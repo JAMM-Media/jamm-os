@@ -1,0 +1,4 @@
+Week #,Hours available,Focus theme,Deliverable,Risk/Blocker
+1,15,Foundations,FastAPI hello + Postgres running,
+2,15,Data models,Clients CRUD + Alembic,
+3,15,Auth,JWT login + roles,

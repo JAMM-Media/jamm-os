@@ -1,0 +1,42 @@
+[
+  {
+    "name": "P0",
+    "color": "d73a4a",
+    "description": "Blocker"
+  },
+  {
+    "name": "P1",
+    "color": "fbca04",
+    "description": "High priority"
+  },
+  {
+    "name": "P2",
+    "color": "0e8a16",
+    "description": "Normal priority"
+  },
+  {
+    "name": "backend",
+    "color": "1d76db",
+    "description": "Server / API"
+  },
+  {
+    "name": "frontend",
+    "color": "5319e7",
+    "description": "UI / Next.js"
+  },
+  {
+    "name": "infra",
+    "color": "0052cc",
+    "description": "Hosting / CI / Secrets"
+  },
+  {
+    "name": "security",
+    "color": "b60205",
+    "description": "Security / compliance"
+  },
+  {
+    "name": "good first issue",
+    "color": "7057ff",
+    "description": "Beginner-friendly"
+  }
+]

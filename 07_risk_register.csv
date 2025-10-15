@@ -1,0 +1,3 @@
+Risk ID,Description,Likelihood,Impact,Mitigation,Owner,Status
+R-001,OAuth flow takes longer than expected,Med,High,Start with Google only; schedule 2 extra days,You,Open
+R-002,Stripe webhook failures/idempotency,Med,High,Create processed_events table; retry with backoff,You,Open
