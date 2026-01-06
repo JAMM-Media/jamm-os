@@ -1,13 +1,21 @@
 from pydantic import BaseModel, EmailStr
+from uuid import UUID
+from typing import Optional
+
+class UserBase(BaseModel):
+    email: EmailStr
+    is_active: bool = True
 
 class UserCreate(BaseModel):
     email: EmailStr
     password: str
 
-class UserOut(BaseModel):
-    id: str
-    email: EmailStr
-    is_active: bool
+class UserUpdate(BaseModel):
+    password: Optional[str] = None
+    is_active: Optional[bool] = None
+
+class UserOut(UserBase):
+    id: UUID
 
     class Config:
-        orm_mode = True
+        from_attributes = True  # for Pydantic v2
