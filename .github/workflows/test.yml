@@ -27,5 +27,8 @@ jobs:
     - name: Copy .env.example to .env
       run: cp .env.example .env
 
+    - name: Set PYTHONPATH
+      run: echo "PYTHONPATH=$PWD" >> $GITHUB_ENV
+
     - name: Run tests
       run: pytest -v
