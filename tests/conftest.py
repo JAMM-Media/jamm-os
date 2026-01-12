@@ -1,6 +1,7 @@
 # tests/conftest.py
 import pytest
-from sqlalchemy.orm import Session
+from fastapi.testclient import TestClient
+from app.main import app
 from app.db.base import Base
 from tests.test_main import engine, TestingSessionLocal
 
@@ -10,3 +11,7 @@ def reset_test_db():
     Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
     yield
+
+@pytest.fixture
+def client():
+    return TestClient(app)

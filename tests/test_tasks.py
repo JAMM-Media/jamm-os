@@ -17,7 +17,7 @@ def test_create_and_get_task():
         "title": "Sample Task"
     }
     r = client.post("/tasks/", json=task_data)
-    assert r.status_code == 200
+    assert r.status_code == 201
     task = r.json()
 
     # Retrieve task

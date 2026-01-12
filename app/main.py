@@ -13,7 +13,6 @@ from app.api.health import router as health_router
 from app.db.session import engine
 from app.db.base import Base
 
-# ⬆️ Define lifespan BEFORE creating FastAPI app
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Run at startup

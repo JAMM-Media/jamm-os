@@ -3,6 +3,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy import select, or_
+from sqlalchemy.exc import IntegrityError
 from uuid import UUID
 from pydantic import BaseModel
 
@@ -19,9 +20,7 @@ class ClientOverview(BaseModel):
     projects: List[ProjectOut]
     tasks: List[TaskOut]
 
-
 router = APIRouter(prefix="/clients", tags=["clients"])
-
 
 def _tags_to_str(tags):
     if tags is None:
@@ -100,7 +99,6 @@ def get_client_overview(
         tasks=tasks,
     )
 
-
 @router.post("/", response_model=ClientOut, status_code=status.HTTP_201_CREATED)
 def create_client(payload: ClientCreate, db: Session = Depends(get_db)):
     obj = Client(
@@ -120,7 +118,14 @@ def create_client(payload: ClientCreate, db: Session = Depends(get_db)):
         tags=_tags_to_str(payload.tags),
     )
     db.add(obj)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="A client with this email already exists.",
+        )
     db.refresh(obj)
     return obj
 

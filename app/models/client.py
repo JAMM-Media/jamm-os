@@ -10,7 +10,7 @@ class Client(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(200), nullable=False)
-    email: Mapped[str | None] = mapped_column(String(255))
+    email: Mapped[str] = mapped_column(String(255), unique=True, nullable=True)
     phone: Mapped[str | None] = mapped_column(String(50))
 
     company_name: Mapped[str | None] = mapped_column(String(200))
@@ -34,3 +34,5 @@ class Client(Base):
     tasks: Mapped[list["Task"]] = relationship("Task", back_populates="client", cascade="all, delete-orphan",)
 
     projects: Mapped[list["Project"]] = relationship(back_populates="client", cascade="all, delete-orphan",)
+
+    contacts: Mapped[list["Contact"]] = relationship("Contact", back_populates="client", cascade="all, delete-orphan")

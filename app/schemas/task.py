@@ -68,12 +68,3 @@ class TaskSummary(BaseModel):
 
     class Config:
         from_attributes = True
-
-class TaskSummary(BaseModel):
-    id: uuid.UUID
-    title: str
-    status: str
-    due_date: date | None = None
-
-    class Config:
-        from_attributes = True
