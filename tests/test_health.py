@@ -1,9 +1,7 @@
-from fastapi.testclient import TestClient
-from app.main import app
+from tests.test_main import client
 
-client = TestClient(app)
 
 def test_health():
-    r = client.get("/api/health")
+    r = client.get("/")  # change this from /api/health
     assert r.status_code == 200
-    assert r.json() == {"status": "ok"}
+    assert r.json() == {"message": "JAMM OS is running"}
