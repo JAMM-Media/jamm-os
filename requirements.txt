@@ -11,3 +11,4 @@ email-validator
 passlib[bcrypt]
 python-jose[cryptography]
 python-multipart
+argon2-cffi==23.1.0
