@@ -1,19 +1,20 @@
+# app/api/system.py
+
 from fastapi import APIRouter, Depends
 from sqlalchemy import text
 from sqlalchemy.orm import Session
-from ..db.session import get_db
 
-router = APIRouter()
+from app.db.session import get_db
 
-@router.get("/health", tags=["system"])
+router = APIRouter(prefix="/health", tags=["system"])
+
+
+@router.get("")
 def health():
     return {"status": "ok"}
 
-@router.get("/db-check", tags=["system"])
-def db_check(db: Session = Depends(get_db)):
-    """
-    Runs a trivial SELECT 1 against your Postgres to prove the connection works.
-    """
-    result = db.execute(text("SELECT 1")).scalar_one()
-    return {"db": "connected", "result": int(result)}
 
+@router.get("/db")
+def db_health(db: Session = Depends(get_db)):
+    db.execute(text("SELECT 1"))
+    return {"db": "connected"}

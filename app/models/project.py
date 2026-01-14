@@ -1,8 +1,7 @@
 # app/models/project.py
 
 import uuid
-from datetime import datetime, date
-
+from datetime import datetime, date, timezone
 from sqlalchemy import String, Boolean, Date, DateTime, ForeignKey, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -12,12 +11,8 @@ from app.db.base import Base
 class Project(Base):
     __tablename__ = "projects"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        primary_key=True,
-        default=uuid.uuid4,
-    )
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
 
-    # link back to the client that owns this project
     client_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("clients.id", ondelete="CASCADE"),
         nullable=False,
@@ -31,25 +26,21 @@ class Project(Base):
     end_date: Mapped[date | None] = mapped_column(Date)
 
     notes: Mapped[str | None] = mapped_column(Text)
-
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        default=datetime.utcnow,
+        default=lambda: datetime.now(timezone.utc),
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
     )
 
-    # relationship back to Client
     client: Mapped["Client"] = relationship(back_populates="projects")
-    # relationship to this project's tasks
     tasks: Mapped[list["Task"]] = relationship(
         "Task",
         back_populates="project",
         cascade="all, delete-orphan",
     )
-    

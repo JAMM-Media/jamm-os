@@ -1,12 +1,7 @@
-# app/schemas/task.py
-
 import uuid
 from datetime import date, datetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict
 
-# ----------------------
-# Shared fields
-# ----------------------
 
 class TaskBase(BaseModel):
     title: str
@@ -17,18 +12,10 @@ class TaskBase(BaseModel):
     is_completed: bool = False
 
 
-# ----------------------
-# On create
-# ----------------------
-
 class TaskCreate(TaskBase):
     client_id: uuid.UUID
     project_id: uuid.UUID
 
-
-# ----------------------
-# On update (PATCH)
-# ----------------------
 
 class TaskUpdate(BaseModel):
     title: str | None = None
@@ -41,10 +28,6 @@ class TaskUpdate(BaseModel):
     project_id: uuid.UUID | None = None
 
 
-# ----------------------
-# Outbound response
-# ----------------------
-
 class TaskOut(TaskBase):
     id: uuid.UUID
     client_id: uuid.UUID
@@ -52,13 +35,8 @@ class TaskOut(TaskBase):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True  # required to serialize SQLAlchemy 2.0 models
-# app/schemas/task.py (at the bottom)
+    model_config = ConfigDict(from_attributes=True)
 
-from pydantic import BaseModel
-from datetime import date
-import uuid
 
 class TaskSummary(BaseModel):
     id: uuid.UUID
@@ -66,5 +44,4 @@ class TaskSummary(BaseModel):
     status: str
     due_date: date | None = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

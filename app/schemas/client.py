@@ -1,8 +1,8 @@
-# app/schemas/client.py
 from typing import Optional, List
 from datetime import datetime
-from pydantic import BaseModel, EmailStr, field_validator
+from pydantic import BaseModel, EmailStr, field_validator, ConfigDict
 from uuid import UUID
+
 
 def _normalize_tags(value: Optional[List[str] | str]) -> Optional[List[str]]:
     if value is None:
@@ -11,6 +11,7 @@ def _normalize_tags(value: Optional[List[str] | str]) -> Optional[List[str]]:
         items = [v.strip() for v in value.split(",") if v.strip()]
         return list(dict.fromkeys(items))
     return value
+
 
 class ClientBase(BaseModel):
     name: str
@@ -33,8 +34,10 @@ class ClientBase(BaseModel):
     def normalize_tags(cls, v):
         return _normalize_tags(v)
 
+
 class ClientCreate(ClientBase):
     pass
+
 
 class ClientUpdate(BaseModel):
     name: Optional[str] = None
@@ -57,20 +60,10 @@ class ClientUpdate(BaseModel):
     def normalize_tags(cls, v):
         return _normalize_tags(v)
 
+
 class ClientOut(ClientBase):
     id: UUID
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
-
-from app.schemas.project import ProjectOut
-from app.schemas.task import TaskSummary
-
-class ClientOverview(BaseModel):
-    client: ClientOut
-    projects: List[ProjectOut]
-    tasks: List[TaskSummary]
-
-
+    model_config = ConfigDict(from_attributes=True)

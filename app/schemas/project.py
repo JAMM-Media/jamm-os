@@ -1,10 +1,10 @@
-# app/schemas/project.py
-
 from datetime import date, datetime
-from typing import Optional
+from typing import Optional, List
 from uuid import UUID
-
 from pydantic import BaseModel, ConfigDict
+
+from app.schemas.task import TaskSummary
+from app.schemas.client import ClientOut
 
 
 class ProjectBase(BaseModel):
@@ -39,9 +39,6 @@ class ProjectOut(ProjectBase):
 
     model_config = ConfigDict(from_attributes=True)
 
-from typing import List
-from app.schemas.task import TaskSummary
-from app.schemas.client import ClientOut
 
 class ProjectOverview(BaseModel):
     project: ProjectOut

@@ -9,7 +9,6 @@ from app.api.tasks import router as tasks_router
 from app.api.auth import router as auth_router
 from app.api.users import router as users_router
 from app.api.contacts import router as contacts_router
-from app.api.health import router as health_router
 from app.db.session import engine
 from app.db.base import Base
 
@@ -29,7 +28,6 @@ app.include_router(clients_router, tags=["clients"])
 app.include_router(projects_router, tags=["projects"])
 app.include_router(tasks_router, tags=["tasks"])
 app.include_router(contacts_router, tags=["contacts"])
-app.include_router(health_router, prefix="/api")
 
 # --- Routes ---
 @app.get("/")
