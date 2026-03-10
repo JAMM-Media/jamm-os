@@ -8,3 +8,4 @@ from app.models.client import Client
 from app.models.engagement import Engagement
 from app.models.task import Task
 from app.models.contact import Contact
+from app.models.document import Document, AuditLog

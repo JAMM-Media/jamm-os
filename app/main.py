@@ -12,6 +12,7 @@ from app.api.auth import router as auth_router
 from app.api.users import router as users_router
 from app.api.contacts import router as contacts_router
 from app.api.firms import router as firms_router
+from app.api.documents import router as documents_router
 
 from app.db.base_class import Base
 from app.core.config import get_settings
@@ -58,6 +59,7 @@ app.include_router(clients_router)
 app.include_router(engagements_router)
 app.include_router(tasks_router)
 app.include_router(contacts_router)
+app.include_router(documents_router)
 
 
 @app.get("/")

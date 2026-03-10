@@ -73,3 +73,9 @@ class Client(Base):
         back_populates="client",
         cascade="all, delete-orphan",
     )
+
+    documents: Mapped[list["Document"]] = relationship(
+        "Document",
+        back_populates="client",
+        cascade="all, delete-orphan",
+    )

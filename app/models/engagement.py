@@ -52,3 +52,9 @@ class Engagement(Base):
         back_populates="engagement",
         cascade="all, delete-orphan",
     )
+
+    documents: Mapped[list["Document"]] = relationship(
+        "Document",
+        back_populates="engagement",
+        cascade="all, delete-orphan",
+    )

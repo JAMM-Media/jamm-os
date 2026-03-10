@@ -123,3 +123,9 @@ class Firm(Base):
         back_populates="firm",
         cascade="all, delete-orphan",
     )
+
+    documents: Mapped[list["Document"]] = relationship(
+        "Document",
+        back_populates="firm",
+        cascade="all, delete-orphan",
+    )
