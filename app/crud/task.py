@@ -18,6 +18,22 @@ def get_task(db: Session, task_id: UUID) -> Task | None:
     return db.query(Task).filter(Task.id == task_id).first()
 
 
+def get_tasks_for_user(
+    db: Session,
+    user_id: UUID,
+    firm_id: UUID,
+    status: str | None = None,
+):
+    """Returns a query of tasks assigned to a specific user, scoped to the firm."""
+    query = db.query(Task).filter(
+        Task.assigned_to == user_id,
+        Task.firm_id == firm_id,
+    )
+    if status:
+        query = query.filter(Task.status == status)
+    return query
+
+
 def get_tasks_for_firm(
     db: Session,
     firm_id: UUID,

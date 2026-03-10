@@ -8,12 +8,14 @@ from app.db.session import get_db
 from app.models.user import User
 from app.models.firm import Firm
 from app.schemas.user import UserCreate, UserOut, UserUpdate
+from app.schemas.task import TaskOut, TaskStatus
 from app.schemas.pagination import PaginatedResponse
 from app.utils.pagination import paginate
 from app.crud import user as crud_user
+from app.crud import task as crud_task
 from app.dependencies.auth import get_current_user
 from app.dependencies.tenant import get_current_firm
-from app.dependencies.roles import require_firm_owner
+from app.dependencies.roles import require_firm_owner, require_staff_or_above
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -65,6 +67,37 @@ def list_users(
 @router.get("/me", response_model=UserOut)
 def read_users_me(current_user: User = Depends(get_current_user)):
     return current_user
+
+
+# -------------------------------------------------------------------
+# GET /users/{user_id}/workload — Tasks assigned to this user
+# Accessible to any staff member (staff can view their own workload,
+# managers/owners can view anyone's).
+# -------------------------------------------------------------------
+@router.get("/{user_id}/workload", response_model=PaginatedResponse[TaskOut])
+def get_user_workload(
+    user_id: UUID,
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    _: object = Depends(require_staff_or_above),
+    status: TaskStatus | None = None,
+    limit: int = Query(100, le=1000),
+    offset: int = 0,
+):
+    user = db.query(User).filter(
+        User.id == user_id,
+        User.firm_id == current_firm.id,
+    ).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    query = crud_task.get_tasks_for_user(
+        db,
+        user_id=user_id,
+        firm_id=current_firm.id,
+        status=status.value if status else None,
+    )
+    return paginate(query, limit=limit, offset=offset)
 
 
 # -------------------------------------------------------------------
