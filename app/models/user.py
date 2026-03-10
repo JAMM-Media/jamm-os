@@ -1,15 +1,104 @@
 # app/models/user.py
 
-from sqlalchemy import Column, String, Boolean
-from sqlalchemy.dialects.postgresql import UUID
 import uuid
+from datetime import datetime, timezone
+from typing import Optional
 
-from app.db.base import Base
+from sqlalchemy import String, DateTime, Boolean, Text, Integer, ForeignKey
+from sqlalchemy import Enum as PgEnum
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.db.base_class import Base
+from app.core.enums import UserRole
+
 
 class User(Base):
     __tablename__ = "users"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
-    email = Column(String, unique=True, index=True, nullable=False)
-    hashed_password = Column(String, nullable=False)
-    is_active = Column(Boolean, default=True)
+    id: Mapped[uuid.UUID] = mapped_column(
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+
+    # firm_id links this user to exactly one Firm.
+    # Every user belongs to a firm. There are no "global" users except
+    # system_admin, which is handled separately at the application layer.
+    # nullable=False means you cannot create a user without assigning them
+    # to a firm — this enforces tenant isolation at the database level.
+    firm_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("firms.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    email: Mapped[str] = mapped_column(
+        String,
+        unique=True,
+        index=True,
+        nullable=False,
+    )
+
+    hashed_password: Mapped[str] = mapped_column(
+        String,
+        nullable=False,
+    )
+
+    full_name: Mapped[Optional[str]] = mapped_column(
+        String,
+        nullable=True,
+    )
+
+    is_active: Mapped[bool] = mapped_column(
+        default=True,
+    )
+
+    role: Mapped[UserRole] = mapped_column(
+        PgEnum(UserRole, name="userrole"),
+        default=UserRole.staff,
+        nullable=False,
+    )
+
+    # token_version is used for session invalidation.
+    # When a user's role changes, we increment this number.
+    # Every JWT we issue includes this number. When the token is validated,
+    # we check that the number in the token matches the current number in the DB.
+    # If they don't match, the token is rejected — forcing a fresh login.
+    # This means: change someone's role → their existing sessions immediately stop working.
+    token_version: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        nullable=False,
+    )
+
+    # 2FA fields — scaffolded now, enforced in Phase 11 compliance hardening.
+    totp_secret: Mapped[Optional[str]] = mapped_column(
+        String,
+        nullable=True,
+    )
+
+    totp_enabled: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
+    )
+
+    backup_codes: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+    # Relationship back to the firm this user belongs to.
+    firm: Mapped["Firm"] = relationship("Firm", back_populates="users")

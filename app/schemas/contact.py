@@ -1,30 +1,29 @@
 from pydantic import BaseModel, EmailStr, ConfigDict
+from typing import Optional
 from uuid import UUID
 from datetime import datetime
-from typing import Optional
-
 
 class ContactBase(BaseModel):
-    first_name: str
-    last_name: str
+    name: str
     email: Optional[EmailStr] = None
     phone: Optional[str] = None
+    client_id: Optional[UUID] = None
+    is_active: bool = True
 
 
 class ContactCreate(ContactBase):
-    client_id: UUID
+    pass
 
 
 class ContactUpdate(BaseModel):
-    first_name: Optional[str] = None
-    last_name: Optional[str] = None
+    name: Optional[str] = None
     email: Optional[EmailStr] = None
     phone: Optional[str] = None
+    is_active: Optional[bool] = None
 
 
 class ContactOut(ContactBase):
     id: UUID
-    client_id: UUID
     created_at: datetime
     updated_at: datetime
 

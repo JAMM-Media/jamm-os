@@ -1,17 +1,38 @@
 # app/core/config.py
-from pydantic_settings import BaseSettings
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from functools import lru_cache
+from typing import Literal
 import os
 
+
 class Settings(BaseSettings):
-    DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql://user:pass@localhost:5432/test_db")
+    # App environment
+    env: Literal["development", "production", "testing"] = "development"
+    debug: bool = True
+
+    # App metadata
+    app_name: str = "JAMM OS"
+    host: str = "0.0.0.0"
+    port: int = 8000
+
+    # Security
     SECRET_KEY: str
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
 
-    class Config:
-        env_file = ".env"
-        extra = "ignore"
+    # Database
+    DATABASE_URL: str
+
+    # CORS
+    BACKEND_CORS_ORIGINS: list[str] = ["http://localhost:3000"]
+
+    model_config = SettingsConfigDict(
+        env_file=(".env.local", ".env"),
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
 
 @lru_cache
 def get_settings() -> Settings:

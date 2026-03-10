@@ -1,11 +1,21 @@
+# app/schemas/task.py
+
 import uuid
 from datetime import date, datetime
+from enum import Enum
+
 from pydantic import BaseModel, ConfigDict
+
+
+class TaskStatus(str, Enum):
+    TODO = "todo"
+    IN_PROGRESS = "in_progress"
+    DONE = "done"
 
 
 class TaskBase(BaseModel):
     title: str
-    status: str = "todo"
+    status: TaskStatus = TaskStatus.TODO
     due_date: date | None = None
     assigned_to: str | None = None
     notes: str | None = None
@@ -14,24 +24,24 @@ class TaskBase(BaseModel):
 
 class TaskCreate(TaskBase):
     client_id: uuid.UUID
-    project_id: uuid.UUID
+    engagement_id: uuid.UUID  # Renamed from project_id
 
 
 class TaskUpdate(BaseModel):
     title: str | None = None
-    status: str | None = None
+    status: TaskStatus | None = None
     due_date: date | None = None
     assigned_to: str | None = None
     notes: str | None = None
     is_completed: bool | None = None
     client_id: uuid.UUID | None = None
-    project_id: uuid.UUID | None = None
+    engagement_id: uuid.UUID | None = None  # Renamed from project_id
 
 
 class TaskOut(TaskBase):
     id: uuid.UUID
     client_id: uuid.UUID
-    project_id: uuid.UUID
+    engagement_id: uuid.UUID  # Renamed from project_id
     created_at: datetime
     updated_at: datetime
 
@@ -41,7 +51,7 @@ class TaskOut(TaskBase):
 class TaskSummary(BaseModel):
     id: uuid.UUID
     title: str
-    status: str
+    status: TaskStatus
     due_date: date | None = None
 
     model_config = ConfigDict(from_attributes=True)
