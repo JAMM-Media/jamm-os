@@ -1,5 +1,6 @@
 # app/api/documents.py
 
+import io
 import uuid
 from typing import Optional
 
@@ -94,7 +95,6 @@ def upload_document(
         current_firm.id, client_id, engagement_id, doc_id, file.filename
     )
 
-    import io
     s3_service.upload_fileobj(io.BytesIO(content), s3_key, content_type)
 
     doc = crud_document.create_document(
