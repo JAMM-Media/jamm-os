@@ -1,0 +1,33 @@
+# Byte-compiled / cache files
+__pycache__/
+*.py[cod]
+*.so
+
+# Virtual env
+.venv/
+
+# Environment files
+.env
+.env.docker
+
+# Git
+.git/
+.gitignore
+
+# Docker files
+Dockerfile
+docker-compose.yml
+
+# Test output / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDEs
+.vscode/
+*.swp
+*.swo
+
+# OS metadata
+.DS_Store
+Thumbs.db
