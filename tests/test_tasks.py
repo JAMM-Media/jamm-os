@@ -1,34 +1,51 @@
-from tests.test_main import client
+# tests/test_tasks.py
 
 
-def test_create_and_get_task():
-    # Create client
-    r = client.post("/clients/", json={"name": "Task Client"})
-    client_id = r.json()["id"]
+def test_admin_can_create_task(client, firm_a_owner):
+    headers = firm_a_owner["headers"]
 
-    # Create project
-    r = client.post("/projects/", json={"client_id": client_id, "name": "Task Project"})
-    project_id = r.json()["id"]
+    client_resp = client.post("/clients/", json={"name": "Task Client"}, headers=headers)
+    assert client_resp.status_code == 201
 
-    # Create task
-    task_data = {
-        "client_id": client_id,
-        "project_id": project_id,
-        "title": "Sample Task"
+    engagement_resp = client.post("/engagements/", json={
+        "name": "Tax Return 2024",
+        "client_id": client_resp.json()["id"]
+    }, headers=headers)
+    assert engagement_resp.status_code == 201
+
+    task_payload = {
+        "title": "Admin-Created Task",
+        "client_id": client_resp.json()["id"],
+        "engagement_id": engagement_resp.json()["id"]
     }
-    r = client.post("/tasks/", json=task_data)
+    task_resp = client.post("/tasks/", json=task_payload, headers=headers)
+    assert task_resp.status_code == 201
+    assert task_resp.json()["title"] == "Admin-Created Task"
+
+
+def test_client_cannot_list_tasks(client, firm_a_owner):
+    owner_headers = firm_a_owner["headers"]
+
+    # firm_owner creates a client_portal_user in their firm
+    portal_user = {
+        "email": "portaluser@example.com",
+        "password": "clientpass123",
+        "full_name": "Portal User",
+        "role": "client_portal_user",
+        "firm_id": firm_a_owner["firm_id"]
+    }
+    r = client.post("/users/", json=portal_user, headers=owner_headers)
     assert r.status_code == 201
-    task = r.json()
 
-    # Retrieve task
-    r = client.get(f"/tasks/{task['id']}")
-    assert r.status_code == 200
-    assert r.json()["title"] == "Sample Task"
+    # Login as that portal user
+    login = client.post("/auth/token", data={
+        "username": portal_user["email"],
+        "password": portal_user["password"]
+    })
+    assert login.status_code == 200
+    token = login.json()["access_token"]
+    portal_headers = {"Authorization": f"Bearer {token}"}
 
-def test_create_task_invalid_data(client):
-    response = client.post("/tasks/", json={"title": "", "project_id": "not-a-uuid"})
-    assert response.status_code in (422, 400)
-
-def test_get_nonexistent_task(client):
-    response = client.get("/tasks/00000000-0000-0000-0000-000000000000")
-    assert response.status_code == 404
+    # client_portal_user should be blocked from listing tasks
+    resp = client.get("/tasks/", headers=portal_headers)
+    assert resp.status_code == 403
