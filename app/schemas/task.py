@@ -17,7 +17,7 @@ class TaskBase(BaseModel):
     title: str
     status: TaskStatus = TaskStatus.TODO
     due_date: date | None = None
-    assigned_to: str | None = None
+    assigned_to: uuid.UUID | None = None
     notes: str | None = None
     is_completed: bool = False
 
@@ -31,7 +31,7 @@ class TaskUpdate(BaseModel):
     title: str | None = None
     status: TaskStatus | None = None
     due_date: date | None = None
-    assigned_to: str | None = None
+    assigned_to: uuid.UUID | None = None
     notes: str | None = None
     is_completed: bool | None = None
     client_id: uuid.UUID | None = None

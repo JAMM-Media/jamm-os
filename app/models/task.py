@@ -38,7 +38,11 @@ class Task(Base):
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     status: Mapped[str] = mapped_column(String(50), default="todo")
     due_date: Mapped[date | None] = mapped_column(Date)
-    assigned_to: Mapped[str | None] = mapped_column(String(200))
+    assigned_to: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     notes: Mapped[str | None] = mapped_column(Text)
     is_completed: Mapped[bool] = mapped_column(Boolean, default=False)
 
@@ -57,3 +61,4 @@ class Task(Base):
     firm: Mapped["Firm"] = relationship("Firm", back_populates="tasks")
     client: Mapped["Client"] = relationship(back_populates="tasks")
     engagement: Mapped["Engagement"] = relationship(back_populates="tasks")
+    assignee: Mapped["User | None"] = relationship("User", foreign_keys=[assigned_to])
