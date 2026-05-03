@@ -104,7 +104,11 @@ export default function TaskDetailPage() {
         <EditTaskModal
           isOpen={isEditOpen}
           onClose={() => setIsEditOpen(false)}
-          task={task}
+          task={{
+            ...task,
+            dueDate: task.dueDate ?? undefined,
+            notes: task.notes ?? undefined,
+          }}
           onSuccess={() => { refetch(); setIsEditOpen(false) }}
         />
       )}

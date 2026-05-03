@@ -372,7 +372,12 @@ export default function EngagementDetailPage() {
         <EditEngagementModal
           isOpen={isEditOpen}
           onClose={() => setIsEditOpen(false)}
-          engagement={engagement}
+          engagement={{
+            ...engagement,
+            engagementType: engagement.engagementType ?? undefined,
+            endDate: engagement.endDate ?? undefined,
+            description: engagement.description ?? undefined,
+          }}
           onSuccess={() => { refetch(); setIsEditOpen(false) }}
         />
       )}
