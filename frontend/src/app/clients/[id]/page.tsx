@@ -1,7 +1,7 @@
 // path: frontend/src/app/clients/[id]/page.tsx
 'use client'
 
-import { useState } from 'react'
+import { Suspense, useState } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import { AppShell } from '@/components/layout/AppShell'
@@ -38,7 +38,7 @@ const CLIENT_TABS = [
   { key: 'messages', label: 'Messages' },
 ]
 
-export default function ClientDetailPage() {
+function ClientDetailContent() {
   const params = useParams()
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -471,5 +471,17 @@ export default function ClientDetailPage() {
         />
       )}
     </AppShell>
+  )
+}
+
+export default function ClientDetailPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader2 className="h-6 w-6 animate-spin text-brand" />
+      </div>
+    }>
+      <ClientDetailContent />
+    </Suspense>
   )
 }

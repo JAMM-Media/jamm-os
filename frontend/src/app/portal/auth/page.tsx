@@ -1,11 +1,11 @@
 // path: frontend/src/app/portal/auth/page.tsx
 'use client'
 
-import { useEffect, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Loader2 } from 'lucide-react'
 
-export default function PortalAuthPage() {
+function PortalAuthContent() {
   const searchParams = useSearchParams()
   const router = useRouter()
   const [error, setError] = useState<string | null>(null)
@@ -49,5 +49,17 @@ export default function PortalAuthPage() {
       <Loader2 className="h-6 w-6 animate-spin text-brand" />
       <p className="text-[13px] text-[#6B7280]">Signing you in...</p>
     </div>
+  )
+}
+
+export default function PortalAuthPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader2 className="h-6 w-6 animate-spin text-brand" />
+      </div>
+    }>
+      <PortalAuthContent />
+    </Suspense>
   )
 }

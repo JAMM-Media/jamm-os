@@ -1,0 +1,9 @@
+autocorrect_links: 	 true
+autocorrect_smart_quotes: true
+enable_string_replacement: true
+autocorrect_paragraph_direction: true
+autocorrect_lists: true
+autocorrect_auto_capitalization: true
+autocorrect_spelling: true
+autocorrect_markdown: false
+show_markdown_promo: false
