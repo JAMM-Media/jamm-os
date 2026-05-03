@@ -1,5 +1,5 @@
 from typing import Optional, List
-from datetime import datetime
+from datetime import datetime, date
 from pydantic import BaseModel, EmailStr, field_validator, ConfigDict
 from uuid import UUID
 
@@ -28,11 +28,22 @@ class ClientBase(BaseModel):
     tags: Optional[List[str]] = None
     notes: Optional[str] = None
     is_active: Optional[bool] = True
+    entity_type: Optional[str] = None
 
     @field_validator("tags", mode="before")
     @classmethod
     def normalize_tags(cls, v):
         return _normalize_tags(v)
+
+    @field_validator("entity_type")
+    @classmethod
+    def validate_entity_type(cls, v):
+        if v is None:
+            return v
+        valid = {"individual", "business", "trust", "estate"}
+        if v not in valid:
+            raise ValueError(f"entity_type must be one of {sorted(valid)}")
+        return v
 
 
 class ClientCreate(ClientBase):
@@ -54,11 +65,22 @@ class ClientUpdate(BaseModel):
     tags: Optional[List[str]] = None
     notes: Optional[str] = None
     is_active: Optional[bool] = None
+    entity_type: Optional[str] = None
 
     @field_validator("tags", mode="before")
     @classmethod
     def normalize_tags(cls, v):
         return _normalize_tags(v)
+
+    @field_validator("entity_type")
+    @classmethod
+    def validate_entity_type(cls, v):
+        if v is None:
+            return v
+        valid = {"individual", "business", "trust", "estate"}
+        if v not in valid:
+            raise ValueError(f"entity_type must be one of {sorted(valid)}")
+        return v
 
 
 class ClientOut(ClientBase):
@@ -67,3 +89,20 @@ class ClientOut(ClientBase):
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class ClientImportResult(BaseModel):
+    created: int
+    skipped: int
+    errors: list[dict]  # [{row: int, reason: str}]
+
+
+class QBOARBalanceOut(BaseModel):
+    connected: bool
+    outstanding_balance: Optional[float] = None
+    last_payment_date: Optional[date] = None
+
+
+class ClientHealthOut(BaseModel):
+    status: str  # "healthy", "needs_attention", "at_risk"
+    reasons: list[str]

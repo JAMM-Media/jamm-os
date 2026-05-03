@@ -1,6 +1,6 @@
 # app/api/users.py
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, Request, status, Query
 from sqlalchemy.orm import Session
 from uuid import UUID
 
@@ -13,9 +13,12 @@ from app.schemas.pagination import PaginatedResponse
 from app.utils.pagination import paginate
 from app.crud import user as crud_user
 from app.crud import task as crud_task
+from app.crud import firm as crud_firm
+from app.schemas.firm import FirmOut
 from app.dependencies.auth import get_current_user
 from app.dependencies.tenant import get_current_firm
 from app.dependencies.roles import require_firm_owner, require_staff_or_above
+from app.services.audit_service import write_audit_log
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -67,6 +70,23 @@ def list_users(
 @router.get("/me", response_model=UserOut)
 def read_users_me(current_user: User = Depends(get_current_user)):
     return current_user
+
+
+# -------------------------------------------------------------------
+# GET /users/firm — Return the current user's firm details
+# Accessible to all staff roles (staff, manager, firm_owner).
+# system_admin is excluded by design — they are not firm members.
+# -------------------------------------------------------------------
+@router.get("/firm", response_model=FirmOut)
+def get_my_firm(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    current_firm: Firm = Depends(get_current_firm),
+):
+    firm = crud_firm.get_firm(db, current_firm.id)
+    if not firm:
+        raise HTTPException(status_code=404, detail="Firm not found")
+    return firm
 
 
 # -------------------------------------------------------------------
@@ -126,8 +146,10 @@ def get_user(
 def update_user(
     user_id: UUID,
     user_in: UserUpdate,
+    request: Request,
     db: Session = Depends(get_db),
     current_firm: Firm = Depends(get_current_firm),
+    current_user: User = Depends(get_current_user),
     _: object = Depends(require_firm_owner),
 ):
     user = db.query(User).filter(
@@ -136,7 +158,28 @@ def update_user(
     ).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    return crud_user.update_user(db, user, user_in)
+
+    old_role = user.role
+    updated = crud_user.update_user(db, user, user_in)
+
+    if user_in.role is not None and user_in.role != old_role:
+        ip = request.headers.get("X-Forwarded-For", "").split(",")[0].strip() or (
+            request.client.host if request.client else None
+        )
+        write_audit_log(
+            db=db,
+            firm_id=current_firm.id,
+            action="user.role_changed",
+            actor_id=current_user.id,
+            actor_type="staff",
+            entity_type="user",
+            entity_id=user_id,
+            ip_address=ip,
+            user_agent=request.headers.get("user-agent"),
+            metadata={"old_role": str(old_role), "new_role": str(user_in.role)},
+        )
+
+    return updated
 
 
 # -------------------------------------------------------------------

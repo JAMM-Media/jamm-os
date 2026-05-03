@@ -1,7 +1,10 @@
 # app/api/firms.py
 
+import logging
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status, Query
+
+logger = logging.getLogger(__name__)
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
@@ -11,13 +14,15 @@ from app.schemas.pagination import PaginatedResponse
 from app.utils.pagination import paginate
 from app.crud import firm as crud_firm
 from app.dependencies.roles import require_system_admin
+from app.services.automation_presets import seed_firm_presets
+from app.services.tax_organizer_service import seed_firm_organizer_templates
 
 router = APIRouter(prefix="/firms", tags=["firms"])
 
 
 # ---------------------------------------------------------
 # CREATE — system_admin only
-# Only JAMM OS staff (system_admin) can create new firms.
+# Only JAMM PX staff (system_admin) can create new firms.
 # Firms are created when a new customer signs up.
 # ---------------------------------------------------------
 @router.post("/", response_model=FirmOut, status_code=status.HTTP_201_CREATED)
@@ -32,7 +37,12 @@ def create_firm(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"A firm with the slug '{payload.slug}' already exists.",
         )
-    return crud_firm.create_firm(db, payload)
+    new_firm = crud_firm.create_firm(db, payload)
+    seeded = seed_firm_presets(firm_id=new_firm.id, db=db)
+    logger.info(f"Firm {new_firm.id} created with {seeded} automation presets")
+    seeded_templates = seed_firm_organizer_templates(firm_id=new_firm.id, db=db)
+    logger.info(f"Firm {new_firm.id} created with {seeded_templates} organizer templates")
+    return new_firm
 
 
 # ---------------------------------------------------------

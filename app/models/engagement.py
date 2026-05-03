@@ -32,7 +32,29 @@ class Engagement(Base):
     start_date: Mapped[date | None] = mapped_column(Date)
     end_date: Mapped[date | None] = mapped_column(Date)
 
-    notes: Mapped[str | None] = mapped_column(Text)
+    # Tax-specific fields — added in Phase 13A
+    engagement_type: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+        index=True,
+    )
+
+    filing_deadline: Mapped[date | None] = mapped_column(
+        Date,
+        nullable=True,
+        comment="IRS filing deadline. Auto-set from engagement_type on creation. "
+                "Use extended_deadline instead if an extension has been filed.",
+    )
+
+    extended_deadline: Mapped[date | None] = mapped_column(
+        Date,
+        nullable=True,
+        comment="Extended IRS deadline after extension filing. "
+                "This field overrides filing_deadline in all scheduler checks.",
+    )
+
+    notes: Mapped[str | None] = mapped_column(Text)           # internal staff notes — never shown to client
+    notes_client_visible: Mapped[str | None] = mapped_column(Text)  # shown in client portal
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
     created_at: Mapped[datetime] = mapped_column(
@@ -58,3 +80,17 @@ class Engagement(Base):
         back_populates="engagement",
         cascade="all, delete-orphan",
     )
+
+    document_requests: Mapped[list["DocumentRequest"]] = relationship(
+        "DocumentRequest",
+        back_populates="engagement",
+        cascade="all, delete-orphan",
+    )
+
+    signature_envelopes: Mapped[list["SignatureEnvelope"]] = relationship(
+        "SignatureEnvelope",
+        back_populates="engagement",
+    )
+
+    invoices: Mapped[list["Invoice"]] = relationship("Invoice", back_populates="engagement")
+    time_entries: Mapped[list["TimeEntry"]] = relationship("TimeEntry", back_populates="engagement")

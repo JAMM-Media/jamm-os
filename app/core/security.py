@@ -1,7 +1,7 @@
 # app/core/security.py
 
 """
-JWT tokens in JAMM OS now include three pieces of information:
+JWT tokens in JAMM PX now include three pieces of information:
   - "sub": the user's UUID (who are you?)
   - "firm_id": the firm's UUID (which firm do you belong to?)
   - "token_version": an integer (has your role changed since this was issued?)
@@ -20,6 +20,7 @@ With version checking, the role change takes effect immediately —
 old tokens are rejected the next time they make a request.
 """
 
+import secrets
 from datetime import datetime, timedelta, timezone
 from jose import jwt
 from passlib.context import CryptContext
@@ -73,3 +74,14 @@ def create_access_token(
         settings.SECRET_KEY,
         algorithm=settings.ALGORITHM,
     )
+
+
+def generate_staff_refresh_token() -> str:
+    """Generate a cryptographically secure random refresh token."""
+    return secrets.token_hex(32)
+
+
+def hash_staff_refresh_token(token: str) -> str:
+    """SHA-256 hash of the refresh token for storage. Never store raw."""
+    import hashlib
+    return hashlib.sha256(token.encode()).hexdigest()

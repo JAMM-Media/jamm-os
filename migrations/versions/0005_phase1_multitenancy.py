@@ -65,30 +65,76 @@ def upgrade() -> None:
     # ------------------------------------------------------------------
     # 2. Update userrole enum to match new role names
     #
-    # PostgreSQL enums cannot be modified directly. The safest approach:
-    # a) Create new enum type
-    # b) Alter column to use new type (with USING cast)
-    # c) Drop old type
-    #
     # New roles: firm_owner, manager, staff, client_portal_user, system_admin
-    # Old roles: admin, staff, client
+    # Old roles (if they existed): admin, staff, client
+    #
+    # This migration handles two cases:
+    # a) userrole enum already exists (upgrade from an older schema) — rename & recreate
+    # b) userrole enum does not exist (fresh DB via migrations) — create it and add the column
     # ------------------------------------------------------------------
-    op.execute("ALTER TYPE userrole RENAME TO userrole_old")
-    op.execute(
-        "CREATE TYPE userrole AS ENUM ('firm_owner', 'manager', 'staff', 'client_portal_user', 'system_admin')"
-    )
-    op.execute(
-        """
-        ALTER TABLE users
-        ALTER COLUMN role TYPE userrole
-        USING CASE role::text
-            WHEN 'admin'  THEN 'firm_owner'::userrole
-            WHEN 'client' THEN 'client_portal_user'::userrole
-            ELSE role::text::userrole
-        END
-        """
-    )
-    op.execute("DROP TYPE userrole_old")
+    conn = op.get_bind()
+    userrole_exists = conn.execute(
+        sa.text("SELECT EXISTS(SELECT 1 FROM pg_type WHERE typname = 'userrole')")
+    ).scalar()
+    role_col_exists = conn.execute(
+        sa.text(
+            "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
+            "WHERE table_name='users' AND column_name='role')"
+        )
+    ).scalar()
+
+    if userrole_exists:
+        op.execute("ALTER TYPE userrole RENAME TO userrole_old")
+        op.execute(
+            "CREATE TYPE userrole AS ENUM ('firm_owner', 'manager', 'staff', 'client_portal_user', 'system_admin')"
+        )
+        if role_col_exists:
+            op.execute(
+                """
+                ALTER TABLE users
+                ALTER COLUMN role TYPE userrole
+                USING CASE role::text
+                    WHEN 'admin'  THEN 'firm_owner'::userrole
+                    WHEN 'client' THEN 'client_portal_user'::userrole
+                    ELSE role::text::userrole
+                END
+                """
+            )
+        op.execute("DROP TYPE userrole_old")
+    else:
+        op.execute(
+            "CREATE TYPE userrole AS ENUM ('firm_owner', 'manager', 'staff', 'client_portal_user', 'system_admin')"
+        )
+
+    if not role_col_exists:
+        op.add_column(
+            "users",
+            sa.Column(
+                "role",
+                sa.Enum(
+                    "firm_owner", "manager", "staff", "client_portal_user", "system_admin",
+                    name="userrole",
+                    create_type=False,
+                ),
+                nullable=False,
+                server_default="staff",
+            ),
+        )
+
+    # ------------------------------------------------------------------
+    # 2b. Add full_name to users (if not present)
+    # ------------------------------------------------------------------
+    full_name_exists = conn.execute(
+        sa.text(
+            "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
+            "WHERE table_name='users' AND column_name='full_name')"
+        )
+    ).scalar()
+    if not full_name_exists:
+        op.add_column(
+            "users",
+            sa.Column("full_name", sa.String(), nullable=True),
+        )
 
     # ------------------------------------------------------------------
     # 3. Add token_version to users

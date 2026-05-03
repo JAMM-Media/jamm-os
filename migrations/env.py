@@ -10,6 +10,25 @@ from app.core.config import get_settings
 
 # Import all models so Alembic can see them and generate correct migrations
 from app.models import user, engagement, task, client, contact
+from app.models import firm, document, document_request, checklist_template, signature_envelope, engagement_letter_template
+from app.models.portal_session import PortalSession
+from app.models.portal_notification import PortalNotification
+from app.models.invoice import Invoice
+from app.models.time_entry import TimeEntry
+from app.models.stripe_connection import StripeConnection
+from app.models.automation_rule import AutomationRule, AutomationExecutionLog
+from app.models.notification import Notification
+from app.models.notification_preference import NotificationPreference
+from app.models.integration import Integration
+from app.models.audit_log import AuditLog
+from app.models.retention import DataRetentionPolicy
+from app.models.message import ClientMessage, ClientMessageRead
+from app.models.firm_chat import Channel, FirmMessage, FirmMessageRead
+from app.models.irs_authorization import IrsAuthorization
+from app.models.extension import Extension
+from app.models.tax_organizer import TaxOrganizerTemplate, TaxOrganizer
+from app.models.transcript_request import TranscriptRequest
+from app.models.behavioral_event import BehavioralEvent
 
 settings = get_settings()
 

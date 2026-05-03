@@ -4,19 +4,21 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
+import sqlalchemy as sa
 from sqlalchemy import String, Boolean, DateTime, Text, JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base_class import Base
+from app.core.enums import StaffAuthPolicy
 
 
 class Firm(Base):
     """
     The root of the entire multi-tenant system.
 
-    Every piece of data in JAMM OS — every client, every engagement,
+    Every piece of data in JAMM PX — every client, every engagement,
     every task, every document — belongs to exactly one Firm.
-    A Firm is the accounting business that pays for and uses JAMM OS.
+    A Firm is the accounting business that pays for and uses JAMM PX.
 
     Think of Firm as a walled container. Data inside one Firm's container
     is completely invisible to every other Firm. This is tenant isolation.
@@ -78,6 +80,18 @@ class Firm(Base):
         nullable=False,
     )
 
+    staff_auth_policy: Mapped[str] = mapped_column(
+        sa.String,
+        nullable=False,
+        default=StaffAuthPolicy.EITHER.value,
+    )
+
+    plan_override: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
@@ -127,5 +141,85 @@ class Firm(Base):
     documents: Mapped[list["Document"]] = relationship(
         "Document",
         back_populates="firm",
+        cascade="all, delete-orphan",
+    )
+
+    document_requests: Mapped[list["DocumentRequest"]] = relationship(
+        "DocumentRequest",
+        back_populates="firm",
+        cascade="all, delete-orphan",
+    )
+
+    checklist_templates: Mapped[list["ChecklistTemplate"]] = relationship(
+        "ChecklistTemplate",
+        back_populates="firm",
+        cascade="all, delete-orphan",
+    )
+
+    signature_envelopes: Mapped[list["SignatureEnvelope"]] = relationship(
+        "SignatureEnvelope",
+        back_populates="firm",
+        cascade="all, delete-orphan",
+    )
+
+    engagement_letter_templates: Mapped[list["EngagementLetterTemplate"]] = relationship(
+        "EngagementLetterTemplate",
+        back_populates="firm",
+        cascade="all, delete-orphan",
+    )
+
+    portal_sessions: Mapped[list["PortalSession"]] = relationship(
+        "PortalSession",
+        back_populates="firm",
+        cascade="all, delete-orphan",
+    )
+
+    portal_notifications: Mapped[list["PortalNotification"]] = relationship(
+        "PortalNotification",
+        back_populates="firm",
+        cascade="all, delete-orphan",
+    )
+
+    invoices: Mapped[list["Invoice"]] = relationship("Invoice", back_populates="firm")
+    time_entries: Mapped[list["TimeEntry"]] = relationship("TimeEntry", back_populates="firm")
+
+    stripe_connection: Mapped[Optional["StripeConnection"]] = relationship(
+        "StripeConnection",
+        back_populates="firm",
+        uselist=False,
+    )
+
+    integrations: Mapped[list["Integration"]] = relationship(
+        "Integration",
+        back_populates="firm",
+        cascade="all, delete-orphan",
+    )
+
+    automation_rules: Mapped[list["AutomationRule"]] = relationship(
+        "AutomationRule", back_populates="firm", cascade="all, delete-orphan"
+    )
+
+    notifications: Mapped[list["Notification"]] = relationship(
+        "Notification",
+        back_populates="firm",
+        cascade="all, delete-orphan",
+    )
+
+    notification_preferences: Mapped[list["NotificationPreference"]] = relationship(
+        "NotificationPreference",
+        back_populates="firm",
+        cascade="all, delete-orphan",
+    )
+
+    audit_logs: Mapped[list["AuditLog"]] = relationship(
+        "AuditLog",
+        back_populates="firm",
+        cascade="all, delete-orphan",
+    )
+
+    retention_policy: Mapped[Optional["DataRetentionPolicy"]] = relationship(
+        "DataRetentionPolicy",
+        back_populates="firm",
+        uselist=False,
         cascade="all, delete-orphan",
     )

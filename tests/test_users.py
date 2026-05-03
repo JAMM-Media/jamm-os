@@ -43,7 +43,7 @@ def test_create_user_missing_password(client, firm_a_owner):
 
 
 def test_login_with_wrong_credentials(client):
-    response = client.post("/auth/token", data={"username": "wrong@example.com", "password": "badpass"})
+    response = client.post("/auth/token", json={"username": "wrong@example.com", "password": "badpass"})
     assert response.status_code == 401
 
 

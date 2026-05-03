@@ -1,7 +1,9 @@
 # app/api/clients.py
 
+import csv
+import io
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, File, HTTPException, status, Query, UploadFile
 from sqlalchemy.orm import Session
 from sqlalchemy import select, or_, func
 from sqlalchemy.exc import IntegrityError
@@ -15,11 +17,14 @@ from app.schemas.engagement import EngagementOut
 from app.schemas.task import TaskOut
 from app.db.session import get_db
 from app.models.client import Client
-from app.schemas.client import ClientCreate, ClientUpdate, ClientOut
+from app.schemas.client import ClientCreate, ClientUpdate, ClientOut, ClientImportResult, QBOARBalanceOut, ClientHealthOut
 from app.schemas.pagination import PaginatedResponse
 from app.crud import client as crud_client
 from app.dependencies.tenant import get_current_firm
 from app.dependencies.roles import require_staff_or_above
+from app.dependencies.auth import get_current_user
+from app.models.user import User
+import app.services.client_service as client_service
 
 router = APIRouter(prefix="/clients", tags=["clients"])
 
@@ -75,6 +80,142 @@ def list_clients(
 
 
 # ---------------------------------------------------------
+# CSV IMPORT
+# Accepts a CSV file upload and bulk-creates clients.
+# Required columns: name, email (optional), entity_type (optional)
+# Optional columns: phone, company_name
+# Max 500 clients per import. Deduplicates on email.
+# firm_id always injected from JWT — never from the CSV.
+# ---------------------------------------------------------
+@router.post("/import", response_model=ClientImportResult)
+async def import_clients_csv(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    _: object = Depends(require_staff_or_above),
+):
+    """
+    Bulk import clients from a CSV file.
+
+    Required columns: name
+    Optional columns: email, entity_type, phone, company_name
+
+    Rules:
+    - Max 500 rows per import
+    - Rows with no name are skipped with an error
+    - Rows where email already exists for this firm are skipped (not errors)
+    - entity_type must be one of: individual, business, trust, estate
+    - firm_id is always injected from JWT — never from the CSV
+    """
+    VALID_ENTITY_TYPES = {"individual", "business", "trust", "estate"}
+    MAX_ROWS = 500
+
+    # Read and decode the uploaded file
+    contents = await file.read()
+    try:
+        text = contents.decode("utf-8-sig")  # utf-8-sig handles Excel BOM
+    except UnicodeDecodeError:
+        try:
+            text = contents.decode("latin-1")
+        except Exception:
+            raise HTTPException(
+                status_code=400,
+                detail="Could not decode file. Please upload a UTF-8 or Latin-1 CSV.",
+            )
+
+    reader = csv.DictReader(io.StringIO(text))
+
+    # Validate required column exists
+    if reader.fieldnames is None or "name" not in [
+        f.strip().lower() for f in reader.fieldnames
+    ]:
+        raise HTTPException(
+            status_code=400,
+            detail="CSV must have a 'name' column.",
+        )
+
+    # Normalize fieldnames to lowercase
+    rows = []
+    for row in reader:
+        rows.append({k.strip().lower(): v.strip() for k, v in row.items()})
+
+    if len(rows) > MAX_ROWS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Import limit is {MAX_ROWS} clients per upload. "
+                   f"Your file has {len(rows)} rows.",
+        )
+
+    # Load existing emails for this firm for deduplication
+    existing_emails = set(
+        row[0]
+        for row in db.execute(
+            select(Client.email).where(
+                Client.firm_id == current_firm.id,
+                Client.email.isnot(None),
+            )
+        ).all()
+        if row[0]
+    )
+
+    created = 0
+    skipped = 0
+    errors = []
+
+    for i, row in enumerate(rows, start=2):  # start=2 because row 1 is the header
+        name = row.get("name", "").strip()
+        if not name:
+            errors.append({"row": i, "reason": "Missing required field: name"})
+            continue
+
+        email = row.get("email", "").strip() or None
+        entity_type = row.get("entity_type", "").strip().lower() or None
+        phone = row.get("phone", "").strip() or None
+        company_name = row.get("company_name", "").strip() or None
+
+        # Validate entity_type if provided
+        if entity_type and entity_type not in VALID_ENTITY_TYPES:
+            errors.append({
+                "row": i,
+                "reason": f"Invalid entity_type '{entity_type}'. "
+                          f"Must be one of: {', '.join(sorted(VALID_ENTITY_TYPES))}",
+            })
+            continue
+
+        # Deduplicate on email
+        if email and email.lower() in existing_emails:
+            skipped += 1
+            continue
+
+        try:
+            new_client = Client(
+                firm_id=current_firm.id,
+                name=name,
+                email=email,
+                entity_type=entity_type,
+                phone=phone,
+                company_name=company_name,
+                is_active=True,
+            )
+            db.add(new_client)
+            db.flush()  # get the ID without committing yet
+
+            if email:
+                existing_emails.add(email.lower())
+
+            created += 1
+
+        except Exception as e:
+            db.rollback()
+            errors.append({"row": i, "reason": f"Database error: {str(e)}"})
+            continue
+
+    db.commit()
+
+    return ClientImportResult(created=created, skipped=skipped, errors=errors)
+
+
+# ---------------------------------------------------------
 # GET SINGLE
 # ---------------------------------------------------------
 @router.get("/{client_id}", response_model=ClientOut)
@@ -122,6 +263,47 @@ def get_client_overview(
 
 
 # ---------------------------------------------------------
+# QBO AR BALANCE
+# ---------------------------------------------------------
+@router.get("/{client_id}/qbo-ar", response_model=QBOARBalanceOut)
+def get_client_qbo_ar(
+    client_id: UUID,
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    _: object = Depends(require_staff_or_above),
+):
+    from app.services.qbo_ar_service import get_qbo_ar_balance
+
+    client = crud_client.get_client_for_firm(db, client_id, current_firm.id)
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found")
+
+    if not client.quickbooks_customer_id:
+        return QBOARBalanceOut(connected=False, outstanding_balance=None, last_payment_date=None)
+
+    result = get_qbo_ar_balance(current_firm.id, client.quickbooks_customer_id, db)
+    return QBOARBalanceOut(**result)
+
+
+# ---------------------------------------------------------
+# HEALTH
+# ---------------------------------------------------------
+@router.get("/{client_id}/health", response_model=ClientHealthOut)
+def get_client_health(
+    client_id: UUID,
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    _: object = Depends(require_staff_or_above),
+):
+    from app.services.client_health_service import compute_client_health
+
+    client = crud_client.get_client_for_firm(db, client_id, current_firm.id)
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found")
+    return compute_client_health(client_id, current_firm.id, db)
+
+
+# ---------------------------------------------------------
 # CREATE
 # firm_id is taken from the JWT — never from the request body.
 # This prevents a user from creating a client in another firm.
@@ -132,15 +314,12 @@ def create_client(
     db: Session = Depends(get_db),
     current_firm: Firm = Depends(get_current_firm),
     _: object = Depends(require_staff_or_above),
+    current_user: User = Depends(get_current_user),
 ):
-    try:
-        return crud_client.create_client(db, payload, firm_id=current_firm.id)
-    except IntegrityError:
-        db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="A client with this email already exists.",
-        )
+    return client_service.create_client(
+        db=db, payload=payload, firm_id=current_firm.id,
+        current_user_id=current_user.id,
+    )
 
 
 # ---------------------------------------------------------
@@ -169,8 +348,11 @@ def delete_client(
     db: Session = Depends(get_db),
     current_firm: Firm = Depends(get_current_firm),
     _: object = Depends(require_staff_or_above),
+    current_user: User = Depends(get_current_user),
 ):
-    client = crud_client.get_client_for_firm(db, client_id, current_firm.id)
-    if not client:
+    result = client_service.delete_client(
+        db=db, client_id=client_id, firm_id=current_firm.id,
+        current_user_id=current_user.id,
+    )
+    if result is None:
         raise HTTPException(status_code=404, detail="Client not found")
-    crud_client.delete_client(db, client)

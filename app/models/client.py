@@ -2,6 +2,7 @@
 
 import uuid
 from datetime import datetime, timezone
+from typing import Optional
 from sqlalchemy import String, Boolean, DateTime, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -38,10 +39,30 @@ class Client(Base):
     postal_code: Mapped[str | None] = mapped_column(String(20))
     country: Mapped[str | None] = mapped_column(String(100))
 
+    quickbooks_customer_id: Mapped[Optional[str]] = mapped_column(String, nullable=True, index=True)
+
+    # entity_type classifies the client for tax purposes.
+    # individual = personal 1040 filer
+    # business   = corporation, LLC, partnership
+    # trust      = trust or estate requiring 1041
+    # estate     = estate requiring 706 (death-related)
+    entity_type: Mapped[Optional[str]] = mapped_column(
+        String(20),
+        nullable=True,
+        comment="individual | business | trust | estate",
+    )
+
     tags: Mapped[str | None] = mapped_column(String(500))
     notes: Mapped[str | None] = mapped_column(String(2000))
 
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+    # --- Client Portal fields ---
+    portal_password_hash: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    portal_invite_token: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    portal_invite_sent_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    portal_access_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    portal_last_login_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -79,3 +100,29 @@ class Client(Base):
         back_populates="client",
         cascade="all, delete-orphan",
     )
+
+    document_requests: Mapped[list["DocumentRequest"]] = relationship(
+        "DocumentRequest",
+        back_populates="client",
+        cascade="all, delete-orphan",
+    )
+
+    signature_envelopes: Mapped[list["SignatureEnvelope"]] = relationship(
+        "SignatureEnvelope",
+        back_populates="client",
+        cascade="all, delete-orphan",
+    )
+
+    portal_sessions: Mapped[list["PortalSession"]] = relationship(
+        "PortalSession",
+        back_populates="client",
+        cascade="all, delete-orphan",
+    )
+
+    portal_notifications: Mapped[list["PortalNotification"]] = relationship(
+        "PortalNotification",
+        back_populates="client",
+        cascade="all, delete-orphan",
+    )
+
+    invoices: Mapped[list["Invoice"]] = relationship("Invoice", back_populates="client")

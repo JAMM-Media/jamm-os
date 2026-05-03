@@ -65,6 +65,8 @@ class FirmUpdate(BaseModel):
 
 class FirmOut(FirmBase):
     id: UUID
+    staff_auth_policy: Optional[str] = "either"
+    plan_override: bool = False
     created_at: datetime
     updated_at: datetime
 

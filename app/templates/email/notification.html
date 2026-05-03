@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ title }}</title>
+</head>
+<body style="margin:0;padding:0;background-color:#f4f4f4;font-family:Arial,Helvetica,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f4f4f4;padding:20px 0;">
+    <tr>
+      <td align="center">
+        <table width="600" cellpadding="0" cellspacing="0" style="background-color:#ffffff;border-radius:6px;overflow:hidden;box-shadow:0 2px 4px rgba(0,0,0,0.08);">
+          <!-- Header -->
+          <tr>
+            <td style="background-color:#1a1a2e;padding:24px 32px;">
+              <p style="margin:0;color:#ffffff;font-size:18px;font-weight:bold;">{{ firm_name }}</p>
+            </td>
+          </tr>
+          <!-- Body -->
+          <tr>
+            <td style="padding:32px;">
+              <p style="margin:0 0 8px 0;color:#555555;font-size:14px;">Hi {{ recipient_name }},</p>
+              <h1 style="margin:16px 0 12px 0;color:#1a1a2e;font-size:22px;font-weight:700;">{{ title }}</h1>
+              <p style="margin:0 0 24px 0;color:#444444;font-size:15px;line-height:1.6;">{{ body }}</p>
+              {% if app_url %}
+              <a href="{{ app_url }}" style="display:inline-block;background-color:#1a1a2e;color:#ffffff;text-decoration:none;padding:12px 24px;border-radius:4px;font-size:14px;font-weight:600;">Open JAMM OS</a>
+              {% endif %}
+            </td>
+          </tr>
+          <!-- Footer -->
+          <tr>
+            <td style="background-color:#f9f9f9;padding:16px 32px;border-top:1px solid #eeeeee;">
+              <p style="margin:0;color:#999999;font-size:12px;">
+                You are receiving this email because you have an account with {{ firm_name }}.
+                {% if app_url %}<br><a href="{{ app_url }}" style="color:#999999;">{{ app_url }}</a>{% endif %}
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

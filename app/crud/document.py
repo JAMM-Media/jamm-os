@@ -5,7 +5,7 @@ from typing import Optional
 
 from sqlalchemy.orm import Session
 
-from app.models.document import Document, AuditLog
+from app.models.document import Document, DocumentAuditLog
 
 
 def create_document(
@@ -71,9 +71,9 @@ def write_audit_log(
     document_id: Optional[uuid.UUID] = None,
     user_id: Optional[uuid.UUID] = None,
     ip_address: Optional[str] = None,
-) -> AuditLog:
+) -> DocumentAuditLog:
     """Append an immutable audit record. Never call update on this."""
-    entry = AuditLog(
+    entry = DocumentAuditLog(
         firm_id=firm_id,
         document_id=document_id,
         user_id=user_id,
@@ -92,7 +92,7 @@ def list_audit_logs(
     document_id: Optional[uuid.UUID] = None,
 ):
     """Returns a query of audit log entries scoped to the firm."""
-    query = db.query(AuditLog).filter(AuditLog.firm_id == firm_id)
+    query = db.query(DocumentAuditLog).filter(DocumentAuditLog.firm_id == firm_id)
     if document_id:
-        query = query.filter(AuditLog.document_id == document_id)
-    return query.order_by(AuditLog.created_at.desc())
+        query = query.filter(DocumentAuditLog.document_id == document_id)
+    return query.order_by(DocumentAuditLog.created_at.desc())

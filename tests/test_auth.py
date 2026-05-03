@@ -52,7 +52,7 @@ def test_user_login_success(client):
     password = "secure123"
     _create_firm_and_user(email, password)
 
-    login = client.post("/auth/token", data={"username": email, "password": password})
+    login = client.post("/auth/token", json={"username": email, "password": password})
     assert login.status_code == 200
     token_data = login.json()
     assert "access_token" in token_data
@@ -63,7 +63,7 @@ def test_login_invalid_credentials(client):
     """Wrong password returns 401."""
     login = client.post(
         "/auth/token",
-        data={"username": "wrong@example.com", "password": "wrongpass"}
+        json={"username": "wrong@example.com", "password": "wrongpass"}
     )
     assert login.status_code in (400, 401)
 
@@ -74,7 +74,7 @@ def test_me_endpoint_returns_current_user(client):
     password = "mepass123"
     _create_firm_and_user(email, password)
 
-    login = client.post("/auth/token", data={"username": email, "password": password})
+    login = client.post("/auth/token", json={"username": email, "password": password})
     token = login.json()["access_token"]
 
     r = client.get("/users/me", headers={"Authorization": f"Bearer {token}"})
@@ -92,3 +92,34 @@ def test_protected_endpoint_requires_auth(client):
     """Calling a protected endpoint without a token returns 401."""
     r = client.get("/clients/")
     assert r.status_code == 401
+
+
+def test_logout_clears_refresh_token(client):
+    """Logout endpoint revokes the staff refresh token in the database."""
+    email = "logout_test@example.com"
+    password = "logoutpass123"
+    firm_id, user_id = _create_firm_and_user(email, password)
+
+    login = client.post("/auth/token", json={"username": email, "password": password})
+    assert login.status_code == 200
+    token = login.json()["access_token"]
+
+    # Manually set a refresh token hash on the user record
+    db = TestingSessionLocal()
+    try:
+        user = db.query(User).filter(User.id == user_id).first()
+        user.staff_refresh_token_hash = "test_hash_value"
+        db.commit()
+    finally:
+        db.close()
+
+    r = client.post("/auth/logout", headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 200
+
+    # Verify the refresh token hash was cleared
+    db = TestingSessionLocal()
+    try:
+        user = db.query(User).filter(User.id == user_id).first()
+        assert user.staff_refresh_token_hash is None
+    finally:
+        db.close()

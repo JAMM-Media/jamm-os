@@ -1,11 +1,13 @@
 # app/crud/engagement.py
 
+from datetime import date
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 from uuid import UUID
 
 from app.models.engagement import Engagement
 from app.schemas.engagement import EngagementCreate, EngagementUpdate
+from app.core.tax_deadlines import get_filing_deadline
 
 
 def get_engagement_for_firm(db: Session, engagement_id: UUID, firm_id: UUID) -> Engagement | None:
@@ -30,6 +32,21 @@ def get_engagements(db: Session, client_id: UUID | None = None):
 
 def create_engagement(db: Session, engagement_in: EngagementCreate, firm_id: UUID) -> Engagement:
     data = engagement_in.model_dump()
+
+    # Auto-set filing_deadline from engagement_type if not explicitly provided
+    if data.get("engagement_type") and not data.get("filing_deadline"):
+        deadline_tuple = get_filing_deadline(data["engagement_type"])
+        if deadline_tuple:
+            # Use the current calendar year for the deadline
+            # Firms can override via PATCH if needed for a different tax year
+            today = date.today()
+            month, day = deadline_tuple
+            try:
+                data["filing_deadline"] = date(today.year, month, day)
+            except ValueError:
+                # Safety net for invalid dates (shouldn't occur with our fixed deadlines)
+                data["filing_deadline"] = None
+
     engagement = Engagement(**data, firm_id=firm_id)
     db.add(engagement)
     db.commit()

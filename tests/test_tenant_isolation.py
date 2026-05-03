@@ -6,7 +6,7 @@ Tenant Isolation Tests — the most important tests in the entire codebase.
 These tests prove one thing: a user logged into Firm A cannot see, modify,
 or delete any data that belongs to Firm B.
 
-This is the core security guarantee of JAMM OS. If any of these tests fail,
+This is the core security guarantee of JAMM PX. If any of these tests fail,
 it means there is a data leak between firms — a critical security breach.
 
 Every test follows the same pattern:

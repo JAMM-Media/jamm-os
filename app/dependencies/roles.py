@@ -61,7 +61,7 @@ def require_staff_or_above(user: User = Depends(get_current_user)) -> User:
 
 
 def require_system_admin(user: User = Depends(get_current_user)) -> User:
-    """Only system_admin (JAMM OS internal) can call this endpoint."""
+    """Only system_admin (JAMM PX internal) can call this endpoint."""
     if user.role != UserRole.system_admin:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

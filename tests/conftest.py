@@ -1,7 +1,7 @@
 # tests/conftest.py
 
 """
-Test configuration for JAMM OS.
+Test configuration for JAMM PX.
 
 IMPORTANT: We use PostgreSQL for tests via the CI GitHub Actions workflow.
 The DATABASE_URL environment variable must point to a real PostgreSQL instance.
@@ -16,11 +16,15 @@ The SQLite approach was removed because:
 3. The CI pipeline already runs PostgreSQL — local should match CI exactly
 """
 
+import os
+# Must be set before any app imports so rate_limit.py picks it up
+os.environ["RATE_LIMIT_ENABLED"] = "false"
+
 import pytest
 from fastapi.testclient import TestClient
+from fastapi.background import BackgroundTasks
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
-import os
 
 from app.main import app
 from app.db.base_class import Base
@@ -30,7 +34,7 @@ from app import models  # Ensures all models register with Base.metadata
 
 DATABASE_URL = os.environ.get(
     "DATABASE_URL",
-    "postgresql://postgres:postgres123@localhost:5432/accounting_dev"
+    "postgresql://postgres:postgres123@localhost:5432/accounting_test"
 )
 
 engine = create_engine(DATABASE_URL, pool_pre_ping=True)
@@ -39,7 +43,7 @@ TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engin
 
 def pytest_configure(config):
     """Create all tables before the test session starts."""
-    Base.metadata.create_all(bind=engine)
+    Base.metadata.create_all(bind=engine, checkfirst=True)
 
 
 def pytest_unconfigure(config):
@@ -74,6 +78,18 @@ def override_get_db():
 app.dependency_overrides[get_db] = override_get_db
 
 
+@pytest.fixture(autouse=True)
+def run_background_tasks_synchronously():
+    """
+    Force BackgroundTasks to execute synchronously during
+    tests so background task interactions with the test DB
+    session do not hang.
+    """
+    # TestClient already runs background tasks synchronously
+    # by default — this fixture ensures no async leakage.
+    yield
+
+
 @pytest.fixture
 def client():
     return TestClient(app)
@@ -105,6 +121,9 @@ def firm_a_owner(client):
         db.refresh(firm)
         firm_id = str(firm.id)
 
+        from app.services.tax_organizer_service import seed_firm_organizer_templates
+        seed_firm_organizer_templates(firm_id=firm.id, db=db)
+
         user = User(
             firm_id=firm.id,
             email="owner@firma.com",
@@ -118,7 +137,7 @@ def firm_a_owner(client):
     finally:
         db.close()
 
-    login = client.post("/auth/token", data={"username": "owner@firma.com", "password": "password123"})
+    login = client.post("/auth/token", json={"username": "owner@firma.com", "password": "password123"})
     token = login.json()["access_token"]
     return {"headers": {"Authorization": f"Bearer {token}"}, "firm_id": firm_id}
 
@@ -142,6 +161,9 @@ def firm_b_owner(client):
         db.refresh(firm)
         firm_id = str(firm.id)
 
+        from app.services.tax_organizer_service import seed_firm_organizer_templates
+        seed_firm_organizer_templates(firm_id=firm.id, db=db)
+
         user = User(
             firm_id=firm.id,
             email="owner@firmb.com",
@@ -155,6 +177,87 @@ def firm_b_owner(client):
     finally:
         db.close()
 
-    login = client.post("/auth/token", data={"username": "owner@firmb.com", "password": "password456"})
+    login = client.post("/auth/token", json={"username": "owner@firmb.com", "password": "password456"})
     token = login.json()["access_token"]
     return {"headers": {"Authorization": f"Bearer {token}"}, "firm_id": firm_id}
+
+
+@pytest.fixture
+def firm_a_staff(client, firm_a_owner):
+    """
+    Creates a staff user in Firm A and returns the auth headers.
+    Used by RBAC tests to verify staff cannot access manager-only endpoints.
+    """
+    from app.models.user import User
+    from app.core.security import get_password_hash
+    from app.core.enums import UserRole
+    import uuid
+
+    firm_id = firm_a_owner["firm_id"]
+
+    db = TestingSessionLocal()
+    try:
+        user = User(
+            firm_id=firm_id,
+            email=f"staff-{uuid.uuid4()}@firma.com",
+            hashed_password=get_password_hash("staffpass123"),
+            full_name="Staff A",
+            role=UserRole.staff,
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        email = user.email
+    finally:
+        db.close()
+
+    login = client.post("/auth/token", json={"username": email, "password": "staffpass123"})
+    token = login.json()["access_token"]
+    return {"headers": {"Authorization": f"Bearer {token}"}, "firm_id": firm_id}
+
+
+@pytest.fixture
+def portal_client_headers(client, firm_a_owner):
+    """
+    Creates a portal-enabled client in Firm A and returns
+    (client_id, portal_auth_headers) for use in portal endpoint tests.
+    """
+    from app.models.client import Client
+    from app.core.security import get_password_hash
+    import uuid as _uuid
+
+    firm_id = firm_a_owner["firm_id"]
+    client_email = f"portal-{_uuid.uuid4()}@client.com"
+    client_password = "portalpass123"
+
+    db = TestingSessionLocal()
+    try:
+        portal_client_obj = Client(
+            firm_id=firm_id,
+            name="Portal Test Client",
+            email=client_email,
+            portal_access_enabled=True,
+            portal_password_hash=get_password_hash(client_password),
+        )
+        db.add(portal_client_obj)
+        db.commit()
+        db.refresh(portal_client_obj)
+        client_id = str(portal_client_obj.id)
+
+        # Get the firm slug for login
+        from app.models.firm import Firm as FirmModel
+        firm = db.get(FirmModel, firm_id)
+        firm_slug = firm.slug
+    finally:
+        db.close()
+
+    # Log in via portal auth endpoint
+    login_r = client.post("/portal/auth/login", json={
+        "firm_slug": firm_slug,
+        "email": client_email,
+        "password": client_password,
+    })
+    assert login_r.status_code == 200, f"Portal login failed: {login_r.json()}"
+    token = login_r.json()["access_token"]
+
+    return client_id, {"Authorization": f"Bearer {token}"}

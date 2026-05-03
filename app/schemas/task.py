@@ -55,3 +55,14 @@ class TaskSummary(BaseModel):
     due_date: date | None = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class BulkTaskFieldUpdate(BaseModel):
+    status: TaskStatus | None = None
+    assigned_to: uuid.UUID | None = None
+    due_date: date | None = None
+
+
+class BulkTaskUpdate(BaseModel):
+    ids: list[uuid.UUID]
+    update: BulkTaskFieldUpdate

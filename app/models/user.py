@@ -72,8 +72,9 @@ class User(Base):
 
     # 2FA fields — scaffolded now, enforced in Phase 11 compliance hardening.
     totp_secret: Mapped[Optional[str]] = mapped_column(
-        String,
+        String(64),
         nullable=True,
+        default=None,
     )
 
     totp_enabled: Mapped[bool] = mapped_column(
@@ -82,9 +83,41 @@ class User(Base):
         nullable=False,
     )
 
-    backup_codes: Mapped[Optional[str]] = mapped_column(
+    backup_codes_hash: Mapped[Optional[str]] = mapped_column(
         Text,
         nullable=True,
+        default=None,
+    )
+
+    password_reset_token_hash: Mapped[Optional[str]] = mapped_column(
+        String(64),
+        nullable=True,
+        default=None,
+    )
+
+    password_reset_expires_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        default=None,
+    )
+
+    magic_link_token_hash: Mapped[Optional[str]] = mapped_column(
+        String(128),
+        nullable=True,
+        default=None,
+    )
+
+    magic_link_expires_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        default=None,
+    )
+
+    staff_refresh_token_hash: Mapped[Optional[str]] = mapped_column(
+        String(64), nullable=True, unique=True, index=True
+    )
+    staff_refresh_expires_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
     )
 
     created_at: Mapped[datetime] = mapped_column(
@@ -102,3 +135,5 @@ class User(Base):
 
     # Relationship back to the firm this user belongs to.
     firm: Mapped["Firm"] = relationship("Firm", back_populates="users")
+
+    time_entries: Mapped[list["TimeEntry"]] = relationship("TimeEntry", back_populates="user")

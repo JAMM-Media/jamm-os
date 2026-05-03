@@ -1,7 +1,7 @@
 # app/dependencies/tenant.py
 
 """
-Tenant Guard — the most important security dependency in JAMM OS.
+Tenant Guard — the most important security dependency in JAMM PX.
 
 Every authenticated endpoint (except system_admin endpoints) MUST use
 get_current_firm() as a dependency. This is what enforces that Firm A

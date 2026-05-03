@@ -4,15 +4,20 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 
+from sqlalchemy import select as sa_select
+
 from app.db.session import get_db
 from app.models.task import Task
 from app.models.firm import Firm
-from app.schemas.task import TaskCreate, TaskUpdate, TaskOut, TaskStatus
+from app.schemas.task import TaskCreate, TaskUpdate, TaskOut, TaskStatus, BulkTaskUpdate
 from app.schemas.pagination import PaginatedResponse
 from app.utils.pagination import paginate
 from app.crud import task as crud_task
+from app.dependencies.auth import get_current_user
 from app.dependencies.tenant import get_current_firm
 from app.dependencies.roles import require_staff_or_above, require_manager_or_above
+from app.models.user import User
+import app.services.task_service as task_service
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
 
@@ -26,9 +31,13 @@ def create_task(
     payload: TaskCreate,
     db: Session = Depends(get_db),
     current_firm: Firm = Depends(get_current_firm),
+    current_user: User = Depends(get_current_user),
     _: object = Depends(require_manager_or_above),
 ):
-    return crud_task.create_task(db, payload, firm_id=current_firm.id)
+    return task_service.create_task(
+        db=db, payload=payload, firm_id=current_firm.id,
+        current_user_id=current_user.id,
+    )
 
 
 # ---------------------------------------------------------
@@ -51,6 +60,29 @@ def list_tasks(
         query = query.filter(Task.status == status.value)
 
     return paginate(query, limit=limit, offset=offset)
+
+
+# ---------------------------------------------------------
+# BULK UPDATE TASKS
+# ---------------------------------------------------------
+@router.patch("/bulk")
+def bulk_update_tasks(
+    payload: BulkTaskUpdate,
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    _: object = Depends(require_manager_or_above),
+):
+    stmt = sa_select(Task).where(
+        Task.id.in_(payload.ids),
+        Task.firm_id == current_firm.id,
+    )
+    tasks = db.execute(stmt).scalars().all()
+    update_data = payload.update.model_dump(exclude_none=True)
+    for task in tasks:
+        for key, value in update_data.items():
+            setattr(task, key, value)
+    db.commit()
+    return {"updated": len(tasks)}
 
 
 # ---------------------------------------------------------
@@ -78,12 +110,16 @@ def update_task(
     payload: TaskUpdate,
     db: Session = Depends(get_db),
     current_firm: Firm = Depends(get_current_firm),
+    current_user: User = Depends(get_current_user),
     _: object = Depends(require_staff_or_above),
 ):
-    task = crud_task.get_task_for_firm(db, task_id, current_firm.id)
-    if not task:
+    result = task_service.update_task(
+        db=db, task_id=task_id, payload=payload,
+        firm_id=current_firm.id, current_user_id=current_user.id,
+    )
+    if not result:
         raise HTTPException(status_code=404, detail="Task not found")
-    return crud_task.update_task(db, task, payload)
+    return result
 
 
 # ---------------------------------------------------------
@@ -94,9 +130,12 @@ def delete_task(
     task_id: UUID,
     db: Session = Depends(get_db),
     current_firm: Firm = Depends(get_current_firm),
+    current_user: User = Depends(get_current_user),
     _: object = Depends(require_manager_or_above),
 ):
-    task = crud_task.get_task_for_firm(db, task_id, current_firm.id)
-    if not task:
+    result = task_service.delete_task(
+        db=db, task_id=task_id,
+        firm_id=current_firm.id, current_user_id=current_user.id,
+    )
+    if result is None:
         raise HTTPException(status_code=404, detail="Task not found")
-    crud_task.delete_task(db, task)

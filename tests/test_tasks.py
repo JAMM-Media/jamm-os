@@ -38,7 +38,7 @@ def test_client_cannot_list_tasks(client, firm_a_owner):
     assert r.status_code == 201
 
     # Login as that portal user
-    login = client.post("/auth/token", data={
+    login = client.post("/auth/token", json={
         "username": portal_user["email"],
         "password": portal_user["password"]
     })
