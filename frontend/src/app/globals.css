@@ -1,0 +1,129 @@
+/* frontend/src/app/globals.css */
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+/* JAMM PX design tokens — Tailwind v4 CSS-based config */
+@theme {
+  /* Brand */
+  --color-brand: #1F3148;
+  --color-brand-light: #4A7FA5;
+  --color-brand-muted: #7DA3C4;
+  --color-brand-dark: #1A2535;
+  --color-brand-btn: #3A6A94;
+
+  /* Surface (light mode) */
+  --color-surface-page: #E4E6EA;
+  --color-surface-card: #EDEEF0;
+  --color-surface-border: #C8CDD6;
+  --color-surface-input: #F7F7F8;
+
+  /* Dark mode surfaces */
+  --color-dark-page: #2D2D2D;
+  --color-dark-card: #383838;
+  --color-dark-border: #484848;
+  --color-dark-sidebar: #1A2535;
+
+  /* Status colors */
+  --color-status-green: #D1FAE5;
+  --color-status-green-text: #065F46;
+  --color-status-blue: #DBEAFE;
+  --color-status-blue-text: #1E40AF;
+  --color-status-amber: #FEF3C7;
+  --color-status-amber-text: #92400E;
+  --color-status-red: #FEE2E2;
+  --color-status-red-text: #991B1B;
+
+  /* Border radius tokens */
+  --radius-badge: 9999px;
+  --radius-card: 8px;
+  --radius-modal: 10px;
+
+  /* Font */
+  --font-sans: var(--font-inter), -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+/* shadcn token mappings */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+}
+
+/* Light mode CSS variables */
+:root {
+  --background: hsl(233, 8%, 90%);
+  --foreground: hsl(215, 23%, 19%);
+  --card: hsl(220, 8%, 93%);
+  --card-foreground: hsl(215, 23%, 19%);
+  --popover: hsl(220, 8%, 93%);
+  --popover-foreground: hsl(215, 23%, 19%);
+  --primary: hsl(215, 40%, 19%);
+  --primary-foreground: hsl(220, 8%, 93%);
+  --secondary: hsl(218, 14%, 79%);
+  --secondary-foreground: hsl(215, 23%, 19%);
+  --muted: hsl(220, 6%, 80%);
+  --muted-foreground: hsl(220, 9%, 46%);
+  --accent: hsl(210, 37%, 47%);
+  --accent-foreground: hsl(220, 8%, 93%);
+  --destructive: hsl(0, 72%, 51%);
+  --destructive-foreground: hsl(0, 0%, 100%);
+  --border: hsl(218, 14%, 79%);
+  --input: hsl(220, 8%, 97%);
+  --ring: hsl(210, 37%, 47%);
+  --radius: 0.5rem;
+}
+
+/* Dark mode CSS variables */
+.dark {
+  --background: hsl(0, 0%, 18%);
+  --foreground: hsl(220, 8%, 93%);
+  --card: hsl(0, 0%, 22%);
+  --card-foreground: hsl(220, 8%, 93%);
+  --popover: hsl(0, 0%, 22%);
+  --popover-foreground: hsl(220, 8%, 93%);
+  --primary: hsl(210, 43%, 40%);
+  --primary-foreground: hsl(220, 8%, 93%);
+  --secondary: hsl(0, 0%, 28%);
+  --secondary-foreground: hsl(220, 8%, 93%);
+  --muted: hsl(0, 0%, 28%);
+  --muted-foreground: hsl(220, 9%, 62%);
+  --accent: hsl(210, 37%, 47%);
+  --accent-foreground: hsl(220, 8%, 93%);
+  --destructive: hsl(0, 63%, 31%);
+  --destructive-foreground: hsl(220, 8%, 93%);
+  --border: hsl(0, 0%, 28%);
+  --input: hsl(0, 0%, 22%);
+  --ring: hsl(210, 37%, 47%);
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+}

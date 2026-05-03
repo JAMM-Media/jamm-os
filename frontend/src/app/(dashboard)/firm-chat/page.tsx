@@ -1,0 +1,689 @@
+// path: frontend/src/app/(dashboard)/firm-chat/page.tsx
+'use client'
+
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import type { ReactNode } from 'react'
+import { AppShell } from '@/components/layout/AppShell'
+import { useChannels } from '@/components/firm-chat/useChannels'
+import { useMessages } from '@/components/firm-chat/useMessages'
+import { MessageSquare, MoreHorizontal } from 'lucide-react'
+import { cn } from '@/lib/utils'
+import api from '@/lib/api'
+import { useAuth } from '@/lib/hooks/useAuth'
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+interface StaffMember {
+  id: string
+  name: string
+  initials: string
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function getUserRole(): string {
+  if (typeof window === 'undefined') return 'staff'
+  const token = localStorage.getItem('access_token')
+  if (!token) return 'staff'
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1])) as Record<string, unknown>
+    return typeof payload.role === 'string' ? payload.role : 'staff'
+  } catch {
+    return 'staff'
+  }
+}
+
+const AVATAR_COLORS = ['#1F3148', '#3A6A94', '#4A7FA5', '#7DA3C4'] as const
+
+function getAvatarColor(index: number): string {
+  return AVATAR_COLORS[index % 4]
+}
+
+function formatTimestamp(iso: string): string {
+  const d = new Date(iso)
+  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+}
+
+function formatDateLabel(iso: string): string {
+  const d = new Date(iso)
+  const today = new Date()
+  const yesterday = new Date(today)
+  yesterday.setDate(yesterday.getDate() - 1)
+  if (d.toDateString() === today.toDateString()) return 'Today'
+  if (d.toDateString() === yesterday.toDateString()) return 'Yesterday'
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+}
+
+function isSameDay(a: string, b: string): boolean {
+  return new Date(a).toDateString() === new Date(b).toDateString()
+}
+
+function isSameSenderWithin5Min(
+  a: { senderId: string; createdAt: string },
+  b: { senderId: string; createdAt: string }
+): boolean {
+  if (a.senderId !== b.senderId) return false
+  return Math.abs(new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()) < 5 * 60 * 1000
+}
+
+function renderBody(body: string, mentions: string[]): ReactNode {
+  if (!mentions || mentions.length === 0) return <>{body}</>
+  const parts: ReactNode[] = []
+  let remaining = body
+  let key = 0
+  let foundAny = false
+  for (const mention of mentions) {
+    const pattern = `@${mention}`
+    const idx = remaining.indexOf(pattern)
+    if (idx === -1) continue
+    foundAny = true
+    if (idx > 0) parts.push(<span key={key++}>{remaining.slice(0, idx)}</span>)
+    parts.push(
+      <span
+        key={key++}
+        className="bg-status-blue text-status-blue-text rounded px-1"
+      >
+        {pattern}
+      </span>
+    )
+    remaining = remaining.slice(idx + pattern.length)
+  }
+  if (remaining.length > 0) parts.push(<span key={key++}>{remaining}</span>)
+  if (!foundAny) return <>{body}</>
+  return <>{parts}</>
+}
+
+function getMentionQuery(value: string, cursor: number): string | null {
+  const before = value.slice(0, cursor)
+  const lastAt = before.lastIndexOf('@')
+  if (lastAt === -1) return null
+  const afterAt = before.slice(lastAt + 1)
+  if (/\s/.test(afterAt)) return null
+  return afterAt
+}
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
+
+export default function FirmChatPage() {
+  const {
+    channels,
+    isLoading: channelsLoading,
+    createChannel,
+    deleteChannel,
+    renameChannel,
+    markChannelRead,
+  } = useChannels()
+
+  const [activeChannelId, setActiveChannelId] = useState<string>('')
+  const { messages, isLoading: messagesLoading, sendMessage } = useMessages(activeChannelId)
+
+  // User role
+  const { user } = useAuth()
+  const isFirmOwner = user?.role === 'firm_owner'
+
+  // Active channel object
+  const activeChannel = channels.find((ch) => ch.id === activeChannelId)
+
+  // Auto-select first channel
+  useEffect(() => {
+    if (!activeChannelId && channels.length > 0) {
+      setActiveChannelId(channels[0].id)
+    }
+  }, [activeChannelId, channels])
+
+  // ─── Channel modals ──────────────────────────────────────────────────────
+  const [showCreateModal, setShowCreateModal] = useState(false)
+  const [createChannelName, setCreateChannelName] = useState('')
+
+  const [showRenameModal, setShowRenameModal] = useState(false)
+  const [renameChannelId, setRenameChannelId] = useState('')
+  const [renameChannelNameInput, setRenameChannelNameInput] = useState('')
+
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
+  const [deleteChannelId, setDeleteChannelId] = useState('')
+  const [deleteChannelDisplayName, setDeleteChannelDisplayName] = useState('')
+
+  // ─── Channel dropdown ────────────────────────────────────────────────────
+  const [openDropdownId, setOpenDropdownId] = useState<string | null>(null)
+  const [hoveredChannelId, setHoveredChannelId] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!openDropdownId) return
+    const handler = () => setOpenDropdownId(null)
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [openDropdownId])
+
+  // ─── Compose box ─────────────────────────────────────────────────────────
+  const [composeValue, setComposeValue] = useState('')
+  const [composeMentions, setComposeMentions] = useState<string[]>([])
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  // ─── @mention popover ────────────────────────────────────────────────────
+  const [showMentionPopover, setShowMentionPopover] = useState(false)
+  const [mentionQuery, setMentionQuery] = useState('')
+  const [staffList, setStaffList] = useState<StaffMember[]>([])
+
+  useEffect(() => {
+    if (showMentionPopover && staffList.length === 0) {
+      api.get<StaffMember[]>('/staff').then((res) => setStaffList(res.data)).catch(() => {})
+    }
+  }, [showMentionPopover, staffList.length])
+
+  const filteredStaff = staffList.filter((s) =>
+    s.name.toLowerCase().startsWith(mentionQuery.toLowerCase())
+  )
+
+  // ─── Messages scroll ─────────────────────────────────────────────────────
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages])
+
+  // ─── Avatar color map ────────────────────────────────────────────────────
+  const senderIndexMap = useMemo(() => {
+    const map = new Map<string, number>()
+    messages.forEach((msg) => {
+      if (!map.has(msg.senderId)) map.set(msg.senderId, map.size)
+    })
+    return map
+  }, [messages])
+
+  const getSenderIndex = useCallback(
+    (senderId: string) => senderIndexMap.get(senderId) ?? 0,
+    [senderIndexMap]
+  )
+
+  // ─── Handlers ────────────────────────────────────────────────────────────
+
+  const handleSelectChannel = (channelId: string) => {
+    setActiveChannelId(channelId)
+    markChannelRead(channelId)
+    setOpenDropdownId(null)
+    setComposeValue('')
+    setComposeMentions([])
+    setShowMentionPopover(false)
+  }
+
+  const handleComposeChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const value = e.target.value
+    setComposeValue(value)
+    const ta = e.currentTarget
+    ta.style.height = 'auto'
+    ta.style.height = `${Math.min(ta.scrollHeight, 160)}px`
+    const cursor = ta.selectionStart
+    const query = getMentionQuery(value, cursor)
+    if (query !== null) {
+      setMentionQuery(query)
+      setShowMentionPopover(true)
+    } else {
+      setShowMentionPopover(false)
+    }
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      handleSend()
+    }
+  }
+
+  const handleSend = () => {
+    if (!composeValue.trim() || !activeChannelId) return
+    sendMessage(composeValue.trim(), composeMentions)
+    setComposeValue('')
+    setComposeMentions([])
+    setShowMentionPopover(false)
+    if (textareaRef.current) textareaRef.current.style.height = '40px'
+  }
+
+  const handleMentionSelect = (staff: StaffMember) => {
+    const cursor = textareaRef.current?.selectionStart ?? composeValue.length
+    const lastAt = composeValue.slice(0, cursor).lastIndexOf('@')
+    if (lastAt !== -1) {
+      const before = composeValue.slice(0, lastAt)
+      const after = composeValue.slice(cursor)
+      setComposeValue(`${before}@${staff.name} ${after}`)
+      setComposeMentions((prev) => [...prev, staff.name])
+    }
+    setShowMentionPopover(false)
+  }
+
+  const handleCreateChannel = () => {
+    const name = createChannelName.trim().toLowerCase().replace(/\s+/g, '-')
+    if (!name) return
+    createChannel(name)
+    setShowCreateModal(false)
+    setCreateChannelName('')
+  }
+
+  const handleRenameChannel = () => {
+    const name = renameChannelNameInput.trim().toLowerCase().replace(/\s+/g, '-')
+    if (!name) return
+    renameChannel(renameChannelId, name)
+    setShowRenameModal(false)
+  }
+
+  const handleDeleteChannel = () => {
+    deleteChannel(deleteChannelId)
+    if (activeChannelId === deleteChannelId) setActiveChannelId('')
+    setShowDeleteModal(false)
+  }
+
+  const openRenameModal = (channelId: string, currentName: string) => {
+    setRenameChannelId(channelId)
+    setRenameChannelNameInput(currentName)
+    setShowRenameModal(true)
+    setOpenDropdownId(null)
+  }
+
+  const openDeleteModal = (channelId: string, channelName: string) => {
+    setDeleteChannelId(channelId)
+    setDeleteChannelDisplayName(channelName)
+    setShowDeleteModal(true)
+    setOpenDropdownId(null)
+  }
+
+  // ─── Message rendering ───────────────────────────────────────────────────
+
+  const renderMessages = (): ReactNode => {
+    if (messagesLoading) {
+      return (
+        <div className="space-y-4 p-4">
+          {[...Array(4)].map((_, i) => (
+            <div key={i} className="flex gap-3 items-start">
+              <div className="w-7 h-7 rounded-full bg-[#D5D8DE] dark:bg-[#444444] flex-shrink-0" />
+              <div className="space-y-2 flex-1">
+                <div className="h-2 bg-[#D5D8DE] dark:bg-[#444444] rounded w-2/5" />
+                <div className="h-2 bg-[#D5D8DE] dark:bg-[#444444] rounded w-3/4" />
+              </div>
+            </div>
+          ))}
+        </div>
+      )
+    }
+
+    if (messages.length === 0) {
+      return (
+        <div className="flex flex-col items-center justify-center h-full gap-1">
+          <p className="text-[12px] text-[#6B7280]">
+            No messages in #{activeChannel?.name ?? ''} yet.
+          </p>
+          <p className="text-[12px] text-[#6B7280]">Be the first to post something.</p>
+        </div>
+      )
+    }
+
+    const items: ReactNode[] = []
+    for (let i = 0; i < messages.length; i++) {
+      const msg = messages[i]
+      const prev = i > 0 ? messages[i - 1] : null
+
+      if (!prev || !isSameDay(msg.createdAt, prev.createdAt)) {
+        items.push(
+          <div key={`divider-${i}`} className="flex items-center gap-3 my-4">
+            <div className="flex-1 h-px bg-[#C8CDD6] dark:bg-[#484848]" />
+            <span className="text-[11px] text-[#6B7280]">{formatDateLabel(msg.createdAt)}</span>
+            <div className="flex-1 h-px bg-[#C8CDD6] dark:bg-[#484848]" />
+          </div>
+        )
+      }
+
+      const isGrouped = prev !== null && isSameSenderWithin5Min(prev, msg)
+      const senderIdx = getSenderIndex(msg.senderId)
+
+      if (isGrouped) {
+        items.push(
+          <div key={msg.id} className="ml-10">
+            <p
+              className="text-[13px] text-[#374151] dark:text-[#9CA3AF]"
+              style={{ lineHeight: '1.6' }}
+            >
+              {renderBody(msg.body, msg.mentions)}
+            </p>
+          </div>
+        )
+      } else {
+        items.push(
+          <div key={msg.id} className="flex gap-3 items-start">
+            <div
+              className="w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center"
+              style={{ backgroundColor: getAvatarColor(senderIdx) }}
+            >
+              <span className="text-white text-[11px] font-medium">{msg.senderInitials}</span>
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-baseline gap-2">
+                <span className="text-[12px] font-medium text-[#1F3148] dark:text-[#EDEEF0]">
+                  {msg.senderName}
+                </span>
+                <span className="text-[11px] text-[#6B7280]">{formatTimestamp(msg.createdAt)}</span>
+              </div>
+              <p
+                className="text-[13px] text-[#374151] dark:text-[#9CA3AF] mt-0.5"
+                style={{ lineHeight: '1.6', marginLeft: '0' }}
+              >
+                {renderBody(msg.body, msg.mentions)}
+              </p>
+            </div>
+          </div>
+        )
+      }
+    }
+
+    return <div className="space-y-2 p-4">{items}</div>
+  }
+
+  // ─── Modal input classes ──────────────────────────────────────────────────
+  const inputClass =
+    'w-full h-9 px-3 text-[14px] text-[#1F3148] dark:text-[#EDEEF0] bg-surface-input dark:bg-dark-card border border-[#C8CDD6] dark:border-[#484848] rounded-md outline-none focus:border-[#4A7FA5] dark:focus:border-[#4A7FA5] transition-colors placeholder:text-[#9CA3AF]'
+
+  const labelClass = 'block text-[11px] font-medium text-[#1F3148] dark:text-[#EDEEF0] mb-1'
+
+  // ─── JSX ─────────────────────────────────────────────────────────────────
+
+  return (
+    <AppShell>
+      <div className="flex h-full overflow-hidden">
+
+        {/* ── Channel list (220px fixed) ─────────────────────────────────── */}
+        <div
+          className="flex-shrink-0 flex flex-col border-r border-[#C8CDD6] dark:border-[#484848] h-full bg-surface-page dark:bg-dark-page"
+          style={{ width: '220px' }}
+        >
+          {/* Header */}
+          <div className="px-3.5 pt-4 pb-2">
+            <h2 className="text-[13px] font-medium text-[#1F3148] dark:text-[#EDEEF0]">
+              Firm Chat
+            </h2>
+            {isFirmOwner && (
+              <button
+                onClick={() => setShowCreateModal(true)}
+                className="mt-1 text-[11px] font-medium text-[#4A7FA5] hover:underline text-left"
+              >
+                + New Channel
+              </button>
+            )}
+          </div>
+
+          {/* Channel rows */}
+          <div className="flex-1 overflow-y-auto px-1.5 pb-3">
+            {channelsLoading ? (
+              <div className="space-y-1 px-2 pt-1">
+                {[...Array(3)].map((_, i) => (
+                  <div key={i} className="h-2 rounded bg-[#D5D8DE] dark:bg-[#444444] w-4/5 my-3" />
+                ))}
+              </div>
+            ) : channels.length === 0 ? (
+              /* Empty state */
+              <div className="flex flex-col items-center justify-center h-full gap-2.5 px-3 text-center">
+                <div className="w-10 h-10 rounded-lg bg-surface-card dark:bg-dark-card flex items-center justify-center">
+                  <MessageSquare className="w-[18px] h-[18px] text-[#6B7280]" />
+                </div>
+                <p className="text-[13px] font-medium text-[#1F3148] dark:text-[#EDEEF0]">
+                  No channels yet
+                </p>
+                <p className="text-[12px] text-[#6B7280]">
+                  Create your first channel to start the conversation.
+                </p>
+                {isFirmOwner && (
+                  <button
+                    onClick={() => setShowCreateModal(true)}
+                    className="text-[12px] font-medium text-white bg-brand dark:bg-brand-btn px-3 py-1.5 rounded-md hover:opacity-90 transition-opacity"
+                  >
+                    + New Channel
+                  </button>
+                )}
+              </div>
+            ) : (
+              channels.map((ch) => {
+                const isActive = ch.id === activeChannelId
+                const isHovered = hoveredChannelId === ch.id
+                return (
+                  <div
+                    key={ch.id}
+                    className="relative"
+                    onMouseEnter={() => setHoveredChannelId(ch.id)}
+                    onMouseLeave={() => setHoveredChannelId(null)}
+                  >
+                    <button
+                      onClick={() => handleSelectChannel(ch.id)}
+                      className={cn(
+                        'w-full flex items-center gap-1 h-9 px-3.5 rounded-md text-[13px] transition-colors text-left',
+                        isActive
+                          ? 'bg-brand dark:bg-dark-sidebar text-white'
+                          : 'text-[#374151] dark:text-[#9CA3AF] hover:bg-[#D5D8DE] dark:hover:bg-dark-card'
+                      )}
+                    >
+                      <span className="truncate flex-1">
+                        #{ch.name}
+                      </span>
+                      {ch.unreadCount > 0 && !isActive && (
+                        <span className="w-1.5 h-1.5 rounded-full bg-[#4A7FA5] flex-shrink-0" />
+                      )}
+                    </button>
+
+                    {/* "..." dropdown button (firm_owner only, visible on hover) */}
+                    {isFirmOwner && isHovered && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setOpenDropdownId((prev) => (prev === ch.id ? null : ch.id))
+                        }}
+                        className={cn(
+                          'absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded transition-colors',
+                          isActive
+                            ? 'text-white/70 hover:text-white hover:bg-white/15'
+                            : 'text-[#6B7280] hover:text-[#1F3148] dark:hover:text-[#EDEEF0] hover:bg-[#C8CDD6] dark:hover:bg-[#484848]'
+                        )}
+                      >
+                        <MoreHorizontal className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+
+                    {/* Dropdown menu */}
+                    {openDropdownId === ch.id && (
+                      <div
+                        className="absolute right-2 top-full mt-1 z-20 bg-surface-card dark:bg-dark-card border border-[#C8CDD6] dark:border-[#484848] rounded-lg shadow-md overflow-hidden"
+                        onMouseDown={(e) => e.stopPropagation()}
+                      >
+                        <button
+                          onClick={() => openRenameModal(ch.id, ch.name)}
+                          className="block w-full text-left px-3 py-2 text-[13px] text-[#374151] dark:text-[#9CA3AF] hover:bg-[#D5D8DE] dark:hover:bg-[#444444] transition-colors whitespace-nowrap"
+                        >
+                          Rename
+                        </button>
+                        <button
+                          onClick={() => openDeleteModal(ch.id, ch.name)}
+                          className="block w-full text-left px-3 py-2 text-[13px] text-[#991B1B] hover:bg-[#D5D8DE] dark:hover:bg-[#444444] transition-colors whitespace-nowrap"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )
+              })
+            )}
+          </div>
+        </div>
+
+        {/* ── Message feed (flex-1) ──────────────────────────────────────── */}
+        <div className="flex-1 flex flex-col h-full overflow-hidden bg-surface-page dark:bg-dark-page">
+          {!activeChannelId ? (
+            /* No channel selected */
+            <div className="flex-1 flex items-center justify-center">
+              <p className="text-[13px] text-[#6B7280]">Select a channel to start messaging</p>
+            </div>
+          ) : (
+            <>
+              {/* Messages list */}
+              <div className="flex-1 overflow-y-auto">
+                {renderMessages()}
+                <div ref={messagesEndRef} />
+              </div>
+
+              {/* Compose box */}
+              <div className="flex-shrink-0 border-t border-[#C8CDD6] dark:border-[#484848] px-4 py-3 relative">
+                {/* @mention popover */}
+                {showMentionPopover && filteredStaff.length > 0 && (
+                  <div className="absolute bottom-full left-4 right-4 mb-1 bg-surface-card dark:bg-dark-card border border-[#C8CDD6] dark:border-[#484848] rounded-lg overflow-y-auto shadow-md z-10"
+                    style={{ maxHeight: '200px' }}>
+                    {filteredStaff.map((staff) => (
+                      <button
+                        key={staff.id}
+                        onMouseDown={(e) => {
+                          e.preventDefault()
+                          handleMentionSelect(staff)
+                        }}
+                        className="flex items-center gap-2 w-full px-3 py-2 text-[13px] text-[#374151] dark:text-[#9CA3AF] hover:bg-[#D5D8DE] dark:hover:bg-[#444444] transition-colors text-left"
+                      >
+                        <div
+                          className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0"
+                          style={{ backgroundColor: '#4A7FA5' }}
+                        >
+                          <span className="text-white text-[10px] font-medium">{staff.initials}</span>
+                        </div>
+                        {staff.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                <div className="flex items-end gap-2">
+                  <textarea
+                    ref={textareaRef}
+                    value={composeValue}
+                    onChange={handleComposeChange}
+                    onKeyDown={handleKeyDown}
+                    placeholder={activeChannel ? `Message #${activeChannel.name}...` : 'Select a channel...'}
+                    rows={1}
+                    className="flex-1 resize-none bg-surface-input dark:bg-dark-page border border-[#C8CDD6] dark:border-[#484848] focus:border-[#4A7FA5] dark:focus:border-[#4A7FA5] rounded-lg px-3 py-2 text-[13px] text-[#374151] dark:text-[#9CA3AF] placeholder:text-[#9CA3AF] outline-none transition-colors overflow-hidden"
+                    style={{ minHeight: '40px', maxHeight: '160px' }}
+                  />
+                  <button
+                    onClick={handleSend}
+                    disabled={!composeValue.trim()}
+                    className="bg-brand dark:bg-brand-btn text-white text-[12px] font-medium rounded-md h-8 px-3 flex-shrink-0 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed hover:opacity-90"
+                  >
+                    Send
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* ── Create channel modal ─────────────────────────────────────────── */}
+      {showCreateModal && (
+        <div className="fixed inset-0 bg-black/[0.35] z-50 flex items-center justify-center">
+          <div className="bg-surface-card dark:bg-dark-card rounded-[10px] border border-[#C8CDD6] dark:border-[#484848] p-6 w-[400px] shadow-xl">
+            <h2 className="text-[16px] font-medium text-[#1F3148] dark:text-[#EDEEF0] mb-4">
+              Create Channel
+            </h2>
+            <div className="mb-4">
+              <label className={labelClass}>
+                Channel name
+                <span className="inline-block w-1 h-1 rounded-full bg-[#E24B4A] ml-1 mb-0.5 align-middle" />
+              </label>
+              <input
+                type="text"
+                value={createChannelName}
+                onChange={(e) => setCreateChannelName(e.target.value.toLowerCase())}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleCreateChannel() }}
+                placeholder="e.g. general"
+                className={inputClass}
+                autoFocus
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => { setShowCreateModal(false); setCreateChannelName('') }}
+                className="h-9 px-4 text-[14px] text-[#374151] dark:text-[#9CA3AF] hover:bg-[#D5D8DE] dark:hover:bg-dark-card rounded-md transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleCreateChannel}
+                disabled={!createChannelName.trim()}
+                className="h-9 px-4 text-[14px] font-medium text-white bg-brand dark:bg-brand-btn rounded-md hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
+              >
+                Create
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Rename channel modal ─────────────────────────────────────────── */}
+      {showRenameModal && (
+        <div className="fixed inset-0 bg-black/[0.35] z-50 flex items-center justify-center">
+          <div className="bg-surface-card dark:bg-dark-card rounded-[10px] border border-[#C8CDD6] dark:border-[#484848] p-6 w-[400px] shadow-xl">
+            <h2 className="text-[16px] font-medium text-[#1F3148] dark:text-[#EDEEF0] mb-4">
+              Rename Channel
+            </h2>
+            <div className="mb-4">
+              <label className={labelClass}>
+                Channel name
+                <span className="inline-block w-1 h-1 rounded-full bg-[#E24B4A] ml-1 mb-0.5 align-middle" />
+              </label>
+              <input
+                type="text"
+                value={renameChannelNameInput}
+                onChange={(e) => setRenameChannelNameInput(e.target.value.toLowerCase())}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleRenameChannel() }}
+                className={inputClass}
+                autoFocus
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setShowRenameModal(false)}
+                className="h-9 px-4 text-[14px] text-[#374151] dark:text-[#9CA3AF] hover:bg-[#D5D8DE] dark:hover:bg-dark-card rounded-md transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleRenameChannel}
+                disabled={!renameChannelNameInput.trim()}
+                className="h-9 px-4 text-[14px] font-medium text-white bg-brand dark:bg-brand-btn rounded-md hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
+              >
+                Rename
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Delete channel modal ─────────────────────────────────────────── */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 bg-black/[0.35] z-50 flex items-center justify-center">
+          <div className="bg-surface-card dark:bg-dark-card rounded-[10px] border border-[#C8CDD6] dark:border-[#484848] p-6 w-[400px] shadow-xl">
+            <h2 className="text-[16px] font-medium text-[#1F3148] dark:text-[#EDEEF0] mb-3">
+              Delete Channel
+            </h2>
+            <p className="text-[14px] text-[#374151] dark:text-[#9CA3AF] mb-6">
+              Delete #{deleteChannelDisplayName}? This cannot be undone.
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setShowDeleteModal(false)}
+                className="h-9 px-4 text-[14px] text-[#374151] dark:text-[#9CA3AF] hover:bg-[#D5D8DE] dark:hover:bg-dark-card rounded-md transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteChannel}
+                className="h-9 px-4 text-[14px] font-medium text-white rounded-md hover:opacity-90 transition-opacity"
+                style={{ backgroundColor: '#991B1B' }}
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </AppShell>
+  )
+}

@@ -1,0 +1,234 @@
+// path: frontend/src/app/engagements/page.tsx
+'use client'
+
+import { useState } from 'react'
+import { toast } from 'sonner'
+import { AppShell } from '@/components/layout/AppShell'
+import { ViewToggle } from '@/components/ui/ViewToggle'
+import { EngagementTable } from '@/components/engagements/EngagementTable'
+import { EngagementCard } from '@/components/engagements/EngagementCard'
+import { EngagementEmptyState } from '@/components/engagements/EngagementEmptyState'
+import { NewEngagementModal } from '@/components/engagements/NewEngagementModal'
+import { engagementsApi, clientsApi, type Engagement } from '@/lib/api'
+import { useFetch } from '@/lib/hooks/useFetch'
+import { Search, X, ChevronDown } from 'lucide-react'
+
+type ViewMode = 'table' | 'card'
+
+const ENGAGEMENT_STATUSES = ['planning', 'active', 'in_review', 'completed', 'archived']
+
+export default function EngagementsPage() {
+  const [view, setView] = useState<ViewMode>('table')
+  const [search, setSearch] = useState('')
+  const [localEngagements, setLocalEngagements] = useState<Engagement[]>([])
+  const [modalOpen, setModalOpen] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [bulkLoading, setBulkLoading] = useState(false)
+  const [statusDropOpen, setStatusDropOpen] = useState(false)
+
+  const { data, isLoading, error } = useFetch(() => engagementsApi.list(0, 100), [])
+  const { data: clientsData, isLoading: clientsLoading } = useFetch(() => clientsApi.list(0, 100), [])
+  const serverEngagements = data?.items ?? []
+  const engagements = [...localEngagements, ...serverEngagements]
+
+  const clientMap: Record<string, string> = Object.fromEntries(
+    (clientsData?.items ?? []).map((c) => [c.id, c.name])
+  )
+
+  const filtered = engagements.filter((e) =>
+    e.name.toLowerCase().includes(search.toLowerCase())
+  )
+
+  function handleAdd(engagement: Engagement) {
+    setLocalEngagements((prev) => [engagement, ...prev])
+  }
+
+  function handleSelect(id: string, checked: boolean) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (checked) next.add(id)
+      else next.delete(id)
+      return next
+    })
+  }
+
+  function handleSelectAll(checked: boolean) {
+    if (checked) setSelectedIds(new Set(filtered.map((e) => e.id)))
+    else setSelectedIds(new Set())
+  }
+
+  async function handleBulkStatus(newStatus: string) {
+    setStatusDropOpen(false)
+    setBulkLoading(true)
+    const ids = Array.from(selectedIds)
+    setLocalEngagements((les) =>
+      les.map((e) => selectedIds.has(e.id) ? { ...e, status: newStatus } : e)
+    )
+    try {
+      await engagementsApi.bulkUpdate(ids, { status: newStatus })
+      setSelectedIds(new Set())
+      toast.success(`Updated ${ids.length} engagement${ids.length !== 1 ? 's' : ''}`)
+    } catch {
+      toast.error('Bulk update failed')
+    } finally {
+      setBulkLoading(false)
+    }
+  }
+
+  async function handlePushDeadline() {
+    setBulkLoading(true)
+    const ids = Array.from(selectedIds)
+    try {
+      await engagementsApi.bulkUpdate(ids, { deadline_push_days: 7 })
+      setSelectedIds(new Set())
+      toast.success(`Pushed deadline by 7 days for ${ids.length} engagement${ids.length !== 1 ? 's' : ''}`)
+    } catch {
+      toast.error('Deadline push failed')
+    } finally {
+      setBulkLoading(false)
+    }
+  }
+
+  const selCount = selectedIds.size
+
+  if (error) {
+    return (
+      <AppShell>
+        <div className="flex flex-col h-full p-6 items-center justify-center">
+          <p className="text-sm text-[#991B1B]">Failed to load engagements.</p>
+        </div>
+      </AppShell>
+    )
+  }
+
+  return (
+    <AppShell>
+      <div className="flex flex-col h-full p-6 gap-4">
+
+        <h1 className="text-2xl font-medium text-brand dark:text-[#EDEEF0]">
+          Engagements
+        </h1>
+
+        <div className="flex items-center gap-3">
+          <div className="relative flex-1">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-[#6B7280]" />
+            <input
+              type="text"
+              placeholder="Search engagements..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full h-9 pl-8 pr-3 rounded-[6px] bg-surface-input dark:bg-dark-card border border-[0.5px] border-surface-border dark:border-dark-border text-[13px] text-brand dark:text-[#EDEEF0] placeholder:text-[#9CA3AF] focus:outline-none focus:border-brand-light transition-colors"
+            />
+          </div>
+          <ViewToggle value={view} onChange={setView} />
+          <button
+            onClick={() => setModalOpen(true)}
+            className="h-9 px-3 rounded-[6px] bg-brand dark:bg-brand-btn text-white text-[13px] font-medium hover:opacity-90 transition-opacity whitespace-nowrap flex-shrink-0"
+          >
+            + New Engagement
+          </button>
+        </div>
+
+        {isLoading && localEngagements.length === 0 ? (
+          <div className="rounded-modal border border-[0.5px] border-surface-border dark:border-dark-border overflow-hidden">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <div
+                key={i}
+                className="flex gap-4 px-4 py-3 border-b border-[0.5px] border-[#D5D8DE] dark:border-dark-card last:border-0"
+              >
+                {Array.from({ length: 6 }).map((_, j) => (
+                  <div key={j} className="h-4 flex-1 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+                ))}
+              </div>
+            ))}
+          </div>
+        ) : filtered.length === 0 && search === '' ? (
+          <EngagementEmptyState onNew={() => setModalOpen(true)} />
+        ) : filtered.length === 0 ? (
+          <div className="flex flex-col items-center justify-center flex-1 py-24 gap-2">
+            <p className="text-[13px] font-medium text-brand dark:text-[#EDEEF0]">
+              No results for &ldquo;{search}&rdquo;
+            </p>
+            <p className="text-[12px] text-[#6B7280]">
+              Try a different title, client, or staff name.
+            </p>
+          </div>
+        ) : view === 'table' ? (
+          <EngagementTable
+            engagements={filtered}
+            clientMap={clientMap}
+            lookupsLoading={clientsLoading}
+            selectedIds={selectedIds}
+            onSelect={handleSelect}
+            onSelectAll={handleSelectAll}
+          />
+        ) : (
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+            {filtered.map((eng) => (
+              <EngagementCard key={eng.id} engagement={eng} clientMap={clientMap} lookupsLoading={clientsLoading} />
+            ))}
+          </div>
+        )}
+
+        <NewEngagementModal
+          open={modalOpen}
+          onClose={() => setModalOpen(false)}
+          onAdd={handleAdd}
+        />
+
+        {/* Floating bulk action bar */}
+        {selCount > 0 && (
+          <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50">
+            <div className="bg-[#1F3148] dark:bg-[#1A2535] rounded-lg shadow-lg px-5 py-3 flex items-center gap-3">
+              <span className="text-[13px] text-white font-medium whitespace-nowrap">
+                {selCount} selected
+              </span>
+
+              {/* Change Status */}
+              <div className="relative">
+                <button
+                  disabled={bulkLoading}
+                  onClick={() => setStatusDropOpen((o) => !o)}
+                  className="flex items-center gap-1 text-white text-[12px] border border-white/30 rounded px-3 py-1.5 hover:bg-white/10 disabled:opacity-50"
+                >
+                  Change Status <ChevronDown className="h-3 w-3" />
+                </button>
+                {statusDropOpen && (
+                  <div className="absolute bottom-full mb-2 left-0 bg-white dark:bg-[#252525] border border-[#D5D8DE] dark:border-dark-border rounded-lg shadow-lg overflow-hidden min-w-[150px]">
+                    {ENGAGEMENT_STATUSES.map((s) => (
+                      <button
+                        key={s}
+                        onClick={() => handleBulkStatus(s)}
+                        className="w-full text-left px-3 py-2 text-[12px] text-[#374151] dark:text-[#D1D5DB] hover:bg-[#F3F4F6] dark:hover:bg-[#333333]"
+                      >
+                        {s.replace(/_/g, ' ')}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Push Deadline 7 Days */}
+              <button
+                disabled={bulkLoading}
+                onClick={handlePushDeadline}
+                className="text-white text-[12px] border border-white/30 rounded px-3 py-1.5 hover:bg-white/10 disabled:opacity-50 whitespace-nowrap"
+              >
+                Push Deadline 7 Days
+              </button>
+
+              {/* Clear */}
+              <button
+                onClick={() => setSelectedIds(new Set())}
+                className="text-white/60 hover:text-white transition-colors ml-1"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        )}
+
+      </div>
+    </AppShell>
+  )
+}
