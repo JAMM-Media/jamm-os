@@ -8,6 +8,15 @@ export interface Channel {
   createdAt: string
 }
 
+export interface ChannelMember {
+  id: string
+  channelId: string
+  userId: string
+  userFullName: string
+  userEmail: string
+  addedAt: string
+}
+
 export interface FirmMessage {
   id: string
   channelId: string
@@ -52,6 +61,17 @@ function mapMessage(raw: Record<string, unknown>): FirmMessage {
   }
 }
 
+function mapChannelMember(raw: Record<string, unknown>): ChannelMember {
+  return {
+    id: String(raw.id),
+    channelId: String(raw.channel_id ?? raw.channelId ?? ''),
+    userId: String(raw.user_id ?? raw.userId ?? ''),
+    userFullName: String(raw.user_full_name ?? raw.userFullName ?? ''),
+    userEmail: String(raw.user_email ?? raw.userEmail ?? ''),
+    addedAt: String(raw.added_at ?? raw.addedAt ?? ''),
+  }
+}
+
 export const firmChatApi = {
   listChannels: async (): Promise<Channel[]> => {
     const { data } = await api.get('/firm-chat/channels')
@@ -87,5 +107,24 @@ export const firmChatApi = {
   postMessage: async (channelId: string, body: string, mentions?: string[]): Promise<FirmMessage> => {
     const { data } = await api.post(`/firm-chat/channels/${channelId}/messages`, { body, mentions })
     return mapMessage(data)
+  },
+
+  listMembers: async (channelId: string): Promise<ChannelMember[]> => {
+    const { data } = await api.get(`/firm-chat/channels/${channelId}/members`)
+    const items = Array.isArray(data) ? data : (data.items ?? [])
+    return items.map(mapChannelMember)
+  },
+
+  addMember: async (channelId: string, userId: string): Promise<ChannelMember> => {
+    const { data } = await api.post(
+      `/firm-chat/channels/${channelId}/members`,
+      null,
+      { params: { user_id: userId } }
+    )
+    return mapChannelMember(data)
+  },
+
+  removeMember: async (channelId: string, userId: string): Promise<void> => {
+    await api.delete(`/firm-chat/channels/${channelId}/members/${userId}`)
   },
 }

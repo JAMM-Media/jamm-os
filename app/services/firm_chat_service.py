@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.crud import firm_chat as crud
+from app.models.firm_chat import Channel, ChannelMember, FirmMessage, FirmMessageRead
 from app.models.user import User
 from app.schemas.firm_chat import (
     ChannelCreate,
@@ -247,3 +248,95 @@ def get_unread_summary(
     per_channel = crud.get_unread_counts_for_firm(db, firm_id=firm_id, user_id=user_id)
     total_unread = sum(per_channel.values())
     return FirmChatUnreadOut(total_unread=total_unread, per_channel=per_channel)
+
+
+def get_channel_members(
+    db: Session,
+    *,
+    firm_id: uuid.UUID,
+    channel_id: uuid.UUID,
+    requesting_user_id: uuid.UUID,
+) -> list[ChannelMember]:
+    channel = (
+        db.query(Channel)
+        .filter(Channel.id == channel_id, Channel.firm_id == firm_id, Channel.is_deleted == False)
+        .first()
+    )
+    if not channel:
+        from fastapi import HTTPException, status
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Channel not found")
+    return channel.members
+
+
+def add_channel_member(
+    db: Session,
+    *,
+    firm_id: uuid.UUID,
+    channel_id: uuid.UUID,
+    user_id: uuid.UUID,
+    requesting_user: "User",
+) -> ChannelMember:
+    from app.models.user import User
+    from fastapi import HTTPException, status
+    from app.core.enums import UserRole
+
+    if requesting_user.role not in (UserRole.firm_owner, UserRole.manager):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only managers and partners can add members")
+
+    channel = (
+        db.query(Channel)
+        .filter(Channel.id == channel_id, Channel.firm_id == firm_id, Channel.is_deleted == False)
+        .first()
+    )
+    if not channel:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Channel not found")
+
+    # Verify the user being added belongs to the same firm
+    user = db.query(User).filter(User.id == user_id, User.firm_id == firm_id).first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    # Check not already a member
+    existing = db.query(ChannelMember).filter(
+        ChannelMember.channel_id == channel_id,
+        ChannelMember.user_id == user_id,
+    ).first()
+    if existing:
+        return existing
+
+    member = ChannelMember(channel_id=channel_id, user_id=user_id)
+    db.add(member)
+    db.commit()
+    db.refresh(member)
+    return member
+
+
+def remove_channel_member(
+    db: Session,
+    *,
+    firm_id: uuid.UUID,
+    channel_id: uuid.UUID,
+    user_id: uuid.UUID,
+    requesting_user: "User",
+) -> None:
+    from fastapi import HTTPException, status
+    from app.core.enums import UserRole
+
+    if requesting_user.role not in (UserRole.firm_owner, UserRole.manager):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only managers and partners can remove members")
+
+    channel = (
+        db.query(Channel)
+        .filter(Channel.id == channel_id, Channel.firm_id == firm_id, Channel.is_deleted == False)
+        .first()
+    )
+    if not channel:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Channel not found")
+
+    member = db.query(ChannelMember).filter(
+        ChannelMember.channel_id == channel_id,
+        ChannelMember.user_id == user_id,
+    ).first()
+    if member:
+        db.delete(member)
+        db.commit()

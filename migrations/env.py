@@ -23,7 +23,7 @@ from app.models.integration import Integration
 from app.models.audit_log import AuditLog
 from app.models.retention import DataRetentionPolicy
 from app.models.message import ClientMessage, ClientMessageRead
-from app.models.firm_chat import Channel, FirmMessage, FirmMessageRead
+from app.models.firm_chat import Channel, ChannelMember, FirmMessage, FirmMessageRead
 from app.models.irs_authorization import IrsAuthorization
 from app.models.extension import Extension
 from app.models.tax_organizer import TaxOrganizerTemplate, TaxOrganizer

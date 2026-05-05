@@ -23,6 +23,7 @@ from app.models.firm import Firm
 from app.models.user import User
 from app.schemas.firm_chat import (
     ChannelCreate,
+    ChannelMemberOut,
     ChannelOut,
     ChannelUpdate,
     FirmChatUnreadOut,
@@ -95,6 +96,74 @@ def delete_channel(
         db,
         firm_id=current_firm.id,
         channel_id=channel_id,
+        requesting_user=current_user,
+    )
+
+
+@router.get("/channels/{channel_id}/members", response_model=list[ChannelMemberOut])
+def list_channel_members(
+    channel_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    current_user: User = Depends(require_staff_or_above),
+):
+    members = firm_chat_service.get_channel_members(
+        db,
+        firm_id=current_firm.id,
+        channel_id=channel_id,
+        requesting_user_id=current_user.id,
+    )
+    return [
+        ChannelMemberOut(
+            id=m.id,
+            channel_id=m.channel_id,
+            user_id=m.user_id,
+            user_full_name=m.user.full_name if m.user else "Unknown",
+            user_email=m.user.email if m.user else "",
+            added_at=m.added_at,
+        )
+        for m in members
+    ]
+
+
+@router.post("/channels/{channel_id}/members", response_model=ChannelMemberOut, status_code=status.HTTP_201_CREATED)
+def add_channel_member(
+    channel_id: uuid.UUID,
+    user_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    current_user: User = Depends(require_staff_or_above),
+):
+    m = firm_chat_service.add_channel_member(
+        db,
+        firm_id=current_firm.id,
+        channel_id=channel_id,
+        user_id=user_id,
+        requesting_user=current_user,
+    )
+    return ChannelMemberOut(
+        id=m.id,
+        channel_id=m.channel_id,
+        user_id=m.user_id,
+        user_full_name=m.user.full_name if m.user else "Unknown",
+        user_email=m.user.email if m.user else "",
+        added_at=m.added_at,
+    )
+
+
+@router.delete("/channels/{channel_id}/members/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+def remove_channel_member(
+    channel_id: uuid.UUID,
+    user_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    current_user: User = Depends(require_staff_or_above),
+):
+    firm_chat_service.remove_channel_member(
+        db,
+        firm_id=current_firm.id,
+        channel_id=channel_id,
+        user_id=user_id,
         requesting_user=current_user,
     )
 

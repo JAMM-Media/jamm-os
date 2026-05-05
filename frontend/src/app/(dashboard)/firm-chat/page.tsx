@@ -6,9 +6,10 @@ import type { ReactNode } from 'react'
 import { AppShell } from '@/components/layout/AppShell'
 import { useChannels } from '@/components/firm-chat/useChannels'
 import { useMessages } from '@/components/firm-chat/useMessages'
-import { MessageSquare, MoreHorizontal } from 'lucide-react'
+import { MessageSquare, MoreHorizontal, Users, X, UserMinus } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import api from '@/lib/api'
+import { firmChatApi, type ChannelMember } from '@/lib/api/firmChat'
 import { useAuth } from '@/lib/hooks/useAuth'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -144,6 +145,12 @@ export default function FirmChatPage() {
   const [deleteChannelDisplayName, setDeleteChannelDisplayName] = useState('')
 
   // ─── Channel dropdown ────────────────────────────────────────────────────
+  const [showMembersModal, setShowMembersModal] = useState(false)
+  const [membersChannelId, setMembersChannelId] = useState('')
+  const [channelMembers, setChannelMembers] = useState<ChannelMember[]>([])
+  const [membersLoading, setMembersLoading] = useState(false)
+  const [addMemberSearch, setAddMemberSearch] = useState('')
+  const [addMemberLoading, setAddMemberLoading] = useState(false)
   const [openDropdownId, setOpenDropdownId] = useState<string | null>(null)
   const [hoveredChannelId, setHoveredChannelId] = useState<string | null>(null)
 
@@ -282,6 +289,46 @@ export default function FirmChatPage() {
     setDeleteChannelDisplayName(channelName)
     setShowDeleteModal(true)
     setOpenDropdownId(null)
+  }
+
+  const openMembersModal = async (channelId: string) => {
+    setMembersChannelId(channelId)
+    setShowMembersModal(true)
+    setOpenDropdownId(null)
+    setAddMemberSearch('')
+    setMembersLoading(true)
+    try {
+      const members = await firmChatApi.listMembers(channelId)
+      setChannelMembers(members)
+    } catch {
+      setChannelMembers([])
+    } finally {
+      setMembersLoading(false)
+    }
+  }
+
+  const handleAddMember = async (userId: string) => {
+    if (!membersChannelId) return
+    setAddMemberLoading(true)
+    try {
+      const member = await firmChatApi.addMember(membersChannelId, userId)
+      setChannelMembers((prev) => [...prev, member])
+      setAddMemberSearch('')
+    } catch {
+      // silently fail — member may already exist
+    } finally {
+      setAddMemberLoading(false)
+    }
+  }
+
+  const handleRemoveMember = async (userId: string) => {
+    if (!membersChannelId) return
+    try {
+      await firmChatApi.removeMember(membersChannelId, userId)
+      setChannelMembers((prev) => prev.filter((m) => m.userId !== userId))
+    } catch {
+      // silently fail
+    }
   }
 
   // ─── Message rendering ───────────────────────────────────────────────────
@@ -494,6 +541,12 @@ export default function FirmChatPage() {
                           Rename
                         </button>
                         <button
+                          onClick={() => openMembersModal(ch.id)}
+                          className="block w-full text-left px-3 py-2 text-[13px] text-[#374151] dark:text-[#9CA3AF] hover:bg-[#D5D8DE] dark:hover:bg-[#444444] transition-colors whitespace-nowrap"
+                        >
+                          Manage Members
+                        </button>
+                        <button
                           onClick={() => openDeleteModal(ch.id, ch.name)}
                           className="block w-full text-left px-3 py-2 text-[13px] text-[#991B1B] hover:bg-[#D5D8DE] dark:hover:bg-[#444444] transition-colors whitespace-nowrap"
                         >
@@ -684,6 +737,107 @@ export default function FirmChatPage() {
           </div>
         </div>
       )}
+        {/* ── Manage Members Modal ─────────────────────────────────────── */}
+        {showMembersModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center">
+            <div
+              className="absolute inset-0 bg-black/35"
+              onClick={() => setShowMembersModal(false)}
+            />
+            <div className="relative z-10 w-[420px] bg-surface-card dark:bg-dark-card rounded-[10px] border border-[#C8CDD6] dark:border-[#484848] shadow-xl">
+              {/* Header */}
+              <div className="flex items-center justify-between px-4 py-3 border-b border-[#C8CDD6] dark:border-[#484848]">
+                <div className="flex items-center gap-2">
+                  <Users className="w-[14px] h-[14px] text-[#6B7280]" />
+                  <span className="text-[13px] font-medium text-[#1F3148] dark:text-[#EDEEF0]">
+                    Manage Members
+                  </span>
+                </div>
+                <button
+                  onClick={() => setShowMembersModal(false)}
+                  className="text-[#6B7280] hover:text-[#1F3148] dark:hover:text-[#EDEEF0] transition-colors"
+                >
+                  <X className="w-[14px] h-[14px]" />
+                </button>
+              </div>
+
+              {/* Add member search */}
+              <div className="px-4 pt-3 pb-2">
+                <label className={labelClass}>Add staff member</label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={addMemberSearch}
+                    onChange={(e) => setAddMemberSearch(e.target.value)}
+                    placeholder="Search by name..."
+                    className={inputClass}
+                  />
+                  {addMemberSearch && staffList.length > 0 && (
+                    <div className="absolute top-full left-0 right-0 mt-1 bg-surface-card dark:bg-dark-card border border-[#C8CDD6] dark:border-[#484848] rounded-lg shadow-lg z-10 max-h-[160px] overflow-y-auto">
+                      {staffList
+                        .filter((s) =>
+                          s.name.toLowerCase().includes(addMemberSearch.toLowerCase()) &&
+                          !channelMembers.some((m) => m.userId === s.id)
+                        )
+                        .map((s) => (
+                          <button
+                            key={s.id}
+                            onClick={() => handleAddMember(s.id)}
+                            disabled={addMemberLoading}
+                            className="w-full text-left px-3 py-2 text-[13px] text-[#374151] dark:text-[#9CA3AF] hover:bg-[#D5D8DE] dark:hover:bg-[#444444] transition-colors disabled:opacity-50"
+                          >
+                            {s.name}
+                          </button>
+                        ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Current members list */}
+              <div className="px-4 pb-4">
+                <p className="text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em] mb-2 mt-2">
+                  Current Members
+                </p>
+                {membersLoading ? (
+                  <div className="space-y-2">
+                    {[...Array(3)].map((_, i) => (
+                      <div key={i} className="h-8 bg-[#D5D8DE] dark:bg-[#444444] rounded animate-pulse" />
+                    ))}
+                  </div>
+                ) : channelMembers.length === 0 ? (
+                  <p className="text-[12px] text-[#6B7280] text-center py-4">
+                    No members yet. Add staff above.
+                  </p>
+                ) : (
+                  <div className="space-y-1">
+                    {channelMembers.map((m) => (
+                      <div
+                        key={m.id}
+                        className="flex items-center justify-between px-2 py-1.5 rounded-md hover:bg-[#F3F4F6] dark:hover:bg-[#333333]"
+                      >
+                        <div>
+                          <p className="text-[13px] font-medium text-[#1F3148] dark:text-[#EDEEF0]">
+                            {m.userFullName}
+                          </p>
+                          <p className="text-[11px] text-[#6B7280]">{m.userEmail}</p>
+                        </div>
+                        <button
+                          onClick={() => handleRemoveMember(m.userId)}
+                          className="text-[#6B7280] hover:text-[#DC2626] transition-colors p-1"
+                          title="Remove member"
+                        >
+                          <UserMinus className="w-[13px] h-[13px]" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
     </AppShell>
   )
 }

@@ -80,3 +80,14 @@ class FirmMessageOut(BaseModel):
 class FirmChatUnreadOut(BaseModel):
     total_unread: int
     per_channel: dict[str, int]  # channel_id (str) -> unread count
+
+
+class ChannelMemberOut(BaseModel):
+    id: uuid.UUID
+    channel_id: uuid.UUID
+    user_id: uuid.UUID
+    user_full_name: str
+    user_email: str
+    added_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)

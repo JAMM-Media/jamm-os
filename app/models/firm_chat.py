@@ -56,6 +56,43 @@ class Channel(Base):
         back_populates="channel",
         cascade="all, delete-orphan",
     )
+    members: Mapped[list["ChannelMember"]] = relationship(
+        "ChannelMember",
+        back_populates="channel",
+        cascade="all, delete-orphan",
+    )
+
+
+class ChannelMember(Base):
+    __tablename__ = "channel_members"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+
+    channel_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("channels.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    added_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+    __table_args__ = (
+        UniqueConstraint("channel_id", "user_id", name="uq_channel_member"),
+    )
+
+    # Relationships
+    channel: Mapped["Channel"] = relationship("Channel", back_populates="members")
+    user: Mapped["User"] = relationship("User", foreign_keys=[user_id])
 
 
 class FirmMessage(Base):
