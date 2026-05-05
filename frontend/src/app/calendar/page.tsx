@@ -303,7 +303,7 @@ export default function CalendarPage() {
           </div>
         ) : isError ? (
           <div className="flex flex-col items-center justify-center py-24 gap-3">
-            <p className="text-[13px] text-[#991B1B]">Failed to load calendar data.</p>
+            <p className="text-[13px] text-[#DC2626]">Failed to load calendar data.</p>
             <button
               onClick={() => refetch()}
               className="flex items-center gap-1.5 text-[13px] font-medium px-4 py-2 rounded-[6px] bg-brand text-white hover:opacity-90"

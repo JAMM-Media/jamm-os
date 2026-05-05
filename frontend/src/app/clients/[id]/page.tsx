@@ -15,7 +15,7 @@ import { toast } from 'sonner'
 import { NotesTab, NotesPanel } from '@/components/notes'
 import { useNotes } from '@/components/notes'
 import { useUnreadMessages } from '@/components/messaging/useUnreadMessages'
-import { cn } from '@/lib/utils'
+import { cn, formatEngagementType } from '@/lib/utils'
 import api from '@/lib/api'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { IrsAuthBadge } from '@/components/clients/IrsAuthBadge'
@@ -382,7 +382,7 @@ function ClientDetailContent() {
                       </td>
                       <td className="px-4 py-3">
                         <span className="text-[12px] text-[#374151] dark:text-[#9CA3AF]">
-                          {eng.engagementType ?? '—'}
+                          {formatEngagementType(eng.engagementType)}
                         </span>
                       </td>
                       <td className="px-4 py-3">

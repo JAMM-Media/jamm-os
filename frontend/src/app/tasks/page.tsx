@@ -16,7 +16,11 @@ import api from '@/lib/api'
 
 type ViewMode = 'table' | 'card'
 
-const TASK_STATUSES = ['todo', 'in_progress', 'done']
+const TASK_STATUSES = [
+  { value: 'todo', label: 'To Do' },
+  { value: 'in_progress', label: 'In Progress' },
+  { value: 'done', label: 'Done' },
+]
 
 export default function TasksPage() {
   const [view, setView] = useState<ViewMode>('table')
@@ -28,6 +32,7 @@ export default function TasksPage() {
   const [statusDropOpen, setStatusDropOpen] = useState(false)
   const [reassignDropOpen, setReassignDropOpen] = useState(false)
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+  const [statusOverrides, setStatusOverrides] = useState<Record<string, string>>({})
 
   const { data, isLoading, error } = useFetch(() => tasksApi.list(0, 100), [])
   const { data: clientsData, isLoading: clientsLoading } = useFetch(() => clientsApi.list(0, 100), [])
@@ -35,7 +40,9 @@ export default function TasksPage() {
   const [tasks, setTasks] = useState<Task[]>([])
 
   const serverTasks = data?.items ?? []
-  const allTasks = [...localTasks, ...serverTasks]
+  const allTasks = [...localTasks, ...serverTasks].map((t) =>
+    statusOverrides[t.id] ? { ...t, status: statusOverrides[t.id] } : t
+  )
 
   const clientMap: Record<string, string> = Object.fromEntries(
     (clientsData?.items ?? []).map((c) => [c.id, c.name])
@@ -74,6 +81,11 @@ export default function TasksPage() {
     const prev = filtered.map((t) => ({ ...t }))
     // optimistic update
     setLocalTasks((lts) => lts.map((t) => selectedIds.has(t.id) ? { ...t, status: newStatus } : t))
+    setStatusOverrides((prev) => {
+      const next = { ...prev }
+      ids.forEach((id) => { next[id] = newStatus })
+      return next
+    })
     try {
       await tasksApi.bulkUpdate(ids, { status: newStatus })
       setSelectedIds(new Set())
@@ -123,7 +135,7 @@ export default function TasksPage() {
     return (
       <AppShell>
         <div className="flex flex-col h-full p-6 items-center justify-center">
-          <p className="text-sm text-[#991B1B]">Failed to load tasks.</p>
+          <p className="text-sm text-[#DC2626]">Failed to load tasks.</p>
         </div>
       </AppShell>
     )
@@ -226,11 +238,11 @@ export default function TasksPage() {
                   <div className="absolute bottom-full mb-2 left-0 bg-white dark:bg-[#252525] border border-[#D5D8DE] dark:border-dark-border rounded-lg shadow-lg overflow-hidden min-w-[140px]">
                     {TASK_STATUSES.map((s) => (
                       <button
-                        key={s}
-                        onClick={() => handleBulkStatus(s)}
+                        key={s.value}
+                        onClick={() => handleBulkStatus(s.value)}
                         className="w-full text-left px-3 py-2 text-[12px] text-[#374151] dark:text-[#D1D5DB] hover:bg-[#F3F4F6] dark:hover:bg-[#333333]"
                       >
-                        {s.replace(/_/g, ' ')}
+                        {s.label}
                       </button>
                     ))}
                   </div>

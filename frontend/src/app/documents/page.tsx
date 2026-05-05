@@ -1,7 +1,7 @@
 // path: frontend/src/app/documents/page.tsx
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { AppShell } from '@/components/layout/AppShell'
 import { ViewToggle } from '@/components/ui/ViewToggle'
 import { DocumentTable } from '@/components/documents/DocumentTable'
@@ -16,9 +16,26 @@ type ViewMode = 'table' | 'card'
 export default function DocumentsPage() {
   const [view, setView] = useState<ViewMode>('table')
   const [search, setSearch] = useState('')
+  const [uploading, setUploading] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const { data, isLoading, error } = useFetch(() => documentsApi.list(), [])
   const documents = data?.items ?? []
+
+  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploading(true)
+    try {
+      await documentsApi.upload(file)
+      window.location.reload()
+    } catch {
+      alert('Upload failed — please try again.')
+    } finally {
+      setUploading(false)
+      if (fileInputRef.current) fileInputRef.current.value = ''
+    }
+  }
 
   const filtered = documents.filter((d) =>
     d.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -30,7 +47,7 @@ export default function DocumentsPage() {
     return (
       <AppShell>
         <div className="flex flex-col h-full p-6 items-center justify-center">
-          <p className="text-sm text-[#991B1B]">Failed to load documents.</p>
+          <p className="text-sm text-[#DC2626]">Failed to load documents.</p>
         </div>
       </AppShell>
     )
@@ -57,8 +74,19 @@ export default function DocumentsPage() {
             />
           </div>
           <ViewToggle value={view} onChange={setView} />
-          <button className="h-9 px-3 rounded-[6px] bg-brand dark:bg-brand-btn text-white text-[13px] font-medium hover:opacity-90 transition-opacity whitespace-nowrap flex-shrink-0">
-            Upload Document
+          <input
+            ref={fileInputRef}
+            type="file"
+            className="hidden"
+            onChange={handleFileChange}
+            accept=".pdf,.doc,.docx,.xlsx,.xls,.csv,.png,.jpg,.jpeg"
+          />
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploading}
+            className="h-9 px-3 rounded-[6px] bg-brand dark:bg-brand-btn text-white text-[13px] font-medium hover:opacity-90 transition-opacity whitespace-nowrap flex-shrink-0 disabled:opacity-60"
+          >
+            {uploading ? 'Uploading...' : 'Upload Document'}
           </button>
         </div>
 

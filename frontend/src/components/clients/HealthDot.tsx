@@ -32,7 +32,7 @@ export function HealthDot({ clientId, showLabel = false }: HealthDotProps) {
     isLoading || !data
       ? undefined
       : data.reasons.length === 0
-      ? 'All good'
+      ? 'Good'
       : data.reasons.join('\n')
 
   const dot = (

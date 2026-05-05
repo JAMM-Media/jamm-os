@@ -590,7 +590,7 @@ export default function FirmChatPage() {
               <input
                 type="text"
                 value={createChannelName}
-                onChange={(e) => setCreateChannelName(e.target.value.toLowerCase())}
+                onChange={(e) => setCreateChannelName(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter') handleCreateChannel() }}
                 placeholder="e.g. general"
                 className={inputClass}
@@ -631,7 +631,7 @@ export default function FirmChatPage() {
               <input
                 type="text"
                 value={renameChannelNameInput}
-                onChange={(e) => setRenameChannelNameInput(e.target.value.toLowerCase())}
+                onChange={(e) => setRenameChannelNameInput(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter') handleRenameChannel() }}
                 className={inputClass}
                 autoFocus

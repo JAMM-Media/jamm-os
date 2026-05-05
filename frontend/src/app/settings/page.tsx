@@ -5,6 +5,7 @@ import { useState } from 'react'
 import { AppShell } from '@/components/layout/AppShell'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { useFetch } from '@/lib/hooks/useFetch'
+import { Eye, EyeOff } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 import api from '@/lib/api'
@@ -21,6 +22,7 @@ const TABS = [
 ]
 
 function formatRoleLabel(role: string): string {
+  if (role === 'firm_owner') return 'Partner'
   return role.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
 }
 
@@ -34,7 +36,7 @@ function RoleBadge({ role }: { role: string }) {
   }
   if (role === 'manager') {
     return (
-      <span className="w-fit text-[11px] font-medium px-2 py-0.5 rounded-full bg-[#E5E7EB] text-brand border border-brand">
+      <span className="w-fit text-[11px] font-medium px-2 py-0.5 rounded-full bg-[#FEF3C7] text-[#92400E]">
         {formatRoleLabel(role)}
       </span>
     )
@@ -66,6 +68,7 @@ export default function SettingsPage() {
   const [invitePassword, setInvitePassword] = useState('')
   const [inviteRole, setInviteRole] = useState<'staff' | 'manager'>('staff')
   const [inviteSubmitting, setInviteSubmitting] = useState(false)
+  const [showInvitePassword, setShowInvitePassword] = useState(false)
 
   async function handleInvite(e: React.FormEvent) {
     e.preventDefault()
@@ -367,13 +370,26 @@ export default function SettingsPage() {
                   </div>
                   <div className={fieldClass}>
                     <label className={labelClass}>Temporary password</label>
-                    <input
-                      type="password"
-                      required
-                      value={invitePassword}
-                      onChange={(e) => setInvitePassword(e.target.value)}
-                      className={inputClass}
-                    />
+                    <div className="relative">
+                      <input
+                        type={showInvitePassword ? 'text' : 'password'}
+                        required
+                        value={invitePassword}
+                        onChange={(e) => setInvitePassword(e.target.value)}
+                        className={inputClass}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowInvitePassword(!showInvitePassword)}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-[#6B7280] hover:text-brand transition-colors"
+                      >
+                        {showInvitePassword ? (
+                          <EyeOff style={{ width: 14, height: 14 }} />
+                        ) : (
+                          <Eye style={{ width: 14, height: 14 }} />
+                        )}
+                      </button>
+                    </div>
                     <span className="text-[11px] text-[#6B7280]">
                       They can change this after first login.
                     </span>

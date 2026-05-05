@@ -18,6 +18,15 @@ const STATUS_OPTIONS = [
   { value: 'archived', label: 'Archived' },
 ]
 
+const ENGAGEMENT_TYPE_OPTIONS = [
+  { value: 'tax_return', label: 'Tax Return' },
+  { value: 'bookkeeping_monthly', label: 'Bookkeeping' },
+  { value: 'payroll_tax_941', label: 'Payroll' },
+  { value: 'tax_planning_advisory', label: 'Advisory' },
+  { value: 'audit_representation', label: 'Audit' },
+  { value: 'custom', label: 'Other' },
+]
+
 interface EditEngagementModalProps {
   isOpen: boolean
   onClose: () => void
@@ -136,10 +145,11 @@ export function EditEngagementModal({ isOpen, onClose, engagement, onSuccess }: 
             />
           </FormField>
           <FormField label="Engagement Type">
-            <TextInput
-              placeholder="Tax Return"
+            <SelectInput
               value={form.engagementType}
               onChange={(e) => handleChange('engagementType', e.target.value)}
+              options={ENGAGEMENT_TYPE_OPTIONS}
+              placeholder="Select type"
             />
           </FormField>
         </div>

@@ -65,7 +65,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
       <div className="flex items-center h-14 px-3 border-b border-white/10 flex-shrink-0">
         {!collapsed && (
           <span className="text-white font-medium text-sm tracking-wide truncate">
-            JAMM PX
+            JAMM <span style={{ color: '#B07D3A' }}>PX</span>
           </span>
         )}
         <button

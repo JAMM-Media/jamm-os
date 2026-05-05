@@ -12,6 +12,7 @@ import { reportsApi } from '@/lib/api/reports'
 import type { DashboardMetrics, OverdueEngagementItem, UpcomingDeadlineItem, StaffUtilizationItem, UnsignedDocumentItem } from '@/lib/api/dashboard'
 import type { WIPSummary } from '@/lib/api/reports'
 import api from '@/lib/api'
+import { formatEngagementType } from '@/lib/utils'
 
 function formatCurrency(value: number): string {
   return new Intl.NumberFormat('en-US', {
@@ -85,7 +86,7 @@ function UpcomingDeadlinesList({ items }: { items: UpcomingDeadlineItem[] }) {
               <div className="flex-1 min-w-0">
                 <p className="text-[13px] font-medium text-[#111827] dark:text-[#EDEEF0] truncate">{item.client_name}</p>
               </div>
-              <p className="text-[12px] text-[#6B7280] truncate flex-shrink-0">{item.engagement_type.replace(/_/g, ' ')}</p>
+              <p className="text-[12px] text-[#6B7280] truncate flex-shrink-0">{formatEngagementType(item.engagement_type)}</p>
               <p className="text-[12px] text-[#6B7280] flex-shrink-0 w-24 text-right">{item.deadline}</p>
               <div className="flex-shrink-0">{daysBadge(item.days_until)}</div>
             </div>
@@ -237,10 +238,10 @@ function OverdueEngagementsTable({
               {items.map((item) => (
                 <tr key={item.engagement_id}>
                   <td className="px-4 py-2.5 font-medium text-[#111827] dark:text-[#EDEEF0]">{item.client_name}</td>
-                  <td className="px-4 py-2.5 text-[#6B7280]">{item.engagement_type.replace(/_/g, ' ')}</td>
+                  <td className="px-4 py-2.5 text-[#6B7280]">{formatEngagementType(item.engagement_type)}</td>
                   <td className="px-4 py-2.5 text-[#6B7280]">{item.deadline}</td>
                   <td className="px-4 py-2.5">
-                    <span className="font-medium text-[#991B1B]">{item.days_overdue}d</span>
+                    <span className="font-medium text-[#DC2626]">{item.days_overdue}d</span>
                   </td>
                   <td className="px-4 py-2.5 text-[#6B7280]">{item.assigned_staff_name ?? '—'}</td>
                   <td className="px-4 py-2.5">
@@ -458,15 +459,17 @@ export default function DashboardPage() {
                 value={formatCurrency(metrics?.mrr)}
                 subtext={`${metrics?.mrr_invoice_count} invoice${metrics?.mrr_invoice_count !== 1 ? 's' : ''} paid`}
               />
-              <MetricCard
-                label="Outstanding AR"
-                value={formatCurrency(metrics?.outstanding_ar)}
-                subtext={
-                  metrics?.oldest_overdue_days != null
-                    ? `${metrics?.outstanding_ar_count} unpaid · Oldest: ${metrics?.oldest_overdue_days}d`
-                    : `${metrics?.outstanding_ar_count} unpaid`
-                }
-              />
+              <Link href="/billing" className="block hover:opacity-90 transition-opacity">
+                <MetricCard
+                  label="Outstanding AR"
+                  value={formatCurrency(metrics?.outstanding_ar)}
+                  subtext={
+                    metrics?.oldest_overdue_days != null
+                      ? `${metrics?.outstanding_ar_count} unpaid · Oldest: ${metrics?.oldest_overdue_days}d`
+                      : `${metrics?.outstanding_ar_count} unpaid`
+                  }
+                />
+              </Link>
               <MetricCard
                 label="Unbilled WIP"
                 value={formatCurrency(metrics?.wip_value)}
@@ -477,7 +480,7 @@ export default function DashboardPage() {
                 value={String(metrics?.overdue_engagement_count)}
                 valueClassName={
                   metrics?.overdue_engagement_count > 0
-                    ? 'text-[#991B1B]'
+                    ? 'text-[#DC2626]'
                     : 'text-brand dark:text-[#EDEEF0]'
                 }
               />

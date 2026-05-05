@@ -36,7 +36,7 @@ export default function ClientsPage() {
     return (
       <AppShell>
         <div className="flex flex-col h-full p-6 items-center justify-center">
-          <p className="text-sm text-[#991B1B]">Failed to load clients.</p>
+          <p className="text-sm text-[#DC2626]">Failed to load clients.</p>
         </div>
       </AppShell>
     )

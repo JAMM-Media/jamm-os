@@ -580,12 +580,12 @@ FILE: frontend\src\app\(auth)\login\magic\page.tsx
 // path: frontend/src/app/(auth)/login/magic/page.tsx
 'use client'
 
-import { useEffect, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Loader2 } from 'lucide-react'
 import Link from 'next/link'
 
-export default function MagicLinkLandingPage() {
+function MagicLinkContent() {
   const searchParams = useSearchParams()
   const router = useRouter()
   const [error, setError] = useState<string | null>(null)
@@ -634,6 +634,18 @@ export default function MagicLinkLandingPage() {
       <Loader2 className="h-6 w-6 animate-spin text-brand" />
       <p className="text-[13px] text-[#6B7280]">Signing you in...</p>
     </div>
+  )
+}
+
+export default function MagicLinkPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader2 className="h-6 w-6 animate-spin text-brand" />
+      </div>
+    }>
+      <MagicLinkContent />
+    </Suspense>
   )
 }
 
@@ -2640,7 +2652,7 @@ FILE: frontend\src\app\clients\[id]\page.tsx
 // path: frontend/src/app/clients/[id]/page.tsx
 'use client'
 
-import { useState } from 'react'
+import { Suspense, useState } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import { AppShell } from '@/components/layout/AppShell'
@@ -2677,7 +2689,7 @@ const CLIENT_TABS = [
   { key: 'messages', label: 'Messages' },
 ]
 
-export default function ClientDetailPage() {
+function ClientDetailContent() {
   const params = useParams()
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -3110,6 +3122,18 @@ export default function ClientDetailPage() {
         />
       )}
     </AppShell>
+  )
+}
+
+export default function ClientDetailPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader2 className="h-6 w-6 animate-spin text-brand" />
+      </div>
+    }>
+      <ClientDetailContent />
+    </Suspense>
   )
 }
 
@@ -4480,7 +4504,12 @@ export default function EngagementDetailPage() {
         <EditEngagementModal
           isOpen={isEditOpen}
           onClose={() => setIsEditOpen(false)}
-          engagement={engagement}
+          engagement={{
+            ...engagement,
+            engagementType: engagement.engagementType ?? undefined,
+            endDate: engagement.endDate ?? undefined,
+            description: engagement.description ?? undefined,
+          }}
           onSuccess={() => { refetch(); setIsEditOpen(false) }}
         />
       )}
@@ -4581,11 +4610,11 @@ FILE: frontend\src\app\portal\auth\page.tsx
 // path: frontend/src/app/portal/auth/page.tsx
 'use client'
 
-import { useEffect, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Loader2 } from 'lucide-react'
 
-export default function PortalAuthPage() {
+function PortalAuthContent() {
   const searchParams = useSearchParams()
   const router = useRouter()
   const [error, setError] = useState<string | null>(null)
@@ -4632,6 +4661,18 @@ export default function PortalAuthPage() {
   )
 }
 
+export default function PortalAuthPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader2 className="h-6 w-6 animate-spin text-brand" />
+      </div>
+    }>
+      <PortalAuthContent />
+    </Suspense>
+  )
+}
+
 
 ================================================================================
 FILE: frontend\src\app\portal\login\page.tsx
@@ -4659,7 +4700,7 @@ export default function PortalLoginPage() {
   const [magicEmail, setMagicEmail] = useState('')
   const [magicLoading, setMagicLoading] = useState(false)
   const [magicSent, setMagicSent] = useState(false)
-  const [magicError, setMagicError] = useState('')
+  const [magicDisabled, setMagicDisabled] = useState(false)
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault()
@@ -4693,25 +4734,21 @@ export default function PortalLoginPage() {
 
   async function handleMagicLink(e: React.FormEvent) {
     e.preventDefault()
-    setMagicError('')
-    setMagicSent(false)
     setMagicLoading(true)
+    setMagicDisabled(true)
+    setTimeout(() => setMagicDisabled(false), 60_000)
     try {
       const target = magicEmail || email
-      const res = await fetch('/api/backend/portal/auth/request-magic-link', {
+      await fetch('/api/backend/portal/request-magic-link', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: target }),
       })
-      if (res.status === 429) {
-        setMagicError('Too many requests. Please wait a few minutes.')
-        return
-      }
-      setMagicSent(true)
     } catch {
-      setMagicError('Something went wrong. Please try again.')
+      // never surface errors — always show success
     } finally {
       setMagicLoading(false)
+      setMagicSent(true)
     }
   }
 
@@ -4820,24 +4857,23 @@ export default function PortalLoginPage() {
           We&apos;ll email you a one-time link. No password needed.
         </p>
 
-        <form onSubmit={handleMagicLink} className="flex flex-col gap-3">
-          <input
-            type="email"
-            value={effectiveMagicEmail}
-            onChange={(e) => setMagicEmail(e.target.value)}
-            placeholder="you@example.com"
-            required
-            className={`${inputClass} ${borderNormal}`}
-          />
-
-          {magicSent ? (
-            <p className="text-[12px] text-center py-2" style={{ color: '#10B981' }}>
-              Link sent — check your email.
-            </p>
-          ) : (
+        {magicSent ? (
+          <p className="text-[12px] text-center py-2" style={{ color: '#10B981' }}>
+            If a portal account exists for that email, a link has been sent. Check your inbox.
+          </p>
+        ) : (
+          <form onSubmit={handleMagicLink} className="flex flex-col gap-3">
+            <input
+              type="email"
+              value={effectiveMagicEmail}
+              onChange={(e) => setMagicEmail(e.target.value)}
+              placeholder="you@example.com"
+              required
+              className={`${inputClass} ${borderNormal}`}
+            />
             <button
               type="submit"
-              disabled={magicLoading}
+              disabled={magicLoading || magicDisabled}
               className="w-full h-9 rounded-[6px] text-[12px] font-[500] flex items-center justify-center gap-2 disabled:opacity-60 transition-colors"
               style={{
                 backgroundColor: 'transparent',
@@ -4854,14 +4890,8 @@ export default function PortalLoginPage() {
                 'Send link'
               )}
             </button>
-          )}
-
-          {magicError && (
-            <p className="text-[11px]" style={{ color: '#E24B4A' }}>
-              {magicError}
-            </p>
-          )}
-        </form>
+          </form>
+        )}
       </div>
     </div>
   )
@@ -5976,7 +6006,11 @@ export default function TaskDetailPage() {
         <EditTaskModal
           isOpen={isEditOpen}
           onClose={() => setIsEditOpen(false)}
-          task={task}
+          task={{
+            ...task,
+            dueDate: task.dueDate ?? undefined,
+            notes: task.notes ?? undefined,
+          }}
           onSuccess={() => { refetch(); setIsEditOpen(false) }}
         />
       )}

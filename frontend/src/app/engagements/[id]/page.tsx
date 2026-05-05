@@ -15,7 +15,7 @@ import { CreateDocumentRequestModal } from '@/components/engagements/CreateDocum
 import { EditEngagementModal } from '@/components/engagements/EditEngagementModal'
 import { TaskTable } from '@/components/tasks/TaskTable'
 import { NotesTab, NotesPanel, useNotes } from '@/components/notes'
-import { cn } from '@/lib/utils'
+import { cn, formatEngagementType } from '@/lib/utils'
 import api from '@/lib/api'
 import { FileText } from 'lucide-react'
 
@@ -122,7 +122,7 @@ export default function EngagementDetailPage() {
             <div className="flex items-center gap-2">
               <StatusBadge variant={engagement.status as BadgeVariant} />
               <span className="text-[12px] text-[#6B7280]">
-                {engagement.engagementType ?? '—'}
+                {formatEngagementType(engagement.engagementType)}
                 {engagement.endDate ? ` · Due ${engagement.endDate}` : ''}
               </span>
             </div>
@@ -161,11 +161,13 @@ export default function EngagementDetailPage() {
               <div className="grid grid-cols-2 gap-x-6 gap-y-4">
                 <div className="flex flex-col gap-1">
                   <span className={labelClass}>Engagement type</span>
-                  <span className={valueClass}>{engagement.engagementType ?? '—'}</span>
+                  <span className={valueClass}>{formatEngagementType(engagement.engagementType)}</span>
                 </div>
                 <div className="flex flex-col gap-1">
                   <span className={labelClass}>Status</span>
-                  <StatusBadge variant={engagement.status as BadgeVariant} />
+                  <div className="w-fit">
+                    <StatusBadge variant={engagement.status as BadgeVariant} />
+                  </div>
                 </div>
                 <div className="flex flex-col gap-1">
                   <span className={labelClass}>Client</span>

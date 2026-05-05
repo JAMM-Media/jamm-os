@@ -25,11 +25,14 @@ export default function EngagementsPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [bulkLoading, setBulkLoading] = useState(false)
   const [statusDropOpen, setStatusDropOpen] = useState(false)
+  const [statusOverrides, setStatusOverrides] = useState<Record<string, string>>({})
 
   const { data, isLoading, error } = useFetch(() => engagementsApi.list(0, 100), [])
   const { data: clientsData, isLoading: clientsLoading } = useFetch(() => clientsApi.list(0, 100), [])
   const serverEngagements = data?.items ?? []
-  const engagements = [...localEngagements, ...serverEngagements]
+  const engagements = [...localEngagements, ...serverEngagements].map((e) =>
+    statusOverrides[e.id] ? { ...e, status: statusOverrides[e.id] } : e
+  )
 
   const clientMap: Record<string, string> = Object.fromEntries(
     (clientsData?.items ?? []).map((c) => [c.id, c.name])
@@ -64,6 +67,11 @@ export default function EngagementsPage() {
     setLocalEngagements((les) =>
       les.map((e) => selectedIds.has(e.id) ? { ...e, status: newStatus } : e)
     )
+    setStatusOverrides((prev) => {
+      const next = { ...prev }
+      ids.forEach((id) => { next[id] = newStatus })
+      return next
+    })
     try {
       await engagementsApi.bulkUpdate(ids, { status: newStatus })
       setSelectedIds(new Set())
@@ -95,7 +103,7 @@ export default function EngagementsPage() {
     return (
       <AppShell>
         <div className="flex flex-col h-full p-6 items-center justify-center">
-          <p className="text-sm text-[#991B1B]">Failed to load engagements.</p>
+          <p className="text-sm text-[#DC2626]">Failed to load engagements.</p>
         </div>
       </AppShell>
     )

@@ -76,7 +76,9 @@ export default function LoginPage() {
     <div className="min-h-screen flex">
       {/* Left panel */}
       <div className="hidden md:flex w-1/2 bg-brand flex-col items-center justify-center gap-3">
-        <span className="text-white text-2xl font-medium">JAMM PX</span>
+        <span className="text-white text-2xl font-medium">
+          JAMM <span style={{ color: '#B07D3A' }}>PX</span>
+        </span>
         <span className="text-brand-muted text-sm font-normal text-center px-8">
           Practice experience for accounting firms.
         </span>
@@ -86,13 +88,13 @@ export default function LoginPage() {
       <div className="flex flex-1 items-center justify-center bg-surface-page dark:bg-dark-page">
         <div className="w-[380px] bg-surface-card dark:bg-dark-card rounded-[10px] border border-surface-border p-8">
           <h1 className="text-base font-medium text-brand dark:text-[#EDEEF0] mb-6">
-            Sign in to JAMM PX
+            Sign in to JAMM <span style={{ color: '#B07D3A' }}>PX</span>
           </h1>
 
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
             {/* Email */}
             <div className="flex flex-col gap-1">
-              <label className="text-[11px] font-medium text-brand">Email</label>
+              <label className="text-[11px] font-medium text-[#6B7280]">Email</label>
               <input
                 type="email"
                 value={email}
@@ -105,7 +107,7 @@ export default function LoginPage() {
 
             {/* Password */}
             <div className="flex flex-col gap-1">
-              <label className="text-[11px] font-medium text-brand">Password</label>
+              <label className="text-[11px] font-medium text-[#6B7280]">Password</label>
               <div className="relative">
                 <input
                   type={showPassword ? 'text' : 'password'}
@@ -131,7 +133,7 @@ export default function LoginPage() {
             {/* TOTP */}
             {showTotp && (
               <div className="flex flex-col gap-1">
-                <label className="text-[11px] font-medium text-brand">
+                <label className="text-[11px] font-medium text-[#6B7280]">
                   Authenticator Code
                 </label>
                 <input

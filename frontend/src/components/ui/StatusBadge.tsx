@@ -23,6 +23,10 @@ type BadgeVariant =
   | 'not_started'
   | 'cancelled'
   | 'todo'
+  | 'completed'
+  | 'archived'
+  | 'in_review'
+  | 'done'
 
 interface StatusBadgeProps {
   variant: BadgeVariant
@@ -137,6 +141,27 @@ const variantConfig: Record<BadgeVariant, { bg: string; text: string; border?: s
     text: 'text-brand',
     border: 'border border-[0.5px] border-brand',
     defaultLabel: 'To Do',
+  },
+  completed: {
+    bg: 'bg-status-green',
+    text: 'text-status-green-text',
+    defaultLabel: 'Completed',
+  },
+  archived: {
+    bg: 'bg-[#E5E7EB]',
+    text: 'text-[#6B7280]',
+    border: 'border border-[0.5px] border-[#C8CDD6]',
+    defaultLabel: 'Archived',
+  },
+  in_review: {
+    bg: 'bg-status-amber',
+    text: 'text-status-amber-text',
+    defaultLabel: 'In Review',
+  },
+  done: {
+    bg: 'bg-status-green',
+    text: 'text-status-green-text',
+    defaultLabel: 'Done',
   },
 }
 

@@ -3,6 +3,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import api from '@/lib/api'
+import { useAuth } from '@/lib/hooks/useAuth'
 
 export interface Note {
   id: string
@@ -12,6 +13,19 @@ export interface Note {
   authorRole: string
   createdAt: string
   isRead: boolean
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function mapNote(raw: any): Note {
+  return {
+    id: raw.id,
+    body: raw.body,
+    isPrivate: raw.is_private ?? raw.isPrivate ?? false,
+    authorName: raw.author_name ?? raw.authorName ?? 'Unknown',
+    authorRole: raw.author_role ?? raw.authorRole ?? 'staff',
+    createdAt: raw.created_at ?? raw.createdAt ?? new Date().toISOString(),
+    isRead: raw.is_read ?? raw.isRead ?? false,
+  }
 }
 
 interface UseNotesOptions {
@@ -31,13 +45,14 @@ interface UseNotesReturn {
 export function useNotes({ entityType, entityId }: UseNotesOptions): UseNotesReturn {
   const [notes, setNotes] = useState<Note[]>([])
   const [isLoading, setIsLoading] = useState(false)
+  const { user } = useAuth()
 
   useEffect(() => {
     if (!entityId) return
     setIsLoading(true)
     api
       .get<Note[]>('/notes', { params: { entity_type: entityType, entity_id: entityId } })
-      .then((res) => setNotes(res.data))
+      .then((res) => setNotes(res.data.map(mapNote)))
       .catch(() => setNotes([]))
       .finally(() => setIsLoading(false))
   }, [entityType, entityId])
@@ -50,7 +65,7 @@ export function useNotes({ entityType, entityId }: UseNotesOptions): UseNotesRet
         id: `temp-${Date.now()}`,
         body,
         isPrivate,
-        authorName: 'You',
+        authorName: user?.full_name ?? 'You',
         authorRole: 'staff',
         createdAt: new Date().toISOString(),
         isRead: true,
@@ -60,7 +75,7 @@ export function useNotes({ entityType, entityId }: UseNotesOptions): UseNotesRet
       api
         .post<Note>('/notes', { body, entity_type: entityType, entity_id: entityId, is_private: isPrivate })
         .then((res) => {
-          setNotes((prev) => prev.map((n) => (n.id === optimistic.id ? res.data : n)))
+          setNotes((prev) => prev.map((n) => (n.id === optimistic.id ? mapNote(res.data) : n)))
         })
         .catch(() => {
           setNotes((prev) => prev.filter((n) => n.id !== optimistic.id))

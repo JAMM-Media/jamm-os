@@ -4,6 +4,7 @@
 import { useRouter } from 'next/navigation'
 import { type Engagement } from '@/lib/api'
 import { StatusBadge } from '@/components/ui/StatusBadge'
+import { formatEngagementType } from '@/lib/utils'
 
 interface EngagementCardProps {
   engagement: Engagement
@@ -34,7 +35,7 @@ export function EngagementCard({ engagement, clientMap = {}, lookupsLoading = fa
       </div>
       <div className="flex items-center justify-between mt-1">
         <span className="text-[11px] text-[#6B7280]">
-          {engagement.engagementType ?? ''}
+          {formatEngagementType(engagement.engagementType)}
         </span>
         {engagement.endDate && (
           <span className="text-[11px] text-[#6B7280]">

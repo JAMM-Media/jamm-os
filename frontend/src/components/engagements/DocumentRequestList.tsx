@@ -86,7 +86,7 @@ function ProgressBar({ items }: { items: ChecklistItem[] }) {
   else if (done > 0) fillColor = '#F59E0B'
 
   return (
-    <div className="mt-2 h-[4px] rounded-[2px] bg-[#C8CDD6] dark:bg-[#484848] overflow-hidden">
+    <div className="mt-2 mb-1 h-[4px] rounded-[2px] bg-[#C8CDD6] dark:bg-[#484848] overflow-hidden">
       <div
         className="h-full rounded-[2px] transition-all duration-300"
         style={{ width: `${pct}%`, backgroundColor: fillColor }}
@@ -237,6 +237,24 @@ function RequestCard({
               {approvedCount} item{approvedCount !== 1 ? 's' : ''} approved
             </p>
           )}
+          <div className="flex items-center gap-4 mt-3 pt-2 border-t border-[0.5px] border-[#C8CDD6] dark:border-[#484848]">
+            <div className="flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-full bg-[#10B981] inline-block" />
+              <span className="text-[10px] text-[#6B7280]">Approved</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-full bg-[#F59E0B] inline-block" />
+              <span className="text-[10px] text-[#6B7280]">Uploaded</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-full border border-[#C8CDD6] inline-block" />
+              <span className="text-[10px] text-[#6B7280]">Pending</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-full bg-[#EF4444] inline-block" />
+              <span className="text-[10px] text-[#6B7280]">Rejected</span>
+            </div>
+          </div>
         </div>
       )}
     </div>

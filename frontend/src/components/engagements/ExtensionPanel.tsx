@@ -39,7 +39,7 @@ function deadlineColor(dateStr: string): string {
   const now = new Date()
   const diffMs = deadline.getTime() - now.getTime()
   const diffDays = diffMs / (1000 * 60 * 60 * 24)
-  if (diffDays < 0) return 'text-[#991B1B]'
+  if (diffDays < 0) return 'text-[#DC2626]'
   if (diffDays <= 30) return 'text-[#92400E]'
   return ''
 }

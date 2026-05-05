@@ -80,7 +80,7 @@ export default function TaskDetailPage() {
           </div>
           <div className="bg-surface-card dark:bg-dark-card rounded-card p-4">
             <p className="text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em] mb-2">Completed</p>
-            <p className="text-[13px] text-brand dark:text-[#EDEEF0]">{task.isCompleted ? 'Yes' : 'No'}</p>
+            <p className="text-[13px] text-brand dark:text-[#EDEEF0]">{task.status === 'done' || task.isCompleted ? 'Yes' : 'No'}</p>
           </div>
         </div>
 
