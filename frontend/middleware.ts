@@ -9,6 +9,8 @@ const PUBLIC_PATHS = [
   '/portal',
   '/_next',
   '/favicon.ico',
+  '/favicon.svg',
+  '/logo.svg',
 ]
 
 export function middleware(request: NextRequest) {
@@ -40,6 +42,6 @@ export const config = {
      * - _next/image (image optimization)
      * - favicon.ico
      */
-    '/((?!_next/static|_next/image|favicon\\.ico).*)',
+    '/((?!_next/static|_next/image|favicon\\.ico|favicon\\.svg|logo\\.svg).*)',
   ],
 }

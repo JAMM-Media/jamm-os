@@ -1,22 +1,15 @@
-## Current Task — Fix TypeScript error in documents page for Vercel build
+## Current Task — Fix middleware to allow favicon.svg
 
-File: frontend/src/app/documents/page.tsx
+File: frontend/middleware.ts
 
-Build error:
-Type error: Type '{ documents: Document[]; view: "table"; onUpload: () => void | undefined; }'
-is not assignable to type 'IntrinsicAttributes & DocumentTableProps'.
-Property 'view' does not exist on type 'IntrinsicAttributes & DocumentTableProps'.
+Two changes needed:
 
-Read both files:
-- frontend/src/app/documents/page.tsx
-- frontend/src/components/documents/DocumentTable.tsx
+1. Add '/favicon.svg' and '/logo.svg' to the PUBLIC_PATHS array
 
-The DocumentTable component doesn't accept a 'view' prop but the page
-is passing one. Fix by removing the view prop from the DocumentTable
-usage in documents/page.tsx.
+2. Update the matcher regex to also exclude .svg files in the
+   public directory. Change:
+   '/((?!_next/static|_next/image|favicon\\.ico).*)'
+   To:
+   '/((?!_next/static|_next/image|favicon\\.ico|favicon\\.svg|logo\\.svg).*)'
 
-After fixing run:
-cd frontend && npx tsc --noEmit
-
-If there are more errors fix them all. Report every file changed
-and the final tsc output.
+No tsc check needed. No pytest needed. Just make the change and report back.
