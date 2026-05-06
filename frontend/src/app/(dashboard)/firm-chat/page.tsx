@@ -158,7 +158,10 @@ export default function FirmChatPage() {
 
   useEffect(() => {
     if (!openDropdownId) return
-    const handler = () => setOpenDropdownId(null)
+    const handler = (e: MouseEvent) => {
+      if (dropdownRef.current && dropdownRef.current.contains(e.target as Node)) return
+      setOpenDropdownId(null)
+    }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
   }, [openDropdownId])
@@ -167,6 +170,7 @@ export default function FirmChatPage() {
   const [composeValue, setComposeValue] = useState('')
   const [composeMentions, setComposeMentions] = useState<string[]>([])
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const dropdownRef = useRef<HTMLDivElement>(null)
 
   // ─── @mention popover ────────────────────────────────────────────────────
   const [showMentionPopover, setShowMentionPopover] = useState(false)
@@ -545,8 +549,8 @@ export default function FirmChatPage() {
                     {/* Dropdown menu */}
                     {openDropdownId === ch.id && (
                       <div
+                        ref={dropdownRef}
                         className="absolute right-2 top-full mt-1 z-20 bg-surface-card dark:bg-dark-card border border-[#C8CDD6] dark:border-[#484848] rounded-lg shadow-md overflow-hidden"
-                        onMouseDown={(e) => e.stopPropagation()}
                       >
                         <button
                           onClick={() => openRenameModal(ch.id, ch.name)}

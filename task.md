@@ -2,58 +2,61 @@ STANDING RULES:
 - Never use passlib. Use bcrypt directly.
 - Background tasks must create their own SessionLocal() in try/finally.
 
-TASK: Fix firm chat — ... dropdown Manage Members click not registering
+TASK: Fix firm chat dropdown — Rename, Manage Members, Delete all broken
 
 FILE TO EDIT: frontend/src/app/(dashboard)/firm-chat/page.tsx
 
-PROBLEM: The ... button on channel rows is only visible when
-isHovered === true. When the user moves the mouse from the channel row
-to the dropdown menu, isHovered goes false, which hides the ... button.
-This can cause the dropdown to flicker or the click to not register.
+PROBLEM: The global mousedown handler fires on document before React's
+synthetic event system processes stopPropagation. So clicking any
+dropdown item closes the dropdown before the click handler fires.
 
-FIX: Change the ... button visibility condition so it shows when EITHER
-the channel is hovered OR its dropdown is open.
+FIX — 3 changes:
 
-Find this condition on the ... button:
-  {isFirmOwner && isHovered && (
-    <button
-      onClick={(e) => {
-        e.stopPropagation()
-        setOpenDropdownId((prev) => (prev === ch.id ? null : ch.id))
-      }}
+CHANGE 1: Add a dropdownRef near the other refs (around line 832
+where textareaRef is declared):
 
-Change it to:
-  {isFirmOwner && (isHovered || openDropdownId === ch.id) && (
-    <button
-      onClick={(e) => {
-        e.stopPropagation()
-        setOpenDropdownId((prev) => (prev === ch.id ? null : ch.id))
-      }}
+  const dropdownRef = useRef<HTMLDivElement>(null)
 
-This ensures the ... button stays visible while its dropdown is open,
-preventing the dropdown from disappearing mid-interaction.
+CHANGE 2: Replace the existing useEffect that listens for mousedown:
 
-Also: the global mousedown handler closes the dropdown on any click
-outside. The dropdown div has onMouseDown stopPropagation but the
-individual menu buttons inside it do not. Add onMouseDown stopPropagation
-to the Manage Members button inside the dropdown:
+Find this exact block:
+  useEffect(() => {
+    if (!openDropdownId) return
+    const handler = () => setOpenDropdownId(null)
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [openDropdownId])
 
-Find:
-  <button
-    onClick={(e) => { e.stopPropagation(); openMembersModal(ch.id) }}
-    className="block w-full text-left px-3 py-2 text-[13px] text-[#374151] dark:text-[#9CA3AF] hover:bg-[#D5D8DE] dark:hover:bg-[#444444] transition-colors whitespace-nowrap"
-  >
-    Manage Members
-  </button>
+Replace it with:
+  useEffect(() => {
+    if (!openDropdownId) return
+    const handler = (e: MouseEvent) => {
+      if (dropdownRef.current && dropdownRef.current.contains(e.target as Node)) return
+      setOpenDropdownId(null)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [openDropdownId])
 
-Change to:
-  <button
-    onClick={(e) => { e.stopPropagation(); openMembersModal(ch.id) }}
+CHANGE 3: Attach the ref to the dropdown div and remove the
+onMouseDown from it.
+
+Find this exact block:
+  <div
+    className="absolute right-2 top-full mt-1 z-20 bg-surface-card dark:bg-dark-card border border-[#C8CDD6] dark:border-[#484848] rounded-lg shadow-md overflow-hidden"
     onMouseDown={(e) => e.stopPropagation()}
-    className="block w-full text-left px-3 py-2 text-[13px] text-[#374151] dark:text-[#9CA3AF] hover:bg-[#D5D8DE] dark:hover:bg-[#444444] transition-colors whitespace-nowrap"
   >
-    Manage Members
-  </button>
 
-Show the updated ... button condition and the updated Manage Members
-button after making changes.
+Replace with:
+  <div
+    ref={dropdownRef}
+    className="absolute right-2 top-full mt-1 z-20 bg-surface-card dark:bg-dark-card border border-[#C8CDD6] dark:border-[#484848] rounded-lg shadow-md overflow-hidden"
+  >
+
+Do NOT change any of the buttons inside the dropdown.
+Do NOT change any other onMouseDown handlers elsewhere in the file.
+
+After making changes show:
+1. The dropdownRef declaration
+2. The updated useEffect
+3. The dropdown div with ref
