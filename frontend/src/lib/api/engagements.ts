@@ -23,7 +23,7 @@ function mapEngagement(raw: Record<string, unknown>): Engagement {
     id: String(raw.id),
     name: String(raw.name ?? raw.title ?? ''),
     description: raw.description ? String(raw.description) : null,
-    status: String(raw.status ?? 'planning').replace(/_/g, '-'),
+    status: String(raw.status ?? 'planning'),
     startDate: raw.start_date ? String(raw.start_date) : null,
     endDate: raw.end_date ? String(raw.end_date) : null,
     filingDeadline: raw.filing_deadline ? String(raw.filing_deadline) : null,

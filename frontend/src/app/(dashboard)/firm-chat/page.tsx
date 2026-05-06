@@ -67,15 +67,18 @@ function isSameSenderWithin5Min(
   return Math.abs(new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()) < 5 * 60 * 1000
 }
 
-function renderBody(body: string, mentions: string[], staffMap?: Map<string, string>): ReactNode {
+function renderBody(body: string, _mentions: string[], staffMap?: Map<string, string>): ReactNode {
   if (!body) return <>{body}</>
-  // Build a list of name patterns to highlight
-  // If staffMap provided, map UUIDs to names; otherwise use mentions as-is
-  const namePatterns: string[] = mentions
-    .map((m) => staffMap?.get(m) ?? m)
-    .filter(Boolean)
-  if (namePatterns.length === 0) {
-    // Fallback: highlight any @word patterns in the body directly
+
+  // Build set of known staff names for matching
+  const staffNames = staffMap ? Array.from(staffMap.values()) : []
+
+  // Find all @Name occurrences in the body that match a staff name
+  // Sort by length descending so "Sarah Chen" matches before "Sarah"
+  const sortedNames = [...staffNames].sort((a, b) => b.length - a.length)
+
+  if (sortedNames.length === 0) {
+    // Fallback: highlight any @word in body
     const parts: ReactNode[] = []
     const regex = /@(\S+)/g
     let last = 0
@@ -94,29 +97,27 @@ function renderBody(body: string, mentions: string[], staffMap?: Map<string, str
     if (last < body.length) parts.push(<span key={last}>{body.slice(last)}</span>)
     return found ? <>{parts}</> : <>{body}</>
   }
+
+  // Build regex that matches @Name for any known staff name
+  const escaped = sortedNames.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+  const pattern = new RegExp(`@(${escaped.join('|')})(?=\\s|$|[^\\w])`, 'gi')
+
   const parts: ReactNode[] = []
-  let remaining = body
-  let key = 0
-  let foundAny = false
-  for (const name of namePatterns) {
-    const pattern = `@${name}`
-    const idx = remaining.indexOf(pattern)
-    if (idx === -1) continue
-    foundAny = true
-    if (idx > 0) parts.push(<span key={key++}>{remaining.slice(0, idx)}</span>)
+  let last = 0
+  let match
+  let found = false
+  while ((match = pattern.exec(body)) !== null) {
+    found = true
+    if (match.index > last) parts.push(<span key={last}>{body.slice(last, match.index)}</span>)
     parts.push(
-      <span
-        key={key++}
-        className="bg-status-blue text-status-blue-text rounded px-1 font-medium"
-      >
-        {pattern}
+      <span key={match.index} className="bg-status-blue text-status-blue-text rounded px-1 font-medium">
+        {match[0]}
       </span>
     )
-    remaining = remaining.slice(idx + pattern.length)
+    last = match.index + match[0].length
   }
-  if (remaining.length > 0) parts.push(<span key={key++}>{remaining}</span>)
-  if (!foundAny) return <>{body}</>
-  return <>{parts}</>
+  if (last < body.length) parts.push(<span key={last}>{body.slice(last)}</span>)
+  return found ? <>{parts}</> : <>{body}</>
 }
 
 function getMentionQuery(value: string, cursor: number): string | null {

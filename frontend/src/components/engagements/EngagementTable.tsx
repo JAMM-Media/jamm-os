@@ -4,6 +4,7 @@
 import { useRouter } from 'next/navigation'
 import { type Engagement } from '@/lib/api'
 import { StatusBadge } from '@/components/ui/StatusBadge'
+import { formatEngagementType } from '@/lib/utils'
 
 interface EngagementTableProps {
   engagements: Engagement[]
@@ -99,7 +100,7 @@ export function EngagementTable({
                 </td>
                 <td className="px-4 py-3">
                   <span className="text-[12px] text-[#374151] dark:text-[#9CA3AF]">
-                    {eng.engagementType ?? '—'}
+                    {formatEngagementType(eng.engagementType ?? '')}
                   </span>
                 </td>
                 <td className="px-4 py-3">
