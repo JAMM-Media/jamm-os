@@ -169,6 +169,7 @@ export default function FirmChatPage() {
   // ─── Compose box ─────────────────────────────────────────────────────────
   const [composeValue, setComposeValue] = useState('')
   const [composeMentions, setComposeMentions] = useState<string[]>([])
+  const [composeMentionIds, setComposeMentionIds] = useState<string[]>([])
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const dropdownRef = useRef<HTMLDivElement>(null)
 
@@ -176,12 +177,25 @@ export default function FirmChatPage() {
   const [showMentionPopover, setShowMentionPopover] = useState(false)
   const [mentionQuery, setMentionQuery] = useState('')
   const [staffList, setStaffList] = useState<StaffMember[]>([])
+  const [mentionIndex, setMentionIndex] = useState(0)
 
   useEffect(() => {
-    if (showMentionPopover && staffList.length === 0) {
-      api.get<StaffMember[]>('/staff').then((res) => setStaffList(res.data)).catch(() => {})
+    if (staffList.length === 0) {
+      api.get('/users/').then((res) => {
+        const items = Array.isArray(res.data) ? res.data : (res.data.items ?? [])
+        setStaffList(items.map((u: Record<string, unknown>) => ({
+          id: String(u.id),
+          name: String(u.full_name ?? u.name ?? ''),
+          initials: String(u.full_name ?? u.name ?? '')
+            .split(' ')
+            .map((p: string) => p[0] ?? '')
+            .join('')
+            .slice(0, 2)
+            .toUpperCase(),
+        })))
+      }).catch(() => {})
     }
-  }, [showMentionPopover, staffList.length])
+  }, [staffList.length])
 
   const filteredStaff = staffList.filter((s) =>
     s.name.toLowerCase().startsWith(mentionQuery.toLowerCase())
@@ -215,6 +229,7 @@ export default function FirmChatPage() {
     setOpenDropdownId(null)
     setComposeValue('')
     setComposeMentions([])
+    setComposeMentionIds([])
     setShowMentionPopover(false)
   }
 
@@ -229,12 +244,34 @@ export default function FirmChatPage() {
     if (query !== null) {
       setMentionQuery(query)
       setShowMentionPopover(true)
+      setMentionIndex(0)
     } else {
       setShowMentionPopover(false)
     }
   }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (showMentionPopover && filteredStaff.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        setMentionIndex((prev) => (prev + 1) % filteredStaff.length)
+        return
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        setMentionIndex((prev) => (prev - 1 + filteredStaff.length) % filteredStaff.length)
+        return
+      }
+      if (e.key === 'Enter') {
+        e.preventDefault()
+        handleMentionSelect(filteredStaff[mentionIndex])
+        return
+      }
+      if (e.key === 'Escape') {
+        setShowMentionPopover(false)
+        return
+      }
+    }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       handleSend()
@@ -243,9 +280,10 @@ export default function FirmChatPage() {
 
   const handleSend = () => {
     if (!composeValue.trim() || !activeChannelId) return
-    sendMessage(composeValue.trim(), composeMentions)
+    sendMessage(composeValue.trim(), composeMentionIds)
     setComposeValue('')
     setComposeMentions([])
+    setComposeMentionIds([])
     setShowMentionPopover(false)
     if (textareaRef.current) textareaRef.current.style.height = '40px'
   }
@@ -258,8 +296,10 @@ export default function FirmChatPage() {
       const after = composeValue.slice(cursor)
       setComposeValue(`${before}@${staff.name} ${after}`)
       setComposeMentions((prev) => [...prev, staff.name])
+      setComposeMentionIds((prev) => [...prev, staff.id])
     }
     setShowMentionPopover(false)
+    setTimeout(() => textareaRef.current?.focus(), 0)
   }
 
   const handleCreateChannel = () => {
@@ -620,14 +660,19 @@ export default function FirmChatPage() {
                 {showMentionPopover && filteredStaff.length > 0 && (
                   <div className="absolute bottom-full left-4 right-4 mb-1 bg-surface-card dark:bg-dark-card border border-[#C8CDD6] dark:border-[#484848] rounded-lg overflow-y-auto shadow-md z-10"
                     style={{ maxHeight: '200px' }}>
-                    {filteredStaff.map((staff) => (
+                    {filteredStaff.map((staff, idx) => (
                       <button
                         key={staff.id}
                         onMouseDown={(e) => {
                           e.preventDefault()
                           handleMentionSelect(staff)
                         }}
-                        className="flex items-center gap-2 w-full px-3 py-2 text-[13px] text-[#374151] dark:text-[#9CA3AF] hover:bg-[#D5D8DE] dark:hover:bg-[#444444] transition-colors text-left"
+                        onMouseEnter={() => setMentionIndex(idx)}
+                        className={`flex items-center gap-2 w-full px-3 py-2 text-[13px] text-[#374151] dark:text-[#9CA3AF] transition-colors text-left ${
+                          idx === mentionIndex
+                            ? 'bg-[#D5D8DE] dark:bg-[#444444]'
+                            : 'hover:bg-[#D5D8DE] dark:hover:bg-[#444444]'
+                        }`}
                       >
                         <div
                           className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0"
