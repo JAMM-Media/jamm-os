@@ -21,7 +21,7 @@ class LineItemSchema(BaseModel):
 
 class InvoiceBase(BaseModel):
     invoice_number: str
-    line_items: list[LineItemSchema]
+    line_items: list[LineItemSchema] = []
     subtotal: Decimal
     tax_rate: Decimal = Decimal("0.0")
     tax_amount: Decimal = Decimal("0.0")
@@ -65,6 +65,7 @@ class InvoiceOut(InvoiceBase):
     created_at: datetime
     updated_at: datetime
     is_deleted: bool
+    line_items: list[LineItemSchema] = []
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -77,7 +78,7 @@ class BulkInvoiceUpdate(BaseModel):
 class PortalInvoiceOut(BaseModel):
     id: uuid.UUID
     invoice_number: str
-    line_items: list[LineItemSchema]
+    line_items: list[LineItemSchema] = []
     subtotal: Decimal
     tax_rate: Decimal
     tax_amount: Decimal
