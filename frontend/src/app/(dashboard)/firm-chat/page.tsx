@@ -151,6 +151,8 @@ export default function FirmChatPage() {
   const [membersLoading, setMembersLoading] = useState(false)
   const [addMemberSearch, setAddMemberSearch] = useState('')
   const [addMemberLoading, setAddMemberLoading] = useState(false)
+  const [memberSearchResults, setMemberSearchResults] = useState<StaffMember[]>([])
+  const [memberSearchLoading, setMemberSearchLoading] = useState(false)
   const [openDropdownId, setOpenDropdownId] = useState<string | null>(null)
   const [hoveredChannelId, setHoveredChannelId] = useState<string | null>(null)
 
@@ -304,6 +306,18 @@ export default function FirmChatPage() {
       setChannelMembers([])
     } finally {
       setMembersLoading(false)
+    }
+    // Fetch staff list for member search
+    if (memberSearchResults.length === 0) {
+      setMemberSearchLoading(true)
+      api.get('/users/').then((res) => {
+        const items = Array.isArray(res.data) ? res.data : (res.data.items ?? [])
+        setMemberSearchResults(items.map((u: Record<string, unknown>) => ({
+          id: String(u.id),
+          name: String(u.full_name ?? u.name ?? ''),
+          initials: String(u.full_name ?? u.name ?? '').split(' ').map((p: string) => p[0]).join('').slice(0, 2).toUpperCase(),
+        })))
+      }).catch(() => {}).finally(() => setMemberSearchLoading(false))
     }
   }
 
@@ -772,23 +786,34 @@ export default function FirmChatPage() {
                     placeholder="Search by name..."
                     className={inputClass}
                   />
-                  {addMemberSearch && staffList.length > 0 && (
+                  {addMemberSearch && (
                     <div className="absolute top-full left-0 right-0 mt-1 bg-surface-card dark:bg-dark-card border border-[#C8CDD6] dark:border-[#484848] rounded-lg shadow-lg z-10 max-h-[160px] overflow-y-auto">
-                      {staffList
-                        .filter((s) =>
-                          s.name.toLowerCase().includes(addMemberSearch.toLowerCase()) &&
-                          !channelMembers.some((m) => m.userId === s.id)
-                        )
-                        .map((s) => (
-                          <button
-                            key={s.id}
-                            onClick={() => handleAddMember(s.id)}
-                            disabled={addMemberLoading}
-                            className="w-full text-left px-3 py-2 text-[13px] text-[#374151] dark:text-[#9CA3AF] hover:bg-[#D5D8DE] dark:hover:bg-[#444444] transition-colors disabled:opacity-50"
-                          >
-                            {s.name}
-                          </button>
-                        ))}
+                      {memberSearchLoading ? (
+                        <div className="px-3 py-2 text-[13px] text-[#6B7280]">Loading...</div>
+                      ) : memberSearchResults
+                          .filter((s) =>
+                            s.name.toLowerCase().includes(addMemberSearch.toLowerCase()) &&
+                            !channelMembers.some((m) => m.userId === s.id)
+                          )
+                          .length === 0 ? (
+                        <div className="px-3 py-2 text-[13px] text-[#6B7280]">No staff found</div>
+                      ) : (
+                        memberSearchResults
+                          .filter((s) =>
+                            s.name.toLowerCase().includes(addMemberSearch.toLowerCase()) &&
+                            !channelMembers.some((m) => m.userId === s.id)
+                          )
+                          .map((s) => (
+                            <button
+                              key={s.id}
+                              onClick={() => handleAddMember(s.id)}
+                              disabled={addMemberLoading}
+                              className="w-full text-left px-3 py-2 text-[13px] text-[#374151] dark:text-[#9CA3AF] hover:bg-[#D5D8DE] dark:hover:bg-[#444444] transition-colors disabled:opacity-50"
+                            >
+                              {s.name}
+                            </button>
+                          ))
+                      )}
                     </div>
                   )}
                 </div>
