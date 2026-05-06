@@ -584,6 +584,25 @@ export default function FirmChatPage() {
             </div>
           ) : (
             <>
+              {/* Channel header */}
+              <div
+                className="flex-shrink-0 flex items-center justify-between px-4 border-b border-[#C8CDD6] dark:border-[#484848] bg-surface-page dark:bg-dark-page"
+                style={{ height: 48 }}
+              >
+                <span className="text-[13px] font-medium text-[#1F3148] dark:text-[#EDEEF0]">
+                  #{activeChannel?.name ?? ''}
+                </span>
+                {isFirmOwner && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); openMembersModal(activeChannelId) }}
+                    className="flex items-center gap-1.5 h-7 px-3 rounded-md text-[12px] font-medium text-[#4A7FA5] border border-[#C8CDD6] dark:border-[#484848] hover:bg-[#D5D8DE] dark:hover:bg-dark-card transition-colors"
+                  >
+                    <Users className="w-[12px] h-[12px]" />
+                    Members
+                  </button>
+                )}
+              </div>
+
               {/* Messages list */}
               <div className="flex-1 overflow-y-auto">
                 {renderMessages()}
@@ -751,121 +770,121 @@ export default function FirmChatPage() {
           </div>
         </div>
       )}
-        {/* ── Manage Members Modal ─────────────────────────────────────── */}
-        {showMembersModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center">
-            <div
-              className="absolute inset-0 bg-black/35"
-              onClick={() => setShowMembersModal(false)}
-            />
-            <div className="relative z-10 w-[420px] bg-surface-card dark:bg-dark-card rounded-[10px] border border-[#C8CDD6] dark:border-[#484848] shadow-xl">
-              {/* Header */}
-              <div className="flex items-center justify-between px-4 py-3 border-b border-[#C8CDD6] dark:border-[#484848]">
-                <div className="flex items-center gap-2">
-                  <Users className="w-[14px] h-[14px] text-[#6B7280]" />
-                  <span className="text-[13px] font-medium text-[#1F3148] dark:text-[#EDEEF0]">
-                    Manage Members
-                  </span>
-                </div>
-                <button
-                  onClick={() => setShowMembersModal(false)}
-                  className="text-[#6B7280] hover:text-[#1F3148] dark:hover:text-[#EDEEF0] transition-colors"
-                >
-                  <X className="w-[14px] h-[14px]" />
-                </button>
+      {/* ── Manage Members Modal ─────────────────────────────────────── */}
+      {showMembersModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div
+            className="absolute inset-0 bg-black/35"
+            onClick={() => setShowMembersModal(false)}
+          />
+          <div className="relative z-10 w-[420px] bg-surface-card dark:bg-dark-card rounded-[10px] border border-[#C8CDD6] dark:border-[#484848] shadow-xl">
+            {/* Header */}
+            <div className="flex items-center justify-between px-4 py-3 border-b border-[#C8CDD6] dark:border-[#484848]">
+              <div className="flex items-center gap-2">
+                <Users className="w-[14px] h-[14px] text-[#6B7280]" />
+                <span className="text-[13px] font-medium text-[#1F3148] dark:text-[#EDEEF0]">
+                  Manage Members
+                </span>
               </div>
+              <button
+                onClick={() => setShowMembersModal(false)}
+                className="text-[#6B7280] hover:text-[#1F3148] dark:hover:text-[#EDEEF0] transition-colors"
+              >
+                <X className="w-[14px] h-[14px]" />
+              </button>
+            </div>
 
-              {/* Add member search */}
-              <div className="px-4 pt-3 pb-2">
-                <label className={labelClass}>Add staff member</label>
-                <div className="relative">
-                  <input
-                    type="text"
-                    value={addMemberSearch}
-                    onChange={(e) => setAddMemberSearch(e.target.value)}
-                    placeholder="Search by name..."
-                    className={inputClass}
-                  />
-                  {addMemberSearch && (
-                    <div className="absolute top-full left-0 right-0 mt-1 bg-surface-card dark:bg-dark-card border border-[#C8CDD6] dark:border-[#484848] rounded-lg shadow-lg z-10 max-h-[160px] overflow-y-auto">
-                      {memberSearchLoading ? (
-                        <div className="px-3 py-2 text-[13px] text-[#6B7280]">Loading...</div>
-                      ) : memberSearchResults.filter((s) =>
+            {/* Add member search */}
+            <div className="px-4 pt-3 pb-2">
+              <label className={labelClass}>Add staff member</label>
+              <div className="relative">
+                <input
+                  type="text"
+                  value={addMemberSearch}
+                  onChange={(e) => setAddMemberSearch(e.target.value)}
+                  placeholder="Search by name..."
+                  className={inputClass}
+                />
+                {addMemberSearch && (
+                  <div className="absolute top-full left-0 right-0 mt-1 bg-surface-card dark:bg-dark-card border border-[#C8CDD6] dark:border-[#484848] rounded-lg shadow-lg z-10 max-h-[160px] overflow-y-auto">
+                    {memberSearchLoading ? (
+                      <div className="px-3 py-2 text-[13px] text-[#6B7280]">Loading...</div>
+                    ) : memberSearchResults.filter((s) =>
+                        s.name.toLowerCase().includes(addMemberSearch.toLowerCase()) &&
+                        !channelMembers.some((m) => m.userId === s.id)
+                      ).length === 0 ? (
+                      <div className="px-3 py-2 text-[13px] text-[#6B7280]">No staff found</div>
+                    ) : (
+                      memberSearchResults
+                        .filter((s) =>
                           s.name.toLowerCase().includes(addMemberSearch.toLowerCase()) &&
                           !channelMembers.some((m) => m.userId === s.id)
-                        ).length === 0 ? (
-                        <div className="px-3 py-2 text-[13px] text-[#6B7280]">No staff found</div>
-                      ) : (
-                        memberSearchResults
-                          .filter((s) =>
-                            s.name.toLowerCase().includes(addMemberSearch.toLowerCase()) &&
-                            !channelMembers.some((m) => m.userId === s.id)
-                          )
-                          .map((s) => (
-                            <button
-                              key={s.id}
-                              onClick={() => handleAddMember(s.id)}
-                              disabled={addMemberLoading}
-                              className="w-full text-left px-3 py-2 text-[13px] text-[#374151] dark:text-[#9CA3AF] hover:bg-[#D5D8DE] dark:hover:bg-[#444444] transition-colors disabled:opacity-50 flex items-center gap-2"
+                        )
+                        .map((s) => (
+                          <button
+                            key={s.id}
+                            onClick={() => handleAddMember(s.id)}
+                            disabled={addMemberLoading}
+                            className="w-full text-left px-3 py-2 text-[13px] text-[#374151] dark:text-[#9CA3AF] hover:bg-[#D5D8DE] dark:hover:bg-[#444444] transition-colors disabled:opacity-50 flex items-center gap-2"
+                          >
+                            <div
+                              className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 text-white text-[10px] font-medium"
+                              style={{ backgroundColor: '#4A7FA5' }}
                             >
-                              <div
-                                className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 text-white text-[10px] font-medium"
-                                style={{ backgroundColor: '#4A7FA5' }}
-                              >
-                                {s.initials}
-                              </div>
-                              {s.name}
-                            </button>
-                          ))
-                      )}
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Current members list */}
-              <div className="px-4 pb-4">
-                <p className="text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em] mb-2 mt-2">
-                  Current Members
-                </p>
-                {membersLoading ? (
-                  <div className="space-y-2">
-                    {[...Array(3)].map((_, i) => (
-                      <div key={i} className="h-8 bg-[#D5D8DE] dark:bg-[#444444] rounded animate-pulse" />
-                    ))}
-                  </div>
-                ) : channelMembers.length === 0 ? (
-                  <p className="text-[12px] text-[#6B7280] text-center py-4">
-                    No members yet. Add staff above.
-                  </p>
-                ) : (
-                  <div className="space-y-1">
-                    {channelMembers.map((m) => (
-                      <div
-                        key={m.id}
-                        className="flex items-center justify-between px-2 py-1.5 rounded-md hover:bg-[#F3F4F6] dark:hover:bg-[#333333]"
-                      >
-                        <div>
-                          <p className="text-[13px] font-medium text-[#1F3148] dark:text-[#EDEEF0]">
-                            {m.userFullName}
-                          </p>
-                          <p className="text-[11px] text-[#6B7280]">{m.userEmail}</p>
-                        </div>
-                        <button
-                          onClick={() => handleRemoveMember(m.userId)}
-                          className="text-[#6B7280] hover:text-[#DC2626] transition-colors p-1"
-                          title="Remove member"
-                        >
-                          <UserMinus className="w-[13px] h-[13px]" />
-                        </button>
-                      </div>
-                    ))}
+                              {s.initials}
+                            </div>
+                            {s.name}
+                          </button>
+                        ))
+                    )}
                   </div>
                 )}
               </div>
             </div>
+
+            {/* Current members list */}
+            <div className="px-4 pb-4">
+              <p className="text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em] mb-2 mt-2">
+                Current Members
+              </p>
+              {membersLoading ? (
+                <div className="space-y-2">
+                  {[...Array(3)].map((_, i) => (
+                    <div key={i} className="h-8 bg-[#D5D8DE] dark:bg-[#444444] rounded animate-pulse" />
+                  ))}
+                </div>
+              ) : channelMembers.length === 0 ? (
+                <p className="text-[12px] text-[#6B7280] text-center py-4">
+                  No members yet. Add staff above.
+                </p>
+              ) : (
+                <div className="space-y-1">
+                  {channelMembers.map((m) => (
+                    <div
+                      key={m.id}
+                      className="flex items-center justify-between px-2 py-1.5 rounded-md hover:bg-[#F3F4F6] dark:hover:bg-[#333333]"
+                    >
+                      <div>
+                        <p className="text-[13px] font-medium text-[#1F3148] dark:text-[#EDEEF0]">
+                          {m.userFullName}
+                        </p>
+                        <p className="text-[11px] text-[#6B7280]">{m.userEmail}</p>
+                      </div>
+                      <button
+                        onClick={() => handleRemoveMember(m.userId)}
+                        className="text-[#6B7280] hover:text-[#DC2626] transition-colors p-1"
+                        title="Remove member"
+                      >
+                        <UserMinus className="w-[13px] h-[13px]" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
-        )}
+        </div>
+      )}
 
     </AppShell>
   )
