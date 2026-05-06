@@ -7,7 +7,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
 from app.core.enums import InvoiceStatus, InvoiceDeliveryMethod
 
@@ -30,6 +30,13 @@ class InvoiceBase(BaseModel):
     due_date: Optional[date] = None
     notes_client_visible: Optional[str] = None
     delivery_method: InvoiceDeliveryMethod = InvoiceDeliveryMethod.portal
+
+    @field_validator('line_items', mode='before')
+    @classmethod
+    def coerce_line_items(cls, v):
+        if v is None:
+            return []
+        return v
 
 
 class InvoiceCreate(InvoiceBase):
@@ -91,3 +98,10 @@ class PortalInvoiceOut(BaseModel):
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+    @field_validator('line_items', mode='before')
+    @classmethod
+    def coerce_line_items(cls, v):
+        if v is None:
+            return []
+        return v
