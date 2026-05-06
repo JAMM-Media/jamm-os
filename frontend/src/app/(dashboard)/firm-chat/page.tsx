@@ -124,7 +124,9 @@ function getMentionQuery(value: string, cursor: number): string | null {
   const lastAt = before.lastIndexOf('@')
   if (lastAt === -1) return null
   const afterAt = before.slice(lastAt + 1)
-  if (/\s/.test(afterAt)) return null
+  // Allow spaces within the query so full names like "Sarah Chen" work
+  // But stop if there are two consecutive spaces or a newline
+  if (/\n/.test(afterAt) || /\s{2}/.test(afterAt)) return null
   return afterAt
 }
 
@@ -223,7 +225,7 @@ export default function FirmChatPage() {
   }, [staffList.length])
 
   const filteredStaff = staffList.filter((s) =>
-    s.name.toLowerCase().startsWith(mentionQuery.toLowerCase())
+    s.name.toLowerCase().includes(mentionQuery.trim().toLowerCase())
   )
 
   // ─── Messages scroll ─────────────────────────────────────────────────────
@@ -321,9 +323,11 @@ export default function FirmChatPage() {
 
   const handleMentionSelect = (staff: StaffMember) => {
     const cursor = textareaRef.current?.selectionStart ?? composeValue.length
-    const lastAt = composeValue.slice(0, cursor).lastIndexOf('@')
+    const beforeCursor = composeValue.slice(0, cursor)
+    const lastAt = beforeCursor.lastIndexOf('@')
     if (lastAt !== -1) {
       const before = composeValue.slice(0, lastAt)
+      // Skip past everything the user typed after @ (the partial query)
       const after = composeValue.slice(cursor)
       setComposeValue(`${before}@${staff.name} ${after}`)
       setComposeMentions((prev) => [...prev, staff.name])
