@@ -51,7 +51,7 @@ class ChannelOut(BaseModel):
 
 class FirmMessageCreate(BaseModel):
     body: str
-    mentions: list[uuid.UUID] = []
+    mentions: list[str] = []
 
     @field_validator("body")
     @classmethod

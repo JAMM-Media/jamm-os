@@ -120,7 +120,7 @@ export default function FirmChatPage() {
 
   // User role
   const { user } = useAuth()
-  const isFirmOwner = user?.role === 'firm_owner'
+  const isFirmOwner = user?.role === 'firm_owner' || user?.role === 'manager'
 
   // Active channel object
   const activeChannel = channels.find((ch) => ch.id === activeChannelId)
