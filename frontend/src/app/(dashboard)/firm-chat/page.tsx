@@ -67,14 +67,39 @@ function isSameSenderWithin5Min(
   return Math.abs(new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()) < 5 * 60 * 1000
 }
 
-function renderBody(body: string, mentions: string[]): ReactNode {
-  if (!mentions || mentions.length === 0) return <>{body}</>
+function renderBody(body: string, mentions: string[], staffMap?: Map<string, string>): ReactNode {
+  if (!body) return <>{body}</>
+  // Build a list of name patterns to highlight
+  // If staffMap provided, map UUIDs to names; otherwise use mentions as-is
+  const namePatterns: string[] = mentions
+    .map((m) => staffMap?.get(m) ?? m)
+    .filter(Boolean)
+  if (namePatterns.length === 0) {
+    // Fallback: highlight any @word patterns in the body directly
+    const parts: ReactNode[] = []
+    const regex = /@(\S+)/g
+    let last = 0
+    let match
+    let found = false
+    while ((match = regex.exec(body)) !== null) {
+      found = true
+      if (match.index > last) parts.push(<span key={last}>{body.slice(last, match.index)}</span>)
+      parts.push(
+        <span key={match.index} className="bg-status-blue text-status-blue-text rounded px-1 font-medium">
+          {match[0]}
+        </span>
+      )
+      last = match.index + match[0].length
+    }
+    if (last < body.length) parts.push(<span key={last}>{body.slice(last)}</span>)
+    return found ? <>{parts}</> : <>{body}</>
+  }
   const parts: ReactNode[] = []
   let remaining = body
   let key = 0
   let foundAny = false
-  for (const mention of mentions) {
-    const pattern = `@${mention}`
+  for (const name of namePatterns) {
+    const pattern = `@${name}`
     const idx = remaining.indexOf(pattern)
     if (idx === -1) continue
     foundAny = true
@@ -220,6 +245,12 @@ export default function FirmChatPage() {
     (senderId: string) => senderIndexMap.get(senderId) ?? 0,
     [senderIndexMap]
   )
+
+  const staffMap = useMemo(() => {
+    const map = new Map<string, string>()
+    staffList.forEach((s) => map.set(s.id, s.name))
+    return map
+  }, [staffList])
 
   // ─── Handlers ────────────────────────────────────────────────────────────
 
@@ -444,7 +475,7 @@ export default function FirmChatPage() {
               className="text-[13px] text-[#374151] dark:text-[#9CA3AF]"
               style={{ lineHeight: '1.6' }}
             >
-              {renderBody(msg.body, msg.mentions)}
+              {renderBody(msg.body, msg.mentions, staffMap)}
             </p>
           </div>
         )
@@ -468,7 +499,7 @@ export default function FirmChatPage() {
                 className="text-[13px] text-[#374151] dark:text-[#9CA3AF] mt-0.5"
                 style={{ lineHeight: '1.6', marginLeft: '0' }}
               >
-                {renderBody(msg.body, msg.mentions)}
+                {renderBody(msg.body, msg.mentions, staffMap)}
               </p>
             </div>
           </div>
