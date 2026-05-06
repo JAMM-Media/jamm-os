@@ -555,7 +555,7 @@ export default function FirmChatPage() {
                           Rename
                         </button>
                         <button
-                          onClick={() => openMembersModal(ch.id)}
+                          onClick={(e) => { e.stopPropagation(); openMembersModal(ch.id) }}
                           className="block w-full text-left px-3 py-2 text-[13px] text-[#374151] dark:text-[#9CA3AF] hover:bg-[#D5D8DE] dark:hover:bg-[#444444] transition-colors whitespace-nowrap"
                         >
                           Manage Members
@@ -790,12 +790,10 @@ export default function FirmChatPage() {
                     <div className="absolute top-full left-0 right-0 mt-1 bg-surface-card dark:bg-dark-card border border-[#C8CDD6] dark:border-[#484848] rounded-lg shadow-lg z-10 max-h-[160px] overflow-y-auto">
                       {memberSearchLoading ? (
                         <div className="px-3 py-2 text-[13px] text-[#6B7280]">Loading...</div>
-                      ) : memberSearchResults
-                          .filter((s) =>
-                            s.name.toLowerCase().includes(addMemberSearch.toLowerCase()) &&
-                            !channelMembers.some((m) => m.userId === s.id)
-                          )
-                          .length === 0 ? (
+                      ) : memberSearchResults.filter((s) =>
+                          s.name.toLowerCase().includes(addMemberSearch.toLowerCase()) &&
+                          !channelMembers.some((m) => m.userId === s.id)
+                        ).length === 0 ? (
                         <div className="px-3 py-2 text-[13px] text-[#6B7280]">No staff found</div>
                       ) : (
                         memberSearchResults
@@ -808,8 +806,14 @@ export default function FirmChatPage() {
                               key={s.id}
                               onClick={() => handleAddMember(s.id)}
                               disabled={addMemberLoading}
-                              className="w-full text-left px-3 py-2 text-[13px] text-[#374151] dark:text-[#9CA3AF] hover:bg-[#D5D8DE] dark:hover:bg-[#444444] transition-colors disabled:opacity-50"
+                              className="w-full text-left px-3 py-2 text-[13px] text-[#374151] dark:text-[#9CA3AF] hover:bg-[#D5D8DE] dark:hover:bg-[#444444] transition-colors disabled:opacity-50 flex items-center gap-2"
                             >
+                              <div
+                                className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 text-white text-[10px] font-medium"
+                                style={{ backgroundColor: '#4A7FA5' }}
+                              >
+                                {s.initials}
+                              </div>
                               {s.name}
                             </button>
                           ))
