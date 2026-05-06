@@ -725,7 +725,13 @@ export default function FirmChatPage() {
                     onKeyDown={handleKeyDown}
                     placeholder={activeChannel ? `Message #${activeChannel.name}...` : 'Select a channel...'}
                     rows={1}
-                    className="flex-1 resize-none bg-surface-input dark:bg-dark-page border border-[#C8CDD6] dark:border-[#484848] focus:border-[#4A7FA5] dark:focus:border-[#4A7FA5] rounded-lg px-3 py-2 text-[13px] text-[#374151] dark:text-[#9CA3AF] placeholder:text-[#9CA3AF] outline-none transition-colors overflow-hidden"
+                    className={`flex-1 resize-none border ${
+                      showMentionPopover
+                        ? 'border-[#4A7FA5] bg-[#EFF6FF] dark:bg-[#1e2a3a]'
+                        : composeMentionIds.length > 0
+                          ? 'bg-[#EFF6FF] dark:bg-[#1e2a3a] border-[#C8CDD6] dark:border-[#484848] focus:border-[#4A7FA5] dark:focus:border-[#4A7FA5]'
+                          : 'bg-surface-input dark:bg-dark-page border-[#C8CDD6] dark:border-[#484848] focus:border-[#4A7FA5] dark:focus:border-[#4A7FA5]'
+                    } rounded-lg px-3 py-2 text-[13px] text-[#374151] dark:text-[#9CA3AF] placeholder:text-[#9CA3AF] outline-none transition-colors overflow-hidden`}
                     style={{ minHeight: '40px', maxHeight: '160px' }}
                   />
                   <button
