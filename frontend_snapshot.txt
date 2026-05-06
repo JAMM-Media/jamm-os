@@ -408,7 +408,9 @@ export default function LoginPage() {
     <div className="min-h-screen flex">
       {/* Left panel */}
       <div className="hidden md:flex w-1/2 bg-brand flex-col items-center justify-center gap-3">
-        <span className="text-white text-2xl font-medium">JAMM PX</span>
+        <span className="text-white text-2xl font-medium">
+          JAMM <span style={{ color: '#B07D3A' }}>PX</span>
+        </span>
         <span className="text-brand-muted text-sm font-normal text-center px-8">
           Practice experience for accounting firms.
         </span>
@@ -418,13 +420,13 @@ export default function LoginPage() {
       <div className="flex flex-1 items-center justify-center bg-surface-page dark:bg-dark-page">
         <div className="w-[380px] bg-surface-card dark:bg-dark-card rounded-[10px] border border-surface-border p-8">
           <h1 className="text-base font-medium text-brand dark:text-[#EDEEF0] mb-6">
-            Sign in to JAMM PX
+            Sign in to JAMM <span style={{ color: '#B07D3A' }}>PX</span>
           </h1>
 
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
             {/* Email */}
             <div className="flex flex-col gap-1">
-              <label className="text-[11px] font-medium text-brand">Email</label>
+              <label className="text-[11px] font-medium text-[#6B7280]">Email</label>
               <input
                 type="email"
                 value={email}
@@ -437,7 +439,7 @@ export default function LoginPage() {
 
             {/* Password */}
             <div className="flex flex-col gap-1">
-              <label className="text-[11px] font-medium text-brand">Password</label>
+              <label className="text-[11px] font-medium text-[#6B7280]">Password</label>
               <div className="relative">
                 <input
                   type={showPassword ? 'text' : 'password'}
@@ -463,7 +465,7 @@ export default function LoginPage() {
             {/* TOTP */}
             {showTotp && (
               <div className="flex flex-col gap-1">
-                <label className="text-[11px] font-medium text-brand">
+                <label className="text-[11px] font-medium text-[#6B7280]">
                   Authenticator Code
                 </label>
                 <input
@@ -661,9 +663,10 @@ import type { ReactNode } from 'react'
 import { AppShell } from '@/components/layout/AppShell'
 import { useChannels } from '@/components/firm-chat/useChannels'
 import { useMessages } from '@/components/firm-chat/useMessages'
-import { MessageSquare, MoreHorizontal } from 'lucide-react'
+import { MessageSquare, MoreHorizontal, Users, X, UserMinus } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import api from '@/lib/api'
+import { firmChatApi, type ChannelMember } from '@/lib/api/firmChat'
 import { useAuth } from '@/lib/hooks/useAuth'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -799,6 +802,12 @@ export default function FirmChatPage() {
   const [deleteChannelDisplayName, setDeleteChannelDisplayName] = useState('')
 
   // ─── Channel dropdown ────────────────────────────────────────────────────
+  const [showMembersModal, setShowMembersModal] = useState(false)
+  const [membersChannelId, setMembersChannelId] = useState('')
+  const [channelMembers, setChannelMembers] = useState<ChannelMember[]>([])
+  const [membersLoading, setMembersLoading] = useState(false)
+  const [addMemberSearch, setAddMemberSearch] = useState('')
+  const [addMemberLoading, setAddMemberLoading] = useState(false)
   const [openDropdownId, setOpenDropdownId] = useState<string | null>(null)
   const [hoveredChannelId, setHoveredChannelId] = useState<string | null>(null)
 
@@ -937,6 +946,46 @@ export default function FirmChatPage() {
     setDeleteChannelDisplayName(channelName)
     setShowDeleteModal(true)
     setOpenDropdownId(null)
+  }
+
+  const openMembersModal = async (channelId: string) => {
+    setMembersChannelId(channelId)
+    setShowMembersModal(true)
+    setOpenDropdownId(null)
+    setAddMemberSearch('')
+    setMembersLoading(true)
+    try {
+      const members = await firmChatApi.listMembers(channelId)
+      setChannelMembers(members)
+    } catch {
+      setChannelMembers([])
+    } finally {
+      setMembersLoading(false)
+    }
+  }
+
+  const handleAddMember = async (userId: string) => {
+    if (!membersChannelId) return
+    setAddMemberLoading(true)
+    try {
+      const member = await firmChatApi.addMember(membersChannelId, userId)
+      setChannelMembers((prev) => [...prev, member])
+      setAddMemberSearch('')
+    } catch {
+      // silently fail — member may already exist
+    } finally {
+      setAddMemberLoading(false)
+    }
+  }
+
+  const handleRemoveMember = async (userId: string) => {
+    if (!membersChannelId) return
+    try {
+      await firmChatApi.removeMember(membersChannelId, userId)
+      setChannelMembers((prev) => prev.filter((m) => m.userId !== userId))
+    } catch {
+      // silently fail
+    }
   }
 
   // ─── Message rendering ───────────────────────────────────────────────────
@@ -1149,6 +1198,12 @@ export default function FirmChatPage() {
                           Rename
                         </button>
                         <button
+                          onClick={() => openMembersModal(ch.id)}
+                          className="block w-full text-left px-3 py-2 text-[13px] text-[#374151] dark:text-[#9CA3AF] hover:bg-[#D5D8DE] dark:hover:bg-[#444444] transition-colors whitespace-nowrap"
+                        >
+                          Manage Members
+                        </button>
+                        <button
                           onClick={() => openDeleteModal(ch.id, ch.name)}
                           className="block w-full text-left px-3 py-2 text-[13px] text-[#991B1B] hover:bg-[#D5D8DE] dark:hover:bg-[#444444] transition-colors whitespace-nowrap"
                         >
@@ -1245,7 +1300,7 @@ export default function FirmChatPage() {
               <input
                 type="text"
                 value={createChannelName}
-                onChange={(e) => setCreateChannelName(e.target.value.toLowerCase())}
+                onChange={(e) => setCreateChannelName(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter') handleCreateChannel() }}
                 placeholder="e.g. general"
                 className={inputClass}
@@ -1286,7 +1341,7 @@ export default function FirmChatPage() {
               <input
                 type="text"
                 value={renameChannelNameInput}
-                onChange={(e) => setRenameChannelNameInput(e.target.value.toLowerCase())}
+                onChange={(e) => setRenameChannelNameInput(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter') handleRenameChannel() }}
                 className={inputClass}
                 autoFocus
@@ -1339,6 +1394,107 @@ export default function FirmChatPage() {
           </div>
         </div>
       )}
+        {/* ── Manage Members Modal ─────────────────────────────────────── */}
+        {showMembersModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center">
+            <div
+              className="absolute inset-0 bg-black/35"
+              onClick={() => setShowMembersModal(false)}
+            />
+            <div className="relative z-10 w-[420px] bg-surface-card dark:bg-dark-card rounded-[10px] border border-[#C8CDD6] dark:border-[#484848] shadow-xl">
+              {/* Header */}
+              <div className="flex items-center justify-between px-4 py-3 border-b border-[#C8CDD6] dark:border-[#484848]">
+                <div className="flex items-center gap-2">
+                  <Users className="w-[14px] h-[14px] text-[#6B7280]" />
+                  <span className="text-[13px] font-medium text-[#1F3148] dark:text-[#EDEEF0]">
+                    Manage Members
+                  </span>
+                </div>
+                <button
+                  onClick={() => setShowMembersModal(false)}
+                  className="text-[#6B7280] hover:text-[#1F3148] dark:hover:text-[#EDEEF0] transition-colors"
+                >
+                  <X className="w-[14px] h-[14px]" />
+                </button>
+              </div>
+
+              {/* Add member search */}
+              <div className="px-4 pt-3 pb-2">
+                <label className={labelClass}>Add staff member</label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={addMemberSearch}
+                    onChange={(e) => setAddMemberSearch(e.target.value)}
+                    placeholder="Search by name..."
+                    className={inputClass}
+                  />
+                  {addMemberSearch && staffList.length > 0 && (
+                    <div className="absolute top-full left-0 right-0 mt-1 bg-surface-card dark:bg-dark-card border border-[#C8CDD6] dark:border-[#484848] rounded-lg shadow-lg z-10 max-h-[160px] overflow-y-auto">
+                      {staffList
+                        .filter((s) =>
+                          s.name.toLowerCase().includes(addMemberSearch.toLowerCase()) &&
+                          !channelMembers.some((m) => m.userId === s.id)
+                        )
+                        .map((s) => (
+                          <button
+                            key={s.id}
+                            onClick={() => handleAddMember(s.id)}
+                            disabled={addMemberLoading}
+                            className="w-full text-left px-3 py-2 text-[13px] text-[#374151] dark:text-[#9CA3AF] hover:bg-[#D5D8DE] dark:hover:bg-[#444444] transition-colors disabled:opacity-50"
+                          >
+                            {s.name}
+                          </button>
+                        ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Current members list */}
+              <div className="px-4 pb-4">
+                <p className="text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em] mb-2 mt-2">
+                  Current Members
+                </p>
+                {membersLoading ? (
+                  <div className="space-y-2">
+                    {[...Array(3)].map((_, i) => (
+                      <div key={i} className="h-8 bg-[#D5D8DE] dark:bg-[#444444] rounded animate-pulse" />
+                    ))}
+                  </div>
+                ) : channelMembers.length === 0 ? (
+                  <p className="text-[12px] text-[#6B7280] text-center py-4">
+                    No members yet. Add staff above.
+                  </p>
+                ) : (
+                  <div className="space-y-1">
+                    {channelMembers.map((m) => (
+                      <div
+                        key={m.id}
+                        className="flex items-center justify-between px-2 py-1.5 rounded-md hover:bg-[#F3F4F6] dark:hover:bg-[#333333]"
+                      >
+                        <div>
+                          <p className="text-[13px] font-medium text-[#1F3148] dark:text-[#EDEEF0]">
+                            {m.userFullName}
+                          </p>
+                          <p className="text-[11px] text-[#6B7280]">{m.userEmail}</p>
+                        </div>
+                        <button
+                          onClick={() => handleRemoveMember(m.userId)}
+                          className="text-[#6B7280] hover:text-[#DC2626] transition-colors p-1"
+                          title="Remove member"
+                        >
+                          <UserMinus className="w-[13px] h-[13px]" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
     </AppShell>
   )
 }
@@ -1737,7 +1893,7 @@ export default function BillingPage() {
     return (
       <AppShell>
         <div className="flex flex-col h-full p-6 items-center justify-center">
-          <p className="text-sm text-[#991B1B]">Failed to load invoices.</p>
+          <p className="text-sm text-[#DC2626]">Failed to load invoices.</p>
         </div>
       </AppShell>
     )
@@ -1987,7 +2143,7 @@ export default function WIPReportPage() {
           </div>
         ) : isError ? (
           <div className="flex flex-col items-center justify-center py-24 gap-3">
-            <p className="text-[13px] text-[#991B1B]">Failed to load WIP data.</p>
+            <p className="text-[13px] text-[#DC2626]">Failed to load WIP data.</p>
             <button
               onClick={() => refetch()}
               className="flex items-center gap-1.5 text-[13px] font-medium px-4 py-2 rounded-[6px] bg-brand text-white hover:opacity-90"
@@ -2495,7 +2651,7 @@ export default function CalendarPage() {
           </div>
         ) : isError ? (
           <div className="flex flex-col items-center justify-center py-24 gap-3">
-            <p className="text-[13px] text-[#991B1B]">Failed to load calendar data.</p>
+            <p className="text-[13px] text-[#DC2626]">Failed to load calendar data.</p>
             <button
               onClick={() => refetch()}
               className="flex items-center gap-1.5 text-[13px] font-medium px-4 py-2 rounded-[6px] bg-brand text-white hover:opacity-90"
@@ -2547,7 +2703,7 @@ export default function ClientsPage() {
   const [localClients, setLocalClients] = useState<Client[]>([])
   const [modalOpen, setModalOpen] = useState(false)
 
-  const { data, isLoading, error } = useFetch(() => clientsApi.list(), [])
+  const { data, isLoading, error, refetch } = useFetch(() => clientsApi.list(), [])
   const clients = [...localClients, ...(data?.items ?? [])]
 
   const filtered = clients.filter((c) =>
@@ -2557,13 +2713,14 @@ export default function ClientsPage() {
 
   function handleAddClient(client: Client) {
     setLocalClients((prev) => [client, ...prev])
+    setTimeout(() => refetch(), 500)
   }
 
   if (error) {
     return (
       <AppShell>
         <div className="flex flex-col h-full p-6 items-center justify-center">
-          <p className="text-sm text-[#991B1B]">Failed to load clients.</p>
+          <p className="text-sm text-[#DC2626]">Failed to load clients.</p>
         </div>
       </AppShell>
     )
@@ -2666,7 +2823,7 @@ import { toast } from 'sonner'
 import { NotesTab, NotesPanel } from '@/components/notes'
 import { useNotes } from '@/components/notes'
 import { useUnreadMessages } from '@/components/messaging/useUnreadMessages'
-import { cn } from '@/lib/utils'
+import { cn, formatEngagementType } from '@/lib/utils'
 import api from '@/lib/api'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { IrsAuthBadge } from '@/components/clients/IrsAuthBadge'
@@ -3033,7 +3190,7 @@ function ClientDetailContent() {
                       </td>
                       <td className="px-4 py-3">
                         <span className="text-[12px] text-[#374151] dark:text-[#9CA3AF]">
-                          {eng.engagementType ?? '—'}
+                          {formatEngagementType(eng.engagementType)}
                         </span>
                       </td>
                       <td className="px-4 py-3">
@@ -3155,6 +3312,7 @@ import { reportsApi } from '@/lib/api/reports'
 import type { DashboardMetrics, OverdueEngagementItem, UpcomingDeadlineItem, StaffUtilizationItem, UnsignedDocumentItem } from '@/lib/api/dashboard'
 import type { WIPSummary } from '@/lib/api/reports'
 import api from '@/lib/api'
+import { formatEngagementType } from '@/lib/utils'
 
 function formatCurrency(value: number): string {
   return new Intl.NumberFormat('en-US', {
@@ -3228,7 +3386,7 @@ function UpcomingDeadlinesList({ items }: { items: UpcomingDeadlineItem[] }) {
               <div className="flex-1 min-w-0">
                 <p className="text-[13px] font-medium text-[#111827] dark:text-[#EDEEF0] truncate">{item.client_name}</p>
               </div>
-              <p className="text-[12px] text-[#6B7280] truncate flex-shrink-0">{item.engagement_type.replace(/_/g, ' ')}</p>
+              <p className="text-[12px] text-[#6B7280] truncate flex-shrink-0">{formatEngagementType(item.engagement_type)}</p>
               <p className="text-[12px] text-[#6B7280] flex-shrink-0 w-24 text-right">{item.deadline}</p>
               <div className="flex-shrink-0">{daysBadge(item.days_until)}</div>
             </div>
@@ -3380,10 +3538,10 @@ function OverdueEngagementsTable({
               {items.map((item) => (
                 <tr key={item.engagement_id}>
                   <td className="px-4 py-2.5 font-medium text-[#111827] dark:text-[#EDEEF0]">{item.client_name}</td>
-                  <td className="px-4 py-2.5 text-[#6B7280]">{item.engagement_type.replace(/_/g, ' ')}</td>
+                  <td className="px-4 py-2.5 text-[#6B7280]">{formatEngagementType(item.engagement_type)}</td>
                   <td className="px-4 py-2.5 text-[#6B7280]">{item.deadline}</td>
                   <td className="px-4 py-2.5">
-                    <span className="font-medium text-[#991B1B]">{item.days_overdue}d</span>
+                    <span className="font-medium text-[#DC2626]">{item.days_overdue}d</span>
                   </td>
                   <td className="px-4 py-2.5 text-[#6B7280]">{item.assigned_staff_name ?? '—'}</td>
                   <td className="px-4 py-2.5">
@@ -3601,15 +3759,17 @@ export default function DashboardPage() {
                 value={formatCurrency(metrics?.mrr)}
                 subtext={`${metrics?.mrr_invoice_count} invoice${metrics?.mrr_invoice_count !== 1 ? 's' : ''} paid`}
               />
-              <MetricCard
-                label="Outstanding AR"
-                value={formatCurrency(metrics?.outstanding_ar)}
-                subtext={
-                  metrics?.oldest_overdue_days != null
-                    ? `${metrics?.outstanding_ar_count} unpaid · Oldest: ${metrics?.oldest_overdue_days}d`
-                    : `${metrics?.outstanding_ar_count} unpaid`
-                }
-              />
+              <Link href="/billing" className="block hover:opacity-90 transition-opacity">
+                <MetricCard
+                  label="Outstanding AR"
+                  value={formatCurrency(metrics?.outstanding_ar)}
+                  subtext={
+                    metrics?.oldest_overdue_days != null
+                      ? `${metrics?.outstanding_ar_count} unpaid · Oldest: ${metrics?.oldest_overdue_days}d`
+                      : `${metrics?.outstanding_ar_count} unpaid`
+                  }
+                />
+              </Link>
               <MetricCard
                 label="Unbilled WIP"
                 value={formatCurrency(metrics?.wip_value)}
@@ -3620,7 +3780,7 @@ export default function DashboardPage() {
                 value={String(metrics?.overdue_engagement_count)}
                 valueClassName={
                   metrics?.overdue_engagement_count > 0
-                    ? 'text-[#991B1B]'
+                    ? 'text-[#DC2626]'
                     : 'text-brand dark:text-[#EDEEF0]'
                 }
               />
@@ -3672,7 +3832,7 @@ FILE: frontend\src\app\documents\page.tsx
 // path: frontend/src/app/documents/page.tsx
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { AppShell } from '@/components/layout/AppShell'
 import { ViewToggle } from '@/components/ui/ViewToggle'
 import { DocumentTable } from '@/components/documents/DocumentTable'
@@ -3687,9 +3847,26 @@ type ViewMode = 'table' | 'card'
 export default function DocumentsPage() {
   const [view, setView] = useState<ViewMode>('table')
   const [search, setSearch] = useState('')
+  const [uploading, setUploading] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const { data, isLoading, error } = useFetch(() => documentsApi.list(), [])
   const documents = data?.items ?? []
+
+  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploading(true)
+    try {
+      await documentsApi.upload(file)
+      window.location.reload()
+    } catch {
+      alert('Upload failed — please try again.')
+    } finally {
+      setUploading(false)
+      if (fileInputRef.current) fileInputRef.current.value = ''
+    }
+  }
 
   const filtered = documents.filter((d) =>
     d.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -3701,7 +3878,7 @@ export default function DocumentsPage() {
     return (
       <AppShell>
         <div className="flex flex-col h-full p-6 items-center justify-center">
-          <p className="text-sm text-[#991B1B]">Failed to load documents.</p>
+          <p className="text-sm text-[#DC2626]">Failed to load documents.</p>
         </div>
       </AppShell>
     )
@@ -3728,8 +3905,19 @@ export default function DocumentsPage() {
             />
           </div>
           <ViewToggle value={view} onChange={setView} />
-          <button className="h-9 px-3 rounded-[6px] bg-brand dark:bg-brand-btn text-white text-[13px] font-medium hover:opacity-90 transition-opacity whitespace-nowrap flex-shrink-0">
-            Upload Document
+          <input
+            ref={fileInputRef}
+            type="file"
+            className="hidden"
+            onChange={handleFileChange}
+            accept=".pdf,.doc,.docx,.xlsx,.xls,.csv,.png,.jpg,.jpeg"
+          />
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploading}
+            className="h-9 px-3 rounded-[6px] bg-brand dark:bg-brand-btn text-white text-[13px] font-medium hover:opacity-90 transition-opacity whitespace-nowrap flex-shrink-0 disabled:opacity-60"
+          >
+            {uploading ? 'Uploading...' : 'Upload Document'}
           </button>
         </div>
 
@@ -3759,7 +3947,11 @@ export default function DocumentsPage() {
             </p>
           </div>
         ) : view === 'table' ? (
-          <DocumentTable documents={filtered} />
+          <DocumentTable
+            documents={filtered}
+            view={view}
+            onUpload={() => fileInputRef.current?.click()}
+          />
         ) : (
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
             {filtered.map((doc) => (
@@ -3918,11 +4110,14 @@ export default function EngagementsPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [bulkLoading, setBulkLoading] = useState(false)
   const [statusDropOpen, setStatusDropOpen] = useState(false)
+  const [statusOverrides, setStatusOverrides] = useState<Record<string, string>>({})
 
   const { data, isLoading, error } = useFetch(() => engagementsApi.list(0, 100), [])
   const { data: clientsData, isLoading: clientsLoading } = useFetch(() => clientsApi.list(0, 100), [])
   const serverEngagements = data?.items ?? []
-  const engagements = [...localEngagements, ...serverEngagements]
+  const engagements = [...localEngagements, ...serverEngagements].map((e) =>
+    statusOverrides[e.id] ? { ...e, status: statusOverrides[e.id] } : e
+  )
 
   const clientMap: Record<string, string> = Object.fromEntries(
     (clientsData?.items ?? []).map((c) => [c.id, c.name])
@@ -3957,6 +4152,11 @@ export default function EngagementsPage() {
     setLocalEngagements((les) =>
       les.map((e) => selectedIds.has(e.id) ? { ...e, status: newStatus } : e)
     )
+    setStatusOverrides((prev) => {
+      const next = { ...prev }
+      ids.forEach((id) => { next[id] = newStatus })
+      return next
+    })
     try {
       await engagementsApi.bulkUpdate(ids, { status: newStatus })
       setSelectedIds(new Set())
@@ -3988,7 +4188,7 @@ export default function EngagementsPage() {
     return (
       <AppShell>
         <div className="flex flex-col h-full p-6 items-center justify-center">
-          <p className="text-sm text-[#991B1B]">Failed to load engagements.</p>
+          <p className="text-sm text-[#DC2626]">Failed to load engagements.</p>
         </div>
       </AppShell>
     )
@@ -4147,7 +4347,7 @@ import { CreateDocumentRequestModal } from '@/components/engagements/CreateDocum
 import { EditEngagementModal } from '@/components/engagements/EditEngagementModal'
 import { TaskTable } from '@/components/tasks/TaskTable'
 import { NotesTab, NotesPanel, useNotes } from '@/components/notes'
-import { cn } from '@/lib/utils'
+import { cn, formatEngagementType } from '@/lib/utils'
 import api from '@/lib/api'
 import { FileText } from 'lucide-react'
 
@@ -4254,7 +4454,7 @@ export default function EngagementDetailPage() {
             <div className="flex items-center gap-2">
               <StatusBadge variant={engagement.status as BadgeVariant} />
               <span className="text-[12px] text-[#6B7280]">
-                {engagement.engagementType ?? '—'}
+                {formatEngagementType(engagement.engagementType)}
                 {engagement.endDate ? ` · Due ${engagement.endDate}` : ''}
               </span>
             </div>
@@ -4293,11 +4493,13 @@ export default function EngagementDetailPage() {
               <div className="grid grid-cols-2 gap-x-6 gap-y-4">
                 <div className="flex flex-col gap-1">
                   <span className={labelClass}>Engagement type</span>
-                  <span className={valueClass}>{engagement.engagementType ?? '—'}</span>
+                  <span className={valueClass}>{formatEngagementType(engagement.engagementType)}</span>
                 </div>
                 <div className="flex flex-col gap-1">
                   <span className={labelClass}>Status</span>
-                  <StatusBadge variant={engagement.status as BadgeVariant} />
+                  <div className="w-fit">
+                    <StatusBadge variant={engagement.status as BadgeVariant} />
+                  </div>
                 </div>
                 <div className="flex flex-col gap-1">
                   <span className={labelClass}>Client</span>
@@ -5151,6 +5353,7 @@ import { useState } from 'react'
 import { AppShell } from '@/components/layout/AppShell'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { useFetch } from '@/lib/hooks/useFetch'
+import { Eye, EyeOff } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 import api from '@/lib/api'
@@ -5167,6 +5370,7 @@ const TABS = [
 ]
 
 function formatRoleLabel(role: string): string {
+  if (role === 'firm_owner') return 'Partner'
   return role.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
 }
 
@@ -5180,7 +5384,7 @@ function RoleBadge({ role }: { role: string }) {
   }
   if (role === 'manager') {
     return (
-      <span className="w-fit text-[11px] font-medium px-2 py-0.5 rounded-full bg-[#E5E7EB] text-brand border border-brand">
+      <span className="w-fit text-[11px] font-medium px-2 py-0.5 rounded-full bg-[#FEF3C7] text-[#92400E]">
         {formatRoleLabel(role)}
       </span>
     )
@@ -5212,6 +5416,8 @@ export default function SettingsPage() {
   const [invitePassword, setInvitePassword] = useState('')
   const [inviteRole, setInviteRole] = useState<'staff' | 'manager'>('staff')
   const [inviteSubmitting, setInviteSubmitting] = useState(false)
+  const [showInvitePassword, setShowInvitePassword] = useState(false)
+  const [invitePasswordLocked, setInvitePasswordLocked] = useState(false)
 
   async function handleInvite(e: React.FormEvent) {
     e.preventDefault()
@@ -5513,13 +5719,28 @@ export default function SettingsPage() {
                   </div>
                   <div className={fieldClass}>
                     <label className={labelClass}>Temporary password</label>
-                    <input
-                      type="password"
-                      required
-                      value={invitePassword}
-                      onChange={(e) => setInvitePassword(e.target.value)}
-                      className={inputClass}
-                    />
+                    <div className="relative">
+                      <input
+                        type={showInvitePassword || invitePasswordLocked ? 'text' : 'password'}
+                        required
+                        value={invitePassword}
+                        onChange={(e) => setInvitePassword(e.target.value)}
+                        className={inputClass}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setInvitePasswordLocked((prev) => !prev)}
+                        onMouseEnter={() => setShowInvitePassword(true)}
+                        onMouseLeave={() => setShowInvitePassword(false)}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-[#6B7280] hover:text-brand transition-colors"
+                      >
+                        {invitePasswordLocked || showInvitePassword ? (
+                          <EyeOff style={{ width: 14, height: 14 }} />
+                        ) : (
+                          <Eye style={{ width: 14, height: 14 }} />
+                        )}
+                      </button>
+                    </div>
                     <span className="text-[11px] text-[#6B7280]">
                       They can change this after first login.
                     </span>
@@ -5583,7 +5804,11 @@ import api from '@/lib/api'
 
 type ViewMode = 'table' | 'card'
 
-const TASK_STATUSES = ['todo', 'in_progress', 'done']
+const TASK_STATUSES = [
+  { value: 'todo', label: 'To Do' },
+  { value: 'in_progress', label: 'In Progress' },
+  { value: 'done', label: 'Done' },
+]
 
 export default function TasksPage() {
   const [view, setView] = useState<ViewMode>('table')
@@ -5595,6 +5820,7 @@ export default function TasksPage() {
   const [statusDropOpen, setStatusDropOpen] = useState(false)
   const [reassignDropOpen, setReassignDropOpen] = useState(false)
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+  const [statusOverrides, setStatusOverrides] = useState<Record<string, string>>({})
 
   const { data, isLoading, error } = useFetch(() => tasksApi.list(0, 100), [])
   const { data: clientsData, isLoading: clientsLoading } = useFetch(() => clientsApi.list(0, 100), [])
@@ -5602,7 +5828,9 @@ export default function TasksPage() {
   const [tasks, setTasks] = useState<Task[]>([])
 
   const serverTasks = data?.items ?? []
-  const allTasks = [...localTasks, ...serverTasks]
+  const allTasks = [...localTasks, ...serverTasks].map((t) =>
+    statusOverrides[t.id] ? { ...t, status: statusOverrides[t.id] } : t
+  )
 
   const clientMap: Record<string, string> = Object.fromEntries(
     (clientsData?.items ?? []).map((c) => [c.id, c.name])
@@ -5641,6 +5869,11 @@ export default function TasksPage() {
     const prev = filtered.map((t) => ({ ...t }))
     // optimistic update
     setLocalTasks((lts) => lts.map((t) => selectedIds.has(t.id) ? { ...t, status: newStatus } : t))
+    setStatusOverrides((prev) => {
+      const next = { ...prev }
+      ids.forEach((id) => { next[id] = newStatus })
+      return next
+    })
     try {
       await tasksApi.bulkUpdate(ids, { status: newStatus })
       setSelectedIds(new Set())
@@ -5690,7 +5923,7 @@ export default function TasksPage() {
     return (
       <AppShell>
         <div className="flex flex-col h-full p-6 items-center justify-center">
-          <p className="text-sm text-[#991B1B]">Failed to load tasks.</p>
+          <p className="text-sm text-[#DC2626]">Failed to load tasks.</p>
         </div>
       </AppShell>
     )
@@ -5793,11 +6026,11 @@ export default function TasksPage() {
                   <div className="absolute bottom-full mb-2 left-0 bg-white dark:bg-[#252525] border border-[#D5D8DE] dark:border-dark-border rounded-lg shadow-lg overflow-hidden min-w-[140px]">
                     {TASK_STATUSES.map((s) => (
                       <button
-                        key={s}
-                        onClick={() => handleBulkStatus(s)}
+                        key={s.value}
+                        onClick={() => handleBulkStatus(s.value)}
                         className="w-full text-left px-3 py-2 text-[12px] text-[#374151] dark:text-[#D1D5DB] hover:bg-[#F3F4F6] dark:hover:bg-[#333333]"
                       >
-                        {s.replace(/_/g, ' ')}
+                        {s.label}
                       </button>
                     ))}
                   </div>
@@ -5982,7 +6215,7 @@ export default function TaskDetailPage() {
           </div>
           <div className="bg-surface-card dark:bg-dark-card rounded-card p-4">
             <p className="text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em] mb-2">Completed</p>
-            <p className="text-[13px] text-brand dark:text-[#EDEEF0]">{task.isCompleted ? 'Yes' : 'No'}</p>
+            <p className="text-[13px] text-brand dark:text-[#EDEEF0]">{task.status === 'done' || task.isCompleted ? 'Yes' : 'No'}</p>
           </div>
         </div>
 
@@ -6700,7 +6933,7 @@ export function HealthDot({ clientId, showLabel = false }: HealthDotProps) {
     isLoading || !data
       ? undefined
       : data.reasons.length === 0
-      ? 'All good'
+      ? 'Good'
       : data.reasons.join('\n')
 
   const dot = (
@@ -8418,51 +8651,15 @@ type ItemStatus = ChecklistItem['status']
 
 function StatusIcon({ status }: { status: ItemStatus }) {
   if (status === 'approved') {
-    return (
-      <svg className="flex-shrink-0" width="18" height="18" viewBox="0 0 18 18" fill="none">
-        <circle cx="9" cy="9" r="9" fill="#10B981" />
-        <path
-          d="M5.5 9l2.5 2.5 4.5-4.5"
-          stroke="white"
-          strokeWidth="1.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </svg>
-    )
+    return <span className="flex-shrink-0 w-2.5 h-2.5 rounded-full bg-[#10B981] inline-block" />
   }
   if (status === 'rejected') {
-    return (
-      <svg className="flex-shrink-0" width="18" height="18" viewBox="0 0 18 18" fill="none">
-        <circle cx="9" cy="9" r="9" fill="#EF4444" />
-        <path
-          d="M6 6l6 6M12 6l-6 6"
-          stroke="white"
-          strokeWidth="1.5"
-          strokeLinecap="round"
-        />
-      </svg>
-    )
+    return <span className="flex-shrink-0 w-2.5 h-2.5 rounded-full bg-[#DC2626] inline-block" />
   }
   if (status === 'uploaded') {
-    return (
-      <svg className="flex-shrink-0" width="18" height="18" viewBox="0 0 18 18" fill="none">
-        <circle cx="9" cy="9" r="9" fill="#F59E0B" />
-        <path
-          d="M9 11.5V6.5M9 6.5L7 8.5M9 6.5l2 2"
-          stroke="white"
-          strokeWidth="1.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </svg>
-    )
+    return <span className="flex-shrink-0 w-2.5 h-2.5 rounded-full bg-[#3B82F6] inline-block" />
   }
-  return (
-    <svg className="flex-shrink-0" width="18" height="18" viewBox="0 0 18 18" fill="none">
-      <circle cx="9" cy="9" r="8.25" stroke="#C8CDD6" strokeWidth="1.5" />
-    </svg>
-  )
+  return <span className="flex-shrink-0 w-2.5 h-2.5 rounded-full bg-[#F59E0B] inline-block" />
 }
 
 function ProgressBar({ items }: { items: ChecklistItem[] }) {
@@ -8477,7 +8674,7 @@ function ProgressBar({ items }: { items: ChecklistItem[] }) {
   else if (done > 0) fillColor = '#F59E0B'
 
   return (
-    <div className="mt-2 h-[4px] rounded-[2px] bg-[#C8CDD6] dark:bg-[#484848] overflow-hidden">
+    <div className="mt-2 mb-1 h-[4px] rounded-[2px] bg-[#C8CDD6] dark:bg-[#484848] overflow-hidden">
       <div
         className="h-full rounded-[2px] transition-all duration-300"
         style={{ width: `${pct}%`, backgroundColor: fillColor }}
@@ -8608,16 +8805,22 @@ function RequestCard({
                   <button
                     disabled={pendingItems.has(item.id)}
                     onClick={() => mutation.mutate({ itemId: item.id, status: 'approved' })}
-                    className="h-6 px-2 rounded-[4px] bg-[#D1FAE5] text-[#065F46] text-[10px] font-medium disabled:opacity-50 hover:opacity-90 transition-opacity"
+                    title="Approve"
+                    className="w-6 h-6 rounded-[4px] bg-[#D1FAE5] text-[#065F46] flex items-center justify-center disabled:opacity-50 hover:opacity-90 transition-opacity"
                   >
-                    Approve
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                      <path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
                   </button>
                   <button
                     disabled={pendingItems.has(item.id)}
                     onClick={() => mutation.mutate({ itemId: item.id, status: 'rejected' })}
-                    className="h-6 px-2 rounded-[4px] bg-[#FEE2E2] text-[#991B1B] text-[10px] font-medium disabled:opacity-50 hover:opacity-90 transition-opacity"
+                    title="Reject"
+                    className="w-6 h-6 rounded-[4px] bg-[#FEE2E2] text-[#DC2626] flex items-center justify-center disabled:opacity-50 hover:opacity-90 transition-opacity"
                   >
-                    Reject
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                      <path d="M3 3l6 6M9 3l-6 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                    </svg>
                   </button>
                 </div>
               )}
@@ -8628,6 +8831,24 @@ function RequestCard({
               {approvedCount} item{approvedCount !== 1 ? 's' : ''} approved
             </p>
           )}
+          <div className="flex items-center gap-4 mt-3 pt-2 border-t border-[0.5px] border-[#C8CDD6] dark:border-[#484848]">
+            <div className="flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-full bg-[#10B981] inline-block" />
+              <span className="text-[10px] text-[#6B7280]">Approved</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-full bg-[#3B82F6] inline-block" />
+              <span className="text-[10px] text-[#6B7280]">Received</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-full bg-[#F59E0B] inline-block" />
+              <span className="text-[10px] text-[#6B7280]">Pending</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-full bg-[#DC2626] inline-block" />
+              <span className="text-[10px] text-[#6B7280]">Rejected</span>
+            </div>
+          </div>
         </div>
       )}
     </div>
@@ -8739,6 +8960,15 @@ const STATUS_OPTIONS = [
   { value: 'in_review', label: 'In Review' },
   { value: 'completed', label: 'Completed' },
   { value: 'archived', label: 'Archived' },
+]
+
+const ENGAGEMENT_TYPE_OPTIONS = [
+  { value: 'tax_return', label: 'Tax Return' },
+  { value: 'bookkeeping_monthly', label: 'Bookkeeping' },
+  { value: 'payroll_tax_941', label: 'Payroll' },
+  { value: 'tax_planning_advisory', label: 'Advisory' },
+  { value: 'audit_representation', label: 'Audit' },
+  { value: 'custom', label: 'Other' },
 ]
 
 interface EditEngagementModalProps {
@@ -8859,10 +9089,11 @@ export function EditEngagementModal({ isOpen, onClose, engagement, onSuccess }: 
             />
           </FormField>
           <FormField label="Engagement Type">
-            <TextInput
-              placeholder="Tax Return"
+            <SelectInput
               value={form.engagementType}
               onChange={(e) => handleChange('engagementType', e.target.value)}
+              options={ENGAGEMENT_TYPE_OPTIONS}
+              placeholder="Select type"
             />
           </FormField>
         </div>
@@ -8899,6 +9130,7 @@ FILE: frontend\src\components\engagements\EngagementCard.tsx
 import { useRouter } from 'next/navigation'
 import { type Engagement } from '@/lib/api'
 import { StatusBadge } from '@/components/ui/StatusBadge'
+import { formatEngagementType } from '@/lib/utils'
 
 interface EngagementCardProps {
   engagement: Engagement
@@ -8929,7 +9161,7 @@ export function EngagementCard({ engagement, clientMap = {}, lookupsLoading = fa
       </div>
       <div className="flex items-center justify-between mt-1">
         <span className="text-[11px] text-[#6B7280]">
-          {engagement.engagementType ?? ''}
+          {formatEngagementType(engagement.engagementType)}
         </span>
         {engagement.endDate && (
           <span className="text-[11px] text-[#6B7280]">
@@ -9147,7 +9379,7 @@ function deadlineColor(dateStr: string): string {
   const now = new Date()
   const diffMs = deadline.getTime() - now.getTime()
   const diffDays = diffMs / (1000 * 60 * 60 * 24)
-  if (diffDays < 0) return 'text-[#991B1B]'
+  if (diffDays < 0) return 'text-[#DC2626]'
   if (diffDays <= 30) return 'text-[#92400E]'
   return ''
 }
@@ -9712,7 +9944,6 @@ export function useChannels(): UseChannelsReturn {
   const [isLoading, setIsLoading] = useState(false)
 
   useEffect(() => {
-    if (typeof window !== 'undefined' && !localStorage.getItem('access_token')) return
     setIsLoading(true)
     firmChatApi
       .listChannels()
@@ -9933,7 +10164,6 @@ import {
   ChevronRight,
   Sun,
   Moon,
-  ExternalLink,
   MessageSquare,
   LogOut,
   CalendarDays,
@@ -9951,7 +10181,6 @@ const navItems = [
   { href: '/documents', label: 'Documents', icon: FileText },
   { href: '/billing', label: 'Billing', icon: CreditCard },
   { href: '/firm-chat', label: 'Firm Chat', icon: MessageSquare },
-  { href: '/portal', label: 'Client Portal', icon: ExternalLink },
 ]
 
 const settingsItem = { href: '/settings', label: 'Settings', icon: Settings }
@@ -9981,7 +10210,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
       <div className="flex items-center h-14 px-3 border-b border-white/10 flex-shrink-0">
         {!collapsed && (
           <span className="text-white font-medium text-sm tracking-wide truncate">
-            JAMM PX
+            JAMM <span style={{ color: '#B07D3A' }}>PX</span>
           </span>
         )}
         <button
@@ -10501,6 +10730,7 @@ FILE: frontend\src\components\notes\useNotes.ts
 
 import { useState, useEffect, useCallback } from 'react'
 import api from '@/lib/api'
+import { useAuth } from '@/lib/hooks/useAuth'
 
 export interface Note {
   id: string
@@ -10510,6 +10740,19 @@ export interface Note {
   authorRole: string
   createdAt: string
   isRead: boolean
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function mapNote(raw: any): Note {
+  return {
+    id: raw.id,
+    body: raw.body,
+    isPrivate: raw.is_private ?? raw.isPrivate ?? false,
+    authorName: raw.author_name ?? raw.authorName ?? 'Unknown',
+    authorRole: raw.author_role ?? raw.authorRole ?? 'staff',
+    createdAt: raw.created_at ?? raw.createdAt ?? new Date().toISOString(),
+    isRead: raw.is_read ?? raw.isRead ?? false,
+  }
 }
 
 interface UseNotesOptions {
@@ -10529,13 +10772,14 @@ interface UseNotesReturn {
 export function useNotes({ entityType, entityId }: UseNotesOptions): UseNotesReturn {
   const [notes, setNotes] = useState<Note[]>([])
   const [isLoading, setIsLoading] = useState(false)
+  const { user } = useAuth()
 
   useEffect(() => {
     if (!entityId) return
     setIsLoading(true)
     api
       .get<Note[]>('/notes', { params: { entity_type: entityType, entity_id: entityId } })
-      .then((res) => setNotes(res.data))
+      .then((res) => setNotes(res.data.map(mapNote)))
       .catch(() => setNotes([]))
       .finally(() => setIsLoading(false))
   }, [entityType, entityId])
@@ -10548,7 +10792,7 @@ export function useNotes({ entityType, entityId }: UseNotesOptions): UseNotesRet
         id: `temp-${Date.now()}`,
         body,
         isPrivate,
-        authorName: 'You',
+        authorName: user?.full_name ?? 'You',
         authorRole: 'staff',
         createdAt: new Date().toISOString(),
         isRead: true,
@@ -10558,7 +10802,7 @@ export function useNotes({ entityType, entityId }: UseNotesOptions): UseNotesRet
       api
         .post<Note>('/notes', { body, entity_type: entityType, entity_id: entityId, is_private: isPrivate })
         .then((res) => {
-          setNotes((prev) => prev.map((n) => (n.id === optimistic.id ? res.data : n)))
+          setNotes((prev) => prev.map((n) => (n.id === optimistic.id ? mapNote(res.data) : n)))
         })
         .catch(() => {
           setNotes((prev) => prev.filter((n) => n.id !== optimistic.id))
@@ -11592,17 +11836,20 @@ function RuleCard({
   isPending: boolean
   onToggle: (rule: AutomationRule) => void
 }) {
+  const [expanded, setExpanded] = useState(false)
   const showBadge =
     section === 'active' && rule.is_enabled && DEFAULT_ON_PRESETS.has(rule.name)
-  const truncated =
-    rule.description.length > 80 ? rule.description.slice(0, 80) + '…' : rule.description
+  const needsTruncation = rule.description.length > 80
+  const truncated = needsTruncation && !expanded
+    ? rule.description.slice(0, 80) + '…'
+    : rule.description
   const lastRun = rule.last_executed_at
     ? 'Last run: ' +
       new Date(rule.last_executed_at).toLocaleDateString('en-US', {
         month: 'short',
         day: 'numeric',
       })
-    : 'Never run'
+    : 'Never used'
 
   return (
     <div className="bg-card dark:bg-dark-card rounded-lg border border-subtle px-4 py-3 flex items-center gap-4 mb-2">
@@ -11623,7 +11870,17 @@ function RuleCard({
             </span>
           )}
         </div>
-        <span className="text-[12px] text-[#6B7280] dark:text-[#9CA3AF]">{truncated}</span>
+        <span className="text-[12px] text-[#6B7280] dark:text-[#9CA3AF]">
+          {truncated}
+          {needsTruncation && (
+            <button
+              onClick={() => setExpanded((e) => !e)}
+              className="ml-1 text-[11px] text-brand-light hover:underline focus:outline-none"
+            >
+              {expanded ? 'Show less' : 'Show more'}
+            </button>
+          )}
+        </span>
         <span className="text-[11px] text-[#6B7280] dark:text-[#9CA3AF]">{lastRun}</span>
       </div>
       <ToggleSwitch
@@ -12719,6 +12976,10 @@ type BadgeVariant =
   | 'not_started'
   | 'cancelled'
   | 'todo'
+  | 'completed'
+  | 'archived'
+  | 'in_review'
+  | 'done'
 
 interface StatusBadgeProps {
   variant: BadgeVariant
@@ -12833,6 +13094,27 @@ const variantConfig: Record<BadgeVariant, { bg: string; text: string; border?: s
     text: 'text-brand',
     border: 'border border-[0.5px] border-brand',
     defaultLabel: 'To Do',
+  },
+  completed: {
+    bg: 'bg-status-green',
+    text: 'text-status-green-text',
+    defaultLabel: 'Completed',
+  },
+  archived: {
+    bg: 'bg-[#E5E7EB]',
+    text: 'text-[#6B7280]',
+    border: 'border border-[0.5px] border-[#C8CDD6]',
+    defaultLabel: 'Archived',
+  },
+  in_review: {
+    bg: 'bg-status-amber',
+    text: 'text-status-amber-text',
+    defaultLabel: 'In Review',
+  },
+  done: {
+    bg: 'bg-status-green',
+    text: 'text-status-green-text',
+    defaultLabel: 'Done',
   },
 }
 
@@ -13486,6 +13768,11 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
+export function formatEngagementType(value: string | null | undefined): string {
+  if (!value) return '—'
+  return value.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+}
+
 
 ================================================================================
 FILE: frontend\src\lib\api\clients.ts
@@ -13857,6 +14144,17 @@ export const documentsApi = {
     const { data } = await api.get(`/documents/${id}/download`)
     return String(data.url ?? data.signed_url ?? '')
   },
+
+  upload: async (file: File, clientId?: string, engagementId?: string): Promise<Document> => {
+    const formData = new FormData()
+    formData.append('file', file)
+    if (clientId) formData.append('client_id', clientId)
+    if (engagementId) formData.append('engagement_id', engagementId)
+    const { data } = await api.post('/documents/upload', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    return mapDocument(data)
+  },
 }
 
 
@@ -14035,6 +14333,15 @@ export interface Channel {
   createdAt: string
 }
 
+export interface ChannelMember {
+  id: string
+  channelId: string
+  userId: string
+  userFullName: string
+  userEmail: string
+  addedAt: string
+}
+
 export interface FirmMessage {
   id: string
   channelId: string
@@ -14079,6 +14386,17 @@ function mapMessage(raw: Record<string, unknown>): FirmMessage {
   }
 }
 
+function mapChannelMember(raw: Record<string, unknown>): ChannelMember {
+  return {
+    id: String(raw.id),
+    channelId: String(raw.channel_id ?? raw.channelId ?? ''),
+    userId: String(raw.user_id ?? raw.userId ?? ''),
+    userFullName: String(raw.user_full_name ?? raw.userFullName ?? ''),
+    userEmail: String(raw.user_email ?? raw.userEmail ?? ''),
+    addedAt: String(raw.added_at ?? raw.addedAt ?? ''),
+  }
+}
+
 export const firmChatApi = {
   listChannels: async (): Promise<Channel[]> => {
     const { data } = await api.get('/firm-chat/channels')
@@ -14114,6 +14432,25 @@ export const firmChatApi = {
   postMessage: async (channelId: string, body: string, mentions?: string[]): Promise<FirmMessage> => {
     const { data } = await api.post(`/firm-chat/channels/${channelId}/messages`, { body, mentions })
     return mapMessage(data)
+  },
+
+  listMembers: async (channelId: string): Promise<ChannelMember[]> => {
+    const { data } = await api.get(`/firm-chat/channels/${channelId}/members`)
+    const items = Array.isArray(data) ? data : (data.items ?? [])
+    return items.map(mapChannelMember)
+  },
+
+  addMember: async (channelId: string, userId: string): Promise<ChannelMember> => {
+    const { data } = await api.post(
+      `/firm-chat/channels/${channelId}/members`,
+      null,
+      { params: { user_id: userId } }
+    )
+    return mapChannelMember(data)
+  },
+
+  removeMember: async (channelId: string, userId: string): Promise<void> => {
+    await api.delete(`/firm-chat/channels/${channelId}/members/${userId}`)
   },
 }
 

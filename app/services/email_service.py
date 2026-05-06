@@ -1,14 +1,13 @@
 # app/services/email_service.py
 
 import logging
-import os
+import requests
 from pathlib import Path
-from typing import Any
 
 logger = logging.getLogger(__name__)
 
-# Resolve the templates directory relative to this file's location
 _TEMPLATES_DIR = Path(__file__).parent.parent / "templates" / "email"
+_POSTMARK_API_URL = "https://api.postmarkapp.com/email"
 
 
 class EmailService:
@@ -26,48 +25,34 @@ class EmailService:
         return template.render(**context)
 
     @staticmethod
-    def _send_raw(to_email: str, subject: str, html_body: str, firm_name: str) -> bool:
-        """Send email via AWS SES. Returns True on success, False on failure.
-        Never raises — all exceptions are caught and logged.
-        Never logs email content — only recipient, subject, and errors.
-        """
-        import boto3
-        from botocore.exceptions import BotoCoreError, ClientError
+    def _send(to_email: str, subject: str, html_body: str, from_name: str) -> None:
+        """Send email via Postmark HTTP API. Raises on failure."""
         from app.core.config import get_settings
 
         settings = get_settings()
-        from_email = settings.AWS_SES_FROM_EMAIL
-        if not from_email:
-            logger.warning("_send_raw: AWS_SES_FROM_EMAIL is not configured — email not sent")
-            return False
+        api_key = settings.POSTMARK_API_KEY
+        if not api_key:
+            raise RuntimeError("POSTMARK_API_KEY is not configured — email not sent")
 
-        source = f"{firm_name} <{from_email}>"
-
+        payload = {
+            "From": f"{from_name} <noreply@jammpx.com>",
+            "To": to_email,
+            "Subject": subject,
+            "HtmlBody": html_body,
+            "MessageStream": "outbound",
+        }
+        headers = {
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+            "X-Postmark-Server-Token": api_key,
+        }
         try:
-            client = boto3.client(
-                "ses",
-                region_name=settings.AWS_REGION,
-                aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
-                aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
-            )
-            client.send_email(
-                Source=source,
-                Destination={"ToAddresses": [to_email]},
-                Message={
-                    "Subject": {"Data": subject, "Charset": "UTF-8"},
-                    "Body": {
-                        "Html": {"Data": html_body, "Charset": "UTF-8"},
-                    },
-                },
-            )
+            response = requests.post(_POSTMARK_API_URL, json=payload, headers=headers, timeout=15)
+            response.raise_for_status()
             logger.info("Email sent: to=%s subject=%s", to_email, subject)
-            return True
-        except (BotoCoreError, ClientError) as e:
-            logger.error("SES send failed: to=%s subject=%s error=%s", to_email, subject, str(e))
-            return False
-        except Exception as e:
-            logger.error("Unexpected error sending email: to=%s subject=%s error=%s", to_email, subject, str(e))
-            return False
+        except requests.RequestException as e:
+            logger.error("Postmark send failed: to=%s subject=%s error=%s", to_email, subject, str(e))
+            raise
 
     @staticmethod
     def send_notification_email(
@@ -86,7 +71,8 @@ class EmailService:
             "app_url": app_url,
         })
         subject = f"[{firm_name}] {title}"
-        return EmailService._send_raw(to_email, subject, html, firm_name)
+        EmailService._send(to_email, subject, html, firm_name)
+        return True
 
     @staticmethod
     def send_document_request_email(
@@ -107,7 +93,8 @@ class EmailService:
             "portal_url": portal_url,
         })
         subject = f"[{firm_name}] Document Request: {document_request_title}"
-        return EmailService._send_raw(to_email, subject, html, firm_name)
+        EmailService._send(to_email, subject, html, firm_name)
+        return True
 
     @staticmethod
     def send_invoice_email(
@@ -127,8 +114,9 @@ class EmailService:
             "due_date": due_date,
             "payment_url": payment_url,
         })
-        subject = f"[{firm_name}] Invoice {invoice_number} \u2014 Payment Due"
-        return EmailService._send_raw(to_email, subject, html, firm_name)
+        subject = f"[{firm_name}] Invoice {invoice_number} — Payment Due"
+        EmailService._send(to_email, subject, html, firm_name)
+        return True
 
     @staticmethod
     def send_password_reset_email(
@@ -143,12 +131,13 @@ class EmailService:
             "expiry_hours": expiry_hours,
             "firm_name": "JAMM PX",
         })
-        return EmailService._send_raw(
+        EmailService._send(
             to_email=to_email,
             subject="Reset your JAMM PX password",
             html_body=html,
-            firm_name="JAMM PX",
+            from_name="JAMM PX",
         )
+        return True
 
     @staticmethod
     def send_welcome_email(
@@ -164,5 +153,6 @@ class EmailService:
             "portal_url": portal_url,
             "temp_password": temp_password,
         })
-        subject = f"Welcome to {firm_name} \u2014 Your Client Portal"
-        return EmailService._send_raw(to_email, subject, html, firm_name)
+        subject = f"Welcome to {firm_name} — Your Client Portal"
+        EmailService._send(to_email, subject, html, firm_name)
+        return True

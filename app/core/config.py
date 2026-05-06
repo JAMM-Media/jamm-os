@@ -25,12 +25,15 @@ class Settings(BaseSettings):
     # Database
     DATABASE_URL: str
 
-    # AWS / S3 / SES
+    # AWS / S3
     AWS_ACCESS_KEY_ID: str = ""
     AWS_SECRET_ACCESS_KEY: str = ""
     AWS_REGION: str = "us-east-1"
     S3_BUCKET_NAME: str = ""
     AWS_SES_FROM_EMAIL: str = ""
+
+    # Postmark
+    POSTMARK_API_KEY: str = ""
 
     # Dropbox Sign (e-signature)
     DROPBOX_SIGN_API_KEY: str = ""
