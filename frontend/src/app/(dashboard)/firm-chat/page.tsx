@@ -82,7 +82,7 @@ function renderBody(body: string, mentions: string[]): ReactNode {
     parts.push(
       <span
         key={key++}
-        className="bg-status-blue text-status-blue-text rounded px-1"
+        className="bg-status-blue text-status-blue-text rounded px-1 font-medium"
       >
         {pattern}
       </span>
