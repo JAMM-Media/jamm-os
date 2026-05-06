@@ -118,8 +118,6 @@ export default function DocumentsPage() {
         ) : view === 'table' ? (
           <DocumentTable
             documents={filtered}
-            view={view}
-            onUpload={() => fileInputRef.current?.click()}
           />
         ) : (
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">

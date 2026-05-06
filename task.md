@@ -1,29 +1,22 @@
-## Current Task — Add JAMM PX favicon
+## Current Task — Fix TypeScript error in documents page for Vercel build
 
-The logo file is at: C:\Users\Andre\Downloads\JAMM-Media\JAMM OS Build\jamm_px_mobile_logo.svg
+File: frontend/src/app/documents/page.tsx
 
-### Step 1
-Copy the SVG file to frontend/public/favicon.svg
-Also copy it to frontend/public/logo.svg
+Build error:
+Type error: Type '{ documents: Document[]; view: "table"; onUpload: () => void | undefined; }'
+is not assignable to type 'IntrinsicAttributes & DocumentTableProps'.
+Property 'view' does not exist on type 'IntrinsicAttributes & DocumentTableProps'.
 
-### Step 2
-In frontend/src/app/layout.tsx, find the existing metadata export and add or update the icons field:
+Read both files:
+- frontend/src/app/documents/page.tsx
+- frontend/src/components/documents/DocumentTable.tsx
 
-export const metadata: Metadata = {
-  title: 'JAMM PX',
-  description: 'Practice Experience Platform',
-  icons: {
-    icon: '/favicon.svg',
-    apple: '/logo.svg',
-  },
-}
+The DocumentTable component doesn't accept a 'view' prop but the page
+is passing one. Fix by removing the view prop from the DocumentTable
+usage in documents/page.tsx.
 
-Read the file first to see the exact current metadata object and preserve everything in it — only add the icons field.
+After fixing run:
+cd frontend && npx tsc --noEmit
 
-### Step 3
-Delete frontend/public/favicon.ico if it exists — the SVG will replace it.
-
-### Step 4
-Report back what was changed.
-
-No pytest needed for this task.
+If there are more errors fix them all. Report every file changed
+and the final tsc output.
