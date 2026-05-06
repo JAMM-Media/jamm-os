@@ -25,7 +25,6 @@ export function useChannels(): UseChannelsReturn {
   const [isLoading, setIsLoading] = useState(false)
 
   useEffect(() => {
-    if (typeof window !== 'undefined' && !localStorage.getItem('access_token')) return
     setIsLoading(true)
     firmChatApi
       .listChannels()

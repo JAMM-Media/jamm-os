@@ -20,7 +20,7 @@ export default function ClientsPage() {
   const [localClients, setLocalClients] = useState<Client[]>([])
   const [modalOpen, setModalOpen] = useState(false)
 
-  const { data, isLoading, error } = useFetch(() => clientsApi.list(), [])
+  const { data, isLoading, error, refetch } = useFetch(() => clientsApi.list(), [])
   const clients = [...localClients, ...(data?.items ?? [])]
 
   const filtered = clients.filter((c) =>
@@ -30,6 +30,7 @@ export default function ClientsPage() {
 
   function handleAddClient(client: Client) {
     setLocalClients((prev) => [client, ...prev])
+    setTimeout(() => refetch(), 500)
   }
 
   if (error) {

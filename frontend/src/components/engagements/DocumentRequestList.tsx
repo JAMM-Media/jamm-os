@@ -27,51 +27,15 @@ type ItemStatus = ChecklistItem['status']
 
 function StatusIcon({ status }: { status: ItemStatus }) {
   if (status === 'approved') {
-    return (
-      <svg className="flex-shrink-0" width="18" height="18" viewBox="0 0 18 18" fill="none">
-        <circle cx="9" cy="9" r="9" fill="#10B981" />
-        <path
-          d="M5.5 9l2.5 2.5 4.5-4.5"
-          stroke="white"
-          strokeWidth="1.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </svg>
-    )
+    return <span className="flex-shrink-0 w-2.5 h-2.5 rounded-full bg-[#10B981] inline-block" />
   }
   if (status === 'rejected') {
-    return (
-      <svg className="flex-shrink-0" width="18" height="18" viewBox="0 0 18 18" fill="none">
-        <circle cx="9" cy="9" r="9" fill="#EF4444" />
-        <path
-          d="M6 6l6 6M12 6l-6 6"
-          stroke="white"
-          strokeWidth="1.5"
-          strokeLinecap="round"
-        />
-      </svg>
-    )
+    return <span className="flex-shrink-0 w-2.5 h-2.5 rounded-full bg-[#DC2626] inline-block" />
   }
   if (status === 'uploaded') {
-    return (
-      <svg className="flex-shrink-0" width="18" height="18" viewBox="0 0 18 18" fill="none">
-        <circle cx="9" cy="9" r="9" fill="#F59E0B" />
-        <path
-          d="M9 11.5V6.5M9 6.5L7 8.5M9 6.5l2 2"
-          stroke="white"
-          strokeWidth="1.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </svg>
-    )
+    return <span className="flex-shrink-0 w-2.5 h-2.5 rounded-full bg-[#3B82F6] inline-block" />
   }
-  return (
-    <svg className="flex-shrink-0" width="18" height="18" viewBox="0 0 18 18" fill="none">
-      <circle cx="9" cy="9" r="8.25" stroke="#C8CDD6" strokeWidth="1.5" />
-    </svg>
-  )
+  return <span className="flex-shrink-0 w-2.5 h-2.5 rounded-full bg-[#F59E0B] inline-block" />
 }
 
 function ProgressBar({ items }: { items: ChecklistItem[] }) {
@@ -217,16 +181,22 @@ function RequestCard({
                   <button
                     disabled={pendingItems.has(item.id)}
                     onClick={() => mutation.mutate({ itemId: item.id, status: 'approved' })}
-                    className="h-6 px-2 rounded-[4px] bg-[#D1FAE5] text-[#065F46] text-[10px] font-medium disabled:opacity-50 hover:opacity-90 transition-opacity"
+                    title="Approve"
+                    className="w-6 h-6 rounded-[4px] bg-[#D1FAE5] text-[#065F46] flex items-center justify-center disabled:opacity-50 hover:opacity-90 transition-opacity"
                   >
-                    Approve
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                      <path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
                   </button>
                   <button
                     disabled={pendingItems.has(item.id)}
                     onClick={() => mutation.mutate({ itemId: item.id, status: 'rejected' })}
-                    className="h-6 px-2 rounded-[4px] bg-[#FEE2E2] text-[#991B1B] text-[10px] font-medium disabled:opacity-50 hover:opacity-90 transition-opacity"
+                    title="Reject"
+                    className="w-6 h-6 rounded-[4px] bg-[#FEE2E2] text-[#DC2626] flex items-center justify-center disabled:opacity-50 hover:opacity-90 transition-opacity"
                   >
-                    Reject
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                      <path d="M3 3l6 6M9 3l-6 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                    </svg>
                   </button>
                 </div>
               )}
@@ -243,15 +213,15 @@ function RequestCard({
               <span className="text-[10px] text-[#6B7280]">Approved</span>
             </div>
             <div className="flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-full bg-[#F59E0B] inline-block" />
-              <span className="text-[10px] text-[#6B7280]">Uploaded</span>
+              <span className="w-2.5 h-2.5 rounded-full bg-[#3B82F6] inline-block" />
+              <span className="text-[10px] text-[#6B7280]">Received</span>
             </div>
             <div className="flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-full border border-[#C8CDD6] inline-block" />
+              <span className="w-2.5 h-2.5 rounded-full bg-[#F59E0B] inline-block" />
               <span className="text-[10px] text-[#6B7280]">Pending</span>
             </div>
             <div className="flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-full bg-[#EF4444] inline-block" />
+              <span className="w-2.5 h-2.5 rounded-full bg-[#DC2626] inline-block" />
               <span className="text-[10px] text-[#6B7280]">Rejected</span>
             </div>
           </div>

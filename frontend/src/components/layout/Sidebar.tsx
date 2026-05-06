@@ -17,7 +17,6 @@ import {
   ChevronRight,
   Sun,
   Moon,
-  ExternalLink,
   MessageSquare,
   LogOut,
   CalendarDays,
@@ -35,7 +34,6 @@ const navItems = [
   { href: '/documents', label: 'Documents', icon: FileText },
   { href: '/billing', label: 'Billing', icon: CreditCard },
   { href: '/firm-chat', label: 'Firm Chat', icon: MessageSquare },
-  { href: '/portal', label: 'Client Portal', icon: ExternalLink },
 ]
 
 const settingsItem = { href: '/settings', label: 'Settings', icon: Settings }

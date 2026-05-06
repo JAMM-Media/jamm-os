@@ -69,6 +69,7 @@ export default function SettingsPage() {
   const [inviteRole, setInviteRole] = useState<'staff' | 'manager'>('staff')
   const [inviteSubmitting, setInviteSubmitting] = useState(false)
   const [showInvitePassword, setShowInvitePassword] = useState(false)
+  const [invitePasswordLocked, setInvitePasswordLocked] = useState(false)
 
   async function handleInvite(e: React.FormEvent) {
     e.preventDefault()
@@ -372,7 +373,7 @@ export default function SettingsPage() {
                     <label className={labelClass}>Temporary password</label>
                     <div className="relative">
                       <input
-                        type={showInvitePassword ? 'text' : 'password'}
+                        type={showInvitePassword || invitePasswordLocked ? 'text' : 'password'}
                         required
                         value={invitePassword}
                         onChange={(e) => setInvitePassword(e.target.value)}
@@ -380,10 +381,12 @@ export default function SettingsPage() {
                       />
                       <button
                         type="button"
-                        onClick={() => setShowInvitePassword(!showInvitePassword)}
+                        onClick={() => setInvitePasswordLocked((prev) => !prev)}
+                        onMouseEnter={() => setShowInvitePassword(true)}
+                        onMouseLeave={() => setShowInvitePassword(false)}
                         className="absolute right-2 top-1/2 -translate-y-1/2 text-[#6B7280] hover:text-brand transition-colors"
                       >
-                        {showInvitePassword ? (
+                        {invitePasswordLocked || showInvitePassword ? (
                           <EyeOff style={{ width: 14, height: 14 }} />
                         ) : (
                           <Eye style={{ width: 14, height: 14 }} />

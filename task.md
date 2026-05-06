@@ -1,30 +1,31 @@
-TASK: Add upload method to documentsApi
+TASK: Fix new client disappearing — refetch after creation
 
-FILE: frontend/src/lib/api/documents.ts
+FILE: frontend/src/app/clients/page.tsx
+
+After creating a client the page only adds it to localClients 
+(in-memory). When the user navigates away and back, that state 
+resets. Fix by triggering a refetch after creation so the new 
+client is in the server-fetched list.
+
+CHANGE 1 — Destructure refetch from useFetch.
 
 Find:
-  getSignedUrl: async (id: string): Promise<string> => {
-    const { data } = await api.get(`/documents/${id}/download`)
-    return String(data.url ?? data.signed_url ?? '')
-  },
-}
+  const { data, isLoading, error } = useFetch(() => clientsApi.list(), [])
 
 Replace with:
-  getSignedUrl: async (id: string): Promise<string> => {
-    const { data } = await api.get(`/documents/${id}/download`)
-    return String(data.url ?? data.signed_url ?? '')
-  },
+  const { data, isLoading, error, refetch } = useFetch(() => clientsApi.list(), [])
 
-  upload: async (file: File, clientId?: string, engagementId?: string): Promise<Document> => {
-    const formData = new FormData()
-    formData.append('file', file)
-    if (clientId) formData.append('client_id', clientId)
-    if (engagementId) formData.append('engagement_id', engagementId)
-    const { data } = await api.post('/documents/upload', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    })
-    return mapDocument(data)
-  },
-}
+CHANGE 2 — Call refetch after adding the client locally.
+
+Find:
+  function handleAddClient(client: Client) {
+    setLocalClients((prev) => [client, ...prev])
+  }
+
+Replace with:
+  function handleAddClient(client: Client) {
+    setLocalClients((prev) => [client, ...prev])
+    setTimeout(() => refetch(), 500)
+  }
 
 No other files need to be changed.
