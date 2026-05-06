@@ -16,6 +16,10 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: 'JAMM PX',
   description: 'Practice experience for accounting firms',
+  icons: {
+    icon: '/favicon.svg',
+    apple: '/logo.svg',
+  },
 }
 
 export default function RootLayout({
