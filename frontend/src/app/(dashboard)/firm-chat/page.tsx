@@ -525,7 +525,7 @@ export default function FirmChatPage() {
                     </button>
 
                     {/* "..." dropdown button (firm_owner only, visible on hover) */}
-                    {isFirmOwner && isHovered && (
+                    {isFirmOwner && (isHovered || openDropdownId === ch.id) && (
                       <button
                         onClick={(e) => {
                           e.stopPropagation()
@@ -556,6 +556,7 @@ export default function FirmChatPage() {
                         </button>
                         <button
                           onClick={(e) => { e.stopPropagation(); openMembersModal(ch.id) }}
+                          onMouseDown={(e) => e.stopPropagation()}
                           className="block w-full text-left px-3 py-2 text-[13px] text-[#374151] dark:text-[#9CA3AF] hover:bg-[#D5D8DE] dark:hover:bg-[#444444] transition-colors whitespace-nowrap"
                         >
                           Manage Members
