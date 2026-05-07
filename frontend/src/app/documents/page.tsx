@@ -105,7 +105,7 @@ export default function DocumentsPage() {
             ))}
           </div>
         ) : filtered.length === 0 && search === '' ? (
-          <DocumentEmptyState onUpload={() => {}} />
+          <DocumentEmptyState onUpload={() => fileInputRef.current?.click()} />
         ) : filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center flex-1 py-24 gap-2">
             <p className="text-[13px] font-medium text-brand dark:text-[#EDEEF0]">

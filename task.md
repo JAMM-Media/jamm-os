@@ -1,27 +1,39 @@
 STANDING RULES:
 - Never use passlib. Use bcrypt directly.
 
-TASK: Fix TypeScript error — add assigned_to to tasksApi.create payload type
+TASK: Fix task auto in_progress — useEffect not firing correctly
 
-FILE TO EDIT: frontend/src/lib/api/tasks.ts
-(or wherever tasksApi is defined — search for the create function
-that has payload: { title: string; client_id: string; engagement_id: string; due_date?: string })
+FILE TO EDIT: frontend/src/app/tasks/[id]/page.tsx
+
+PROBLEM: The useEffect dependency array is [task?.id, user?.id]. When
+the component mounts, task is null so the effect fires but exits early.
+When task loads, neither task.id nor user.id changed so the effect
+doesn't re-fire.
+
+FIX: Change the dependency array to include task?.status so the effect
+re-runs when task data arrives:
 
 Find:
-  create: async (payload: {
-    title: string
-    client_id: string
-    engagement_id: string
-    due_date?: string
-  }): Promise<Task> => {
+  useEffect(() => {
+    if (!task || !user) return
+    // Auto-switch to in_progress when the assigned user first opens the task
+    if (
+      task.status === 'todo' &&
+      task.assignedTo === user.id
+    ) {
+      tasksApi.update(task.id, { status: 'in_progress' }).then(() => refetch())
+    }
+  }, [task?.id, user?.id])
 
 Change to:
-  create: async (payload: {
-    title: string
-    client_id: string
-    engagement_id: string
-    due_date?: string
-    assigned_to?: string
-  }): Promise<Task> => {
+  useEffect(() => {
+    if (!task || !user) return
+    if (
+      task.status === 'todo' &&
+      task.assignedTo === user.id
+    ) {
+      tasksApi.update(task.id, { status: 'in_progress' }).then(() => refetch())
+    }
+  }, [task?.id, task?.status, user?.id])
 
-Show the updated function signature after the change.
+Show the updated useEffect after the change.

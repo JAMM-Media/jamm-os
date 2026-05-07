@@ -25,14 +25,13 @@ export default function TaskDetailPage() {
 
   useEffect(() => {
     if (!task || !user) return
-    // Auto-switch to in_progress when the assigned user first opens the task
     if (
       task.status === 'todo' &&
       task.assignedTo === user.id
     ) {
       tasksApi.update(task.id, { status: 'in_progress' }).then(() => refetch())
     }
-  }, [task?.id, user?.id])
+  }, [task?.id, task?.status, user?.id])
 
   if (isLoading) {
     return (
