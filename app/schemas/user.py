@@ -17,8 +17,8 @@ class UserBase(BaseModel):
 
 class UserCreate(UserBase):
     password: str
-    # firm_id is required when creating a user — every user must belong to a firm.
-    firm_id: UUID
+    # firm_id is injected from JWT in the endpoint — optional in the request body
+    firm_id: Optional[UUID] = None
 
 
 class UserUpdate(BaseModel):
