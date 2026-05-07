@@ -106,6 +106,7 @@ export default function TasksPage() {
       await tasksApi.bulkUpdate(ids, { assigned_to: userId })
       setSelectedIds(new Set())
       toast.success(`Reassigned ${ids.length} task${ids.length !== 1 ? 's' : ''}`)
+      refetch()
     } catch {
       toast.error('Reassign failed')
     } finally {
