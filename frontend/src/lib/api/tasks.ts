@@ -61,6 +61,7 @@ export const tasksApi = {
     client_id: string
     engagement_id: string
     due_date?: string
+    assigned_to?: string
   }): Promise<Task> => {
     const { data } = await api.post('/tasks/', payload)
     return mapTask(data)
