@@ -78,9 +78,9 @@ export function NewClientModal({ open, onClose, onAdd }: NewClientModalProps) {
     try {
       const newClient = await clientsApi.create({
         name: form.name.trim(),
-        email: form.email.trim() || null,
-        phone: form.phone.trim() || null,
-        entity_type: form.entity_type || null,
+        email: form.email.trim() || undefined,
+        phone: form.phone.trim() || undefined,
+        entity_type: form.entity_type || undefined,
       })
       onAdd(newClient)
       handleClose()
