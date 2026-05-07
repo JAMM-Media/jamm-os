@@ -1,42 +1,14 @@
 STANDING RULES:
 - Never use passlib. Use bcrypt directly.
 
-TASK: Refetch task list after bulk reassign so names update immediately
+TASK: Fix TypeScript error — refetch not in scope on tasks page
 
-FILE TO EDIT: frontend/src/app/(dashboard)/tasks/page.tsx
-(or wherever handleBulkReassign is defined)
+FILE TO EDIT: frontend/src/app/tasks/page.tsx
 
 Find:
-  async function handleBulkReassign(userId: string) {
-    setReassignDropOpen(false)
-    setBulkLoading(true)
-    const ids = Array.from(selectedIds)
-    try {
-      await tasksApi.bulkUpdate(ids, { assigned_to: userId })
-      setSelectedIds(new Set())
-      toast.success(`Reassigned ${ids.length} task${ids.length !== 1 ? 's' : ''}`)
-    } catch {
-      toast.error('Reassign failed')
-    } finally {
-      setBulkLoading(false)
-    }
-  }
+  const { data, isLoading, error } = useFetch(() => tasksApi.list(0, 100), [])
 
 Change to:
-  async function handleBulkReassign(userId: string) {
-    setReassignDropOpen(false)
-    setBulkLoading(true)
-    const ids = Array.from(selectedIds)
-    try {
-      await tasksApi.bulkUpdate(ids, { assigned_to: userId })
-      setSelectedIds(new Set())
-      toast.success(`Reassigned ${ids.length} task${ids.length !== 1 ? 's' : ''}`)
-      refetch()
-    } catch {
-      toast.error('Reassign failed')
-    } finally {
-      setBulkLoading(false)
-    }
-  }
+  const { data, isLoading, error, refetch } = useFetch(() => tasksApi.list(0, 100), [])
 
-Show the updated function after the change.
+Show the updated line after the change.
