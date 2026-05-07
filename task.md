@@ -1,30 +1,92 @@
 STANDING RULES:
 - Never use passlib. Use bcrypt directly.
+- Background tasks must create their own SessionLocal() in try/finally.
 
-TASK: Fix client messages compose box not visible
+TASK: Fix NewClientModal — actually save client to database via API
 
-FILE TO EDIT: frontend/src/app/(dashboard)/clients/[id]/page.tsx
+FILE TO EDIT: frontend/src/components/clients/NewClientModal.tsx
 
-PROBLEM: The messages tab container uses h-[500px] with flex-col but
-the compose box is not visible. The parent div wrapping the tab content
-likely does not have a fixed height, so the flex container collapses.
+PROBLEM: handleSubmit creates a fake client object with id: String(Date.now())
+and calls onAdd() without ever making an API call. The client is never
+saved to the database so it disappears on navigation.
 
-FIX: Change the messages tab container to not rely on a fixed height.
-Instead use a min-height and let the compose box always be visible.
+FIX: Replace the fake client creation with a real API call to
+clientsApi.create(), then pass the real server response to onAdd().
+
+STEP 1: Import clientsApi and toast at the top of the file.
+
+Add these imports:
+  import { clientsApi, type Client } from '@/lib/api'
+  import { toast } from 'sonner'
+
+Note: type Client is already imported so just add clientsApi to that
+import line.
+
+STEP 2: Replace the entire handleSubmit function.
 
 Find:
-  {activeTab === 'messages' && (
-    <div className="flex flex-col h-[500px]">
-      {/* Messages list */}
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
+  function handleSubmit() {
+    const validation = validate(form)
+    if (Object.keys(validation).length > 0) {
+      setErrors(validation)
+      return
+    }
 
-Change to:
-  {activeTab === 'messages' && (
-    <div className="flex flex-col" style={{ minHeight: 400 }}>
-      {/* Messages list */}
-      <div className="overflow-y-auto px-4 py-4 space-y-3" style={{ minHeight: 300 }}>
+    setSubmitting(true)
 
-This removes flex-1 from the messages list so it doesn't consume all
-available space, and gives the compose box room to always render below.
+    const newClient: Client = {
+      id: String(Date.now()),
+      name: form.name.trim(),
+      email: form.email.trim() || null,
+      phone: form.phone.trim() || null,
+      companyName: null,
+      addressLine1: null,
+      addressLine2: null,
+      city: null,
+      state: null,
+      postalCode: null,
+      country: null,
+      isActive: true,
+      entityType: form.entity_type || null,
+      tags: [],
+      notes: null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }
 
-Show the updated container divs after the change.
+    onAdd(newClient)
+    setSubmitting(false)
+    handleClose()
+  }
+
+Replace with:
+  async function handleSubmit() {
+    const validation = validate(form)
+    if (Object.keys(validation).length > 0) {
+      setErrors(validation)
+      return
+    }
+
+    setSubmitting(true)
+    try {
+      const newClient = await clientsApi.create({
+        name: form.name.trim(),
+        email: form.email.trim() || null,
+        phone: form.phone.trim() || null,
+        entity_type: form.entity_type || null,
+      })
+      onAdd(newClient)
+      handleClose()
+    } catch (err: unknown) {
+      const message = (err as { response?: { data?: { detail?: string } } })
+        ?.response?.data?.detail ?? 'Failed to create client'
+      toast.error(message)
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+Also change the handleSubmit button onClick to not need to be async-safe —
+the button already has disabled={submitting} so no change needed there.
+
+After making changes show the updated handleSubmit function.

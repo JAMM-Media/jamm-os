@@ -6,7 +6,8 @@ import { Modal } from '@/components/ui/Modal'
 import { FormField } from '@/components/ui/FormField'
 import { TextInput } from '@/components/ui/TextInput'
 import { SelectInput } from '@/components/ui/SelectInput'
-import { type Client } from '@/lib/api'
+import { clientsApi, type Client } from '@/lib/api'
+import { toast } from 'sonner'
 
 const ENTITY_TYPE_OPTIONS = [
   { value: 'individual', label: 'Individual' },
@@ -66,7 +67,7 @@ export function NewClientModal({ open, onClose, onAdd }: NewClientModalProps) {
     onClose()
   }
 
-  function handleSubmit() {
+  async function handleSubmit() {
     const validation = validate(form)
     if (Object.keys(validation).length > 0) {
       setErrors(validation)
@@ -74,30 +75,22 @@ export function NewClientModal({ open, onClose, onAdd }: NewClientModalProps) {
     }
 
     setSubmitting(true)
-
-    const newClient: Client = {
-      id: String(Date.now()),
-      name: form.name.trim(),
-      email: form.email.trim() || null,
-      phone: form.phone.trim() || null,
-      companyName: null,
-      addressLine1: null,
-      addressLine2: null,
-      city: null,
-      state: null,
-      postalCode: null,
-      country: null,
-      isActive: true,
-      entityType: form.entity_type || null,
-      tags: [],
-      notes: null,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+    try {
+      const newClient = await clientsApi.create({
+        name: form.name.trim(),
+        email: form.email.trim() || null,
+        phone: form.phone.trim() || null,
+        entity_type: form.entity_type || null,
+      })
+      onAdd(newClient)
+      handleClose()
+    } catch (err: unknown) {
+      const message = (err as { response?: { data?: { detail?: string } } })
+        ?.response?.data?.detail ?? 'Failed to create client'
+      toast.error(message)
+    } finally {
+      setSubmitting(false)
     }
-
-    onAdd(newClient)
-    setSubmitting(false)
-    handleClose()
   }
 
   return (
