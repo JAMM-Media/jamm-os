@@ -7,6 +7,7 @@ export interface Task {
   status: string
   dueDate: string | null
   assignedTo: string | null
+  assignedToName: string | null
   notes: string | null
   isCompleted: boolean
   clientId: string
@@ -22,6 +23,7 @@ function mapTask(raw: Record<string, unknown>): Task {
     status: String(raw.status ?? 'todo'),
     dueDate: raw.due_date ? String(raw.due_date) : null,
     assignedTo: raw.assigned_to ? String(raw.assigned_to) : null,
+    assignedToName: raw.assigned_to_name ? String(raw.assigned_to_name) : null,
     notes: raw.notes ? String(raw.notes) : null,
     isCompleted: Boolean(raw.is_completed ?? false),
     clientId: String(raw.client_id ?? ''),

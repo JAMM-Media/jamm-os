@@ -22,6 +22,15 @@ import app.services.task_service as task_service
 router = APIRouter(prefix="/tasks", tags=["tasks"])
 
 
+def enrich_task(task: Task, db: Session) -> TaskOut:
+    out = TaskOut.model_validate(task)
+    if task.assigned_to:
+        user = db.get(User, task.assigned_to)
+        if user:
+            out.assigned_to_name = user.full_name
+    return out
+
+
 # ---------------------------------------------------------
 # CREATE TASK
 # manager_or_above can create tasks
@@ -59,7 +68,14 @@ def list_tasks(
     if status:
         query = query.filter(Task.status == status.value)
 
-    return paginate(query, limit=limit, offset=offset)
+    total = query.count()
+    tasks = query.offset(offset).limit(limit).all()
+    return {
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "items": [enrich_task(t, db) for t in tasks],
+    }
 
 
 # ---------------------------------------------------------
@@ -98,7 +114,7 @@ def get_task(
     task = crud_task.get_task_for_firm(db, task_id, current_firm.id)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
-    return task
+    return enrich_task(task, db)
 
 
 # ---------------------------------------------------------

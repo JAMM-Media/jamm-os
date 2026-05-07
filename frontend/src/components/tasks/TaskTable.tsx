@@ -115,7 +115,7 @@ export function TaskTable({
                 </td>
                 <td className="px-4 py-3">
                   <span className="text-[12px] text-[#374151] dark:text-[#9CA3AF]">
-                    —
+                    {task.assignedToName ?? task.assignedTo ?? '—'}
                   </span>
                 </td>
                 <td className="px-4 py-3">

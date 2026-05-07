@@ -81,7 +81,7 @@ export default function TaskDetailPage() {
           </button>
         </div>
 
-        <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 mb-4">
+        <div className="grid grid-cols-1 xl:grid-cols-4 gap-4 mb-4">
           <div className="bg-surface-card dark:bg-dark-card rounded-card p-4">
             <p className="text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em] mb-2">Status</p>
             <StatusBadge variant={task.status as BadgeVariant} />
@@ -89,6 +89,10 @@ export default function TaskDetailPage() {
           <div className="bg-surface-card dark:bg-dark-card rounded-card p-4">
             <p className="text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em] mb-2">Due Date</p>
             <p className="text-[13px] text-brand dark:text-[#EDEEF0]">{task.dueDate ?? '—'}</p>
+          </div>
+          <div className="bg-surface-card dark:bg-dark-card rounded-card p-4">
+            <p className="text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em] mb-2">Assigned To</p>
+            <p className="text-[13px] text-brand dark:text-[#EDEEF0]">{task.assignedToName ?? task.assignedTo ?? '—'}</p>
           </div>
           <div className="bg-surface-card dark:bg-dark-card rounded-card p-4">
             <p className="text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em] mb-2">Completed</p>

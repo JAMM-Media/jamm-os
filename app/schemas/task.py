@@ -3,6 +3,7 @@
 import uuid
 from datetime import date, datetime
 from enum import Enum
+from typing import Optional
 
 from pydantic import BaseModel, ConfigDict
 
@@ -44,6 +45,7 @@ class TaskOut(TaskBase):
     engagement_id: uuid.UUID  # Renamed from project_id
     created_at: datetime
     updated_at: datetime
+    assigned_to_name: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
