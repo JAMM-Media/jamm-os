@@ -6,7 +6,7 @@ import { Modal } from '@/components/ui/Modal'
 import { FormField } from '@/components/ui/FormField'
 import { TextInput } from '@/components/ui/TextInput'
 import { SelectInput } from '@/components/ui/SelectInput'
-import { tasksApi, clientsApi, engagementsApi, type Task } from '@/lib/api'
+import api, { tasksApi, clientsApi, engagementsApi, type Task } from '@/lib/api'
 
 interface NewTaskModalProps {
   open: boolean
@@ -19,6 +19,7 @@ interface FormState {
   clientId: string
   engagementId: string
   dueDate: string
+  assignedTo: string
 }
 
 interface FormErrors {
@@ -43,6 +44,7 @@ export function NewTaskModal({ open, onClose, onAdd }: NewTaskModalProps) {
     clientId: '',
     engagementId: '',
     dueDate: '',
+    assignedTo: '',
   })
   const [errors, setErrors] = useState<FormErrors>({})
   const [submitting, setSubmitting] = useState(false)
@@ -51,6 +53,8 @@ export function NewTaskModal({ open, onClose, onAdd }: NewTaskModalProps) {
   const [clientsLoading, setClientsLoading] = useState(false)
   const [engagements, setEngagements] = useState<Array<{ value: string; label: string }>>([])
   const [engagementsLoading, setEngagementsLoading] = useState(false)
+  const [staff, setStaff] = useState<Array<{ value: string; label: string }>>([])
+  const [staffLoading, setStaffLoading] = useState(false)
 
   useEffect(() => {
     if (!open) return
@@ -60,6 +64,19 @@ export function NewTaskModal({ open, onClose, onAdd }: NewTaskModalProps) {
       .then(({ items }) => setClients(items.map((c) => ({ value: c.id, label: c.name }))))
       .catch(() => setClients([]))
       .finally(() => setClientsLoading(false))
+  }, [open])
+
+  useEffect(() => {
+    if (!open) return
+    setStaffLoading(true)
+    api.get('/users/').then((res) => {
+      const items = Array.isArray(res.data) ? res.data : (res.data.items ?? [])
+      setStaff(items.map((u: Record<string, unknown>) => ({
+        value: String(u.id),
+        label: String(u.full_name ?? u.name ?? ''),
+      })))
+    }).catch(() => setStaff([]))
+      .finally(() => setStaffLoading(false))
   }, [open])
 
   useEffect(() => {
@@ -87,7 +104,7 @@ export function NewTaskModal({ open, onClose, onAdd }: NewTaskModalProps) {
   }
 
   function handleClose() {
-    setForm({ title: '', clientId: '', engagementId: '', dueDate: '' })
+    setForm({ title: '', clientId: '', engagementId: '', dueDate: '', assignedTo: '' })
     setErrors({})
     onClose()
   }
@@ -106,6 +123,7 @@ export function NewTaskModal({ open, onClose, onAdd }: NewTaskModalProps) {
         client_id: form.clientId,
         engagement_id: form.engagementId,
         due_date: form.dueDate || undefined,
+        assigned_to: form.assignedTo || undefined,
       })
       onAdd(task)
       handleClose()
@@ -181,6 +199,19 @@ export function NewTaskModal({ open, onClose, onAdd }: NewTaskModalProps) {
             value={form.dueDate}
             onChange={(e) => handleChange('dueDate', e.target.value)}
             error={!!errors.dueDate}
+          />
+        </FormField>
+
+        {/* Assign To */}
+        <FormField label="Assign To">
+          <SelectInput
+            value={form.assignedTo}
+            onChange={(e) => handleChange('assignedTo', e.target.value)}
+            disabled={staffLoading}
+            options={[
+              { value: '', label: staffLoading ? 'Loading...' : 'Unassigned' },
+              ...staff,
+            ]}
           />
         </FormField>
 

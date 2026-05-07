@@ -1,7 +1,7 @@
 // path: frontend/src/app/tasks/[id]/page.tsx
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useParams } from 'next/navigation'
 import { AppShell } from '@/components/layout/AppShell'
 import { Breadcrumb } from '@/components/layout/Breadcrumb'
@@ -10,6 +10,7 @@ import { tasksApi } from '@/lib/api'
 import { useFetch } from '@/lib/hooks/useFetch'
 import { NotesTab, NotesPanel, useNotes } from '@/components/notes'
 import { EditTaskModal } from '@/components/tasks/EditTaskModal'
+import { useAuth } from '@/lib/hooks/useAuth'
 
 type BadgeVariant = Parameters<typeof StatusBadge>[0]['variant']
 
@@ -17,9 +18,21 @@ export default function TaskDetailPage() {
   const params = useParams()
   const id = params.id as string
   const { data: task, isLoading, refetch } = useFetch(() => tasksApi.get(id), [id])
+  const { user } = useAuth()
   const [notesOpen, setNotesOpen] = useState(false)
   const [isEditOpen, setIsEditOpen] = useState(false)
   const { unreadCount } = useNotes({ entityType: 'task', entityId: id })
+
+  useEffect(() => {
+    if (!task || !user) return
+    // Auto-switch to in_progress when the assigned user first opens the task
+    if (
+      task.status === 'todo' &&
+      task.assignedTo === user.id
+    ) {
+      tasksApi.update(task.id, { status: 'in_progress' }).then(() => refetch())
+    }
+  }, [task?.id, user?.id])
 
   if (isLoading) {
     return (
