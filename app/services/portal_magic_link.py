@@ -114,6 +114,7 @@ def exchange_magic_link(token: str, db: Session) -> str:
 
     new_jti = str(uuid.uuid4())
     session.access_jti = new_jti
+    session.last_active_at = datetime.now(timezone.utc)
     db.commit()
 
     from app.services.portal_auth import create_portal_access_token
