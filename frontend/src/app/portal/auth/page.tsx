@@ -43,7 +43,7 @@ export default function PortalAuthPage() {
         }
         const data = await res.json()
         localStorage.setItem('portal_access_token', data.access_token)
-        router.replace('/portal')
+        window.location.href = '/portal'
       })
       .catch(() => {
         setExchangeError('This link has expired. Please request a new one.')
