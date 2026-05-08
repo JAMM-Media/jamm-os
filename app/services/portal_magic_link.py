@@ -48,7 +48,8 @@ def generate_magic_link(
         )
     ).scalar_one_or_none()
 
-    if session is None:
+    is_new_session = session is None
+    if is_new_session:
         session = PortalSession(
             firm_id=firm_id,
             client_id=client_id,
@@ -62,6 +63,8 @@ def generate_magic_link(
     expires_at = datetime.now(timezone.utc) + timedelta(hours=expiry_hours)
     session.magic_link_token_hash = token_hash
     session.magic_link_expires_at = expires_at
+    if not is_new_session:
+        session.last_active_at = datetime.now(timezone.utc)
     db.commit()
 
     if client.email:
