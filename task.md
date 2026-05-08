@@ -3,178 +3,162 @@
 - Background tasks must create their own SessionLocal() session in try/finally
 - Routers are thin — no business logic
 - Every file starts with a path comment
-- Do not run migrations — backend schema is unchanged
+- Do not run migrations unless explicitly told to
 
-## TASK: Wire the Client Portal Frontend to Real API Data
+## TASK A: Fix EmailService._send_raw missing method
 
-The client portal frontend currently reads from hardcoded mock arrays in
-`frontend/src/lib/mock/portal.ts`. The backend portal endpoints are fully
-built and working. This task replaces the mock data with real API calls
-across all four portal tabs: To-do, Documents, Invoices, and Messages.
+File: app/services/email_service.py
 
-The portal uses a separate JWT from the staff side. The portal token is
-stored in localStorage under the key `portal_token` (or wherever the
-current portal auth flow stores it after magic link exchange). Read the
-existing portal auth flow before assuming the key name.
+Add this static method to the EmailService class, directly after the 
+existing _send() method:
 
----
+    @staticmethod
+    def _send_raw(to_email: str, subject: str, html_body: str, from_name: str) -> None:
+        """Direct HTML send — used by magic link and portal invite flows."""
+        EmailService._send(to_email, subject, html_body, from_name)
 
-## STEP 1 — Audit the current portal structure
-
-Read these files in full before writing any code:
-
-1. `frontend/src/lib/mock/portal.ts` — understand what mock data exists
-2. `frontend/src/app/portal/` — find all portal page and component files
-3. `frontend/src/lib/` — find any existing portal API client or axios instance
-4. The portal auth page at `/portal/auth` — understand how the token is stored after magic link exchange
-
-Report back exactly:
-- Where the portal JWT is stored after login (localStorage key, cookie name, etc.)
-- Which components currently import from mock/portal.ts
-- Whether a portal-specific axios/fetch wrapper already exists or needs to be created
-
-Do NOT write any code yet. Just report the findings.
+No other changes to this file.
 
 ---
 
-## STEP 2 — Create a portal API client
+## TASK B: Fix "View Client Portal" button — redirect staff directly into portal
 
-Create `frontend/src/lib/portal-api.ts`.
+Currently the View Client Portal button on the client detail page opens 
+a blank page. It should generate a magic link for the client and open 
+the portal directly in a new tab, bypassing the email flow entirely.
 
-This is a thin fetch wrapper that:
-- Reads the portal JWT from wherever Step 1 confirmed it is stored
-- Attaches it as `Authorization: Bearer {token}` on every request
-- Points at the Next.js proxy route (same pattern as the staff API client — use `/api/` prefix if a proxy exists, or direct to backend if not — check how the staff API client works and match the pattern)
-- Exports typed fetch functions for each portal endpoint
+This is a staff-only shortcut. The client never sees this happen.
 
-Functions to export:
+### Backend change
 
-```typescript
-// Returns PaginatedResponse<PortalInvoice>
-export async function getPortalInvoices(): Promise<PortalInvoicesResponse>
+File: app/api/portal.py
 
-// Returns list of portal documents
-export async function getPortalDocuments(): Promise<PortalDocument[]>
+Add a new endpoint after the existing /portal/magic-link endpoint:
 
-// Returns list of portal messages for a client
-export async function getPortalMessages(clientId: string): Promise<PortalMessage[]>
+    @router.get("/admin/portal-access/{client_id}")
+    def staff_portal_access(
+        client_id: UUID,
+        db: Session = Depends(get_db),
+        current_user: User = Depends(require_staff_or_above),
+        current_firm: Firm = Depends(get_current_firm),
+    ):
+        """
+        Generate a magic link token for a client and return the raw
+        portal URL directly to the staff member — no email sent.
+        Staff use this to preview exactly what the client sees.
+        Auth: firm_owner, manager, staff.
+        """
+        from app.services import portal_magic_link
+        from sqlalchemy import select
 
-// Send a message from the client
-export async function sendPortalMessage(clientId: string, body: string): Promise<PortalMessage>
+        client = db.execute(
+            select(Client).where(
+                Client.id == client_id,
+                Client.firm_id == current_firm.id,
+            )
+        ).scalar_one_or_none()
+        if not client:
+            raise HTTPException(status_code=404, detail="Client not found")
 
-// Returns portal dashboard (active engagements, pending signatures, unread count)
-export async function getPortalDashboard(): Promise<PortalDashboard>
+        # Enable portal access temporarily if not already enabled
+        # so the magic link exchange works
+        if not client.portal_access_enabled:
+            client.portal_access_enabled = True
+            db.commit()
 
-// Get unread message count
-export async function getPortalUnreadCount(clientId: string): Promise<number>
-```
+        result = portal_magic_link.generate_magic_link(
+            client_id=client_id,
+            firm_id=current_firm.id,
+            expiry_hours=2,
+            db=db,
+        )
 
-Define TypeScript interfaces for each response type based on the backend
-schemas in the codebase snapshot:
+        from app.core.config import get_settings
+        settings = get_settings()
+        portal_url = f"{settings.FRONTEND_URL}/portal/auth?token="
 
-- `PortalInvoice` — matches `PortalInvoiceOut` schema (id, invoice_number, total_amount, status, due_date, line_items, etc.)
-- `PortalDocument` — matches the `/portal/documents` response shape (id, name, uploaded_at, file_type, file_size_kb, uploaded_by)
-- `PortalMessage` — matches `ClientMessageOut` (id, body, sender_role, sender_name, created_at)
-- `PortalDashboard` — matches `PortalDashboardOut` (active_engagements, pending_signatures, pending_document_requests, unread_notification_count)
+        # We need the raw token — generate it directly instead of 
+        # going through generate_magic_link which doesn't return it.
+        # Re-implement inline:
+        import hashlib, secrets
+        from datetime import datetime, timedelta, timezone
+        from app.models.portal_session import PortalSession
+
+        raw_token = secrets.token_hex(32)
+        token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
+        expires_at = datetime.now(timezone.utc) + timedelta(hours=2)
+
+        session = db.execute(
+            select(PortalSession).where(
+                PortalSession.client_id == client_id,
+                PortalSession.firm_id == current_firm.id,
+                PortalSession.is_revoked.is_(False),
+            )
+        ).scalar_one_or_none()
+
+        import uuid as _uuid
+        if session is None:
+            import hashlib as _hl, secrets as _sec
+            session = PortalSession(
+                firm_id=current_firm.id,
+                client_id=client_id,
+                refresh_token_hash=_hl.sha256(_sec.token_hex(32).encode()).hexdigest(),
+                access_jti=str(_uuid.uuid4()),
+                expires_at=datetime.now(timezone.utc) + timedelta(days=30),
+            )
+            db.add(session)
+            db.flush()
+
+        session.magic_link_token_hash = token_hash
+        session.magic_link_expires_at = expires_at
+        db.commit()
+
+        return {
+            "portal_url": f"{settings.FRONTEND_URL}/portal/auth?token={raw_token}"
+        }
+
+Wait — that approach duplicates logic from generate_magic_link. 
+Do it cleanly instead:
+
+Modify app/services/portal_magic_link.py:
+
+Change generate_magic_link() to also return the raw_token in its 
+response alongside the MagicLinkResponse. Specifically:
+
+1. Change the return type to a tuple: return both the MagicLinkResponse 
+   and the raw_token string
+2. Return: return MagicLinkResponse(sent=True, expires_at=expires_at), raw_token
+
+Then in the existing /portal/magic-link endpoint (POST), update the 
+call to unpack the tuple and only use the MagicLinkResponse:
+    result, _ = portal_magic_link.generate_magic_link(...)
+    return result
+
+Then the new /admin/portal-access/{client_id} endpoint unpacks both:
+    result, raw_token = portal_magic_link.generate_magic_link(...)
+    return {"portal_url": f"{settings.FRONTEND_URL}/portal/auth?token={raw_token}"}
+
+### Frontend change
+
+File: frontend/src/app/clients/[id]/page.tsx (or wherever the 
+View Client Portal button lives — find it first)
+
+Change the View Client Portal button's onClick handler to:
+1. Call GET /api/backend/portal/admin/portal-access/{clientId} 
+   with the staff JWT (use the existing api axios instance)
+2. On success, open the returned portal_url in a new tab: 
+   window.open(data.portal_url, '_blank')
+3. Show a loading state on the button while the request is in flight
+4. Show a toast error if the request fails
+
+The button should say "View Client Portal" and open the portal 
+in a new tab — not navigate the current tab away from the client page.
 
 ---
 
-## STEP 3 — Wire the Invoices tab
+## VERIFICATION
 
-Find the portal Invoices component (currently imports from mock/portal.ts).
-
-Replace the mock import with a real call to `getPortalInvoices()`.
-
-Requirements:
-- Show a loading skeleton while fetching (match the existing skeleton pattern used elsewhere in the app)
-- Show an empty state if no invoices returned
-- Error state if the fetch fails — simple "Something went wrong" message with a retry button
-- The Pay Now button already exists — leave it in place, do not change its behavior
-- Display: invoice number, amount, status badge, due date, issued date
-- Status badges must use the existing status color system (sent=blue, paid=green, overdue=red)
-
----
-
-## STEP 4 — Wire the Documents tab
-
-Find the portal Documents component.
-
-Replace mock import with a real call to `getPortalDocuments()`.
-
-Requirements:
-- Loading skeleton while fetching
-- Empty state: "No documents yet. Your firm will share documents here."
-- Display: filename, uploaded date, file type badge, file size
-- uploaded_by field: if "firm" show firm name, if "client" show "Uploaded by you"
-- Do NOT add a download button — the portal document download requires a separate presigned URL endpoint that isn't in scope here. Just show the list.
-
----
-
-## STEP 5 — Wire the Messages tab
-
-Find the portal Messages component.
-
-Replace mock import with real calls to `getPortalMessages(clientId)`.
-
-The clientId needs to come from the portal JWT payload (the `sub` claim is the client_id). Decode the JWT on the client side to extract it — use `jwt-decode` if already installed, or parse the base64 payload manually (no signature verification needed client-side).
-
-Requirements:
-- Load messages on mount
-- Show sender name and timestamp on each message
-- Messages from sender_role="staff" appear on the left
-- Messages from sender_role="client" appear on the right
-- Compose box at the bottom calls `sendPortalMessage(clientId, body)`
-- Optimistic UI: message appears immediately on send, before API confirms
-- Loading skeleton while initial fetch is in progress
-- Empty state: "No messages yet."
-
----
-
-## STEP 6 — Wire the To-do tab
-
-The To-do tab shows pending signatures and pending document requests.
-
-Call `getPortalDashboard()` which returns:
-- `pending_signatures` — list of signature envelopes awaiting signing
-- `pending_document_requests` — currently returns empty list (backend placeholder) — that's fine, render nothing for this section if empty
-- `active_engagements` — show engagement name and status
-
-Requirements:
-- Pending signatures: show subject, sent_at date, and a "Sign" button (button can link to the envelope or just show a placeholder — Dropbox Sign flow is separate)
-- Active engagements: show name and status badge
-- Loading skeleton while fetching
-- Empty state for each section if nothing pending: "You're all caught up."
-
----
-
-## STEP 7 — Wire the portal /me endpoint for firm name display
-
-The portal top bar currently shows a hardcoded firm name. 
-
-Call `GET /portal/me` on portal load. It returns:
-```json
-{ "client_id": "...", "client_name": "...", "firm_name": "..." }
-```
-
-Store this in component state or a simple context. Use `firm_name` in the portal top bar and `client_name` in the "Hello, [First Name]" greeting on the To-do tab. Extract first name from client_name by splitting on space and taking the first element.
-
----
-
-## STEP 8 — Remove mock imports
-
-After all tabs are wired and working:
-
-1. Check that nothing in the portal still imports from `frontend/src/lib/mock/portal.ts`
-2. Delete `frontend/src/lib/mock/portal.ts`
-3. Do NOT delete `frontend/src/lib/mock/tasks.ts` — the staff task list may still use it
-
----
-
-## STEP 9 — Verify
-
-Check that:
-- The portal compiles with no TypeScript errors (`npx tsc --noEmit` in the frontend directory)
-- No remaining imports from mock/portal.ts
-- Each tab renders a loading state, an empty state, and a data state (can be verified visually if the DB has seed data, or just confirmed the component structure handles all three cases)
-
-Report every file modified and what changed in each one.
+After both changes:
+1. Run: npx tsc --noEmit in the frontend directory
+2. Confirm no TypeScript errors
+3. Report every file modified

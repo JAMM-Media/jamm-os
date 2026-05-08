@@ -48,6 +48,7 @@ function ClientDetailContent() {
   })
   const [notesOpen, setNotesOpen] = useState(false)
   const [sendingPortalLink, setSendingPortalLink] = useState(false)
+  const [viewingPortal, setViewingPortal] = useState(false)
   const { user } = useAuth()
 
   const clientId = params.id as string
@@ -127,11 +128,14 @@ function ClientDetailContent() {
   }
 
   const handleViewPortal = async () => {
+    setViewingPortal(true)
     try {
-      const res = await api.get<{ url: string }>(`/portal/preview/${clientId}`)
-      window.open(res.data.url, '_blank', 'noopener,noreferrer')
-    } catch (err) {
-      console.error('Failed to load portal preview:', err)
+      const res = await api.get<{ portal_url: string }>(`/portal/admin/portal-access/${clientId}`)
+      window.open(res.data.portal_url, '_blank', 'noopener,noreferrer')
+    } catch {
+      toast.error('Could not open client portal — please try again')
+    } finally {
+      setViewingPortal(false)
     }
   }
 
@@ -272,9 +276,14 @@ function ClientDetailContent() {
             )}
             <button
               onClick={handleViewPortal}
-              className="flex items-center gap-1.5 h-8 px-3 text-[12px] font-medium text-[#1F3148] dark:text-[#EDEEF0] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] rounded-md bg-transparent hover:bg-surface-card dark:hover:bg-dark-card transition-colors"
+              disabled={viewingPortal}
+              className="flex items-center gap-1.5 h-8 px-3 text-[12px] font-medium text-[#1F3148] dark:text-[#EDEEF0] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] rounded-md bg-transparent hover:bg-surface-card dark:hover:bg-dark-card transition-colors disabled:opacity-60"
             >
-              <ExternalLink className="h-[14px] w-[14px]" />
+              {viewingPortal ? (
+                <Loader2 className="h-[14px] w-[14px] animate-spin" />
+              ) : (
+                <ExternalLink className="h-[14px] w-[14px]" />
+              )}
               View Client Portal
             </button>
           </div>

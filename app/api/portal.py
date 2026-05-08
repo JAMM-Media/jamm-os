@@ -326,12 +326,48 @@ def send_portal_magic_link(
     Generate and email a magic link for passwordless client portal access.
     Auth: firm_owner or manager only.
     """
-    return portal_magic_link.generate_magic_link(
+    result, _ = portal_magic_link.generate_magic_link(
         client_id=body.client_id,
         firm_id=current_firm.id,
         expiry_hours=body.expiry_hours,
         db=db,
     )
+    return result
+
+
+@router.get("/admin/portal-access/{client_id}")
+def staff_portal_access(
+    client_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_staff_or_above),
+    current_firm: Firm = Depends(get_current_firm),
+):
+    """
+    Generate a magic link token for a client and return the raw
+    portal URL directly to the staff member — no email sent.
+    Staff use this to preview exactly what the client sees.
+    Auth: firm_owner, manager, staff.
+    """
+    client = db.execute(
+        select(Client).where(
+            Client.id == client_id,
+            Client.firm_id == current_firm.id,
+        )
+    ).scalar_one_or_none()
+    if client is None:
+        raise HTTPException(status_code=404, detail="Client not found")
+
+    if not client.portal_access_enabled:
+        client.portal_access_enabled = True
+        db.commit()
+
+    _, raw_token = portal_magic_link.generate_magic_link(
+        client_id=client_id,
+        firm_id=current_firm.id,
+        expiry_hours=2,
+        db=db,
+    )
+    return {"portal_url": f"{settings.FRONTEND_URL}/portal/auth?token={raw_token}"}
 
 
 @router.post("/request-magic-link")

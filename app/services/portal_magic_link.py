@@ -27,7 +27,7 @@ def generate_magic_link(
     firm_id: uuid.UUID,
     expiry_hours: int,
     db: Session,
-) -> MagicLinkResponse:
+) -> tuple[MagicLinkResponse, str]:
     client = db.execute(
         select(Client).where(
             Client.id == client_id,
@@ -90,7 +90,7 @@ def generate_magic_link(
             "days_since_client_created": None,
         }
     )
-    return MagicLinkResponse(sent=True, expires_at=expires_at)
+    return MagicLinkResponse(sent=True, expires_at=expires_at), raw_token
 
 
 def exchange_magic_link(token: str, db: Session) -> str:

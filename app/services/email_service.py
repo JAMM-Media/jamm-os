@@ -55,6 +55,11 @@ class EmailService:
             raise
 
     @staticmethod
+    def _send_raw(to_email: str, subject: str, html_body: str, from_name: str) -> None:
+        """Direct HTML send — used by magic link and portal invite flows."""
+        EmailService._send(to_email, subject, html_body, from_name)
+
+    @staticmethod
     def send_notification_email(
         to_email: str,
         firm_name: str,
