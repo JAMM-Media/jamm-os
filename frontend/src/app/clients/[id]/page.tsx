@@ -130,11 +130,13 @@ function ClientDetailContent() {
   const handleViewPortal = async () => {
     setViewingPortal(true)
     try {
-      const res = await api.get<{ portal_url: string }>(`/portal/admin/portal-access/${clientId}`)
-      window.open(res.data.portal_url, '_blank', 'noopener,noreferrer')
+      const res = await api.get<{ portal_url: string }>(
+        `/portal/admin/portal-access/${clientId}`
+      )
+      // Navigate current tab — avoids popup blocker
+      window.location.href = res.data.portal_url
     } catch {
       toast.error('Could not open client portal — please try again')
-    } finally {
       setViewingPortal(false)
     }
   }
