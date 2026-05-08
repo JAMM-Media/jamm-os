@@ -4,8 +4,6 @@
 import { useState, useEffect } from 'react'
 import { Loader2 } from 'lucide-react'
 
-export const dynamic = 'force-dynamic'
-
 const inputClass =
   'w-full h-9 px-3 rounded-[6px] text-[13px] bg-[#2D2D2D] border border-[#484848] text-[#EDEEF0] placeholder:text-[#9CA3AF] focus:outline-none focus:border-[#4A7FA5] transition-colors'
 

@@ -11,8 +11,6 @@ import { PortalDocuments } from '@/components/portal/PortalDocuments'
 import { PortalInvoices } from '@/components/portal/PortalInvoices'
 import { PortalMessages } from '@/components/portal/PortalMessages'
 
-export const dynamic = 'force-dynamic'
-
 const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!)
 
 interface PortalMe {
