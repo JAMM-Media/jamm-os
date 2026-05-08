@@ -1,7 +1,7 @@
 // frontend/src/components/portal/PortalDocuments.tsx
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { FileText, Upload } from 'lucide-react'
 import { getPortalDocuments } from '@/lib/portal-api'
 import type { PortalDocument as PortalDocumentItem } from '@/lib/portal-api'
@@ -19,6 +19,16 @@ export function PortalDocuments({ firmName }: PortalDocumentsProps) {
   const [documents, setDocuments] = useState<PortalDocumentItem[]>([])
   const [loading, setLoading] = useState(true)
   const [fetchError, setFetchError] = useState(false)
+  const [toast, setToast] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setToast('Upload coming soon — document uploads will be available in the next update.')
+    setTimeout(() => setToast(null), 4000)
+    e.target.value = ''
+  }
 
   const fetchDocuments = useCallback(async () => {
     setLoading(true)
@@ -69,11 +79,26 @@ export function PortalDocuments({ firmName }: PortalDocumentsProps) {
         <p className="text-[10px] font-medium text-[#9CA3AF] uppercase tracking-[0.05em]">
           Documents ({documents.length})
         </p>
-        <button className="flex items-center gap-1.5 h-8 px-3 rounded-[6px] bg-[#3A6A94] text-[#EDEEF0] text-[12px] font-medium hover:opacity-90 transition-opacity">
+        <button
+          onClick={() => fileInputRef.current?.click()}
+          className="flex items-center gap-1.5 h-8 px-3 rounded-[6px] bg-[#3A6A94] text-[#EDEEF0] text-[12px] font-medium hover:opacity-90 transition-opacity"
+        >
           <Upload className="h-3.5 w-3.5" />
           Upload
         </button>
       </div>
+      <input
+        type="file"
+        ref={fileInputRef}
+        className="hidden"
+        accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg"
+        onChange={handleFileChange}
+      />
+      {toast && (
+        <div className="fixed bottom-4 right-4 z-50 rounded-[8px] px-4 py-3 text-[12px] min-w-[260px] max-w-[320px] shadow-lg" style={{ backgroundColor: '#383838', borderLeft: '3px solid #10B981', color: '#EDEEF0' }}>
+          {toast}
+        </div>
+      )}
 
       {documents.length === 0 ? (
         <div className="flex flex-col items-center gap-1 py-12">
