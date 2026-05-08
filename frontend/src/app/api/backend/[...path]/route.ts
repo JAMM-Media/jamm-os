@@ -37,7 +37,8 @@ async function proxyRequest(
   params: { path: string[] }
 ): Promise<NextResponse> {
   const cookieStore = await cookies()
-  const token = cookieStore.get('jamm_token')?.value
+  const incomingAuth = request.headers.get('Authorization')
+  const cookieToken = cookieStore.get('jamm_token')?.value
 
   const path = params.path.join('/')
   const search = request.nextUrl.search ?? ''
@@ -46,11 +47,13 @@ async function proxyRequest(
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   }
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`
-  } else {
-    const incomingAuth = request.headers.get('Authorization')
-    if (incomingAuth) headers['Authorization'] = incomingAuth
+  // Portal routes send their own JWT via Authorization header.
+  // Always prefer the incoming Authorization header when present.
+  // Fall back to the staff cookie token for staff-side requests.
+  if (incomingAuth) {
+    headers['Authorization'] = incomingAuth
+  } else if (cookieToken) {
+    headers['Authorization'] = `Bearer ${cookieToken}`
   }
 
   const init: RequestInit = {
