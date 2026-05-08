@@ -67,7 +67,7 @@ export default function PortalPage() {
       onTabChange={setActiveTab}
     >
       {activeTab === 'todo' && <PortalTodo clientFirstName={firstName} />}
-      {activeTab === 'documents' && <PortalDocuments />}
+      {activeTab === 'documents' && <PortalDocuments firmName={me.firm_name} />}
       {activeTab === 'invoices' && (
         <Elements stripe={stripePromise}>
           <PortalInvoices />

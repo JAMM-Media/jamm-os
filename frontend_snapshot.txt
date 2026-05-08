@@ -730,31 +730,57 @@ function isSameSenderWithin5Min(
   return Math.abs(new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()) < 5 * 60 * 1000
 }
 
-function renderBody(body: string, mentions: string[]): ReactNode {
-  if (!mentions || mentions.length === 0) return <>{body}</>
+function renderBody(body: string, _mentions: string[], staffMap?: Map<string, string>): ReactNode {
+  if (!body) return <>{body}</>
+
+  // Build set of known staff names for matching
+  const staffNames = staffMap ? Array.from(staffMap.values()) : []
+
+  // Find all @Name occurrences in the body that match a staff name
+  // Sort by length descending so "Sarah Chen" matches before "Sarah"
+  const sortedNames = [...staffNames].sort((a, b) => b.length - a.length)
+
+  if (sortedNames.length === 0) {
+    // Fallback: highlight any @word in body
+    const parts: ReactNode[] = []
+    const regex = /@(\S+)/g
+    let last = 0
+    let match
+    let found = false
+    while ((match = regex.exec(body)) !== null) {
+      found = true
+      if (match.index > last) parts.push(<span key={last}>{body.slice(last, match.index)}</span>)
+      parts.push(
+        <span key={match.index} className="bg-status-blue text-status-blue-text rounded px-1 font-medium">
+          {match[0]}
+        </span>
+      )
+      last = match.index + match[0].length
+    }
+    if (last < body.length) parts.push(<span key={last}>{body.slice(last)}</span>)
+    return found ? <>{parts}</> : <>{body}</>
+  }
+
+  // Build regex that matches @Name for any known staff name
+  const escaped = sortedNames.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+  const pattern = new RegExp(`@(${escaped.join('|')})(?=\\s|$|[^\\w])`, 'gi')
+
   const parts: ReactNode[] = []
-  let remaining = body
-  let key = 0
-  let foundAny = false
-  for (const mention of mentions) {
-    const pattern = `@${mention}`
-    const idx = remaining.indexOf(pattern)
-    if (idx === -1) continue
-    foundAny = true
-    if (idx > 0) parts.push(<span key={key++}>{remaining.slice(0, idx)}</span>)
+  let last = 0
+  let match
+  let found = false
+  while ((match = pattern.exec(body)) !== null) {
+    found = true
+    if (match.index > last) parts.push(<span key={last}>{body.slice(last, match.index)}</span>)
     parts.push(
-      <span
-        key={key++}
-        className="bg-status-blue text-status-blue-text rounded px-1 font-medium"
-      >
-        {pattern}
+      <span key={match.index} className="bg-status-blue text-status-blue-text rounded px-1 font-medium">
+        {match[0]}
       </span>
     )
-    remaining = remaining.slice(idx + pattern.length)
+    last = match.index + match[0].length
   }
-  if (remaining.length > 0) parts.push(<span key={key++}>{remaining}</span>)
-  if (!foundAny) return <>{body}</>
-  return <>{parts}</>
+  if (last < body.length) parts.push(<span key={last}>{body.slice(last)}</span>)
+  return found ? <>{parts}</> : <>{body}</>
 }
 
 function getMentionQuery(value: string, cursor: number): string | null {
@@ -762,7 +788,9 @@ function getMentionQuery(value: string, cursor: number): string | null {
   const lastAt = before.lastIndexOf('@')
   if (lastAt === -1) return null
   const afterAt = before.slice(lastAt + 1)
-  if (/\s/.test(afterAt)) return null
+  // Allow spaces within the query so full names like "Sarah Chen" work
+  // But stop if there are two consecutive spaces or a newline
+  if (/\n/.test(afterAt) || /\s{2}/.test(afterAt)) return null
   return afterAt
 }
 
@@ -861,7 +889,7 @@ export default function FirmChatPage() {
   }, [staffList.length])
 
   const filteredStaff = staffList.filter((s) =>
-    s.name.toLowerCase().startsWith(mentionQuery.toLowerCase())
+    s.name.toLowerCase().includes(mentionQuery.trim().toLowerCase())
   )
 
   // ─── Messages scroll ─────────────────────────────────────────────────────
@@ -883,6 +911,12 @@ export default function FirmChatPage() {
     (senderId: string) => senderIndexMap.get(senderId) ?? 0,
     [senderIndexMap]
   )
+
+  const staffMap = useMemo(() => {
+    const map = new Map<string, string>()
+    staffList.forEach((s) => map.set(s.id, s.name))
+    return map
+  }, [staffList])
 
   // ─── Handlers ────────────────────────────────────────────────────────────
 
@@ -953,9 +987,11 @@ export default function FirmChatPage() {
 
   const handleMentionSelect = (staff: StaffMember) => {
     const cursor = textareaRef.current?.selectionStart ?? composeValue.length
-    const lastAt = composeValue.slice(0, cursor).lastIndexOf('@')
+    const beforeCursor = composeValue.slice(0, cursor)
+    const lastAt = beforeCursor.lastIndexOf('@')
     if (lastAt !== -1) {
       const before = composeValue.slice(0, lastAt)
+      // Skip past everything the user typed after @ (the partial query)
       const after = composeValue.slice(cursor)
       setComposeValue(`${before}@${staff.name} ${after}`)
       setComposeMentions((prev) => [...prev, staff.name])
@@ -1107,7 +1143,7 @@ export default function FirmChatPage() {
               className="text-[13px] text-[#374151] dark:text-[#9CA3AF]"
               style={{ lineHeight: '1.6' }}
             >
-              {renderBody(msg.body, msg.mentions)}
+              {renderBody(msg.body, msg.mentions, staffMap)}
             </p>
           </div>
         )
@@ -1131,7 +1167,7 @@ export default function FirmChatPage() {
                 className="text-[13px] text-[#374151] dark:text-[#9CA3AF] mt-0.5"
                 style={{ lineHeight: '1.6', marginLeft: '0' }}
               >
-                {renderBody(msg.body, msg.mentions)}
+                {renderBody(msg.body, msg.mentions, staffMap)}
               </p>
             </div>
           </div>
@@ -1357,7 +1393,13 @@ export default function FirmChatPage() {
                     onKeyDown={handleKeyDown}
                     placeholder={activeChannel ? `Message #${activeChannel.name}...` : 'Select a channel...'}
                     rows={1}
-                    className="flex-1 resize-none bg-surface-input dark:bg-dark-page border border-[#C8CDD6] dark:border-[#484848] focus:border-[#4A7FA5] dark:focus:border-[#4A7FA5] rounded-lg px-3 py-2 text-[13px] text-[#374151] dark:text-[#9CA3AF] placeholder:text-[#9CA3AF] outline-none transition-colors overflow-hidden"
+                    className={`flex-1 resize-none border ${
+                      showMentionPopover
+                        ? 'border-[#4A7FA5] bg-[#EFF6FF] dark:bg-[#1e2a3a]'
+                        : composeMentionIds.length > 0
+                          ? 'bg-[#EFF6FF] dark:bg-[#1e2a3a] border-[#C8CDD6] dark:border-[#484848] focus:border-[#4A7FA5] dark:focus:border-[#4A7FA5]'
+                          : 'bg-surface-input dark:bg-dark-page border-[#C8CDD6] dark:border-[#484848] focus:border-[#4A7FA5] dark:focus:border-[#4A7FA5]'
+                    } rounded-lg px-3 py-2 text-[13px] text-[#374151] dark:text-[#9CA3AF] placeholder:text-[#9CA3AF] outline-none transition-colors overflow-hidden`}
                     style={{ minHeight: '40px', maxHeight: '160px' }}
                   />
                   <button
@@ -2913,7 +2955,7 @@ FILE: frontend\src\app\clients\[id]\page.tsx
 // path: frontend/src/app/clients/[id]/page.tsx
 'use client'
 
-import { Suspense, useState } from 'react'
+import { Suspense, useState, useEffect } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import { AppShell } from '@/components/layout/AppShell'
@@ -2966,6 +3008,17 @@ function ClientDetailContent() {
 
   const [isEditOpen, setIsEditOpen] = useState(false)
 
+  const [clientMessages, setClientMessages] = useState<Array<{
+    id: string
+    body: string
+    senderName: string | null
+    senderRole: string
+    createdAt: string
+  }>>([])
+  const [messagesLoading, setMessagesLoading] = useState(false)
+  const [messageCompose, setMessageCompose] = useState('')
+  const [messageSending, setMessageSending] = useState(false)
+
   const { data: client, isLoading: clientLoading, refetch: refetchClient } = useFetch(
     () => clientsApi.get(clientId),
     [clientId]
@@ -2985,6 +3038,47 @@ function ClientDetailContent() {
 
   const { unreadCount: unreadMessages, markAsRead: markMessagesRead } = useUnreadMessages(clientId)
   const { unreadCount: unreadNotes } = useNotes({ entityType: 'client', entityId: clientId })
+
+  useEffect(() => {
+    if (activeTab !== 'messages' || !clientId) return
+    setMessagesLoading(true)
+    api.get(`/clients/${clientId}/messages`)
+      .then((res) => {
+        const items = Array.isArray(res.data) ? res.data : (res.data.items ?? [])
+        setClientMessages(items.map((m: Record<string, unknown>) => ({
+          id: String(m.id),
+          body: String(m.body ?? ''),
+          senderName: m.sender_name ? String(m.sender_name) : null,
+          senderRole: String(m.sender_role ?? 'staff'),
+          createdAt: String(m.created_at ?? ''),
+        })))
+      })
+      .catch(() => {})
+      .finally(() => setMessagesLoading(false))
+  }, [activeTab, clientId])
+
+  const handleSendMessage = async () => {
+    if (!messageCompose.trim() || messageSending) return
+    setMessageSending(true)
+    try {
+      const res = await api.post(`/clients/${clientId}/messages`, {
+        body: messageCompose.trim()
+      })
+      const m = res.data
+      setClientMessages((prev) => [...prev, {
+        id: String(m.id),
+        body: String(m.body ?? ''),
+        senderName: m.sender_name ? String(m.sender_name) : null,
+        senderRole: String(m.sender_role ?? 'staff'),
+        createdAt: String(m.created_at ?? ''),
+      }])
+      setMessageCompose('')
+    } catch {
+      toast.error('Failed to send message')
+    } finally {
+      setMessageSending(false)
+    }
+  }
 
   const handleViewPortal = async () => {
     try {
@@ -3350,16 +3444,77 @@ function ClientDetailContent() {
         )}
 
         {activeTab === 'messages' && (
-          <div className="flex flex-col items-center justify-center py-24 gap-[10px]">
-            <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-surface-card dark:bg-dark-card border border-[0.5px] border-surface-border dark:border-dark-border">
-              <span className="text-[18px]">💬</span>
+          <div className="flex flex-col" style={{ minHeight: 400 }}>
+            {/* Messages list */}
+            <div className="overflow-y-auto px-4 py-4 space-y-3" style={{ minHeight: 300 }}>
+              {messagesLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="h-5 w-5 animate-spin text-[#6B7280]" />
+                </div>
+              ) : clientMessages.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-16 gap-2">
+                  <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-surface-card dark:bg-dark-card border border-[0.5px] border-surface-border dark:border-dark-border">
+                    <span className="text-[18px]">💬</span>
+                  </div>
+                  <p className="text-[13px] font-medium text-brand dark:text-[#EDEEF0]">No messages yet</p>
+                  <p className="text-[12px] text-[#6B7280]">Send the first message below.</p>
+                </div>
+              ) : (
+                clientMessages.map((msg) => {
+                  const isStaff = msg.senderRole === 'staff'
+                  return (
+                    <div key={msg.id} className={`flex flex-col gap-1 ${isStaff ? 'items-end' : 'items-start'}`}>
+                      <div
+                        className={`max-w-[70%] px-3 py-2 rounded-xl text-[13px] leading-relaxed ${
+                          isStaff
+                            ? 'bg-[#1F3148] text-white rounded-br-sm'
+                            : 'bg-surface-card dark:bg-dark-card text-[#374151] dark:text-[#EDEEF0] rounded-bl-sm border border-[#C8CDD6] dark:border-[#484848]'
+                        }`}
+                      >
+                        {msg.body}
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[11px] text-[#6B7280]">
+                          {msg.senderName ?? (isStaff ? 'You' : 'Client')}
+                        </span>
+                        <span className="text-[11px] text-[#9CA3AF]">
+                          {new Date(msg.createdAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                        </span>
+                      </div>
+                    </div>
+                  )
+                })
+              )}
             </div>
-            <p className="text-[13px] font-medium text-brand dark:text-[#EDEEF0]">
-              No messages yet
-            </p>
-            <p className="text-[12px] text-[#6B7280]">
-              Messages with this client will appear here.
-            </p>
+
+            {/* Compose box */}
+            <div className="flex-shrink-0 border-t border-[#C8CDD6] dark:border-[#484848] px-4 py-3 flex gap-2 items-end">
+              <textarea
+                value={messageCompose}
+                onChange={(e) => setMessageCompose(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault()
+                    handleSendMessage()
+                  }
+                }}
+                placeholder="Send a message to this client..."
+                rows={1}
+                className="flex-1 resize-none bg-surface-input dark:bg-dark-page border border-[#C8CDD6] dark:border-[#484848] focus:border-[#4A7FA5] dark:focus:border-[#4A7FA5] rounded-lg px-3 py-2 text-[13px] text-[#374151] dark:text-[#9CA3AF] placeholder:text-[#9CA3AF] outline-none transition-colors"
+                style={{ minHeight: 36, maxHeight: 120 }}
+              />
+              <button
+                onClick={handleSendMessage}
+                disabled={!messageCompose.trim() || messageSending}
+                className="flex-shrink-0 h-9 w-9 flex items-center justify-center rounded-lg bg-[#1F3148] text-white hover:bg-[#3A6A94] disabled:opacity-40 transition-colors"
+              >
+                {messageSending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Send className="h-4 w-4" />
+                )}
+              </button>
+            </div>
           </div>
         )}
 
@@ -4040,7 +4195,7 @@ export default function DocumentsPage() {
             ))}
           </div>
         ) : filtered.length === 0 && search === '' ? (
-          <DocumentEmptyState onUpload={() => {}} />
+          <DocumentEmptyState onUpload={() => fileInputRef.current?.click()} />
         ) : filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center flex-1 py-24 gap-2">
             <p className="text-[13px] font-medium text-brand dark:text-[#EDEEF0]">
@@ -5924,7 +6079,7 @@ export default function TasksPage() {
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [statusOverrides, setStatusOverrides] = useState<Record<string, string>>({})
 
-  const { data, isLoading, error } = useFetch(() => tasksApi.list(0, 100), [])
+  const { data, isLoading, error, refetch } = useFetch(() => tasksApi.list(0, 100), [])
   const { data: clientsData, isLoading: clientsLoading } = useFetch(() => clientsApi.list(0, 100), [])
   const { data: engagementsData, isLoading: engagementsLoading } = useFetch(() => engagementsApi.list(0, 100), [])
   const [tasks, setTasks] = useState<Task[]>([])
@@ -5996,6 +6151,7 @@ export default function TasksPage() {
       await tasksApi.bulkUpdate(ids, { assigned_to: userId })
       setSelectedIds(new Set())
       toast.success(`Reassigned ${ids.length} task${ids.length !== 1 ? 's' : ''}`)
+      refetch()
     } catch {
       toast.error('Reassign failed')
     } finally {
@@ -6238,7 +6394,7 @@ FILE: frontend\src\app\tasks\[id]\page.tsx
 // path: frontend/src/app/tasks/[id]/page.tsx
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useParams } from 'next/navigation'
 import { AppShell } from '@/components/layout/AppShell'
 import { Breadcrumb } from '@/components/layout/Breadcrumb'
@@ -6247,6 +6403,7 @@ import { tasksApi } from '@/lib/api'
 import { useFetch } from '@/lib/hooks/useFetch'
 import { NotesTab, NotesPanel, useNotes } from '@/components/notes'
 import { EditTaskModal } from '@/components/tasks/EditTaskModal'
+import { useAuth } from '@/lib/hooks/useAuth'
 
 type BadgeVariant = Parameters<typeof StatusBadge>[0]['variant']
 
@@ -6254,9 +6411,20 @@ export default function TaskDetailPage() {
   const params = useParams()
   const id = params.id as string
   const { data: task, isLoading, refetch } = useFetch(() => tasksApi.get(id), [id])
+  const { user } = useAuth()
   const [notesOpen, setNotesOpen] = useState(false)
   const [isEditOpen, setIsEditOpen] = useState(false)
   const { unreadCount } = useNotes({ entityType: 'task', entityId: id })
+
+  useEffect(() => {
+    if (!task || !user) return
+    if (
+      task.status === 'todo' &&
+      task.assignedTo === user.id
+    ) {
+      tasksApi.update(task.id, { status: 'in_progress' }).then(() => refetch())
+    }
+  }, [task?.id, task?.status, user?.id])
 
   if (isLoading) {
     return (
@@ -6306,7 +6474,7 @@ export default function TaskDetailPage() {
           </button>
         </div>
 
-        <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 mb-4">
+        <div className="grid grid-cols-1 xl:grid-cols-4 gap-4 mb-4">
           <div className="bg-surface-card dark:bg-dark-card rounded-card p-4">
             <p className="text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em] mb-2">Status</p>
             <StatusBadge variant={task.status as BadgeVariant} />
@@ -6314,6 +6482,10 @@ export default function TaskDetailPage() {
           <div className="bg-surface-card dark:bg-dark-card rounded-card p-4">
             <p className="text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em] mb-2">Due Date</p>
             <p className="text-[13px] text-brand dark:text-[#EDEEF0]">{task.dueDate ?? '—'}</p>
+          </div>
+          <div className="bg-surface-card dark:bg-dark-card rounded-card p-4">
+            <p className="text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em] mb-2">Assigned To</p>
+            <p className="text-[13px] text-brand dark:text-[#EDEEF0]">{task.assignedToName ?? task.assignedTo ?? '—'}</p>
           </div>
           <div className="bg-surface-card dark:bg-dark-card rounded-card p-4">
             <p className="text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em] mb-2">Completed</p>
@@ -7621,7 +7793,8 @@ import { Modal } from '@/components/ui/Modal'
 import { FormField } from '@/components/ui/FormField'
 import { TextInput } from '@/components/ui/TextInput'
 import { SelectInput } from '@/components/ui/SelectInput'
-import { type Client } from '@/lib/api'
+import { clientsApi, type Client } from '@/lib/api'
+import { toast } from 'sonner'
 
 const ENTITY_TYPE_OPTIONS = [
   { value: 'individual', label: 'Individual' },
@@ -7681,7 +7854,7 @@ export function NewClientModal({ open, onClose, onAdd }: NewClientModalProps) {
     onClose()
   }
 
-  function handleSubmit() {
+  async function handleSubmit() {
     const validation = validate(form)
     if (Object.keys(validation).length > 0) {
       setErrors(validation)
@@ -7689,30 +7862,22 @@ export function NewClientModal({ open, onClose, onAdd }: NewClientModalProps) {
     }
 
     setSubmitting(true)
-
-    const newClient: Client = {
-      id: String(Date.now()),
-      name: form.name.trim(),
-      email: form.email.trim() || null,
-      phone: form.phone.trim() || null,
-      companyName: null,
-      addressLine1: null,
-      addressLine2: null,
-      city: null,
-      state: null,
-      postalCode: null,
-      country: null,
-      isActive: true,
-      entityType: form.entity_type || null,
-      tags: [],
-      notes: null,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+    try {
+      const newClient = await clientsApi.create({
+        name: form.name.trim(),
+        email: form.email.trim() || undefined,
+        phone: form.phone.trim() || undefined,
+        entity_type: form.entity_type || undefined,
+      })
+      onAdd(newClient)
+      handleClose()
+    } catch (err: unknown) {
+      const message = (err as { response?: { data?: { detail?: string } } })
+        ?.response?.data?.detail ?? 'Failed to create client'
+      toast.error(message)
+    } finally {
+      setSubmitting(false)
     }
-
-    onAdd(newClient)
-    setSubmitting(false)
-    handleClose()
   }
 
   return (
@@ -9321,6 +9486,7 @@ FILE: frontend\src\components\engagements\EngagementTable.tsx
 import { useRouter } from 'next/navigation'
 import { type Engagement } from '@/lib/api'
 import { StatusBadge } from '@/components/ui/StatusBadge'
+import { formatEngagementType } from '@/lib/utils'
 
 interface EngagementTableProps {
   engagements: Engagement[]
@@ -9416,7 +9582,7 @@ export function EngagementTable({
                 </td>
                 <td className="px-4 py-3">
                   <span className="text-[12px] text-[#374151] dark:text-[#9CA3AF]">
-                    {eng.engagementType ?? '—'}
+                    {formatEngagementType(eng.engagementType ?? '')}
                   </span>
                 </td>
                 <td className="px-4 py-3">
@@ -12438,7 +12604,7 @@ import { Modal } from '@/components/ui/Modal'
 import { FormField } from '@/components/ui/FormField'
 import { TextInput } from '@/components/ui/TextInput'
 import { SelectInput } from '@/components/ui/SelectInput'
-import { tasksApi, clientsApi, engagementsApi, type Task } from '@/lib/api'
+import api, { tasksApi, clientsApi, engagementsApi, type Task } from '@/lib/api'
 
 interface NewTaskModalProps {
   open: boolean
@@ -12451,6 +12617,7 @@ interface FormState {
   clientId: string
   engagementId: string
   dueDate: string
+  assignedTo: string
 }
 
 interface FormErrors {
@@ -12475,6 +12642,7 @@ export function NewTaskModal({ open, onClose, onAdd }: NewTaskModalProps) {
     clientId: '',
     engagementId: '',
     dueDate: '',
+    assignedTo: '',
   })
   const [errors, setErrors] = useState<FormErrors>({})
   const [submitting, setSubmitting] = useState(false)
@@ -12483,6 +12651,8 @@ export function NewTaskModal({ open, onClose, onAdd }: NewTaskModalProps) {
   const [clientsLoading, setClientsLoading] = useState(false)
   const [engagements, setEngagements] = useState<Array<{ value: string; label: string }>>([])
   const [engagementsLoading, setEngagementsLoading] = useState(false)
+  const [staff, setStaff] = useState<Array<{ value: string; label: string }>>([])
+  const [staffLoading, setStaffLoading] = useState(false)
 
   useEffect(() => {
     if (!open) return
@@ -12492,6 +12662,19 @@ export function NewTaskModal({ open, onClose, onAdd }: NewTaskModalProps) {
       .then(({ items }) => setClients(items.map((c) => ({ value: c.id, label: c.name }))))
       .catch(() => setClients([]))
       .finally(() => setClientsLoading(false))
+  }, [open])
+
+  useEffect(() => {
+    if (!open) return
+    setStaffLoading(true)
+    api.get('/users/').then((res) => {
+      const items = Array.isArray(res.data) ? res.data : (res.data.items ?? [])
+      setStaff(items.map((u: Record<string, unknown>) => ({
+        value: String(u.id),
+        label: String(u.full_name ?? u.name ?? ''),
+      })))
+    }).catch(() => setStaff([]))
+      .finally(() => setStaffLoading(false))
   }, [open])
 
   useEffect(() => {
@@ -12519,7 +12702,7 @@ export function NewTaskModal({ open, onClose, onAdd }: NewTaskModalProps) {
   }
 
   function handleClose() {
-    setForm({ title: '', clientId: '', engagementId: '', dueDate: '' })
+    setForm({ title: '', clientId: '', engagementId: '', dueDate: '', assignedTo: '' })
     setErrors({})
     onClose()
   }
@@ -12538,6 +12721,7 @@ export function NewTaskModal({ open, onClose, onAdd }: NewTaskModalProps) {
         client_id: form.clientId,
         engagement_id: form.engagementId,
         due_date: form.dueDate || undefined,
+        assigned_to: form.assignedTo || undefined,
       })
       onAdd(task)
       handleClose()
@@ -12613,6 +12797,19 @@ export function NewTaskModal({ open, onClose, onAdd }: NewTaskModalProps) {
             value={form.dueDate}
             onChange={(e) => handleChange('dueDate', e.target.value)}
             error={!!errors.dueDate}
+          />
+        </FormField>
+
+        {/* Assign To */}
+        <FormField label="Assign To">
+          <SelectInput
+            value={form.assignedTo}
+            onChange={(e) => handleChange('assignedTo', e.target.value)}
+            disabled={staffLoading}
+            options={[
+              { value: '', label: staffLoading ? 'Loading...' : 'Unassigned' },
+              ...staff,
+            ]}
           />
         </FormField>
 
@@ -12834,7 +13031,7 @@ export function TaskTable({
                 </td>
                 <td className="px-4 py-3">
                   <span className="text-[12px] text-[#374151] dark:text-[#9CA3AF]">
-                    —
+                    {task.assignedToName ?? task.assignedTo ?? '—'}
                   </span>
                 </td>
                 <td className="px-4 py-3">
@@ -14288,7 +14485,7 @@ function mapEngagement(raw: Record<string, unknown>): Engagement {
     id: String(raw.id),
     name: String(raw.name ?? raw.title ?? ''),
     description: raw.description ? String(raw.description) : null,
-    status: String(raw.status ?? 'planning').replace(/_/g, '-'),
+    status: String(raw.status ?? 'planning'),
     startDate: raw.start_date ? String(raw.start_date) : null,
     endDate: raw.end_date ? String(raw.end_date) : null,
     filingDeadline: raw.filing_deadline ? String(raw.filing_deadline) : null,
@@ -14861,6 +15058,7 @@ export interface Task {
   status: string
   dueDate: string | null
   assignedTo: string | null
+  assignedToName: string | null
   notes: string | null
   isCompleted: boolean
   clientId: string
@@ -14876,6 +15074,7 @@ function mapTask(raw: Record<string, unknown>): Task {
     status: String(raw.status ?? 'todo'),
     dueDate: raw.due_date ? String(raw.due_date) : null,
     assignedTo: raw.assigned_to ? String(raw.assigned_to) : null,
+    assignedToName: raw.assigned_to_name ? String(raw.assigned_to_name) : null,
     notes: raw.notes ? String(raw.notes) : null,
     isCompleted: Boolean(raw.is_completed ?? false),
     clientId: String(raw.client_id ?? ''),
@@ -14915,6 +15114,7 @@ export const tasksApi = {
     client_id: string
     engagement_id: string
     due_date?: string
+    assigned_to?: string
   }): Promise<Task> => {
     const { data } = await api.post('/tasks/', payload)
     return mapTask(data)

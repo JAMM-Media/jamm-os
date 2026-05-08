@@ -13,16 +13,8 @@ import {
 import type { StripeCardNumberElementOptions } from '@stripe/stripe-js'
 import { toast } from 'sonner'
 import { Loader2 } from 'lucide-react'
-
-interface PortalInvoiceItem {
-  id: string
-  invoice_number: string
-  total_amount: number
-  status: 'draft' | 'sent' | 'paid' | 'overdue' | 'void'
-  due_date: string | null
-  sent_at: string | null
-  created_at: string
-}
+import { getPortalInvoices } from '@/lib/portal-api'
+import type { PortalInvoice as PortalInvoiceItem } from '@/lib/portal-api'
 
 function formatCurrency(amount: number): string {
   return new Intl.NumberFormat('en-US', {
@@ -240,12 +232,7 @@ export function PortalInvoices() {
     setLoading(true)
     setFetchError(false)
     try {
-      const token = localStorage.getItem('portal_access_token')
-      const res = await fetch('/api/backend/portal/invoices?limit=100', {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      })
-      if (!res.ok) throw new Error('fetch failed')
-      const data = await res.json()
+      const data = await getPortalInvoices()
       setInvoices(data.items ?? [])
     } catch {
       setFetchError(true)

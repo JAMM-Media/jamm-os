@@ -1,14 +1,14 @@
 // frontend/src/components/portal/PortalMessages.tsx
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import { Loader2, Send } from 'lucide-react'
+import { toast } from 'sonner'
+import { getPortalMessages, sendPortalMessage } from '@/lib/portal-api'
+import type { PortalMessage } from '@/lib/portal-api'
 
-interface RawMessage {
-  id: string
-  sender_role: string
-  sender_name: string | null
-  body: string
-  created_at: string
+interface MessageWithOptimistic extends PortalMessage {
+  optimistic?: boolean
 }
 
 interface PortalMessagesProps {
@@ -16,29 +16,67 @@ interface PortalMessagesProps {
   firmName: string
 }
 
-function formatTimestamp(isoString: string): string {
-  const date = new Date(isoString)
+function formatTimestamp(iso: string): string {
+  const d = new Date(iso)
   return (
-    date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) +
+    d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) +
     ' · ' +
-    date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+    d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
   )
 }
 
 export function PortalMessages({ clientId, firmName }: PortalMessagesProps) {
-  const [messages, setMessages] = useState<RawMessage[]>([])
+  const [messages, setMessages] = useState<MessageWithOptimistic[]>([])
   const [loading, setLoading] = useState(true)
+  const [draft, setDraft] = useState('')
+  const [sending, setSending] = useState(false)
+  const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    const token = localStorage.getItem('portal_access_token')
-    fetch(`/api/backend/portal/clients/${clientId}/messages`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-    })
-      .then((res) => (res.ok ? res.json() : []))
-      .then((data) => setMessages(Array.isArray(data) ? data : []))
+    getPortalMessages(clientId)
+      .then(setMessages)
       .catch(() => setMessages([]))
       .finally(() => setLoading(false))
   }, [clientId])
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages])
+
+  async function handleSend() {
+    const body = draft.trim()
+    if (!body || sending) return
+    setDraft('')
+    setSending(true)
+
+    const optimisticId = `opt-${Date.now()}`
+    const optimistic: MessageWithOptimistic = {
+      id: optimisticId,
+      body,
+      sender_role: 'client',
+      sender_name: null,
+      created_at: new Date().toISOString(),
+      optimistic: true,
+    }
+    setMessages((prev) => [...prev, optimistic])
+
+    try {
+      const real = await sendPortalMessage(clientId, body)
+      setMessages((prev) => prev.map((m) => (m.id === optimisticId ? real : m)))
+    } catch {
+      setMessages((prev) => prev.filter((m) => m.id !== optimisticId))
+      toast.error('Failed to send message. Please try again.')
+    } finally {
+      setSending(false)
+    }
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      handleSend()
+    }
+  }
 
   if (loading) {
     return (
@@ -50,30 +88,65 @@ export function PortalMessages({ clientId, firmName }: PortalMessagesProps) {
     )
   }
 
-  if (messages.length === 0) {
-    return (
-      <div className="flex items-center justify-center py-24">
-        <p className="text-[12px] text-[#9CA3AF]">No messages yet.</p>
-      </div>
-    )
-  }
-
   return (
-    <div className="p-5 space-y-3">
-      {messages.map((msg) => (
-        <div
-          key={msg.id}
-          className="rounded-[6px] p-[10px_12px] bg-[#EDEEF0] dark:bg-[#383838]"
-        >
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-[12px] font-medium text-brand dark:text-[#EDEEF0]">
-              {msg.sender_role === 'client' ? 'You' : firmName}
-            </span>
-            <span className="text-[11px] text-[#9CA3AF]">{formatTimestamp(msg.created_at)}</span>
+    <div className="flex flex-col">
+      <div className="p-5 space-y-4 max-w-2xl mx-auto w-full">
+        {messages.length === 0 ? (
+          <div className="flex items-center justify-center py-24">
+            <p className="text-[12px] text-[#9CA3AF]">No messages yet.</p>
           </div>
-          <p className="text-[13px] text-[#374151] dark:text-[#9CA3AF] leading-[1.6]">{msg.body}</p>
+        ) : (
+          messages.map((msg) => (
+            <div
+              key={msg.id}
+              className={`flex flex-col gap-1 ${
+                msg.sender_role === 'client' ? 'items-end' : 'items-start'
+              }`}
+            >
+              {msg.sender_role !== 'client' && (
+                <span className="text-[11px] text-[#9CA3AF] px-1">
+                  {msg.sender_name ?? firmName}
+                </span>
+              )}
+              <div
+                className={`rounded-[8px] px-3 py-2 max-w-[75%] ${
+                  msg.sender_role === 'client' ? 'bg-[#3A6A94]' : 'bg-[#383838]'
+                } ${msg.optimistic ? 'opacity-60' : ''}`}
+              >
+                <p className="text-[13px] text-[#EDEEF0] leading-relaxed">{msg.body}</p>
+              </div>
+              <span className="text-[10px] text-[#9CA3AF] px-1">
+                {formatTimestamp(msg.created_at)}
+              </span>
+            </div>
+          ))
+        )}
+        <div ref={bottomRef} />
+      </div>
+
+      <div className="border-t border-[#383838] p-4 max-w-2xl mx-auto w-full">
+        <div className="flex items-end gap-2">
+          <textarea
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="Message your accountant..."
+            rows={2}
+            className="flex-1 bg-[#383838] border border-[#484848] rounded-[6px] px-3 py-2 text-[13px] text-[#EDEEF0] placeholder:text-[#6B7280] resize-none focus:outline-none focus:border-[#3A6A94]"
+          />
+          <button
+            onClick={handleSend}
+            disabled={!draft.trim() || sending}
+            className="h-9 w-9 rounded-[6px] bg-[#3A6A94] text-[#EDEEF0] flex items-center justify-center disabled:opacity-40 hover:opacity-90 transition-opacity flex-shrink-0"
+          >
+            {sending ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <Send className="w-3.5 h-3.5" />
+            )}
+          </button>
         </div>
-      ))}
+      </div>
     </div>
   )
 }

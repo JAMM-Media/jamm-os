@@ -3,6 +3,8 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { FileUp, PenLine, CreditCard, CheckCircle2 } from 'lucide-react'
+import { getPortalDashboard } from '@/lib/portal-api'
+import type { PortalDashboard } from '@/lib/portal-api'
 
 interface ActionItem {
   id: string
@@ -13,25 +15,36 @@ interface ActionItem {
   completed: boolean
 }
 
-interface DashboardResponse {
-  pending_document_requests: Array<{
-    id: string
-    title?: string
-    due_date?: string | null
-    status?: string
-  }>
-  pending_signatures: Array<{
-    id: string
-    engagement_id: string | null
-    status: string
-    sent_at: string | null
-  }>
-}
-
 function getIcon(type: ActionItem['type']) {
   if (type === 'document-request') return <FileUp className="h-4 w-4 text-[#9CA3AF]" />
   if (type === 'signature') return <PenLine className="h-4 w-4 text-[#9CA3AF]" />
   return <CreditCard className="h-4 w-4 text-[#9CA3AF]" />
+}
+
+function formatDate(iso: string | null | undefined): string {
+  if (!iso) return ''
+  return new Date(iso).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  })
+}
+
+const STATUS_COLORS: Record<string, string> = {
+  active: 'bg-[#1E3A5F] text-[#7DA3C4]',
+  in_progress: 'bg-[#1E3A5F] text-[#7DA3C4]',
+  pending: 'bg-[#292524] text-[#78716C]',
+  completed: 'bg-[#14532D] text-[#86EFAC]',
+  archived: 'bg-[#292524] text-[#78716C]',
+}
+
+function EngagementBadge({ status }: { status: string }) {
+  const cls = STATUS_COLORS[status] ?? 'bg-[#292524] text-[#78716C]'
+  return (
+    <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-[4px] capitalize ${cls}`}>
+      {status.replace(/_/g, ' ')}
+    </span>
+  )
 }
 
 function ActionCard({ item }: { item: ActionItem }) {
@@ -54,7 +67,11 @@ function ActionCard({ item }: { item: ActionItem }) {
         <CheckCircle2 className="h-5 w-5 text-[#10B981] flex-shrink-0" />
       ) : (
         <button className="flex-shrink-0 h-8 px-3 rounded-[6px] bg-[#3A6A94] text-[#EDEEF0] text-[12px] font-medium hover:opacity-90 transition-opacity whitespace-nowrap">
-          {item.type === 'document-request' ? 'Upload' : item.type === 'signature' ? 'Review & Sign' : 'Pay Now'}
+          {item.type === 'document-request'
+            ? 'Upload'
+            : item.type === 'signature'
+            ? 'Review & Sign'
+            : 'Pay Now'}
         </button>
       )}
     </div>
@@ -67,17 +84,13 @@ interface PortalTodoProps {
 
 export function PortalTodo({ clientFirstName }: PortalTodoProps) {
   const [items, setItems] = useState<ActionItem[]>([])
+  const [engagements, setEngagements] = useState<PortalDashboard['active_engagements']>([])
   const [loading, setLoading] = useState(true)
 
   const fetchDashboard = useCallback(async () => {
     setLoading(true)
     try {
-      const token = localStorage.getItem('portal_access_token')
-      const res = await fetch('/api/backend/portal/dashboard', {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      })
-      if (!res.ok) return
-      const data: DashboardResponse = await res.json()
+      const data = await getPortalDashboard()
 
       const mapped: ActionItem[] = [
         ...data.pending_document_requests.map((dr) => ({
@@ -92,11 +105,14 @@ export function PortalTodo({ clientFirstName }: PortalTodoProps) {
           id: sig.id,
           type: 'signature' as const,
           title: 'Signature Required',
-          description: 'Please review and sign the document.',
+          description: sig.sent_at
+            ? `Sent ${formatDate(sig.sent_at)} — please review and sign.`
+            : 'Please review and sign the document.',
           completed: sig.status === 'signed' || sig.status === 'completed',
         })),
       ]
       setItems(mapped)
+      setEngagements(data.active_engagements)
     } finally {
       setLoading(false)
     }
@@ -136,7 +152,28 @@ export function PortalTodo({ clientFirstName }: PortalTodoProps) {
             Action needed
           </p>
           <div className="flex flex-col gap-2">
-            {active.map((item) => <ActionCard key={item.id} item={item} />)}
+            {active.map((item) => (
+              <ActionCard key={item.id} item={item} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {engagements.length > 0 && (
+        <div>
+          <p className="text-[10px] font-medium text-[#9CA3AF] uppercase tracking-[0.05em] mb-2">
+            Active engagements
+          </p>
+          <div className="flex flex-col gap-2">
+            {engagements.map((eng) => (
+              <div
+                key={eng.id}
+                className="flex items-center justify-between bg-[#383838] rounded-[8px] px-4 py-3"
+              >
+                <p className="text-[12px] font-medium text-[#EDEEF0]">{eng.name}</p>
+                <EngagementBadge status={eng.status} />
+              </div>
+            ))}
           </div>
         </div>
       )}
@@ -147,7 +184,9 @@ export function PortalTodo({ clientFirstName }: PortalTodoProps) {
             Completed
           </p>
           <div className="flex flex-col gap-2">
-            {completed.map((item) => <ActionCard key={item.id} item={item} />)}
+            {completed.map((item) => (
+              <ActionCard key={item.id} item={item} />
+            ))}
           </div>
         </div>
       )}
