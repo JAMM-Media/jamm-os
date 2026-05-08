@@ -40,8 +40,20 @@ export default function PortalAuthPage() {
           return
         }
         const data = await res.json()
+        if (!data.access_token) {
+          setExchangeError('Invalid response from server. Please try again.')
+          setExchanging(false)
+          return
+        }
         localStorage.setItem('portal_access_token', data.access_token)
-        window.location.href = '/portal'
+        // Verify it was written before navigating
+        const stored = localStorage.getItem('portal_access_token')
+        if (stored) {
+          window.location.replace('/portal')
+        } else {
+          setExchangeError('Could not store session. Please try again.')
+          setExchanging(false)
+        }
       })
       .catch(() => {
         setExchangeError('This link has expired. Please request a new one.')
