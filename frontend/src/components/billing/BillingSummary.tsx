@@ -25,9 +25,9 @@ function SummaryPill({
       <span
         className={cn(
           'text-[15px] font-medium',
-          accent === 'danger' && 'text-status-red-text',
-          accent === 'warning' && 'text-status-amber-text',
-          accent === 'success' && 'text-status-green-text',
+          accent === 'danger' && 'text-red-600 dark:text-red-400',
+          accent === 'warning' && 'text-amber-600 dark:text-amber-400',
+          accent === 'success' && 'text-green-600 dark:text-green-400',
           !accent && 'text-brand dark:text-[#EDEEF0]'
         )}
       >
