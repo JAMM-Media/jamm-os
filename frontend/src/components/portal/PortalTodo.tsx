@@ -16,9 +16,9 @@ interface ActionItem {
 }
 
 function getIcon(type: ActionItem['type']) {
-  if (type === 'document-request') return <FileUp className="h-4 w-4 text-[#9CA3AF]" />
-  if (type === 'signature') return <PenLine className="h-4 w-4 text-[#9CA3AF]" />
-  return <CreditCard className="h-4 w-4 text-[#9CA3AF]" />
+  if (type === 'document-request') return <FileUp className="h-5 w-5 text-[#9CA3AF]" />
+  if (type === 'signature') return <PenLine className="h-5 w-5 text-[#9CA3AF]" />
+  return <CreditCard className="h-5 w-5 text-[#9CA3AF]" />
 }
 
 function formatDate(iso: string | null | undefined): string {
@@ -50,23 +50,23 @@ function EngagementBadge({ status }: { status: string }) {
 function ActionCard({ item }: { item: ActionItem }) {
   return (
     <div
-      className="flex items-center justify-between gap-4 bg-[#383838] rounded-[8px] px-4 py-3"
+      className="flex items-center justify-between gap-4 bg-[#383838] rounded-[8px] px-5 py-4"
       style={{ opacity: item.completed ? 0.7 : 1 }}
     >
       <div className="flex items-start gap-3 min-w-0">
         <div className="flex-shrink-0 mt-0.5">{getIcon(item.type)}</div>
         <div className="min-w-0">
-          <p className="text-[12px] font-medium text-[#EDEEF0] leading-tight">{item.title}</p>
-          <p className="text-[11px] text-[#9CA3AF] mt-0.5 leading-snug">{item.description}</p>
+          <p className="text-[14px] font-medium text-[#EDEEF0] leading-tight">{item.title}</p>
+          <p className="text-[13px] text-[#9CA3AF] mt-0.5 leading-snug">{item.description}</p>
           {item.dueDate && !item.completed && (
-            <p className="text-[11px] text-[#9CA3AF] mt-1">Due {item.dueDate}</p>
+            <p className="text-[13px] text-[#9CA3AF] mt-1">Due {item.dueDate}</p>
           )}
         </div>
       </div>
       {item.completed ? (
         <CheckCircle2 className="h-5 w-5 text-[#10B981] flex-shrink-0" />
       ) : (
-        <button className="flex-shrink-0 h-8 px-3 rounded-[6px] bg-[#3A6A94] text-[#EDEEF0] text-[12px] font-medium hover:opacity-90 transition-opacity whitespace-nowrap">
+        <button className="flex-shrink-0 h-10 px-4 rounded-[6px] bg-[#3A6A94] text-[#EDEEF0] text-[13px] font-medium hover:opacity-90 transition-opacity whitespace-nowrap">
           {item.type === 'document-request'
             ? 'Upload'
             : item.type === 'signature'
@@ -136,10 +136,10 @@ export function PortalTodo({ clientFirstName }: PortalTodoProps) {
   }
 
   return (
-    <div className="p-5 flex flex-col gap-5 max-w-2xl mx-auto">
+    <div className="p-6 flex flex-col gap-6 max-w-2xl mx-auto">
       <div>
-        <p className="text-[14px] font-medium text-[#EDEEF0]">Hello, {clientFirstName}</p>
-        <p className="text-[11px] text-[#9CA3AF] mt-0.5">
+        <p className="text-[18px] font-medium text-[#EDEEF0]">Hello, {clientFirstName}</p>
+        <p className="text-[14px] text-[#9CA3AF] mt-0.5">
           {active.length === 0
             ? "You're all caught up."
             : `You have ${active.length} item${active.length !== 1 ? 's' : ''} that need${active.length === 1 ? 's' : ''} your attention.`}
@@ -148,10 +148,10 @@ export function PortalTodo({ clientFirstName }: PortalTodoProps) {
 
       {active.length > 0 && (
         <div>
-          <p className="text-[10px] font-medium text-[#9CA3AF] uppercase tracking-[0.05em] mb-2">
+          <p className="text-[12px] font-medium text-[#9CA3AF] uppercase tracking-[0.05em] mb-2">
             Action needed
           </p>
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-3">
             {active.map((item) => (
               <ActionCard key={item.id} item={item} />
             ))}
@@ -161,16 +161,16 @@ export function PortalTodo({ clientFirstName }: PortalTodoProps) {
 
       {engagements.length > 0 && (
         <div>
-          <p className="text-[10px] font-medium text-[#9CA3AF] uppercase tracking-[0.05em] mb-2">
+          <p className="text-[12px] font-medium text-[#9CA3AF] uppercase tracking-[0.05em] mb-2">
             Active engagements
           </p>
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-3">
             {engagements.map((eng) => (
               <div
                 key={eng.id}
                 className="flex items-center justify-between bg-[#383838] rounded-[8px] px-4 py-3"
               >
-                <p className="text-[12px] font-medium text-[#EDEEF0]">{eng.name}</p>
+                <p className="text-[14px] font-medium text-[#EDEEF0]">{eng.name}</p>
                 <EngagementBadge status={eng.status} />
               </div>
             ))}
@@ -180,10 +180,10 @@ export function PortalTodo({ clientFirstName }: PortalTodoProps) {
 
       {completed.length > 0 && (
         <div>
-          <p className="text-[10px] font-medium text-[#9CA3AF] uppercase tracking-[0.05em] mb-2">
+          <p className="text-[12px] font-medium text-[#9CA3AF] uppercase tracking-[0.05em] mb-2">
             Completed
           </p>
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-3">
             {completed.map((item) => (
               <ActionCard key={item.id} item={item} />
             ))}

@@ -74,9 +74,9 @@ export function PortalDocuments({ firmName }: PortalDocumentsProps) {
   }
 
   return (
-    <div className="p-5 flex flex-col gap-4 max-w-2xl mx-auto">
+    <div className="p-6 flex flex-col gap-5 max-w-2xl mx-auto">
       <div className="flex items-center justify-between">
-        <p className="text-[10px] font-medium text-[#9CA3AF] uppercase tracking-[0.05em]">
+        <p className="text-[12px] font-medium text-[#9CA3AF] uppercase tracking-[0.05em]">
           Documents ({documents.length})
         </p>
         <button
@@ -108,21 +108,21 @@ export function PortalDocuments({ firmName }: PortalDocumentsProps) {
           </p>
         </div>
       ) : (
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-3">
           {documents.map((doc) => (
             <div
               key={doc.id}
-              className="flex items-center gap-3 bg-[#383838] rounded-[8px] px-4 py-3"
+              className="flex items-center gap-3 bg-[#383838] rounded-[8px] px-5 py-4"
             >
-              <FileText className="h-4 w-4 text-[#9CA3AF] flex-shrink-0" />
+              <FileText className="h-5 w-5 text-[#9CA3AF] flex-shrink-0" />
               <div className="flex-1 min-w-0">
-                <p className="text-[12px] font-medium text-[#EDEEF0] truncate">{doc.name}</p>
-                <p className="text-[11px] text-[#9CA3AF]">
+                <p className="text-[14px] font-medium text-[#EDEEF0] truncate">{doc.name}</p>
+                <p className="text-[12px] text-[#9CA3AF]">
                   {doc.file_type} · {formatFileSize(doc.file_size_kb)} ·{' '}
                   {doc.uploaded_at.split('T')[0]}
                 </p>
               </div>
-              <span className="text-[11px] text-[#9CA3AF] flex-shrink-0">
+              <span className="text-[12px] text-[#9CA3AF] flex-shrink-0">
                 {doc.uploaded_by === 'firm' ? firmName : 'Uploaded by you'}
               </span>
             </div>

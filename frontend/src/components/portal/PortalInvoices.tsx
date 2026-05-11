@@ -322,14 +322,14 @@ export function PortalInvoices() {
   }
 
   return (
-    <div className="p-5 flex flex-col gap-4 max-w-2xl mx-auto">
+    <div className="p-6 flex flex-col gap-5 max-w-2xl mx-auto">
       {/* Outstanding balance summary */}
       {unpaid.length > 0 && (
-        <div className="bg-[#383838] rounded-[8px] px-4 py-3">
-          <p className="text-[11px] text-[#9CA3AF] uppercase tracking-[0.05em]">
+        <div className="bg-[#383838] rounded-[8px] px-5 py-4">
+          <p className="text-[12px] text-[#9CA3AF] uppercase tracking-[0.05em]">
             Outstanding balance
           </p>
-          <p className="text-[20px] font-medium text-[#EDEEF0] mt-0.5">
+          <p className="text-[24px] font-medium text-[#EDEEF0] mt-0.5">
             {formatCurrency(totalOutstanding)}
           </p>
         </div>
@@ -345,32 +345,32 @@ export function PortalInvoices() {
       {/* Unpaid invoices */}
       {unpaid.length > 0 && (
         <div>
-          <p className="text-[10px] font-medium text-[#9CA3AF] uppercase tracking-[0.05em] mb-2">
+          <p className="text-[12px] font-medium text-[#9CA3AF] uppercase tracking-[0.05em] mb-2">
             Due
           </p>
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-3">
             {unpaid.map((inv) => (
               <div key={inv.id}>
-                <div className="flex items-center justify-between bg-[#383838] rounded-[8px] px-4 py-3">
+                <div className="flex items-center justify-between bg-[#383838] rounded-[8px] px-5 py-4">
                   <div className="flex flex-col gap-0.5">
-                    <p className="text-[12px] font-medium text-[#EDEEF0]">
+                    <p className="text-[14px] font-medium text-[#EDEEF0]">
                       {inv.invoice_number}
                     </p>
                     <div className="flex items-center gap-2">
                       <StatusBadge status={inv.status} />
-                      <p className="text-[11px] text-[#9CA3AF]">
+                      <p className="text-[13px] text-[#9CA3AF]">
                         Due {formatDate(inv.due_date)}
                       </p>
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
-                    <span className="text-[13px] font-medium text-[#EDEEF0]">
+                    <span className="text-[15px] font-medium text-[#EDEEF0]">
                       {formatCurrency(Number(inv.total_amount))}
                     </span>
                     <button
                       onClick={() => handlePayNow(inv.id)}
                       disabled={payLoading === inv.id}
-                      className="h-8 px-3 rounded-[6px] bg-[#3A6A94] text-[#EDEEF0] text-[12px] font-medium hover:opacity-90 transition-opacity flex items-center justify-center gap-1.5 disabled:opacity-60"
+                      className="h-10 px-4 rounded-[6px] bg-[#3A6A94] text-[#EDEEF0] text-[13px] font-medium hover:opacity-90 transition-opacity flex items-center justify-center gap-1.5 disabled:opacity-60"
                     >
                       {payLoading === inv.id ? (
                         <Loader2 className="w-3 h-3 animate-spin" />
@@ -396,14 +396,14 @@ export function PortalInvoices() {
       {/* Paid invoices */}
       {paid.length > 0 && (
         <div>
-          <p className="text-[10px] font-medium text-[#9CA3AF] uppercase tracking-[0.05em] mb-2">
+          <p className="text-[12px] font-medium text-[#9CA3AF] uppercase tracking-[0.05em] mb-2">
             Paid
           </p>
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-3">
             {paid.map((inv) => (
               <div
                 key={inv.id}
-                className="flex items-center justify-between bg-[#383838] rounded-[8px] px-4 py-3 opacity-70"
+                className="flex items-center justify-between bg-[#383838] rounded-[8px] px-5 py-4 opacity-70"
               >
                 <div className="flex flex-col gap-0.5">
                   <p className="text-[12px] font-medium text-[#EDEEF0]">
@@ -413,7 +413,7 @@ export function PortalInvoices() {
                     Paid · {formatDate(inv.due_date)}
                   </p>
                 </div>
-                <span className="text-[13px] font-medium text-[#10B981]">
+                <span className="text-[15px] font-medium text-[#10B981]">
                   {formatCurrency(Number(inv.total_amount))}
                 </span>
               </div>
