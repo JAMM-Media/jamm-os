@@ -246,7 +246,7 @@ def run():
         ])
 
         db.add(Note(
-            id=uuid.uuid4(), firm_id=fid, client_id=chen.id, author_id=owner.id,
+            id=uuid.uuid4(), firm_id=fid, entity_type="client", entity_id=chen.id, author_id=owner.id,
             body="Sarah is a great client — always responsive and documents come in on time. Potential for advisory work Q3.",
             is_private=False, created_at=dt(-30),
         ))
@@ -327,10 +327,10 @@ def run():
         ))
 
         db.add_all([
-            Note(id=uuid.uuid4(), firm_id=fid, client_id=martinez.id, author_id=manager.id,
+            Note(id=uuid.uuid4(), firm_id=fid, entity_type="client", entity_id=martinez.id, author_id=manager.id,
                 body="Left voicemail 3x this week. Carlos mentioned he's traveling. Expected documents by end of next week.",
                 is_private=False, created_at=dt(-7)),
-            Note(id=uuid.uuid4(), firm_id=fid, client_id=martinez.id, author_id=owner.id,
+            Note(id=uuid.uuid4(), firm_id=fid, entity_type="client", entity_id=martinez.id, author_id=owner.id,
                 body="PRIVATE: Consider whether we continue engagement if invoice not paid by June 1.",
                 is_private=True, created_at=dt(-3)),
         ])
@@ -699,7 +699,7 @@ def run():
         ))
 
         db.add(Note(
-            id=uuid.uuid4(), firm_id=fid, client_id=hammond.id, author_id=owner.id,
+            id=uuid.uuid4(), firm_id=fid, entity_type="client", entity_id=hammond.id, author_id=owner.id,
             body="PRIVATE: Relationship at serious risk. Two overdue invoices, expired auth, zero portal engagement. Consider sending formal notice.",
             is_private=True, created_at=dt(-7),
         ))
