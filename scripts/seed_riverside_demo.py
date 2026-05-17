@@ -223,13 +223,13 @@ def run():
         ))
 
         db.add_all([
-            TimeEntry(id=uuid.uuid4(), firm_id=fid, client_id=chen.id, engagement_id=eng_chen.id,
+            TimeEntry(id=uuid.uuid4(), firm_id=fid, engagement_id=eng_chen.id,
                 user_id=staff.id, hours=3.5, hourly_rate=150.0, is_billable=True, is_billed=True,
                 description="Document review and data entry", date=d(-80)),
-            TimeEntry(id=uuid.uuid4(), firm_id=fid, client_id=chen.id, engagement_id=eng_chen.id,
+            TimeEntry(id=uuid.uuid4(), firm_id=fid, engagement_id=eng_chen.id,
                 user_id=staff.id, hours=4.0, hourly_rate=150.0, is_billable=True, is_billed=True,
                 description="Return preparation", date=d(-60)),
-            TimeEntry(id=uuid.uuid4(), firm_id=fid, client_id=chen.id, engagement_id=eng_chen.id,
+            TimeEntry(id=uuid.uuid4(), firm_id=fid, engagement_id=eng_chen.id,
                 user_id=owner.id, hours=1.0, hourly_rate=250.0, is_billable=True, is_billed=True,
                 description="Partner review and sign-off", date=d(-40)),
         ])
