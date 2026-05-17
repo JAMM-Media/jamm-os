@@ -236,11 +236,11 @@ def run():
 
         db.add_all([
             ClientMessage(id=uuid.uuid4(), firm_id=fid, client_id=chen.id,
-                sender_type="staff", sender_id=owner.id,
+                sender_role="staff", sender_id=owner.id,
                 body="Hi Sarah — your 2024 return is complete and has been e-filed. You should see a refund of approximately $2,841 within 21 days. Please let us know if you have any questions!",
                 created_at=dt(-36)),
             ClientMessage(id=uuid.uuid4(), firm_id=fid, client_id=chen.id,
-                sender_type="client",
+                sender_role="client",
                 body="Thank you so much! That's great news. Will do.",
                 created_at=dt(-35)),
         ])
@@ -551,7 +551,7 @@ def run():
 
         db.add(ClientMessage(
             id=uuid.uuid4(), firm_id=fid, client_id=patel.id,
-            sender_type="staff", sender_id=staff.id,
+            sender_role="staff", sender_id=staff.id,
             body="Hi Raj and Priya! Welcome to Riverside Tax & Advisory. I've sent over your tax organizer and document checklist through the portal. Please upload your documents when you have a chance — we'll be in touch once we've had a chance to review everything.",
             created_at=dt(-14),
         ))
