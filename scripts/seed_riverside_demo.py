@@ -68,6 +68,7 @@ def run():
         firm = Firm(
             id=uuid.uuid4(),
             name="Riverside Tax & Advisory",
+            slug="riverside-tax-advisory",
         )
         db.add(firm)
         db.flush()
