@@ -6,7 +6,8 @@ import { Modal } from '@/components/ui/Modal'
 import { FormField } from '@/components/ui/FormField'
 import { TextInput } from '@/components/ui/TextInput'
 import { SelectInput } from '@/components/ui/SelectInput'
-import { type Engagement } from '@/lib/api'
+import { type Engagement, clientsApi } from '@/lib/api'
+import { useFetch } from '@/lib/hooks/useFetch'
 
 const ENGAGEMENT_TYPE_OPTIONS = [
   { value: 'tax_return', label: 'Tax Return' },
@@ -41,6 +42,7 @@ interface FormErrors {
 function validate(form: FormState): FormErrors {
   const errors: FormErrors = {}
   if (!form.name.trim()) errors.name = 'Title is required.'
+  if (!form.clientId) errors.clientId = 'Client is required.'
   if (!form.engagementType) errors.engagementType = 'Please select a type.'
   if (!form.endDate) errors.endDate = 'Due date is required.'
   return errors
@@ -59,6 +61,9 @@ export function NewEngagementModal({
     endDate: '',
   })
   const [errors, setErrors] = useState<FormErrors>({})
+
+  const { data: clientsData } = useFetch(() => clientsApi.list(0, 100), [])
+  const clientOptions = (clientsData?.items ?? []).map((c) => ({ value: c.id, label: c.name }))
 
   function handleChange(field: keyof FormState, value: string) {
     setForm((prev) => ({ ...prev, [field]: value }))
@@ -130,6 +135,17 @@ export function NewEngagementModal({
       }
     >
       <div className="flex flex-col gap-4">
+
+        {/* Client */}
+        <FormField label="Client" required error={errors.clientId}>
+          <SelectInput
+            value={form.clientId}
+            onChange={(e) => handleChange('clientId', e.target.value)}
+            options={clientOptions}
+            placeholder="Select client"
+            error={!!errors.clientId}
+          />
+        </FormField>
 
         {/* Title */}
         <FormField label="Engagement Title" required error={errors.name}>

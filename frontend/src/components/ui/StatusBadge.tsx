@@ -177,7 +177,7 @@ export function StatusBadge({ variant, label, className }: StatusBadgeProps) {
   return (
     <span
       className={cn(
-        'inline-flex items-center h-[22px] px-2.5 rounded-badge text-[11px] font-medium',
+        'inline-flex items-center h-[22px] px-2.5 rounded-badge text-[11px] font-medium whitespace-nowrap',
         config.bg,
         config.text,
         config.border,

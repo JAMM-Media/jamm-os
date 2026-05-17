@@ -11,6 +11,7 @@ interface TaskTableProps {
   tasks: Task[]
   clientMap?: Record<string, string>
   engagementMap?: Record<string, string>
+  userMap?: Record<string, string>
   lookupsLoading?: boolean
   selectedIds?: Set<string>
   onSelect?: (id: string, checked: boolean) => void
@@ -21,6 +22,7 @@ export function TaskTable({
   tasks,
   clientMap = {},
   engagementMap = {},
+  userMap = {},
   lookupsLoading = false,
   selectedIds,
   onSelect,
@@ -33,7 +35,7 @@ export function TaskTable({
   const someSelected = hasSelection && tasks.some((t) => selectedIds.has(t.id))
 
   return (
-    <div className="rounded-modal border border-[0.5px] border-surface-border dark:border-dark-border overflow-hidden">
+    <div className="rounded-modal border border-[0.5px] border-surface-border dark:border-dark-border overflow-auto">
       <table className="w-full border-collapse">
         <thead>
           <tr className="bg-surface-card dark:bg-[#252525]">
@@ -115,7 +117,7 @@ export function TaskTable({
                 </td>
                 <td className="px-4 py-3">
                   <span className="text-[12px] text-[#374151] dark:text-[#9CA3AF]">
-                    {task.assignedToName ?? task.assignedTo ?? '—'}
+                    {task.assignedToName ?? (task.assignedTo ? (userMap[task.assignedTo] ?? task.assignedTo) : '—')}
                   </span>
                 </td>
                 <td className="px-4 py-3">

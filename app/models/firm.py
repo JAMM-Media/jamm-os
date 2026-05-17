@@ -92,6 +92,14 @@ class Firm(Base):
         default=False,
     )
 
+    index_consent: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default="true",
+        comment="Firm has consented to contribute anonymized data to the JAMM Intelligence Index.",
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),

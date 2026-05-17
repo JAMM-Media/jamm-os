@@ -354,6 +354,7 @@ export default function SettingsPage() {
                     <input
                       type="text"
                       required
+                      autoComplete="off"
                       value={inviteFullName}
                       onChange={(e) => setInviteFullName(e.target.value)}
                       className={inputClass}
@@ -364,6 +365,7 @@ export default function SettingsPage() {
                     <input
                       type="email"
                       required
+                      autoComplete="off"
                       value={inviteEmail}
                       onChange={(e) => setInviteEmail(e.target.value)}
                       className={inputClass}
@@ -375,6 +377,7 @@ export default function SettingsPage() {
                       <input
                         type={showInvitePassword || invitePasswordLocked ? 'text' : 'password'}
                         required
+                        autoComplete="new-password"
                         value={invitePassword}
                         onChange={(e) => setInvitePassword(e.target.value)}
                         className={inputClass}

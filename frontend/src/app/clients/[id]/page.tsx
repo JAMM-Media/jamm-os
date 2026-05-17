@@ -7,7 +7,7 @@ import { useQuery } from '@tanstack/react-query'
 import { AppShell } from '@/components/layout/AppShell'
 import { Breadcrumb } from '@/components/layout/Breadcrumb'
 import { StatusBadge } from '@/components/ui/StatusBadge'
-import { clientsApi, engagementsApi } from '@/lib/api'
+import { clientsApi, engagementsApi, invoicesApi } from '@/lib/api'
 import type { QBOARBalance } from '@/lib/api/clients'
 import { useFetch } from '@/lib/hooks/useFetch'
 import { Mail, Phone, MapPin, ArrowLeft, ExternalLink, Loader2, Send } from 'lucide-react'
@@ -75,6 +75,12 @@ function ClientDetailContent() {
     [clientId]
   )
   const engagements = engagementsData?.items ?? []
+
+  const { data: invoicesData, isLoading: invoicesLoading } = useFetch(
+    () => invoicesApi.list(0, 50, clientId),
+    [clientId]
+  )
+  const clientInvoices = invoicesData?.items ?? []
 
   const { data: qboAr, isLoading: qboLoading, isError: qboError } = useQuery<QBOARBalance>({
     queryKey: ['qbo-ar', clientId],
@@ -479,17 +485,70 @@ function ClientDetailContent() {
         )}
 
         {activeTab === 'billing' && (
-          <div className="flex flex-col items-center justify-center py-24 gap-[10px]">
-            <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-surface-card dark:bg-dark-card border border-[0.5px] border-surface-border dark:border-dark-border">
-              <span className="text-[18px]">💳</span>
+          invoicesLoading ? (
+            <div className="rounded-modal border border-[0.5px] border-surface-border dark:border-dark-border overflow-auto">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <div key={i} className="flex gap-4 px-4 py-3 border-b border-[0.5px] border-[#D5D8DE] dark:border-dark-card last:border-0">
+                  {Array.from({ length: 5 }).map((_, j) => (
+                    <div key={j} className="h-4 flex-1 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+                  ))}
+                </div>
+              ))}
             </div>
-            <p className="text-[13px] font-medium text-brand dark:text-[#EDEEF0]">
-              No invoices yet
-            </p>
-            <p className="text-[12px] text-[#6B7280]">
-              Invoices for this client will appear here.
-            </p>
-          </div>
+          ) : clientInvoices.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-24 gap-[10px]">
+              <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-surface-card dark:bg-dark-card border border-[0.5px] border-surface-border dark:border-dark-border">
+                <span className="text-[18px]">💳</span>
+              </div>
+              <p className="text-[13px] font-medium text-brand dark:text-[#EDEEF0]">
+                No invoices yet
+              </p>
+              <p className="text-[12px] text-[#6B7280]">
+                Invoices for this client will appear here.
+              </p>
+            </div>
+          ) : (
+            <div className="rounded-modal border border-[0.5px] border-surface-border dark:border-dark-border overflow-auto">
+              <table className="w-full border-collapse">
+                <thead>
+                  <tr className="bg-surface-card dark:bg-[#252525]">
+                    {['Invoice', 'Amount', 'Due', 'Status'].map((col) => (
+                      <th key={col} className="px-4 py-2.5 text-left text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em] whitespace-nowrap">
+                        {col}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {clientInvoices.map((inv, i) => (
+                    <tr
+                      key={inv.id}
+                      onClick={() => router.push(`/billing/${inv.id}`)}
+                      className={[
+                        'cursor-pointer transition-colors bg-surface-page dark:bg-dark-page hover:bg-[#DDDFE3] dark:hover:bg-[#323232]',
+                        i !== clientInvoices.length - 1 ? 'border-b border-[0.5px] border-[#D5D8DE] dark:border-dark-card' : '',
+                      ].join(' ')}
+                    >
+                      <td className="px-4 py-3">
+                        <span className="text-[12px] font-medium text-brand dark:text-[#EDEEF0]">{inv.invoiceNumber}</span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className="text-[12px] font-medium text-brand dark:text-[#EDEEF0]">
+                          {new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(inv.totalAmount)}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className="text-[12px] text-[#374151] dark:text-[#9CA3AF]">{inv.dueDate ?? '—'}</span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <StatusBadge variant={inv.status as Parameters<typeof StatusBadge>[0]['variant']} />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )
         )}
 
         {activeTab === 'irs-auth' && (

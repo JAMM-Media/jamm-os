@@ -1819,7 +1819,8 @@ async function proxyRequest(
   params: { path: string[] }
 ): Promise<NextResponse> {
   const cookieStore = await cookies()
-  const token = cookieStore.get('jamm_token')?.value
+  const incomingAuth = request.headers.get('Authorization')
+  const cookieToken = cookieStore.get('jamm_token')?.value
 
   const path = params.path.join('/')
   const search = request.nextUrl.search ?? ''
@@ -1828,11 +1829,13 @@ async function proxyRequest(
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   }
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`
-  } else {
-    const incomingAuth = request.headers.get('Authorization')
-    if (incomingAuth) headers['Authorization'] = incomingAuth
+  // Portal routes send their own JWT via Authorization header.
+  // Always prefer the incoming Authorization header when present.
+  // Fall back to the staff cookie token for staff-side requests.
+  if (incomingAuth) {
+    headers['Authorization'] = incomingAuth
+  } else if (cookieToken) {
+    headers['Authorization'] = `Bearer ${cookieToken}`
   }
 
   const init: RequestInit = {
@@ -3002,6 +3005,7 @@ function ClientDetailContent() {
   })
   const [notesOpen, setNotesOpen] = useState(false)
   const [sendingPortalLink, setSendingPortalLink] = useState(false)
+  const [viewingPortal, setViewingPortal] = useState(false)
   const { user } = useAuth()
 
   const clientId = params.id as string
@@ -3081,11 +3085,16 @@ function ClientDetailContent() {
   }
 
   const handleViewPortal = async () => {
+    setViewingPortal(true)
     try {
-      const res = await api.get<{ url: string }>(`/portal/preview/${clientId}`)
-      window.open(res.data.url, '_blank', 'noopener,noreferrer')
-    } catch (err) {
-      console.error('Failed to load portal preview:', err)
+      const res = await api.get<{ portal_url: string }>(
+        `/portal/admin/portal-access/${clientId}`
+      )
+      // Navigate current tab — avoids popup blocker
+      window.location.href = res.data.portal_url
+    } catch {
+      toast.error('Could not open client portal — please try again')
+      setViewingPortal(false)
     }
   }
 
@@ -3226,9 +3235,14 @@ function ClientDetailContent() {
             )}
             <button
               onClick={handleViewPortal}
-              className="flex items-center gap-1.5 h-8 px-3 text-[12px] font-medium text-[#1F3148] dark:text-[#EDEEF0] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] rounded-md bg-transparent hover:bg-surface-card dark:hover:bg-dark-card transition-colors"
+              disabled={viewingPortal}
+              className="flex items-center gap-1.5 h-8 px-3 text-[12px] font-medium text-[#1F3148] dark:text-[#EDEEF0] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] rounded-md bg-transparent hover:bg-surface-card dark:hover:bg-dark-card transition-colors disabled:opacity-60"
             >
-              <ExternalLink className="h-[14px] w-[14px]" />
+              {viewingPortal ? (
+                <Loader2 className="h-[14px] w-[14px] animate-spin" />
+              ) : (
+                <ExternalLink className="h-[14px] w-[14px]" />
+              )}
               View Client Portal
             </button>
           </div>
@@ -4978,6 +4992,21 @@ export default function EngagementDetailPage() {
 
 
 ================================================================================
+FILE: frontend\src\app\portal\layout.tsx
+================================================================================
+// path: frontend/src/app/portal/layout.tsx
+export const dynamic = 'force-dynamic'
+
+export default function PortalLayout({
+  children,
+}: {
+  children: React.ReactNode
+}) {
+  return <>{children}</>
+}
+
+
+================================================================================
 FILE: frontend\src\app\portal\page.tsx
 ================================================================================
 // frontend/src/app/portal/page.tsx
@@ -5049,7 +5078,7 @@ export default function PortalPage() {
       onTabChange={setActiveTab}
     >
       {activeTab === 'todo' && <PortalTodo clientFirstName={firstName} />}
-      {activeTab === 'documents' && <PortalDocuments />}
+      {activeTab === 'documents' && <PortalDocuments firmName={me.firm_name} />}
       {activeTab === 'invoices' && (
         <Elements stripe={stripePromise}>
           <PortalInvoices />
@@ -5069,66 +5098,271 @@ FILE: frontend\src\app\portal\auth\page.tsx
 // path: frontend/src/app/portal/auth/page.tsx
 'use client'
 
-import { Suspense, useEffect, useState } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { Loader2 } from 'lucide-react'
 
-function PortalAuthContent() {
-  const searchParams = useSearchParams()
+const inputClass =
+  'w-full h-9 px-3 rounded-[6px] text-[13px] bg-[#2D2D2D] border text-[#EDEEF0] placeholder:text-[#9CA3AF] focus:outline-none focus:border-[#4A7FA5] transition-colors'
+const borderNormal = 'border-[#484848]'
+
+export default function PortalAuthPage() {
   const router = useRouter()
-  const [error, setError] = useState<string | null>(null)
+
+  const [exchanging, setExchanging] = useState(true)
+  const [exchangeError, setExchangeError] = useState<string | null>(null)
+
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [loginLoading, setLoginLoading] = useState(false)
+  const [loginError, setLoginError] = useState('')
+  const [noPasswordSet, setNoPasswordSet] = useState(false)
+
+  const [magicEmail, setMagicEmail] = useState('')
+  const [magicLoading, setMagicLoading] = useState(false)
+  const [magicSent, setMagicSent] = useState(false)
+  const [magicDisabled, setMagicDisabled] = useState(false)
 
   useEffect(() => {
-    const token = searchParams.get('token')
-
+    const token = new URLSearchParams(window.location.search).get('token')
     if (!token) {
-      setError('This link is invalid. Please contact your firm for a new portal link.')
+      setExchanging(false)
       return
     }
-
     fetch(`/api/backend/portal/auth?token=${encodeURIComponent(token)}`)
       .then(async (res) => {
         if (!res.ok) {
-          setError('This link has expired or has already been used. Please contact your firm for a new link.')
+          setExchangeError('This link has expired. Please request a new one.')
+          setExchanging(false)
           return
         }
         const data = await res.json()
+        if (!data.access_token) {
+          setExchangeError('Invalid response from server. Please try again.')
+          setExchanging(false)
+          return
+        }
         localStorage.setItem('portal_access_token', data.access_token)
-        router.replace('/portal')
+        // Verify it was written before navigating
+        const stored = localStorage.getItem('portal_access_token')
+        if (stored) {
+          window.location.replace('/portal')
+        } else {
+          setExchangeError('Could not store session. Please try again.')
+          setExchanging(false)
+        }
       })
       .catch(() => {
-        setError('This link has expired or has already been used. Please contact your firm for a new link.')
+        setExchangeError('This link has expired. Please request a new one.')
+        setExchanging(false)
       })
-  }, [searchParams, router])
+  }, [router])
 
-  if (error) {
+  async function handleLogin(e: React.FormEvent) {
+    e.preventDefault()
+    setLoginError('')
+    setNoPasswordSet(false)
+    setLoginLoading(true)
+    try {
+      const res = await fetch('/api/backend/portal/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        const detail: string = data.detail ?? ''
+        if (detail.toLowerCase().includes('no password')) {
+          setNoPasswordSet(true)
+        } else {
+          setLoginError(detail || 'Sign in failed. Please try again.')
+        }
+        return
+      }
+      localStorage.setItem('portal_access_token', data.access_token)
+      router.replace('/portal')
+    } catch {
+      setLoginError('Sign in failed. Please try again.')
+    } finally {
+      setLoginLoading(false)
+    }
+  }
+
+  async function handleMagicLink(e: React.FormEvent) {
+    e.preventDefault()
+    setMagicLoading(true)
+    setMagicDisabled(true)
+    setTimeout(() => setMagicDisabled(false), 60_000)
+    try {
+      const target = magicEmail || email
+      await fetch('/api/backend/portal/request-magic-link', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: target }),
+      })
+    } catch {
+      // never surface errors — always show success
+    } finally {
+      setMagicLoading(false)
+      setMagicSent(true)
+    }
+  }
+
+  if (exchanging) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-surface-page dark:bg-dark-page">
-        <div className="w-[380px] bg-surface-card dark:bg-dark-card rounded-[10px] border border-surface-border p-8 text-center">
-          <p className="text-[13px] font-medium text-[#991B1B] mb-2">Link unavailable</p>
-          <p className="text-[12px] text-[#6B7280]">{error}</p>
-        </div>
+      <div
+        className="min-h-screen flex flex-col items-center justify-center gap-3"
+        style={{ backgroundColor: '#2D2D2D' }}
+      >
+        <Loader2 className="h-6 w-6 animate-spin text-[#4A7FA5]" />
+        <p className="text-[13px] text-[#6B7280]">Signing you in...</p>
       </div>
     )
   }
 
-  return (
-    <div className="min-h-screen flex flex-col items-center justify-center gap-3 bg-surface-page dark:bg-dark-page">
-      <Loader2 className="h-6 w-6 animate-spin text-brand" />
-      <p className="text-[13px] text-[#6B7280]">Signing you in...</p>
-    </div>
-  )
-}
+  const effectiveMagicEmail = magicEmail || email
 
-export default function PortalAuthPage() {
   return (
-    <Suspense fallback={
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="h-6 w-6 animate-spin text-brand" />
+    <div
+      className="min-h-screen flex items-center justify-center"
+      style={{ backgroundColor: '#2D2D2D' }}
+    >
+      <div
+        className="w-[400px] flex flex-col gap-0 rounded-[10px] p-8"
+        style={{ backgroundColor: '#383838', border: '0.5px solid #484848' }}
+      >
+        <div className="flex items-center gap-2 mb-5">
+          <span className="text-[12px] font-[500] text-white">Your Firm</span>
+          <span className="text-[10px]" style={{ color: '#7DA3C4' }}>
+            Client Portal
+          </span>
+        </div>
+
+        {exchangeError && (
+          <div
+            className="mb-4 px-3 py-2 rounded-[6px] text-[12px]"
+            style={{ backgroundColor: '#7F1D1D', color: '#FCA5A5' }}
+          >
+            {exchangeError}
+          </div>
+        )}
+
+        <p className="text-[16px] font-[500] mb-1" style={{ color: '#EDEEF0' }}>
+          Sign in
+        </p>
+        <p className="text-[12px] mb-6" style={{ color: '#9CA3AF' }}>
+          Access your documents, invoices, and to-do items.
+        </p>
+
+        <form onSubmit={handleLogin} className="flex flex-col gap-3">
+          <div className="flex flex-col gap-1">
+            <label className="text-[11px] font-[500]" style={{ color: '#EDEEF0' }}>
+              Email
+            </label>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="you@example.com"
+              required
+              className={`${inputClass} ${borderNormal}`}
+            />
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <label className="text-[11px] font-[500]" style={{ color: '#EDEEF0' }}>
+              Password
+            </label>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              className={`${inputClass} ${borderNormal}`}
+            />
+          </div>
+
+          <button
+            type="submit"
+            disabled={loginLoading}
+            className="w-full h-9 rounded-[6px] text-[12px] font-[500] text-white flex items-center justify-center gap-2 disabled:opacity-60"
+            style={{ backgroundColor: '#3A6A94' }}
+          >
+            {loginLoading ? (
+              <>
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                Signing in...
+              </>
+            ) : (
+              'Sign in'
+            )}
+          </button>
+
+          {noPasswordSet && (
+            <p className="text-[11px]" style={{ color: '#E24B4A' }}>
+              No password set yet. Use a magic link below to log in, then set a password in your
+              account settings.
+            </p>
+          )}
+          {loginError && !noPasswordSet && (
+            <p className="text-[11px]" style={{ color: '#E24B4A' }}>
+              {loginError}
+            </p>
+          )}
+        </form>
+
+        <div className="flex items-center gap-3 my-5">
+          <div className="flex-1 h-px" style={{ backgroundColor: '#484848' }} />
+          <span className="text-[11px]" style={{ color: '#9CA3AF' }}>
+            or
+          </span>
+          <div className="flex-1 h-px" style={{ backgroundColor: '#484848' }} />
+        </div>
+
+        <p className="text-[13px] font-[500] mb-1" style={{ color: '#EDEEF0' }}>
+          Get a magic link
+        </p>
+        <p className="text-[11px] mb-3" style={{ color: '#9CA3AF' }}>
+          We&apos;ll email you a one-time link. No password needed.
+        </p>
+
+        {magicSent ? (
+          <p className="text-[12px] text-center py-2" style={{ color: '#10B981' }}>
+            If a portal account exists for that email, a link has been sent. Check your inbox.
+          </p>
+        ) : (
+          <form onSubmit={handleMagicLink} className="flex flex-col gap-3">
+            <input
+              type="email"
+              value={effectiveMagicEmail}
+              onChange={(e) => setMagicEmail(e.target.value)}
+              placeholder="you@example.com"
+              required
+              className={`${inputClass} ${borderNormal}`}
+            />
+            <button
+              type="submit"
+              disabled={magicLoading || magicDisabled}
+              className="w-full h-9 rounded-[6px] text-[12px] font-[500] flex items-center justify-center gap-2 disabled:opacity-60 transition-colors"
+              style={{
+                backgroundColor: 'transparent',
+                border: '0.5px solid #3A6A94',
+                color: '#4A7FA5',
+              }}
+            >
+              {magicLoading ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  Sending...
+                </>
+              ) : (
+                'Send link'
+              )}
+            </button>
+          </form>
+        )}
       </div>
-    }>
-      <PortalAuthContent />
-    </Suspense>
+    </div>
   )
 }
 
@@ -6592,9 +6826,9 @@ function SummaryPill({
       <span
         className={cn(
           'text-[15px] font-medium',
-          accent === 'danger' && 'text-status-red-text',
-          accent === 'warning' && 'text-status-amber-text',
-          accent === 'success' && 'text-status-green-text',
+          accent === 'danger' && 'text-[#DC2626]',
+          accent === 'warning' && 'text-[#D97706]',
+          accent === 'success' && 'text-[#16A34A]',
           !accent && 'text-brand dark:text-[#EDEEF0]'
         )}
       >
@@ -11101,37 +11335,51 @@ FILE: frontend\src\components\portal\PortalDocuments.tsx
 // frontend/src/components/portal/PortalDocuments.tsx
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { FileText, Upload } from 'lucide-react'
-
-interface PortalDocumentItem {
-  id: string
-  name: string
-  uploaded_at: string
-  file_type: string
-  file_size_kb: number
-  uploaded_by: 'client' | 'firm'
-}
+import { getPortalDocuments } from '@/lib/portal-api'
+import type { PortalDocument as PortalDocumentItem } from '@/lib/portal-api'
 
 function formatFileSize(kb: number): string {
   if (kb < 1024) return `${kb} KB`
   return `${(kb / 1024).toFixed(1)} MB`
 }
 
-export function PortalDocuments() {
+interface PortalDocumentsProps {
+  firmName: string
+}
+
+export function PortalDocuments({ firmName }: PortalDocumentsProps) {
   const [documents, setDocuments] = useState<PortalDocumentItem[]>([])
   const [loading, setLoading] = useState(true)
+  const [fetchError, setFetchError] = useState(false)
+  const [toast, setToast] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setToast('Upload coming soon — document uploads will be available in the next update.')
+    setTimeout(() => setToast(null), 4000)
+    e.target.value = ''
+  }
+
+  const fetchDocuments = useCallback(async () => {
+    setLoading(true)
+    setFetchError(false)
+    try {
+      const data = await getPortalDocuments()
+      setDocuments(data)
+    } catch {
+      setFetchError(true)
+    } finally {
+      setLoading(false)
+    }
+  }, [])
 
   useEffect(() => {
-    const token = localStorage.getItem('portal_access_token')
-    fetch('/api/backend/portal/documents', {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-    })
-      .then((res) => (res.ok ? res.json() : []))
-      .then((data) => setDocuments(Array.isArray(data) ? data : []))
-      .catch(() => setDocuments([]))
-      .finally(() => setLoading(false))
-  }, [])
+    fetchDocuments()
+  }, [fetchDocuments])
 
   if (loading) {
     return (
@@ -11143,39 +11391,73 @@ export function PortalDocuments() {
     )
   }
 
+  if (fetchError) {
+    return (
+      <div className="p-5 max-w-2xl mx-auto">
+        <div className="bg-[#383838] rounded-[8px] px-4 py-6 flex flex-col items-center gap-3">
+          <p className="text-[13px] text-[#9CA3AF]">Failed to load documents.</p>
+          <button
+            onClick={fetchDocuments}
+            className="h-8 px-4 rounded-[6px] bg-[#3A6A94] text-[#EDEEF0] text-[12px] font-medium hover:opacity-90 transition-opacity"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   return (
-    <div className="p-5 flex flex-col gap-4 max-w-2xl mx-auto">
+    <div className="p-6 flex flex-col gap-5 max-w-2xl mx-auto">
       <div className="flex items-center justify-between">
-        <p className="text-[10px] font-medium text-[#9CA3AF] uppercase tracking-[0.05em]">
+        <p className="text-[12px] font-medium text-[#9CA3AF] uppercase tracking-[0.05em]">
           Documents ({documents.length})
         </p>
-        <button className="flex items-center gap-1.5 h-8 px-3 rounded-[6px] bg-[#3A6A94] text-[#EDEEF0] text-[12px] font-medium hover:opacity-90 transition-opacity">
+        <button
+          onClick={() => fileInputRef.current?.click()}
+          className="flex items-center gap-1.5 h-8 px-3 rounded-[6px] bg-[#3A6A94] text-[#EDEEF0] text-[12px] font-medium hover:opacity-90 transition-opacity"
+        >
           <Upload className="h-3.5 w-3.5" />
           Upload
         </button>
       </div>
+      <input
+        type="file"
+        ref={fileInputRef}
+        className="hidden"
+        accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg"
+        onChange={handleFileChange}
+      />
+      {toast && (
+        <div className="fixed bottom-4 right-4 z-50 rounded-[8px] px-4 py-3 text-[12px] min-w-[260px] max-w-[320px] shadow-lg" style={{ backgroundColor: '#383838', borderLeft: '3px solid #10B981', color: '#EDEEF0' }}>
+          {toast}
+        </div>
+      )}
 
       {documents.length === 0 ? (
         <div className="flex flex-col items-center gap-1 py-12">
           <p className="text-[13px] font-medium text-[#EDEEF0]">No documents yet.</p>
-          <p className="text-[12px] text-[#9CA3AF]">Documents shared with you will appear here.</p>
+          <p className="text-[12px] text-[#9CA3AF]">
+            Your firm will share documents here.
+          </p>
         </div>
       ) : (
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-3">
           {documents.map((doc) => (
             <div
               key={doc.id}
-              className="flex items-center gap-3 bg-[#383838] rounded-[8px] px-4 py-3 cursor-pointer hover:brightness-110 transition-all"
+              className="flex items-center gap-3 bg-[#383838] rounded-[8px] px-5 py-4"
             >
-              <FileText className="h-4 w-4 text-[#9CA3AF] flex-shrink-0" />
+              <FileText className="h-5 w-5 text-[#9CA3AF] flex-shrink-0" />
               <div className="flex-1 min-w-0">
-                <p className="text-[12px] font-medium text-[#EDEEF0] truncate">{doc.name}</p>
-                <p className="text-[11px] text-[#9CA3AF]">
-                  {doc.file_type} · {formatFileSize(doc.file_size_kb)} · {doc.uploaded_at.split('T')[0]}
+                <p className="text-[14px] font-medium text-[#EDEEF0] truncate">{doc.name}</p>
+                <p className="text-[12px] text-[#9CA3AF]">
+                  {doc.file_type} · {formatFileSize(doc.file_size_kb)} ·{' '}
+                  {doc.uploaded_at.split('T')[0]}
                 </p>
               </div>
-              <span className="text-[11px] text-[#9CA3AF] flex-shrink-0">
-                {doc.uploaded_by === 'firm' ? 'From firm' : 'Uploaded by you'}
+              <span className="text-[12px] text-[#9CA3AF] flex-shrink-0">
+                {doc.uploaded_by === 'firm' ? firmName : 'Uploaded by you'}
               </span>
             </div>
           ))}
@@ -11204,16 +11486,8 @@ import {
 import type { StripeCardNumberElementOptions } from '@stripe/stripe-js'
 import { toast } from 'sonner'
 import { Loader2 } from 'lucide-react'
-
-interface PortalInvoiceItem {
-  id: string
-  invoice_number: string
-  total_amount: number
-  status: 'draft' | 'sent' | 'paid' | 'overdue' | 'void'
-  due_date: string | null
-  sent_at: string | null
-  created_at: string
-}
+import { getPortalInvoices } from '@/lib/portal-api'
+import type { PortalInvoice as PortalInvoiceItem } from '@/lib/portal-api'
 
 function formatCurrency(amount: number): string {
   return new Intl.NumberFormat('en-US', {
@@ -11431,12 +11705,7 @@ export function PortalInvoices() {
     setLoading(true)
     setFetchError(false)
     try {
-      const token = localStorage.getItem('portal_access_token')
-      const res = await fetch('/api/backend/portal/invoices?limit=100', {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      })
-      if (!res.ok) throw new Error('fetch failed')
-      const data = await res.json()
+      const data = await getPortalInvoices()
       setInvoices(data.items ?? [])
     } catch {
       setFetchError(true)
@@ -11526,14 +11795,14 @@ export function PortalInvoices() {
   }
 
   return (
-    <div className="p-5 flex flex-col gap-4 max-w-2xl mx-auto">
+    <div className="p-6 flex flex-col gap-5 max-w-2xl mx-auto">
       {/* Outstanding balance summary */}
       {unpaid.length > 0 && (
-        <div className="bg-[#383838] rounded-[8px] px-4 py-3">
-          <p className="text-[11px] text-[#9CA3AF] uppercase tracking-[0.05em]">
+        <div className="bg-[#383838] rounded-[8px] px-5 py-4">
+          <p className="text-[12px] text-[#9CA3AF] uppercase tracking-[0.05em]">
             Outstanding balance
           </p>
-          <p className="text-[20px] font-medium text-[#EDEEF0] mt-0.5">
+          <p className="text-[24px] font-medium text-[#EDEEF0] mt-0.5">
             {formatCurrency(totalOutstanding)}
           </p>
         </div>
@@ -11549,32 +11818,32 @@ export function PortalInvoices() {
       {/* Unpaid invoices */}
       {unpaid.length > 0 && (
         <div>
-          <p className="text-[10px] font-medium text-[#9CA3AF] uppercase tracking-[0.05em] mb-2">
+          <p className="text-[12px] font-medium text-[#9CA3AF] uppercase tracking-[0.05em] mb-2">
             Due
           </p>
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-3">
             {unpaid.map((inv) => (
               <div key={inv.id}>
-                <div className="flex items-center justify-between bg-[#383838] rounded-[8px] px-4 py-3">
+                <div className="flex items-center justify-between bg-[#383838] rounded-[8px] px-5 py-4">
                   <div className="flex flex-col gap-0.5">
-                    <p className="text-[12px] font-medium text-[#EDEEF0]">
+                    <p className="text-[14px] font-medium text-[#EDEEF0]">
                       {inv.invoice_number}
                     </p>
                     <div className="flex items-center gap-2">
                       <StatusBadge status={inv.status} />
-                      <p className="text-[11px] text-[#9CA3AF]">
+                      <p className="text-[13px] text-[#9CA3AF]">
                         Due {formatDate(inv.due_date)}
                       </p>
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
-                    <span className="text-[13px] font-medium text-[#EDEEF0]">
+                    <span className="text-[15px] font-medium text-[#EDEEF0]">
                       {formatCurrency(Number(inv.total_amount))}
                     </span>
                     <button
                       onClick={() => handlePayNow(inv.id)}
                       disabled={payLoading === inv.id}
-                      className="h-8 px-3 rounded-[6px] bg-[#3A6A94] text-[#EDEEF0] text-[12px] font-medium hover:opacity-90 transition-opacity flex items-center justify-center gap-1.5 disabled:opacity-60"
+                      className="h-10 px-4 rounded-[6px] bg-[#3A6A94] text-[#EDEEF0] text-[13px] font-medium hover:opacity-90 transition-opacity flex items-center justify-center gap-1.5 disabled:opacity-60"
                     >
                       {payLoading === inv.id ? (
                         <Loader2 className="w-3 h-3 animate-spin" />
@@ -11600,14 +11869,14 @@ export function PortalInvoices() {
       {/* Paid invoices */}
       {paid.length > 0 && (
         <div>
-          <p className="text-[10px] font-medium text-[#9CA3AF] uppercase tracking-[0.05em] mb-2">
+          <p className="text-[12px] font-medium text-[#9CA3AF] uppercase tracking-[0.05em] mb-2">
             Paid
           </p>
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-3">
             {paid.map((inv) => (
               <div
                 key={inv.id}
-                className="flex items-center justify-between bg-[#383838] rounded-[8px] px-4 py-3 opacity-70"
+                className="flex items-center justify-between bg-[#383838] rounded-[8px] px-5 py-4 opacity-70"
               >
                 <div className="flex flex-col gap-0.5">
                   <p className="text-[12px] font-medium text-[#EDEEF0]">
@@ -11617,7 +11886,7 @@ export function PortalInvoices() {
                     Paid · {formatDate(inv.due_date)}
                   </p>
                 </div>
-                <span className="text-[13px] font-medium text-[#10B981]">
+                <span className="text-[15px] font-medium text-[#10B981]">
                   {formatCurrency(Number(inv.total_amount))}
                 </span>
               </div>
@@ -11636,14 +11905,14 @@ FILE: frontend\src\components\portal\PortalMessages.tsx
 // frontend/src/components/portal/PortalMessages.tsx
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import { Loader2, Send } from 'lucide-react'
+import { toast } from 'sonner'
+import { getPortalMessages, sendPortalMessage } from '@/lib/portal-api'
+import type { PortalMessage } from '@/lib/portal-api'
 
-interface RawMessage {
-  id: string
-  sender_role: string
-  sender_name: string | null
-  body: string
-  created_at: string
+interface MessageWithOptimistic extends PortalMessage {
+  optimistic?: boolean
 }
 
 interface PortalMessagesProps {
@@ -11651,29 +11920,67 @@ interface PortalMessagesProps {
   firmName: string
 }
 
-function formatTimestamp(isoString: string): string {
-  const date = new Date(isoString)
+function formatTimestamp(iso: string): string {
+  const d = new Date(iso)
   return (
-    date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) +
+    d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) +
     ' · ' +
-    date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+    d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
   )
 }
 
 export function PortalMessages({ clientId, firmName }: PortalMessagesProps) {
-  const [messages, setMessages] = useState<RawMessage[]>([])
+  const [messages, setMessages] = useState<MessageWithOptimistic[]>([])
   const [loading, setLoading] = useState(true)
+  const [draft, setDraft] = useState('')
+  const [sending, setSending] = useState(false)
+  const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    const token = localStorage.getItem('portal_access_token')
-    fetch(`/api/backend/portal/clients/${clientId}/messages`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-    })
-      .then((res) => (res.ok ? res.json() : []))
-      .then((data) => setMessages(Array.isArray(data) ? data : []))
+    getPortalMessages(clientId)
+      .then(setMessages)
       .catch(() => setMessages([]))
       .finally(() => setLoading(false))
   }, [clientId])
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages])
+
+  async function handleSend() {
+    const body = draft.trim()
+    if (!body || sending) return
+    setDraft('')
+    setSending(true)
+
+    const optimisticId = `opt-${Date.now()}`
+    const optimistic: MessageWithOptimistic = {
+      id: optimisticId,
+      body,
+      sender_role: 'client',
+      sender_name: null,
+      created_at: new Date().toISOString(),
+      optimistic: true,
+    }
+    setMessages((prev) => [...prev, optimistic])
+
+    try {
+      const real = await sendPortalMessage(clientId, body)
+      setMessages((prev) => prev.map((m) => (m.id === optimisticId ? real : m)))
+    } catch {
+      setMessages((prev) => prev.filter((m) => m.id !== optimisticId))
+      toast.error('Failed to send message. Please try again.')
+    } finally {
+      setSending(false)
+    }
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      handleSend()
+    }
+  }
 
   if (loading) {
     return (
@@ -11685,30 +11992,65 @@ export function PortalMessages({ clientId, firmName }: PortalMessagesProps) {
     )
   }
 
-  if (messages.length === 0) {
-    return (
-      <div className="flex items-center justify-center py-24">
-        <p className="text-[12px] text-[#9CA3AF]">No messages yet.</p>
-      </div>
-    )
-  }
-
   return (
-    <div className="p-5 space-y-3">
-      {messages.map((msg) => (
-        <div
-          key={msg.id}
-          className="rounded-[6px] p-[10px_12px] bg-[#EDEEF0] dark:bg-[#383838]"
-        >
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-[12px] font-medium text-brand dark:text-[#EDEEF0]">
-              {msg.sender_role === 'client' ? 'You' : firmName}
-            </span>
-            <span className="text-[11px] text-[#9CA3AF]">{formatTimestamp(msg.created_at)}</span>
+    <div className="flex flex-col">
+      <div className="p-5 space-y-4 max-w-2xl mx-auto w-full">
+        {messages.length === 0 ? (
+          <div className="flex items-center justify-center py-24">
+            <p className="text-[12px] text-[#9CA3AF]">No messages yet.</p>
           </div>
-          <p className="text-[13px] text-[#374151] dark:text-[#9CA3AF] leading-[1.6]">{msg.body}</p>
+        ) : (
+          messages.map((msg) => (
+            <div
+              key={msg.id}
+              className={`flex flex-col gap-1 ${
+                msg.sender_role === 'client' ? 'items-end' : 'items-start'
+              }`}
+            >
+              {msg.sender_role !== 'client' && (
+                <span className="text-[11px] text-[#9CA3AF] px-1">
+                  {msg.sender_name ?? firmName}
+                </span>
+              )}
+              <div
+                className={`rounded-[8px] px-3 py-2 max-w-[75%] ${
+                  msg.sender_role === 'client' ? 'bg-[#3A6A94]' : 'bg-[#383838]'
+                } ${msg.optimistic ? 'opacity-60' : ''}`}
+              >
+                <p className="text-[13px] text-[#EDEEF0] leading-relaxed">{msg.body}</p>
+              </div>
+              <span className="text-[10px] text-[#9CA3AF] px-1">
+                {formatTimestamp(msg.created_at)}
+              </span>
+            </div>
+          ))
+        )}
+        <div ref={bottomRef} />
+      </div>
+
+      <div className="border-t border-[#383838] p-4 max-w-2xl mx-auto w-full">
+        <div className="flex items-end gap-2">
+          <textarea
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="Message your accountant..."
+            rows={2}
+            className="flex-1 bg-[#383838] border border-[#484848] rounded-[6px] px-3 py-2 text-[13px] text-[#EDEEF0] placeholder:text-[#6B7280] resize-none focus:outline-none focus:border-[#3A6A94]"
+          />
+          <button
+            onClick={handleSend}
+            disabled={!draft.trim() || sending}
+            className="h-9 w-9 rounded-[6px] bg-[#3A6A94] text-[#EDEEF0] flex items-center justify-center disabled:opacity-40 hover:opacity-90 transition-opacity flex-shrink-0"
+          >
+            {sending ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <Send className="w-3.5 h-3.5" />
+            )}
+          </button>
         </div>
-      ))}
+      </div>
     </div>
   )
 }
@@ -11826,6 +12168,8 @@ FILE: frontend\src\components\portal\PortalTodo.tsx
 
 import { useState, useEffect, useCallback } from 'react'
 import { FileUp, PenLine, CreditCard, CheckCircle2 } from 'lucide-react'
+import { getPortalDashboard } from '@/lib/portal-api'
+import type { PortalDashboard } from '@/lib/portal-api'
 
 interface ActionItem {
   id: string
@@ -11836,48 +12180,63 @@ interface ActionItem {
   completed: boolean
 }
 
-interface DashboardResponse {
-  pending_document_requests: Array<{
-    id: string
-    title?: string
-    due_date?: string | null
-    status?: string
-  }>
-  pending_signatures: Array<{
-    id: string
-    engagement_id: string | null
-    status: string
-    sent_at: string | null
-  }>
+function getIcon(type: ActionItem['type']) {
+  if (type === 'document-request') return <FileUp className="h-5 w-5 text-[#9CA3AF]" />
+  if (type === 'signature') return <PenLine className="h-5 w-5 text-[#9CA3AF]" />
+  return <CreditCard className="h-5 w-5 text-[#9CA3AF]" />
 }
 
-function getIcon(type: ActionItem['type']) {
-  if (type === 'document-request') return <FileUp className="h-4 w-4 text-[#9CA3AF]" />
-  if (type === 'signature') return <PenLine className="h-4 w-4 text-[#9CA3AF]" />
-  return <CreditCard className="h-4 w-4 text-[#9CA3AF]" />
+function formatDate(iso: string | null | undefined): string {
+  if (!iso) return ''
+  return new Date(iso).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  })
+}
+
+const STATUS_COLORS: Record<string, string> = {
+  active: 'bg-[#1E3A5F] text-[#7DA3C4]',
+  in_progress: 'bg-[#1E3A5F] text-[#7DA3C4]',
+  pending: 'bg-[#292524] text-[#78716C]',
+  completed: 'bg-[#14532D] text-[#86EFAC]',
+  archived: 'bg-[#292524] text-[#78716C]',
+}
+
+function EngagementBadge({ status }: { status: string }) {
+  const cls = STATUS_COLORS[status] ?? 'bg-[#292524] text-[#78716C]'
+  return (
+    <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-[4px] capitalize ${cls}`}>
+      {status.replace(/_/g, ' ')}
+    </span>
+  )
 }
 
 function ActionCard({ item }: { item: ActionItem }) {
   return (
     <div
-      className="flex items-center justify-between gap-4 bg-[#383838] rounded-[8px] px-4 py-3"
+      className="flex items-center justify-between gap-4 bg-[#383838] rounded-[8px] px-5 py-4"
       style={{ opacity: item.completed ? 0.7 : 1 }}
     >
       <div className="flex items-start gap-3 min-w-0">
         <div className="flex-shrink-0 mt-0.5">{getIcon(item.type)}</div>
         <div className="min-w-0">
-          <p className="text-[12px] font-medium text-[#EDEEF0] leading-tight">{item.title}</p>
-          <p className="text-[11px] text-[#9CA3AF] mt-0.5 leading-snug">{item.description}</p>
+          <p className="text-[14px] font-medium text-[#EDEEF0] leading-tight">{item.title}</p>
+          <p className="text-[13px] text-[#9CA3AF] mt-0.5 leading-snug">{item.description}</p>
           {item.dueDate && !item.completed && (
-            <p className="text-[11px] text-[#9CA3AF] mt-1">Due {item.dueDate}</p>
+            <p className="text-[13px] text-[#9CA3AF] mt-1">Due {item.dueDate}</p>
           )}
         </div>
       </div>
       {item.completed ? (
         <CheckCircle2 className="h-5 w-5 text-[#10B981] flex-shrink-0" />
       ) : (
-        <button className="flex-shrink-0 h-8 px-3 rounded-[6px] bg-[#3A6A94] text-[#EDEEF0] text-[12px] font-medium hover:opacity-90 transition-opacity whitespace-nowrap">
-          {item.type === 'document-request' ? 'Upload' : item.type === 'signature' ? 'Review & Sign' : 'Pay Now'}
+        <button className="flex-shrink-0 h-10 px-4 rounded-[6px] bg-[#3A6A94] text-[#EDEEF0] text-[13px] font-medium hover:opacity-90 transition-opacity whitespace-nowrap">
+          {item.type === 'document-request'
+            ? 'Upload'
+            : item.type === 'signature'
+            ? 'Review & Sign'
+            : 'Pay Now'}
         </button>
       )}
     </div>
@@ -11890,17 +12249,13 @@ interface PortalTodoProps {
 
 export function PortalTodo({ clientFirstName }: PortalTodoProps) {
   const [items, setItems] = useState<ActionItem[]>([])
+  const [engagements, setEngagements] = useState<PortalDashboard['active_engagements']>([])
   const [loading, setLoading] = useState(true)
 
   const fetchDashboard = useCallback(async () => {
     setLoading(true)
     try {
-      const token = localStorage.getItem('portal_access_token')
-      const res = await fetch('/api/backend/portal/dashboard', {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      })
-      if (!res.ok) return
-      const data: DashboardResponse = await res.json()
+      const data = await getPortalDashboard()
 
       const mapped: ActionItem[] = [
         ...data.pending_document_requests.map((dr) => ({
@@ -11915,11 +12270,14 @@ export function PortalTodo({ clientFirstName }: PortalTodoProps) {
           id: sig.id,
           type: 'signature' as const,
           title: 'Signature Required',
-          description: 'Please review and sign the document.',
+          description: sig.sent_at
+            ? `Sent ${formatDate(sig.sent_at)} — please review and sign.`
+            : 'Please review and sign the document.',
           completed: sig.status === 'signed' || sig.status === 'completed',
         })),
       ]
       setItems(mapped)
+      setEngagements(data.active_engagements)
     } finally {
       setLoading(false)
     }
@@ -11943,10 +12301,10 @@ export function PortalTodo({ clientFirstName }: PortalTodoProps) {
   }
 
   return (
-    <div className="p-5 flex flex-col gap-5 max-w-2xl mx-auto">
+    <div className="p-6 flex flex-col gap-6 max-w-2xl mx-auto">
       <div>
-        <p className="text-[14px] font-medium text-[#EDEEF0]">Hello, {clientFirstName}</p>
-        <p className="text-[11px] text-[#9CA3AF] mt-0.5">
+        <p className="text-[18px] font-medium text-[#EDEEF0]">Hello, {clientFirstName}</p>
+        <p className="text-[14px] text-[#9CA3AF] mt-0.5">
           {active.length === 0
             ? "You're all caught up."
             : `You have ${active.length} item${active.length !== 1 ? 's' : ''} that need${active.length === 1 ? 's' : ''} your attention.`}
@@ -11955,22 +12313,45 @@ export function PortalTodo({ clientFirstName }: PortalTodoProps) {
 
       {active.length > 0 && (
         <div>
-          <p className="text-[10px] font-medium text-[#9CA3AF] uppercase tracking-[0.05em] mb-2">
+          <p className="text-[12px] font-medium text-[#9CA3AF] uppercase tracking-[0.05em] mb-2">
             Action needed
           </p>
-          <div className="flex flex-col gap-2">
-            {active.map((item) => <ActionCard key={item.id} item={item} />)}
+          <div className="flex flex-col gap-3">
+            {active.map((item) => (
+              <ActionCard key={item.id} item={item} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {engagements.length > 0 && (
+        <div>
+          <p className="text-[12px] font-medium text-[#9CA3AF] uppercase tracking-[0.05em] mb-2">
+            Active engagements
+          </p>
+          <div className="flex flex-col gap-3">
+            {engagements.map((eng) => (
+              <div
+                key={eng.id}
+                className="flex items-center justify-between bg-[#383838] rounded-[8px] px-4 py-3"
+              >
+                <p className="text-[14px] font-medium text-[#EDEEF0]">{eng.name}</p>
+                <EngagementBadge status={eng.status} />
+              </div>
+            ))}
           </div>
         </div>
       )}
 
       {completed.length > 0 && (
         <div>
-          <p className="text-[10px] font-medium text-[#9CA3AF] uppercase tracking-[0.05em] mb-2">
+          <p className="text-[12px] font-medium text-[#9CA3AF] uppercase tracking-[0.05em] mb-2">
             Completed
           </p>
-          <div className="flex flex-col gap-2">
-            {completed.map((item) => <ActionCard key={item.id} item={item} />)}
+          <div className="flex flex-col gap-3">
+            {completed.map((item) => (
+              <ActionCard key={item.id} item={item} />
+            ))}
           </div>
         </div>
       )}
@@ -11986,7 +12367,21 @@ FILE: frontend\src\components\portal\usePortalUnreadMessages.ts
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import api from '@/lib/api'
+import { getPortalUnreadCount } from '@/lib/portal-api'
+
+function getPortalClientId(): string | null {
+  if (typeof window === 'undefined') return null
+  const token = localStorage.getItem('portal_access_token')
+  if (!token) return null
+  try {
+    const parts = token.split('.')
+    if (parts.length < 2) return null
+    const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')))
+    return payload.sub ?? null
+  } catch {
+    return null
+  }
+}
 
 interface UsePortalUnreadMessagesReturn {
   unreadCount: number
@@ -11997,15 +12392,15 @@ export function usePortalUnreadMessages(): UsePortalUnreadMessagesReturn {
   const [unreadCount, setUnreadCount] = useState(0)
 
   useEffect(() => {
-    api
-      .get<{ count: number }>('/portal/messages/unread-count')
-      .then((res) => setUnreadCount(res.data.count))
+    const clientId = getPortalClientId()
+    if (!clientId) return
+    getPortalUnreadCount(clientId)
+      .then(setUnreadCount)
       .catch(() => setUnreadCount(0))
   }, [])
 
   const markAsRead = useCallback(() => {
     setUnreadCount(0)
-    api.post('/portal/messages/mark-read').catch(() => {})
   }, [])
 
   return { unreadCount, markAsRead }
@@ -14058,6 +14453,129 @@ export type { WIPSummary, WIPEngagement } from './api/reports'
 
 
 ================================================================================
+FILE: frontend\src\lib\portal-api.ts
+================================================================================
+// frontend/src/lib/portal-api.ts
+
+const BASE = '/api/backend'
+
+function portalHeaders(): HeadersInit {
+  const token =
+    typeof window !== 'undefined' ? localStorage.getItem('portal_access_token') : null
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  if (token) headers['Authorization'] = `Bearer ${token}`
+  return headers
+}
+
+export interface PortalInvoiceLineItem {
+  id: string
+  description: string
+  quantity: number
+  unit_price: number
+  total: number
+}
+
+export interface PortalInvoice {
+  id: string
+  invoice_number: string
+  total_amount: number
+  status: 'draft' | 'sent' | 'paid' | 'overdue' | 'void'
+  due_date: string | null
+  sent_at: string | null
+  created_at: string
+  line_items?: PortalInvoiceLineItem[]
+}
+
+export interface PortalInvoicesResponse {
+  items: PortalInvoice[]
+  total: number
+  limit: number
+  offset: number
+}
+
+export interface PortalDocument {
+  id: string
+  name: string
+  uploaded_at: string
+  file_type: string
+  file_size_kb: number
+  uploaded_by: 'client' | 'firm'
+}
+
+export interface PortalMessage {
+  id: string
+  body: string
+  sender_role: 'staff' | 'client'
+  sender_name: string | null
+  created_at: string
+}
+
+export interface PortalDashboard {
+  active_engagements: Array<{ id: string; name: string; status: string }>
+  pending_signatures: Array<{
+    id: string
+    engagement_id: string | null
+    status: string
+    sent_at: string | null
+  }>
+  pending_document_requests: Array<{
+    id: string
+    title?: string
+    due_date?: string | null
+    status?: string
+  }>
+  unread_notification_count: number
+}
+
+export async function getPortalInvoices(): Promise<PortalInvoicesResponse> {
+  const res = await fetch(`${BASE}/portal/invoices?limit=100`, { headers: portalHeaders() })
+  if (!res.ok) throw new Error('fetch failed')
+  return res.json()
+}
+
+export async function getPortalDocuments(): Promise<PortalDocument[]> {
+  const res = await fetch(`${BASE}/portal/documents`, { headers: portalHeaders() })
+  if (!res.ok) throw new Error('fetch failed')
+  const data = await res.json()
+  return Array.isArray(data) ? data : []
+}
+
+export async function getPortalMessages(clientId: string): Promise<PortalMessage[]> {
+  const res = await fetch(`${BASE}/portal/clients/${clientId}/messages`, {
+    headers: portalHeaders(),
+  })
+  if (!res.ok) throw new Error('fetch failed')
+  const data = await res.json()
+  return Array.isArray(data) ? data : []
+}
+
+export async function sendPortalMessage(clientId: string, body: string): Promise<PortalMessage> {
+  const res = await fetch(`${BASE}/portal/clients/${clientId}/messages`, {
+    method: 'POST',
+    headers: portalHeaders(),
+    body: JSON.stringify({ body }),
+  })
+  if (!res.ok) throw new Error('fetch failed')
+  return res.json()
+}
+
+export async function getPortalDashboard(): Promise<PortalDashboard> {
+  const res = await fetch(`${BASE}/portal/dashboard`, { headers: portalHeaders() })
+  if (!res.ok) throw new Error('fetch failed')
+  return res.json()
+}
+
+export async function getPortalUnreadCount(clientId: string): Promise<number> {
+  const res = await fetch(`${BASE}/portal/clients/${clientId}/messages/unread-count`, {
+    headers: portalHeaders(),
+  })
+  if (!res.ok) return 0
+  const data = await res.json()
+  return data.unread_count ?? 0
+}
+
+
+================================================================================
 FILE: frontend\src\lib\utils.ts
 ================================================================================
 import { clsx, type ClassValue } from "clsx"
@@ -16017,149 +16535,6 @@ export const mockInvoices: MockInvoice[] = [
 ]
 
 export function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(amount)
-}
-
-
-================================================================================
-FILE: frontend\src\lib\mock\portal.ts
-================================================================================
-// frontend/src/lib/mock/portal.ts
-
-export interface PortalActionItem {
-  id: string
-  type: 'document-request' | 'signature' | 'invoice'
-  title: string
-  description: string
-  dueDate?: string
-  completed: boolean
-}
-
-export interface PortalDocument {
-  id: string
-  name: string
-  uploadedAt: string
-  fileType: string
-  fileSizeKb: number
-  uploadedBy: 'client' | 'firm'
-}
-
-export interface PortalInvoice {
-  id: string
-  invoiceNumber: string
-  amount: number
-  status: 'unpaid' | 'paid'
-  dueDate: string
-  issuedDate: string
-}
-
-export const portalClient = {
-  name: 'James Holden',
-  firmName: 'Miller & Associates CPA',
-}
-
-export const portalActionItems: PortalActionItem[] = [
-  {
-    id: 'pa1',
-    type: 'document-request',
-    title: 'Upload 2023 W-2 Forms',
-    description: 'Please upload all W-2 forms received for the 2023 tax year.',
-    dueDate: '2024-08-15',
-    completed: false,
-  },
-  {
-    id: 'pa2',
-    type: 'document-request',
-    title: 'Upload Bank Statements — Q2 2024',
-    description: 'All business bank statements for April, May, and June 2024.',
-    dueDate: '2024-08-01',
-    completed: false,
-  },
-  {
-    id: 'pa3',
-    type: 'signature',
-    title: 'Sign Engagement Letter',
-    description: 'Please review and sign the 2023 tax return engagement letter.',
-    dueDate: '2024-07-25',
-    completed: false,
-  },
-  {
-    id: 'pa4',
-    type: 'invoice',
-    title: 'Pay Invoice INV-2024-001',
-    description: '$3,500 due for 2023 Corporate Tax Return preparation.',
-    dueDate: '2024-07-31',
-    completed: false,
-  },
-  {
-    id: 'pa5',
-    type: 'document-request',
-    title: 'Upload 2022 Prior Year Return',
-    description: 'Copy of your 2022 filed tax return for reference.',
-    dueDate: '2024-07-10',
-    completed: true,
-  },
-  {
-    id: 'pa6',
-    type: 'signature',
-    title: 'Sign Prior Year Amendment',
-    description: 'Signature required on the 2021 amended return.',
-    completed: true,
-  },
-]
-
-export const portalDocuments: PortalDocument[] = [
-  {
-    id: 'pd1',
-    name: 'Engagement Letter — 2023 Tax Return',
-    uploadedAt: '2024-01-20',
-    fileType: 'PDF',
-    fileSizeKb: 89,
-    uploadedBy: 'firm',
-  },
-  {
-    id: 'pd2',
-    name: '2022 Tax Return (Filed Copy)',
-    uploadedAt: '2024-07-10',
-    fileType: 'PDF',
-    fileSizeKb: 412,
-    uploadedBy: 'client',
-  },
-  {
-    id: 'pd3',
-    name: '2023 W-2 — Acme Corp',
-    uploadedAt: '2024-07-14',
-    fileType: 'PDF',
-    fileSizeKb: 142,
-    uploadedBy: 'client',
-  },
-]
-
-export const portalInvoices: PortalInvoice[] = [
-  {
-    id: 'pi1',
-    invoiceNumber: 'INV-2024-001',
-    amount: 3500,
-    status: 'unpaid',
-    dueDate: '2024-07-31',
-    issuedDate: '2024-07-01',
-  },
-  {
-    id: 'pi2',
-    invoiceNumber: 'INV-2023-008',
-    amount: 3200,
-    status: 'paid',
-    dueDate: '2023-09-30',
-    issuedDate: '2023-09-01',
-  },
-]
-
-export function formatCurrencyPortal(amount: number): string {
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
     currency: 'USD',

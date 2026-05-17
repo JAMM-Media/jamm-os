@@ -32,7 +32,7 @@ export function InvoiceTable({
   const someSelected = hasSelection && invoices.some((inv) => selectedIds.has(inv.id))
 
   return (
-    <div className="rounded-modal border border-[0.5px] border-surface-border dark:border-dark-border overflow-hidden">
+    <div className="rounded-modal border border-[0.5px] border-surface-border dark:border-dark-border overflow-auto">
       <table className="w-full border-collapse">
         <thead>
           <tr className="bg-surface-card dark:bg-[#252525]">

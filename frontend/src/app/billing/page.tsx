@@ -9,6 +9,7 @@ import { InvoiceTable } from '@/components/billing/InvoiceTable'
 import { InvoiceCard } from '@/components/billing/InvoiceCard'
 import { BillingEmptyState } from '@/components/billing/BillingEmptyState'
 import { BillingSummary } from '@/components/billing/BillingSummary'
+import { NewInvoiceModal } from '@/components/billing/NewInvoiceModal'
 import { invoicesApi, clientsApi } from '@/lib/api'
 import { useFetch } from '@/lib/hooks/useFetch'
 import { Search, X } from 'lucide-react'
@@ -22,6 +23,7 @@ export default function BillingPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [bulkLoading, setBulkLoading] = useState(false)
   const [voidConfirmOpen, setVoidConfirmOpen] = useState(false)
+  const [newInvoiceOpen, setNewInvoiceOpen] = useState(false)
   const [localInvoices, setLocalInvoices] = useState<Invoice[]>([])
 
   const { data, isLoading, error } = useFetch(() => invoicesApi.list(0, 50), [])
@@ -33,9 +35,14 @@ export default function BillingPage() {
     (clientsData?.items ?? []).map((c) => [c.id, c.name])
   )
 
-  const filtered = invoices.filter((inv) =>
-    inv.invoiceNumber.toLowerCase().includes(search.toLowerCase())
-  )
+  const filtered = invoices.filter((inv) => {
+    const q = search.toLowerCase()
+    const clientName = (clientMap[inv.clientId] ?? '').toLowerCase()
+    return (
+      inv.invoiceNumber.toLowerCase().includes(q) ||
+      clientName.includes(q)
+    )
+  })
 
   function handleSelect(id: string, checked: boolean) {
     setSelectedIds((prev) => {
@@ -132,7 +139,10 @@ export default function BillingPage() {
             />
           </div>
           <ViewToggle value={view} onChange={setView} />
-          <button className="h-9 px-3 rounded-[6px] bg-brand dark:bg-brand-btn text-white text-[13px] font-medium hover:opacity-90 transition-opacity whitespace-nowrap flex-shrink-0">
+          <button
+            onClick={() => setNewInvoiceOpen(true)}
+            className="h-9 px-3 rounded-[6px] bg-brand dark:bg-brand-btn text-white text-[13px] font-medium hover:opacity-90 transition-opacity whitespace-nowrap flex-shrink-0"
+          >
             + New Invoice
           </button>
         </div>
@@ -250,6 +260,11 @@ export default function BillingPage() {
         )}
 
       </div>
+
+      <NewInvoiceModal
+        open={newInvoiceOpen}
+        onClose={() => setNewInvoiceOpen(false)}
+      />
     </AppShell>
   )
 }

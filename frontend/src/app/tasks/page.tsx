@@ -37,6 +37,7 @@ export default function TasksPage() {
   const { data, isLoading, error, refetch } = useFetch(() => tasksApi.list(0, 100), [])
   const { data: clientsData, isLoading: clientsLoading } = useFetch(() => clientsApi.list(0, 100), [])
   const { data: engagementsData, isLoading: engagementsLoading } = useFetch(() => engagementsApi.list(0, 100), [])
+  const { data: usersData } = useFetch(() => api.get('/users/').then((r) => r.data), [])
   const [tasks, setTasks] = useState<Task[]>([])
 
   const serverTasks = data?.items ?? []
@@ -49,6 +50,12 @@ export default function TasksPage() {
   )
   const engagementMap: Record<string, string> = Object.fromEntries(
     (engagementsData?.items ?? []).map((e) => [e.id, e.name])
+  )
+  const rawUsers: Array<{ id: string; full_name: string }> = Array.isArray(usersData)
+    ? usersData
+    : (usersData?.items ?? [])
+  const userMap: Record<string, string> = Object.fromEntries(
+    rawUsers.map((u) => [u.id, u.full_name])
   )
   const lookupsLoading = clientsLoading || engagementsLoading
 
@@ -199,6 +206,7 @@ export default function TasksPage() {
             tasks={filtered}
             clientMap={clientMap}
             engagementMap={engagementMap}
+            userMap={userMap}
             lookupsLoading={lookupsLoading}
             selectedIds={selectedIds}
             onSelect={handleSelect}

@@ -1,7 +1,7 @@
 // frontend/src/components/engagements/ExtensionPanel.tsx
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { toast } from 'sonner'
 import { CalendarClock } from 'lucide-react'
 import { useFetch } from '@/lib/hooks/useFetch'
@@ -241,97 +241,19 @@ export function ExtensionPanel({ engagementId, clientId }: ExtensionPanelProps) 
 
       {/* File Extension Modal */}
       {fileModalOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
-          onClick={(e) => { if (e.target === e.currentTarget) setFileModalOpen(false) }}
-        >
-          <div className="bg-surface-card dark:bg-dark-card rounded-[10px] border border-[0.5px] border-surface-border dark:border-dark-border p-6 w-full max-w-md shadow-xl">
-            <h2 className="text-[15px] font-medium text-brand dark:text-[#EDEEF0] mb-4">File Extension</h2>
-            <form onSubmit={handleFile} className="flex flex-col gap-4">
-              {/* Form type radio group */}
-              <div className="flex flex-col gap-2">
-                <label className={labelClass}>Form Type</label>
-                <div className="flex flex-col gap-2">
-                  {FORM_OPTIONS.map((opt) => (
-                    <label
-                      key={opt.value}
-                      className="flex items-start gap-3 cursor-pointer"
-                    >
-                      <input
-                        type="radio"
-                        name="form_type"
-                        value={opt.value}
-                        checked={formType === opt.value}
-                        onChange={() => setFormType(opt.value)}
-                        className="mt-0.5 accent-brand"
-                        required
-                      />
-                      <div>
-                        <span className="text-[13px] text-brand dark:text-[#EDEEF0]">
-                          {opt.label} — {opt.description} (extends to {opt.deadline})
-                        </span>
-                        <p className="text-[11px] text-[#6B7280]">{opt.description}</p>
-                      </div>
-                    </label>
-                  ))}
-                </div>
-              </div>
-
-              {/* Filed date */}
-              <div className="flex flex-col gap-1.5">
-                <label className={labelClass}>Filed date</label>
-                <input
-                  type="date"
-                  value={filedAt}
-                  onChange={(e) => setFiledAt(e.target.value)}
-                  className="h-9 px-3 rounded-[6px] border border-[0.5px] border-surface-border dark:border-dark-border bg-surface-page dark:bg-dark-page text-[13px] text-brand dark:text-[#EDEEF0]"
-                />
-                <span className="text-[11px] text-[#6B7280]">Defaults to today if left blank.</span>
-              </div>
-
-              {/* Override deadline */}
-              <div className="flex flex-col gap-1.5">
-                <label className={labelClass}>Override deadline</label>
-                <input
-                  type="date"
-                  value={overrideDeadline}
-                  onChange={(e) => setOverrideDeadline(e.target.value)}
-                  className="h-9 px-3 rounded-[6px] border border-[0.5px] border-surface-border dark:border-dark-border bg-surface-page dark:bg-dark-page text-[13px] text-brand dark:text-[#EDEEF0]"
-                />
-                <span className="text-[11px] text-[#6B7280]">Leave blank to use the standard extended deadline for this form type.</span>
-              </div>
-
-              {/* Notes */}
-              <div className="flex flex-col gap-1.5">
-                <label className={labelClass}>Notes</label>
-                <textarea
-                  value={fileNotes}
-                  onChange={(e) => setFileNotes(e.target.value)}
-                  placeholder="Any notes about this extension..."
-                  rows={3}
-                  className="px-3 py-2 rounded-[6px] border border-[0.5px] border-surface-border dark:border-dark-border bg-surface-page dark:bg-dark-page text-[13px] text-brand dark:text-[#EDEEF0] resize-none placeholder:text-[#9CA3AF]"
-                />
-              </div>
-
-              <div className="flex items-center justify-end gap-2 mt-1">
-                <button
-                  type="button"
-                  onClick={() => setFileModalOpen(false)}
-                  className="h-8 px-3 rounded-[6px] border border-[0.5px] border-[#C8CDD6] bg-transparent text-[#1F3148] dark:text-[#EDEEF0] text-[12px] font-medium hover:opacity-80 transition-opacity"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={filing}
-                  className="h-8 px-3 rounded-[6px] bg-brand dark:bg-brand-btn text-white text-[12px] font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
-                >
-                  {filing ? 'Filing...' : 'File Extension'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+        <FileExtensionModalContent
+          formType={formType}
+          setFormType={setFormType}
+          filedAt={filedAt}
+          setFiledAt={setFiledAt}
+          overrideDeadline={overrideDeadline}
+          setOverrideDeadline={setOverrideDeadline}
+          fileNotes={fileNotes}
+          setFileNotes={setFileNotes}
+          filing={filing}
+          onSubmit={handleFile}
+          onClose={() => setFileModalOpen(false)}
+        />
       )}
 
       {/* Update Status Modal */}
@@ -397,5 +319,133 @@ export function ExtensionPanel({ engagementId, clientId }: ExtensionPanelProps) 
         </div>
       )}
     </>
+  )
+}
+
+interface FileExtensionModalContentProps {
+  formType: '4868' | '7004' | '8868'
+  setFormType: (v: '4868' | '7004' | '8868') => void
+  filedAt: string
+  setFiledAt: (v: string) => void
+  overrideDeadline: string
+  setOverrideDeadline: (v: string) => void
+  fileNotes: string
+  setFileNotes: (v: string) => void
+  filing: boolean
+  onSubmit: (e: React.FormEvent) => void
+  onClose: () => void
+}
+
+function FileExtensionModalContent({
+  formType, setFormType, filedAt, setFiledAt,
+  overrideDeadline, setOverrideDeadline, fileNotes, setFileNotes,
+  filing, onSubmit, onClose,
+}: FileExtensionModalContentProps) {
+  useEffect(() => {
+    function handleKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') onClose()
+    }
+    document.addEventListener('keydown', handleKey)
+    return () => document.removeEventListener('keydown', handleKey)
+  }, [onClose])
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
+    >
+      <div className="bg-surface-card dark:bg-dark-card rounded-[10px] border border-[0.5px] border-surface-border dark:border-dark-border w-full max-w-md shadow-xl max-h-[90vh] overflow-y-auto flex flex-col">
+        <div className="sticky top-0 bg-surface-card dark:bg-dark-card z-10 flex items-center justify-between p-4 border-b border-surface-border dark:border-dark-border">
+          <h2 className="text-[15px] font-medium text-brand dark:text-[#EDEEF0]">File Extension</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-[#6B7280] hover:text-brand dark:hover:text-[#EDEEF0] transition-colors text-[18px] leading-none"
+          >
+            ×
+          </button>
+        </div>
+        <form onSubmit={onSubmit} className="flex flex-col gap-4 p-6">
+          {/* Form type radio group */}
+          <div className="flex flex-col gap-2">
+            <label className={labelClass}>Form Type</label>
+            <div className="flex flex-col gap-2">
+              {FORM_OPTIONS.map((opt) => (
+                <label key={opt.value} className="flex items-start gap-3 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="form_type"
+                    value={opt.value}
+                    checked={formType === opt.value}
+                    onChange={() => setFormType(opt.value)}
+                    className="mt-0.5 accent-brand"
+                    required
+                  />
+                  <div>
+                    <span className="text-[13px] text-brand dark:text-[#EDEEF0]">
+                      {opt.label} — {opt.description} (extends to {opt.deadline})
+                    </span>
+                    <p className="text-[11px] text-[#6B7280]">{opt.description}</p>
+                  </div>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          {/* Filed date */}
+          <div className="flex flex-col gap-1.5">
+            <label className={labelClass}>Filed date</label>
+            <input
+              type="date"
+              value={filedAt}
+              onChange={(e) => setFiledAt(e.target.value)}
+              className="h-9 px-3 rounded-[6px] border border-[0.5px] border-surface-border dark:border-dark-border bg-surface-page dark:bg-dark-page text-[13px] text-brand dark:text-[#EDEEF0]"
+            />
+            <span className="text-[11px] text-[#6B7280]">Defaults to today if left blank.</span>
+          </div>
+
+          {/* Override deadline */}
+          <div className="flex flex-col gap-1.5">
+            <label className={labelClass}>Override deadline</label>
+            <input
+              type="date"
+              value={overrideDeadline}
+              onChange={(e) => setOverrideDeadline(e.target.value)}
+              className="h-9 px-3 rounded-[6px] border border-[0.5px] border-surface-border dark:border-dark-border bg-surface-page dark:bg-dark-page text-[13px] text-brand dark:text-[#EDEEF0]"
+            />
+            <span className="text-[11px] text-[#6B7280]">Leave blank to use the standard extended deadline for this form type.</span>
+          </div>
+
+          {/* Notes */}
+          <div className="flex flex-col gap-1.5">
+            <label className={labelClass}>Notes</label>
+            <textarea
+              value={fileNotes}
+              onChange={(e) => setFileNotes(e.target.value)}
+              placeholder="Any notes about this extension..."
+              rows={3}
+              className="px-3 py-2 rounded-[6px] border border-[0.5px] border-surface-border dark:border-dark-border bg-surface-page dark:bg-dark-page text-[13px] text-brand dark:text-[#EDEEF0] resize-none placeholder:text-[#9CA3AF]"
+            />
+          </div>
+
+          <div className="flex items-center justify-end gap-2 mt-1">
+            <button
+              type="button"
+              onClick={onClose}
+              className="h-8 px-3 rounded-[6px] border border-[0.5px] border-[#C8CDD6] bg-transparent text-[#1F3148] dark:text-[#EDEEF0] text-[12px] font-medium hover:opacity-80 transition-opacity"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={filing}
+              className="h-8 px-3 rounded-[6px] bg-brand dark:bg-brand-btn text-white text-[12px] font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
+            >
+              {filing ? 'Filing...' : 'File Extension'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
   )
 }
