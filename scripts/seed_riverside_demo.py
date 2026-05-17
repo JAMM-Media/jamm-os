@@ -68,14 +68,6 @@ def run():
         firm = Firm(
             id=uuid.uuid4(),
             name="Riverside Tax & Advisory",
-            email="andrew@jammpx.com",
-            phone="(512) 555-0192",
-            address_line1="3400 Bee Cave Rd, Suite 200",
-            city="Austin",
-            state="TX",
-            postal_code="78746",
-            country="US",
-            website="www.riversidetax.com",
         )
         db.add(firm)
         db.flush()
