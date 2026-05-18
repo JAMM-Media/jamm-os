@@ -203,7 +203,7 @@ def run():
         db.add(Invoice(
             id=uuid.uuid4(), firm_id=fid, client_id=chen.id, engagement_id=eng_chen.id,
             invoice_number="RTA-2025-001",
-            line_items=[{"description": "2024 Form 1040 Preparation", "quantity": 1, "unit_price": 1200.00, "amount": 1200.00}],
+            line_items=[{"description": "2024 Form 1040 Preparation", "quantity": 1, "unit_price": 1200.00, "amount": 1200.00, "total": 1200.00}],
             subtotal=1200.00, tax_rate=0.0, tax_amount=0.0, total_amount=1200.00,
             status=InvoiceStatus.paid, due_date=d(-30), sent_at=dt(-38), paid_at=dt(-35),
             delivery_method=InvoiceDeliveryMethod.portal, created_by=owner.id,
@@ -213,8 +213,8 @@ def run():
             id=uuid.uuid4(), firm_id=fid, client_id=chen.id, engagement_id=eng_chen.id,
             invoice_number="RTA-2025-008",
             line_items=[
-                {"description": "2024 Tax Planning Advisory — Q2", "quantity": 1, "unit_price": 450.00, "amount": 450.00},
-                {"description": "IRS Correspondence Assistance", "quantity": 1, "unit_price": 200.00, "amount": 200.00},
+                {"description": "2024 Tax Planning Advisory — Q2", "quantity": 1, "unit_price": 450.00, "amount": 450.00, "total": 450.00},
+                {"description": "IRS Correspondence Assistance", "quantity": 1, "unit_price": 200.00, "amount": 200.00, "total": 200.00},
             ],
             subtotal=650.00, tax_rate=0.0, tax_amount=0.0, total_amount=650.00,
             status=InvoiceStatus.sent, due_date=d(14), sent_at=dt(-3),
@@ -320,7 +320,7 @@ def run():
         db.add(Invoice(
             id=uuid.uuid4(), firm_id=fid, client_id=martinez.id, engagement_id=eng_martinez.id,
             invoice_number="RTA-2025-002",
-            line_items=[{"description": "2024 Form 1120-S Preparation (retainer)", "quantity": 1, "unit_price": 1400.00, "amount": 1400.00}],
+            line_items=[{"description": "2024 Form 1120-S Preparation (retainer)", "quantity": 1, "unit_price": 1400.00, "amount": 1400.00, "total": 1400.00}],
             subtotal=1400.00, tax_rate=0.0, tax_amount=0.0, total_amount=1400.00,
             status=InvoiceStatus.overdue, due_date=d(-45), sent_at=dt(-52),
             delivery_method=InvoiceDeliveryMethod.portal, created_by=owner.id,
@@ -400,7 +400,7 @@ def run():
         db.add(Invoice(
             id=uuid.uuid4(), firm_id=fid, client_id=kowalski.id, engagement_id=eng_kowalski.id,
             invoice_number="RTA-2025-003",
-            line_items=[{"description": "2024 Form 1041 Preparation (retainer — 50%)", "quantity": 1, "unit_price": 1100.00, "amount": 1100.00}],
+            line_items=[{"description": "2024 Form 1041 Preparation (retainer — 50%)", "quantity": 1, "unit_price": 1100.00, "amount": 1100.00, "total": 1100.00}],
             subtotal=1100.00, tax_rate=0.0, tax_amount=0.0, total_amount=1100.00,
             status=InvoiceStatus.paid, due_date=d(-20), sent_at=dt(-28), paid_at=dt(-21),
             delivery_method=InvoiceDeliveryMethod.portal, created_by=owner.id,
@@ -481,7 +481,7 @@ def run():
         db.add(Invoice(
             id=uuid.uuid4(), firm_id=fid, client_id=okonkwo.id, engagement_id=eng_okonkwo.id,
             invoice_number="RTA-2025-004",
-            line_items=[{"description": "2024 Form 1120-S Preparation", "quantity": 1, "unit_price": 2400.00, "amount": 2400.00}],
+            line_items=[{"description": "2024 Form 1120-S Preparation", "quantity": 1, "unit_price": 2400.00, "amount": 2400.00, "total": 2400.00}],
             subtotal=2400.00, tax_rate=0.0, tax_amount=0.0, total_amount=2400.00,
             status=InvoiceStatus.sent, due_date=d(7), sent_at=dt(-5),
             delivery_method=InvoiceDeliveryMethod.portal, created_by=owner.id,
@@ -614,7 +614,7 @@ def run():
         db.add(Invoice(
             id=uuid.uuid4(), firm_id=fid, client_id=rivera.id, engagement_id=eng_rivera.id,
             invoice_number="RTA-2025-005",
-            line_items=[{"description": "2024 Form 1065 Preparation — 50% retainer", "quantity": 1, "unit_price": 1400.00, "amount": 1400.00}],
+            line_items=[{"description": "2024 Form 1065 Preparation — 50% retainer", "quantity": 1, "unit_price": 1400.00, "amount": 1400.00, "total": 1400.00}],
             subtotal=1400.00, tax_rate=0.0, tax_amount=0.0, total_amount=1400.00,
             status=InvoiceStatus.sent, due_date=d(7), sent_at=dt(-7),
             delivery_method=InvoiceDeliveryMethod.portal, created_by=owner.id,
@@ -692,7 +692,7 @@ def run():
         db.add(Invoice(
             id=uuid.uuid4(), firm_id=fid, client_id=hammond.id, engagement_id=eng_hammond.id,
             invoice_number="RTA-2025-006",
-            line_items=[{"description": "Form 706 Estate Tax Return — retainer", "quantity": 1, "unit_price": 2800.00, "amount": 2800.00}],
+            line_items=[{"description": "Form 706 Estate Tax Return — retainer", "quantity": 1, "unit_price": 2800.00, "amount": 2800.00, "total": 2800.00}],
             subtotal=2800.00, tax_rate=0.0, tax_amount=0.0, total_amount=2800.00,
             status=InvoiceStatus.overdue, due_date=d(-90), sent_at=dt(-100),
             delivery_method=InvoiceDeliveryMethod.portal, created_by=owner.id,
