@@ -1,138 +1,59 @@
 # JAMM PX — Task Batch
 
-Read every instruction in this file before writing a single line of code. Execute in the order listed. Do not skip steps or reorder them.
+Read every instruction in this file before writing a single line of code. Execute in the order listed.
 
 ---
 
 ## STANDING RULES
 
-- Backend: FastAPI, PostgreSQL, SQLAlchemy ORM 2.0, Pydantic v2. Never deviate from existing patterns.
 - Frontend: Next.js 14 App Router, TypeScript always, Tailwind CSS, shadcn/ui.
-- Every file must begin with its path comment.
 - Never touch files not listed in a task's scope.
 - Never add new npm or pip packages unless explicitly instructed.
 
 ---
 
-## TASK 1 — Fix NewEngagementModal: wire handleSubmit to the API
+## TASK 1 — Fix engagements type filter: "All Types" must show all engagements
 
-**File to edit:** `frontend/src/components/engagements/NewEngagementModal.tsx`
+**File to edit:** `frontend/src/app/engagements/page.tsx`
 
-**Problem:** `handleSubmit` builds a fake local engagement object with `id: \`e${Date.now()}\`` and calls `onAdd` immediately. It never calls `engagementsApi.create`. The engagement appears in the list momentarily with a garbage ID, fails when navigated to (422 — not a valid UUID), and disappears on the next data fetch.
+**Problem:** `uniqueTypes` is computed from `engagements` (the server-fetched array). Newly created engagements are added to `localEngagements` separately. When the type filter is set to "All Types" (`typeFilter === 'all'`), the filter logic should show everything — but there is a secondary issue: `uniqueTypes` only includes types from the server fetch, so any type that only exists in `localEngagements` won't appear in the dropdown. More critically, there may be a logic error where engagements with a type not in `uniqueTypes` are being excluded even when `typeFilter === 'all'`.
 
-**Fix:** Make `handleSubmit` async, call `engagementsApi.create` with the form data, and only call `onAdd` with the real server-returned engagement on success.
+**Fix 1 — Compute `uniqueTypes` from the combined list:**
 
-Find the `handleSubmit` function. It currently looks like:
-
+Find this line:
 ```tsx
-function handleSubmit() {
-  const validation = validate(form)
-  if (Object.keys(validation).length > 0) {
-    setErrors(validation)
-    return
-  }
-
-  const newEngagement: Engagement = {
-    id: `e${Date.now()}`,
-    name: form.name.trim(),
-    description: null,
-    status: 'not-started',
-    startDate: null,
-    endDate: form.endDate,
-    filingDeadline: null,
-    extendedDeadline: null,
-    engagementType: form.engagementType,
-    isActive: true,
-    clientId: form.clientId,
-    notes: null,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  }
-
-  onAdd(newEngagement)
-  handleClose()
-}
+const uniqueTypes = Array.from(new Set(engagements.map((e) => e.engagementType).filter(Boolean))) as string[]
 ```
 
 Replace it with:
-
 ```tsx
-const [submitting, setSubmitting] = useState(false)
-
-async function handleSubmit() {
-  const validation = validate(form)
-  if (Object.keys(validation).length > 0) {
-    setErrors(validation)
-    return
-  }
-
-  setSubmitting(true)
-  try {
-    const created = await engagementsApi.create({
-      name: form.name.trim(),
-      client_id: form.clientId,
-      engagement_type: form.engagementType || undefined,
-      end_date: form.endDate || undefined,
-    })
-    onAdd(created)
-    handleClose()
-  } catch {
-    toast.error('Failed to create engagement. Please try again.')
-  } finally {
-    setSubmitting(false)
-  }
-}
+const allEngagements = [...localEngagements, ...engagements]
+const uniqueTypes = Array.from(new Set(allEngagements.map((e) => e.engagementType).filter(Boolean))) as string[]
 ```
 
-Also update the Save button to disable and show a loading state while submitting. Find the Save button in the modal footer — it currently looks like:
+**Fix 2 — Verify the filtered computation uses the combined list:**
+
+Find the `filtered` computation. It should be filtering from `engagements` but needs to include `localEngagements` too. Check whether it currently reads from `engagements` or `allEngagements`. If it reads from `engagements`, update it to use `allEngagements` instead:
 
 ```tsx
-<button
-  onClick={handleSubmit}
-  className="h-9 px-4 rounded-[6px] bg-brand ..."
->
-  Save
-</button>
+const filtered = allEngagements.filter((e) => {
+  if (search && !e.name.toLowerCase().includes(search.toLowerCase())) return false
+  if (statusFilter !== 'all' && e.status !== statusFilter) return false
+  if (typeFilter !== 'all' && e.engagementType !== typeFilter) return false
+  return true
+})
 ```
 
-Update it to:
+**Fix 3 — Remove the duplicate `localEngagements` prepend:**
 
-```tsx
-<button
-  onClick={handleSubmit}
-  disabled={submitting}
-  className="h-9 px-4 rounded-[6px] bg-brand dark:bg-brand-btn text-white text-[13px] font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
->
-  {submitting ? 'Saving...' : 'Save'}
-</button>
-```
+Currently `handleAdd` does `setLocalEngagements((prev) => [engagement, ...prev])` and the list renders from a combined `[...localEngagements, ...engagements]` or similar. Now that `filtered` uses `allEngagements` which already includes `localEngagements`, make sure the final rendered list uses `filtered` directly and doesn't double-add local engagements.
 
-Check the existing imports at the top of this file:
-- `useState` — likely already imported, do not duplicate
-- `engagementsApi` — check if already imported; if not, add it from `@/lib/api`
-- `toast` — check if already imported; if not, add `import { toast } from 'sonner'`
-
-Only add imports that are genuinely missing.
-
-Also reset `submitting` in `handleClose`:
-```tsx
-function handleClose() {
-  setForm({
-    name: '',
-    clientId: preselectedClientId ?? '',
-    engagementType: '',
-    endDate: '',
-  })
-  setErrors({})
-  setSubmitting(false)
-  onClose()
-}
-```
+Read the current rendering logic carefully before making this change — find where `localEngagements` and `engagements` are combined for display and make sure `filtered` is the single source of truth for what gets rendered.
 
 ---
 
 ## EXECUTION ORDER
 
-1. Task 1 — frontend only: NewEngagementModal.tsx
+1. Task 1 — frontend only: engagements/page.tsx
 
 After the task: report every file modified and confirm no TypeScript errors.

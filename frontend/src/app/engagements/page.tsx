@@ -32,7 +32,7 @@ export default function EngagementsPage() {
   const { data, isLoading, error } = useFetch(() => engagementsApi.list(0, 100), [])
   const { data: clientsData, isLoading: clientsLoading } = useFetch(() => clientsApi.list(0, 100), [])
   const serverEngagements = data?.items ?? []
-  const engagements = [...localEngagements, ...serverEngagements].map((e) =>
+  const allEngagements = [...localEngagements, ...serverEngagements].map((e) =>
     statusOverrides[e.id] ? { ...e, status: statusOverrides[e.id] } : e
   )
 
@@ -40,9 +40,9 @@ export default function EngagementsPage() {
     (clientsData?.items ?? []).map((c) => [c.id, c.name])
   )
 
-  const uniqueTypes = Array.from(new Set(engagements.map((e) => e.engagementType).filter(Boolean))) as string[]
+  const uniqueTypes = Array.from(new Set(allEngagements.map((e) => e.engagementType).filter(Boolean))) as string[]
 
-  const filtered = engagements.filter((e) => {
+  const filtered = allEngagements.filter((e) => {
     if (search && !e.name.toLowerCase().includes(search.toLowerCase())) return false
     if (statusFilter !== 'all' && e.status !== statusFilter) return false
     if (typeFilter !== 'all' && e.engagementType !== typeFilter) return false
@@ -181,7 +181,7 @@ export default function EngagementsPage() {
 
           {(statusFilter !== 'all' || typeFilter !== 'all') && (
             <span className="text-[11px] text-[#6B7280]">
-              Showing {filtered.length} of {engagements.length} engagements
+              Showing {filtered.length} of {allEngagements.length} engagements
             </span>
           )}
         </div>
