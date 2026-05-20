@@ -168,7 +168,7 @@ export default function TasksPage() {
 
   return (
     <AppShell>
-      <div className="flex flex-col h-full p-6 gap-4">
+      <div className="flex flex-col h-full p-6 gap-4 overflow-y-auto">
 
         <h1 className="text-2xl font-medium text-brand dark:text-[#EDEEF0]">
           Tasks
