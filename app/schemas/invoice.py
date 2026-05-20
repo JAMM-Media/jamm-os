@@ -16,7 +16,25 @@ class LineItemSchema(BaseModel):
     description: str
     quantity: Decimal
     unit_price: Decimal
-    total: Decimal
+    amount: Optional[Decimal] = None
+    total: Optional[Decimal] = None
+
+    @field_validator('total', mode='before')
+    @classmethod
+    def coerce_total(cls, v, info):
+        if v is not None:
+            return v
+        # Try to compute from quantity * unit_price
+        data = info.data
+        qty = data.get('quantity')
+        price = data.get('unit_price')
+        if qty is not None and price is not None:
+            return qty * price
+        # Fall back to amount field
+        amt = data.get('amount')
+        if amt is not None:
+            return amt
+        return Decimal('0')
 
 
 class InvoiceBase(BaseModel):

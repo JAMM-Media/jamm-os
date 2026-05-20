@@ -89,7 +89,7 @@ function renderBody(body: string, _mentions: string[], staffMap?: Map<string, st
       if (match.index > last) parts.push(<span key={last}>{body.slice(last, match.index)}</span>)
       parts.push(
         <span key={match.index} className="font-semibold text-[#1F3148] dark:text-[#EDEEF0]">
-          {match[0]}
+          {match[1]}
         </span>
       )
       last = match.index + match[0].length
@@ -110,8 +110,8 @@ function renderBody(body: string, _mentions: string[], staffMap?: Map<string, st
     found = true
     if (match.index > last) parts.push(<span key={last}>{body.slice(last, match.index)}</span>)
     parts.push(
-      <span key={match.index} className="font-semibold">
-        {match[0]}
+      <span key={match.index} className="font-semibold text-[#1F3148] dark:text-[#EDEEF0]">
+        {match[1]}
       </span>
     )
     last = match.index + match[0].length
