@@ -20,10 +20,13 @@ import {
   MessageSquare,
   LogOut,
   CalendarDays,
+  Bell,
 } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
 import { cn } from '@/lib/utils'
 import { useChannels } from '@/components/firm-chat/useChannels'
 import { useAuth } from '@/lib/hooks/useAuth'
+import api from '@/lib/api'
 
 const navItems = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -34,6 +37,7 @@ const navItems = [
   { href: '/documents', label: 'Documents', icon: FileText },
   { href: '/billing', label: 'Billing', icon: CreditCard },
   { href: '/firm-chat', label: 'Firm Chat', icon: MessageSquare },
+  { href: '/notifications', label: 'Notifications', icon: Bell },
 ]
 
 const settingsItem = { href: '/settings', label: 'Settings', icon: Settings }
@@ -50,7 +54,20 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   useEffect(() => setMounted(true), [])
 
   const { totalUnread } = useChannels()
-  const { logout } = useAuth()
+  const { logout, user } = useAuth()
+
+  const { data: notifData } = useQuery({
+    queryKey: ['notifications-unread-count'],
+    queryFn: () => api.get('/api/v1/notifications/unread-count').then((r) => r.data),
+    staleTime: 30 * 1000,
+    refetchInterval: 60 * 1000,
+  })
+  const notifUnread: number = notifData?.count ?? 0
+
+  const visibleNavItems = navItems.filter((item) => {
+    if (item.href === '/dashboard' && user?.role === 'staff') return false
+    return true
+  })
 
   return (
     <aside
@@ -85,11 +102,14 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
       {/* Main nav */}
       <nav className="flex-1 py-3 overflow-y-auto">
         <ul className="space-y-0.5 px-1.5">
-          {navItems.map((item) => {
+          {visibleNavItems.map((item) => {
             const isActive = pathname.startsWith(item.href)
             const Icon = item.icon
             const isFirmChat = item.href === '/firm-chat'
-            const showBadge = isFirmChat && totalUnread > 0
+            const isNotifications = item.href === '/notifications'
+            const showNotifBadge = isNotifications && notifUnread > 0
+            const badgeCount = isNotifications ? notifUnread : totalUnread
+            const showBadge = (isFirmChat && totalUnread > 0) || showNotifBadge
 
             return (
               <li key={item.href}>
@@ -109,7 +129,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                     <Icon className="h-4 w-4" />
                     {showBadge && collapsed && (
                       <span className="absolute -top-1 -right-1 flex items-center justify-center bg-brand dark:bg-brand-btn text-white text-[11px] font-medium w-[18px] h-[18px] rounded-full">
-                        {totalUnread > 99 ? '99+' : totalUnread}
+                        {badgeCount > 99 ? '99+' : badgeCount}
                       </span>
                     )}
                   </div>
@@ -119,7 +139,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                       <span className="truncate flex-1">{item.label}</span>
                       {showBadge && (
                         <span className="flex items-center justify-center bg-brand dark:bg-brand-btn text-white text-[11px] font-medium h-[18px] min-w-[18px] px-1.5 rounded-full flex-shrink-0">
-                          {totalUnread > 99 ? '99+' : totalUnread}
+                          {badgeCount > 99 ? '99+' : badgeCount}
                         </span>
                       )}
                     </>

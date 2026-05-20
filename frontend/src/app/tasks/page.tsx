@@ -11,6 +11,7 @@ import { TaskEmptyState } from '@/components/tasks/TaskEmptyState'
 import { NewTaskModal } from '@/components/tasks/NewTaskModal'
 import { tasksApi, clientsApi, engagementsApi, type Task } from '@/lib/api'
 import { useFetch } from '@/lib/hooks/useFetch'
+import { useAuth } from '@/lib/hooks/useAuth'
 import { Search, X, ChevronDown } from 'lucide-react'
 import api from '@/lib/api'
 
@@ -25,6 +26,8 @@ const TASK_STATUSES = [
 export default function TasksPage() {
   const [view, setView] = useState<ViewMode>('table')
   const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState<string>('all')
+  const [myTasksOnly, setMyTasksOnly] = useState(false)
   const [localTasks, setLocalTasks] = useState<Task[]>([])
   const [modalOpen, setModalOpen] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
@@ -34,6 +37,7 @@ export default function TasksPage() {
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [statusOverrides, setStatusOverrides] = useState<Record<string, string>>({})
 
+  const { user } = useAuth()
   const { data, isLoading, error, refetch } = useFetch(() => tasksApi.list(0, 100), [])
   const { data: clientsData, isLoading: clientsLoading } = useFetch(() => clientsApi.list(0, 100), [])
   const { data: engagementsData, isLoading: engagementsLoading } = useFetch(() => engagementsApi.list(0, 100), [])
@@ -59,9 +63,22 @@ export default function TasksPage() {
   )
   const lookupsLoading = clientsLoading || engagementsLoading
 
-  const filtered = allTasks.filter((t) =>
-    t.title.toLowerCase().includes(search.toLowerCase())
-  )
+  const filtered = allTasks
+    .filter((t) => {
+      if (search && !t.title.toLowerCase().includes(search.toLowerCase())) return false
+      if (statusFilter !== 'all' && t.status !== statusFilter) return false
+      if (myTasksOnly && t.assignedTo !== user?.id) return false
+      return true
+    })
+    .sort((a, b) => {
+      // When not filtering to my tasks, sort user's own tasks to the top
+      if (!myTasksOnly) {
+        const aMe = a.assignedTo === user?.id ? 0 : 1
+        const bMe = b.assignedTo === user?.id ? 0 : 1
+        return aMe - bMe
+      }
+      return 0
+    })
 
   function handleAdd(task: Task) {
     setLocalTasks((prev) => [task, ...prev])
@@ -175,6 +192,47 @@ export default function TasksPage() {
           >
             + New Task
           </button>
+        </div>
+
+        {/* Filter bar */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="text-[12px] h-8 px-2 rounded-[6px] border border-surface-border dark:border-dark-border bg-surface-card dark:bg-dark-card text-brand dark:text-[#EDEEF0] cursor-pointer"
+          >
+            <option value="all">All Statuses</option>
+            <option value="todo">To Do</option>
+            <option value="in_progress">In Progress</option>
+            <option value="in_review">In Review</option>
+            <option value="done">Done</option>
+          </select>
+
+          <button
+            onClick={() => setMyTasksOnly((prev) => !prev)}
+            className={`text-[12px] h-8 px-3 rounded-[6px] border font-medium transition-colors ${
+              myTasksOnly
+                ? 'bg-brand text-white border-brand'
+                : 'border-surface-border dark:border-dark-border text-[#6B7280] dark:text-[#9CA3AF] bg-surface-card dark:bg-dark-card hover:text-brand'
+            }`}
+          >
+            My Tasks
+          </button>
+
+          {(statusFilter !== 'all' || myTasksOnly) && (
+            <button
+              onClick={() => { setStatusFilter('all'); setMyTasksOnly(false) }}
+              className="text-[11px] text-[#6B7280] hover:text-brand underline"
+            >
+              Clear filters
+            </button>
+          )}
+
+          {(statusFilter !== 'all' || myTasksOnly) && (
+            <span className="text-[11px] text-[#6B7280]">
+              Showing {filtered.length} of {allTasks.length} tasks
+            </span>
+          )}
         </div>
 
         {isLoading && localTasks.length === 0 ? (

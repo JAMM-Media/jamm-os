@@ -19,6 +19,27 @@ function formatTimestamp(isoString: string): string {
     date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
 }
 
+function renderNoteBody(body: string): React.ReactNode {
+  if (!body) return <>{body}</>
+  const parts: React.ReactNode[] = []
+  const regex = /@(\S+(?:\s\S+)?)/g
+  let last = 0
+  let match
+  let found = false
+  while ((match = regex.exec(body)) !== null) {
+    found = true
+    if (match.index > last) parts.push(<span key={last}>{body.slice(last, match.index)}</span>)
+    parts.push(
+      <span key={match.index} className="font-semibold">
+        {match[0]}
+      </span>
+    )
+    last = match.index + match[0].length
+  }
+  if (last < body.length) parts.push(<span key={last}>{body.slice(last)}</span>)
+  return found ? <>{parts}</> : <>{body}</>
+}
+
 function NoteCard({
   note,
   onDelete,
@@ -73,7 +94,7 @@ function NoteCard({
         </div>
       </div>
       <p className="text-[13px] text-[#374151] dark:text-[#9CA3AF] leading-[1.6]">
-        {note.body}
+        {renderNoteBody(note.body)}
       </p>
     </div>
   )

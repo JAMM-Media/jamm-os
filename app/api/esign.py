@@ -240,6 +240,51 @@ def send_envelope(
 
 
 # -----------------------------------------------------------------------
+# POST /esign/envelopes/{envelope_id}/remind — Send a reminder
+# -----------------------------------------------------------------------
+@router.post("/envelopes/{envelope_id}/remind")
+def send_envelope_reminder(
+    envelope_id: UUID,
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    _: User = Depends(require_manager_or_above),
+):
+    envelope = crud_envelope.get_signature_envelope(db, envelope_id, current_firm.id)
+    if not envelope:
+        raise HTTPException(status_code=404, detail="Signature envelope not found")
+    if envelope.status != "sent":
+        raise HTTPException(status_code=400, detail="Reminders can only be sent for envelopes with status 'sent'")
+    if not envelope.provider_envelope_id:
+        raise HTTPException(status_code=400, detail="Envelope has no provider ID")
+
+    dropbox_sign.send_reminder(
+        signature_request_id=envelope.provider_envelope_id,
+        signer_email=envelope.signers[0]["email"] if envelope.signers else None,
+    )
+
+    now = datetime.now(timezone.utc)
+    crud_envelope.update_signature_envelope(
+        db,
+        envelope,
+        SignatureEnvelopeUpdate(
+            reminder_count=(envelope.reminder_count or 0) + 1,
+            last_reminder_sent_at=now,
+        ),
+    )
+
+    write_audit_log(
+        db=db,
+        firm_id=current_firm.id,
+        action="esign.reminder_sent",
+        actor_type="staff",
+        entity_type="signature_envelope",
+        entity_id=envelope_id,
+    )
+
+    return {"sent": True, "reminder_count": (envelope.reminder_count or 0) + 1}
+
+
+# -----------------------------------------------------------------------
 # 5. POST /esign/webhook — Dropbox Sign event callback (no auth)
 # -----------------------------------------------------------------------
 @router.post("/webhook")

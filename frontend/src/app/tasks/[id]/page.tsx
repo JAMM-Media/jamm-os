@@ -33,6 +33,15 @@ export default function TaskDetailPage() {
     }
   }, [task?.id, task?.status, user?.id])
 
+  // Poll so managers/owners see the in_progress transition without manual reload
+  useEffect(() => {
+    if (!task || task.status === 'completed' || task.status === 'done') return
+    const interval = setInterval(() => {
+      refetch()
+    }, 10000)
+    return () => clearInterval(interval)
+  }, [task?.status, refetch])
+
   if (isLoading) {
     return (
       <AppShell>

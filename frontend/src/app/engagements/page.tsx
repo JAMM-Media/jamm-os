@@ -20,6 +20,8 @@ const ENGAGEMENT_STATUSES = ['planning', 'active', 'in_review', 'completed', 'ar
 export default function EngagementsPage() {
   const [view, setView] = useState<ViewMode>('table')
   const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState<string>('all')
+  const [typeFilter, setTypeFilter] = useState<string>('all')
   const [localEngagements, setLocalEngagements] = useState<Engagement[]>([])
   const [modalOpen, setModalOpen] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
@@ -38,9 +40,14 @@ export default function EngagementsPage() {
     (clientsData?.items ?? []).map((c) => [c.id, c.name])
   )
 
-  const filtered = engagements.filter((e) =>
-    e.name.toLowerCase().includes(search.toLowerCase())
-  )
+  const uniqueTypes = Array.from(new Set(engagements.map((e) => e.engagementType).filter(Boolean))) as string[]
+
+  const filtered = engagements.filter((e) => {
+    if (search && !e.name.toLowerCase().includes(search.toLowerCase())) return false
+    if (statusFilter !== 'all' && e.status !== statusFilter) return false
+    if (typeFilter !== 'all' && e.engagementType !== typeFilter) return false
+    return true
+  })
 
   function handleAdd(engagement: Engagement) {
     setLocalEngagements((prev) => [engagement, ...prev])
@@ -135,6 +142,48 @@ export default function EngagementsPage() {
           >
             + New Engagement
           </button>
+        </div>
+
+        {/* Filter bar */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="text-[12px] h-8 px-2 rounded-[6px] border border-surface-border dark:border-dark-border bg-surface-card dark:bg-dark-card text-brand dark:text-[#EDEEF0] cursor-pointer"
+          >
+            <option value="all">All Statuses</option>
+            <option value="planning">Planning</option>
+            <option value="active">Active</option>
+            <option value="in_review">In Review</option>
+            <option value="completed">Completed</option>
+            <option value="archived">Archived</option>
+          </select>
+
+          <select
+            value={typeFilter}
+            onChange={(e) => setTypeFilter(e.target.value)}
+            className="text-[12px] h-8 px-2 rounded-[6px] border border-surface-border dark:border-dark-border bg-surface-card dark:bg-dark-card text-brand dark:text-[#EDEEF0] cursor-pointer"
+          >
+            <option value="all">All Types</option>
+            {uniqueTypes.map((t) => (
+              <option key={t} value={t}>{t}</option>
+            ))}
+          </select>
+
+          {(statusFilter !== 'all' || typeFilter !== 'all') && (
+            <button
+              onClick={() => { setStatusFilter('all'); setTypeFilter('all') }}
+              className="text-[11px] text-[#6B7280] hover:text-brand underline"
+            >
+              Clear filters
+            </button>
+          )}
+
+          {(statusFilter !== 'all' || typeFilter !== 'all') && (
+            <span className="text-[11px] text-[#6B7280]">
+              Showing {filtered.length} of {engagements.length} engagements
+            </span>
+          )}
         </div>
 
         {isLoading && localEngagements.length === 0 ? (

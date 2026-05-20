@@ -97,3 +97,28 @@ def download_signed_document(signature_request_id: str) -> bytes:
         )
 
     return r.content
+
+
+def send_reminder(signature_request_id: str, signer_email: str | None = None) -> dict:
+    """
+    Sends a reminder for an existing Dropbox Sign signature request.
+    Raises HTTPException(502) if the upstream call fails.
+    """
+    data = {}
+    if signer_email:
+        data["email_address"] = signer_email
+
+    r = requests.post(
+        f"{_BASE_URL}/signature_request/remind/{signature_request_id}",
+        auth=_get_auth(),
+        data=data,
+        timeout=30,
+    )
+
+    if not r.ok:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Dropbox Sign reminder failed: {r.status_code} — {r.text}",
+        )
+
+    return r.json()

@@ -55,7 +55,7 @@ FILE: frontend\next-env.d.ts
 ================================================================================
 /// <reference types="next" />
 /// <reference types="next/image-types/global" />
-import "./.next/dev/types/routes.d.ts";
+import "./.next/types/routes.d.ts";
 
 // NOTE: This file should not be edited
 // see https://nextjs.org/docs/app/api-reference/config/typescript for more information.
@@ -1949,6 +1949,7 @@ import { InvoiceTable } from '@/components/billing/InvoiceTable'
 import { InvoiceCard } from '@/components/billing/InvoiceCard'
 import { BillingEmptyState } from '@/components/billing/BillingEmptyState'
 import { BillingSummary } from '@/components/billing/BillingSummary'
+import { NewInvoiceModal } from '@/components/billing/NewInvoiceModal'
 import { invoicesApi, clientsApi } from '@/lib/api'
 import { useFetch } from '@/lib/hooks/useFetch'
 import { Search, X } from 'lucide-react'
@@ -1962,6 +1963,7 @@ export default function BillingPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [bulkLoading, setBulkLoading] = useState(false)
   const [voidConfirmOpen, setVoidConfirmOpen] = useState(false)
+  const [newInvoiceOpen, setNewInvoiceOpen] = useState(false)
   const [localInvoices, setLocalInvoices] = useState<Invoice[]>([])
 
   const { data, isLoading, error } = useFetch(() => invoicesApi.list(0, 50), [])
@@ -1973,9 +1975,14 @@ export default function BillingPage() {
     (clientsData?.items ?? []).map((c) => [c.id, c.name])
   )
 
-  const filtered = invoices.filter((inv) =>
-    inv.invoiceNumber.toLowerCase().includes(search.toLowerCase())
-  )
+  const filtered = invoices.filter((inv) => {
+    const q = search.toLowerCase()
+    const clientName = (clientMap[inv.clientId] ?? '').toLowerCase()
+    return (
+      inv.invoiceNumber.toLowerCase().includes(q) ||
+      clientName.includes(q)
+    )
+  })
 
   function handleSelect(id: string, checked: boolean) {
     setSelectedIds((prev) => {
@@ -2072,7 +2079,10 @@ export default function BillingPage() {
             />
           </div>
           <ViewToggle value={view} onChange={setView} />
-          <button className="h-9 px-3 rounded-[6px] bg-brand dark:bg-brand-btn text-white text-[13px] font-medium hover:opacity-90 transition-opacity whitespace-nowrap flex-shrink-0">
+          <button
+            onClick={() => setNewInvoiceOpen(true)}
+            className="h-9 px-3 rounded-[6px] bg-brand dark:bg-brand-btn text-white text-[13px] font-medium hover:opacity-90 transition-opacity whitespace-nowrap flex-shrink-0"
+          >
             + New Invoice
           </button>
         </div>
@@ -2190,6 +2200,11 @@ export default function BillingPage() {
         )}
 
       </div>
+
+      <NewInvoiceModal
+        open={newInvoiceOpen}
+        onClose={() => setNewInvoiceOpen(false)}
+      />
     </AppShell>
   )
 }
@@ -2964,7 +2979,7 @@ import { useQuery } from '@tanstack/react-query'
 import { AppShell } from '@/components/layout/AppShell'
 import { Breadcrumb } from '@/components/layout/Breadcrumb'
 import { StatusBadge } from '@/components/ui/StatusBadge'
-import { clientsApi, engagementsApi } from '@/lib/api'
+import { clientsApi, engagementsApi, invoicesApi } from '@/lib/api'
 import type { QBOARBalance } from '@/lib/api/clients'
 import { useFetch } from '@/lib/hooks/useFetch'
 import { Mail, Phone, MapPin, ArrowLeft, ExternalLink, Loader2, Send } from 'lucide-react'
@@ -3032,6 +3047,12 @@ function ClientDetailContent() {
     [clientId]
   )
   const engagements = engagementsData?.items ?? []
+
+  const { data: invoicesData, isLoading: invoicesLoading } = useFetch(
+    () => invoicesApi.list(0, 50, clientId),
+    [clientId]
+  )
+  const clientInvoices = invoicesData?.items ?? []
 
   const { data: qboAr, isLoading: qboLoading, isError: qboError } = useQuery<QBOARBalance>({
     queryKey: ['qbo-ar', clientId],
@@ -3436,17 +3457,70 @@ function ClientDetailContent() {
         )}
 
         {activeTab === 'billing' && (
-          <div className="flex flex-col items-center justify-center py-24 gap-[10px]">
-            <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-surface-card dark:bg-dark-card border border-[0.5px] border-surface-border dark:border-dark-border">
-              <span className="text-[18px]">💳</span>
+          invoicesLoading ? (
+            <div className="rounded-modal border border-[0.5px] border-surface-border dark:border-dark-border overflow-auto">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <div key={i} className="flex gap-4 px-4 py-3 border-b border-[0.5px] border-[#D5D8DE] dark:border-dark-card last:border-0">
+                  {Array.from({ length: 5 }).map((_, j) => (
+                    <div key={j} className="h-4 flex-1 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+                  ))}
+                </div>
+              ))}
             </div>
-            <p className="text-[13px] font-medium text-brand dark:text-[#EDEEF0]">
-              No invoices yet
-            </p>
-            <p className="text-[12px] text-[#6B7280]">
-              Invoices for this client will appear here.
-            </p>
-          </div>
+          ) : clientInvoices.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-24 gap-[10px]">
+              <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-surface-card dark:bg-dark-card border border-[0.5px] border-surface-border dark:border-dark-border">
+                <span className="text-[18px]">💳</span>
+              </div>
+              <p className="text-[13px] font-medium text-brand dark:text-[#EDEEF0]">
+                No invoices yet
+              </p>
+              <p className="text-[12px] text-[#6B7280]">
+                Invoices for this client will appear here.
+              </p>
+            </div>
+          ) : (
+            <div className="rounded-modal border border-[0.5px] border-surface-border dark:border-dark-border overflow-auto">
+              <table className="w-full border-collapse">
+                <thead>
+                  <tr className="bg-surface-card dark:bg-[#252525]">
+                    {['Invoice', 'Amount', 'Due', 'Status'].map((col) => (
+                      <th key={col} className="px-4 py-2.5 text-left text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em] whitespace-nowrap">
+                        {col}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {clientInvoices.map((inv, i) => (
+                    <tr
+                      key={inv.id}
+                      onClick={() => router.push(`/billing/${inv.id}`)}
+                      className={[
+                        'cursor-pointer transition-colors bg-surface-page dark:bg-dark-page hover:bg-[#DDDFE3] dark:hover:bg-[#323232]',
+                        i !== clientInvoices.length - 1 ? 'border-b border-[0.5px] border-[#D5D8DE] dark:border-dark-card' : '',
+                      ].join(' ')}
+                    >
+                      <td className="px-4 py-3">
+                        <span className="text-[12px] font-medium text-brand dark:text-[#EDEEF0]">{inv.invoiceNumber}</span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className="text-[12px] font-medium text-brand dark:text-[#EDEEF0]">
+                          {new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(inv.totalAmount)}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className="text-[12px] text-[#374151] dark:text-[#9CA3AF]">{inv.dueDate ?? '—'}</span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <StatusBadge variant={inv.status as Parameters<typeof StatusBadge>[0]['variant']} />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )
         )}
 
         {activeTab === 'irs-auth' && (
@@ -6193,6 +6267,7 @@ export default function SettingsPage() {
                     <input
                       type="text"
                       required
+                      autoComplete="off"
                       value={inviteFullName}
                       onChange={(e) => setInviteFullName(e.target.value)}
                       className={inputClass}
@@ -6203,6 +6278,7 @@ export default function SettingsPage() {
                     <input
                       type="email"
                       required
+                      autoComplete="off"
                       value={inviteEmail}
                       onChange={(e) => setInviteEmail(e.target.value)}
                       className={inputClass}
@@ -6214,6 +6290,7 @@ export default function SettingsPage() {
                       <input
                         type={showInvitePassword || invitePasswordLocked ? 'text' : 'password'}
                         required
+                        autoComplete="new-password"
                         value={invitePassword}
                         onChange={(e) => setInvitePassword(e.target.value)}
                         className={inputClass}
@@ -6316,6 +6393,7 @@ export default function TasksPage() {
   const { data, isLoading, error, refetch } = useFetch(() => tasksApi.list(0, 100), [])
   const { data: clientsData, isLoading: clientsLoading } = useFetch(() => clientsApi.list(0, 100), [])
   const { data: engagementsData, isLoading: engagementsLoading } = useFetch(() => engagementsApi.list(0, 100), [])
+  const { data: usersData } = useFetch(() => api.get('/users/').then((r) => r.data), [])
   const [tasks, setTasks] = useState<Task[]>([])
 
   const serverTasks = data?.items ?? []
@@ -6328,6 +6406,12 @@ export default function TasksPage() {
   )
   const engagementMap: Record<string, string> = Object.fromEntries(
     (engagementsData?.items ?? []).map((e) => [e.id, e.name])
+  )
+  const rawUsers: Array<{ id: string; full_name: string }> = Array.isArray(usersData)
+    ? usersData
+    : (usersData?.items ?? [])
+  const userMap: Record<string, string> = Object.fromEntries(
+    rawUsers.map((u) => [u.id, u.full_name])
   )
   const lookupsLoading = clientsLoading || engagementsLoading
 
@@ -6478,6 +6562,7 @@ export default function TasksPage() {
             tasks={filtered}
             clientMap={clientMap}
             engagementMap={engagementMap}
+            userMap={userMap}
             lookupsLoading={lookupsLoading}
             selectedIds={selectedIds}
             onSelect={handleSelect}
@@ -6956,7 +7041,7 @@ export function InvoiceTable({
   const someSelected = hasSelection && invoices.some((inv) => selectedIds.has(inv.id))
 
   return (
-    <div className="rounded-modal border border-[0.5px] border-surface-border dark:border-dark-border overflow-hidden">
+    <div className="rounded-modal border border-[0.5px] border-surface-border dark:border-dark-border overflow-auto">
       <table className="w-full border-collapse">
         <thead>
           <tr className="bg-surface-card dark:bg-[#252525]">
@@ -7043,6 +7128,43 @@ export function InvoiceTable({
         </tbody>
       </table>
     </div>
+  )
+}
+
+
+================================================================================
+FILE: frontend\src\components\billing\NewInvoiceModal.tsx
+================================================================================
+// frontend/src/components/billing/NewInvoiceModal.tsx
+'use client'
+
+import { Modal } from '@/components/ui/Modal'
+
+interface NewInvoiceModalProps {
+  open: boolean
+  onClose: () => void
+}
+
+export function NewInvoiceModal({ open, onClose }: NewInvoiceModalProps) {
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="New Invoice"
+      size="md"
+      footer={
+        <button
+          onClick={onClose}
+          className="h-9 px-3 rounded-[6px] border border-[0.5px] border-brand dark:border-[#4A7FA5] text-brand dark:text-[#EDEEF0] text-[13px] font-medium hover:bg-surface-page dark:hover:bg-dark-page transition-colors"
+        >
+          Close
+        </button>
+      }
+    >
+      <p className="text-[13px] text-[#6B7280]">
+        Invoice creation coming soon.
+      </p>
+    </Modal>
   )
 }
 
@@ -7152,7 +7274,7 @@ export function ClientTable({ clients }: ClientTableProps) {
   const router = useRouter()
 
   return (
-    <div className="rounded-modal border border-[0.5px] border-surface-border dark:border-dark-border overflow-hidden">
+    <div className="rounded-modal border border-[0.5px] border-surface-border dark:border-dark-border overflow-auto">
       <table className="w-full border-collapse">
         <thead>
           <tr className="bg-surface-card dark:bg-[#252525]">
@@ -9843,7 +9965,7 @@ FILE: frontend\src\components\engagements\ExtensionPanel.tsx
 // frontend/src/components/engagements/ExtensionPanel.tsx
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { toast } from 'sonner'
 import { CalendarClock } from 'lucide-react'
 import { useFetch } from '@/lib/hooks/useFetch'
@@ -10083,97 +10205,19 @@ export function ExtensionPanel({ engagementId, clientId }: ExtensionPanelProps) 
 
       {/* File Extension Modal */}
       {fileModalOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
-          onClick={(e) => { if (e.target === e.currentTarget) setFileModalOpen(false) }}
-        >
-          <div className="bg-surface-card dark:bg-dark-card rounded-[10px] border border-[0.5px] border-surface-border dark:border-dark-border p-6 w-full max-w-md shadow-xl">
-            <h2 className="text-[15px] font-medium text-brand dark:text-[#EDEEF0] mb-4">File Extension</h2>
-            <form onSubmit={handleFile} className="flex flex-col gap-4">
-              {/* Form type radio group */}
-              <div className="flex flex-col gap-2">
-                <label className={labelClass}>Form Type</label>
-                <div className="flex flex-col gap-2">
-                  {FORM_OPTIONS.map((opt) => (
-                    <label
-                      key={opt.value}
-                      className="flex items-start gap-3 cursor-pointer"
-                    >
-                      <input
-                        type="radio"
-                        name="form_type"
-                        value={opt.value}
-                        checked={formType === opt.value}
-                        onChange={() => setFormType(opt.value)}
-                        className="mt-0.5 accent-brand"
-                        required
-                      />
-                      <div>
-                        <span className="text-[13px] text-brand dark:text-[#EDEEF0]">
-                          {opt.label} — {opt.description} (extends to {opt.deadline})
-                        </span>
-                        <p className="text-[11px] text-[#6B7280]">{opt.description}</p>
-                      </div>
-                    </label>
-                  ))}
-                </div>
-              </div>
-
-              {/* Filed date */}
-              <div className="flex flex-col gap-1.5">
-                <label className={labelClass}>Filed date</label>
-                <input
-                  type="date"
-                  value={filedAt}
-                  onChange={(e) => setFiledAt(e.target.value)}
-                  className="h-9 px-3 rounded-[6px] border border-[0.5px] border-surface-border dark:border-dark-border bg-surface-page dark:bg-dark-page text-[13px] text-brand dark:text-[#EDEEF0]"
-                />
-                <span className="text-[11px] text-[#6B7280]">Defaults to today if left blank.</span>
-              </div>
-
-              {/* Override deadline */}
-              <div className="flex flex-col gap-1.5">
-                <label className={labelClass}>Override deadline</label>
-                <input
-                  type="date"
-                  value={overrideDeadline}
-                  onChange={(e) => setOverrideDeadline(e.target.value)}
-                  className="h-9 px-3 rounded-[6px] border border-[0.5px] border-surface-border dark:border-dark-border bg-surface-page dark:bg-dark-page text-[13px] text-brand dark:text-[#EDEEF0]"
-                />
-                <span className="text-[11px] text-[#6B7280]">Leave blank to use the standard extended deadline for this form type.</span>
-              </div>
-
-              {/* Notes */}
-              <div className="flex flex-col gap-1.5">
-                <label className={labelClass}>Notes</label>
-                <textarea
-                  value={fileNotes}
-                  onChange={(e) => setFileNotes(e.target.value)}
-                  placeholder="Any notes about this extension..."
-                  rows={3}
-                  className="px-3 py-2 rounded-[6px] border border-[0.5px] border-surface-border dark:border-dark-border bg-surface-page dark:bg-dark-page text-[13px] text-brand dark:text-[#EDEEF0] resize-none placeholder:text-[#9CA3AF]"
-                />
-              </div>
-
-              <div className="flex items-center justify-end gap-2 mt-1">
-                <button
-                  type="button"
-                  onClick={() => setFileModalOpen(false)}
-                  className="h-8 px-3 rounded-[6px] border border-[0.5px] border-[#C8CDD6] bg-transparent text-[#1F3148] dark:text-[#EDEEF0] text-[12px] font-medium hover:opacity-80 transition-opacity"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={filing}
-                  className="h-8 px-3 rounded-[6px] bg-brand dark:bg-brand-btn text-white text-[12px] font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
-                >
-                  {filing ? 'Filing...' : 'File Extension'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+        <FileExtensionModalContent
+          formType={formType}
+          setFormType={setFormType}
+          filedAt={filedAt}
+          setFiledAt={setFiledAt}
+          overrideDeadline={overrideDeadline}
+          setOverrideDeadline={setOverrideDeadline}
+          fileNotes={fileNotes}
+          setFileNotes={setFileNotes}
+          filing={filing}
+          onSubmit={handleFile}
+          onClose={() => setFileModalOpen(false)}
+        />
       )}
 
       {/* Update Status Modal */}
@@ -10242,6 +10286,134 @@ export function ExtensionPanel({ engagementId, clientId }: ExtensionPanelProps) 
   )
 }
 
+interface FileExtensionModalContentProps {
+  formType: '4868' | '7004' | '8868'
+  setFormType: (v: '4868' | '7004' | '8868') => void
+  filedAt: string
+  setFiledAt: (v: string) => void
+  overrideDeadline: string
+  setOverrideDeadline: (v: string) => void
+  fileNotes: string
+  setFileNotes: (v: string) => void
+  filing: boolean
+  onSubmit: (e: React.FormEvent) => void
+  onClose: () => void
+}
+
+function FileExtensionModalContent({
+  formType, setFormType, filedAt, setFiledAt,
+  overrideDeadline, setOverrideDeadline, fileNotes, setFileNotes,
+  filing, onSubmit, onClose,
+}: FileExtensionModalContentProps) {
+  useEffect(() => {
+    function handleKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') onClose()
+    }
+    document.addEventListener('keydown', handleKey)
+    return () => document.removeEventListener('keydown', handleKey)
+  }, [onClose])
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
+    >
+      <div className="bg-surface-card dark:bg-dark-card rounded-[10px] border border-[0.5px] border-surface-border dark:border-dark-border w-full max-w-md shadow-xl max-h-[90vh] overflow-y-auto flex flex-col">
+        <div className="sticky top-0 bg-surface-card dark:bg-dark-card z-10 flex items-center justify-between p-4 border-b border-surface-border dark:border-dark-border">
+          <h2 className="text-[15px] font-medium text-brand dark:text-[#EDEEF0]">File Extension</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-[#6B7280] hover:text-brand dark:hover:text-[#EDEEF0] transition-colors text-[18px] leading-none"
+          >
+            ×
+          </button>
+        </div>
+        <form onSubmit={onSubmit} className="flex flex-col gap-4 p-6">
+          {/* Form type radio group */}
+          <div className="flex flex-col gap-2">
+            <label className={labelClass}>Form Type</label>
+            <div className="flex flex-col gap-2">
+              {FORM_OPTIONS.map((opt) => (
+                <label key={opt.value} className="flex items-start gap-3 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="form_type"
+                    value={opt.value}
+                    checked={formType === opt.value}
+                    onChange={() => setFormType(opt.value)}
+                    className="mt-0.5 accent-brand"
+                    required
+                  />
+                  <div>
+                    <span className="text-[13px] text-brand dark:text-[#EDEEF0]">
+                      {opt.label} — {opt.description} (extends to {opt.deadline})
+                    </span>
+                    <p className="text-[11px] text-[#6B7280]">{opt.description}</p>
+                  </div>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          {/* Filed date */}
+          <div className="flex flex-col gap-1.5">
+            <label className={labelClass}>Filed date</label>
+            <input
+              type="date"
+              value={filedAt}
+              onChange={(e) => setFiledAt(e.target.value)}
+              className="h-9 px-3 rounded-[6px] border border-[0.5px] border-surface-border dark:border-dark-border bg-surface-page dark:bg-dark-page text-[13px] text-brand dark:text-[#EDEEF0]"
+            />
+            <span className="text-[11px] text-[#6B7280]">Defaults to today if left blank.</span>
+          </div>
+
+          {/* Override deadline */}
+          <div className="flex flex-col gap-1.5">
+            <label className={labelClass}>Override deadline</label>
+            <input
+              type="date"
+              value={overrideDeadline}
+              onChange={(e) => setOverrideDeadline(e.target.value)}
+              className="h-9 px-3 rounded-[6px] border border-[0.5px] border-surface-border dark:border-dark-border bg-surface-page dark:bg-dark-page text-[13px] text-brand dark:text-[#EDEEF0]"
+            />
+            <span className="text-[11px] text-[#6B7280]">Leave blank to use the standard extended deadline for this form type.</span>
+          </div>
+
+          {/* Notes */}
+          <div className="flex flex-col gap-1.5">
+            <label className={labelClass}>Notes</label>
+            <textarea
+              value={fileNotes}
+              onChange={(e) => setFileNotes(e.target.value)}
+              placeholder="Any notes about this extension..."
+              rows={3}
+              className="px-3 py-2 rounded-[6px] border border-[0.5px] border-surface-border dark:border-dark-border bg-surface-page dark:bg-dark-page text-[13px] text-brand dark:text-[#EDEEF0] resize-none placeholder:text-[#9CA3AF]"
+            />
+          </div>
+
+          <div className="flex items-center justify-end gap-2 mt-1">
+            <button
+              type="button"
+              onClick={onClose}
+              className="h-8 px-3 rounded-[6px] border border-[0.5px] border-[#C8CDD6] bg-transparent text-[#1F3148] dark:text-[#EDEEF0] text-[12px] font-medium hover:opacity-80 transition-opacity"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={filing}
+              className="h-8 px-3 rounded-[6px] bg-brand dark:bg-brand-btn text-white text-[12px] font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
+            >
+              {filing ? 'Filing...' : 'File Extension'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
 
 ================================================================================
 FILE: frontend\src\components\engagements\NewEngagementModal.tsx
@@ -10254,7 +10426,8 @@ import { Modal } from '@/components/ui/Modal'
 import { FormField } from '@/components/ui/FormField'
 import { TextInput } from '@/components/ui/TextInput'
 import { SelectInput } from '@/components/ui/SelectInput'
-import { type Engagement } from '@/lib/api'
+import { type Engagement, clientsApi } from '@/lib/api'
+import { useFetch } from '@/lib/hooks/useFetch'
 
 const ENGAGEMENT_TYPE_OPTIONS = [
   { value: 'tax_return', label: 'Tax Return' },
@@ -10289,6 +10462,7 @@ interface FormErrors {
 function validate(form: FormState): FormErrors {
   const errors: FormErrors = {}
   if (!form.name.trim()) errors.name = 'Title is required.'
+  if (!form.clientId) errors.clientId = 'Client is required.'
   if (!form.engagementType) errors.engagementType = 'Please select a type.'
   if (!form.endDate) errors.endDate = 'Due date is required.'
   return errors
@@ -10307,6 +10481,9 @@ export function NewEngagementModal({
     endDate: '',
   })
   const [errors, setErrors] = useState<FormErrors>({})
+
+  const { data: clientsData } = useFetch(() => clientsApi.list(0, 100), [])
+  const clientOptions = (clientsData?.items ?? []).map((c) => ({ value: c.id, label: c.name }))
 
   function handleChange(field: keyof FormState, value: string) {
     setForm((prev) => ({ ...prev, [field]: value }))
@@ -10378,6 +10555,17 @@ export function NewEngagementModal({
       }
     >
       <div className="flex flex-col gap-4">
+
+        {/* Client */}
+        <FormField label="Client" required error={errors.clientId}>
+          <SelectInput
+            value={form.clientId}
+            onChange={(e) => handleChange('clientId', e.target.value)}
+            options={clientOptions}
+            placeholder="Select client"
+            error={!!errors.clientId}
+          />
+        </FormField>
 
         {/* Title */}
         <FormField label="Engagement Title" required error={errors.name}>
@@ -13322,6 +13510,7 @@ interface TaskTableProps {
   tasks: Task[]
   clientMap?: Record<string, string>
   engagementMap?: Record<string, string>
+  userMap?: Record<string, string>
   lookupsLoading?: boolean
   selectedIds?: Set<string>
   onSelect?: (id: string, checked: boolean) => void
@@ -13332,6 +13521,7 @@ export function TaskTable({
   tasks,
   clientMap = {},
   engagementMap = {},
+  userMap = {},
   lookupsLoading = false,
   selectedIds,
   onSelect,
@@ -13344,7 +13534,7 @@ export function TaskTable({
   const someSelected = hasSelection && tasks.some((t) => selectedIds.has(t.id))
 
   return (
-    <div className="rounded-modal border border-[0.5px] border-surface-border dark:border-dark-border overflow-hidden">
+    <div className="rounded-modal border border-[0.5px] border-surface-border dark:border-dark-border overflow-auto">
       <table className="w-full border-collapse">
         <thead>
           <tr className="bg-surface-card dark:bg-[#252525]">
@@ -13426,7 +13616,7 @@ export function TaskTable({
                 </td>
                 <td className="px-4 py-3">
                   <span className="text-[12px] text-[#374151] dark:text-[#9CA3AF]">
-                    {task.assignedToName ?? task.assignedTo ?? '—'}
+                    {task.assignedToName ?? (task.assignedTo ? (userMap[task.assignedTo] ?? task.assignedTo) : '—')}
                   </span>
                 </td>
                 <td className="px-4 py-3">
@@ -13824,7 +14014,7 @@ export function StatusBadge({ variant, label, className }: StatusBadgeProps) {
   return (
     <span
       className={cn(
-        'inline-flex items-center h-[22px] px-2.5 rounded-badge text-[11px] font-medium',
+        'inline-flex items-center h-[22px] px-2.5 rounded-badge text-[11px] font-medium whitespace-nowrap',
         config.bg,
         config.text,
         config.border,
@@ -14287,6 +14477,16 @@ const Toaster = ({ ...props }: ToasterProps) => {
     <Sonner
       theme={theme as ToasterProps["theme"]}
       className="toaster group"
+      containerAriaLabel="Notifications"
+      style={
+        {
+          pointerEvents: "none",
+          "--normal-bg": "var(--popover)",
+          "--normal-text": "var(--popover-foreground)",
+          "--normal-border": "var(--border)",
+          "--border-radius": "var(--radius)",
+        } as React.CSSProperties
+      }
       icons={{
         success: (
           <CircleCheckIcon className="size-4" />
@@ -14304,15 +14504,8 @@ const Toaster = ({ ...props }: ToasterProps) => {
           <Loader2Icon className="size-4 animate-spin" />
         ),
       }}
-      style={
-        {
-          "--normal-bg": "var(--popover)",
-          "--normal-text": "var(--popover-foreground)",
-          "--normal-border": "var(--border)",
-          "--border-radius": "var(--radius)",
-        } as React.CSSProperties
-      }
       toastOptions={{
+        style: { pointerEvents: "auto" },
         classNames: {
           toast: "cn-toast",
         },

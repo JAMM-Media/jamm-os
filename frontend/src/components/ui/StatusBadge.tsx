@@ -62,8 +62,8 @@ const variantConfig: Record<BadgeVariant, { bg: string; text: string; border?: s
     defaultLabel: 'Not Started',
   },
   active: {
-    bg: 'bg-status-green',
-    text: 'text-status-green-text',
+    bg: 'bg-status-blue',
+    text: 'text-status-blue-text',
     defaultLabel: 'Active',
   },
   inactive: {

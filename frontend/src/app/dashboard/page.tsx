@@ -268,6 +268,20 @@ function OverdueEngagementsTable({
 // ---------------------------------------------------------------------------
 
 function UnsignedDocumentsTable({ items }: { items: UnsignedDocumentItem[] }) {
+  const [sending, setSending] = useState<string | null>(null)
+
+  async function handleRemind(envelopeId: string) {
+    setSending(envelopeId)
+    try {
+      await api.post(`/esign/envelopes/${envelopeId}/remind`)
+      toast.success('Reminder sent')
+    } catch {
+      toast.error('Failed to send reminder')
+    } finally {
+      setSending(null)
+    }
+  }
+
   return (
     <div className="bg-white dark:bg-dark-card rounded-[8px] border border-surface-border dark:border-dark-border overflow-hidden">
       <div className="px-4 py-3 border-b border-surface-border dark:border-dark-border flex items-center gap-2">
@@ -302,12 +316,13 @@ function UnsignedDocumentsTable({ items }: { items: UnsignedDocumentItem[] }) {
                   <td className="px-4 py-2.5 text-[#6B7280]">{new Date(item.sent_at).toLocaleDateString()}</td>
                   <td className="px-4 py-2.5 text-[#6B7280]">{item.days_waiting}d</td>
                   <td className="px-4 py-2.5">
-                    <span
-                      title="Coming soon"
-                      className="inline-block text-[11px] font-medium px-2.5 py-1 rounded border border-surface-border dark:border-dark-border text-[#9CA3AF] cursor-not-allowed select-none"
+                    <button
+                      onClick={() => handleRemind(item.envelope_id)}
+                      disabled={sending === item.envelope_id}
+                      className="text-[11px] font-medium px-2.5 py-1 rounded border border-surface-border dark:border-dark-border text-brand dark:text-[#EDEEF0] hover:bg-surface-card dark:hover:bg-dark-card disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                     >
-                      Send Reminder
-                    </span>
+                      {sending === item.envelope_id ? 'Sending...' : 'Send Reminder'}
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -477,9 +492,9 @@ export default function DashboardPage() {
               />
               <MetricCard
                 label="Overdue Engagements"
-                value={String(metrics?.overdue_engagement_count)}
+                value={String(visibleOverdue.length)}
                 valueClassName={
-                  metrics?.overdue_engagement_count > 0
+                  visibleOverdue.length > 0
                     ? 'text-[#DC2626]'
                     : 'text-brand dark:text-[#EDEEF0]'
                 }

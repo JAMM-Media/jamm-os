@@ -18,8 +18,8 @@ logger = logging.getLogger(__name__)
 
 settings = get_settings()
 
-REFRESH_INACTIVITY_HOURS = 2    # Rolling window — resets on each use
-REFRESH_ABSOLUTE_HOURS = 12     # Hard cap — no renewal past this point
+REFRESH_INACTIVITY_HOURS = 8    # Rolling window — resets on each use
+REFRESH_ABSOLUTE_HOURS = 72     # Hard cap — no renewal past this point
 
 
 def issue_staff_refresh_token(user: User, db: Session) -> str:
