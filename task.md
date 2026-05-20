@@ -12,43 +12,47 @@ Read every instruction in this file before writing a single line of code. Execut
 
 ---
 
-## TASK 1 — Fix engagements type filter: "All Types" must show all engagements
+## TASK 1 — Fix engagements type filter dropdown: show human-readable labels
 
 **File to edit:** `frontend/src/app/engagements/page.tsx`
 
-**Problem:** `uniqueTypes` is computed from `engagements` (the server-fetched array). Newly created engagements are added to `localEngagements` separately. When the type filter is set to "All Types" (`typeFilter === 'all'`), the filter logic should show everything — but there is a secondary issue: `uniqueTypes` only includes types from the server fetch, so any type that only exists in `localEngagements` won't appear in the dropdown. More critically, there may be a logic error where engagements with a type not in `uniqueTypes` are being excluded even when `typeFilter === 'all'`.
+**Problem 1:** The type filter dropdown shows raw backend enum values (`tax_return_1040`, `custom`, etc.) instead of formatted labels. It should show "Tax Return 1040", "Custom", etc.
 
-**Fix 1 — Compute `uniqueTypes` from the combined list:**
+**Problem 2:** The "All Types" option is not showing all engagements. Add a `console.log` to debug this, and also fix the display issue.
 
-Find this line:
-```tsx
-const uniqueTypes = Array.from(new Set(engagements.map((e) => e.engagementType).filter(Boolean))) as string[]
-```
+### Fix 1 — Import formatEngagementType
 
-Replace it with:
-```tsx
-const allEngagements = [...localEngagements, ...engagements]
-const uniqueTypes = Array.from(new Set(allEngagements.map((e) => e.engagementType).filter(Boolean))) as string[]
-```
+Check if `formatEngagementType` is already imported from `@/lib/utils`. If not, add it to the existing import line.
 
-**Fix 2 — Verify the filtered computation uses the combined list:**
+### Fix 2 — Add debug logging temporarily
 
-Find the `filtered` computation. It should be filtering from `engagements` but needs to include `localEngagements` too. Check whether it currently reads from `engagements` or `allEngagements`. If it reads from `engagements`, update it to use `allEngagements` instead:
+Add this line immediately after the `filtered` computation (after line `return true })`):
 
 ```tsx
-const filtered = allEngagements.filter((e) => {
-  if (search && !e.name.toLowerCase().includes(search.toLowerCase())) return false
-  if (statusFilter !== 'all' && e.status !== statusFilter) return false
-  if (typeFilter !== 'all' && e.engagementType !== typeFilter) return false
-  return true
-})
+console.log('DEBUG allEngagements:', allEngagements.map(e => ({ id: e.id, name: e.name, type: e.engagementType, status: e.status })))
+console.log('DEBUG filtered:', filtered.map(e => ({ id: e.id, name: e.name, type: e.engagementType })))
+console.log('DEBUG typeFilter:', typeFilter, 'statusFilter:', statusFilter)
 ```
 
-**Fix 3 — Remove the duplicate `localEngagements` prepend:**
+### Fix 3 — Fix the type filter dropdown labels
 
-Currently `handleAdd` does `setLocalEngagements((prev) => [engagement, ...prev])` and the list renders from a combined `[...localEngagements, ...engagements]` or similar. Now that `filtered` uses `allEngagements` which already includes `localEngagements`, make sure the final rendered list uses `filtered` directly and doesn't double-add local engagements.
+Find the type filter `<select>` dropdown. It currently renders options like:
+```tsx
+{uniqueTypes.map((t) => (
+  <option key={t} value={t}>{t}</option>
+))}
+```
 
-Read the current rendering logic carefully before making this change — find where `localEngagements` and `engagements` are combined for display and make sure `filtered` is the single source of truth for what gets rendered.
+Change it to show formatted labels while keeping the raw value for filtering:
+```tsx
+{uniqueTypes.map((t) => (
+  <option key={t} value={t}>{formatEngagementType(t)}</option>
+))}
+```
+
+### Fix 4 — Add "Custom" to the status options display
+
+The status filter dropdown hardcodes statuses. Verify it includes all statuses that engagements can have. The current options are: All Statuses, Planning, Active, In Review, Completed, Archived. If `not_started` or any other status is missing, add it.
 
 ---
 

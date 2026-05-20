@@ -12,6 +12,7 @@ import { NewEngagementModal } from '@/components/engagements/NewEngagementModal'
 import { engagementsApi, clientsApi, type Engagement } from '@/lib/api'
 import { useFetch } from '@/lib/hooks/useFetch'
 import { Search, X, ChevronDown } from 'lucide-react'
+import { formatEngagementType } from '@/lib/utils'
 
 type ViewMode = 'table' | 'card'
 
@@ -48,6 +49,9 @@ export default function EngagementsPage() {
     if (typeFilter !== 'all' && e.engagementType !== typeFilter) return false
     return true
   })
+  console.log('DEBUG allEngagements:', allEngagements.map(e => ({ id: e.id, name: e.name, type: e.engagementType, status: e.status })))
+  console.log('DEBUG filtered:', filtered.map(e => ({ id: e.id, name: e.name, type: e.engagementType })))
+  console.log('DEBUG typeFilter:', typeFilter, 'statusFilter:', statusFilter)
 
   function handleAdd(engagement: Engagement) {
     setLocalEngagements((prev) => [engagement, ...prev])
@@ -152,6 +156,7 @@ export default function EngagementsPage() {
             className="text-[12px] h-8 px-2 rounded-[6px] border border-surface-border dark:border-dark-border bg-surface-card dark:bg-dark-card text-brand dark:text-[#EDEEF0] cursor-pointer"
           >
             <option value="all">All Statuses</option>
+            <option value="not-started">Not Started</option>
             <option value="planning">Planning</option>
             <option value="active">Active</option>
             <option value="in_review">In Review</option>
@@ -166,7 +171,7 @@ export default function EngagementsPage() {
           >
             <option value="all">All Types</option>
             {uniqueTypes.map((t) => (
-              <option key={t} value={t}>{t}</option>
+              <option key={t} value={t}>{formatEngagementType(t)}</option>
             ))}
           </select>
 
