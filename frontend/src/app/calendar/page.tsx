@@ -260,7 +260,7 @@ export default function CalendarPage() {
 
   return (
     <AppShell>
-      <div className="flex flex-col h-full p-6 gap-4 overflow-y-auto">
+      <div className="flex flex-col p-6 gap-4">
 
         {/* Header */}
         <div className="flex items-start justify-between">

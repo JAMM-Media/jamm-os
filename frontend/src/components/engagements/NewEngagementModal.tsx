@@ -10,15 +10,6 @@ import { type Engagement, clientsApi, engagementsApi } from '@/lib/api'
 import { toast } from 'sonner'
 import { useFetch } from '@/lib/hooks/useFetch'
 
-const ENGAGEMENT_TYPE_OPTIONS = [
-  { value: 'tax_return', label: 'Tax Return' },
-  { value: 'bookkeeping_monthly', label: 'Bookkeeping' },
-  { value: 'payroll_tax_941', label: 'Payroll' },
-  { value: 'tax_planning_advisory', label: 'Advisory' },
-  { value: 'audit_representation', label: 'Audit' },
-  { value: 'custom', label: 'Other' },
-]
-
 interface NewEngagementModalProps {
   open: boolean
   onClose: () => void
@@ -26,27 +17,12 @@ interface NewEngagementModalProps {
   preselectedClientId?: string
 }
 
-interface FormState {
-  name: string
-  clientId: string
-  engagementType: string
-  endDate: string
-}
-
 interface FormErrors {
   name?: string
   clientId?: string
+  engagementCategory?: string
   engagementType?: string
   endDate?: string
-}
-
-function validate(form: FormState): FormErrors {
-  const errors: FormErrors = {}
-  if (!form.name.trim()) errors.name = 'Title is required.'
-  if (!form.clientId) errors.clientId = 'Client is required.'
-  if (!form.engagementType) errors.engagementType = 'Please select a type.'
-  if (!form.endDate) errors.endDate = 'Due date is required.'
-  return errors
 }
 
 export function NewEngagementModal({
@@ -55,9 +31,10 @@ export function NewEngagementModal({
   onAdd,
   preselectedClientId,
 }: NewEngagementModalProps) {
-  const [form, setForm] = useState<FormState>({
+  const [form, setForm] = useState({
     name: '',
     clientId: preselectedClientId ?? '',
+    engagementCategory: '',
     engagementType: '',
     endDate: '',
   })
@@ -67,17 +44,30 @@ export function NewEngagementModal({
   const { data: clientsData } = useFetch(() => clientsApi.list(0, 100), [])
   const clientOptions = (clientsData?.items ?? []).map((c) => ({ value: c.id, label: c.name }))
 
-  function handleChange(field: keyof FormState, value: string) {
-    setForm((prev) => ({ ...prev, [field]: value }))
-    if (errors[field as keyof FormErrors]) {
-      setErrors((prev) => ({ ...prev, [field]: undefined }))
-    }
+  function validate(f: typeof form): FormErrors {
+    const errs: FormErrors = {}
+    if (!f.clientId) errs.clientId = 'Please select a client.'
+    if (!f.name.trim()) errs.name = 'Please enter a title.'
+    if (!f.engagementCategory) errs.engagementCategory = 'Please select a type.'
+    const needsSubtype = ['tax_return', 'bookkeeping', 'payroll'].includes(f.engagementCategory)
+    if (needsSubtype && !f.engagementType) errs.engagementType = 'Please select a form or subtype.'
+    return errs
+  }
+
+  function handleChange(field: string, value: string) {
+    setForm((prev) => {
+      const next = { ...prev, [field]: value }
+      if (field === 'engagementCategory') next.engagementType = ''
+      return next
+    })
+    if (errors[field as keyof FormErrors]) setErrors((prev) => ({ ...prev, [field]: '' }))
   }
 
   function handleClose() {
     setForm({
       name: '',
       clientId: preselectedClientId ?? '',
+      engagementCategory: '',
       engagementType: '',
       endDate: '',
     })
@@ -93,12 +83,14 @@ export function NewEngagementModal({
       return
     }
 
+    const finalType = form.engagementType || form.engagementCategory || undefined
+
     setSubmitting(true)
     try {
       const created = await engagementsApi.create({
         name: form.name.trim(),
         client_id: form.clientId,
-        engagement_type: form.engagementType || undefined,
+        engagement_type: finalType,
         end_date: form.endDate || undefined,
       })
       onAdd(created)
@@ -157,26 +149,88 @@ export function NewEngagementModal({
           />
         </FormField>
 
-        {/* Type + Due Date */}
-        <div className="grid grid-cols-2 gap-3">
-          <FormField label="Type" required error={errors.engagementType}>
+        {/* Category */}
+        <FormField label="Type" required error={errors.engagementCategory}>
+          <SelectInput
+            value={form.engagementCategory}
+            onChange={(e) => handleChange('engagementCategory', e.target.value)}
+            placeholder="Select type"
+            error={!!errors.engagementCategory}
+            options={[
+              { value: 'tax_return', label: 'Tax Return' },
+              { value: 'bookkeeping', label: 'Bookkeeping' },
+              { value: 'payroll', label: 'Payroll' },
+              { value: 'advisory', label: 'Advisory' },
+              { value: 'audit', label: 'Audit' },
+              { value: 'other', label: 'Other' },
+            ]}
+          />
+        </FormField>
+
+        {/* Tax Return subtype */}
+        {form.engagementCategory === 'tax_return' && (
+          <FormField label="Form" required error={errors.engagementType}>
             <SelectInput
               value={form.engagementType}
               onChange={(e) => handleChange('engagementType', e.target.value)}
-              options={ENGAGEMENT_TYPE_OPTIONS}
-              placeholder="Select type"
+              placeholder="Select form"
               error={!!errors.engagementType}
+              options={[
+                { value: 'tax_return_1040', label: '1040 — Individual' },
+                { value: 'tax_return_1120', label: '1120 — C-Corporation' },
+                { value: 'tax_return_1120s', label: '1120-S — S-Corporation' },
+                { value: 'tax_return_1065', label: '1065 — Partnership' },
+                { value: 'tax_return_1041', label: '1041 — Trust / Estate Income' },
+                { value: 'tax_return_706', label: '706 — Estate Tax' },
+                { value: 'amended_return_1040x', label: '1040-X — Amended Return' },
+                { value: 'extension_4868', label: '4868 — Individual Extension' },
+                { value: 'extension_7004', label: '7004 — Business Extension' },
+                { value: 'extension_8868', label: '8868 — Exempt Org Extension' },
+              ]}
             />
           </FormField>
-          <FormField label="Due Date" required error={errors.endDate}>
-            <TextInput
-              type="date"
-              value={form.endDate}
-              onChange={(e) => handleChange('endDate', e.target.value)}
-              error={!!errors.endDate}
+        )}
+
+        {/* Bookkeeping subtype */}
+        {form.engagementCategory === 'bookkeeping' && (
+          <FormField label="Frequency" required error={errors.engagementType}>
+            <SelectInput
+              value={form.engagementType}
+              onChange={(e) => handleChange('engagementType', e.target.value)}
+              placeholder="Select frequency"
+              error={!!errors.engagementType}
+              options={[
+                { value: 'bookkeeping_monthly', label: 'Monthly Bookkeeping' },
+                { value: 'bookkeeping_quarterly', label: 'Quarterly Bookkeeping' },
+              ]}
             />
           </FormField>
-        </div>
+        )}
+
+        {/* Payroll subtype */}
+        {form.engagementCategory === 'payroll' && (
+          <FormField label="Form" required error={errors.engagementType}>
+            <SelectInput
+              value={form.engagementType}
+              onChange={(e) => handleChange('engagementType', e.target.value)}
+              placeholder="Select form"
+              error={!!errors.engagementType}
+              options={[
+                { value: 'payroll_tax_941', label: '941 — Quarterly Payroll Tax' },
+              ]}
+            />
+          </FormField>
+        )}
+
+        {/* Due Date */}
+        <FormField label="Due Date" required error={errors.endDate}>
+          <TextInput
+            type="date"
+            value={form.endDate}
+            onChange={(e) => handleChange('endDate', e.target.value)}
+            error={!!errors.endDate}
+          />
+        </FormField>
 
       </div>
     </Modal>

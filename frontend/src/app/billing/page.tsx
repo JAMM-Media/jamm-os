@@ -117,7 +117,7 @@ export default function BillingPage() {
 
   return (
     <AppShell>
-      <div className="flex flex-col h-full p-6 gap-4 overflow-y-auto">
+      <div className="flex flex-col p-6 gap-4">
 
         <h1 className="text-2xl font-medium text-brand dark:text-[#EDEEF0]">
           Billing

@@ -4,7 +4,30 @@
 import { useRouter } from 'next/navigation'
 import { type Engagement } from '@/lib/api'
 import { StatusBadge } from '@/components/ui/StatusBadge'
-import { formatEngagementType } from '@/lib/utils'
+
+function formatTypeDisplay(engagementType: string | null | undefined): string {
+  if (!engagementType) return '—'
+  const map: Record<string, string> = {
+    tax_return_1040: 'Tax Return — 1040',
+    tax_return_1120: 'Tax Return — 1120',
+    tax_return_1120s: 'Tax Return — 1120-S',
+    tax_return_1065: 'Tax Return — 1065',
+    tax_return_1041: 'Tax Return — 1041',
+    tax_return_706: 'Tax Return — 706',
+    amended_return_1040x: 'Amended — 1040-X',
+    extension_4868: 'Extension — 4868',
+    extension_7004: 'Extension — 7004',
+    extension_8868: 'Extension — 8868',
+    payroll_tax_941: 'Payroll — 941',
+    tax_planning_advisory: 'Advisory',
+    bookkeeping_monthly: 'Bookkeeping — Monthly',
+    bookkeeping_quarterly: 'Bookkeeping — Quarterly',
+    audit_representation: 'Audit',
+    other_advisory: 'Advisory',
+    custom: 'Other',
+  }
+  return map[engagementType] ?? engagementType.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+}
 
 interface EngagementTableProps {
   engagements: Engagement[]
@@ -100,7 +123,7 @@ export function EngagementTable({
                 </td>
                 <td className="px-4 py-3">
                   <span className="text-[12px] text-[#374151] dark:text-[#9CA3AF]">
-                    {formatEngagementType(eng.engagementType ?? '')}
+                    {formatTypeDisplay(eng.engagementType)}
                   </span>
                 </td>
                 <td className="px-4 py-3">

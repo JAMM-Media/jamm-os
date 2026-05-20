@@ -50,7 +50,7 @@ export default function WIPReportPage() {
 
   return (
     <AppShell>
-      <div className="flex flex-col h-full p-6 gap-4 overflow-y-auto">
+      <div className="flex flex-col p-6 gap-4">
 
         {/* Breadcrumb */}
         <nav className="flex items-center gap-1.5 text-[12px] text-[#6B7280]">

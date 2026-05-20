@@ -43,12 +43,13 @@ export default function EngagementsPage() {
 
   function getEngagementCategory(engagementType: string | null): string {
     if (!engagementType) return 'other'
-    if (engagementType.startsWith('tax_return') || engagementType.startsWith('amended_return')) return 'tax_return'
-    if (engagementType.startsWith('extension')) return 'tax_return'
+    if (engagementType.startsWith('tax_return') || engagementType.startsWith('amended_return') || engagementType.startsWith('extension')) return 'tax_return'
     if (engagementType.startsWith('bookkeeping')) return 'bookkeeping'
     if (engagementType.startsWith('payroll')) return 'payroll'
     if (engagementType === 'tax_planning_advisory') return 'advisory'
     if (engagementType === 'audit_representation') return 'audit'
+    if (engagementType === 'other_advisory') return 'advisory'
+    if (engagementType === 'custom') return 'other'
     return 'other'
   }
 
@@ -129,7 +130,7 @@ export default function EngagementsPage() {
 
   return (
     <AppShell>
-      <div className="flex flex-col h-full p-6 gap-4 overflow-y-auto">
+      <div className="flex flex-col p-6 gap-4">
 
         <h1 className="text-2xl font-medium text-brand dark:text-[#EDEEF0]">
           Engagements
@@ -207,6 +208,31 @@ export default function EngagementsPage() {
               <option value="extension_4868">4868 Extension</option>
               <option value="extension_7004">7004 Extension</option>
               <option value="extension_8868">8868 Extension</option>
+            </select>
+          )}
+
+          {/* Bookkeeping subtype filter */}
+          {categoryFilter === 'bookkeeping' && (
+            <select
+              value={formFilter}
+              onChange={(e) => setFormFilter(e.target.value)}
+              className="text-[12px] h-8 px-2 rounded-[6px] border border-surface-border dark:border-dark-border bg-surface-card dark:bg-dark-card text-brand dark:text-[#EDEEF0] cursor-pointer"
+            >
+              <option value="all">All Frequencies</option>
+              <option value="bookkeeping_monthly">Monthly</option>
+              <option value="bookkeeping_quarterly">Quarterly</option>
+            </select>
+          )}
+
+          {/* Payroll subtype filter */}
+          {categoryFilter === 'payroll' && (
+            <select
+              value={formFilter}
+              onChange={(e) => setFormFilter(e.target.value)}
+              className="text-[12px] h-8 px-2 rounded-[6px] border border-surface-border dark:border-dark-border bg-surface-card dark:bg-dark-card text-brand dark:text-[#EDEEF0] cursor-pointer"
+            >
+              <option value="all">All Forms</option>
+              <option value="payroll_tax_941">941 — Quarterly Payroll</option>
             </select>
           )}
 
