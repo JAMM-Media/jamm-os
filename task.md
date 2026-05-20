@@ -14,100 +14,125 @@ Read every instruction in this file before writing a single line of code. Execut
 
 ---
 
-## TASK 1 — Fix invoice ResponseValidationError: make LineItemSchema.total optional with fallback
+## TASK 1 — Fix NewEngagementModal: wire handleSubmit to the API
 
-**File to edit:** `app/schemas/invoice.py`
+**File to edit:** `frontend/src/components/engagements/NewEngagementModal.tsx`
 
-**Problem:** Some line items stored in the database JSON column were saved without a `total` field — they have `description`, `quantity`, `unit_price`, and `amount` but no `total`. When the `InvoiceOut` schema tries to serialize them, `LineItemSchema` requires `total: Decimal` and throws a `ResponseValidationError`.
+**Problem:** `handleSubmit` builds a fake local engagement object with `id: \`e${Date.now()}\`` and calls `onAdd` immediately. It never calls `engagementsApi.create`. The engagement appears in the list momentarily with a garbage ID, fails when navigated to (422 — not a valid UUID), and disappears on the next data fetch.
 
-**Fix:** Make `total` optional in `LineItemSchema` and add a validator that computes it from `quantity * unit_price` if missing, or falls back to `amount` if present:
+**Fix:** Make `handleSubmit` async, call `engagementsApi.create` with the form data, and only call `onAdd` with the real server-returned engagement on success.
 
-Find `LineItemSchema` and replace it with:
+Find the `handleSubmit` function. It currently looks like:
 
-```python
-class LineItemSchema(BaseModel):
-    description: str
-    quantity: Decimal
-    unit_price: Decimal
-    amount: Optional[Decimal] = None
-    total: Optional[Decimal] = None
-
-    @field_validator('total', mode='before')
-    @classmethod
-    def coerce_total(cls, v, info):
-        if v is not None:
-            return v
-        # Try to compute from quantity * unit_price
-        data = info.data
-        qty = data.get('quantity')
-        price = data.get('unit_price')
-        if qty is not None and price is not None:
-            return qty * price
-        # Fall back to amount field
-        amt = data.get('amount')
-        if amt is not None:
-            return amt
-        return Decimal('0')
-```
-
-Make sure `Optional` is imported from `typing` at the top of the file — check the existing imports before adding it.
-
-No migration required. No frontend changes required.
-
----
-
-## TASK 2 — @mention rendering: display name only, drop the @ symbol
-
-**Problem:** `match[0]` captures the full `@Name` string including the `@`. Industry standard (Slack, Teams, Discord) is to display just the name in bold, no `@` symbol in the rendered output. The `@` stays in the stored body text — it just doesn't render visually.
-
-The fix is changing `{match[0]}` to `{match[1]}` in the rendered span. `match[1]` is the first capture group — the name part without the `@`.
-
-### 2A — Firm chat renderBody
-
-**File to edit:** `frontend/src/app/(dashboard)/firm-chat/page.tsx`
-
-In the `renderBody` function there are two branches that render a mention span. Both currently have:
 ```tsx
-<span key={match.index} className="font-semibold text-[#1F3148] dark:text-[#EDEEF0]">
-  {match[0]}
-</span>
+function handleSubmit() {
+  const validation = validate(form)
+  if (Object.keys(validation).length > 0) {
+    setErrors(validation)
+    return
+  }
+
+  const newEngagement: Engagement = {
+    id: `e${Date.now()}`,
+    name: form.name.trim(),
+    description: null,
+    status: 'not-started',
+    startDate: null,
+    endDate: form.endDate,
+    filingDeadline: null,
+    extendedDeadline: null,
+    engagementType: form.engagementType,
+    isActive: true,
+    clientId: form.clientId,
+    notes: null,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  }
+
+  onAdd(newEngagement)
+  handleClose()
+}
 ```
 
-Change both to:
+Replace it with:
+
 ```tsx
-<span key={match.index} className="font-semibold text-[#1F3148] dark:text-[#EDEEF0]">
-  {match[1]}
-</span>
+const [submitting, setSubmitting] = useState(false)
+
+async function handleSubmit() {
+  const validation = validate(form)
+  if (Object.keys(validation).length > 0) {
+    setErrors(validation)
+    return
+  }
+
+  setSubmitting(true)
+  try {
+    const created = await engagementsApi.create({
+      name: form.name.trim(),
+      client_id: form.clientId,
+      engagement_type: form.engagementType || undefined,
+      end_date: form.endDate || undefined,
+    })
+    onAdd(created)
+    handleClose()
+  } catch {
+    toast.error('Failed to create engagement. Please try again.')
+  } finally {
+    setSubmitting(false)
+  }
+}
 ```
 
-The first branch uses regex `/@(\S+)/g` (fallback when no staffMap). The second branch uses the named-staff pattern. Both use `match[1]` after this change. No other changes to this function.
+Also update the Save button to disable and show a loading state while submitting. Find the Save button in the modal footer — it currently looks like:
 
-### 2B — Notes renderNoteBody
-
-**File to edit:** `frontend/src/components/notes/NotesPanel.tsx`
-
-In the `renderNoteBody` function, the mention span currently has:
 ```tsx
-<span key={match.index} className="font-semibold text-[#1F3148] dark:text-[#EDEEF0]">
-  {match[0]}
-</span>
+<button
+  onClick={handleSubmit}
+  className="h-9 px-4 rounded-[6px] bg-brand ..."
+>
+  Save
+</button>
 ```
 
-Change it to:
+Update it to:
+
 ```tsx
-<span key={match.index} className="font-semibold text-[#1F3148] dark:text-[#EDEEF0]">
-  {match[1]}
-</span>
+<button
+  onClick={handleSubmit}
+  disabled={submitting}
+  className="h-9 px-4 rounded-[6px] bg-brand dark:bg-brand-btn text-white text-[13px] font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+>
+  {submitting ? 'Saving...' : 'Save'}
+</button>
 ```
 
-The regex in `renderNoteBody` is `/@(\S+(?:\s\S+)?)/g` — `match[1]` is the name without the `@`. No other changes to this function.
+Check the existing imports at the top of this file:
+- `useState` — likely already imported, do not duplicate
+- `engagementsApi` — check if already imported; if not, add it from `@/lib/api`
+- `toast` — check if already imported; if not, add `import { toast } from 'sonner'`
+
+Only add imports that are genuinely missing.
+
+Also reset `submitting` in `handleClose`:
+```tsx
+function handleClose() {
+  setForm({
+    name: '',
+    clientId: preselectedClientId ?? '',
+    engagementType: '',
+    endDate: '',
+  })
+  setErrors({})
+  setSubmitting(false)
+  onClose()
+}
+```
 
 ---
 
 ## EXECUTION ORDER
 
-1. Task 1 — backend: app/schemas/invoice.py
-2. Task 2A — frontend: firm-chat/page.tsx
-3. Task 2B — frontend: notes/NotesPanel.tsx
+1. Task 1 — frontend only: NewEngagementModal.tsx
 
-After all tasks: report every file modified and confirm no TypeScript errors.
+After the task: report every file modified and confirm no TypeScript errors.

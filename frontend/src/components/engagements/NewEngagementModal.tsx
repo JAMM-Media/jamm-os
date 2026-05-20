@@ -6,7 +6,8 @@ import { Modal } from '@/components/ui/Modal'
 import { FormField } from '@/components/ui/FormField'
 import { TextInput } from '@/components/ui/TextInput'
 import { SelectInput } from '@/components/ui/SelectInput'
-import { type Engagement, clientsApi } from '@/lib/api'
+import { type Engagement, clientsApi, engagementsApi } from '@/lib/api'
+import { toast } from 'sonner'
 import { useFetch } from '@/lib/hooks/useFetch'
 
 const ENGAGEMENT_TYPE_OPTIONS = [
@@ -61,6 +62,7 @@ export function NewEngagementModal({
     endDate: '',
   })
   const [errors, setErrors] = useState<FormErrors>({})
+  const [submitting, setSubmitting] = useState(false)
 
   const { data: clientsData } = useFetch(() => clientsApi.list(0, 100), [])
   const clientOptions = (clientsData?.items ?? []).map((c) => ({ value: c.id, label: c.name }))
@@ -80,35 +82,32 @@ export function NewEngagementModal({
       endDate: '',
     })
     setErrors({})
+    setSubmitting(false)
     onClose()
   }
 
-  function handleSubmit() {
+  async function handleSubmit() {
     const validation = validate(form)
     if (Object.keys(validation).length > 0) {
       setErrors(validation)
       return
     }
 
-    const newEngagement: Engagement = {
-      id: `e${Date.now()}`,
-      name: form.name.trim(),
-      description: null,
-      status: 'not-started',
-      startDate: null,
-      endDate: form.endDate,
-      filingDeadline: null,
-      extendedDeadline: null,
-      engagementType: form.engagementType,
-      isActive: true,
-      clientId: form.clientId,
-      notes: null,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+    setSubmitting(true)
+    try {
+      const created = await engagementsApi.create({
+        name: form.name.trim(),
+        client_id: form.clientId,
+        engagement_type: form.engagementType || undefined,
+        end_date: form.endDate || undefined,
+      })
+      onAdd(created)
+      handleClose()
+    } catch {
+      toast.error('Failed to create engagement. Please try again.')
+    } finally {
+      setSubmitting(false)
     }
-
-    onAdd(newEngagement)
-    handleClose()
   }
 
   return (
@@ -127,9 +126,10 @@ export function NewEngagementModal({
           </button>
           <button
             onClick={handleSubmit}
-            className="h-9 px-3 rounded-[6px] bg-brand dark:bg-brand-btn text-white text-[13px] font-medium hover:opacity-90 transition-opacity"
+            disabled={submitting}
+            className="h-9 px-4 rounded-[6px] bg-brand dark:bg-brand-btn text-white text-[13px] font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
-            Save Engagement
+            {submitting ? 'Saving...' : 'Save'}
           </button>
         </>
       }
