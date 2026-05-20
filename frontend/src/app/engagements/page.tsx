@@ -12,7 +12,6 @@ import { NewEngagementModal } from '@/components/engagements/NewEngagementModal'
 import { engagementsApi, clientsApi, type Engagement } from '@/lib/api'
 import { useFetch } from '@/lib/hooks/useFetch'
 import { Search, X, ChevronDown } from 'lucide-react'
-import { formatEngagementType } from '@/lib/utils'
 
 type ViewMode = 'table' | 'card'
 
@@ -22,7 +21,8 @@ export default function EngagementsPage() {
   const [view, setView] = useState<ViewMode>('table')
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('all')
-  const [typeFilter, setTypeFilter] = useState<string>('all')
+  const [categoryFilter, setCategoryFilter] = useState<string>('all')
+  const [formFilter, setFormFilter] = useState<string>('all')
   const [localEngagements, setLocalEngagements] = useState<Engagement[]>([])
   const [modalOpen, setModalOpen] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
@@ -41,17 +41,24 @@ export default function EngagementsPage() {
     (clientsData?.items ?? []).map((c) => [c.id, c.name])
   )
 
-  const uniqueTypes = Array.from(new Set(allEngagements.map((e) => e.engagementType).filter(Boolean))) as string[]
+  function getEngagementCategory(engagementType: string | null): string {
+    if (!engagementType) return 'other'
+    if (engagementType.startsWith('tax_return') || engagementType.startsWith('amended_return')) return 'tax_return'
+    if (engagementType.startsWith('extension')) return 'tax_return'
+    if (engagementType.startsWith('bookkeeping')) return 'bookkeeping'
+    if (engagementType.startsWith('payroll')) return 'payroll'
+    if (engagementType === 'tax_planning_advisory') return 'advisory'
+    if (engagementType === 'audit_representation') return 'audit'
+    return 'other'
+  }
 
   const filtered = allEngagements.filter((e) => {
     if (search && !e.name.toLowerCase().includes(search.toLowerCase())) return false
     if (statusFilter !== 'all' && e.status !== statusFilter) return false
-    if (typeFilter !== 'all' && e.engagementType !== typeFilter) return false
+    if (categoryFilter !== 'all' && getEngagementCategory(e.engagementType) !== categoryFilter) return false
+    if (formFilter !== 'all' && e.engagementType !== formFilter) return false
     return true
   })
-  console.log('DEBUG allEngagements:', allEngagements.map(e => ({ id: e.id, name: e.name, type: e.engagementType, status: e.status })))
-  console.log('DEBUG filtered:', filtered.map(e => ({ id: e.id, name: e.name, type: e.engagementType })))
-  console.log('DEBUG typeFilter:', typeFilter, 'statusFilter:', statusFilter)
 
   function handleAdd(engagement: Engagement) {
     setLocalEngagements((prev) => [engagement, ...prev])
@@ -156,7 +163,7 @@ export default function EngagementsPage() {
             className="text-[12px] h-8 px-2 rounded-[6px] border border-surface-border dark:border-dark-border bg-surface-card dark:bg-dark-card text-brand dark:text-[#EDEEF0] cursor-pointer"
           >
             <option value="all">All Statuses</option>
-            <option value="not-started">Not Started</option>
+            <option value="draft">Draft</option>
             <option value="planning">Planning</option>
             <option value="active">Active</option>
             <option value="in_review">In Review</option>
@@ -164,27 +171,55 @@ export default function EngagementsPage() {
             <option value="archived">Archived</option>
           </select>
 
+          {/* Category filter */}
           <select
-            value={typeFilter}
-            onChange={(e) => setTypeFilter(e.target.value)}
+            value={categoryFilter}
+            onChange={(e) => {
+              setCategoryFilter(e.target.value)
+              setFormFilter('all')
+            }}
             className="text-[12px] h-8 px-2 rounded-[6px] border border-surface-border dark:border-dark-border bg-surface-card dark:bg-dark-card text-brand dark:text-[#EDEEF0] cursor-pointer"
           >
             <option value="all">All Types</option>
-            {uniqueTypes.map((t) => (
-              <option key={t} value={t}>{formatEngagementType(t)}</option>
-            ))}
+            <option value="tax_return">Tax Return</option>
+            <option value="bookkeeping">Bookkeeping</option>
+            <option value="payroll">Payroll</option>
+            <option value="advisory">Advisory</option>
+            <option value="audit">Audit</option>
+            <option value="other">Other</option>
           </select>
 
-          {(statusFilter !== 'all' || typeFilter !== 'all') && (
+          {/* Form filter — only shown when category is tax_return */}
+          {categoryFilter === 'tax_return' && (
+            <select
+              value={formFilter}
+              onChange={(e) => setFormFilter(e.target.value)}
+              className="text-[12px] h-8 px-2 rounded-[6px] border border-surface-border dark:border-dark-border bg-surface-card dark:bg-dark-card text-brand dark:text-[#EDEEF0] cursor-pointer"
+            >
+              <option value="all">All Forms</option>
+              <option value="tax_return_1040">1040</option>
+              <option value="tax_return_1120">1120</option>
+              <option value="tax_return_1120s">1120-S</option>
+              <option value="tax_return_1065">1065</option>
+              <option value="tax_return_1041">1041</option>
+              <option value="tax_return_706">706</option>
+              <option value="amended_return_1040x">1040-X Amended</option>
+              <option value="extension_4868">4868 Extension</option>
+              <option value="extension_7004">7004 Extension</option>
+              <option value="extension_8868">8868 Extension</option>
+            </select>
+          )}
+
+          {(statusFilter !== 'all' || categoryFilter !== 'all' || formFilter !== 'all') && (
             <button
-              onClick={() => { setStatusFilter('all'); setTypeFilter('all') }}
+              onClick={() => { setStatusFilter('all'); setCategoryFilter('all'); setFormFilter('all') }}
               className="text-[11px] text-[#6B7280] hover:text-brand underline"
             >
               Clear filters
             </button>
           )}
 
-          {(statusFilter !== 'all' || typeFilter !== 'all') && (
+          {(statusFilter !== 'all' || categoryFilter !== 'all' || formFilter !== 'all') && (
             <span className="text-[11px] text-[#6B7280]">
               Showing {filtered.length} of {allEngagements.length} engagements
             </span>
