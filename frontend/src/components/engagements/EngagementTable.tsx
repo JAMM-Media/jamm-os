@@ -29,6 +29,20 @@ function formatTypeDisplay(engagementType: string | null | undefined): string {
   return map[engagementType] ?? engagementType.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
 }
 
+function formatDeadline(eng: Engagement): string {
+  const raw = eng.extendedDeadline ?? eng.filingDeadline ?? eng.endDate
+  if (!raw) return '—'
+  try {
+    return new Date(raw).toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    })
+  } catch {
+    return raw
+  }
+}
+
 interface EngagementTableProps {
   engagements: Engagement[]
   clientMap?: Record<string, string>
@@ -128,7 +142,7 @@ export function EngagementTable({
                 </td>
                 <td className="px-4 py-3">
                   <span className="text-[12px] text-[#374151] dark:text-[#9CA3AF]">
-                    {eng.endDate ?? '—'}
+                    {formatDeadline(eng)}
                   </span>
                 </td>
                 <td className="px-4 py-3">

@@ -223,7 +223,7 @@ export function NewEngagementModal({
         )}
 
         {/* Due Date */}
-        <FormField label="Due Date" required error={errors.endDate}>
+        <FormField label="Due Date" error={errors.endDate}>
           <TextInput
             type="date"
             value={form.endDate}
