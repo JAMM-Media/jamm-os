@@ -116,6 +116,12 @@ def send_reminder(signature_request_id: str, signer_email: str | None = None) ->
     )
 
     if not r.ok:
+        import logging
+        logging.getLogger(__name__).error(
+            "Dropbox Sign remind failed: status=%s body=%s",
+            r.status_code,
+            r.text,
+        )
         raise HTTPException(
             status_code=502,
             detail=f"Dropbox Sign reminder failed: {r.status_code} — {r.text}",

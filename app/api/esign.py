@@ -36,6 +36,7 @@ from app.schemas.signature_envelope import (
     SignatureEnvelopeOut,
     SignatureEnvelopeUpdate,
 )
+from app.core.config import get_settings as _get_settings
 from app.services import dropbox_sign
 from app.services import letter_renderer
 from app.services import s3 as s3_service
@@ -249,6 +250,11 @@ def send_envelope_reminder(
     current_firm: Firm = Depends(get_current_firm),
     _: User = Depends(require_manager_or_above),
 ):
+    if not _get_settings().DROPBOX_SIGN_API_KEY:
+        raise HTTPException(
+            status_code=503,
+            detail="Dropbox Sign is not configured. Set DROPBOX_SIGN_API_KEY in the environment."
+        )
     envelope = crud_envelope.get_signature_envelope(db, envelope_id, current_firm.id)
     if not envelope:
         raise HTTPException(status_code=404, detail="Signature envelope not found")

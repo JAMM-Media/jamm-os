@@ -3,6 +3,13 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { useNotes, Note } from './useNotes'
+import api from '@/lib/api'
+
+interface StaffMember {
+  id: string
+  name: string
+  initials: string
+}
 
 interface NotesPanelProps {
   isOpen: boolean
@@ -19,6 +26,15 @@ function formatTimestamp(isoString: string): string {
     date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
 }
 
+function getMentionQuery(value: string, cursor: number): string | null {
+  const before = value.slice(0, cursor)
+  const lastAt = before.lastIndexOf('@')
+  if (lastAt === -1) return null
+  const afterAt = before.slice(lastAt + 1)
+  if (/\n/.test(afterAt) || /\s{2}/.test(afterAt)) return null
+  return afterAt
+}
+
 function renderNoteBody(body: string): React.ReactNode {
   if (!body) return <>{body}</>
   const parts: React.ReactNode[] = []
@@ -30,7 +46,7 @@ function renderNoteBody(body: string): React.ReactNode {
     found = true
     if (match.index > last) parts.push(<span key={last}>{body.slice(last, match.index)}</span>)
     parts.push(
-      <span key={match.index} className="font-semibold">
+      <span key={match.index} className="font-semibold text-[#1F3148] dark:text-[#EDEEF0]">
         {match[0]}
       </span>
     )
@@ -112,6 +128,33 @@ export function NotesPanel({
   const [isPrivate, setIsPrivate] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
+  const [showMentionPopover, setShowMentionPopover] = useState(false)
+  const [mentionQuery, setMentionQuery] = useState('')
+  const [mentionIndex, setMentionIndex] = useState(0)
+  const [staffList, setStaffList] = useState<StaffMember[]>([])
+
+  useEffect(() => {
+    if (staffList.length === 0) {
+      api.get('/users/').then((res) => {
+        const items = Array.isArray(res.data) ? res.data : (res.data.items ?? [])
+        setStaffList(items.map((u: Record<string, unknown>) => ({
+          id: String(u.id),
+          name: String(u.full_name ?? u.name ?? ''),
+          initials: String(u.full_name ?? u.name ?? '')
+            .split(' ')
+            .map((p: string) => p[0] ?? '')
+            .join('')
+            .slice(0, 2)
+            .toUpperCase(),
+        })))
+      }).catch(() => {})
+    }
+  }, [staffList.length])
+
+  const filteredStaff = staffList.filter((s) =>
+    s.name.toLowerCase().includes(mentionQuery.trim().toLowerCase())
+  )
+
   // Mark as read when panel opens
   useEffect(() => {
     if (isOpen) {
@@ -130,12 +173,61 @@ export function NotesPanel({
     addNote(body.trim(), isPrivate)
     setBody('')
     setIsPrivate(false)
+    setShowMentionPopover(false)
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (showMentionPopover && filteredStaff.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        setMentionIndex((prev) => (prev + 1) % filteredStaff.length)
+        return
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        setMentionIndex((prev) => (prev - 1 + filteredStaff.length) % filteredStaff.length)
+        return
+      }
+      if (e.key === 'Enter') {
+        e.preventDefault()
+        handleMentionSelect(filteredStaff[mentionIndex])
+        return
+      }
+      if (e.key === 'Escape') {
+        setShowMentionPopover(false)
+        return
+      }
+    }
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
       handleSubmit()
     }
+  }
+
+  function handleBodyChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
+    const value = e.target.value
+    setBody(value)
+    const cursor = e.currentTarget.selectionStart
+    const query = getMentionQuery(value, cursor)
+    if (query !== null) {
+      setMentionQuery(query)
+      setShowMentionPopover(true)
+      setMentionIndex(0)
+    } else {
+      setShowMentionPopover(false)
+    }
+  }
+
+  function handleMentionSelect(staff: StaffMember) {
+    const cursor = textareaRef.current?.selectionStart ?? body.length
+    const beforeCursor = body.slice(0, cursor)
+    const lastAt = beforeCursor.lastIndexOf('@')
+    if (lastAt !== -1) {
+      const before = body.slice(0, lastAt)
+      const after = body.slice(cursor)
+      setBody(`${before}@${staff.name} ${after}`)
+    }
+    setShowMentionPopover(false)
+    setTimeout(() => textareaRef.current?.focus(), 0)
   }
 
   return (
@@ -247,15 +339,50 @@ export function NotesPanel({
           className="p-4 border-t border-[0.5px] border-[#C8CDD6] dark:border-[#484848]"
           style={{ flexShrink: 0 }}
         >
-          <textarea
-            ref={textareaRef}
-            value={body}
-            onChange={(e) => setBody(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Add a note..."
-            className="w-full rounded-[6px] border border-[0.5px] border-[#C8CDD6] focus:border-[#4A7FA5] focus:outline-none bg-[#F7F7F8] dark:bg-[#2D2D2D] text-[13px] text-[#374151] dark:text-[#9CA3AF] placeholder:text-[#9CA3AF] p-2.5 resize-none transition-colors"
-            style={{ minHeight: 72 }}
-          />
+          <div className="relative">
+            {/* @mention popover */}
+            {showMentionPopover && filteredStaff.length > 0 && (
+              <div
+                className="absolute bottom-full left-0 right-0 mb-1 bg-surface-card dark:bg-dark-card border border-[#C8CDD6] dark:border-[#484848] rounded-lg overflow-y-auto shadow-md z-10"
+                style={{ maxHeight: '200px' }}
+              >
+                {filteredStaff.map((staff, idx) => (
+                  <button
+                    key={staff.id}
+                    onMouseDown={(e) => {
+                      e.preventDefault()
+                      handleMentionSelect(staff)
+                    }}
+                    onMouseEnter={() => setMentionIndex(idx)}
+                    className={`flex items-center gap-2 w-full px-3 py-2 text-[13px] text-[#374151] dark:text-[#9CA3AF] transition-colors text-left ${
+                      idx === mentionIndex
+                        ? 'bg-[#D5D8DE] dark:bg-[#444444]'
+                        : 'hover:bg-[#D5D8DE] dark:hover:bg-[#444444]'
+                    }`}
+                  >
+                    <div
+                      className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0"
+                      style={{ backgroundColor: '#4A7FA5' }}
+                    >
+                      <span className="text-white text-[10px] font-medium">{staff.initials}</span>
+                    </div>
+                    {staff.name}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <textarea
+              ref={textareaRef}
+              value={body}
+              onChange={handleBodyChange}
+              onKeyDown={handleKeyDown}
+              placeholder="Add a note..."
+              className="w-full rounded-[6px] border border-[0.5px] border-[#C8CDD6] focus:border-[#4A7FA5] focus:outline-none bg-[#F7F7F8] dark:bg-[#2D2D2D] text-[13px] text-[#374151] dark:text-[#9CA3AF] placeholder:text-[#9CA3AF] p-2.5 resize-none transition-colors"
+              style={{ minHeight: 72 }}
+            />
+          </div>
+
           <div className="flex items-center justify-between mt-2.5">
             <label className="flex items-center gap-1.5 cursor-pointer">
               <input
