@@ -14,7 +14,7 @@ from app.utils.pagination import paginate
 from app.crud import user as crud_user
 from app.crud import task as crud_task
 from app.crud import firm as crud_firm
-from app.schemas.firm import FirmOut
+from app.schemas.firm import FirmOut, FirmUpdate
 from app.dependencies.auth import get_current_user
 from app.dependencies.tenant import get_current_firm
 from app.dependencies.roles import require_firm_owner, require_staff_or_above
@@ -87,6 +87,38 @@ def get_my_firm(
     if not firm:
         raise HTTPException(status_code=404, detail="Firm not found")
     return firm
+
+
+# -------------------------------------------------------------------
+# PATCH /users/firm/settings — Firm owner updates their firm settings
+# -------------------------------------------------------------------
+@router.patch("/firm/settings", response_model=FirmOut)
+def update_my_firm_settings(
+    payload: dict,
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    _: object = Depends(require_firm_owner),
+):
+    """
+    Allows a firm_owner to update their firm's settings JSON blob.
+    Merges the payload into the existing settings dict rather than
+    replacing it entirely — so updating fee_schedule does not wipe
+    other settings keys.
+    """
+    firm = crud_firm.get_firm(db, current_firm.id)
+    if not firm:
+        raise HTTPException(status_code=404, detail="Firm not found")
+
+    # Merge into existing settings rather than replace
+    current_settings = firm.settings or {}
+    merged = {**current_settings, **payload}
+
+    updated = crud_firm.update_firm(
+        db,
+        firm,
+        FirmUpdate(settings=merged),
+    )
+    return updated
 
 
 # -------------------------------------------------------------------

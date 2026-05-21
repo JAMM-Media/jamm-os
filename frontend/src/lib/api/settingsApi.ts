@@ -8,6 +8,7 @@ export interface FirmDetails {
   subscription_tier: string
   is_active: boolean
   staff_auth_policy: string
+  settings: Record<string, unknown> | null
   created_at: string
   updated_at: string
 }
@@ -35,4 +36,7 @@ export const settingsApi = {
 
   updateStaffAuthPolicy: (policy: StaffAuthPolicy) =>
     api.patch('/settings/security/staff-auth-policy', { staff_auth_policy: policy }),
+
+  updateFirmSettings: (settings: Record<string, unknown>) =>
+    api.patch('/users/firm/settings', settings),
 }

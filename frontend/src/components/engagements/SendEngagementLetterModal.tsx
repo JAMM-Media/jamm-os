@@ -45,10 +45,27 @@ export function SendEngagementLetterModal({
   const [loading, setLoading] = useState(false)
   const [fetching, setFetching] = useState(false)
   const [errors, setErrors] = useState<{ template?: string; fee?: string }>({})
+  const [feeSchedule, setFeeSchedule] = useState<Record<string, string>>({})
   const [mode, setMode] = useState<'template' | 'upload'>('template')
   const [uploadFile, setUploadFile] = useState<File | null>(null)
   const [uploadSubject, setUploadSubject] = useState('')
   const [dragOver, setDragOver] = useState(false)
+
+  useEffect(() => {
+    if (!open) return
+    api.get('/users/firm').then((res) => {
+      const schedule = res.data?.settings?.fee_schedule ?? {}
+      setFeeSchedule(schedule)
+    }).catch(() => {})
+  }, [open])
+
+  useEffect(() => {
+    if (!engagementType || !feeSchedule) return
+    const scheduledFee = feeSchedule[engagementType]
+    if (scheduledFee && !feeAmount) {
+      setFeeAmount(`$${scheduledFee}`)
+    }
+  }, [engagementType, feeSchedule])
 
   useEffect(() => {
     if (!open) return
