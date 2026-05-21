@@ -1,27 +1,3 @@
-# JAMM PX — Letter Template Editor
-
-Read every instruction in this file before writing a single line of code. Execute in the order listed.
-
----
-
-## STANDING RULES
-
-- Frontend: Next.js 14 App Router, TypeScript always, Tailwind CSS, shadcn/ui.
-- Every file must begin with its path comment.
-- Never touch files not listed in a task's scope.
-- Never add new npm or pip packages unless explicitly instructed.
-
----
-
-## TASK 1 — Create LetterTemplatesTab component
-
-**File to create:** `frontend/src/components/settings/LetterTemplatesTab.tsx`
-
-This component has two views:
-- **List view** — shows all templates with name, engagement type badge, active/inactive toggle, edit button, delete button, and a "+ New Template" button
-- **Editor view** — shown when creating or editing a template
-
-```tsx
 // frontend/src/components/settings/LetterTemplatesTab.tsx
 'use client'
 
@@ -459,44 +435,3 @@ export default function LetterTemplatesTab() {
     </div>
   )
 }
-```
-
----
-
-## TASK 2 — Add Letter Templates tab to Settings page
-
-**Files to edit:**
-- `frontend/src/app/settings/page.tsx`
-- (no changes to settingsApi.ts needed — the esign API is called directly)
-
-### Step 1 — Import
-```tsx
-import LetterTemplatesTab from '@/components/settings/LetterTemplatesTab'
-```
-
-### Step 2 — Add to TABS
-Add after `fee_schedule`:
-```tsx
-{ key: 'letter_templates', label: 'Letter Templates' },
-```
-
-### Step 3 — Add to filter
-```tsx
-if (tab.key === 'letter_templates') return isFirmOwner
-```
-
-### Step 4 — Add tab content
-```tsx
-{activeTab === 'letter_templates' && isFirmOwner && (
-  <LetterTemplatesTab />
-)}
-```
-
----
-
-## EXECUTION ORDER
-
-1. Task 1 — create LetterTemplatesTab.tsx
-2. Task 2 — settings/page.tsx
-
-After all tasks: report every file modified and confirm no TypeScript errors.
