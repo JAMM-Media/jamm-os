@@ -322,8 +322,22 @@ async def handle_webhook(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
+    import logging as _logging
+    _logging.getLogger(__name__).warning(
+        "Webhook headers: %s", dict(request.headers)
+    )
     signature_header = request.headers.get("Hash")
     if not signature_header:
+        # Try alternate header names Dropbox Sign might use
+        signature_header = (
+            request.headers.get("X-HelloSign-Signature") or
+            request.headers.get("X-Dropbox-Sign-Signature") or
+            request.headers.get("x-hellosign-signature")
+        )
+    if not signature_header:
+        _logging.getLogger(__name__).warning(
+            "Missing webhook signature. Headers received: %s", dict(request.headers)
+        )
         raise HTTPException(status_code=400, detail="Missing webhook signature")
 
     payload_bytes = await request.body()
