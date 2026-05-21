@@ -54,22 +54,17 @@ export function SendEngagementLetterModal({
   useEffect(() => {
     if (!open) return
     api.get('/users/firm').then((res) => {
-      const schedule = res.data?.settings?.fee_schedule ?? {}
+      const schedule: Record<string, string> = res.data?.settings?.fee_schedule ?? {}
       setFeeSchedule(schedule)
+      // Auto-populate fee immediately when schedule loads
+      if (engagementType && schedule[engagementType]) {
+        setFeeAmount((prev) => prev || `$${schedule[engagementType]}`)
+      }
     }).catch(() => {})
-  }, [open])
-
-  useEffect(() => {
-    if (!engagementType || !feeSchedule) return
-    const scheduledFee = feeSchedule[engagementType]
-    if (scheduledFee && !feeAmount) {
-      setFeeAmount(`$${scheduledFee}`)
-    }
-  }, [engagementType, feeSchedule])
+  }, [open, engagementType])
 
   useEffect(() => {
     if (!open) return
-    console.log('SendEngagementLetterModal: fetching templates, open=', open)
     setFetching(true)
     api.get('/esign/templates?limit=50')
       .then((res) => {
@@ -161,7 +156,12 @@ export function SendEngagementLetterModal({
     ? new Date(displayDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
     : '—'
 
-  const templateOptions = templates.map((t) => ({ value: t.id, label: t.name }))
+  const templateOptions = templates.map((t) => ({
+    value: t.id,
+    label: t.engagement_type === engagementType
+      ? `${t.name} ★`
+      : t.name,
+  }))
 
   return (
     <Modal
