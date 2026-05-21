@@ -118,7 +118,7 @@ export function SendEngagementLetterModal({
 
   return (
     <Modal
-      isOpen={open}
+      open={open}
       onClose={handleClose}
       title="Send Engagement Letter"
       footer={
