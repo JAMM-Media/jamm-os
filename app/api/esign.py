@@ -393,16 +393,21 @@ async def handle_webhook(
         return PlainTextResponse("Hello API Event Received")
 
     if event_type == "signature_request_signed":
-        pdf_bytes = dropbox_sign.download_signed_document(signature_request_id)
-        background_tasks.add_task(
-            store_signed_document,
-            str(envelope.id),
-            str(envelope.firm_id),
-            str(envelope.client_id),
-            envelope.engagement_id,
-            envelope.provider_envelope_id,
-            pdf_bytes,
-        )
+        try:
+            pdf_bytes = dropbox_sign.download_signed_document(signature_request_id)
+            store_signed_document(
+                str(envelope.id),
+                str(envelope.firm_id),
+                str(envelope.client_id),
+                envelope.engagement_id,
+                envelope.provider_envelope_id,
+                pdf_bytes,
+            )
+        except Exception as _exc:
+            import logging as _log
+            _log.getLogger(__name__).error(
+                "Failed to store signed document: %s", _exc, exc_info=True
+            )
         write_audit_log(
             db=db,
             firm_id=envelope.firm_id,
