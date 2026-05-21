@@ -45,6 +45,10 @@ export function SendEngagementLetterModal({
   const [loading, setLoading] = useState(false)
   const [fetching, setFetching] = useState(false)
   const [errors, setErrors] = useState<{ template?: string; fee?: string }>({})
+  const [mode, setMode] = useState<'template' | 'upload'>('template')
+  const [uploadFile, setUploadFile] = useState<File | null>(null)
+  const [uploadSubject, setUploadSubject] = useState('')
+  const [dragOver, setDragOver] = useState(false)
 
   useEffect(() => {
     if (!open) return
@@ -70,42 +74,67 @@ export function SendEngagementLetterModal({
     setSelectedTemplateId('')
     setFeeAmount('')
     setErrors({})
+    setMode('template')
+    setUploadFile(null)
+    setUploadSubject('')
+    setDragOver(false)
     onClose()
   }
 
   async function handleSend() {
-    const errs: typeof errors = {}
-    if (!selectedTemplateId) errs.template = 'Please select a template.'
-    if (!feeAmount.trim()) errs.fee = 'Please enter the fee amount.'
-    if (Object.keys(errs).length > 0) {
-      setErrors(errs)
-      return
-    }
+    if (mode === 'template') {
+      const errs: typeof errors = {}
+      if (!selectedTemplateId) errs.template = 'Please select a template.'
+      if (!feeAmount.trim()) errs.fee = 'Please enter the fee amount.'
+      if (Object.keys(errs).length > 0) { setErrors(errs); return }
 
-    setLoading(true)
-    try {
-      // Step 1: Prepare — renders template to PDF, creates draft envelope
-      const prepareRes = await api.post('/esign/prepare', {
-        template_id: selectedTemplateId,
-        engagement_id: engagementId,
-        fee_amount: feeAmount.trim(),
-      })
-      const envelopeId = prepareRes.data?.id
-      if (!envelopeId) throw new Error('No envelope ID returned from prepare')
+      setLoading(true)
+      try {
+        const prepareRes = await api.post('/esign/prepare', {
+          template_id: selectedTemplateId,
+          engagement_id: engagementId,
+          fee_amount: feeAmount.trim(),
+        })
+        const envelopeId = prepareRes.data?.id
+        if (!envelopeId) throw new Error('No envelope ID returned')
+        await api.post(`/esign/envelopes/${envelopeId}/send`)
+        toast.success('Engagement letter sent for signature')
+        onSent()
+        handleClose()
+      } catch (err: unknown) {
+        const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Failed to send engagement letter'
+        toast.error(msg)
+      } finally {
+        setLoading(false)
+      }
+    } else {
+      // Upload path
+      const errs: typeof errors = {}
+      if (!uploadFile) errs.template = 'Please select a PDF file.'
+      if (Object.keys(errs).length > 0) { setErrors(errs); return }
 
-      // Step 2: Send — sends envelope to Dropbox Sign, emails client
-      await api.post(`/esign/envelopes/${envelopeId}/send`)
+      setLoading(true)
+      try {
+        const formData = new FormData()
+        formData.append('file', uploadFile!)
 
-      toast.success('Engagement letter sent for signature')
-      onSent()
-      handleClose()
-    } catch (err: unknown) {
-      const msg =
-        (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-        ?? 'Failed to send engagement letter'
-      toast.error(msg)
-    } finally {
-      setLoading(false)
+        const uploadRes = await api.post(
+          `/esign/upload-and-prepare?engagement_id=${engagementId}`,
+          formData,
+          { headers: { 'Content-Type': 'multipart/form-data' } }
+        )
+        const envelopeId = uploadRes.data?.id
+        if (!envelopeId) throw new Error('No envelope ID returned')
+        await api.post(`/esign/envelopes/${envelopeId}/send`)
+        toast.success('Engagement letter sent for signature')
+        onSent()
+        handleClose()
+      } catch (err: unknown) {
+        const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Failed to send engagement letter'
+        toast.error(msg)
+      } finally {
+        setLoading(false)
+      }
     }
   }
 
@@ -140,65 +169,176 @@ export function SendEngagementLetterModal({
       }
     >
       <div className="flex flex-col gap-4">
-        {/* Auto-populated preview */}
-        <div className="bg-surface-page dark:bg-[#252525] rounded-[6px] p-3 flex flex-col gap-2">
-          <p className="text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em]">Auto-populated from engagement</p>
-          <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
-            <div>
-              <p className="text-[11px] text-[#6B7280]">Client</p>
-              <p className="text-[12px] font-medium text-brand dark:text-[#EDEEF0]">{clientName || '—'}</p>
-            </div>
-            <div>
-              <p className="text-[11px] text-[#6B7280]">Engagement</p>
-              <p className="text-[12px] font-medium text-brand dark:text-[#EDEEF0]">{engagementName || '—'}</p>
-            </div>
-            <div>
-              <p className="text-[11px] text-[#6B7280]">Date</p>
-              <p className="text-[12px] font-medium text-brand dark:text-[#EDEEF0]">{new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</p>
-            </div>
-            <div>
-              <p className="text-[11px] text-[#6B7280]">Deadline</p>
-              <p className="text-[12px] font-medium text-brand dark:text-[#EDEEF0]">{formattedDate}</p>
-            </div>
-          </div>
+        {/* Mode toggle */}
+        <div className="flex rounded-[6px] border border-surface-border dark:border-dark-border overflow-hidden">
+          <button
+            onClick={() => { setMode('template'); setErrors({}) }}
+            className={`flex-1 py-2 text-[12px] font-medium transition-colors ${
+              mode === 'template'
+                ? 'bg-brand dark:bg-brand-btn text-white'
+                : 'bg-surface-card dark:bg-dark-card text-[#6B7280] hover:text-brand'
+            }`}
+          >
+            Use a Template
+          </button>
+          <button
+            onClick={() => { setMode('upload'); setErrors({}) }}
+            className={`flex-1 py-2 text-[12px] font-medium transition-colors ${
+              mode === 'upload'
+                ? 'bg-brand dark:bg-brand-btn text-white'
+                : 'bg-surface-card dark:bg-dark-card text-[#6B7280] hover:text-brand'
+            }`}
+          >
+            Upload Your Own PDF
+          </button>
         </div>
 
-        {/* Template selection */}
-        <FormField label="Letter Template" required error={errors.template}>
-          {fetching ? (
-            <div className="h-9 rounded-[6px] bg-[#D5D8DE] dark:bg-[#444444] animate-pulse" />
-          ) : templates.length === 0 ? (
-            <p className="text-[12px] text-[#6B7280]">No templates found. Add templates in Settings → Letter Templates.</p>
-          ) : (
-            <SelectInput
-              value={selectedTemplateId}
-              onChange={(e) => {
-                setSelectedTemplateId(e.target.value)
-                if (errors.template) setErrors((prev) => ({ ...prev, template: undefined }))
-              }}
-              options={templateOptions}
-              placeholder="Select a template"
-              error={!!errors.template}
-            />
-          )}
-        </FormField>
+        {mode === 'template' && (
+          <>
+            {/* Auto-populated preview */}
+            <div className="bg-surface-page dark:bg-[#252525] rounded-[6px] p-3 flex flex-col gap-2">
+              <p className="text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em]">Auto-populated from engagement</p>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
+                <div>
+                  <p className="text-[11px] text-[#6B7280]">Client</p>
+                  <p className="text-[12px] font-medium text-brand dark:text-[#EDEEF0]">{clientName || '—'}</p>
+                </div>
+                <div>
+                  <p className="text-[11px] text-[#6B7280]">Engagement</p>
+                  <p className="text-[12px] font-medium text-brand dark:text-[#EDEEF0]">{engagementName || '—'}</p>
+                </div>
+                <div>
+                  <p className="text-[11px] text-[#6B7280]">Date</p>
+                  <p className="text-[12px] font-medium text-brand dark:text-[#EDEEF0]">{new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</p>
+                </div>
+                <div>
+                  <p className="text-[11px] text-[#6B7280]">Deadline</p>
+                  <p className="text-[12px] font-medium text-brand dark:text-[#EDEEF0]">{formattedDate}</p>
+                </div>
+              </div>
+            </div>
 
-        {/* Fee amount */}
-        <FormField label="Fee Amount" required error={errors.fee}>
-          <TextInput
-            value={feeAmount}
-            onChange={(e) => {
-              setFeeAmount(e.target.value)
-              if (errors.fee) setErrors((prev) => ({ ...prev, fee: undefined }))
-            }}
-            placeholder="e.g. $750 or $1,200"
-            error={!!errors.fee}
-          />
-        </FormField>
+            {/* Template selection */}
+            <FormField label="Letter Template" required error={errors.template}>
+              {fetching ? (
+                <div className="h-9 rounded-[6px] bg-[#D5D8DE] dark:bg-[#444444] animate-pulse" />
+              ) : templates.length === 0 ? (
+                <p className="text-[12px] text-[#6B7280]">No templates found. Add templates in Settings → Letter Templates.</p>
+              ) : (
+                <SelectInput
+                  value={selectedTemplateId}
+                  onChange={(e) => {
+                    setSelectedTemplateId(e.target.value)
+                    if (errors.template) setErrors((prev) => ({ ...prev, template: undefined }))
+                  }}
+                  options={templateOptions}
+                  placeholder="Select a template"
+                  error={!!errors.template}
+                />
+              )}
+            </FormField>
 
-        <p className="text-[11px] text-[#6B7280]">
-          The client will receive an email from Dropbox Sign with a link to review and sign the letter. You will be notified when they sign.
-        </p>
+            {/* Fee amount */}
+            <FormField label="Fee Amount" required error={errors.fee}>
+              <TextInput
+                value={feeAmount}
+                onChange={(e) => {
+                  setFeeAmount(e.target.value)
+                  if (errors.fee) setErrors((prev) => ({ ...prev, fee: undefined }))
+                }}
+                placeholder="e.g. $750 or $1,200"
+                error={!!errors.fee}
+              />
+            </FormField>
+
+            <p className="text-[11px] text-[#6B7280]">
+              The client will receive an email from Dropbox Sign with a link to review and sign the letter. You will be notified when they sign.
+            </p>
+          </>
+        )}
+
+        {mode === 'upload' && (
+          <div className="flex flex-col gap-4">
+            {/* Auto-populated preview — same as template path */}
+            <div className="bg-surface-page dark:bg-[#252525] rounded-[6px] p-3 flex flex-col gap-2">
+              <p className="text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em]">Auto-populated from engagement</p>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
+                <div>
+                  <p className="text-[11px] text-[#6B7280]">Client</p>
+                  <p className="text-[12px] font-medium text-brand dark:text-[#EDEEF0]">{clientName || '—'}</p>
+                </div>
+                <div>
+                  <p className="text-[11px] text-[#6B7280]">Engagement</p>
+                  <p className="text-[12px] font-medium text-brand dark:text-[#EDEEF0]">{engagementName || '—'}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* File upload area */}
+            <FormField label="Engagement Letter PDF" required error={errors.template}>
+              <div
+                onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
+                onDragLeave={() => setDragOver(false)}
+                onDrop={(e) => {
+                  e.preventDefault()
+                  setDragOver(false)
+                  const file = e.dataTransfer.files[0]
+                  if (file?.type === 'application/pdf') {
+                    setUploadFile(file)
+                    if (errors.template) setErrors((prev) => ({ ...prev, template: undefined }))
+                  } else {
+                    toast.error('Please upload a PDF file')
+                  }
+                }}
+                className={`relative flex flex-col items-center justify-center gap-2 p-6 rounded-[6px] border border-dashed transition-colors cursor-pointer ${
+                  dragOver
+                    ? 'border-brand bg-surface-card dark:bg-dark-card'
+                    : errors.template
+                    ? 'border-red-400 bg-surface-page dark:bg-[#252525]'
+                    : 'border-surface-border dark:border-dark-border bg-surface-page dark:bg-[#252525] hover:border-brand'
+                }`}
+                onClick={() => document.getElementById('esign-pdf-upload')?.click()}
+              >
+                <input
+                  id="esign-pdf-upload"
+                  type="file"
+                  accept="application/pdf"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0]
+                    if (file) {
+                      setUploadFile(file)
+                      if (errors.template) setErrors((prev) => ({ ...prev, template: undefined }))
+                    }
+                  }}
+                />
+                {uploadFile ? (
+                  <>
+                    <div className="w-8 h-8 rounded-[6px] bg-status-green flex items-center justify-center">
+                      <svg width="16" height="16" fill="none" stroke="#065F46" strokeWidth={2} viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                      </svg>
+                    </div>
+                    <p className="text-[12px] font-medium text-brand dark:text-[#EDEEF0]">{uploadFile.name}</p>
+                    <p className="text-[11px] text-[#6B7280]">{(uploadFile.size / 1024).toFixed(0)} KB · Click to replace</p>
+                  </>
+                ) : (
+                  <>
+                    <svg width="24" height="24" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24" className="text-[#6B7280]">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+                    </svg>
+                    <p className="text-[12px] font-medium text-brand dark:text-[#EDEEF0]">Drop your PDF here or click to browse</p>
+                    <p className="text-[11px] text-[#6B7280]">PDF files only</p>
+                  </>
+                )}
+              </div>
+            </FormField>
+
+            <p className="text-[11px] text-[#6B7280]">
+              The client will receive an email from Dropbox Sign with a link to review and sign the document. You will be notified when they sign.
+            </p>
+          </div>
+        )}
       </div>
     </Modal>
   )

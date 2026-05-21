@@ -8,7 +8,7 @@ from typing import Optional
 from uuid import UUID
 
 import requests
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, Request, status, UploadFile
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -460,6 +460,104 @@ def prepare_letter(
         }],
     )
     return crud_envelope.create_signature_envelope(db, envelope_schema, firm_id=current_firm.id)
+
+
+# -----------------------------------------------------------------------
+# POST /esign/upload-and-prepare — Upload a PDF and create a draft envelope
+# -----------------------------------------------------------------------
+@router.post(
+    "/upload-and-prepare",
+    response_model=SignatureEnvelopeOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def upload_and_prepare(
+    engagement_id: uuid.UUID = Query(...),
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    current_user: User = Depends(get_current_user),
+    _: User = Depends(require_staff_or_above),
+):
+    """
+    Accepts a PDF upload, stores it in S3, creates a document record,
+    then creates a draft signature envelope linked to that document.
+    The envelope has the client pre-populated as the signer.
+    The caller then calls POST /esign/envelopes/{id}/send to send it.
+    """
+    # Validate file type
+    if file.content_type not in ("application/pdf", "application/octet-stream"):
+        raise HTTPException(status_code=400, detail="Only PDF files are accepted")
+
+    # Get the engagement and client
+    engagement = db.execute(
+        select(Engagement).where(
+            Engagement.id == engagement_id,
+            Engagement.firm_id == current_firm.id,
+        )
+    ).scalars().first()
+    if not engagement:
+        raise HTTPException(status_code=404, detail="Engagement not found")
+
+    client = db.execute(
+        select(Client).where(
+            Client.id == engagement.client_id,
+            Client.firm_id == current_firm.id,
+        )
+    ).scalars().first()
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found")
+
+    # Read file bytes and upload to S3
+    import uuid as _uuid
+    pdf_bytes = file.file.read()
+    s3_key = (
+        f"{current_firm.id}/letters/{engagement_id}"
+        f"/{file.filename or 'engagement_letter'}_{date.today()}_{_uuid.uuid4().hex[:8]}.pdf"
+    )
+    s3_service.upload_fileobj(
+        io.BytesIO(pdf_bytes),
+        s3_key,
+        file.content_type or "application/pdf",
+    )
+
+    # Create document record
+    doc = crud_document.create_document(
+        db=db,
+        firm_id=current_firm.id,
+        client_id=client.id,
+        engagement_id=engagement_id,
+        uploaded_by=current_user.id,
+        filename=file.filename or "engagement_letter.pdf",
+        s3_key=s3_key,
+        content_type="application/pdf",
+        size_bytes=len(pdf_bytes),
+    )
+
+    # Create draft envelope with client as signer
+    envelope_schema = SignatureEnvelopeCreate(
+        client_id=client.id,
+        engagement_id=engagement_id,
+        document_id=doc.id,
+        subject=file.filename or "Engagement Letter",
+        signers=[{
+            "name": getattr(client, "full_name", None) or client.name,
+            "email": client.email or "",
+            "status": "pending",
+            "signed_at": None,
+        }],
+    )
+    envelope = crud_envelope.create_signature_envelope(db, envelope_schema, firm_id=current_firm.id)
+
+    write_audit_log(
+        db=db,
+        firm_id=current_firm.id,
+        action="esign.document_uploaded",
+        actor_type="staff",
+        entity_type="signature_envelope",
+        entity_id=envelope.id,
+    )
+
+    return envelope
 
 
 # -----------------------------------------------------------------------
