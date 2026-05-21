@@ -1,7 +1,10 @@
 // frontend/src/components/settings/LetterTemplatesTab.tsx
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { useEditor, EditorContent } from '@tiptap/react'
+import StarterKit from '@tiptap/starter-kit'
+import Placeholder from '@tiptap/extension-placeholder'
 import api from '@/lib/api'
 import { toast } from 'sonner'
 
@@ -62,6 +65,159 @@ function formatEngType(val: string | null): string {
   return found ? found.label : val
 }
 
+interface RichTextEditorProps {
+  content: string
+  onChange: (html: string) => void
+  onInsertVariable: (insertFn: (text: string) => void) => void
+}
+
+function RichTextEditor({ content, onChange, onInsertVariable }: RichTextEditorProps) {
+  const editor = useEditor({
+    extensions: [
+      StarterKit.configure({
+        heading: { levels: [1, 2, 3] },
+      }),
+      Placeholder.configure({
+        placeholder: 'Start writing your engagement letter here...',
+      }),
+    ],
+    content,
+    onUpdate({ editor }) {
+      onChange(editor.getHTML())
+    },
+    editorProps: {
+      attributes: {
+        class: 'prose prose-sm max-w-none focus:outline-none min-h-[400px] px-6 py-6 text-[13px] leading-relaxed',
+        style: 'font-family: Georgia, serif; color: #111;',
+      },
+    },
+  })
+
+  // Expose insert function to parent
+  useEffect(() => {
+    if (!editor) return
+    onInsertVariable((text: string) => {
+      editor.chain().focus().insertContent(text).run()
+    })
+  }, [editor, onInsertVariable])
+
+  if (!editor) return null
+
+  return (
+    <div className="flex flex-col rounded-[6px] border border-surface-border dark:border-dark-border overflow-hidden bg-white">
+      {/* Formatting toolbar */}
+      <div className="flex items-center gap-0.5 px-2 py-1.5 border-b border-surface-border dark:border-dark-border bg-surface-card dark:bg-dark-card flex-wrap">
+        {/* Bold */}
+        <button
+          onClick={() => editor.chain().focus().toggleBold().run()}
+          className={`h-7 w-7 rounded flex items-center justify-center text-[13px] font-bold transition-colors ${
+            editor.isActive('bold')
+              ? 'bg-brand text-white'
+              : 'text-[#374151] hover:bg-surface-page dark:hover:bg-dark-page'
+          }`}
+          title="Bold (Ctrl+B)"
+        >
+          B
+        </button>
+
+        {/* Italic */}
+        <button
+          onClick={() => editor.chain().focus().toggleItalic().run()}
+          className={`h-7 w-7 rounded flex items-center justify-center text-[13px] italic transition-colors ${
+            editor.isActive('italic')
+              ? 'bg-brand text-white'
+              : 'text-[#374151] hover:bg-surface-page dark:hover:bg-dark-page'
+          }`}
+          title="Italic (Ctrl+I)"
+        >
+          I
+        </button>
+
+        <div className="w-px h-4 bg-surface-border dark:bg-dark-border mx-1" />
+
+        {/* Heading 2 */}
+        <button
+          onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
+          className={`h-7 px-2 rounded flex items-center justify-center text-[11px] font-medium transition-colors ${
+            editor.isActive('heading', { level: 2 })
+              ? 'bg-brand text-white'
+              : 'text-[#374151] hover:bg-surface-page dark:hover:bg-dark-page'
+          }`}
+          title="Heading"
+        >
+          H2
+        </button>
+
+        {/* Paragraph */}
+        <button
+          onClick={() => editor.chain().focus().setParagraph().run()}
+          className={`h-7 px-2 rounded flex items-center justify-center text-[11px] font-medium transition-colors ${
+            editor.isActive('paragraph')
+              ? 'bg-brand text-white'
+              : 'text-[#374151] hover:bg-surface-page dark:hover:bg-dark-page'
+          }`}
+          title="Paragraph"
+        >
+          ¶
+        </button>
+
+        <div className="w-px h-4 bg-surface-border dark:bg-dark-border mx-1" />
+
+        {/* Bullet list */}
+        <button
+          onClick={() => editor.chain().focus().toggleBulletList().run()}
+          className={`h-7 px-2 rounded flex items-center justify-center text-[11px] transition-colors ${
+            editor.isActive('bulletList')
+              ? 'bg-brand text-white'
+              : 'text-[#374151] hover:bg-surface-page dark:hover:bg-dark-page'
+          }`}
+          title="Bullet list"
+        >
+          • List
+        </button>
+
+        <div className="w-px h-4 bg-surface-border dark:bg-dark-border mx-1" />
+
+        {/* Undo */}
+        <button
+          onClick={() => editor.chain().focus().undo().run()}
+          disabled={!editor.can().undo()}
+          className="h-7 px-2 rounded flex items-center justify-center text-[11px] text-[#374151] hover:bg-surface-page dark:hover:bg-dark-page disabled:opacity-30 transition-colors"
+          title="Undo (Ctrl+Z)"
+        >
+          ↩ Undo
+        </button>
+
+        {/* Redo */}
+        <button
+          onClick={() => editor.chain().focus().redo().run()}
+          disabled={!editor.can().redo()}
+          className="h-7 px-2 rounded flex items-center justify-center text-[11px] text-[#374151] hover:bg-surface-page dark:hover:bg-dark-page disabled:opacity-30 transition-colors"
+          title="Redo (Ctrl+Shift+Z)"
+        >
+          ↪ Redo
+        </button>
+
+        <div className="w-px h-4 bg-surface-border dark:bg-dark-border mx-1" />
+
+        {/* Horizontal rule */}
+        <button
+          onClick={() => editor.chain().focus().setHorizontalRule().run()}
+          className="h-7 px-2 rounded flex items-center justify-center text-[11px] text-[#374151] hover:bg-surface-page dark:hover:bg-dark-page transition-colors"
+          title="Horizontal line"
+        >
+          — Line
+        </button>
+      </div>
+
+      {/* Editor content — always white background */}
+      <div className="bg-white" style={{ minHeight: '400px' }}>
+        <EditorContent editor={editor} />
+      </div>
+    </div>
+  )
+}
+
 export default function LetterTemplatesTab() {
   const [templates, setTemplates] = useState<LetterTemplate[]>([])
   const [loading, setLoading] = useState(true)
@@ -73,8 +229,8 @@ export default function LetterTemplatesTab() {
   const [editName, setEditName] = useState('')
   const [editType, setEditType] = useState('')
   const [editBody, setEditBody] = useState('')
-  const [editPreview, setEditPreview] = useState(false)
   const [saving, setSaving] = useState(false)
+  const insertVariableFnRef = useRef<((text: string) => void) | null>(null)
 
   const fetchTemplates = useCallback(async () => {
     setLoading(true)
@@ -96,7 +252,6 @@ export default function LetterTemplatesTab() {
     setEditName('')
     setEditType('')
     setEditBody('')
-    setEditPreview(false)
   }
 
   function openEdit(t: LetterTemplate) {
@@ -105,7 +260,6 @@ export default function LetterTemplatesTab() {
     setEditName(t.name)
     setEditType(t.engagement_type ?? '')
     setEditBody(t.body_html)
-    setEditPreview(false)
   }
 
   function cancelEdit() {
@@ -115,19 +269,8 @@ export default function LetterTemplatesTab() {
 
   function insertVariable(key: string) {
     const tag = `{{${key}}}`
-    const textarea = document.getElementById('template-body-editor') as HTMLTextAreaElement
-    if (textarea) {
-      const start = textarea.selectionStart
-      const end = textarea.selectionEnd
-      const newBody = editBody.slice(0, start) + tag + editBody.slice(end)
-      setEditBody(newBody)
-      // Restore cursor after inserted tag
-      setTimeout(() => {
-        textarea.focus()
-        textarea.setSelectionRange(start + tag.length, start + tag.length)
-      }, 0)
-    } else {
-      setEditBody((prev) => prev + tag)
+    if (insertVariableFnRef.current) {
+      insertVariableFnRef.current(tag)
     }
   }
 
@@ -185,20 +328,6 @@ export default function LetterTemplatesTab() {
     }
   }
 
-  // Render a simple preview by replacing {{vars}} with placeholder values
-  function renderPreview(html: string): string {
-    return html
-      .replace(/\{\{client_name\}\}/g, 'Sarah Chen')
-      .replace(/\{\{client_email\}\}/g, 'sarah.chen@example.com')
-      .replace(/\{\{firm_name\}\}/g, 'Riverside Tax & Advisory')
-      .replace(/\{\{firm_owner_name\}\}/g, 'James Rivera, CPA')
-      .replace(/\{\{engagement_name\}\}/g, '2024 Individual Tax Return — Form 1040')
-      .replace(/\{\{engagement_type\}\}/g, '1040')
-      .replace(/\{\{fee_amount\}\}/g, '$750')
-      .replace(/\{\{engagement_date\}\}/g, 'May 21, 2026')
-      .replace(/\{\{due_date\}\}/g, 'April 15, 2026')
-  }
-
   // ─── EDITOR VIEW ───────────────────────────────────────────────────────────
   if (editing !== null || isNew) {
     return (
@@ -214,12 +343,6 @@ export default function LetterTemplatesTab() {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => setEditPreview((p) => !p)}
-              className="h-8 px-3 rounded-[6px] border border-surface-border dark:border-dark-border text-[12px] font-medium text-brand dark:text-[#EDEEF0] hover:bg-surface-card dark:hover:bg-dark-card transition-colors"
-            >
-              {editPreview ? 'Edit' : 'Preview'}
-            </button>
             <button
               onClick={cancelEdit}
               className="h-8 px-3 rounded-[6px] border border-surface-border dark:border-dark-border text-[12px] font-medium text-[#6B7280] hover:text-brand transition-colors"
@@ -266,52 +389,38 @@ export default function LetterTemplatesTab() {
         </div>
 
         {/* Variable insertion toolbar */}
-        {!editPreview && (
-          <div className="flex flex-col gap-2">
-            <p className="text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em]">Insert Variable</p>
-            <div className="flex flex-wrap gap-1.5">
-              {SUPPORTED_VARIABLES.map((v) => (
-                <button
-                  key={v.key}
-                  onClick={() => insertVariable(v.key)}
-                  className="text-[11px] font-medium px-2 py-1 rounded-[4px] bg-surface-card dark:bg-dark-card border border-surface-border dark:border-dark-border text-brand dark:text-[#EDEEF0] hover:bg-[#D5D8DE] dark:hover:bg-[#444444] transition-colors font-mono"
-                >
-                  {`{{${v.key}}}`}
-                </button>
-              ))}
-            </div>
+        <div className="flex flex-col gap-2">
+          <p className="text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em]">
+            Insert Variable at Cursor
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {SUPPORTED_VARIABLES.map((v) => (
+              <button
+                key={v.key}
+                onClick={() => insertVariable(v.key)}
+                className="text-[11px] font-medium px-2 py-1 rounded-[4px] bg-surface-card dark:bg-dark-card border border-surface-border dark:border-dark-border text-brand dark:text-[#EDEEF0] hover:bg-[#D5D8DE] dark:hover:bg-[#444444] transition-colors font-mono"
+              >
+                {`{{${v.key}}}`}
+              </button>
+            ))}
           </div>
-        )}
+        </div>
 
-        {/* Body editor or preview */}
-        {editPreview ? (
-          <div className="flex flex-col gap-1.5">
-            <p className="text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em]">Preview (with sample data)</p>
-            <div
-              className="min-h-[400px] p-6 rounded-[6px] border border-surface-border dark:border-dark-border bg-white dark:bg-[#252525] text-[13px] text-[#111] leading-relaxed overflow-auto"
-              style={{ fontFamily: 'Georgia, serif' }}
-              dangerouslySetInnerHTML={{ __html: renderPreview(editBody) }}
-            />
-          </div>
-        ) : (
-          <div className="flex flex-col gap-1.5">
-            <label className="text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em]">
-              Letter Body (HTML) <span className="text-red-500">•</span>
-            </label>
-            <textarea
-              id="template-body-editor"
-              value={editBody}
-              onChange={(e) => setEditBody(e.target.value)}
-              placeholder="<p>Dear {{client_name}},</p>..."
-              className="w-full rounded-[6px] border border-surface-border dark:border-dark-border bg-surface-page dark:bg-dark-page text-[12px] text-brand dark:text-[#EDEEF0] placeholder:text-[#9CA3AF] p-3 resize-none focus:outline-none focus:border-[#4A7FA5] font-mono leading-relaxed"
-              style={{ minHeight: '400px' }}
-            />
-            <p className="text-[11px] text-[#6B7280]">
-              Write in HTML. Use {'<p>'} for paragraphs, {'<strong>'} for bold, {'<br>'} for line breaks.
-              Variables are detected automatically when you save.
-            </p>
-          </div>
-        )}
+        {/* Rich text editor */}
+        <div className="flex flex-col gap-1.5">
+          <label className="text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em]">
+            Letter Body <span className="text-red-500">•</span>
+          </label>
+          <RichTextEditor
+            content={editBody}
+            onChange={setEditBody}
+            onInsertVariable={(fn) => { insertVariableFnRef.current = fn }}
+          />
+          <p className="text-[11px] text-[#6B7280]">
+            Format text using the toolbar above. Click any variable button to insert it at your cursor position.
+            Use Ctrl+Z to undo, Ctrl+B for bold, Ctrl+I for italic.
+          </p>
+        </div>
       </div>
     )
   }

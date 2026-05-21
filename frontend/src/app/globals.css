@@ -127,3 +127,43 @@
     font-feature-settings: "rlig" 1, "calt" 1;
   }
 }
+
+/* TipTap editor styles */
+.ProseMirror {
+  outline: none;
+}
+
+.ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: #9CA3AF;
+  pointer-events: none;
+  height: 0;
+}
+
+.ProseMirror p {
+  margin-bottom: 0.75em;
+}
+
+.ProseMirror strong {
+  font-weight: 600;
+}
+
+.ProseMirror h2 {
+  font-size: 1.1em;
+  font-weight: 600;
+  margin-bottom: 0.5em;
+  margin-top: 1em;
+}
+
+.ProseMirror ul {
+  list-style-type: disc;
+  padding-left: 1.5em;
+  margin-bottom: 0.75em;
+}
+
+.ProseMirror hr {
+  border: none;
+  border-top: 1px solid #111;
+  margin: 1em 0;
+}
