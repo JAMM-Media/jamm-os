@@ -118,6 +118,20 @@ def update_my_firm_settings(
         firm,
         FirmUpdate(settings=merged),
     )
+    if "fee_schedule" in payload:
+        from app.services.behavioral_log import log_event
+        log_event(
+            firm_id=current_firm.id,
+            event_type="firm.fee_schedule_updated",
+            entity_type="firm",
+            entity_id=current_firm.id,
+            actor_type="staff",
+            actor_id=None,
+            metadata={
+                "fee_schedule": payload["fee_schedule"],
+                "count": len(payload["fee_schedule"]),
+            }
+        )
     return updated
 
 

@@ -41,6 +41,7 @@ from app.services import dropbox_sign
 from app.services import letter_renderer
 from app.services import s3 as s3_service
 from app.services.audit_service import write_audit_log
+from app.services.behavioral_log import log_event
 
 router = APIRouter(prefix="/esign", tags=["E-Signatures"])
 
@@ -191,6 +192,7 @@ def send_envelope(
     db: Session = Depends(get_db),
     current_firm: Firm = Depends(get_current_firm),
     _: User = Depends(require_manager_or_above),
+    current_user: User = Depends(get_current_user),
 ):
     envelope = crud_envelope.get_signature_envelope(db, envelope_id, current_firm.id)
     if not envelope:
@@ -244,6 +246,19 @@ def send_envelope(
         actor_type="staff",
         entity_type="signature_envelope",
         entity_id=envelope_id,
+    )
+    log_event(
+        firm_id=current_firm.id,
+        event_type="engagement_letter.sent",
+        entity_type="signature_envelope",
+        entity_id=envelope_id,
+        actor_type="staff",
+        actor_id=current_user.id if hasattr(current_user, 'id') else None,
+        metadata={
+            "client_id": str(envelope.client_id),
+            "engagement_id": str(envelope.engagement_id) if envelope.engagement_id else None,
+            "provider": envelope.provider,
+        }
     )
     return updated
 
@@ -459,7 +474,24 @@ def prepare_letter(
             "signed_at": None,
         }],
     )
-    return crud_envelope.create_signature_envelope(db, envelope_schema, firm_id=current_firm.id)
+    envelope = crud_envelope.create_signature_envelope(db, envelope_schema, firm_id=current_firm.id)
+
+    log_event(
+        firm_id=current_firm.id,
+        event_type="engagement_letter.prepared",
+        entity_type="signature_envelope",
+        entity_id=envelope.id,
+        actor_type="staff",
+        actor_id=current_user.id,
+        metadata={
+            "client_id": str(client.id),
+            "engagement_id": str(payload.engagement_id),
+            "template_id": str(payload.template_id),
+            "fee_amount": payload.fee_amount or None,
+        }
+    )
+
+    return envelope
 
 
 # -----------------------------------------------------------------------
@@ -556,6 +588,20 @@ def upload_and_prepare(
         entity_type="signature_envelope",
         entity_id=envelope.id,
     )
+    log_event(
+        firm_id=current_firm.id,
+        event_type="engagement_letter.uploaded",
+        entity_type="signature_envelope",
+        entity_id=envelope.id,
+        actor_type="staff",
+        actor_id=current_user.id,
+        metadata={
+            "client_id": str(client.id),
+            "engagement_id": str(engagement_id),
+            "filename": file.filename or "engagement_letter.pdf",
+            "size_bytes": len(pdf_bytes),
+        }
+    )
 
     return envelope
 
@@ -575,7 +621,22 @@ def create_letter_template(
     current_firm: Firm = Depends(get_current_firm),
     _: User = Depends(require_staff_or_above),
 ):
-    return crud_template.create_template(db, payload, firm_id=current_firm.id)
+    template = crud_template.create_template(db, payload, firm_id=current_firm.id)
+
+    log_event(
+        firm_id=current_firm.id,
+        event_type="letter_template.created",
+        entity_type="letter_template",
+        entity_id=template.id,
+        actor_type="staff",
+        actor_id=None,
+        metadata={
+            "engagement_type": payload.engagement_type,
+            "variable_count": len(payload.variable_fields),
+        }
+    )
+
+    return template
 
 
 @router.get("/templates", response_model=PaginatedResponse[EngagementLetterTemplateOut])
@@ -631,7 +692,21 @@ def update_letter_template(
     template = crud_template.get_template(db, template_id, current_firm.id)
     if not template:
         raise HTTPException(status_code=404, detail="Template not found")
-    return crud_template.update_template(db, template, payload)
+    updated = crud_template.update_template(db, template, payload)
+
+    log_event(
+        firm_id=current_firm.id,
+        event_type="letter_template.updated",
+        entity_type="letter_template",
+        entity_id=template_id,
+        actor_type="staff",
+        actor_id=None,
+        metadata={
+            "engagement_type": payload.engagement_type,
+        }
+    )
+
+    return updated
 
 
 @router.delete("/templates/{template_id}")
