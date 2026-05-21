@@ -210,14 +210,21 @@ def send_envelope(
     pdf_bytes = requests.get(presigned_url, timeout=30).content
 
     signer = envelope.signers[0]
-    response = dropbox_sign.send_envelope(
-        client_name=signer["name"],
-        client_email=signer["email"],
-        subject=envelope.subject or "Please sign this document",
-        message=envelope.message or "",
-        pdf_bytes=pdf_bytes,
-        expires_at=envelope.expires_at,
-    )
+    try:
+        response = dropbox_sign.send_envelope(
+            client_name=signer["name"],
+            client_email=signer["email"],
+            subject=envelope.subject or "Please sign this document",
+            message=envelope.message or "",
+            pdf_bytes=pdf_bytes,
+            expires_at=envelope.expires_at,
+        )
+    except Exception as _send_exc:
+        import logging as _logging
+        _logging.getLogger(__name__).error(
+            "dropbox_sign.send_envelope failed: %s", str(_send_exc), exc_info=True
+        )
+        raise
 
     provider_envelope_id = response["signature_request"]["signature_request_id"]
 

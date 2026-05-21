@@ -55,9 +55,15 @@ def send_envelope(
     )
 
     if not r.ok:
+        import logging
+        logging.getLogger(__name__).error(
+            "Dropbox Sign send_envelope failed: status=%s body=%s",
+            r.status_code,
+            r.text,
+        )
         raise HTTPException(
             status_code=502,
-            detail=f"Dropbox Sign API error: {r.status_code}",
+            detail=f"Dropbox Sign error {r.status_code}: {r.text}",
         )
 
     return r.json()
