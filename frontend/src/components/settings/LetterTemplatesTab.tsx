@@ -113,7 +113,7 @@ function RichTextEditor({ content, onChange, onInsertVariable }: RichTextEditorP
           className={`h-7 w-7 rounded flex items-center justify-center text-[13px] font-bold transition-colors ${
             editor.isActive('bold')
               ? 'bg-brand text-white'
-              : 'text-[#374151] hover:bg-surface-page dark:hover:bg-dark-page'
+              : 'text-[#374151] dark:text-[#EDEEF0] hover:bg-surface-page dark:hover:bg-dark-page'
           }`}
           title="Bold (Ctrl+B)"
         >
@@ -126,7 +126,7 @@ function RichTextEditor({ content, onChange, onInsertVariable }: RichTextEditorP
           className={`h-7 w-7 rounded flex items-center justify-center text-[13px] italic transition-colors ${
             editor.isActive('italic')
               ? 'bg-brand text-white'
-              : 'text-[#374151] hover:bg-surface-page dark:hover:bg-dark-page'
+              : 'text-[#374151] dark:text-[#EDEEF0] hover:bg-surface-page dark:hover:bg-dark-page'
           }`}
           title="Italic (Ctrl+I)"
         >
@@ -141,7 +141,7 @@ function RichTextEditor({ content, onChange, onInsertVariable }: RichTextEditorP
           className={`h-7 px-2 rounded flex items-center justify-center text-[11px] font-medium transition-colors ${
             editor.isActive('heading', { level: 2 })
               ? 'bg-brand text-white'
-              : 'text-[#374151] hover:bg-surface-page dark:hover:bg-dark-page'
+              : 'text-[#374151] dark:text-[#EDEEF0] hover:bg-surface-page dark:hover:bg-dark-page'
           }`}
           title="Heading"
         >
@@ -154,7 +154,7 @@ function RichTextEditor({ content, onChange, onInsertVariable }: RichTextEditorP
           className={`h-7 px-2 rounded flex items-center justify-center text-[11px] font-medium transition-colors ${
             editor.isActive('paragraph')
               ? 'bg-brand text-white'
-              : 'text-[#374151] hover:bg-surface-page dark:hover:bg-dark-page'
+              : 'text-[#374151] dark:text-[#EDEEF0] hover:bg-surface-page dark:hover:bg-dark-page'
           }`}
           title="Paragraph"
         >
@@ -169,7 +169,7 @@ function RichTextEditor({ content, onChange, onInsertVariable }: RichTextEditorP
           className={`h-7 px-2 rounded flex items-center justify-center text-[11px] transition-colors ${
             editor.isActive('bulletList')
               ? 'bg-brand text-white'
-              : 'text-[#374151] hover:bg-surface-page dark:hover:bg-dark-page'
+              : 'text-[#374151] dark:text-[#EDEEF0] hover:bg-surface-page dark:hover:bg-dark-page'
           }`}
           title="Bullet list"
         >
@@ -182,7 +182,7 @@ function RichTextEditor({ content, onChange, onInsertVariable }: RichTextEditorP
         <button
           onClick={() => editor.chain().focus().undo().run()}
           disabled={!editor.can().undo()}
-          className="h-7 px-2 rounded flex items-center justify-center text-[11px] text-[#374151] hover:bg-surface-page dark:hover:bg-dark-page disabled:opacity-30 transition-colors"
+          className="h-7 px-2 rounded flex items-center justify-center text-[11px] text-[#374151] dark:text-[#EDEEF0] hover:bg-surface-page dark:hover:bg-dark-page disabled:opacity-30 transition-colors"
           title="Undo (Ctrl+Z)"
         >
           ↩ Undo
@@ -192,7 +192,7 @@ function RichTextEditor({ content, onChange, onInsertVariable }: RichTextEditorP
         <button
           onClick={() => editor.chain().focus().redo().run()}
           disabled={!editor.can().redo()}
-          className="h-7 px-2 rounded flex items-center justify-center text-[11px] text-[#374151] hover:bg-surface-page dark:hover:bg-dark-page disabled:opacity-30 transition-colors"
+          className="h-7 px-2 rounded flex items-center justify-center text-[11px] text-[#374151] dark:text-[#EDEEF0] hover:bg-surface-page dark:hover:bg-dark-page disabled:opacity-30 transition-colors"
           title="Redo (Ctrl+Shift+Z)"
         >
           ↪ Redo
@@ -203,7 +203,7 @@ function RichTextEditor({ content, onChange, onInsertVariable }: RichTextEditorP
         {/* Horizontal rule */}
         <button
           onClick={() => editor.chain().focus().setHorizontalRule().run()}
-          className="h-7 px-2 rounded flex items-center justify-center text-[11px] text-[#374151] hover:bg-surface-page dark:hover:bg-dark-page transition-colors"
+          className="h-7 px-2 rounded flex items-center justify-center text-[11px] text-[#374151] dark:text-[#EDEEF0] hover:bg-surface-page dark:hover:bg-dark-page transition-colors"
           title="Horizontal line"
         >
           — Line
