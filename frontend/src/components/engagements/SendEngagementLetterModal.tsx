@@ -69,6 +69,7 @@ export function SendEngagementLetterModal({
 
   useEffect(() => {
     if (!open) return
+    console.log('SendEngagementLetterModal: fetching templates, open=', open)
     setFetching(true)
     api.get('/esign/templates?limit=50')
       .then((res) => {
@@ -85,7 +86,7 @@ export function SendEngagementLetterModal({
       })
       .catch(() => toast.error('Failed to load templates'))
       .finally(() => setFetching(false))
-  }, [open, engagementType])
+  }, [open])
 
   function handleClose() {
     setSelectedTemplateId('')
