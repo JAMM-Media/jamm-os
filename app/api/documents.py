@@ -23,11 +23,11 @@ from app.models.client import Client
 from app.models.engagement import Engagement
 from app.schemas.document import DocumentOut, DocumentDownloadResponse, AuditLogOut
 from app.schemas.pagination import PaginatedResponse
-from app.utils.pagination import paginate
 from app.crud import document as crud_document
 from app.dependencies.auth import get_current_user
 from app.dependencies.tenant import get_current_firm
 from app.dependencies.roles import require_staff_or_above
+from app.models.signature_envelope import SignatureEnvelope
 from app.services import s3 as s3_service
 from app.services.audit_service import write_audit_log
 import app.services.document_service as document_service
@@ -85,7 +85,25 @@ def list_documents(
         client_id=client_id,
         engagement_id=engagement_id,
     )
-    return paginate(query, limit=limit, offset=offset)
+    total = query.count()
+    docs = query.offset(offset).limit(limit).all()
+
+    doc_ids = [doc.id for doc in docs]
+    envelope_status_map: dict[uuid.UUID, str] = {}
+    if doc_ids:
+        envelopes = db.query(SignatureEnvelope).filter(
+            SignatureEnvelope.signed_document_id.in_(doc_ids)
+        ).all()
+        for env in envelopes:
+            envelope_status_map[env.signed_document_id] = env.status
+
+    items = [
+        DocumentOut.model_validate(doc).model_copy(
+            update={"envelope_status": envelope_status_map.get(doc.id, "uploaded")}
+        )
+        for doc in docs
+    ]
+    return {"total": total, "limit": limit, "offset": offset, "items": items}
 
 
 # -----------------------------------------------------------------------

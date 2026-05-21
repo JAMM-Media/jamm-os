@@ -21,6 +21,7 @@ class DocumentOut(BaseModel):
     visibility: str = "internal"
     created_at: datetime
     updated_at: datetime
+    envelope_status: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 

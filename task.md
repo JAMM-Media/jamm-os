@@ -1,50 +1,53 @@
-# JAMM PX — Quick Fix
+# JAMM PX — Fix Document Status Display
 
-Read every instruction in this file before writing a single line of code.
+Read every instruction in this file before writing a single line of code. Execute in the order listed.
 
 ---
 
-## TASK 1 — Run store_signed_document inline instead of as background task
+## TASK 1 — Backend: include envelope status in document list response
 
-**File to edit:** `app/api/esign.py`
+**File to edit:** `app/api/documents.py`
 
-The background task approach is causing intermittent 502s likely because downloading the PDF from Dropbox Sign is a blocking network call. Instead of using background_tasks, call store_signed_document directly in the webhook handler after updating the envelope status.
+The GET /documents endpoint returns documents but doesn't include any envelope information. We need to enrich the response with the envelope status for documents that are linked to a signature envelope via `signed_document_id`.
 
-Find in `handle_webhook`:
-```python
-if event_type == "signature_request_signed":
-    pdf_bytes = dropbox_sign.download_signed_document(signature_request_id)
-    background_tasks.add_task(
-        store_signed_document,
-        str(envelope.id),
-        str(envelope.firm_id),
-        str(envelope.client_id),
-        envelope.engagement_id,
-        envelope.provider_envelope_id,
-        pdf_bytes,
-    )
+Find the document list endpoint (GET /documents). Read how it queries and returns documents. After fetching the documents, do a single query to find all signature envelopes where `signed_document_id` is in the set of document IDs, then attach the envelope status to each document in the response.
+
+Look at the existing `DocumentOut` schema — check if it has a `status` or `envelope_status` field. If not, the simplest approach is to add an `envelope_status: Optional[str] = None` field to `DocumentOut`.
+
+Also check the `GET /documents/{id}` single document endpoint and apply the same enrichment.
+
+Read the files carefully before writing any code. The goal is:
+- If a document has a corresponding envelope (envelope.signed_document_id == document.id), return the envelope's status as the document's status
+- If no envelope, return `"uploaded"` as the status (not None or "other")
+
+**Do not change the Document model or run any migrations.** Only change the API response enrichment and schema.
+
+---
+
+## TASK 2 — Frontend: fix mapDocument status fallback
+
+**File to edit:** `frontend/src/lib/api/documents.ts`
+
+In the `mapDocument` function, line:
+```typescript
+status: (raw.status as Document['status']) ?? 'pending',
 ```
 
-Replace with:
-```python
-if event_type == "signature_request_signed":
-    try:
-        pdf_bytes = dropbox_sign.download_signed_document(signature_request_id)
-        store_signed_document(
-            str(envelope.id),
-            str(envelope.firm_id),
-            str(envelope.client_id),
-            envelope.engagement_id,
-            envelope.provider_envelope_id,
-            pdf_bytes,
-        )
-    except Exception as _exc:
-        import logging as _log
-        _log.getLogger(__name__).error(
-            "Failed to store signed document: %s", _exc, exc_info=True
-        )
+Change the fallback from `'pending'` to `'uploaded'`:
+```typescript
+status: (raw.status as Document['status']) ?? 'uploaded',
 ```
 
-This calls store_signed_document directly (synchronously) rather than scheduling it as a background task. The webhook response is still fast enough for Dropbox Sign. Wrap in try/except so a failure here doesn't prevent the `{"Hello API Event Received"}` response from being returned.
+Also update the `Document` interface to include `'pending_signature'` as a valid status value since that's what the StatusBadge uses:
+```typescript
+status: 'uploaded' | 'pending' | 'pending_signature' | 'signed' | 'rejected'
+```
 
-No other changes. No frontend changes needed.
+---
+
+## EXECUTION ORDER
+
+1. Task 1 — backend: read documents.py carefully, enrich response with envelope status
+2. Task 2 — frontend: fix mapDocument fallback
+
+After all tasks: report every file modified.
