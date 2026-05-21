@@ -394,17 +394,7 @@ async def handle_webhook(
 
     if event_type == "signature_request_signed":
         pdf_bytes = dropbox_sign.download_signed_document(signature_request_id)
-        s3_key = f"{envelope.firm_id}/signed/{envelope.id}.pdf"
-        s3_service.upload_fileobj(
-            io.BytesIO(pdf_bytes),
-            s3_key,
-            "application/pdf",
-        )
-        crud_envelope.update_signature_envelope(
-            db,
-            envelope,
-            SignatureEnvelopeUpdate(status="signed", signed_document_s3_key=s3_key),
-        )
+        background_tasks.add_task(store_signed_document, db, envelope, pdf_bytes)
         write_audit_log(
             db=db,
             firm_id=envelope.firm_id,
