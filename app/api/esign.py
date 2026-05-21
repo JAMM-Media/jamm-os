@@ -365,6 +365,23 @@ async def handle_webhook(
                 entity_type="signature_envelope",
                 entity_id=envelope.id,
             )
+            log_event(
+                firm_id=envelope.firm_id,
+                event_type="engagement_letter.signed",
+                entity_type="signature_envelope",
+                entity_id=envelope.id,
+                actor_type="client",
+                actor_id=None,
+                metadata={
+                    "client_id": str(envelope.client_id),
+                    "engagement_id": str(envelope.engagement_id) if envelope.engagement_id else None,
+                    "days_to_sign": (
+                        (datetime.now(timezone.utc) - envelope.sent_at).days
+                        if hasattr(envelope, 'sent_at') and envelope.sent_at
+                        else None
+                    ),
+                }
+            )
 
     # Dropbox Sign retries unless it receives exactly {"status": "ok"}.
     return {"status": "ok"}
@@ -487,7 +504,10 @@ def prepare_letter(
             "client_id": str(client.id),
             "engagement_id": str(payload.engagement_id),
             "template_id": str(payload.template_id),
+            "template_name": template.name,
+            "template_engagement_type": template.engagement_type,
             "fee_amount": payload.fee_amount or None,
+            "engagement_type": getattr(engagement, "engagement_type", None),
         }
     )
 

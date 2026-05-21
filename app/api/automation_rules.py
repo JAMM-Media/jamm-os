@@ -127,7 +127,25 @@ def toggle_rule(
     rule = crud_rule.get_rule(db, rule_id=rule_id, firm_id=current_firm.id)
     if not rule:
         raise HTTPException(status_code=404, detail="Automation rule not found")
-    return crud_rule.toggle_rule(db, rule=rule, enabled=enabled)
+    from app.services.behavioral_log import log_event
+
+    result = crud_rule.toggle_rule(db, rule=rule, enabled=enabled)
+
+    log_event(
+        firm_id=current_firm.id,
+        event_type="firm.automation_enabled" if enabled else "firm.automation_disabled",
+        entity_type="automation_rule",
+        entity_id=rule_id,
+        actor_type="staff",
+        actor_id=None,
+        metadata={
+            "rule_name": rule.name,
+            "rule_type": rule.trigger_event if hasattr(rule, 'trigger_event') else None,
+            "execution_count": rule.execution_count if hasattr(rule, 'execution_count') else None,
+        }
+    )
+
+    return result
 
 
 # --- POST /{rule_id}/simulate ---

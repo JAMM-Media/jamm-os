@@ -113,6 +113,9 @@ def update_my_firm_settings(
     current_settings = firm.settings or {}
     merged = {**current_settings, **payload}
 
+    if "fee_schedule" in payload:
+        previous_schedule = current_settings.get("fee_schedule", {})
+
     updated = crud_firm.update_firm(
         db,
         firm,
@@ -129,7 +132,12 @@ def update_my_firm_settings(
             actor_id=None,
             metadata={
                 "fee_schedule": payload["fee_schedule"],
+                "previous_fee_schedule": previous_schedule,
                 "count": len(payload["fee_schedule"]),
+                "changed_types": [
+                    k for k in payload["fee_schedule"]
+                    if str(payload["fee_schedule"].get(k)) != str(previous_schedule.get(k))
+                ],
             }
         )
     return updated

@@ -162,6 +162,23 @@ def login_portal_with_password(
     if not verify_portal_password(password, client.portal_password_hash):
         return None, "wrong_password"
 
+    if client.portal_last_login_at is None:
+        log_event(
+            firm_id=client.firm_id,
+            event_type="portal.first_login",
+            entity_type="client",
+            entity_id=client.id,
+            actor_type="client",
+            actor_id=None,
+            metadata={
+                "time_since_invitation_days": (
+                    (datetime.now(timezone.utc) - client.portal_invited_at).days
+                    if hasattr(client, 'portal_invited_at') and client.portal_invited_at
+                    else None
+                ),
+                "login_method": "password",
+            }
+        )
     log_event(
         firm_id=client.firm_id,
         event_type="portal.login",
@@ -202,6 +219,23 @@ def authenticate_portal_client(
         return None
     if not verify_portal_password(password, client.portal_password_hash):
         return None
+    if client.portal_last_login_at is None:
+        log_event(
+            firm_id=firm_id,
+            event_type="portal.first_login",
+            entity_type="client",
+            entity_id=client.id,
+            actor_type="client",
+            actor_id=None,
+            metadata={
+                "time_since_invitation_days": (
+                    (datetime.now(timezone.utc) - client.portal_invited_at).days
+                    if hasattr(client, 'portal_invited_at') and client.portal_invited_at
+                    else None
+                ),
+                "login_method": "magic_link",
+            }
+        )
     log_event(
         firm_id=firm_id,
         event_type="portal.login",

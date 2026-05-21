@@ -62,6 +62,7 @@ from app.services.portal_auth import (
 from app.core.config import get_settings
 from app.schemas.portal import MagicLinkRequest, MagicLinkResponse, ClientMagicLinkRequest
 from app.services import portal_magic_link
+from app.services.behavioral_log import log_event
 
 settings = get_settings()
 
@@ -743,6 +744,23 @@ def portal_get_invoice(
     )
     if invoice is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invoice not found")
+    log_event(
+        firm_id=current_client.firm_id,
+        event_type="portal.invoice_viewed",
+        entity_type="invoice",
+        entity_id=invoice_id,
+        actor_type="client",
+        actor_id=None,
+        metadata={
+            "invoice_amount": float(invoice.total_amount) if hasattr(invoice, 'total_amount') else None,
+            "invoice_status": str(invoice.status) if hasattr(invoice, 'status') else None,
+            "days_since_sent": (
+                (datetime.now(timezone.utc) - invoice.sent_at).days
+                if hasattr(invoice, 'sent_at') and invoice.sent_at
+                else None
+            ),
+        }
+    )
     return invoice
 
 
@@ -881,12 +899,25 @@ def portal_send_message(
             detail="Access denied",
         )
 
-    return msg_service.send_message_client(
+    result = msg_service.send_message_client(
         db,
         firm_id=current_client.firm_id,
         client_id=client_id,
         data=data,
     )
+    log_event(
+        firm_id=current_client.firm_id,
+        event_type="portal.message_sent",
+        entity_type="client",
+        entity_id=current_client.id,
+        actor_type="client",
+        actor_id=None,
+        metadata={
+            "time_of_day": datetime.now(timezone.utc).hour,
+            "day_of_week": datetime.now(timezone.utc).weekday(),
+        }
+    )
+    return result
 
 
 @router.get("/clients/{client_id}/messages/unread-count", response_model=UnreadCountOut)
@@ -963,6 +994,18 @@ def portal_pay_invoice(
         idempotency_key=idempotency_key,
     )
     set_payment_intent(db, invoice, result["payment_intent_id"])
+    log_event(
+        firm_id=current_client.firm_id,
+        event_type="portal.invoice_paid",
+        entity_type="invoice",
+        entity_id=invoice_id,
+        actor_type="client",
+        actor_id=None,
+        metadata={
+            "payment_method": "stripe",
+            "time_of_day": datetime.now(timezone.utc).hour,
+        }
+    )
     return result
 
 

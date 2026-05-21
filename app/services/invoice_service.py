@@ -151,6 +151,30 @@ def mark_invoice_paid(
     )
 
 
+def mark_invoice_overdue(
+    *,
+    db: Session,
+    invoice: Invoice,
+):
+    log_event(
+        firm_id=invoice.firm_id,
+        event_type="invoice.overdue",
+        entity_type="invoice",
+        entity_id=invoice.id,
+        actor_type="system",
+        actor_id=None,
+        metadata={
+            "amount": float(invoice.total_amount) if hasattr(invoice, 'total_amount') else None,
+            "days_since_sent": (
+                (datetime.now(timezone.utc) - invoice.sent_at).days
+                if hasattr(invoice, 'sent_at') and invoice.sent_at
+                else None
+            ),
+            "client_id": str(invoice.client_id),
+        }
+    )
+
+
 def delete_invoice(
     *,
     db: Session,
