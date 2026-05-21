@@ -5,6 +5,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
+import { Undo2, Redo2 } from 'lucide-react'
 import api from '@/lib/api'
 import { toast } from 'sonner'
 
@@ -185,7 +186,7 @@ function RichTextEditor({ content, onChange, onInsertVariable }: RichTextEditorP
           className="h-7 px-2 rounded flex items-center justify-center text-[11px] text-[#374151] dark:text-[#EDEEF0] hover:bg-surface-page dark:hover:bg-dark-page disabled:opacity-30 transition-colors"
           title="Undo (Ctrl+Z)"
         >
-          ↩ Undo
+          <Undo2 className="h-3.5 w-3.5" />
         </button>
 
         {/* Redo */}
@@ -195,7 +196,7 @@ function RichTextEditor({ content, onChange, onInsertVariable }: RichTextEditorP
           className="h-7 px-2 rounded flex items-center justify-center text-[11px] text-[#374151] dark:text-[#EDEEF0] hover:bg-surface-page dark:hover:bg-dark-page disabled:opacity-30 transition-colors"
           title="Redo (Ctrl+Shift+Z)"
         >
-          ↪ Redo
+          <Redo2 className="h-3.5 w-3.5" />
         </button>
 
         <div className="w-px h-4 bg-surface-border dark:bg-dark-border mx-1" />
