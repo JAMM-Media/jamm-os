@@ -421,9 +421,10 @@ def prepare_letter(
 
     pdf_bytes = letter_renderer.render_to_pdf(template.body_html, context)
 
+    import uuid as _uuid
     s3_key = (
         f"{current_firm.id}/letters/{payload.engagement_id}"
-        f"/{template.name}_{date.today()}.pdf"
+        f"/{template.name}_{date.today()}_{_uuid.uuid4().hex[:8]}.pdf"
     )
     s3_service.upload_fileobj(io.BytesIO(pdf_bytes), s3_key, "application/pdf")
 

@@ -4,37 +4,29 @@ Read every instruction in this file before writing a single line of code.
 
 ---
 
-## TASK 1 — Fix prepare_letter endpoint: populate signers from client
+## TASK 1 — Fix duplicate S3 key in prepare_letter endpoint
 
 **File to edit:** `app/api/esign.py`
 
-In the `prepare_letter` function, find the envelope creation block:
+In the `prepare_letter` function, find the S3 key construction:
 
 ```python
-envelope_schema = SignatureEnvelopeCreate(
-    client_id=client.id,
-    engagement_id=payload.engagement_id,
-    document_id=doc.id,
-    subject=template.name,
-    signers=[],
+s3_key = (
+    f"{current_firm.id}/letters/{payload.engagement_id}"
+    f"/{template.name}_{date.today()}.pdf"
 )
 ```
 
 Replace with:
 
 ```python
-envelope_schema = SignatureEnvelopeCreate(
-    client_id=client.id,
-    engagement_id=payload.engagement_id,
-    document_id=doc.id,
-    subject=template.name,
-    signers=[{
-        "name": getattr(client, "full_name", None) or client.name,
-        "email": client.email or "",
-        "status": "pending",
-        "signed_at": None,
-    }],
+import uuid as _uuid
+s3_key = (
+    f"{current_firm.id}/letters/{payload.engagement_id}"
+    f"/{template.name}_{date.today()}_{_uuid.uuid4().hex[:8]}.pdf"
 )
 ```
 
-No other changes. No migration needed.
+This appends a short random hex suffix to the filename so every send generates a unique S3 key, preventing the duplicate key constraint on the documents table.
+
+No migration needed. No frontend changes needed.
