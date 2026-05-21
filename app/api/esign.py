@@ -323,33 +323,64 @@ async def handle_webhook(
     db: Session = Depends(get_db),
 ):
     import logging as _logging
-    _logging.getLogger(__name__).warning(
-        "Webhook headers: %s", dict(request.headers)
-    )
-    signature_header = request.headers.get("Hash")
-    if not signature_header:
-        # Try alternate header names Dropbox Sign might use
-        signature_header = (
-            request.headers.get("X-HelloSign-Signature") or
-            request.headers.get("X-Dropbox-Sign-Signature") or
-            request.headers.get("x-hellosign-signature")
-        )
-    if not signature_header:
-        _logging.getLogger(__name__).warning(
-            "Missing webhook signature. Headers received: %s", dict(request.headers)
-        )
-        raise HTTPException(status_code=400, detail="Missing webhook signature")
+    import hashlib
+    import hmac as _hmac
 
-    payload_bytes = await request.body()
+    # Dropbox Sign sends multipart/form-data with event JSON in a field called "json"
+    content_type = request.headers.get("content-type", "")
 
-    if not dropbox_sign.validate_webhook_signature(payload_bytes, signature_header):
-        raise HTTPException(status_code=403, detail="Invalid webhook signature")
+    if "multipart/form-data" in content_type:
+        form = await request.form()
+        json_str = form.get("json")
+        if not json_str:
+            raise HTTPException(status_code=400, detail="Missing json field in form data")
+        try:
+            data = json.loads(json_str)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid JSON in form data")
+    else:
+        # Fallback: try reading as raw JSON body
+        payload_bytes = await request.body()
+        try:
+            data = json.loads(payload_bytes)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid request body")
 
-    data = json.loads(payload_bytes)
-    event_type = data["event"]["event_type"]
-    signature_request_id = data["signature_request"]["signature_request_id"]
+    # Validate event_hash from within the payload
+    event = data.get("event", {})
+    event_hash = event.get("event_hash")
 
-    # Silently ack if our record doesn't exist yet (edge case: webhook races our DB write).
+    if event_hash:
+        # Validate: HMAC-SHA256 of (event_time + event_type) using API key as secret
+        event_time = str(event.get("event_time", ""))
+        event_type = str(event.get("event_type", ""))
+        settings = get_settings()
+        secret = settings.DROPBOX_SIGN_API_KEY.encode()
+        computed = _hmac.new(
+            secret,
+            (event_time + event_type).encode(),
+            hashlib.sha256,
+        ).hexdigest()
+        if not _hmac.compare_digest(computed, event_hash):
+            _logging.getLogger(__name__).warning(
+                "Webhook signature mismatch: computed=%s received=%s",
+                computed, event_hash
+            )
+            raise HTTPException(status_code=403, detail="Invalid webhook signature")
+
+    event_type = event.get("event_type")
+
+    # Dropbox Sign requires responding with {"status": "ok"} for the test event
+    if event_type == "callback_test":
+        return {"status": "ok"}
+
+    signature_request = data.get("signature_request", {})
+    signature_request_id = signature_request.get("signature_request_id")
+
+    if not signature_request_id:
+        return {"status": "ok"}
+
+    # Silently ack if our record doesn't exist yet
     envelope = db.execute(
         select(SignatureEnvelope).where(
             SignatureEnvelope.provider_envelope_id == signature_request_id
@@ -358,44 +389,44 @@ async def handle_webhook(
     if envelope is None:
         return {"status": "ok"}
 
-    new_status = EVENT_STATUS_MAP.get(event_type)
-    if new_status:
-        update_kwargs: dict = {"status": new_status}
-        if new_status == "signed":
-            update_kwargs["completed_at"] = datetime.now(timezone.utc)
-
-        crud_envelope.update_signature_envelope(
-            db, envelope, SignatureEnvelopeUpdate(**update_kwargs)
+    if event_type == "signature_request_signed":
+        pdf_bytes = dropbox_sign.download_signed_document(signature_request_id)
+        s3_key = f"{envelope.firm_id}/signed/{envelope.id}.pdf"
+        s3_service.upload_fileobj(
+            io.BytesIO(pdf_bytes),
+            s3_key,
+            "application/pdf",
         )
-
-        if new_status == "signed":
-            pdf_bytes = dropbox_sign.download_signed_document(signature_request_id)
-            background_tasks.add_task(store_signed_document, db, envelope, pdf_bytes)
-            write_audit_log(
-                db=db,
-                firm_id=envelope.firm_id,
-                action="esign.signed",
-                actor_type="system",
-                entity_type="signature_envelope",
-                entity_id=envelope.id,
-            )
-            log_event(
-                firm_id=envelope.firm_id,
-                event_type="engagement_letter.signed",
-                entity_type="signature_envelope",
-                entity_id=envelope.id,
-                actor_type="client",
-                actor_id=None,
-                metadata={
-                    "client_id": str(envelope.client_id),
-                    "engagement_id": str(envelope.engagement_id) if envelope.engagement_id else None,
-                    "days_to_sign": (
-                        (datetime.now(timezone.utc) - envelope.sent_at).days
-                        if hasattr(envelope, 'sent_at') and envelope.sent_at
-                        else None
-                    ),
-                }
-            )
+        crud_envelope.update_signature_envelope(
+            db,
+            envelope,
+            SignatureEnvelopeUpdate(status="signed", signed_document_s3_key=s3_key),
+        )
+        write_audit_log(
+            db=db,
+            firm_id=envelope.firm_id,
+            action="esign.signed",
+            actor_type="client",
+            entity_type="signature_envelope",
+            entity_id=envelope.id,
+        )
+        log_event(
+            firm_id=envelope.firm_id,
+            event_type="engagement_letter.signed",
+            entity_type="signature_envelope",
+            entity_id=envelope.id,
+            actor_type="client",
+            actor_id=None,
+            metadata={
+                "client_id": str(envelope.client_id),
+                "engagement_id": str(envelope.engagement_id) if envelope.engagement_id else None,
+                "days_to_sign": (
+                    (datetime.now(timezone.utc) - envelope.sent_at).days
+                    if hasattr(envelope, 'sent_at') and envelope.sent_at
+                    else None
+                ),
+            }
+        )
 
     # Dropbox Sign retries unless it receives exactly {"status": "ok"}.
     return {"status": "ok"}
