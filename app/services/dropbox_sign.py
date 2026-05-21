@@ -33,6 +33,7 @@ def send_envelope(
     Raises HTTPException(502) if the upstream API call fails.
     """
     data: dict = {
+        "test_mode": "1",  # test_mode=1 — remove this line when upgrading to a paid Dropbox Sign API plan
         "title": subject,
         "subject": subject,
         "message": message,
