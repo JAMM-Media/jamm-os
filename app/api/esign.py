@@ -372,13 +372,15 @@ async def handle_webhook(
 
     # Dropbox Sign requires responding with {"status": "ok"} for the test event
     if event_type == "callback_test":
-        return {"status": "ok"}
+        from fastapi.responses import PlainTextResponse
+        return PlainTextResponse("Hello API Event Received")
 
     signature_request = data.get("signature_request", {})
     signature_request_id = signature_request.get("signature_request_id")
 
     if not signature_request_id:
-        return {"status": "ok"}
+        from fastapi.responses import PlainTextResponse
+        return PlainTextResponse("Hello API Event Received")
 
     # Silently ack if our record doesn't exist yet
     envelope = db.execute(
@@ -387,7 +389,8 @@ async def handle_webhook(
         )
     ).scalars().first()
     if envelope is None:
-        return {"status": "ok"}
+        from fastapi.responses import PlainTextResponse
+        return PlainTextResponse("Hello API Event Received")
 
     if event_type == "signature_request_signed":
         pdf_bytes = dropbox_sign.download_signed_document(signature_request_id)
@@ -428,8 +431,8 @@ async def handle_webhook(
             }
         )
 
-    # Dropbox Sign retries unless it receives exactly {"status": "ok"}.
-    return {"status": "ok"}
+    from fastapi.responses import PlainTextResponse
+    return PlainTextResponse("Hello API Event Received")
 
 
 # -----------------------------------------------------------------------
