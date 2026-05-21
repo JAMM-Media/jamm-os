@@ -4,20 +4,37 @@ Read every instruction in this file before writing a single line of code.
 
 ---
 
-## TASK 1 — Fix Modal prop name in SendEngagementLetterModal
+## TASK 1 — Fix prepare_letter endpoint: populate signers from client
 
-**File to edit:** `frontend/src/components/engagements/SendEngagementLetterModal.tsx`
+**File to edit:** `app/api/esign.py`
 
-Find:
-```tsx
-<Modal
-  isOpen={open}
+In the `prepare_letter` function, find the envelope creation block:
+
+```python
+envelope_schema = SignatureEnvelopeCreate(
+    client_id=client.id,
+    engagement_id=payload.engagement_id,
+    document_id=doc.id,
+    subject=template.name,
+    signers=[],
+)
 ```
 
 Replace with:
-```tsx
-<Modal
-  open={open}
+
+```python
+envelope_schema = SignatureEnvelopeCreate(
+    client_id=client.id,
+    engagement_id=payload.engagement_id,
+    document_id=doc.id,
+    subject=template.name,
+    signers=[{
+        "name": getattr(client, "full_name", None) or client.name,
+        "email": client.email or "",
+        "status": "pending",
+        "signed_at": None,
+    }],
+)
 ```
 
-That is the only change. Run TypeScript check after.
+No other changes. No migration needed.

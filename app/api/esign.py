@@ -444,7 +444,12 @@ def prepare_letter(
         engagement_id=payload.engagement_id,
         document_id=doc.id,
         subject=template.name,
-        signers=[],
+        signers=[{
+            "name": getattr(client, "full_name", None) or client.name,
+            "email": client.email or "",
+            "status": "pending",
+            "signed_at": None,
+        }],
     )
     return crud_envelope.create_signature_envelope(db, envelope_schema, firm_id=current_firm.id)
 
