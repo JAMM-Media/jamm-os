@@ -354,7 +354,7 @@ async def handle_webhook(
         # Validate: HMAC-SHA256 of (event_time + event_type) using API key as secret
         event_time = str(event.get("event_time", ""))
         event_type = str(event.get("event_type", ""))
-        settings = get_settings()
+        settings = _get_settings()
         secret = settings.DROPBOX_SIGN_API_KEY.encode()
         computed = _hmac.new(
             secret,
