@@ -3,6 +3,7 @@
 
 import { useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
+import { toast } from 'sonner'
 import { useQueryClient } from '@tanstack/react-query'
 import { AppShell } from '@/components/layout/AppShell'
 import { Breadcrumb } from '@/components/layout/Breadcrumb'
@@ -13,6 +14,7 @@ import { ExtensionPanel } from '@/components/engagements/ExtensionPanel'
 import { DocumentRequestList } from '@/components/engagements/DocumentRequestList'
 import { CreateDocumentRequestModal } from '@/components/engagements/CreateDocumentRequestModal'
 import { EditEngagementModal } from '@/components/engagements/EditEngagementModal'
+import { SendEngagementLetterModal } from '@/components/engagements/SendEngagementLetterModal'
 import { TaskTable } from '@/components/tasks/TaskTable'
 import { NotesTab, NotesPanel, useNotes } from '@/components/notes'
 import { cn, formatEngagementType } from '@/lib/utils'
@@ -45,6 +47,7 @@ export default function EngagementDetailPage() {
   const [notesOpen, setNotesOpen] = useState(false)
   const [showModal, setShowModal] = useState(false)
   const [isEditOpen, setIsEditOpen] = useState(false)
+  const [sendLetterOpen, setSendLetterOpen] = useState(false)
 
   const { unreadCount } = useNotes({ entityType: 'engagement', entityId: id })
 
@@ -127,9 +130,20 @@ export default function EngagementDetailPage() {
               </span>
             </div>
           </div>
-          <button onClick={() => setIsEditOpen(true)} className="h-9 px-3 rounded-[6px] bg-brand dark:bg-brand-btn text-white text-[13px] font-medium hover:opacity-90 transition-opacity">
-            Edit Engagement
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setSendLetterOpen(true)}
+              className="h-9 px-3 rounded-[6px] border border-brand dark:border-[#4A7FA5] text-brand dark:text-[#4A7FA5] text-[13px] font-medium hover:bg-surface-card dark:hover:bg-dark-card transition-colors"
+            >
+              Send Engagement Letter
+            </button>
+            <button
+              onClick={() => setIsEditOpen(true)}
+              className="h-9 px-3 rounded-[6px] bg-brand dark:bg-brand-btn text-white text-[13px] font-medium hover:opacity-90 transition-opacity"
+            >
+              Edit Engagement
+            </button>
+          </div>
         </div>
 
         {/* Tab bar */}
@@ -383,6 +397,20 @@ export default function EngagementDetailPage() {
           onSuccess={() => { refetch(); setIsEditOpen(false) }}
         />
       )}
+      <SendEngagementLetterModal
+        open={sendLetterOpen}
+        onClose={() => setSendLetterOpen(false)}
+        onSent={() => {
+          setSendLetterOpen(false)
+          toast.success('Engagement letter sent')
+        }}
+        engagementId={id}
+        engagementType={engagement.engagementType}
+        clientName={clientName}
+        engagementName={engagement.name}
+        filingDeadline={engagement.filingDeadline ?? null}
+        endDate={engagement.endDate ?? null}
+      />
     </AppShell>
   )
 }

@@ -57,6 +57,7 @@ EVENT_STATUS_MAP: dict[str, str] = {
 class PrepareLetterBody(BaseModel):
     template_id: UUID
     engagement_id: UUID
+    fee_amount: str = ""
     extra_context: dict = {}
 
 
@@ -387,13 +388,32 @@ def prepare_letter(
     context: dict = {
         "client_name": getattr(client, "full_name", None) or client.name,
         "client_email": client.email or "",
+        "firm_name": current_firm.name,
+        "firm_owner_name": current_user.full_name or current_user.email,
         "engagement_name": engagement.name,
         "engagement_type": getattr(engagement, "engagement_type", None) or "",
-        "engagement_date": date.today().isoformat(),
-        "due_date": str(engagement.end_date) if getattr(engagement, "end_date", None) else "",
+        "engagement_date": date.today().strftime("%B %d, %Y"),
+        "due_date": "",
+        "fee_amount": "",
     }
+    if payload.fee_amount:
+        context["fee_amount"] = payload.fee_amount
     if payload.extra_context:
         context.update(payload.extra_context)
+
+    # Get due date from engagement filing deadline or end date
+    filing_deadline = getattr(engagement, "filing_deadline", None)
+    end_date = getattr(engagement, "end_date", None)
+    raw_date = filing_deadline or end_date
+    if raw_date:
+        try:
+            from datetime import datetime as dt
+            if hasattr(raw_date, 'strftime'):
+                context["due_date"] = raw_date.strftime("%B %d, %Y")
+            else:
+                context["due_date"] = str(raw_date)
+        except Exception:
+            context["due_date"] = str(raw_date)
 
     missing = letter_renderer.validate_context(template.variable_fields, context)
     if missing:
