@@ -394,7 +394,15 @@ async def handle_webhook(
 
     if event_type == "signature_request_signed":
         pdf_bytes = dropbox_sign.download_signed_document(signature_request_id)
-        background_tasks.add_task(store_signed_document, db, envelope, pdf_bytes)
+        background_tasks.add_task(
+            store_signed_document,
+            str(envelope.id),
+            str(envelope.firm_id),
+            str(envelope.client_id),
+            envelope.engagement_id,
+            envelope.provider_envelope_id,
+            pdf_bytes,
+        )
         write_audit_log(
             db=db,
             firm_id=envelope.firm_id,
@@ -784,38 +792,56 @@ def delete_letter_template(
 # -----------------------------------------------------------------------
 # Background task — store the completed signed PDF after webhook confirms
 # -----------------------------------------------------------------------
-async def store_signed_document(
-    db: Session,
-    envelope: SignatureEnvelope,
+def store_signed_document(
+    envelope_id: str,
+    firm_id: str,
+    client_id: str,
+    engagement_id,
+    provider_envelope_id: str,
     pdf_bytes: bytes,
 ) -> None:
-    engagement_segment = (
-        str(envelope.engagement_id) if envelope.engagement_id else "no_engagement"
-    )
-    s3_key = (
-        f"{envelope.firm_id}/signed/{envelope.client_id}"
-        f"/{engagement_segment}/{envelope.provider_envelope_id}.pdf"
-    )
+    from app.db.session import SessionLocal
+    db = SessionLocal()
+    try:
+        from app.models.signature_envelope import SignatureEnvelope as _SE
+        envelope = db.query(_SE).filter(_SE.id == envelope_id).first()
+        if not envelope:
+            return
 
-    s3_service.upload_fileobj(io.BytesIO(pdf_bytes), s3_key, "application/pdf")
+        engagement_segment = (
+            str(engagement_id) if engagement_id else "no_engagement"
+        )
+        s3_key = (
+            f"{firm_id}/signed/{client_id}"
+            f"/{engagement_segment}/{provider_envelope_id}.pdf"
+        )
 
-    doc = crud_document.create_document(
-        db=db,
-        firm_id=envelope.firm_id,
-        client_id=envelope.client_id,
-        engagement_id=envelope.engagement_id,
-        uploaded_by=None,
-        filename=f"{envelope.provider_envelope_id}.pdf",
-        s3_key=s3_key,
-        content_type="application/pdf",
-        size_bytes=len(pdf_bytes),
-    )
+        s3_service.upload_fileobj(io.BytesIO(pdf_bytes), s3_key, "application/pdf")
 
-    crud_envelope.update_signature_envelope(
-        db,
-        envelope,
-        SignatureEnvelopeUpdate(
-            signed_document_id=doc.id,
-            status="signed",
-        ),
-    )
+        doc = crud_document.create_document(
+            db=db,
+            firm_id=uuid.UUID(firm_id),
+            client_id=uuid.UUID(client_id),
+            engagement_id=uuid.UUID(str(engagement_id)) if engagement_id else None,
+            uploaded_by=None,
+            filename=f"{provider_envelope_id}.pdf",
+            s3_key=s3_key,
+            content_type="application/pdf",
+            size_bytes=len(pdf_bytes),
+        )
+
+        crud_envelope.update_signature_envelope(
+            db,
+            envelope,
+            SignatureEnvelopeUpdate(
+                signed_document_id=doc.id,
+                status="signed",
+            ),
+        )
+        db.commit()
+    except Exception as exc:
+        import logging as _log
+        _log.getLogger(__name__).error("store_signed_document failed: %s", exc, exc_info=True)
+        db.rollback()
+    finally:
+        db.close()
