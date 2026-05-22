@@ -8,6 +8,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
+    Integer,
     JSON,
     String,
     Text,
@@ -121,6 +122,9 @@ class FirmMessage(Base):
 
     # S3 object key only — never the full URL
     attachment_key: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    attachment_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    attachment_size: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    attachment_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
     # List of user UUIDs who were @mentioned
     mentions: Mapped[list | None] = mapped_column(JSON, nullable=True)

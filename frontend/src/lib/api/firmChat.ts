@@ -104,8 +104,22 @@ export const firmChatApi = {
     await api.post(`/firm-chat/channels/${channelId}/read`)
   },
 
-  postMessage: async (channelId: string, body: string, mentions?: string[]): Promise<FirmMessage> => {
-    const { data } = await api.post(`/firm-chat/channels/${channelId}/messages`, { body, mentions })
+  postMessage: async (
+    channelId: string,
+    body: string,
+    mentions?: string[],
+    attachment?: {
+      attachment_key: string | null
+      attachment_name: string | null
+      attachment_size: number | null
+      attachment_type: string | null
+    }
+  ): Promise<FirmMessage> => {
+    const { data } = await api.post(`/firm-chat/channels/${channelId}/messages`, {
+      body,
+      mentions,
+      ...(attachment ?? {}),
+    })
     return mapMessage(data)
   },
 

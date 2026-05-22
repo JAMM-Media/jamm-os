@@ -214,7 +214,10 @@ def send_message(
         channel_id=channel_id,
         sender_id=sender_user.id,
         body=data.body,
-        attachment_key=attachment_key,
+        attachment_key=attachment_key or data.attachment_key,
+        attachment_name=data.attachment_name,
+        attachment_size=data.attachment_size,
+        attachment_type=data.attachment_type,
         mentions=valid_mentions if valid_mentions else None,
     )
 

@@ -6,7 +6,8 @@ import type { ReactNode } from 'react'
 import { AppShell } from '@/components/layout/AppShell'
 import { useChannels } from '@/components/firm-chat/useChannels'
 import { useMessages } from '@/components/firm-chat/useMessages'
-import { MessageSquare, MoreHorizontal, Users, X, UserMinus, Link } from 'lucide-react'
+import { MessageSquare, MoreHorizontal, Users, X, UserMinus, Link, Paperclip, Loader2, Download } from 'lucide-react'
+import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import api from '@/lib/api'
 import { firmChatApi, type ChannelMember } from '@/lib/api/firmChat'
@@ -218,9 +219,13 @@ export default function FirmChatPage() {
   const [composeMentionIds, setComposeMentionIds] = useState<string[]>([])
   const [linkedEntities, setLinkedEntities] = useState<Map<string, EntityLink>>(new Map())
   const [showPicker, setShowPicker] = useState(false)
+  const [pendingFile, setPendingFile] = useState<File | null>(null)
+  const [pendingFileKey, setPendingFileKey] = useState<string | null>(null)
+  const [fileUploading, setFileUploading] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const toolbarRef = useRef<HTMLDivElement>(null)
   const dropdownRef = useRef<HTMLDivElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   // ─── @mention popover ────────────────────────────────────────────────────
   const [showMentionPopover, setShowMentionPopover] = useState(false)
@@ -288,6 +293,8 @@ export default function FirmChatPage() {
     setLinkedEntities(new Map())
     setShowPicker(false)
     setShowMentionPopover(false)
+    setPendingFile(null)
+    setPendingFileKey(null)
   }
 
   const handleComposeChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -374,13 +381,26 @@ export default function FirmChatPage() {
     linkedEntities.forEach((link, token) => {
       body = body.split(token).join(`[[entity:${link.entityType}:${link.entityId}:${link.label}]]`)
     })
-    sendMessage(body, composeMentionIds)
+    sendMessage(
+      body,
+      composeMentionIds,
+      pendingFileKey
+        ? {
+            attachment_key: pendingFileKey,
+            attachment_name: pendingFile?.name ?? null,
+            attachment_size: pendingFile?.size ?? null,
+            attachment_type: pendingFile?.type ?? null,
+          }
+        : undefined
+    )
     setComposeValue('')
     setComposeMentions([])
     setComposeMentionIds([])
     setLinkedEntities(new Map())
     setShowPicker(false)
     setShowMentionPopover(false)
+    setPendingFile(null)
+    setPendingFileKey(null)
     if (textareaRef.current) textareaRef.current.style.height = '40px'
   }
 
@@ -398,6 +418,45 @@ export default function FirmChatPage() {
     }
     setShowMentionPopover(false)
     setTimeout(() => textareaRef.current?.focus(), 0)
+  }
+
+  async function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (file.size > 26214400) {
+      toast.error('File must be under 25MB')
+      return
+    }
+    setFileUploading(true)
+    setPendingFile(file)
+    try {
+      const { data } = await api.post(
+        `/firm-chat/channels/${activeChannelId}/upload-url`,
+        { file_name: file.name, file_type: file.type, file_size: file.size }
+      )
+      await fetch(data.upload_url, {
+        method: 'PUT',
+        body: file,
+        headers: { 'Content-Type': file.type },
+      })
+      setPendingFileKey(data.key)
+    } catch {
+      toast.error('File upload failed — please try again')
+      setPendingFile(null)
+      setPendingFileKey(null)
+    } finally {
+      setFileUploading(false)
+      if (fileInputRef.current) fileInputRef.current.value = ''
+    }
+  }
+
+  async function handleDownloadAttachment(message: { id: string }) {
+    try {
+      const { data } = await api.get(`/firm-chat/messages/${message.id}/attachment-url`)
+      window.open(data.download_url, '_blank')
+    } catch {
+      toast.error('Could not load attachment')
+    }
   }
 
   const handleCreateChannel = () => {
@@ -544,6 +603,16 @@ export default function FirmChatPage() {
             >
               {renderBody(msg.body, msg.mentions, staffMap)}
             </p>
+            {msg.attachmentKey && (
+              <button
+                onClick={() => handleDownloadAttachment(msg)}
+                className="flex items-center gap-2 mt-1.5 bg-surface-card dark:bg-dark-card border border-[#C8CDD6] dark:border-[#484848] rounded-md px-2.5 py-1.5 text-[12px] text-[#374151] dark:text-[#EDEEF0] hover:border-[#4A7FA5] transition-colors max-w-[240px]"
+              >
+                <Paperclip className="w-3.5 h-3.5 text-[#6B7280] flex-shrink-0" />
+                <span className="truncate flex-1">{msg.attachmentName}</span>
+                <Download className="w-3.5 h-3.5 text-[#6B7280] flex-shrink-0" />
+              </button>
+            )}
           </div>
         )
       } else {
@@ -568,6 +637,16 @@ export default function FirmChatPage() {
               >
                 {renderBody(msg.body, msg.mentions, staffMap)}
               </p>
+              {msg.attachmentKey && (
+                <button
+                  onClick={() => handleDownloadAttachment(msg)}
+                  className="flex items-center gap-2 mt-1.5 bg-surface-card dark:bg-dark-card border border-[#C8CDD6] dark:border-[#484848] rounded-md px-2.5 py-1.5 text-[12px] text-[#374151] dark:text-[#EDEEF0] hover:border-[#4A7FA5] transition-colors max-w-[240px]"
+                >
+                  <Paperclip className="w-3.5 h-3.5 text-[#6B7280] flex-shrink-0" />
+                  <span className="truncate flex-1">{msg.attachmentName}</span>
+                  <Download className="w-3.5 h-3.5 text-[#6B7280] flex-shrink-0" />
+                </button>
+              )}
             </div>
           </div>
         )
@@ -793,6 +872,15 @@ export default function FirmChatPage() {
                   />
                 )}
 
+                {/* Hidden file input */}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".pdf,.jpg,.jpeg,.png,.xlsx,.csv,.docx"
+                  className="hidden"
+                  onChange={handleFileSelect}
+                />
+
                 {/* Toolbar */}
                 <div ref={toolbarRef} className="flex items-center gap-1 mb-2">
                   <button
@@ -802,6 +890,13 @@ export default function FirmChatPage() {
                     <Link className="w-3.5 h-3.5" />
                     Link record
                   </button>
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    className="flex items-center gap-1 px-2 py-1 rounded text-[11px] text-[#6B7280] hover:bg-[#D5D8DE] dark:hover:bg-[#2D2D2D] transition-colors"
+                  >
+                    <Paperclip className="w-3.5 h-3.5" />
+                    Attach file
+                  </button>
                 </div>
 
                 {/* Entity chips preview */}
@@ -810,6 +905,29 @@ export default function FirmChatPage() {
                     {Array.from(linkedEntities.entries()).map(([token, link]) => (
                       <EntityChip key={token} link={link} onRemove={() => handleEntityRemove(token)} />
                     ))}
+                  </div>
+                )}
+
+                {/* File preview chip */}
+                {pendingFile && (
+                  <div className="flex items-center gap-2 mb-2 px-1">
+                    <div className="flex items-center gap-2 bg-surface-card dark:bg-dark-card border border-[#C8CDD6] dark:border-[#484848] rounded-md px-2.5 py-1.5 text-[12px] text-[#374151] dark:text-[#EDEEF0] max-w-[240px]">
+                      {fileUploading ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin text-[#6B7280] flex-shrink-0" />
+                      ) : (
+                        <Paperclip className="w-3.5 h-3.5 text-[#6B7280] flex-shrink-0" />
+                      )}
+                      <span className="truncate flex-1">{pendingFile.name}</span>
+                      <span className="text-[11px] text-[#6B7280] flex-shrink-0">
+                        {(pendingFile.size / 1024).toFixed(0)}KB
+                      </span>
+                      <button
+                        onClick={() => { setPendingFile(null); setPendingFileKey(null) }}
+                        className="text-[#6B7280] hover:text-[#991B1B] transition-colors flex-shrink-0"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
                   </div>
                 )}
 
@@ -832,7 +950,7 @@ export default function FirmChatPage() {
                   />
                   <button
                     onClick={handleSend}
-                    disabled={!composeValue.trim()}
+                    disabled={!composeValue.trim() || fileUploading}
                     className="bg-brand dark:bg-brand-btn text-white text-[12px] font-medium rounded-md h-8 px-3 flex-shrink-0 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed hover:opacity-90"
                   >
                     Send

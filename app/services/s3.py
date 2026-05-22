@@ -56,6 +56,25 @@ def generate_presigned_url(s3_key: str) -> str:
     )
 
 
+def generate_presigned_put_url(s3_key: str, content_type: str) -> str:
+    """
+    Generate a short-lived presigned PUT URL so a browser can upload directly to S3.
+
+    Expires in PRESIGNED_URL_EXPIRY seconds (1 hour).
+    The caller must PUT with a matching Content-Type header.
+    """
+    settings = get_settings()
+    return _get_client().generate_presigned_url(
+        "put_object",
+        Params={
+            "Bucket": settings.S3_BUCKET_NAME,
+            "Key": s3_key,
+            "ContentType": content_type,
+        },
+        ExpiresIn=PRESIGNED_URL_EXPIRY,
+    )
+
+
 def delete_object(s3_key: str) -> None:
     """
     Delete an object from S3.

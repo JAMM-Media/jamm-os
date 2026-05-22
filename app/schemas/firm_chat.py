@@ -52,6 +52,10 @@ class ChannelOut(BaseModel):
 class FirmMessageCreate(BaseModel):
     body: str
     mentions: list[str] = []
+    attachment_key: Optional[str] = None
+    attachment_name: Optional[str] = None
+    attachment_size: Optional[int] = None
+    attachment_type: Optional[str] = None
 
     @field_validator("body")
     @classmethod
@@ -68,7 +72,10 @@ class FirmMessageOut(BaseModel):
     sender_id: Optional[uuid.UUID] = None
     body: str
     attachment_key: Optional[str] = None
-    attachment_url: Optional[str] = None  # signed URL, populated by service
+    attachment_name: Optional[str] = None
+    attachment_size: Optional[int] = None
+    attachment_type: Optional[str] = None
+    attachment_url: Optional[str] = None  # signed GET URL, populated by service
     mentions: Optional[list[uuid.UUID]] = []
     created_at: datetime
     is_deleted: bool

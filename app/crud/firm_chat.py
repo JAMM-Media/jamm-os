@@ -92,6 +92,9 @@ def create_message(
     sender_id: uuid.UUID,
     body: str,
     attachment_key: Optional[str] = None,
+    attachment_name: Optional[str] = None,
+    attachment_size: Optional[int] = None,
+    attachment_type: Optional[str] = None,
     mentions: Optional[list] = None,
 ) -> FirmMessage:
     # Store mentions as list of str for JSON serialization
@@ -102,6 +105,9 @@ def create_message(
         sender_id=sender_id,
         body=body,
         attachment_key=attachment_key,
+        attachment_name=attachment_name,
+        attachment_size=attachment_size,
+        attachment_type=attachment_type,
         mentions=mentions_data,
     )
     db.add(message)

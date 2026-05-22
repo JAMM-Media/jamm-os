@@ -17,10 +17,17 @@ export interface Message {
   createdAt: string
 }
 
+interface Attachment {
+  attachment_key: string | null
+  attachment_name: string | null
+  attachment_size: number | null
+  attachment_type: string | null
+}
+
 interface UseMessagesReturn {
   messages: Message[]
   isLoading: boolean
-  sendMessage: (body: string, mentions: string[]) => void
+  sendMessage: (body: string, mentions: string[], attachment?: Attachment) => void
   markChannelRead: (channelId: string) => void
 }
 
@@ -39,22 +46,22 @@ export function useMessages(channelId: string): UseMessagesReturn {
   }, [channelId])
 
   const sendMessage = useCallback(
-    (body: string, mentions: string[]) => {
+    (body: string, mentions: string[], attachment?: Attachment) => {
       const optimistic: Message = {
         id: `temp-${Date.now()}`,
         senderId: 'current',
         senderName: 'You',
         senderInitials: 'YO',
         body,
-        attachmentKey: null,
-        attachmentName: null,
-        attachmentSize: null,
+        attachmentKey: attachment?.attachment_key ?? null,
+        attachmentName: attachment?.attachment_name ?? null,
+        attachmentSize: attachment?.attachment_size ?? null,
         mentions,
         createdAt: new Date().toISOString(),
       }
       setMessages((prev) => [...prev, optimistic])
       firmChatApi
-        .postMessage(channelId, body, mentions)
+        .postMessage(channelId, body, mentions, attachment)
         .then((msg) => {
           setMessages((prev) =>
             prev.map((m) => (m.id === optimistic.id ? msg : m))
