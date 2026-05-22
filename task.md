@@ -1,178 +1,176 @@
-# JAMM PX — Document Detail Page + Filename + File Size Fixes
+# JAMM PX — Fix Document Response Enrichment
 
 Read every instruction in this file before writing a single line of code. Execute in the order listed.
 
 ---
 
-## TASK 1 — Backend: fix signed document filename and file size
-
-**File to edit:** `app/api/esign.py`
-
-In `store_signed_document`, find where the document is created:
-
-```python
-doc = crud_document.create_document(
-    db=db,
-    firm_id=uuid.UUID(firm_id),
-    client_id=uuid.UUID(client_id),
-    engagement_id=uuid.UUID(str(engagement_id)) if engagement_id else None,
-    uploaded_by=None,
-    filename=f"{provider_envelope_id}.pdf",
-    s3_key=s3_key,
-    content_type="application/pdf",
-    size_bytes=len(pdf_bytes),
-)
-```
-
-The filename is the raw Dropbox Sign ID. Replace the filename with something readable. To do this, fetch the engagement name from the database first:
-
-```python
-def store_signed_document(
-    envelope_id: str,
-    firm_id: str,
-    client_id: str,
-    engagement_id,
-    provider_envelope_id: str,
-    pdf_bytes: bytes,
-) -> None:
-    from app.db.session import SessionLocal
-    db = SessionLocal()
-    try:
-        from app.models.signature_envelope import SignatureEnvelope as _SE
-        envelope = db.query(_SE).filter(_SE.id == envelope_id).first()
-        if not envelope:
-            return
-
-        # Build a readable filename from the engagement name if available
-        readable_name = "Engagement Letter"
-        if engagement_id:
-            from app.models.engagement import Engagement as _Eng
-            eng = db.query(_Eng).filter(_Eng.id == engagement_id).first()
-            if eng:
-                # Sanitize: remove characters that are invalid in filenames
-                import re
-                safe_name = re.sub(r'[^\w\s\-]', '', eng.name).strip()
-                readable_name = safe_name if safe_name else "Engagement Letter"
-
-        filename = f"{readable_name} — Signed.pdf"
-```
-
-Replace the `filename=f"{provider_envelope_id}.pdf"` line in `crud_document.create_document` with `filename=filename`.
-
-Keep the rest of the function exactly as it is.
-
----
-
-## TASK 2 — Backend: fix file size in document response
+## TASK 1 — Backend: enrich DocumentOut with client_name, engagement_title, uploaded_by_name
 
 **File to edit:** `app/schemas/document.py`
 
-Check the `DocumentOut` schema — find the `size_bytes` or `file_size` field. The frontend reads `raw.file_size_kb` but the backend likely returns `size_bytes`. 
+Add optional enrichment fields to `DocumentOut`:
 
-In `mapDocument` in `frontend/src/lib/api/documents.ts`:
-```typescript
-fileSizeKb: Number(raw.file_size_kb ?? raw.fileSizeKb ?? 0),
+```python
+class DocumentOut(BaseModel):
+    id: uuid.UUID
+    firm_id: uuid.UUID
+    client_id: uuid.UUID
+    engagement_id: uuid.UUID
+    uploaded_by: Optional[uuid.UUID]
+    filename: str
+    s3_key: str
+    content_type: str
+    size_bytes: int
+    category: Optional[str] = "other"
+    visibility: str = "internal"
+    created_at: datetime
+    updated_at: datetime
+    envelope_status: Optional[str] = None
+    # Enrichment fields — populated by API layer, not from DB model
+    client_name: Optional[str] = None
+    engagement_title: Optional[str] = None
+    uploaded_by_name: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
 ```
-
-The backend returns `size_bytes` not `file_size_kb`. Update `mapDocument`:
-
-**File to edit:** `frontend/src/lib/api/documents.ts`
-
-Find:
-```typescript
-fileSizeKb: Number(raw.file_size_kb ?? raw.fileSizeKb ?? 0),
-```
-
-Replace with:
-```typescript
-fileSizeKb: raw.size_bytes
-  ? Number(raw.size_bytes) / 1024
-  : Number(raw.file_size_kb ?? raw.fileSizeKb ?? 0),
-```
-
-This converts `size_bytes` to KB for display.
 
 ---
 
-## TASK 3 — Frontend: replace document detail page placeholder with proper metadata card
+## TASK 2 — Backend: populate enrichment fields in document list and get endpoints
 
-**File to edit:** `frontend/src/app/documents/[id]/page.tsx`
+**File to edit:** `app/api/documents.py`
 
-Find the placeholder section:
-```tsx
-<div className="bg-surface-card dark:bg-dark-card rounded-card p-4">
-  <p className="text-[12px] text-[#6B7280]">
-    Document preview and version history coming in a future phase.
-  </p>
-</div>
+The list endpoint already does manual pagination. Update it to also populate `client_name`, `engagement_title`, and `uploaded_by_name`.
+
+After the existing envelope status enrichment block, add:
+
+```python
+# Fetch client names
+from app.models.client import Client
+from app.models.engagement import Engagement
+from app.models.user import User
+
+client_ids = [doc.client_id for doc in docs if doc.client_id]
+engagement_ids = [doc.engagement_id for doc in docs if doc.engagement_id]
+uploaded_by_ids = [doc.uploaded_by for doc in docs if doc.uploaded_by]
+
+client_map = {}
+if client_ids:
+    clients = db.query(Client).filter(Client.id.in_(client_ids)).all()
+    client_map = {c.id: c.name for c in clients}
+
+engagement_map = {}
+if engagement_ids:
+    engagements = db.query(Engagement).filter(Engagement.id.in_(engagement_ids)).all()
+    engagement_map = {e.id: e.name for e in engagements}
+
+user_map = {}
+if uploaded_by_ids:
+    users = db.query(User).filter(User.id.in_(uploaded_by_ids)).all()
+    user_map = {u.id: u.full_name or u.email for u in users}
 ```
 
-Replace with a proper document metadata card:
-```tsx
-<div className="flex flex-col gap-3">
-  {/* Document info card */}
-  <div className="bg-surface-card dark:bg-dark-card rounded-[8px] border border-[0.5px] border-surface-border dark:border-dark-border overflow-hidden">
-    <div className="px-4 py-2.5 border-b border-[0.5px] border-surface-border dark:border-dark-border bg-[#EDEEF0] dark:bg-[#252525]">
-      <p className="text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em]">Document Details</p>
-    </div>
-    <div className="grid grid-cols-2 gap-0">
-      {[
-        { label: 'Client', value: doc.clientName || '—' },
-        { label: 'Engagement', value: doc.engagementTitle || '—' },
-        { label: 'File Type', value: doc.fileType || '—' },
-        { label: 'File Size', value: doc.fileSizeKb > 0 ? `${doc.fileSizeKb.toFixed(0)} KB` : '—' },
-        { label: 'Uploaded', value: doc.uploadedAt || '—' },
-        { label: 'Uploaded By', value: doc.uploadedBy || 'System' },
-      ].map((row, i) => (
-        <div
-          key={row.label}
-          className={`px-4 py-3 flex flex-col gap-0.5 ${
-            i < 4 ? 'border-b border-[0.5px] border-surface-border dark:border-dark-border' : ''
-          }`}
-        >
-          <p className="text-[11px] text-[#6B7280]">{row.label}</p>
-          <p className="text-[12px] font-medium text-brand dark:text-[#EDEEF0]">{row.value}</p>
-        </div>
-      ))}
-    </div>
-  </div>
+Then update the `items` list to include these:
 
-  {/* Download CTA */}
-  <div className="bg-surface-card dark:bg-dark-card rounded-[8px] border border-[0.5px] border-surface-border dark:border-dark-border p-4 flex items-center justify-between">
-    <div>
-      <p className="text-[13px] font-medium text-brand dark:text-[#EDEEF0]">Download Document</p>
-      <p className="text-[11px] text-[#6B7280] mt-0.5">Opens a secure link valid for 1 hour</p>
-    </div>
-    <button
-      onClick={handleDownload}
-      className="h-9 px-4 rounded-[6px] bg-brand dark:bg-brand-btn text-white text-[13px] font-medium hover:opacity-90 transition-opacity"
-    >
-      Download
-    </button>
-  </div>
-</div>
+```python
+items = [
+    DocumentOut.model_validate(doc).model_copy(
+        update={
+            "envelope_status": envelope_status_map.get(doc.id, "uploaded"),
+            "client_name": client_map.get(doc.client_id),
+            "engagement_title": engagement_map.get(doc.engagement_id),
+            "uploaded_by_name": user_map.get(doc.uploaded_by) if doc.uploaded_by else None,
+        }
+    )
+    for doc in docs
+]
 ```
 
-Also remove the duplicate Download button from the header — the one at the top right next to the filename. The download action is now in the card below.
+Apply the same enrichment to the `GET /documents/{document_id}` single endpoint. After the envelope lookup, add:
 
-Find and remove:
-```tsx
-<button
-  onClick={handleDownload}
-  className="h-9 px-3 rounded-[6px] bg-brand dark:bg-brand-btn text-white text-[13px] font-medium hover:opacity-90 transition-opacity flex-shrink-0"
->
-  Download
-</button>
+```python
+from app.models.client import Client
+from app.models.engagement import Engagement  
+from app.models.user import User
+
+client = db.query(Client).filter(Client.id == doc.client_id).first()
+engagement = db.query(Engagement).filter(Engagement.id == doc.engagement_id).first()
+uploader = db.query(User).filter(User.id == doc.uploaded_by).first() if doc.uploaded_by else None
+
+return DocumentOut.model_validate(doc).model_copy(
+    update={
+        "envelope_status": envelope_status,
+        "client_name": client.name if client else None,
+        "engagement_title": engagement.name if engagement else None,
+        "uploaded_by_name": (uploader.full_name or uploader.email) if uploader else None,
+    }
+)
 ```
 
-Run TypeScript check after all frontend changes.
+---
+
+## TASK 3 — Frontend: use enrichment fields in mapDocument and fix file size display
+
+**File to edit:** `frontend/src/lib/api/documents.ts`
+
+Update the `Document` interface to include the new fields:
+
+```typescript
+export interface Document {
+  id: string
+  name: string
+  clientId: string
+  clientName: string
+  engagementId: string
+  engagementTitle: string
+  status: 'uploaded' | 'pending' | 'pending_signature' | 'signed' | 'rejected'
+  uploadedBy: string
+  uploadedAt: string
+  fileType: string
+  fileSizeKb: number
+}
+```
+
+Update `mapDocument` to use the enrichment fields:
+
+```typescript
+function mapDocument(raw: Record<string, unknown>): Document {
+  return {
+    id: String(raw.id),
+    name: String(raw.filename ?? raw.file_name ?? raw.name ?? ''),
+    clientId: String(raw.client_id ?? raw.clientId ?? ''),
+    clientName: String(raw.client_name ?? raw.clientName ?? ''),
+    engagementId: String(raw.engagement_id ?? raw.engagementId ?? ''),
+    engagementTitle: String(raw.engagement_title ?? raw.engagementTitle ?? raw.engagement_name ?? ''),
+    status: ((raw.envelope_status ?? raw.status) as Document['status']) ?? 'uploaded',
+    uploadedBy: raw.uploaded_by_name
+      ? String(raw.uploaded_by_name)
+      : raw.uploaded_by
+      ? 'Staff'
+      : 'System',
+    uploadedAt: String(raw.uploaded_at ?? raw.uploadedAt ?? ''),
+    fileType: String(raw.file_type ?? raw.fileType ?? 'PDF'),
+    fileSizeKb: raw.size_bytes
+      ? Math.round(Number(raw.size_bytes) / 1024 * 10) / 10
+      : Number(raw.file_size_kb ?? raw.fileSizeKb ?? 0),
+  }
+}
+```
+
+Key changes:
+- `clientName` reads `raw.client_name` from the enriched response
+- `engagementTitle` reads `raw.engagement_title` or `raw.engagement_name`
+- `uploadedBy` shows the user's name, "Staff" for known users, "System" for null
+- `fileSizeKb` rounds to 1 decimal place
+
+Run TypeScript check after.
 
 ---
 
 ## EXECUTION ORDER
 
-1. Task 1 — app/api/esign.py (readable filename)
-2. Task 2 — frontend/src/lib/api/documents.ts (file size)
-3. Task 3 — frontend/src/app/documents/[id]/page.tsx (metadata card)
+1. Task 1 — app/schemas/document.py
+2. Task 2 — app/api/documents.py
+3. Task 3 — frontend/src/lib/api/documents.ts
 
 No migrations needed. Report every file modified.

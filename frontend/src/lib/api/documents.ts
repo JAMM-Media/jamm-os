@@ -22,13 +22,17 @@ function mapDocument(raw: Record<string, unknown>): Document {
     clientId: String(raw.client_id ?? raw.clientId ?? ''),
     clientName: String(raw.client_name ?? raw.clientName ?? ''),
     engagementId: String(raw.engagement_id ?? raw.engagementId ?? ''),
-    engagementTitle: String(raw.engagement_title ?? raw.engagementTitle ?? ''),
+    engagementTitle: String(raw.engagement_title ?? raw.engagementTitle ?? raw.engagement_name ?? ''),
     status: ((raw.envelope_status ?? raw.status) as Document['status']) ?? 'uploaded',
-    uploadedBy: String(raw.uploaded_by ?? raw.uploadedBy ?? ''),
+    uploadedBy: raw.uploaded_by_name
+      ? String(raw.uploaded_by_name)
+      : raw.uploaded_by
+      ? 'Staff'
+      : 'System',
     uploadedAt: String(raw.uploaded_at ?? raw.uploadedAt ?? ''),
     fileType: String(raw.file_type ?? raw.fileType ?? 'PDF'),
     fileSizeKb: raw.size_bytes
-      ? Number(raw.size_bytes) / 1024
+      ? Math.round(Number(raw.size_bytes) / 1024 * 10) / 10
       : Number(raw.file_size_kb ?? raw.fileSizeKb ?? 0),
   }
 }

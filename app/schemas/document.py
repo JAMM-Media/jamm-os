@@ -22,6 +22,10 @@ class DocumentOut(BaseModel):
     created_at: datetime
     updated_at: datetime
     envelope_status: Optional[str] = None
+    # Enrichment fields — populated by API layer, not from DB model
+    client_name: Optional[str] = None
+    engagement_title: Optional[str] = None
+    uploaded_by_name: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 

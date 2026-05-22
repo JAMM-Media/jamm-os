@@ -97,9 +97,33 @@ def list_documents(
         for env in envelopes:
             envelope_status_map[env.signed_document_id] = env.status
 
+    client_ids = [doc.client_id for doc in docs if doc.client_id]
+    engagement_ids = [doc.engagement_id for doc in docs if doc.engagement_id]
+    uploaded_by_ids = [doc.uploaded_by for doc in docs if doc.uploaded_by]
+
+    client_map = {}
+    if client_ids:
+        clients = db.query(Client).filter(Client.id.in_(client_ids)).all()
+        client_map = {c.id: c.name for c in clients}
+
+    engagement_map = {}
+    if engagement_ids:
+        engagements = db.query(Engagement).filter(Engagement.id.in_(engagement_ids)).all()
+        engagement_map = {e.id: e.name for e in engagements}
+
+    user_map = {}
+    if uploaded_by_ids:
+        users = db.query(User).filter(User.id.in_(uploaded_by_ids)).all()
+        user_map = {u.id: u.full_name or u.email for u in users}
+
     items = [
         DocumentOut.model_validate(doc).model_copy(
-            update={"envelope_status": envelope_status_map.get(doc.id, "uploaded")}
+            update={
+                "envelope_status": envelope_status_map.get(doc.id, "uploaded"),
+                "client_name": client_map.get(doc.client_id),
+                "engagement_title": engagement_map.get(doc.engagement_id),
+                "uploaded_by_name": user_map.get(doc.uploaded_by) if doc.uploaded_by else None,
+            }
         )
         for doc in docs
     ]
@@ -126,8 +150,17 @@ def get_document(
     ).first()
     envelope_status = envelope.status if envelope else "uploaded"
 
+    client = db.query(Client).filter(Client.id == doc.client_id).first()
+    engagement = db.query(Engagement).filter(Engagement.id == doc.engagement_id).first()
+    uploader = db.query(User).filter(User.id == doc.uploaded_by).first() if doc.uploaded_by else None
+
     return DocumentOut.model_validate(doc).model_copy(
-        update={"envelope_status": envelope_status}
+        update={
+            "envelope_status": envelope_status,
+            "client_name": client.name if client else None,
+            "engagement_title": engagement.name if engagement else None,
+            "uploaded_by_name": (uploader.full_name or uploader.email) if uploader else None,
+        }
     )
 
 
