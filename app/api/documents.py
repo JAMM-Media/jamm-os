@@ -107,6 +107,31 @@ def list_documents(
 
 
 # -----------------------------------------------------------------------
+# GET /documents/{document_id} — Return a single document
+# -----------------------------------------------------------------------
+@router.get("/{document_id}", response_model=DocumentOut)
+def get_document(
+    document_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    _: object = Depends(require_staff_or_above),
+):
+    doc = crud_document.get_document(db, document_id=document_id, firm_id=current_firm.id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    # Enrich with envelope status
+    envelope = db.query(SignatureEnvelope).filter(
+        SignatureEnvelope.signed_document_id == document_id
+    ).first()
+    envelope_status = envelope.status if envelope else "uploaded"
+
+    return DocumentOut.model_validate(doc).model_copy(
+        update={"envelope_status": envelope_status}
+    )
+
+
+# -----------------------------------------------------------------------
 # GET /documents/{document_id}/download — Return a presigned URL
 # -----------------------------------------------------------------------
 @router.get("/{document_id}/download", response_model=DocumentDownloadResponse)

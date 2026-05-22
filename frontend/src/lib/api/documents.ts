@@ -23,7 +23,7 @@ function mapDocument(raw: Record<string, unknown>): Document {
     clientName: String(raw.client_name ?? raw.clientName ?? ''),
     engagementId: String(raw.engagement_id ?? raw.engagementId ?? ''),
     engagementTitle: String(raw.engagement_title ?? raw.engagementTitle ?? ''),
-    status: (raw.status as Document['status']) ?? 'uploaded',
+    status: ((raw.envelope_status ?? raw.status) as Document['status']) ?? 'uploaded',
     uploadedBy: String(raw.uploaded_by ?? raw.uploadedBy ?? ''),
     uploadedAt: String(raw.uploaded_at ?? raw.uploadedAt ?? ''),
     fileType: String(raw.file_type ?? raw.fileType ?? 'PDF'),
