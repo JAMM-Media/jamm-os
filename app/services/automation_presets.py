@@ -51,6 +51,18 @@ def _get_preset_rules(firm_id: UUID) -> List[Dict[str, Any]]:
                     "order": 0,
                 }
             ],
+            "default_actions": [
+                {
+                    "type": AutomationActionType.send_email,
+                    "config": {
+                        "to": "client",
+                        "subject": "Reminder: Documents needed",
+                        "template": "doc_request_reminder",
+                        "delay_days": 3,
+                    },
+                    "order": 0,
+                }
+            ],  # exact copy of actions above
             "execution_count": 0,
             "last_executed_at": None,
             "created_at": now,
@@ -80,6 +92,18 @@ def _get_preset_rules(firm_id: UUID) -> List[Dict[str, Any]]:
                     "order": 0,
                 }
             ],
+            "default_actions": [
+                {
+                    "type": AutomationActionType.send_email,
+                    "config": {
+                        "to": "client",
+                        "subject": "Reminder: Signature needed",
+                        "template": "esign_reminder",
+                        "delay_days": 2,
+                    },
+                    "order": 0,
+                }
+            ],  # exact copy of actions above
             "execution_count": 0,
             "last_executed_at": None,
             "created_at": now,
@@ -105,6 +129,17 @@ def _get_preset_rules(firm_id: UUID) -> List[Dict[str, Any]]:
                     "order": 0,
                 }
             ],
+            "default_actions": [
+                {
+                    "type": AutomationActionType.send_notification,
+                    "config": {
+                        "to": "assigned_staff",
+                        "message": "A task assigned to you is now overdue",
+                        "notification_type": "task_overdue",
+                    },
+                    "order": 0,
+                }
+            ],  # exact copy of actions above
             "execution_count": 0,
             "last_executed_at": None,
             "created_at": now,
@@ -137,6 +172,22 @@ def _get_preset_rules(firm_id: UUID) -> List[Dict[str, Any]]:
                     "order": 0,
                 }
             ],
+            "default_actions": [
+                {
+                    "type": AutomationActionType.create_invoice,
+                    "config": {
+                        "line_items": [
+                            {
+                                "description": "Professional Services",
+                                "quantity": 1,
+                                "unit_price": 0,
+                            }
+                        ],
+                        "due_days_from_now": 30,
+                    },
+                    "order": 0,
+                }
+            ],  # exact copy of actions above
             "execution_count": 0,
             "last_executed_at": None,
             "created_at": now,
@@ -164,6 +215,17 @@ def _get_preset_rules(firm_id: UUID) -> List[Dict[str, Any]]:
                     "order": 0,
                 }
             ],
+            "default_actions": [
+                {
+                    "type": AutomationActionType.send_email,
+                    "config": {
+                        "to": "client",
+                        "subject": "Welcome — we're glad to have you",
+                        "template": "client_welcome",
+                    },
+                    "order": 0,
+                }
+            ],  # exact copy of actions above
             "execution_count": 0,
             "last_executed_at": None,
             "created_at": now,
@@ -192,6 +254,17 @@ def _get_preset_rules(firm_id: UUID) -> List[Dict[str, Any]]:
                     "order": 0,
                 }
             ],
+            "default_actions": [
+                {
+                    "type": AutomationActionType.send_notification,
+                    "config": {
+                        "to": "assigned_staff",
+                        "message": "Client has uploaded all requested documents",
+                        "notification_type": "doc_request_completed",
+                    },
+                    "order": 0,
+                }
+            ],  # exact copy of actions above
             "execution_count": 0,
             "last_executed_at": None,
             "created_at": now,
@@ -217,6 +290,17 @@ def _get_preset_rules(firm_id: UUID) -> List[Dict[str, Any]]:
                     "order": 0,
                 }
             ],
+            "default_actions": [
+                {
+                    "type": AutomationActionType.send_email,
+                    "config": {
+                        "to": "client",
+                        "subject": "Invoice payment overdue",
+                        "template": "invoice_overdue_reminder",
+                    },
+                    "order": 0,
+                }
+            ],  # exact copy of actions above
             "execution_count": 0,
             "last_executed_at": None,
             "created_at": now,
@@ -245,6 +329,17 @@ def _get_preset_rules(firm_id: UUID) -> List[Dict[str, Any]]:
                     "order": 0,
                 }
             ],
+            "default_actions": [
+                {
+                    "type": AutomationActionType.send_notification,
+                    "config": {
+                        "to": "assigned_staff",
+                        "message": "A new recurring engagement has been created and is ready for review",
+                        "notification_type": "recurring_engagement_created",
+                    },
+                    "order": 0,
+                }
+            ],  # exact copy of actions above
             "execution_count": 0,
             "last_executed_at": None,
             "created_at": now,
@@ -278,6 +373,23 @@ def _get_preset_rules(firm_id: UUID) -> List[Dict[str, Any]]:
                     "order": 2,
                 },
             ],
+            "default_actions": [
+                {
+                    "type": AutomationActionType.send_email,
+                    "config": {"template": "client_welcome"},
+                    "order": 0,
+                },
+                {
+                    "type": AutomationActionType.create_task,
+                    "config": {"title": "Collect prior year return"},
+                    "order": 1,
+                },
+                {
+                    "type": AutomationActionType.create_task,
+                    "config": {"title": "Verify contact info and entity type"},
+                    "order": 2,
+                },
+            ],  # exact copy of actions above
             "execution_count": 0,
             "last_executed_at": None,
             "created_at": now,
@@ -306,6 +418,18 @@ def _get_preset_rules(firm_id: UUID) -> List[Dict[str, Any]]:
                     "order": 1,
                 },
             ],
+            "default_actions": [
+                {
+                    "type": AutomationActionType.send_email,
+                    "config": {"template": "extension_confirmation"},
+                    "order": 0,
+                },
+                {
+                    "type": AutomationActionType.create_task,
+                    "config": {"title": "Prepare return by extended deadline"},
+                    "order": 1,
+                },
+            ],  # exact copy of actions above
             "execution_count": 0,
             "last_executed_at": None,
             "created_at": now,
@@ -339,6 +463,23 @@ def _get_preset_rules(firm_id: UUID) -> List[Dict[str, Any]]:
                     "order": 2,
                 },
             ],
+            "default_actions": [
+                {
+                    "type": AutomationActionType.send_notification,
+                    "config": {"to": "staff"},
+                    "order": 0,
+                },
+                {
+                    "type": AutomationActionType.create_task,
+                    "config": {"title": "Renew Form 8821/2848 before expiry"},
+                    "order": 1,
+                },
+                {
+                    "type": AutomationActionType.send_email,
+                    "config": {"template": "irs_auth_expiry_warning"},
+                    "order": 2,
+                },
+            ],  # exact copy of actions above
             "execution_count": 0,
             "last_executed_at": None,
             "created_at": now,
@@ -373,6 +514,23 @@ def _get_preset_rules(firm_id: UUID) -> List[Dict[str, Any]]:
                     "order": 2,
                 },
             ],
+            "default_actions": [
+                {
+                    "type": AutomationActionType.send_email,
+                    "config": {"template": "invoice_overdue_reminder", "delay_days": 1},
+                    "order": 0,
+                },
+                {
+                    "type": AutomationActionType.send_email,
+                    "config": {"template": "invoice_overdue_followup", "delay_days": 7},
+                    "order": 1,
+                },
+                {
+                    "type": AutomationActionType.send_notification,
+                    "config": {"to": "firm_owner", "delay_days": 14},
+                    "order": 2,
+                },
+            ],  # exact copy of actions above
             "execution_count": 0,
             "last_executed_at": None,
             "created_at": now,
@@ -397,6 +555,16 @@ def _get_preset_rules(firm_id: UUID) -> List[Dict[str, Any]]:
                     "order": 0,
                 },
             ],
+            "default_actions": [
+                {
+                    "type": AutomationActionType.send_notification,
+                    "config": {
+                        "to": "assigned_staff",
+                        "message": "Engagement deadline in 14 days — check task count",
+                    },
+                    "order": 0,
+                },
+            ],  # exact copy of actions above
             "execution_count": 0,
             "last_executed_at": None,
             "created_at": now,
@@ -436,6 +604,28 @@ def _get_preset_rules(firm_id: UUID) -> List[Dict[str, Any]]:
                     "order": 3,
                 },
             ],
+            "default_actions": [
+                {
+                    "type": AutomationActionType.create_task,
+                    "config": {"title": "Upload final return to client portal"},
+                    "order": 0,
+                },
+                {
+                    "type": AutomationActionType.create_invoice,
+                    "config": {"source": "time_entries"},
+                    "order": 1,
+                },
+                {
+                    "type": AutomationActionType.send_email,
+                    "config": {"template": "return_ready"},
+                    "order": 2,
+                },
+                {
+                    "type": AutomationActionType.create_task,
+                    "config": {"title": "Confirm client acknowledgment within 5 days"},
+                    "order": 3,
+                },
+            ],  # exact copy of actions above
             "execution_count": 0,
             "last_executed_at": None,
             "created_at": now,
@@ -470,6 +660,23 @@ def _get_preset_rules(firm_id: UUID) -> List[Dict[str, Any]]:
                     "order": 2,
                 },
             ],
+            "default_actions": [
+                {
+                    "type": AutomationActionType.send_email,
+                    "config": {"template": "client_portal_welcome"},
+                    "order": 0,
+                },
+                {
+                    "type": AutomationActionType.create_task,
+                    "config": {"title": "Schedule onboarding call"},
+                    "order": 1,
+                },
+                {
+                    "type": AutomationActionType.create_task,
+                    "config": {"title": "Collect entity documents"},
+                    "order": 2,
+                },
+            ],  # exact copy of actions above
             "execution_count": 0,
             "last_executed_at": None,
             "created_at": now,

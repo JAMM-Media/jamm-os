@@ -148,6 +148,25 @@ def toggle_rule(
     return result
 
 
+# --- POST /{rule_id}/reset-to-default ---
+@router.post("/{rule_id}/reset-to-default", response_model=AutomationRuleOut)
+def reset_rule_to_default(
+    rule_id: UUID,
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    _: User = Depends(require_manager_or_above),
+):
+    rule = crud_rule.get_rule(db, rule_id=rule_id, firm_id=current_firm.id)
+    if not rule:
+        raise HTTPException(status_code=404, detail="Automation rule not found")
+    if not rule.default_actions:
+        raise HTTPException(status_code=400, detail="No default actions stored for this rule")
+    rule.actions = rule.default_actions
+    db.commit()
+    db.refresh(rule)
+    return rule
+
+
 # --- POST /{rule_id}/simulate ---
 @router.post("/{rule_id}/simulate")
 def simulate_rule(

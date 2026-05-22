@@ -24,6 +24,7 @@ class AutomationRule(Base):
     )
     trigger_conditions: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     actions: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    default_actions: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     execution_count: Mapped[int] = mapped_column(default=0, nullable=False)
     last_executed_at: Mapped[datetime | None] = mapped_column(nullable=True)
     created_at: Mapped[datetime] = mapped_column(

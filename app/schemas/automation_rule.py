@@ -58,6 +58,7 @@ class AutomationRuleOut(AutomationRuleBase):
     last_executed_at: Optional[datetime]
     created_at: datetime
     updated_at: datetime
+    default_actions: List[Any] = []
     model_config = ConfigDict(from_attributes=True)
 
 

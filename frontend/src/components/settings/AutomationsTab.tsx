@@ -6,6 +6,14 @@ import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import api from '@/lib/api'
 import { cn } from '@/lib/utils'
+import { useAuth } from '@/lib/hooks/useAuth'
+import AutomationEditModal from './AutomationEditModal'
+
+type Action = {
+  type: string
+  config: Record<string, unknown>
+  order: number
+}
 
 interface AutomationRule {
   id: string
@@ -14,6 +22,8 @@ interface AutomationRule {
   is_enabled: boolean
   execution_count: number
   last_executed_at: string | null
+  actions: Action[]
+  default_actions: Action[]
 }
 
 const DEFAULT_ON_PRESETS = new Set([
@@ -80,12 +90,16 @@ function RuleCard({
   rule,
   section,
   isPending,
+  canEdit,
   onToggle,
+  onEdit,
 }: {
   rule: AutomationRule
   section: 'active' | 'available'
   isPending: boolean
+  canEdit: boolean
   onToggle: (rule: AutomationRule) => void
+  onEdit: (rule: AutomationRule) => void
 }) {
   const [expanded, setExpanded] = useState(false)
   const showBadge =
@@ -134,12 +148,22 @@ function RuleCard({
         </span>
         <span className="text-[11px] text-[#6B7280] dark:text-[#9CA3AF]">{lastRun}</span>
       </div>
-      <ToggleSwitch
-        checked={rule.is_enabled}
-        disabled={isPending}
-        loading={isPending}
-        onChange={() => onToggle(rule)}
-      />
+      <div className="flex items-center gap-3 shrink-0">
+        {canEdit && (
+          <button
+            onClick={() => onEdit(rule)}
+            className="text-[12px] text-brand dark:text-[#4A7FA5] hover:underline focus:outline-none"
+          >
+            Edit
+          </button>
+        )}
+        <ToggleSwitch
+          checked={rule.is_enabled}
+          disabled={isPending}
+          loading={isPending}
+          onChange={() => onToggle(rule)}
+        />
+      </div>
     </div>
   )
 }
@@ -149,10 +173,14 @@ const sectionLabelClass =
 const emptyStateClass = 'text-[12px] text-[#6B7280] text-center py-6'
 
 export default function AutomationsTab() {
+  const { user } = useAuth()
+  const canEdit = user?.role === 'firm_owner' || user?.role === 'manager'
+
   const [rules, setRules] = useState<AutomationRule[]>([])
   const [loading, setLoading] = useState(true)
   const [fetchError, setFetchError] = useState(false)
   const [pendingIds, setPendingIds] = useState<Set<string>>(new Set())
+  const [editingRule, setEditingRule] = useState<AutomationRule | null>(null)
 
   const fetchRules = useCallback(() => {
     setLoading(true)
@@ -245,7 +273,9 @@ export default function AutomationsTab() {
             rule={rule}
             section="active"
             isPending={pendingIds.has(rule.id)}
+            canEdit={canEdit}
             onToggle={handleToggle}
+            onEdit={setEditingRule}
           />
         ))
       )}
@@ -260,9 +290,22 @@ export default function AutomationsTab() {
             rule={rule}
             section="available"
             isPending={pendingIds.has(rule.id)}
+            canEdit={canEdit}
             onToggle={handleToggle}
+            onEdit={setEditingRule}
           />
         ))
+      )}
+
+      {editingRule && (
+        <AutomationEditModal
+          rule={editingRule}
+          onClose={() => setEditingRule(null)}
+          onSaved={() => {
+            setEditingRule(null)
+            fetchRules()
+          }}
+        />
       )}
     </div>
   )
