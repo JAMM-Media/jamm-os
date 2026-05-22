@@ -25,6 +25,10 @@ function MagicLinkContent() {
           return
         }
         const data = await res.json()
+        if (!data.access_token) {
+          setError('Invalid response from server. Please try again.')
+          return
+        }
         localStorage.setItem('access_token', data.access_token)
         router.replace('/dashboard')
       })

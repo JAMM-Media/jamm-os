@@ -10,114 +10,135 @@ Never modify the database schema in this task — no migrations.
 Tenant isolation is absolute — every query scoped to firm_id.
 Routers are thin — no business logic in routers ever.
 
-== TASK: Fix Session Timeout — Staff JWT and Silent Refresh ==
+== TASK: Diagnose and Fix Magic Link — Staff and Portal ==
 
-The staff side of JAMM PX is kicking users out after approximately
-30-60 minutes. There is a refresh token system in place that should
-silently renew the access token before it expires, but it is not
-working correctly. This task fixes the root cause and adds a
-belt-and-suspenders config change.
+Magic links may be globally broken. There are two separate magic
+link systems in the codebase:
 
-Do all four steps in order. Report findings after Step 1 before
-proceeding if anything unexpected is found.
+1. Staff magic link — staff log into the app via
+   /login/magic?token=... instead of password
+2. Portal magic link — firm staff send a client a link to access
+   their portal at /portal/auth?token=...
 
-== STEP 1 — DIAGNOSE THE SILENT REFRESH INTERCEPTOR ==
+Both need to be diagnosed and fixed if broken. Work through all
+steps in order.
 
-Read the following files in full before making any changes:
+== STEP 1 — DIAGNOSE STAFF MAGIC LINK END TO END ==
 
-- frontend/src/lib/api.ts
-- frontend/src/lib/hooks/useAuth.ts
-- frontend/src/app/api/backend/auth/refresh/route.ts (if it exists)
-- Any Next.js API route under frontend/src/app/api/backend/auth/
+Read these files in full:
 
-Look for the Axios interceptor that handles 401 responses. It should:
-1. Catch a 401 from any API call
-2. Call the /auth/refresh endpoint using the jamm_refresh_token cookie
-3. Retry the original request with the new access token
-4. Redirect to /login only if refresh fails
+- app/api/auth.py (the request-magic-link and verify-magic-link
+  endpoints)
+- app/services/staff_magic_link.py
+- frontend/src/app/(auth)/login/magic/page.tsx
+- frontend/src/app/api/backend/auth/verify-magic-link/route.ts
+  (if it exists — check if this Next.js proxy route exists)
+- frontend/src/app/api/backend/auth/request-magic-link/route.ts
+  (if it exists)
 
-Report exactly what the interceptor currently does. Common failure
-modes to check for:
-- The interceptor exists but is never registered (not imported in
-  the right place)
-- The interceptor makes the refresh call but does not retry the
-  original request
-- The refresh API route does not correctly forward the
-  jamm_refresh_token cookie to the backend
-- The interceptor triggers an infinite loop on the /auth/refresh
-  endpoint itself (refresh failing causes another 401 which
-  triggers another refresh attempt)
+Trace the full flow:
+1. User enters email on login page and requests a magic link
+2. Backend generates token, stores hash, sends email with URL
+3. User clicks link, lands on /login/magic?token=...
+4. Frontend page reads token from URL, calls verify endpoint
+5. Backend verifies hash, clears token, returns JWT
+6. Frontend stores JWT and redirects to /dashboard
 
-== STEP 2 — FIX THE SILENT REFRESH INTERCEPTOR ==
+For each step identify whether it works correctly or has a
+failure point. Specifically check:
 
-Based on the diagnosis in Step 1, fix the interceptor so it works
-correctly. The correct behavior is:
+- Does the verify-magic-link Next.js proxy route exist? If not
+  this is the primary failure — the frontend calls
+  /api/backend/auth/verify-magic-link but there may be no
+  dedicated route, meaning the catch-all proxy handles it. Check
+  whether the catch-all proxy correctly handles GET requests with
+  query parameters.
+- After the session timeout fix in the previous task, the
+  frontend now stores access_token in localStorage and uses the
+  Axios interceptor. Does the magic page correctly store the
+  returned token in localStorage after verification? Check
+  frontend/src/app/(auth)/login/magic/page.tsx — it currently
+  calls fetch() directly, not the Axios instance. This means the
+  new interceptor does not apply. The page must store the token
+  in localStorage after a successful verify so the rest of the
+  app can use it.
+- Does the email contain the correct URL pointing to the right
+  frontend domain? Check that FRONTEND_URL in the backend config
+  matches the production URL.
 
-1. Every Axios request goes out normally
-2. If a 401 comes back AND the request was not itself to
-   /auth/refresh:
-   a. Call POST /api/backend/auth/refresh (the Next.js route that
-      proxies to the backend)
-   b. If refresh succeeds: store the new access_token in
-      localStorage under the key 'access_token', then retry the
-      original failed request once with the new token in the
-      Authorization header
-   c. If refresh fails (401 or any error): clear localStorage,
-      redirect to /login
-3. If a 401 comes back from /auth/refresh itself: clear
-   localStorage, redirect to /login — do not retry
+== STEP 2 — DIAGNOSE PORTAL MAGIC LINK END TO END ==
 
-Make sure the interceptor is only registered once. If useAuth or
-api.ts both try to register interceptors, consolidate so there is
-exactly one 401 interceptor on the Axios instance.
+Read these files in full:
 
-The Next.js API route at
-frontend/src/app/api/backend/auth/refresh/route.ts must:
-- Accept POST requests
-- Forward the jamm_refresh_token cookie from the browser to the
-  backend POST /auth/refresh endpoint
-- Return the new access_token in the JSON response body
-- Forward the new jamm_refresh_token Set-Cookie header from the
-  backend response back to the browser
+- app/api/portal.py (the portal magic-link endpoints)
+- app/services/portal_magic_link.py
+- frontend/src/app/portal/auth/page.tsx (if it exists)
+- frontend/src/app/api/backend/portal/auth/route.ts (if it
+  exists)
 
-If this route does not exist, create it.
+Trace the full portal magic link flow:
+1. Staff member clicks Send Portal Link on client detail page
+2. Backend generates token, stores hash on PortalSession,
+   sends email to client with URL
+3. Client clicks link, lands on /portal/auth?token=...
+4. Frontend reads token, calls exchange endpoint
+5. Backend verifies hash, clears token, returns portal JWT
+6. Frontend stores portal JWT and redirects to portal home
 
-== STEP 3 — EXTEND JWT AND MAGIC LINK EXPIRY IN CONFIG ==
+Check the same failure points as Step 1 — missing proxy routes,
+token not stored correctly, wrong URL in email.
 
-Belt-and-suspenders fix alongside the interceptor repair.
+== STEP 3 — FIX ALL IDENTIFIED ISSUES ==
 
-File: app/core/config.py
+Fix every failure point identified in Steps 1 and 2. Common
+fixes needed:
 
-Change:
-  ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
-To:
-  ACCESS_TOKEN_EXPIRE_MINUTES: int = 480
+FIX A — Staff magic link page not storing token in localStorage
+If frontend/src/app/(auth)/login/magic/page.tsx calls fetch()
+and then does localStorage.setItem('access_token', ...) only on
+success but the key or storage call is wrong, fix it. The page
+must store the token under the key 'access_token' in localStorage
+after a successful verify response, then redirect to /dashboard.
+This is consistent with how the new Axios interceptor expects
+to find the token.
 
-This sets the staff JWT to 8 hours. Even if the silent refresh
-has an edge case, a firm owner will not be kicked out mid-workday.
+FIX B — Missing Next.js proxy routes
+If the catch-all proxy at
+frontend/src/app/api/backend/[...path]/route.ts handles GET
+requests with query parameters correctly, no dedicated route is
+needed. Verify this by reading the catch-all proxy. If it does
+not forward query parameters, create dedicated routes:
+- frontend/src/app/api/backend/auth/verify-magic-link/route.ts
+- frontend/src/app/api/backend/portal/auth/route.ts
+Each route must forward all query parameters to the backend and
+return the response body and status unchanged.
 
-File: app/services/staff_magic_link.py
+FIX C — Portal auth page missing or broken
+If frontend/src/app/portal/auth/page.tsx does not exist or does
+not correctly store the portal JWT and redirect to the portal
+home, fix or create it. The portal uses a separate token key —
+check what key the portal currently uses for its JWT (look for
+how the portal reads its token in portal page components) and
+store the returned token under that same key.
 
-Change:
-  _MAGIC_LINK_EXPIRY_MINUTES = 15
-To:
-  _MAGIC_LINK_EXPIRY_MINUTES = 30
-
-The 15-minute window is too short. Email delivery can take a few
-minutes and users do not always click immediately. 30 minutes is
-the industry standard for magic link expiry.
+FIX D — Wrong FRONTEND_URL in email
+If the magic link URL in the email points to localhost or the
+wrong domain, the backend is reading FRONTEND_URL from the
+environment incorrectly. Do not hardcode the URL — flag this for
+Andrew to verify the FRONTEND_URL environment variable on the
+droplet matches https://app.jammpx.com.
 
 == STEP 4 — VERIFY ==
 
-After all changes:
+After all fixes:
 
-1. Confirm app/core/config.py shows ACCESS_TOKEN_EXPIRE_MINUTES = 480
-2. Confirm app/services/staff_magic_link.py shows
-   _MAGIC_LINK_EXPIRY_MINUTES = 30
-3. Confirm the Axios interceptor is registered exactly once
-4. Confirm the /api/backend/auth/refresh Next.js route exists and
-   correctly forwards cookies in both directions
-5. Print a summary of every file modified and what changed in
-   each one
+1. List every file created or modified and what changed
+2. Trace the staff magic link flow end to end in plain English
+   confirming each step now works
+3. Trace the portal magic link flow end to end in plain English
+   confirming each step now works
+4. Flag anything that requires Andrew to verify on the server
+   (environment variables, email delivery) that cannot be
+   confirmed from code alone
 
 Do not restart any services — Andrew will handle deployment.
