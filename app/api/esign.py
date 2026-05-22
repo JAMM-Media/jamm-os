@@ -369,6 +369,12 @@ async def handle_webhook(
             raise HTTPException(status_code=403, detail="Invalid webhook signature")
 
     event_type = event.get("event_type")
+    import logging as _logging
+    _logging.getLogger(__name__).warning(
+        "Webhook received: event_type=%s signature_request_id=%s",
+        event_type,
+        data.get("signature_request", {}).get("signature_request_id", "none"),
+    )
 
     # Dropbox Sign requires responding with {"status": "ok"} for the test event
     if event_type == "callback_test":
@@ -391,6 +397,14 @@ async def handle_webhook(
     if envelope is None:
         from fastapi.responses import PlainTextResponse
         return PlainTextResponse("Hello API Event Received")
+
+    _logging.getLogger(__name__).warning(
+        "Webhook envelope lookup: provider_id=%s found=%s status=%s signed_doc_id=%s",
+        signature_request_id,
+        envelope is not None,
+        envelope.status if envelope else "n/a",
+        envelope.signed_document_id if envelope else "n/a",
+    )
 
     if event_type == "signature_request_signed":
         # Skip if already processed — envelope already has a signed document
