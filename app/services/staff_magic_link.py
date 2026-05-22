@@ -19,7 +19,7 @@ from app.services.email_service import EmailService
 settings = get_settings()
 logger = logging.getLogger(__name__)
 
-_MAGIC_LINK_EXPIRY_MINUTES = 15
+_MAGIC_LINK_EXPIRY_MINUTES = 30
 
 
 def request_staff_magic_link(email: str, db: Session) -> None:
