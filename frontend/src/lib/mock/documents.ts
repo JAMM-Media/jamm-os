@@ -3,6 +3,7 @@
 export type DocumentStatus =
   | 'uploaded'
   | 'pending'
+  | 'pending_signature'
   | 'signed'
   | 'rejected'
 

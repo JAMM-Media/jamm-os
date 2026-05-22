@@ -2,7 +2,7 @@
 
 import { cn } from '@/lib/utils'
 
-type BadgeVariant =
+export type BadgeVariant =
   | 'in-progress'
   | 'awaiting-docs'
   | 'complete'
@@ -12,6 +12,7 @@ type BadgeVariant =
   | 'inactive'
   | 'uploaded'
   | 'pending'
+  | 'pending_signature'
   | 'signed'
   | 'rejected'
   | 'draft'
@@ -81,6 +82,11 @@ const variantConfig: Record<BadgeVariant, { bg: string; text: string; border?: s
     bg: 'bg-status-amber',
     text: 'text-status-amber-text',
     defaultLabel: 'Pending',
+  },
+  pending_signature: {
+    bg: 'bg-[#DBEAFE]',
+    text: 'text-[#1E40AF]',
+    defaultLabel: 'Pending Signature',
   },
   signed: {
     bg: 'bg-status-green',

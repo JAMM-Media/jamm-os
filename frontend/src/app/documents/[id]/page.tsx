@@ -5,7 +5,7 @@ import { useState } from 'react'
 import { useParams } from 'next/navigation'
 import { AppShell } from '@/components/layout/AppShell'
 import { Breadcrumb } from '@/components/layout/Breadcrumb'
-import { StatusBadge } from '@/components/ui/StatusBadge'
+import { StatusBadge, BadgeVariant } from '@/components/ui/StatusBadge'
 import { documentsApi } from '@/lib/api'
 import { useFetch } from '@/lib/hooks/useFetch'
 import { FileText } from 'lucide-react'
@@ -75,7 +75,7 @@ export default function DocumentDetailPage() {
                 {doc.name}
               </h1>
               <div className="flex items-center gap-2">
-                <StatusBadge variant={doc.status} />
+                <StatusBadge variant={doc.status as BadgeVariant} />
                 <span className="text-[12px] text-[#6B7280]">
                   {doc.clientName} · {doc.fileType} · {formatFileSize(doc.fileSizeKb)} · Uploaded {doc.uploadedAt}
                 </span>
