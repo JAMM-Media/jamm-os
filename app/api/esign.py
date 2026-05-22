@@ -393,6 +393,10 @@ async def handle_webhook(
         return PlainTextResponse("Hello API Event Received")
 
     if event_type == "signature_request_signed":
+        # Skip if already processed — envelope already has a signed document
+        if envelope.signed_document_id:
+            from fastapi.responses import PlainTextResponse
+            return PlainTextResponse("Hello API Event Received")
         try:
             pdf_bytes = dropbox_sign.download_signed_document(signature_request_id)
             store_signed_document(
@@ -403,6 +407,15 @@ async def handle_webhook(
                 envelope.provider_envelope_id,
                 pdf_bytes,
             )
+        except HTTPException as _hex:
+            if _hex.status_code == 409:
+                # Already downloaded in a previous webhook attempt — treat as success
+                pass
+            else:
+                import logging as _log
+                _log.getLogger(__name__).error(
+                    "Failed to store signed document: %s", _hex, exc_info=True
+                )
         except Exception as _exc:
             import logging as _log
             _log.getLogger(__name__).error(

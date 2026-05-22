@@ -96,10 +96,15 @@ def download_signed_document(signature_request_id: str) -> bytes:
         timeout=60,
     )
 
+    if r.status_code == 409:
+        raise HTTPException(
+            status_code=409,
+            detail="Signed document already downloaded — Dropbox Sign only allows one download per signature request"
+        )
     if not r.ok:
         raise HTTPException(
             status_code=502,
-            detail=f"Dropbox Sign API error: {r.status_code}",
+            detail=f"Dropbox Sign API error: {r.status_code}"
         )
 
     return r.content

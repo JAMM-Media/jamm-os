@@ -1,176 +1,86 @@
-# JAMM PX — Fix Document Response Enrichment
+# JAMM PX — Quick Fix
 
-Read every instruction in this file before writing a single line of code. Execute in the order listed.
-
----
-
-## TASK 1 — Backend: enrich DocumentOut with client_name, engagement_title, uploaded_by_name
-
-**File to edit:** `app/schemas/document.py`
-
-Add optional enrichment fields to `DocumentOut`:
-
-```python
-class DocumentOut(BaseModel):
-    id: uuid.UUID
-    firm_id: uuid.UUID
-    client_id: uuid.UUID
-    engagement_id: uuid.UUID
-    uploaded_by: Optional[uuid.UUID]
-    filename: str
-    s3_key: str
-    content_type: str
-    size_bytes: int
-    category: Optional[str] = "other"
-    visibility: str = "internal"
-    created_at: datetime
-    updated_at: datetime
-    envelope_status: Optional[str] = None
-    # Enrichment fields — populated by API layer, not from DB model
-    client_name: Optional[str] = None
-    engagement_title: Optional[str] = None
-    uploaded_by_name: Optional[str] = None
-
-    model_config = ConfigDict(from_attributes=True)
-```
+Read every instruction in this file before writing a single line of code.
 
 ---
 
-## TASK 2 — Backend: populate enrichment fields in document list and get endpoints
+## TASK 1 — Handle 409 from Dropbox Sign download in store_signed_document
 
-**File to edit:** `app/api/documents.py`
+**File to edit:** `app/api/esign.py`
 
-The list endpoint already does manual pagination. Update it to also populate `client_name`, `engagement_title`, and `uploaded_by_name`.
+In the `store_signed_document` function, find where `dropbox_sign.download_signed_document` is called. Currently it's called in `handle_webhook` before `store_signed_document`. The 409 means Dropbox Sign already served the PDF to a previous webhook attempt.
 
-After the existing envelope status enrichment block, add:
+The fix has two parts:
 
+### Part A — Check if envelope already has a signed document before downloading
+
+In `handle_webhook`, find:
 ```python
-# Fetch client names
-from app.models.client import Client
-from app.models.engagement import Engagement
-from app.models.user import User
-
-client_ids = [doc.client_id for doc in docs if doc.client_id]
-engagement_ids = [doc.engagement_id for doc in docs if doc.engagement_id]
-uploaded_by_ids = [doc.uploaded_by for doc in docs if doc.uploaded_by]
-
-client_map = {}
-if client_ids:
-    clients = db.query(Client).filter(Client.id.in_(client_ids)).all()
-    client_map = {c.id: c.name for c in clients}
-
-engagement_map = {}
-if engagement_ids:
-    engagements = db.query(Engagement).filter(Engagement.id.in_(engagement_ids)).all()
-    engagement_map = {e.id: e.name for e in engagements}
-
-user_map = {}
-if uploaded_by_ids:
-    users = db.query(User).filter(User.id.in_(uploaded_by_ids)).all()
-    user_map = {u.id: u.full_name or u.email for u in users}
+if event_type == "signature_request_signed":
+    try:
+        pdf_bytes = dropbox_sign.download_signed_document(signature_request_id)
+        store_signed_document(
 ```
 
-Then update the `items` list to include these:
+Replace with:
+```python
+if event_type == "signature_request_signed":
+    # Skip if already processed — envelope already has a signed document
+    if envelope.signed_document_id:
+        return PlainTextResponse("Hello API Event Received")
+    try:
+        pdf_bytes = dropbox_sign.download_signed_document(signature_request_id)
+        store_signed_document(
+```
+
+### Part B — Handle 409 gracefully in the download service
+
+**File to edit:** `app/services/dropbox_sign.py`
+
+Find the `download_signed_document` function. It makes a GET request to Dropbox Sign. Find where it raises on non-ok status and add a specific check for 409:
 
 ```python
-items = [
-    DocumentOut.model_validate(doc).model_copy(
-        update={
-            "envelope_status": envelope_status_map.get(doc.id, "uploaded"),
-            "client_name": client_map.get(doc.client_id),
-            "engagement_title": engagement_map.get(doc.engagement_id),
-            "uploaded_by_name": user_map.get(doc.uploaded_by) if doc.uploaded_by else None,
-        }
+if r.status_code == 409:
+    raise HTTPException(
+        status_code=409,
+        detail="Signed document already downloaded — Dropbox Sign only allows one download per signature request"
     )
-    for doc in docs
-]
+if not r.ok:
+    raise HTTPException(
+        status_code=502,
+        detail=f"Dropbox Sign API error: {r.status_code}"
+    )
 ```
 
-Apply the same enrichment to the `GET /documents/{document_id}` single endpoint. After the envelope lookup, add:
+### Part C — Catch 409 in handle_webhook and treat as success
+
+Back in `handle_webhook`, update the try/except around `store_signed_document`:
 
 ```python
-from app.models.client import Client
-from app.models.engagement import Engagement  
-from app.models.user import User
-
-client = db.query(Client).filter(Client.id == doc.client_id).first()
-engagement = db.query(Engagement).filter(Engagement.id == doc.engagement_id).first()
-uploader = db.query(User).filter(User.id == doc.uploaded_by).first() if doc.uploaded_by else None
-
-return DocumentOut.model_validate(doc).model_copy(
-    update={
-        "envelope_status": envelope_status,
-        "client_name": client.name if client else None,
-        "engagement_title": engagement.name if engagement else None,
-        "uploaded_by_name": (uploader.full_name or uploader.email) if uploader else None,
-    }
-)
+    try:
+        pdf_bytes = dropbox_sign.download_signed_document(signature_request_id)
+        store_signed_document(
+            str(envelope.id),
+            str(envelope.firm_id),
+            str(envelope.client_id),
+            envelope.engagement_id,
+            envelope.provider_envelope_id,
+            pdf_bytes,
+        )
+    except HTTPException as _hex:
+        if _hex.status_code == 409:
+            # Already downloaded in a previous webhook attempt — treat as success
+            pass
+        else:
+            import logging as _log
+            _log.getLogger(__name__).error(
+                "Failed to store signed document: %s", _hex, exc_info=True
+            )
+    except Exception as _exc:
+        import logging as _log
+        _log.getLogger(__name__).error(
+            "Failed to store signed document: %s", _exc, exc_info=True
+        )
 ```
 
----
-
-## TASK 3 — Frontend: use enrichment fields in mapDocument and fix file size display
-
-**File to edit:** `frontend/src/lib/api/documents.ts`
-
-Update the `Document` interface to include the new fields:
-
-```typescript
-export interface Document {
-  id: string
-  name: string
-  clientId: string
-  clientName: string
-  engagementId: string
-  engagementTitle: string
-  status: 'uploaded' | 'pending' | 'pending_signature' | 'signed' | 'rejected'
-  uploadedBy: string
-  uploadedAt: string
-  fileType: string
-  fileSizeKb: number
-}
-```
-
-Update `mapDocument` to use the enrichment fields:
-
-```typescript
-function mapDocument(raw: Record<string, unknown>): Document {
-  return {
-    id: String(raw.id),
-    name: String(raw.filename ?? raw.file_name ?? raw.name ?? ''),
-    clientId: String(raw.client_id ?? raw.clientId ?? ''),
-    clientName: String(raw.client_name ?? raw.clientName ?? ''),
-    engagementId: String(raw.engagement_id ?? raw.engagementId ?? ''),
-    engagementTitle: String(raw.engagement_title ?? raw.engagementTitle ?? raw.engagement_name ?? ''),
-    status: ((raw.envelope_status ?? raw.status) as Document['status']) ?? 'uploaded',
-    uploadedBy: raw.uploaded_by_name
-      ? String(raw.uploaded_by_name)
-      : raw.uploaded_by
-      ? 'Staff'
-      : 'System',
-    uploadedAt: String(raw.uploaded_at ?? raw.uploadedAt ?? ''),
-    fileType: String(raw.file_type ?? raw.fileType ?? 'PDF'),
-    fileSizeKb: raw.size_bytes
-      ? Math.round(Number(raw.size_bytes) / 1024 * 10) / 10
-      : Number(raw.file_size_kb ?? raw.fileSizeKb ?? 0),
-  }
-}
-```
-
-Key changes:
-- `clientName` reads `raw.client_name` from the enriched response
-- `engagementTitle` reads `raw.engagement_title` or `raw.engagement_name`
-- `uploadedBy` shows the user's name, "Staff" for known users, "System" for null
-- `fileSizeKb` rounds to 1 decimal place
-
-Run TypeScript check after.
-
----
-
-## EXECUTION ORDER
-
-1. Task 1 — app/schemas/document.py
-2. Task 2 — app/api/documents.py
-3. Task 3 — frontend/src/lib/api/documents.ts
-
-No migrations needed. Report every file modified.
+No frontend changes. No migration needed.
