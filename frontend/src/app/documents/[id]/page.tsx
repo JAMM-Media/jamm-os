@@ -82,17 +82,48 @@ export default function DocumentDetailPage() {
               </div>
             </div>
           </div>
-          <button
-            onClick={handleDownload}
-            className="h-9 px-3 rounded-[6px] bg-brand dark:bg-brand-btn text-white text-[13px] font-medium hover:opacity-90 transition-opacity flex-shrink-0"
-          >
-            Download
-          </button>
         </div>
-        <div className="bg-surface-card dark:bg-dark-card rounded-card p-4">
-          <p className="text-[12px] text-[#6B7280]">
-            Document preview and version history coming in a future phase.
-          </p>
+        <div className="flex flex-col gap-3">
+          {/* Document info card */}
+          <div className="bg-surface-card dark:bg-dark-card rounded-[8px] border border-[0.5px] border-surface-border dark:border-dark-border overflow-hidden">
+            <div className="px-4 py-2.5 border-b border-[0.5px] border-surface-border dark:border-dark-border bg-[#EDEEF0] dark:bg-[#252525]">
+              <p className="text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em]">Document Details</p>
+            </div>
+            <div className="grid grid-cols-2 gap-0">
+              {[
+                { label: 'Client', value: doc.clientName || '—' },
+                { label: 'Engagement', value: doc.engagementTitle || '—' },
+                { label: 'File Type', value: doc.fileType || '—' },
+                { label: 'File Size', value: doc.fileSizeKb > 0 ? `${doc.fileSizeKb.toFixed(0)} KB` : '—' },
+                { label: 'Uploaded', value: doc.uploadedAt || '—' },
+                { label: 'Uploaded By', value: doc.uploadedBy || 'System' },
+              ].map((row, i) => (
+                <div
+                  key={row.label}
+                  className={`px-4 py-3 flex flex-col gap-0.5 ${
+                    i < 4 ? 'border-b border-[0.5px] border-surface-border dark:border-dark-border' : ''
+                  }`}
+                >
+                  <p className="text-[11px] text-[#6B7280]">{row.label}</p>
+                  <p className="text-[12px] font-medium text-brand dark:text-[#EDEEF0]">{row.value}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Download CTA */}
+          <div className="bg-surface-card dark:bg-dark-card rounded-[8px] border border-[0.5px] border-surface-border dark:border-dark-border p-4 flex items-center justify-between">
+            <div>
+              <p className="text-[13px] font-medium text-brand dark:text-[#EDEEF0]">Download Document</p>
+              <p className="text-[11px] text-[#6B7280] mt-0.5">Opens a secure link valid for 1 hour</p>
+            </div>
+            <button
+              onClick={handleDownload}
+              className="h-9 px-4 rounded-[6px] bg-brand dark:bg-brand-btn text-white text-[13px] font-medium hover:opacity-90 transition-opacity"
+            >
+              Download
+            </button>
+          </div>
         </div>
       </div>
 

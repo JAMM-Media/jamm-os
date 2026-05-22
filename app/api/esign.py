@@ -821,6 +821,18 @@ def store_signed_document(
             f"/{engagement_segment}/{provider_envelope_id}.pdf"
         )
 
+        # Build a readable filename from the engagement name if available
+        readable_name = "Engagement Letter"
+        if engagement_id:
+            from app.models.engagement import Engagement as _Eng
+            eng = db.query(_Eng).filter(_Eng.id == engagement_id).first()
+            if eng:
+                import re
+                safe_name = re.sub(r'[^\w\s\-]', '', eng.name).strip()
+                readable_name = safe_name if safe_name else "Engagement Letter"
+
+        filename = f"{readable_name} — Signed.pdf"
+
         s3_service.upload_fileobj(io.BytesIO(pdf_bytes), s3_key, "application/pdf")
 
         doc = crud_document.create_document(
@@ -829,7 +841,7 @@ def store_signed_document(
             client_id=uuid.UUID(client_id),
             engagement_id=uuid.UUID(str(engagement_id)) if engagement_id else None,
             uploaded_by=None,
-            filename=f"{provider_envelope_id}.pdf",
+            filename=filename,
             s3_key=s3_key,
             content_type="application/pdf",
             size_bytes=len(pdf_bytes),

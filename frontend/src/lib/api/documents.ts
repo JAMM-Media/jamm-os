@@ -27,7 +27,9 @@ function mapDocument(raw: Record<string, unknown>): Document {
     uploadedBy: String(raw.uploaded_by ?? raw.uploadedBy ?? ''),
     uploadedAt: String(raw.uploaded_at ?? raw.uploadedAt ?? ''),
     fileType: String(raw.file_type ?? raw.fileType ?? 'PDF'),
-    fileSizeKb: Number(raw.file_size_kb ?? raw.fileSizeKb ?? 0),
+    fileSizeKb: raw.size_bytes
+      ? Number(raw.size_bytes) / 1024
+      : Number(raw.file_size_kb ?? raw.fileSizeKb ?? 0),
   }
 }
 
