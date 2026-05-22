@@ -346,6 +346,14 @@ async def handle_webhook(
         except Exception:
             raise HTTPException(status_code=400, detail="Invalid request body")
 
+    # DEBUG: write payload to file
+    try:
+        import json as _json
+        with open("/tmp/webhook_debug.json", "w") as _f:
+            _json.dump(data, _f, indent=2, default=str)
+    except Exception:
+        pass
+
     # Validate event_hash from within the payload
     event = data.get("event", {})
     event_hash = event.get("event_hash")

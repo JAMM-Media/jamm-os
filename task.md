@@ -4,31 +4,22 @@ Read every instruction in this file before writing a single line of code.
 
 ---
 
-## TASK 1 — Add event type logging to webhook handler
+## TASK 1 — Write webhook payload to file for debugging
 
 **File to edit:** `app/api/esign.py`
 
-In `handle_webhook`, after `event_type = event.get("event_type")` is set, add:
+In `handle_webhook`, immediately after `data` is parsed (after the multipart/form-data block), add:
 
 ```python
-import logging as _logging
-_logging.getLogger(__name__).warning(
-    "Webhook received: event_type=%s signature_request_id=%s",
-    event_type,
-    data.get("signature_request", {}).get("signature_request_id", "none"),
-)
+# DEBUG: write payload to file
+try:
+    import json as _json
+    with open("/tmp/webhook_debug.json", "w") as _f:
+        _json.dump(data, _f, indent=2, default=str)
+except Exception:
+    pass
 ```
 
-Also after the `if envelope is None` check, add:
+This writes the raw parsed payload to `/tmp/webhook_debug.json` so we can see exactly what Dropbox Sign is sending. Remove after debugging.
 
-```python
-_logging.getLogger(__name__).warning(
-    "Webhook envelope lookup: provider_id=%s found=%s status=%s signed_doc_id=%s",
-    signature_request_id,
-    envelope is not None,
-    envelope.status if envelope else "n/a",
-    envelope.signed_document_id if envelope else "n/a",
-)
-```
-
-No other changes. No frontend changes.
+No other changes.
