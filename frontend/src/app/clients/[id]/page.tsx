@@ -1,7 +1,7 @@
 // path: frontend/src/app/clients/[id]/page.tsx
 'use client'
 
-import { Suspense, useState, useEffect } from 'react'
+import { Suspense, useState, useEffect, useRef } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import { AppShell } from '@/components/layout/AppShell'
@@ -10,8 +10,11 @@ import { StatusBadge } from '@/components/ui/StatusBadge'
 import { clientsApi, engagementsApi, invoicesApi } from '@/lib/api'
 import type { QBOARBalance } from '@/lib/api/clients'
 import { useFetch } from '@/lib/hooks/useFetch'
-import { Mail, Phone, MapPin, ArrowLeft, ExternalLink, Loader2, Send } from 'lucide-react'
+import { Mail, Phone, MapPin, ArrowLeft, ExternalLink, Loader2, Send, Link } from 'lucide-react'
 import { toast } from 'sonner'
+import { EntityLinkPicker, type EntityLink } from '@/components/shared/EntityLinkPicker'
+import { EntityChip } from '@/components/shared/EntityChip'
+import { parseMessage } from '@/lib/entityLinkParser'
 import { NotesTab, NotesPanel } from '@/components/notes'
 import { useNotes } from '@/components/notes'
 import { useUnreadMessages } from '@/components/messaging/useUnreadMessages'
@@ -65,6 +68,9 @@ function ClientDetailContent() {
   const [messagesLoading, setMessagesLoading] = useState(false)
   const [messageCompose, setMessageCompose] = useState('')
   const [messageSending, setMessageSending] = useState(false)
+  const [linkedEntities, setLinkedEntities] = useState<Map<string, EntityLink>>(new Map())
+  const [showPicker, setShowPicker] = useState(false)
+  const msgToolbarRef = useRef<HTMLDivElement>(null)
 
   const { data: client, isLoading: clientLoading, refetch: refetchClient } = useFetch(
     () => clientsApi.get(clientId),
@@ -110,13 +116,31 @@ function ClientDetailContent() {
       .finally(() => setMessagesLoading(false))
   }, [activeTab, clientId])
 
+  const handleEntitySelect = (link: EntityLink) => {
+    const token = `[@${link.entityType}:${link.entityId}:${link.label}]`
+    setMessageCompose((prev) => prev + token + ' ')
+    setLinkedEntities((prev) => new Map(prev).set(token, link))
+    setShowPicker(false)
+  }
+
+  const handleEntityRemove = (token: string) => {
+    setMessageCompose((prev) => prev.replace(token, '').replace(/\s{2,}/g, ' ').trim())
+    setLinkedEntities((prev) => {
+      const next = new Map(prev)
+      next.delete(token)
+      return next
+    })
+  }
+
   const handleSendMessage = async () => {
     if (!messageCompose.trim() || messageSending) return
     setMessageSending(true)
     try {
-      const res = await api.post(`/clients/${clientId}/messages`, {
-        body: messageCompose.trim()
+      let body = messageCompose.trim()
+      linkedEntities.forEach((link, token) => {
+        body = body.split(token).join(`[[entity:${link.entityType}:${link.entityId}:${link.label}]]`)
       })
+      const res = await api.post(`/clients/${clientId}/messages`, { body })
       const m = res.data
       setClientMessages((prev) => [...prev, {
         id: String(m.id),
@@ -126,6 +150,8 @@ function ClientDetailContent() {
         createdAt: String(m.created_at ?? ''),
       }])
       setMessageCompose('')
+      setLinkedEntities(new Map())
+      setShowPicker(false)
     } catch {
       toast.error('Failed to send message')
     } finally {
@@ -587,7 +613,7 @@ function ClientDetailContent() {
                             : 'bg-surface-card dark:bg-dark-card text-[#374151] dark:text-[#EDEEF0] rounded-bl-sm border border-[#C8CDD6] dark:border-[#484848]'
                         }`}
                       >
-                        {msg.body}
+                        {parseMessage(msg.body)}
                       </div>
                       <div className="flex items-center gap-1.5">
                         <span className="text-[11px] text-[#6B7280]">
@@ -604,32 +630,76 @@ function ClientDetailContent() {
             </div>
 
             {/* Compose box */}
-            <div className="flex-shrink-0 border-t border-[#C8CDD6] dark:border-[#484848] px-4 py-3 flex gap-2 items-end">
-              <textarea
-                value={messageCompose}
-                onChange={(e) => setMessageCompose(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault()
-                    handleSendMessage()
-                  }
-                }}
-                placeholder="Send a message to this client..."
-                rows={1}
-                className="flex-1 resize-none bg-surface-input dark:bg-dark-page border border-[#C8CDD6] dark:border-[#484848] focus:border-[#4A7FA5] dark:focus:border-[#4A7FA5] rounded-lg px-3 py-2 text-[13px] text-[#374151] dark:text-[#9CA3AF] placeholder:text-[#9CA3AF] outline-none transition-colors"
-                style={{ minHeight: 36, maxHeight: 120 }}
-              />
-              <button
-                onClick={handleSendMessage}
-                disabled={!messageCompose.trim() || messageSending}
-                className="flex-shrink-0 h-9 w-9 flex items-center justify-center rounded-lg bg-[#1F3148] text-white hover:bg-[#3A6A94] disabled:opacity-40 transition-colors"
-              >
-                {messageSending ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Send className="h-4 w-4" />
-                )}
-              </button>
+            <div className="flex-shrink-0 border-t border-[#C8CDD6] dark:border-[#484848] px-4 pt-2 pb-3 relative">
+              {/* Entity link picker */}
+              {showPicker && (
+                <EntityLinkPicker
+                  anchorRef={msgToolbarRef as React.RefObject<HTMLElement>}
+                  onSelect={handleEntitySelect}
+                  onClose={() => setShowPicker(false)}
+                />
+              )}
+
+              {/* Toolbar */}
+              <div ref={msgToolbarRef} className="flex items-center gap-1 mb-2">
+                <button
+                  onClick={() => setShowPicker(true)}
+                  className="flex items-center gap-1 px-2 py-1 rounded text-[11px] text-[#6B7280] hover:bg-[#D5D8DE] dark:hover:bg-[#2D2D2D] transition-colors"
+                >
+                  <Link className="w-3.5 h-3.5" />
+                  Link record
+                </button>
+              </div>
+
+              {/* Entity chips preview */}
+              {linkedEntities.size > 0 && (
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  {Array.from(linkedEntities.entries()).map(([token, link]) => (
+                    <EntityChip key={token} link={link} onRemove={() => handleEntityRemove(token)} />
+                  ))}
+                </div>
+              )}
+
+              <div className="flex gap-2 items-end">
+                <textarea
+                  value={messageCompose}
+                  onChange={(e) => {
+                    const value = e.target.value
+                    const cursor = e.target.selectionStart
+                    if (
+                      cursor > 0 &&
+                      value[cursor - 1] === '#' &&
+                      (cursor === 1 || value[cursor - 2] === ' ' || value[cursor - 2] === '\n')
+                    ) {
+                      setMessageCompose(value.slice(0, cursor - 1) + value.slice(cursor))
+                      setShowPicker(true)
+                      return
+                    }
+                    setMessageCompose(value)
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault()
+                      handleSendMessage()
+                    }
+                  }}
+                  placeholder="Send a message to this client..."
+                  rows={1}
+                  className="flex-1 resize-none bg-surface-input dark:bg-dark-page border border-[#C8CDD6] dark:border-[#484848] focus:border-[#4A7FA5] dark:focus:border-[#4A7FA5] rounded-lg px-3 py-2 text-[13px] text-[#374151] dark:text-[#9CA3AF] placeholder:text-[#9CA3AF] outline-none transition-colors"
+                  style={{ minHeight: 36, maxHeight: 120 }}
+                />
+                <button
+                  onClick={handleSendMessage}
+                  disabled={!messageCompose.trim() || messageSending}
+                  className="flex-shrink-0 h-9 w-9 flex items-center justify-center rounded-lg bg-[#1F3148] text-white hover:bg-[#3A6A94] disabled:opacity-40 transition-colors"
+                >
+                  {messageSending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Send className="h-4 w-4" />
+                  )}
+                </button>
+              </div>
             </div>
           </div>
         )}

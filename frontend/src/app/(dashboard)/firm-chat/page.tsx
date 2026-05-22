@@ -6,11 +6,13 @@ import type { ReactNode } from 'react'
 import { AppShell } from '@/components/layout/AppShell'
 import { useChannels } from '@/components/firm-chat/useChannels'
 import { useMessages } from '@/components/firm-chat/useMessages'
-import { MessageSquare, MoreHorizontal, Users, X, UserMinus } from 'lucide-react'
+import { MessageSquare, MoreHorizontal, Users, X, UserMinus, Link } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import api from '@/lib/api'
 import { firmChatApi, type ChannelMember } from '@/lib/api/firmChat'
 import { useAuth } from '@/lib/hooks/useAuth'
+import { EntityLinkPicker, type EntityLink } from '@/components/shared/EntityLinkPicker'
+import { EntityChip } from '@/components/shared/EntityChip'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -67,57 +69,73 @@ function isSameSenderWithin5Min(
   return Math.abs(new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()) < 5 * 60 * 1000
 }
 
+const VALID_ENTITY_TYPES = ['client', 'engagement', 'task', 'document'] as const
+type ValidEntityType = typeof VALID_ENTITY_TYPES[number]
+
 function renderBody(body: string, _mentions: string[], staffMap?: Map<string, string>): ReactNode {
   if (!body) return <>{body}</>
 
-  // Build set of known staff names for matching
+  // Segment body by [[entity:...]] tokens first
+  const entityRegex = /\[\[entity:([^:]+):([^:]+):([^\]]+)\]\]/g
+  type Segment = { text: string } | { entityType: string; entityId: string; label: string }
+  const segments: Segment[] = []
+  let last = 0
+  let em: RegExpExecArray | null
+  entityRegex.lastIndex = 0
+  while ((em = entityRegex.exec(body)) !== null) {
+    if (em.index > last) segments.push({ text: body.slice(last, em.index) })
+    segments.push({ entityType: em[1], entityId: em[2], label: em[3] })
+    last = em.index + em[0].length
+  }
+  if (last < body.length) segments.push({ text: body.slice(last) })
+
+  // Build @mention pattern from staff map
   const staffNames = staffMap ? Array.from(staffMap.values()) : []
-
-  // Find all @Name occurrences in the body that match a staff name
-  // Sort by length descending so "Sarah Chen" matches before "Sarah"
   const sortedNames = [...staffNames].sort((a, b) => b.length - a.length)
+  let mentionPattern: RegExp | null = null
+  if (sortedNames.length > 0) {
+    const escaped = sortedNames.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    mentionPattern = new RegExp(`@(${escaped.join('|')})(?=\\s|$|[^\\w])`, 'gi')
+  }
 
-  if (sortedNames.length === 0) {
-    // Fallback: highlight any @word in body
+  function highlightMentions(text: string, keyPrefix: string): ReactNode[] {
     const parts: ReactNode[] = []
-    const regex = /@(\S+)/g
-    let last = 0
-    let match
-    let found = false
-    while ((match = regex.exec(body)) !== null) {
-      found = true
-      if (match.index > last) parts.push(<span key={last}>{body.slice(last, match.index)}</span>)
+    const regex = mentionPattern ?? /@(\S+)/g
+    regex.lastIndex = 0
+    let pos = 0
+    let m: RegExpExecArray | null
+    while ((m = regex.exec(text)) !== null) {
+      if (m.index > pos) parts.push(<span key={`${keyPrefix}-${pos}`}>{text.slice(pos, m.index)}</span>)
       parts.push(
-        <span key={match.index} className="font-semibold text-[#1F3148] dark:text-[#EDEEF0]">
-          {match[1]}
+        <span key={`${keyPrefix}-m${m.index}`} className="font-semibold text-[#1F3148] dark:text-[#EDEEF0]">
+          {m[1]}
         </span>
       )
-      last = match.index + match[0].length
+      pos = m.index + m[0].length
     }
-    if (last < body.length) parts.push(<span key={last}>{body.slice(last)}</span>)
-    return found ? <>{parts}</> : <>{body}</>
+    if (pos < text.length) parts.push(<span key={`${keyPrefix}-e${pos}`}>{text.slice(pos)}</span>)
+    return parts.length > 0 ? parts : [<span key={keyPrefix}>{text}</span>]
   }
 
-  // Build regex that matches @Name for any known staff name
-  const escaped = sortedNames.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
-  const pattern = new RegExp(`@(${escaped.join('|')})(?=\\s|$|[^\\w])`, 'gi')
+  const nodes: ReactNode[] = []
+  segments.forEach((seg, i) => {
+    if ('text' in seg) {
+      highlightMentions(seg.text, `t${i}`).forEach((n) => nodes.push(n))
+    } else {
+      const type: ValidEntityType = VALID_ENTITY_TYPES.includes(seg.entityType as ValidEntityType)
+        ? (seg.entityType as ValidEntityType)
+        : 'client'
+      const link: EntityLink = {
+        entityType: type,
+        entityId: seg.entityId,
+        label: seg.label,
+        href: `/${type === 'client' ? 'clients' : type === 'engagement' ? 'engagements' : type === 'task' ? 'tasks' : 'documents'}/${seg.entityId}`,
+      }
+      nodes.push(<EntityChip key={`e${i}`} link={link} />)
+    }
+  })
 
-  const parts: ReactNode[] = []
-  let last = 0
-  let match
-  let found = false
-  while ((match = pattern.exec(body)) !== null) {
-    found = true
-    if (match.index > last) parts.push(<span key={last}>{body.slice(last, match.index)}</span>)
-    parts.push(
-      <span key={match.index} className="font-semibold text-[#1F3148] dark:text-[#EDEEF0]">
-        {match[1]}
-      </span>
-    )
-    last = match.index + match[0].length
-  }
-  if (last < body.length) parts.push(<span key={last}>{body.slice(last)}</span>)
-  return found ? <>{parts}</> : <>{body}</>
+  return <>{nodes}</>
 }
 
 function getMentionQuery(value: string, cursor: number): string | null {
@@ -198,7 +216,10 @@ export default function FirmChatPage() {
   const [composeValue, setComposeValue] = useState('')
   const [composeMentions, setComposeMentions] = useState<string[]>([])
   const [composeMentionIds, setComposeMentionIds] = useState<string[]>([])
+  const [linkedEntities, setLinkedEntities] = useState<Map<string, EntityLink>>(new Map())
+  const [showPicker, setShowPicker] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const toolbarRef = useRef<HTMLDivElement>(null)
   const dropdownRef = useRef<HTMLDivElement>(null)
 
   // ─── @mention popover ────────────────────────────────────────────────────
@@ -264,16 +285,34 @@ export default function FirmChatPage() {
     setComposeValue('')
     setComposeMentions([])
     setComposeMentionIds([])
+    setLinkedEntities(new Map())
+    setShowPicker(false)
     setShowMentionPopover(false)
   }
 
   const handleComposeChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const value = e.target.value
-    setComposeValue(value)
     const ta = e.currentTarget
+    const cursor = ta.selectionStart
+
+    // Detect standalone # to open entity picker
+    if (
+      cursor > 0 &&
+      value[cursor - 1] === '#' &&
+      (cursor === 1 || value[cursor - 2] === ' ' || value[cursor - 2] === '\n')
+    ) {
+      const newValue = value.slice(0, cursor - 1) + value.slice(cursor)
+      setComposeValue(newValue)
+      setShowPicker(true)
+      setShowMentionPopover(false)
+      ta.style.height = 'auto'
+      ta.style.height = `${Math.min(ta.scrollHeight, 160)}px`
+      return
+    }
+
+    setComposeValue(value)
     ta.style.height = 'auto'
     ta.style.height = `${Math.min(ta.scrollHeight, 160)}px`
-    const cursor = ta.selectionStart
     const query = getMentionQuery(value, cursor)
     if (query !== null) {
       setMentionQuery(query)
@@ -312,12 +351,35 @@ export default function FirmChatPage() {
     }
   }
 
+  const handleEntitySelect = (link: EntityLink) => {
+    const token = `[@${link.entityType}:${link.entityId}:${link.label}]`
+    setComposeValue((prev) => prev + token + ' ')
+    setLinkedEntities((prev) => new Map(prev).set(token, link))
+    setShowPicker(false)
+    setTimeout(() => textareaRef.current?.focus(), 0)
+  }
+
+  const handleEntityRemove = (token: string) => {
+    setComposeValue((prev) => prev.replace(token, '').replace(/\s{2,}/g, ' ').trim())
+    setLinkedEntities((prev) => {
+      const next = new Map(prev)
+      next.delete(token)
+      return next
+    })
+  }
+
   const handleSend = () => {
     if (!composeValue.trim() || !activeChannelId) return
-    sendMessage(composeValue.trim(), composeMentionIds)
+    let body = composeValue.trim()
+    linkedEntities.forEach((link, token) => {
+      body = body.split(token).join(`[[entity:${link.entityType}:${link.entityId}:${link.label}]]`)
+    })
+    sendMessage(body, composeMentionIds)
     setComposeValue('')
     setComposeMentions([])
     setComposeMentionIds([])
+    setLinkedEntities(new Map())
+    setShowPicker(false)
     setShowMentionPopover(false)
     if (textareaRef.current) textareaRef.current.style.height = '40px'
   }
@@ -718,6 +780,35 @@ export default function FirmChatPage() {
                         </div>
                         {staff.name}
                       </button>
+                    ))}
+                  </div>
+                )}
+
+                {/* Entity link picker */}
+                {showPicker && (
+                  <EntityLinkPicker
+                    anchorRef={toolbarRef as React.RefObject<HTMLElement>}
+                    onSelect={handleEntitySelect}
+                    onClose={() => setShowPicker(false)}
+                  />
+                )}
+
+                {/* Toolbar */}
+                <div ref={toolbarRef} className="flex items-center gap-1 mb-2">
+                  <button
+                    onClick={() => { setShowPicker(true); setShowMentionPopover(false) }}
+                    className="flex items-center gap-1 px-2 py-1 rounded text-[11px] text-[#6B7280] hover:bg-[#D5D8DE] dark:hover:bg-[#2D2D2D] transition-colors"
+                  >
+                    <Link className="w-3.5 h-3.5" />
+                    Link record
+                  </button>
+                </div>
+
+                {/* Entity chips preview */}
+                {linkedEntities.size > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mb-2">
+                    {Array.from(linkedEntities.entries()).map(([token, link]) => (
+                      <EntityChip key={token} link={link} onRemove={() => handleEntityRemove(token)} />
                     ))}
                   </div>
                 )}
