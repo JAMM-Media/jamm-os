@@ -18,7 +18,7 @@ export interface Document {
 function mapDocument(raw: Record<string, unknown>): Document {
   return {
     id: String(raw.id),
-    name: String(raw.file_name ?? raw.name ?? ''),
+    name: String(raw.filename ?? raw.file_name ?? raw.name ?? ''),
     clientId: String(raw.client_id ?? raw.clientId ?? ''),
     clientName: String(raw.client_name ?? raw.clientName ?? ''),
     engagementId: String(raw.engagement_id ?? raw.engagementId ?? ''),
