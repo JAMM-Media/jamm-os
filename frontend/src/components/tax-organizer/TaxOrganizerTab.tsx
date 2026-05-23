@@ -41,6 +41,7 @@ interface OrganizerListItem {
   template_id: string
   status: 'sent' | 'in_progress' | 'submitted'
   sent_at: string
+  created_at?: string
 }
 
 interface OrganizerDetail {
@@ -48,6 +49,15 @@ interface OrganizerDetail {
   tax_year: number
   template: Template
   responses: Record<string, string>
+}
+
+function formatDate(dateStr: string | null | undefined): string {
+  if (!dateStr) return '—'
+  const d = new Date(dateStr)
+  if (isNaN(d.getTime())) return '—'
+  return d.toLocaleDateString('en-US', {
+    month: 'short', day: 'numeric', year: 'numeric'
+  })
 }
 
 const inputClass =
@@ -277,11 +287,7 @@ export default function TaxOrganizerTab({ clientId, userRole }: TaxOrganizerTabP
                   {getTemplateName(org.template_id)}
                 </span>
                 <span className="text-[11px] text-[#9CA3AF]">
-                  {new Date(org.sent_at).toLocaleDateString('en-US', {
-                    month: 'short',
-                    day: 'numeric',
-                    year: 'numeric',
-                  })}
+                  {formatDate(org.created_at)}
                 </span>
               </div>
               <div className="flex items-center gap-3">
