@@ -20,6 +20,10 @@ from app.schemas.engagement import (
     BulkEngagementUpdate,
     CalendarEngagementItem,
     CalendarResponse,
+    BulkEngagementCreate,
+    BulkEngagementCreateResult,
+    BulkSendLetterRequest,
+    BulkSendLetterResult,
 )
 from app.models.task import Task
 from app.models.client import Client as ClientModel
@@ -28,7 +32,7 @@ from app.schemas.pagination import PaginatedResponse
 from app.crud import engagement as crud_engagement
 from app.dependencies.auth import get_current_user
 from app.dependencies.tenant import get_current_firm
-from app.dependencies.roles import require_staff_or_above, require_firm_owner
+from app.dependencies.roles import require_staff_or_above, require_firm_owner, require_manager_or_above
 from app.models.user import User
 from app.core.enums import TriggerEvent
 from app.services.event_bus import emit_event
@@ -349,3 +353,135 @@ def delete_engagement(
     )
     if result is None:
         raise HTTPException(status_code=404, detail="Engagement not found")
+
+
+# ---------------------------------------------------------
+# BULK CREATE ENGAGEMENTS
+# ---------------------------------------------------------
+@router.post("/bulk-create", response_model=BulkEngagementCreateResult, status_code=status.HTTP_201_CREATED)
+def bulk_create_engagements(
+    payload: BulkEngagementCreate,
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    current_user: User = Depends(get_current_user),
+    _: object = Depends(require_staff_or_above),
+):
+    from app.services.audit_service import write_audit_log
+    from sqlalchemy import select as _select
+
+    created_ids = []
+    skipped = 0
+
+    for client_id in payload.client_ids:
+        client = db.execute(
+            _select(ClientModel).where(
+                ClientModel.id == client_id,
+                ClientModel.firm_id == current_firm.id,
+            )
+        ).scalars().first()
+        if not client:
+            skipped += 1
+            continue
+
+        eng_create = EngagementCreate(
+            client_id=client.id,
+            name=payload.name,
+            engagement_type=payload.engagement_type,
+            status=payload.status,
+            start_date=payload.start_date,
+            end_date=payload.end_date,
+            notes=payload.notes,
+            filing_deadline=payload.filing_deadline,
+        )
+        engagement = crud_engagement.create_engagement(db, eng_create, firm_id=current_firm.id)
+
+        write_audit_log(
+            db=db,
+            firm_id=current_firm.id,
+            action="engagement.bulk_created",
+            actor_id=current_user.id,
+            actor_type="staff",
+            entity_type="engagement",
+            entity_id=engagement.id,
+        )
+        created_ids.append(engagement.id)
+
+    return BulkEngagementCreateResult(
+        created=len(created_ids),
+        engagement_ids=created_ids,
+        skipped=skipped,
+    )
+
+
+# ---------------------------------------------------------
+# BULK SEND ENGAGEMENT LETTER
+# ---------------------------------------------------------
+@router.post("/bulk-send-letter", response_model=BulkSendLetterResult)
+def bulk_send_letter(
+    payload: BulkSendLetterRequest,
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    current_user: User = Depends(get_current_user),
+    _: object = Depends(require_manager_or_above),
+):
+    from sqlalchemy import select as _select
+    from app.crud import engagement_letter_template as crud_template
+    from app.services import esign_service
+
+    template = crud_template.get_template(db, payload.template_id, current_firm.id)
+    if not template:
+        raise HTTPException(status_code=404, detail="Template not found")
+
+    sent = 0
+    failed = 0
+    errors = []
+
+    for engagement_id in payload.engagement_ids:
+        engagement = db.execute(
+            _select(Engagement).where(
+                Engagement.id == engagement_id,
+                Engagement.firm_id == current_firm.id,
+            )
+        ).scalars().first()
+        if not engagement:
+            continue
+
+        client = db.execute(
+            _select(ClientModel).where(
+                ClientModel.id == engagement.client_id,
+                ClientModel.firm_id == current_firm.id,
+            )
+        ).scalars().first()
+        if not client:
+            errors.append(f"Engagement {engagement.name}: client not found")
+            failed += 1
+            continue
+
+        if not client.email:
+            errors.append(f"Client {client.name}: no email address")
+            failed += 1
+            continue
+
+        try:
+            envelope = esign_service.prepare_and_create_envelope(
+                db=db,
+                firm=current_firm,
+                engagement=engagement,
+                template=template,
+                current_user=current_user,
+                fee_amount=payload.fee_amount or "",
+                extra_context={},
+            )
+            esign_service.send_envelope_to_dropbox(
+                db=db,
+                firm=current_firm,
+                envelope=envelope,
+                current_user=current_user,
+            )
+            sent += 1
+        except Exception as exc:
+            errors.append(f"Client {client.name}: {str(exc)}")
+            failed += 1
+            continue
+
+    return BulkSendLetterResult(sent=sent, failed=failed, errors=errors)

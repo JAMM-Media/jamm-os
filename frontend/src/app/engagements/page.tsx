@@ -1,7 +1,7 @@
 // path: frontend/src/app/engagements/page.tsx
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { toast } from 'sonner'
 import { AppShell } from '@/components/layout/AppShell'
 import { ViewToggle } from '@/components/ui/ViewToggle'
@@ -10,9 +10,10 @@ import { EngagementCard } from '@/components/engagements/EngagementCard'
 import { EngagementEmptyState } from '@/components/engagements/EngagementEmptyState'
 import { NewEngagementModal } from '@/components/engagements/NewEngagementModal'
 import { SaveAsTemplateModal } from '@/components/engagements/SaveAsTemplateModal'
-import { engagementsApi, clientsApi, type Engagement } from '@/lib/api'
+import { engagementsApi, clientsApi, type Engagement, type Client } from '@/lib/api'
 import { useFetch } from '@/lib/hooks/useFetch'
-import { Search, X, ChevronDown } from 'lucide-react'
+import { Search, X, ChevronDown, Loader2 } from 'lucide-react'
+import api from '@/lib/api'
 
 type ViewMode = 'table' | 'card'
 
@@ -26,6 +27,8 @@ export default function EngagementsPage() {
   const [formFilter, setFormFilter] = useState<string>('all')
   const [localEngagements, setLocalEngagements] = useState<Engagement[]>([])
   const [modalOpen, setModalOpen] = useState(false)
+  const [bulkCreateOpen, setBulkCreateOpen] = useState(false)
+  const [bulkLetterOpen, setBulkLetterOpen] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [bulkLoading, setBulkLoading] = useState(false)
   const [statusDropOpen, setStatusDropOpen] = useState(false)
@@ -150,6 +153,12 @@ export default function EngagementsPage() {
             />
           </div>
           <ViewToggle value={view} onChange={setView} />
+          <button
+            onClick={() => setBulkCreateOpen(true)}
+            className="h-9 px-3 rounded-[6px] border border-brand dark:border-[#4A7FA5] text-brand dark:text-[#EDEEF0] text-[13px] font-medium hover:bg-surface-page dark:hover:bg-dark-page transition-colors whitespace-nowrap flex-shrink-0 bg-transparent"
+          >
+            Create for Multiple Clients
+          </button>
           <button
             onClick={() => setModalOpen(true)}
             className="h-9 px-3 rounded-[6px] bg-brand dark:bg-brand-btn text-white text-[13px] font-medium hover:opacity-90 transition-opacity whitespace-nowrap flex-shrink-0"
@@ -309,6 +318,27 @@ export default function EngagementsPage() {
           />
         )}
 
+        <BulkCreateEngagementModal
+          open={bulkCreateOpen}
+          onClose={() => setBulkCreateOpen(false)}
+          clients={clientsData?.items ?? []}
+          onSuccess={() => {
+            setBulkCreateOpen(false)
+            window.location.reload()
+          }}
+        />
+
+        <BulkSendLetterModal
+          open={bulkLetterOpen}
+          onClose={() => setBulkLetterOpen(false)}
+          selectedIds={selectedIds}
+          engagements={filtered}
+          onSuccess={() => {
+            setBulkLetterOpen(false)
+            setSelectedIds(new Set())
+          }}
+        />
+
         {/* Floating bulk action bar */}
         {selCount > 0 && (
           <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50">
@@ -350,6 +380,15 @@ export default function EngagementsPage() {
                 Push Deadline 7 Days
               </button>
 
+              {/* Send Engagement Letter */}
+              <button
+                disabled={bulkLoading}
+                onClick={() => setBulkLetterOpen(true)}
+                className="text-white text-[12px] border border-white/30 rounded px-3 py-1.5 hover:bg-white/10 disabled:opacity-50 whitespace-nowrap"
+              >
+                Send Engagement Letter
+              </button>
+
               {/* Clear */}
               <button
                 onClick={() => setSelectedIds(new Set())}
@@ -363,5 +402,466 @@ export default function EngagementsPage() {
 
       </div>
     </AppShell>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// BULK CREATE ENGAGEMENT MODAL
+// ---------------------------------------------------------------------------
+
+const ENGAGEMENT_TYPE_OPTIONS = [
+  { value: 'tax_return_1040', label: '1040 — Individual' },
+  { value: 'tax_return_1120', label: '1120 — C-Corporation' },
+  { value: 'tax_return_1120s', label: '1120-S — S-Corporation' },
+  { value: 'tax_return_1065', label: '1065 — Partnership' },
+  { value: 'tax_return_1041', label: '1041 — Trust / Estate Income' },
+  { value: 'tax_return_706', label: '706 — Estate Tax' },
+  { value: 'amended_return_1040x', label: '1040-X — Amended Return' },
+  { value: 'extension_4868', label: '4868 — Individual Extension' },
+  { value: 'extension_7004', label: '7004 — Business Extension' },
+  { value: 'extension_8868', label: '8868 — Exempt Org Extension' },
+  { value: 'bookkeeping_monthly', label: 'Monthly Bookkeeping' },
+  { value: 'bookkeeping_quarterly', label: 'Quarterly Bookkeeping' },
+  { value: 'payroll_tax_941', label: '941 — Quarterly Payroll Tax' },
+  { value: 'tax_planning_advisory', label: 'Tax Planning / Advisory' },
+  { value: 'audit_representation', label: 'Audit Representation' },
+  { value: 'other_advisory', label: 'Other Advisory' },
+  { value: 'custom', label: 'Custom' },
+]
+
+interface BulkCreateEngagementModalProps {
+  open: boolean
+  onClose: () => void
+  clients: Client[]
+  onSuccess: () => void
+}
+
+function BulkCreateEngagementModal({ open, onClose, clients, onSuccess }: BulkCreateEngagementModalProps) {
+  const [step, setStep] = useState<1 | 2>(1)
+  const [clientSearch, setClientSearch] = useState('')
+  const [selectedClientIds, setSelectedClientIds] = useState<Set<string>>(new Set())
+  const [form, setForm] = useState({
+    name: '',
+    engagement_type: '',
+    status: 'planning',
+    start_date: '',
+    end_date: '',
+    notes: '',
+  })
+  const [submitting, setSubmitting] = useState(false)
+  const [nameError, setNameError] = useState('')
+
+  const activeClients = clients.filter((c) => c.isActive)
+  const filteredClients = clientSearch
+    ? activeClients.filter((c) => c.name.toLowerCase().includes(clientSearch.toLowerCase()))
+    : activeClients
+
+  function handleClose() {
+    setStep(1)
+    setClientSearch('')
+    setSelectedClientIds(new Set())
+    setForm({ name: '', engagement_type: '', status: 'planning', start_date: '', end_date: '', notes: '' })
+    setNameError('')
+    onClose()
+  }
+
+  function toggleClient(id: string) {
+    setSelectedClientIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  function selectAll() {
+    setSelectedClientIds(new Set(filteredClients.map((c) => c.id)))
+  }
+
+  function deselectAll() {
+    setSelectedClientIds(new Set())
+  }
+
+  async function handleSubmit() {
+    if (!form.name.trim()) {
+      setNameError('Engagement name is required.')
+      return
+    }
+    setNameError('')
+    setSubmitting(true)
+    try {
+      const payload: Record<string, unknown> = {
+        client_ids: Array.from(selectedClientIds),
+        name: form.name.trim(),
+        status: form.status || 'planning',
+      }
+      if (form.engagement_type) payload.engagement_type = form.engagement_type
+      if (form.start_date) payload.start_date = form.start_date
+      if (form.end_date) payload.end_date = form.end_date
+      if (form.notes.trim()) payload.notes = form.notes.trim()
+
+      const result = await engagementsApi.bulkCreate(payload as Parameters<typeof engagementsApi.bulkCreate>[0])
+      toast.success(`Created ${result.created} engagement${result.created !== 1 ? 's' : ''} successfully`)
+      onSuccess()
+    } catch {
+      toast.error('Failed to create engagements. Please try again.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  if (!open) return null
+
+  const inputCls = 'w-full h-9 px-3 rounded-[6px] bg-surface-input dark:bg-dark-card border border-[0.5px] border-surface-border dark:border-dark-border text-[13px] text-brand dark:text-[#EDEEF0] placeholder:text-[#9CA3AF] focus:outline-none focus:border-brand-light transition-colors'
+  const labelCls = 'text-[12px] font-medium text-[#374151] dark:text-[#D1D5DB] mb-1'
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+      <div className="bg-white dark:bg-[#1E2A3B] rounded-[10px] shadow-xl w-full max-w-lg flex flex-col max-h-[90vh]">
+        {/* Header */}
+        <div className="px-6 pt-5 pb-4 border-b border-surface-border dark:border-dark-border flex-shrink-0">
+          <h2 className="text-[15px] font-semibold text-brand dark:text-[#EDEEF0]">
+            {step === 1
+              ? 'Create Engagement — Step 1 of 2: Select Clients'
+              : 'Create Engagement — Step 2 of 2: Engagement Details'}
+          </h2>
+        </div>
+
+        {/* Body */}
+        <div className="px-6 py-4 flex-1 overflow-y-auto">
+          {step === 1 ? (
+            <div className="flex flex-col gap-3">
+              <input
+                type="text"
+                placeholder="Search clients..."
+                value={clientSearch}
+                onChange={(e) => setClientSearch(e.target.value)}
+                className={inputCls}
+              />
+              <div className="flex items-center gap-3 text-[12px]">
+                <button onClick={selectAll} className="text-brand dark:text-[#4A9ED6] hover:underline">Select all</button>
+                <button onClick={deselectAll} className="text-[#6B7280] hover:underline">Deselect all</button>
+                <span className="ml-auto text-[#6B7280]">{selectedClientIds.size} client{selectedClientIds.size !== 1 ? 's' : ''} selected</span>
+              </div>
+              <div className="border border-surface-border dark:border-dark-border rounded-[6px] overflow-y-auto max-h-64">
+                {filteredClients.length === 0 ? (
+                  <div className="px-4 py-6 text-center text-[13px] text-[#6B7280]">No clients found</div>
+                ) : (
+                  filteredClients.map((client) => (
+                    <label
+                      key={client.id}
+                      className="flex items-center gap-3 px-4 py-2.5 cursor-pointer hover:bg-[#F9FAFB] dark:hover:bg-[#252D3A] border-b border-surface-border dark:border-dark-border last:border-0"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedClientIds.has(client.id)}
+                        onChange={() => toggleClient(client.id)}
+                        className="rounded border-surface-border"
+                      />
+                      <span className="text-[13px] text-brand dark:text-[#EDEEF0]">{client.name}</span>
+                    </label>
+                  ))
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-4">
+              <p className="text-[12px] text-[#6B7280]">
+                This will create {selectedClientIds.size} engagement{selectedClientIds.size !== 1 ? 's' : ''} — one for each selected client.
+              </p>
+
+              <div>
+                <p className={labelCls}>Engagement Name <span className="text-red-500">*</span></p>
+                <input
+                  type="text"
+                  placeholder="e.g. 2024 Tax Return"
+                  value={form.name}
+                  onChange={(e) => { setForm((f) => ({ ...f, name: e.target.value })); setNameError('') }}
+                  className={inputCls + (nameError ? ' border-red-500' : '')}
+                />
+                {nameError && <p className="text-[11px] text-red-500 mt-1">{nameError}</p>}
+              </div>
+
+              <div>
+                <p className={labelCls}>Engagement Type</p>
+                <select
+                  value={form.engagement_type}
+                  onChange={(e) => setForm((f) => ({ ...f, engagement_type: e.target.value }))}
+                  className={inputCls}
+                >
+                  <option value="">None</option>
+                  {ENGAGEMENT_TYPE_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>{o.label}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <p className={labelCls}>Status</p>
+                <select
+                  value={form.status}
+                  onChange={(e) => setForm((f) => ({ ...f, status: e.target.value }))}
+                  className={inputCls}
+                >
+                  <option value="planning">Planning</option>
+                  <option value="active">Active</option>
+                  <option value="draft">Draft</option>
+                </select>
+              </div>
+
+              <div>
+                <p className={labelCls}>Start Date</p>
+                <input type="date" value={form.start_date} onChange={(e) => setForm((f) => ({ ...f, start_date: e.target.value }))} className={inputCls} />
+              </div>
+
+              <div>
+                <p className={labelCls}>End Date / Filing Deadline</p>
+                <input type="date" value={form.end_date} onChange={(e) => setForm((f) => ({ ...f, end_date: e.target.value }))} className={inputCls} />
+              </div>
+
+              <div>
+                <p className={labelCls}>Notes</p>
+                <textarea
+                  value={form.notes}
+                  onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
+                  placeholder="Optional notes..."
+                  rows={3}
+                  className="w-full px-3 py-2 rounded-[6px] bg-surface-input dark:bg-dark-card border border-[0.5px] border-surface-border dark:border-dark-border text-[13px] text-brand dark:text-[#EDEEF0] placeholder:text-[#9CA3AF] focus:outline-none focus:border-brand-light transition-colors resize-none"
+                />
+              </div>
+
+              <p className="text-[12px] text-[#6B7280] font-medium">
+                This will create {selectedClientIds.size} engagement{selectedClientIds.size !== 1 ? 's' : ''} — one for each selected client.
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="px-6 py-4 border-t border-surface-border dark:border-dark-border flex-shrink-0 flex justify-between">
+          {step === 1 ? (
+            <>
+              <button
+                onClick={handleClose}
+                className="h-9 px-3 rounded-[6px] border border-[0.5px] border-brand dark:border-[#4A7FA5] text-brand dark:text-[#EDEEF0] text-[13px] font-medium hover:bg-surface-page dark:hover:bg-dark-page transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => setStep(2)}
+                disabled={selectedClientIds.size === 0}
+                className="h-9 px-4 rounded-[6px] bg-brand dark:bg-brand-btn text-white text-[13px] font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                Next →
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                onClick={() => setStep(1)}
+                className="h-9 px-3 rounded-[6px] border border-[0.5px] border-brand dark:border-[#4A7FA5] text-brand dark:text-[#EDEEF0] text-[13px] font-medium hover:bg-surface-page dark:hover:bg-dark-page transition-colors"
+              >
+                ← Back
+              </button>
+              <button
+                onClick={handleSubmit}
+                disabled={submitting}
+                className="h-9 px-4 rounded-[6px] bg-brand dark:bg-brand-btn text-white text-[13px] font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+              >
+                {submitting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                {submitting ? 'Creating...' : `Create ${selectedClientIds.size} Engagement${selectedClientIds.size !== 1 ? 's' : ''}`}
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// BULK SEND LETTER MODAL
+// ---------------------------------------------------------------------------
+
+interface BulkSendLetterModalProps {
+  open: boolean
+  onClose: () => void
+  selectedIds: Set<string>
+  engagements: Engagement[]
+  onSuccess: () => void
+}
+
+interface LetterTemplate {
+  id: string
+  name: string
+  engagement_type: string | null
+}
+
+function BulkSendLetterModal({ open, onClose, selectedIds, engagements, onSuccess }: BulkSendLetterModalProps) {
+  const [templates, setTemplates] = useState<LetterTemplate[]>([])
+  const [templateId, setTemplateId] = useState('')
+  const [feeAmount, setFeeAmount] = useState('')
+  const [fetching, setFetching] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [partialErrors, setPartialErrors] = useState<string[]>([])
+  const [showErrors, setShowErrors] = useState(false)
+
+  const selectedEngagements = engagements.filter((e) => selectedIds.has(e.id))
+  const n = selectedEngagements.length
+
+  useEffect(() => {
+    if (!open) return
+    setFetching(true)
+    api.get('/esign/templates?limit=100')
+      .then((res) => {
+        const items: LetterTemplate[] = res.data?.items ?? []
+        setTemplates(items)
+        if (items.length > 0) setTemplateId(items[0].id)
+      })
+      .catch(() => toast.error('Failed to load templates'))
+      .finally(() => setFetching(false))
+  }, [open])
+
+  function handleClose() {
+    setTemplateId('')
+    setFeeAmount('')
+    setPartialErrors([])
+    setShowErrors(false)
+    onClose()
+  }
+
+  async function handleSubmit() {
+    if (!templateId) return
+    setSubmitting(true)
+    setPartialErrors([])
+    setShowErrors(false)
+    try {
+      const result = await engagementsApi.bulkSendLetter({
+        engagement_ids: Array.from(selectedIds),
+        template_id: templateId,
+        fee_amount: feeAmount || undefined,
+      })
+
+      if (result.failed === 0) {
+        toast.success(`Sent engagement letters to ${result.sent} client${result.sent !== 1 ? 's' : ''}`)
+        onSuccess()
+      } else if (result.sent > 0) {
+        toast.warning(`Sent ${result.sent}, failed ${result.failed}. Check errors below.`)
+        setPartialErrors(result.errors)
+        setShowErrors(true)
+      } else {
+        toast.error(`All ${result.failed} sends failed.`)
+        setPartialErrors(result.errors)
+        setShowErrors(true)
+      }
+    } catch {
+      toast.error('Bulk send failed. Please try again.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  if (!open) return null
+
+  const inputCls = 'w-full h-9 px-3 rounded-[6px] bg-surface-input dark:bg-dark-card border border-[0.5px] border-surface-border dark:border-dark-border text-[13px] text-brand dark:text-[#EDEEF0] placeholder:text-[#9CA3AF] focus:outline-none focus:border-brand-light transition-colors'
+  const labelCls = 'text-[12px] font-medium text-[#374151] dark:text-[#D1D5DB] mb-1'
+
+  const MAX_VISIBLE = 5
+  const visibleEngagements = selectedEngagements.slice(0, MAX_VISIBLE)
+  const remainder = n - MAX_VISIBLE
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+      <div className="bg-white dark:bg-[#1E2A3B] rounded-[10px] shadow-xl w-full max-w-lg flex flex-col max-h-[90vh]">
+        {/* Header */}
+        <div className="px-6 pt-5 pb-4 border-b border-surface-border dark:border-dark-border flex-shrink-0">
+          <h2 className="text-[15px] font-semibold text-brand dark:text-[#EDEEF0]">
+            Send Engagement Letter to {n} Client{n !== 1 ? 's' : ''}
+          </h2>
+        </div>
+
+        {/* Body */}
+        <div className="px-6 py-4 flex-1 overflow-y-auto flex flex-col gap-4">
+          <div>
+            <p className={labelCls}>Letter Template <span className="text-red-500">*</span></p>
+            {fetching ? (
+              <div className="flex items-center gap-2 text-[13px] text-[#6B7280]">
+                <Loader2 className="h-4 w-4 animate-spin" /> Loading templates...
+              </div>
+            ) : (
+              <select
+                value={templateId}
+                onChange={(e) => setTemplateId(e.target.value)}
+                className={inputCls}
+              >
+                <option value="">Select a template</option>
+                {templates.map((t) => (
+                  <option key={t.id} value={t.id}>{t.name}</option>
+                ))}
+              </select>
+            )}
+          </div>
+
+          <div>
+            <p className={labelCls}>Fee Amount (optional)</p>
+            <input
+              type="text"
+              placeholder="$0.00"
+              value={feeAmount}
+              onChange={(e) => setFeeAmount(e.target.value)}
+              className={inputCls}
+            />
+            <p className="text-[11px] text-[#6B7280] mt-1">Leave blank to use the fee from the template.</p>
+          </div>
+
+          <div className="rounded-[6px] bg-[#FFFBEB] dark:bg-[#2D2206] border border-[#FCD34D] dark:border-[#92400E] px-3 py-2.5">
+            <p className="text-[12px] text-[#92400E] dark:text-[#FCD34D]">
+              This will generate and send a signature request to each selected client via Dropbox Sign. This action cannot be undone.
+            </p>
+          </div>
+
+          <div>
+            <p className={labelCls}>Selected engagements</p>
+            <ul className="text-[12px] text-brand dark:text-[#D1D5DB] space-y-0.5">
+              {visibleEngagements.map((e) => (
+                <li key={e.id} className="truncate">• {e.name}</li>
+              ))}
+              {remainder > 0 && (
+                <li className="text-[#6B7280]">and {remainder} more…</li>
+              )}
+            </ul>
+          </div>
+
+          {showErrors && partialErrors.length > 0 && (
+            <div className="rounded-[6px] bg-[#FEF2F2] dark:bg-[#2D0707] border border-[#FECACA] dark:border-[#7F1D1D] px-3 py-2.5">
+              <p className="text-[12px] font-medium text-[#991B1B] dark:text-[#FCA5A5] mb-1">Errors:</p>
+              <ul className="text-[12px] text-[#DC2626] dark:text-[#FCA5A5] space-y-0.5">
+                {partialErrors.map((err, i) => (
+                  <li key={i}>• {err}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="px-6 py-4 border-t border-surface-border dark:border-dark-border flex-shrink-0 flex justify-between">
+          <button
+            onClick={handleClose}
+            className="h-9 px-3 rounded-[6px] border border-[0.5px] border-brand dark:border-[#4A7FA5] text-brand dark:text-[#EDEEF0] text-[13px] font-medium hover:bg-surface-page dark:hover:bg-dark-page transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSubmit}
+            disabled={submitting || !templateId}
+            className="h-9 px-4 rounded-[6px] bg-brand dark:bg-brand-btn text-white text-[13px] font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+          >
+            {submitting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+            {submitting ? 'Sending...' : `Send to ${n} Client${n !== 1 ? 's' : ''}`}
+          </button>
+        </div>
+      </div>
+    </div>
   )
 }

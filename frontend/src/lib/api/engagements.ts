@@ -80,6 +80,29 @@ export const engagementsApi = {
     return data
   },
 
+  bulkCreate: async (payload: {
+    client_ids: string[]
+    name: string
+    engagement_type?: string
+    status?: string
+    start_date?: string
+    end_date?: string
+    notes?: string
+    filing_deadline?: string
+  }): Promise<{ created: number; engagement_ids: string[]; skipped: number }> => {
+    const { data } = await api.post('/engagements/bulk-create', payload)
+    return data
+  },
+
+  bulkSendLetter: async (payload: {
+    engagement_ids: string[]
+    template_id: string
+    fee_amount?: string
+  }): Promise<{ sent: number; failed: number; errors: string[] }> => {
+    const { data } = await api.post('/engagements/bulk-send-letter', payload)
+    return data
+  },
+
   getCalendar: async (days = 180): Promise<CalendarItem[]> => {
     const { data } = await api.get('/engagements/calendar', { params: { days } })
     const items = Array.isArray(data) ? data : (data.items ?? [])

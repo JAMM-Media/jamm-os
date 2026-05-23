@@ -115,3 +115,42 @@ class CalendarEngagementItem(BaseModel):
 
 class CalendarResponse(BaseModel):
     items: list[CalendarEngagementItem]
+
+
+class BulkEngagementCreate(BaseModel):
+    client_ids: list[UUID]
+    name: str
+    engagement_type: Optional[str] = None
+    status: Optional[str] = "planning"
+    start_date: Optional[date] = None
+    end_date: Optional[date] = None
+    notes: Optional[str] = None
+    filing_deadline: Optional[date] = None
+
+    @field_validator("engagement_type")
+    @classmethod
+    def validate_engagement_type(cls, v):
+        if v is None:
+            return v
+        valid = {e.value for e in EngagementType}
+        if v not in valid:
+            raise ValueError(f"Invalid engagement_type '{v}'. Must be one of: {sorted(valid)}")
+        return v
+
+
+class BulkEngagementCreateResult(BaseModel):
+    created: int
+    engagement_ids: list[UUID]
+    skipped: int
+
+
+class BulkSendLetterRequest(BaseModel):
+    engagement_ids: list[UUID]
+    template_id: UUID
+    fee_amount: Optional[str] = ""
+
+
+class BulkSendLetterResult(BaseModel):
+    sent: int
+    failed: int
+    errors: list[str]
