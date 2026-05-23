@@ -131,6 +131,7 @@ export default function DailyTab({ selectedUserId, currentUserId, userRole }: Da
   const [engSearch, setEngSearch] = useState('')
   const [engDropOpen, setEngDropOpen] = useState(false)
   const [taskOpen, setTaskOpen] = useState(false)
+  const [taskHint, setTaskHint] = useState(false)
   const [taskSearch, setTaskSearch] = useState('')
   const [actOpen, setActOpen] = useState(false)
   const [submitting, setSubmitting] = useState(false)
@@ -149,7 +150,7 @@ export default function DailyTab({ selectedUserId, currentUserId, userRole }: Da
 
   // Load engagements, clients, settings, entries
   useEffect(() => {
-    api.get('/api/v1/engagements/?limit=100&status=active').then((r) => {
+    api.get('/api/v1/engagements/?limit=100').then((r) => {
       setEngagements(r.data?.items ?? [])
     }).catch(() => {})
 
@@ -472,9 +473,16 @@ export default function DailyTab({ selectedUserId, currentUserId, userRole }: Da
               <div className="relative">
                 <button
                   type="button"
-                  disabled={!form.engagementId}
-                  onClick={() => form.engagementId && setTaskOpen((o) => !o)}
-                  className={cn(inputClass, 'text-left flex items-center justify-between', !form.engagementId ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer')}
+                  onClick={() => {
+                    if (!form.engagementId) {
+                      setTaskHint(true)
+                      setTimeout(() => setTaskHint(false), 3000)
+                    } else {
+                      setTaskHint(false)
+                      setTaskOpen((o) => !o)
+                    }
+                  }}
+                  className={cn(inputClass, 'text-left flex items-center justify-between cursor-pointer')}
                 >
                   <span className={form.taskId ? '' : 'text-[#9CA3AF]'}>
                     {form.taskId
@@ -483,6 +491,11 @@ export default function DailyTab({ selectedUserId, currentUserId, userRole }: Da
                   </span>
                   <ChevronDown className="h-3.5 w-3.5 text-[#9CA3AF] flex-shrink-0 ml-2" />
                 </button>
+                {taskHint && (
+                  <p className="text-[11px] text-[#F59E0B] mt-1">
+                    Please select an engagement first
+                  </p>
+                )}
                 {taskOpen && form.engagementId && (
                   <div className="absolute z-50 top-full mt-1 w-full bg-white dark:bg-dark-card border border-surface-border dark:border-dark-border rounded-[6px] shadow-lg">
                     <div className="p-2 border-b border-surface-border dark:border-dark-border">
