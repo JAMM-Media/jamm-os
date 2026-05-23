@@ -17,6 +17,7 @@ const TABS = [
   { key: 'documents', label: 'Documents' },
   { key: 'invoices', label: 'Invoices' },
   { key: 'messages', label: 'Messages' },
+  { key: 'organizer', label: 'Tax Organizer' },
 ]
 
 export function PortalShell({

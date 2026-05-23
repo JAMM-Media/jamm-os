@@ -24,6 +24,7 @@ import { IrsAuthTab } from '@/components/clients/IrsAuthTab'
 import { PortalPreview } from '@/components/clients/PortalPreview'
 import { HealthDot } from '@/components/clients/HealthDot'
 import { EditClientModal } from '@/components/clients/EditClientModal'
+import TaxOrganizerTab from '@/components/tax-organizer/TaxOrganizerTab'
 
 function EngagementStatusBadge({ status }: { status: string }) {
   return <StatusBadge variant={status as Parameters<typeof StatusBadge>[0]['variant']} />
@@ -35,6 +36,7 @@ const CLIENT_TABS = [
   { key: 'documents', label: 'Documents' },
   { key: 'billing', label: 'Billing' },
   { key: 'irs-auth', label: 'IRS Authorizations' },
+  { key: 'organizer', label: 'Tax Organizer' },
   { key: 'portal', label: 'Portal' },
   { key: 'messages', label: 'Messages' },
 ]
@@ -552,6 +554,10 @@ function ClientDetailContent() {
 
         {activeTab === 'irs-auth' && (
           <IrsAuthTab clientId={clientId} />
+        )}
+
+        {activeTab === 'organizer' && (
+          <TaxOrganizerTab clientId={clientId} userRole={user?.role ?? ''} />
         )}
 
         {activeTab === 'portal' && (

@@ -10,6 +10,7 @@ import { PortalTodo } from '@/components/portal/PortalTodo'
 import { PortalDocuments } from '@/components/portal/PortalDocuments'
 import { PortalInvoices } from '@/components/portal/PortalInvoices'
 import { PortalMessages } from '@/components/portal/PortalMessages'
+import PortalOrganizer from '@/components/portal/PortalOrganizer'
 
 const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!)
 
@@ -75,6 +76,9 @@ export default function PortalPage() {
       )}
       {activeTab === 'messages' && (
         <PortalMessages clientId={me.client_id} firmName={me.firm_name} />
+      )}
+      {activeTab === 'organizer' && (
+        <PortalOrganizer clientId={me.client_id} />
       )}
     </PortalShell>
   )
