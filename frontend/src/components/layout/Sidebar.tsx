@@ -21,6 +21,7 @@ import {
   LogOut,
   CalendarDays,
   Bell,
+  Clock,
 } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { cn } from '@/lib/utils'
@@ -33,6 +34,7 @@ const navItems = [
   { href: '/clients', label: 'Clients', icon: Users },
   { href: '/engagements', label: 'Engagements', icon: Briefcase },
   { href: '/tasks', label: 'Tasks', icon: CheckSquare },
+  { href: '/timesheets', label: 'Timesheets', icon: Clock },
   { href: '/calendar', label: 'Calendar', icon: CalendarDays },
   { href: '/documents', label: 'Documents', icon: FileText },
   { href: '/billing', label: 'Billing', icon: CreditCard },

@@ -61,12 +61,14 @@ class FirmUpdate(BaseModel):
     is_active: Optional[bool] = None
     settings: Optional[dict] = None
     feature_flags: Optional[dict] = None
+    timesheet_approval_required: Optional[bool] = None
 
 
 class FirmOut(FirmBase):
     id: UUID
     staff_auth_policy: Optional[str] = "either"
     plan_override: bool = False
+    timesheet_approval_required: bool = False
     created_at: datetime
     updated_at: datetime
 

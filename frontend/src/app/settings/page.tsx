@@ -1,7 +1,7 @@
 // frontend/src/app/settings/page.tsx
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { AppShell } from '@/components/layout/AppShell'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { useFetch } from '@/lib/hooks/useFetch'
@@ -55,6 +55,8 @@ function RoleBadge({ role }: { role: string }) {
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState('profile')
   const { user } = useAuth()
+  const [approvalRequired, setApprovalRequired] = useState<boolean | null>(null)
+  const [savingApproval, setSavingApproval] = useState(false)
 
   const { data: firmData, isLoading: firmLoading } = useFetch<FirmDetails>(
     () => settingsApi.getMyFirm().then((r) => r.data as FirmDetails),
@@ -96,6 +98,28 @@ export default function SettingsPage() {
       toast.error(detail ?? 'Something went wrong.')
     } finally {
       setInviteSubmitting(false)
+    }
+  }
+
+  useEffect(() => {
+    if (firmData && approvalRequired === null) {
+      setApprovalRequired((firmData as FirmDetails & { timesheet_approval_required?: boolean }).timesheet_approval_required ?? false)
+    }
+  }, [firmData, approvalRequired])
+
+  async function handleToggleApproval() {
+    if (!isFirmOwner) return
+    const next = !approvalRequired
+    setApprovalRequired(next)
+    setSavingApproval(true)
+    try {
+      await api.patch('/api/v1/firms/me', { timesheet_approval_required: next })
+      toast.success('Timesheet setting saved')
+    } catch {
+      setApprovalRequired(!next)
+      toast.error('Failed to save setting')
+    } finally {
+      setSavingApproval(false)
     }
   }
 
@@ -251,6 +275,40 @@ export default function SettingsPage() {
               <p className="text-[11px] text-[#6B7280]" style={{ marginTop: '8px' }}>
                 To update firm details or change your subscription, contact JAMM PX support.
               </p>
+            )}
+
+            {/* Timesheets section */}
+            {isFirmOwner && (
+              <div className="bg-surface-card dark:bg-dark-card rounded-[10px] p-4 flex flex-col gap-3 max-w-lg" style={{ marginTop: '12px' }}>
+                <p className="text-[13px] font-medium text-brand dark:text-[#EDEEF0]">Timesheets</p>
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex-1">
+                    <p className="text-[13px] text-brand dark:text-[#EDEEF0]">
+                      Require manager approval for submitted timesheets
+                    </p>
+                    <p className="text-[11px] text-[#6B7280] mt-0.5">
+                      When on, submitted entries show as Pending Approval until a manager approves them.
+                    </p>
+                  </div>
+                  <button
+                    onClick={handleToggleApproval}
+                    disabled={savingApproval || approvalRequired === null}
+                    className={cn(
+                      'relative inline-flex h-5 w-9 flex-shrink-0 rounded-full transition-colors focus:outline-none disabled:opacity-60',
+                      approvalRequired ? 'bg-brand dark:bg-brand-btn' : 'bg-[#D1D5DB]'
+                    )}
+                    aria-label="Toggle approval requirement"
+                  >
+                    <span
+                      className={cn(
+                        'inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform',
+                        approvalRequired ? 'translate-x-[18px]' : 'translate-x-0.5'
+                      )}
+                      style={{ marginTop: '2px' }}
+                    />
+                  </button>
+                </div>
+              </div>
             )}
           </>
         )}

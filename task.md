@@ -6,297 +6,492 @@ Frontend: Next.js 14+ App Router, TypeScript, Tailwind CSS, shadcn/ui
 All backend files start with a path comment.
 All frontend files start with a path comment.
 Never use && to chain commands — run them sequentially.
-No backend changes in this task — frontend only.
+Never modify the database schema without following the
+migration procedure exactly.
 Tenant isolation is absolute — every query scoped to firm_id.
+Routers are thin — no business logic in routers ever.
+Never use native_enum=True for enums — always use
+sa.Enum(MyEnum, native_enum=False).
 
-== TASK: Entity Linking in Firm Chat and Client Messages ==
+== MIGRATION PROCEDURE — FOLLOW EVERY TIME ==
 
-Allow staff to link directly to any client, engagement, task,
-or document from within any message compose box in the app.
-Typing # or clicking a toolbar button opens a two-level
-dropdown. Selecting a record inserts a clickable chip into
-the message. Recipients click the chip and navigate directly
-to that record.
+1. alembic current
+2. alembic revision --autogenerate -m "description"
+3. Read the generated file in full
+4. If it contains tables beyond what was just added, delete
+   it and write a clean manual migration
+5. Do NOT run alembic upgrade head locally — Andrew runs
+   this on the droplet
 
-This is a frontend-only build. All API endpoints needed
-already exist. No backend changes, no migration, no restart.
+== TASK: Staff Timesheets — Full Feature Build ==
 
-Read these files in full before writing any code:
+Build a complete timesheet system as a new first-class
+sidebar tab. Staff see only their own entries. Managers and
+firm owners see all staff with filter controls. Six view
+tabs: Daily, Weekly, Biweekly, Monthly, Quarterly, Yearly.
+Daily is the active entry surface. All other tabs are
+read-and-edit with CSV export.
 
-- frontend/src/components/firm-chat/MessageCompose.tsx
-  (or wherever the firm chat compose box lives)
-- frontend/src/components/firm-chat/ (list all files)
-- frontend/src/app/firm-chat/ (list all files)
-- Any client messaging compose component if separate from
-  firm chat
+Read these files before writing any code:
+- app/models/time_entry.py
+- app/schemas/time_entry.py
+- app/api/time_entries.py
+- app/crud/time_entry.py
+- app/services/time_entry_service.py
+- app/core/enums.py (for NotificationType)
+- app/crud/notification.py
+- frontend/src/components/layout/Sidebar.tsx
+- frontend/src/app/(dashboard)/billing/page.tsx
+  (to understand existing time entry UI patterns)
 
-== STEP 1 — AUDIT EXISTING COMPOSE BOXES ==
+Report what existing fields are on TimeEntry before writing
+any code.
 
-List every compose box in the application that sends messages:
-1. Firm Chat channel message compose
-2. Client messaging compose (staff side on client detail page)
-3. Any other compose surfaces
+== PHASE 1 — BACKEND: EXTEND TIME ENTRY MODEL ==
 
-For each one, identify:
-- The file path
-- Whether it uses a textarea or a contenteditable div
-- How it currently handles submission
-- Whether it already has a toolbar row below or above the
-  textarea
+Read the TimeEntry model first. Then add the following
+fields via migration.
 
-Report findings before writing any code.
+Fields to add to the TimeEntry model in
+app/models/time_entry.py:
 
-== STEP 2 — BUILD THE ENTITY LINK PICKER COMPONENT ==
+  start_time: Mapped[Optional[time]] = mapped_column(
+      Time, nullable=True
+  )
+  end_time: Mapped[Optional[time]] = mapped_column(
+      Time, nullable=True
+  )
+  activity_type: Mapped[Optional[str]] = mapped_column(
+      String(100), nullable=True
+  )
+  is_submitted: Mapped[bool] = mapped_column(
+      Boolean, default=False, nullable=False
+  )
+  submitted_at: Mapped[Optional[datetime]] = mapped_column(
+      DateTime(timezone=True), nullable=True
+  )
+  is_approved: Mapped[bool] = mapped_column(
+      Boolean, default=False, nullable=False
+  )
+  approved_at: Mapped[Optional[datetime]] = mapped_column(
+      DateTime(timezone=True), nullable=True
+  )
+  approved_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+      ForeignKey("users.id", ondelete="SET NULL"),
+      nullable=True
+  )
+  edited_after_submission: Mapped[bool] = mapped_column(
+      Boolean, default=False, nullable=False
+  )
+  edit_note: Mapped[Optional[str]] = mapped_column(
+      String(500), nullable=True
+  )
 
-Create a new file:
-frontend/src/components/shared/EntityLinkPicker.tsx
+Add the import for time at the top of the model file:
+  from datetime import date, datetime, time, timezone
 
-This is a self-contained dropdown component used by any
-compose box. It handles the full two-level selection flow
-and calls back with the selected entity.
+Add to app/schemas/time_entry.py:
+- All new fields to TimeEntryOut
+- start_time, end_time, activity_type to TimeEntryCreate
+  and TimeEntryUpdate
+- is_submitted, is_approved, edited_after_submission,
+  edit_note to TimeEntryOut only — clients never set these
+  directly
 
-PROPS:
-  interface EntityLinkPickerProps {
-    anchorRef: React.RefObject<HTMLElement>
-    onSelect: (link: EntityLink) => void
-    onClose: () => void
+Write the migration file manually following the procedure.
+The revision should chain from 0027. Do NOT run it locally.
+
+== PHASE 2 — BACKEND: NEW TIMESHEET ENDPOINTS ==
+
+File: app/api/time_entries.py
+
+Add these endpoints after the existing ones. Read the
+existing router before adding anything.
+
+ENDPOINT 1 — Submit daily entries
+POST /time-entries/submit-day
+- Requires staff_or_above role
+- Body: { date: date }
+- Logic: Find all time entries for current_user.id and
+  firm_id where entry.date == submitted date and
+  is_submitted == False
+- Mark each is_submitted = True, submitted_at = now
+- If no entries found: return 400 "No unsubmitted entries
+  for this date"
+- Returns: { submitted_count: int, date: str }
+
+ENDPOINT 2 — Get timesheet summary for a date range
+GET /time-entries/summary
+- Requires staff_or_above role
+- Query params: start_date, end_date, user_id (optional,
+  manager+ only)
+- Staff: always scoped to their own user_id regardless of
+  query param
+- Manager+: can pass any user_id in the firm, or omit for
+  all staff
+- Returns list of summary rows grouped by user and date:
+  [{ user_id, user_name, date, total_hours, billable_hours,
+  billable_pct, entry_count, is_submitted, has_edits }]
+- has_edits = any entry in that user+date group has
+  edited_after_submission = True
+
+ENDPOINT 3 — Edit submitted entry (with manager notification)
+PATCH /time-entries/{entry_id}/submitted-edit
+- Requires staff_or_above role
+- Body: { hours, start_time, end_time, activity_type,
+  description, edit_note } — all optional
+- If entry.is_submitted == False: return 400 "Entry has
+  not been submitted — use the regular edit endpoint"
+- Staff can only edit their own entries
+- Apply the changes, set edited_after_submission = True,
+  set edit_note from body if provided
+- Fire a notification to all managers and firm_owners in
+  the firm:
+  title: "Timesheet entry edited after submission"
+  body: "{user.full_name} edited a submitted time entry
+    for {entry.date}. {edit_note if provided}"
+  notification_type: NotificationType.system
+  related_entity_type: "time_entry"
+  related_entity_id: entry.id
+- Returns updated TimeEntryOut
+
+ENDPOINT 4 — Approve a submitted entry
+POST /time-entries/{entry_id}/approve
+- Requires manager_or_above role
+- Sets is_approved = True, approved_at = now,
+  approved_by_id = current_user.id
+- Returns updated TimeEntryOut
+
+ENDPOINT 5 — Get CSV export
+GET /time-entries/export
+- Requires staff_or_above role
+- Query params: start_date, end_date, user_id (optional,
+  manager+ only), format="csv"
+- Staff: scoped to own entries only
+- Returns a CSV file response with headers:
+  Date, Staff, Engagement, Activity Type, Description,
+  Start Time, End Time, Hours, Billable, Rate, Value,
+  Submitted, Approved
+- Use fastapi.responses.StreamingResponse with
+  media_type="text/csv"
+- Set header:
+  Content-Disposition: attachment;
+  filename="timesheets_{start_date}_{end_date}.csv"
+
+ENDPOINT 6 — Get firm settings for timesheets
+This reads from the existing firm settings. Check if Firm
+model has a timesheet_approval_required field. If not,
+this endpoint just returns { approval_required: false }
+as a placeholder — the settings toggle is built in Phase 4.
+
+GET /time-entries/settings
+- Requires manager_or_above role
+- Returns { approval_required: bool }
+
+== PHASE 3 — FRONTEND: SIDEBAR AND PAGE SHELL ==
+
+SIDEBAR UPDATE
+File: frontend/src/components/layout/Sidebar.tsx
+
+Read this file first. Add Timesheets to navItems between
+Tasks and Calendar:
+  { href: '/timesheets', label: 'Timesheets',
+    icon: Clock }
+
+Import Clock from lucide-react — add to existing import.
+
+PAGE SHELL
+Create: frontend/src/app/(dashboard)/timesheets/page.tsx
+
+This is the top-level page. It renders the tab bar and
+the active tab content.
+
+Tab bar: Daily | Weekly | Biweekly | Monthly | Quarterly
+| Yearly
+
+Active tab indicator: 2px border-bottom #1F3148 light /
+#4A7FA5 dark. Inactive tabs: text-[#6B7280].
+
+Page header:
+- Left: "Timesheets" — 20px weight 500 #1F3148
+- Right (manager+ only): Staff filter dropdown
+  Default: "All Staff" for managers, hidden for staff
+  Shows list of firm users from GET /users/?limit=100
+  Selecting a user filters all tabs to that user
+
+Tab content is rendered below the tab bar. Each tab is a
+separate component imported from the timesheets components
+directory.
+
+Create the following empty component files that will be
+filled in Phase 4:
+- frontend/src/app/(dashboard)/timesheets/DailyTab.tsx
+- frontend/src/app/(dashboard)/timesheets/WeeklyTab.tsx
+- frontend/src/app/(dashboard)/timesheets/BiweeklyTab.tsx
+- frontend/src/app/(dashboard)/timesheets/MonthlyTab.tsx
+- frontend/src/app/(dashboard)/timesheets/QuarterlyTab.tsx
+- frontend/src/app/(dashboard)/timesheets/YearlyTab.tsx
+
+Each empty component just renders a placeholder div for now:
+  <div className="p-6 text-[13px] text-[#6B7280]">
+    Loading...
+  </div>
+
+== PHASE 4 — FRONTEND: DAILY TAB ==
+
+File: frontend/src/app/(dashboard)/timesheets/DailyTab.tsx
+
+This is the primary entry surface. Props:
+  interface DailyTabProps {
+    selectedUserId: string | null  // null = current user
+    currentUserId: string
+    userRole: string
   }
 
-  interface EntityLink {
-    entityType: 'client' | 'engagement' | 'task' | 'document'
-    entityId: string
-    label: string
-    href: string
+LAYOUT:
+Top section — Entry form (always visible)
+Bottom section — Today's submitted and pending entries
+
+ENTRY FORM:
+Card surface bg #EDEEF0 dark:#383838, 8px radius,
+padding 16px, margin-bottom 16px.
+
+Form header: "Log time for {today's date formatted as
+'Monday, May 22'}" — 13px weight 500
+
+Form fields in a responsive grid (2-col on wide, 1-col
+narrow):
+
+1. Engagement — required
+   Dropdown populated from GET /engagements/?limit=100
+   Shows assigned engagements first (where
+   assigned_staff_id == current user), then all others
+   separated by a divider "— Other engagements —"
+   Searchable — typing filters the list
+   Display: "{engagement.name} — {client.name}"
+
+2. Task — optional
+   Dropdown populated from GET /tasks/?engagement_id=X
+   after engagement is selected
+   Shows tasks assigned to current user first
+   Display: task.title
+
+3. Activity Type — required
+   Dropdown with preset options:
+   Tax Preparation, Client Meeting, Document Review,
+   Review & Sign-off, Client Communication, Research,
+   Admin, Other
+   Plus a free-text "Custom" option that shows a text
+   input
+
+4. Start Time — optional
+   Time picker input, type="time"
+   Default: current time rounded to nearest 15 minutes
+
+5. End Time — optional
+   Time picker input, type="time"
+   Must be after Start Time — show inline error if not
+   When both are set: auto-calculate and display duration
+   below the end time field: "2h 30m"
+
+6. Hours — required
+   Number input, min 0.25, max 24, step 0.25
+   Auto-populated from Start/End time difference if both
+   are set, but remains editable
+   If user manually edits hours after auto-fill, clear
+   the auto-fill and keep manual value
+
+7. Billable toggle — yes/no
+   Default: yes for engagement-linked entries
+   Pill toggle, brand blue when on
+
+8. Notes — optional
+   Textarea, 2 rows, max 500 chars
+   Placeholder: "What did you work on?"
+
+Below the form fields:
+- "Add Entry" button — #1F3148 bg, white text, full width
+  Validates required fields before adding
+  On success: adds entry to today's pending list below,
+  clears form fields (keep engagement and activity type
+  selected for fast repeat entry)
+  Shows soft duplicate warning if same engagement +
+  activity type + overlapping time already exists today:
+  "This looks similar to an entry you already logged
+  today. Add anyway?"
+
+TODAY'S ENTRIES:
+Below the form, two sections:
+
+PENDING ENTRIES (not yet submitted):
+Section label: "Pending — not yet submitted"
+11px uppercase letter-spacing muted color
+
+Each entry row:
+- Date chip (today) — muted
+- Engagement name + client name — 12px weight 500
+- Activity type — 12px muted
+- Start–End time if set, else hours — 12px
+- Billable indicator — small green dot if billable
+- Edit icon — pencil, opens inline edit (same fields)
+- Delete icon — trash, confirm before delete
+
+Running total below pending entries:
+"X entries · Y.Z hours · $N.NN billable value"
+
+SUBMIT DAY BUTTON:
+Below pending entries. Only shows if there are pending
+entries.
+"Submit Day" — full width, #1F3148 bg white text
+On click: POST /time-entries/submit-day { date: today }
+On success: move all pending entries to submitted section,
+show success toast "Day submitted"
+
+SUBMITTED ENTRIES:
+Section label: "Submitted"
+Same row layout as pending but:
+- No edit/delete icons (edit triggers the submitted-edit
+  flow)
+- Show edit icon with a warning color if manager+ — on
+  click show a warning modal: "Editing a submitted entry
+  will notify all managers. Continue?" then open edit form
+- Approved entries show a small green checkmark badge
+- If approval mode is on (from settings): show "Pending
+  approval" badge on unapproved submitted entries
+
+EMPTY STATE:
+If no entries at all today:
+"Nothing logged yet today. Add your first entry above."
+
+== PHASE 5 — FRONTEND: AGGREGATE TABS ==
+
+Each aggregate tab (Weekly, Biweekly, Monthly, Quarterly,
+Yearly) follows the same pattern with different date ranges.
+
+Create a shared component:
+frontend/src/app/(dashboard)/timesheets/AggregateTab.tsx
+
+Props:
+  interface AggregateTabProps {
+    period: 'weekly' | 'biweekly' | 'monthly' |
+            'quarterly' | 'yearly'
+    selectedUserId: string | null
+    currentUserId: string
+    userRole: string
   }
 
-BEHAVIOR:
-- Renders as a floating dropdown positioned above the
-  anchorRef element (above the toolbar, not below it —
-  so it does not get clipped by the bottom of the viewport)
-- First level: entity type selection
-  Four rows: Clients, Engagements, Tasks, Documents
-  Each row has an icon (Users, Briefcase, CheckSquare,
-  FileText from lucide-react) and a label
-  Clicking a row loads the second level for that type
-- Second level: record selection within the chosen type
-  Shows a search input at the top (autofocused)
-  Below search: scrollable list of matching records
-  Each row shows the record name and a subtle secondary
-  label (client name for engagements and tasks, engagement
-  name for tasks)
-  Searching filters the list client-side after initial load
-  Back arrow at top left returns to the first level
+DATE RANGE CALCULATION:
+  weekly: current Mon–Sun
+  biweekly: last two Mon–Sun periods
+  monthly: first to last day of current month
+  quarterly: first to last day of current quarter
+  yearly: Jan 1 to Dec 31 of current year
 
-API CALLS — use the existing endpoints with these patterns:
-  Clients:     GET /api/v1/clients/?limit=50
-               display: client.display_name or client.name
-               href: /clients/{id}
-  Engagements: GET /api/v1/engagements/?limit=50
-               display: engagement.name
-               secondary: client name if available
-               href: /engagements/{id}
-  Tasks:       GET /api/v1/tasks/?limit=50
-               display: task.title
-               secondary: client name if available
-               href: /tasks/{id}
-  Documents:   GET /api/v1/documents/?limit=50
-               display: document.name or file_name
-               href: /documents/{id}
+NAVIGATION:
+Left/right arrow buttons to go to previous/next period.
+Center: period label e.g. "May 12 – May 18, 2026" or
+"May 2026" or "Q2 2026"
 
-Load the list when the user selects an entity type (not
-before). Show a small inline spinner while loading. Cache
-the result for the lifetime of the picker so switching
-back and forth does not re-fetch.
+MANAGER SUMMARY (manager+ only, shown above detail):
+Summary row per staff member:
+  Name | Total Hours | Billable Hours | Billable % |
+  Entries | Status indicator
 
-SEARCH:
-- Filter client-side on the already-loaded list
-- Match against the display label case-insensitively
-- If the list is empty after filtering show:
-  "No results for '[query]'"
+Status indicator:
+  Green dot — all entries submitted and approved
+  Amber dot — some submitted, some pending
+  Red dot — entries exist but none submitted
 
-DROPDOWN STYLING — match the existing Firm Chat patterns:
-- Background: #EDEEF0 light / #383838 dark
-- Border: 0.5px solid #C8CDD6 light / #484848 dark
-- Border-radius: 8px
-- Width: 280px fixed
-- Max-height: 320px, overflow-y auto on the list
-- Box-shadow: 0 4px 12px rgba(0,0,0,0.12)
-- z-index: 100 (above everything)
-- First level rows: 36px height, 12px 14px padding
-  Icon 14px in #6B7280, label 13px #1F3148 dark/#EDEEF0
-  Hover: #D5D8DE light / #2D2D2D dark background
-- Second level header: back arrow + entity type label
-  12px weight 500, 10px 14px padding, border-bottom 0.5px
-- Search input: full width, 11px, 8px 12px padding
-  border-bottom 0.5px, no border-radius, bg transparent
-  placeholder "Search [entity type]..."
-- Record rows: 36px min-height, 12px 14px padding
-  Primary label 12px weight 500 #1F3148 / #EDEEF0
-  Secondary label 11px #6B7280 / #9CA3AF, truncated
-  Hover: same as first level rows
-- Close on: Escape key, click outside the dropdown
+Overtime flag: if total hours > 40 for weekly/biweekly
+periods (normalized), show amber highlight on that row.
+If > 50 hours show red highlight.
 
-== STEP 3 — BUILD THE ENTITY CHIP ==
+DETAIL TABLE:
+Columns: Date | Staff (manager only) | Engagement |
+Activity | Start | End | Hours | Billable | Notes |
+Submitted | Approved | Actions
 
-Create a new file:
-frontend/src/components/shared/EntityChip.tsx
+Actions column:
+- Staff viewing own entries: edit icon only if not
+  submitted, warning edit icon if submitted
+- Manager viewing any entry: approve button if submitted
+  but not approved, warning edit icon always
 
-This is the clickable chip that appears inside the message
-after a link is selected.
+EDIT FLOW FOR SUBMITTED ENTRIES:
+Show a modal with warning: "Editing this submitted entry
+will notify all managers. Add a note explaining the
+change (optional):" with a textarea for edit_note.
+On confirm: PATCH /time-entries/{id}/submitted-edit
 
-PROPS:
-  interface EntityChipProps {
-    link: EntityLink
-    onRemove?: () => void  // only shown in compose, not
-                           // in rendered messages
-  }
+CSV EXPORT:
+Top right of each aggregate tab: "Export CSV" button
+On click: GET /time-entries/export with the current
+period's date range and user filter
+Triggers browser file download.
 
-VISUAL SPEC:
-- Inline-flex element, sits within the message text flow
-- Background: #DBEAFE light / #1E3A5F dark
-- Text: #1E40AF light / #93C5FD dark
-- Border-radius: 4px
-- Padding: 2px 6px
-- Font: 11px weight 500
-- Icon: 10px icon matching entity type, 3px gap before label
-  client → Users icon
-  engagement → Briefcase icon
-  task → CheckSquare icon
-  document → FileText icon
-- In compose mode (onRemove provided): show a small × button
-  on the right, 10px, same text color, on click calls
-  onRemove
-- In message display mode (no onRemove): entire chip is
-  clickable, onClick calls router.push(link.href)
-- Never wraps — white-space: nowrap, overflow: hidden,
-  text-overflow: ellipsis, max-width: 200px
+Update each of the six tab component files to import and
+use the correct tab component:
+- WeeklyTab, BiweeklyTab, MonthlyTab, QuarterlyTab,
+  YearlyTab all import AggregateTab and pass the correct
+  period prop
+- DailyTab renders the full daily entry form
 
-== STEP 4 — MESSAGE FORMAT AND STORAGE ==
+== PHASE 6 — SETTINGS: APPROVAL TOGGLE ==
 
-Entity links need to survive being sent and re-rendered from
-the database. The message body is stored as a plain string.
+Read the existing Settings page to understand the tab
+structure.
 
-Use a simple inline syntax for encoding links in the stored
-message body:
+File: frontend/src/components/settings/ (list files)
 
-  [[entity:client:uuid:Display Name]]
+Add a new "Timesheets" section to the existing Firm
+settings tab (not a new tab — add it as a new section
+within the Firm tab below the existing firm settings).
 
-Pattern: [[entity:{type}:{id}:{label}]]
+The section has one toggle:
+  Label: "Require manager approval for submitted
+  timesheets"
+  Helper text: "When on, submitted entries show as
+  Pending Approval until a manager approves them."
+  Default: off
 
-When rendering a received message, parse this pattern with
-a regex and replace each match with an EntityChip component
-in display mode.
+This requires a new field on the Firm model:
+  timesheet_approval_required: bool, default False
 
-Create a new file:
-frontend/src/lib/entityLinkParser.tsx
+Add this field to:
+- app/models/firm.py
+- app/schemas/firm.py (FirmOut and FirmUpdate)
 
-Export two functions:
+Write a migration for this field. Chain from 0028.
 
-1. serializeLinks(parts: MessagePart[]): string
-   Takes an array of text strings and EntityLink objects
-   and serializes to a single string with the [[entity:...]]
-   syntax for storage.
+The toggle calls PATCH /firms/me with
+{ timesheet_approval_required: bool }
+The existing PATCH /firms/me endpoint should already
+handle this if FirmUpdate includes the field.
 
-   type MessagePart = string | EntityLink
+== PHASE 7 — TYPESCRIPT, MIGRATION, AND GIT ==
 
-2. parseMessage(body: string): React.ReactNode
-   Takes a stored message string, finds all [[entity:...]]
-   patterns, and returns a React node with EntityChip
-   components for each link and plain text spans for
-   everything else.
+Run: npx tsc --noEmit from the frontend directory.
+Fix all TypeScript errors before proceeding.
 
-== STEP 5 — WIRE INTO COMPOSE BOXES ==
+Then confirm all migration files exist:
+- 0028_add_timesheet_fields_to_time_entries.py
+- 0029_add_timesheet_approval_to_firms.py
 
-For each compose box identified in Step 1, make these
-changes:
+Then:
+git add .
+git commit -m "add timesheets — full feature build"
+git push
 
-STATE CHANGES:
-Add to the compose component:
-  const [parts, setParts] = useState<MessagePart[]>([''])
-  const [showPicker, setShowPicker] = useState(false)
-  const toolbarRef = useRef<HTMLDivElement>(null)
-
-The parts array is the source of truth for the message
-content. It is an array alternating between strings and
-EntityLink objects. The textarea displays the text-only
-version for editing; chips are rendered as overlays or
-inline in a contenteditable. Given that all existing
-compose boxes use textarea elements, use the following
-simpler approach:
-
-SIMPLIFIED COMPOSE APPROACH FOR TEXTAREA:
-Rather than converting to contenteditable (complex, risky),
-keep the textarea for text input and render entity chips
-as a visual preview row between the toolbar and the
-textarea label. When an entity is selected:
-- Append a placeholder token to the textarea value:
-  [@client:Display Name] — visible in the textarea as text
-- Store the full EntityLink separately in a links[] array
-  keyed by the placeholder token
-- On send: replace each placeholder token with the full
-  [[entity:...]] syntax before submitting to the API
-- In the preview row above the textarea: render EntityChip
-  components for each linked entity so the sender can see
-  what they linked and remove chips before sending
-
-TOOLBAR ADDITION:
-In the toolbar row of each compose box, add a link button:
-- Position: left side of the toolbar, before any existing
-  buttons
-- Icon: Link icon from lucide-react, 14px, #6B7280
-- Label: "Link record" — 11px text next to the icon
-- On click: setShowPicker(true)
-- Button style: flex items-center gap-1 px-2 py-1 rounded
-  text-[11px] text-[#6B7280] hover:bg-[#D5D8DE]
-  dark:hover:bg-[#2D2D2D] transition-colors
-
-Also trigger the picker when the user types # in the
-textarea:
-- Add an onChange handler that detects a standalone #
-  character (preceded by a space or at the start of input)
-- When detected: remove the # from the textarea value and
-  open the picker
-- This is the power-user shortcut; the button is the
-  primary discovery path
-
-SUBMISSION:
-Before calling the send API, serialize the message:
-  const body = serializeLinks(parts)
-  // or for the simplified textarea approach:
-  // replace placeholder tokens with [[entity:...]] syntax
-
-== STEP 6 — WIRE INTO MESSAGE RENDERING ==
-
-For each place where received messages are rendered, import
-parseMessage from entityLinkParser and wrap the message
-body:
-
-Instead of:
-  <p>{message.body}</p>
-
-Use:
-  <p>{parseMessage(message.body)}</p>
-
-Find all message rendering locations in:
-- frontend/src/components/firm-chat/ (message feed)
-- frontend/src/app/(app)/clients/[id]/ (client messages tab
-  if it exists)
-
-== STEP 7 — VERIFY ==
+== PHASE 8 — VERIFY ==
 
 1. List every file created or modified
-2. Confirm EntityLinkPicker renders two levels correctly
-3. Confirm EntityChip renders in both compose and display
-   modes
-4. Confirm entityLinkParser serializes and parses the
-   [[entity:...]] format correctly with a simple inline
-   test — call serializeLinks and parseMessage with a
-   sample and log the output
-5. Confirm the # trigger works in the onChange handler
-6. Confirm the Link record button appears in the toolbar
-   of every compose box
-7. Flag anything that requires manual testing in the browser
-   that cannot be verified from code alone
+2. Confirm migration files exist and chain correctly
+3. Confirm all six endpoints exist in the router
+4. Confirm DailyTab renders the entry form and both
+   entry sections
+5. Confirm AggregateTab handles all five period types
+6. Confirm the approval toggle exists in Firm settings
+7. Confirm TypeScript passes clean
+8. List exactly what Andrew needs to run on the droplet
 
-No backend changes. No migration. No restart needed.
-Push to git when complete — Vercel handles frontend deploy.
+Do not restart services — Andrew handles deployment.

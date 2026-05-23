@@ -13,7 +13,8 @@ from app.schemas.firm import FirmCreate, FirmUpdate, FirmOut
 from app.schemas.pagination import PaginatedResponse
 from app.utils.pagination import paginate
 from app.crud import firm as crud_firm
-from app.dependencies.roles import require_system_admin
+from app.dependencies.roles import require_firm_owner, require_system_admin
+from app.models.user import User
 from app.services.automation_presets import seed_firm_presets
 from app.services.tax_organizer_service import seed_firm_organizer_templates
 
@@ -43,6 +44,21 @@ def create_firm(
     seeded_templates = seed_firm_organizer_templates(firm_id=new_firm.id, db=db)
     logger.info(f"Firm {new_firm.id} created with {seeded_templates} organizer templates")
     return new_firm
+
+
+# ---------------------------------------------------------
+# UPDATE MY FIRM — firm_owner only
+# ---------------------------------------------------------
+@router.patch("/me", response_model=FirmOut)
+def update_my_firm(
+    payload: FirmUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_firm_owner),
+):
+    firm = crud_firm.get_firm(db, current_user.firm_id)
+    if not firm:
+        raise HTTPException(status_code=404, detail="Firm not found")
+    return crud_firm.update_firm(db, firm, payload)
 
 
 # ---------------------------------------------------------
