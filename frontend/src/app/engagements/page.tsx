@@ -341,7 +341,7 @@ export default function EngagementsPage() {
 
         {/* Floating bulk action bar */}
         {selCount > 0 && (
-          <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50">
+          <div className={`fixed ${bulkLetterOpen ? 'bottom-24' : 'bottom-6'} left-1/2 -translate-x-1/2 z-50`}>
             <div className="bg-[#1F3148] dark:bg-[#1A2535] rounded-lg shadow-lg px-5 py-3 flex items-center gap-3">
               <span className="text-[13px] text-white font-medium whitespace-nowrap">
                 {selCount} selected
@@ -700,7 +700,7 @@ interface LetterTemplate {
 function BulkSendLetterModal({ open, onClose, selectedIds, engagements, onSuccess }: BulkSendLetterModalProps) {
   const [templates, setTemplates] = useState<LetterTemplate[]>([])
   const [templateId, setTemplateId] = useState('')
-  const [feeAmount, setFeeAmount] = useState('')
+  const [feeAmounts, setFeeAmounts] = useState<Record<string, string>>({})
   const [fetching, setFetching] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [partialErrors, setPartialErrors] = useState<string[]>([])
@@ -709,14 +709,39 @@ function BulkSendLetterModal({ open, onClose, selectedIds, engagements, onSucces
   const selectedEngagements = engagements.filter((e) => selectedIds.has(e.id))
   const n = selectedEngagements.length
 
+  const groupMap = new Map<string, Engagement[]>()
+  for (const eng of selectedEngagements) {
+    const key = eng.engagementType ?? '__none__'
+    if (!groupMap.has(key)) groupMap.set(key, [])
+    groupMap.get(key)!.push(eng)
+  }
+  const groups = Array.from(groupMap.entries()).map(([key, engs]) => {
+    const typeOption = ENGAGEMENT_TYPE_OPTIONS.find((o) => o.value === key)
+    const label = key === '__none__' ? 'Custom / Other' : (typeOption?.label ?? key)
+    return { key, label, engagements: engs }
+  })
+
   useEffect(() => {
     if (!open) return
     setFetching(true)
-    api.get('/esign/templates?limit=100')
-      .then((res) => {
-        const items: LetterTemplate[] = res.data?.items ?? []
+    Promise.all([
+      api.get('/esign/templates?limit=100'),
+      api.get('/users/firm'),
+    ])
+      .then(([templatesRes, firmRes]) => {
+        const items: LetterTemplate[] = templatesRes.data?.items ?? []
         setTemplates(items)
         if (items.length > 0) setTemplateId(items[0].id)
+
+        const schedule: Record<string, string> = firmRes.data?.settings?.fee_schedule ?? {}
+        const initial: Record<string, string> = {}
+        for (const eng of selectedEngagements) {
+          const key = eng.engagementType ?? '__none__'
+          if (!(key in initial) && key !== '__none__' && schedule[key]) {
+            initial[key] = `$${schedule[key]}`
+          }
+        }
+        setFeeAmounts(initial)
       })
       .catch(() => toast.error('Failed to load templates'))
       .finally(() => setFetching(false))
@@ -724,7 +749,7 @@ function BulkSendLetterModal({ open, onClose, selectedIds, engagements, onSucces
 
   function handleClose() {
     setTemplateId('')
-    setFeeAmount('')
+    setFeeAmounts({})
     setPartialErrors([])
     setShowErrors(false)
     onClose()
@@ -736,22 +761,31 @@ function BulkSendLetterModal({ open, onClose, selectedIds, engagements, onSucces
     setPartialErrors([])
     setShowErrors(false)
     try {
-      const result = await engagementsApi.bulkSendLetter({
-        engagement_ids: Array.from(selectedIds),
-        template_id: templateId,
-        fee_amount: feeAmount || undefined,
-      })
+      let totalSent = 0
+      let totalFailed = 0
+      const allErrors: string[] = []
 
-      if (result.failed === 0) {
-        toast.success(`Sent engagement letters to ${result.sent} client${result.sent !== 1 ? 's' : ''}`)
+      for (const group of groups) {
+        const result = await engagementsApi.bulkSendLetter({
+          engagement_ids: group.engagements.map((e) => e.id),
+          template_id: templateId,
+          fee_amount: feeAmounts[group.key] || undefined,
+        })
+        totalSent += result.sent
+        totalFailed += result.failed
+        allErrors.push(...result.errors)
+      }
+
+      if (totalFailed === 0) {
+        toast.success(`Sent engagement letters to ${totalSent} client${totalSent !== 1 ? 's' : ''}`)
         onSuccess()
-      } else if (result.sent > 0) {
-        toast.warning(`Sent ${result.sent}, failed ${result.failed}. Check errors below.`)
-        setPartialErrors(result.errors)
+      } else if (totalSent > 0) {
+        toast.warning(`Sent ${totalSent}, failed ${totalFailed}. Check errors below.`)
+        setPartialErrors(allErrors)
         setShowErrors(true)
       } else {
-        toast.error(`All ${result.failed} sends failed.`)
-        setPartialErrors(result.errors)
+        toast.error(`All ${totalFailed} sends failed.`)
+        setPartialErrors(allErrors)
         setShowErrors(true)
       }
     } catch {
@@ -765,10 +799,6 @@ function BulkSendLetterModal({ open, onClose, selectedIds, engagements, onSucces
 
   const inputCls = 'w-full h-9 px-3 rounded-[6px] bg-surface-input dark:bg-dark-card border border-[0.5px] border-surface-border dark:border-dark-border text-[13px] text-brand dark:text-[#EDEEF0] placeholder:text-[#9CA3AF] focus:outline-none focus:border-brand-light transition-colors'
   const labelCls = 'text-[12px] font-medium text-[#374151] dark:text-[#D1D5DB] mb-1'
-
-  const MAX_VISIBLE = 5
-  const visibleEngagements = selectedEngagements.slice(0, MAX_VISIBLE)
-  const remainder = n - MAX_VISIBLE
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
@@ -802,35 +832,38 @@ function BulkSendLetterModal({ open, onClose, selectedIds, engagements, onSucces
             )}
           </div>
 
-          <div>
-            <p className={labelCls}>Fee Amount (optional)</p>
-            <input
-              type="text"
-              placeholder="$0.00"
-              value={feeAmount}
-              onChange={(e) => setFeeAmount(e.target.value)}
-              className={inputCls}
-            />
-            <p className="text-[11px] text-[#6B7280] mt-1">Leave blank to use the fee from the template.</p>
-          </div>
-
           <div className="rounded-[6px] bg-[#FFFBEB] dark:bg-[#2D2206] border border-[#FCD34D] dark:border-[#92400E] px-3 py-2.5">
             <p className="text-[12px] text-[#92400E] dark:text-[#FCD34D]">
               This will generate and send a signature request to each selected client via Dropbox Sign. This action cannot be undone.
             </p>
           </div>
 
-          <div>
-            <p className={labelCls}>Selected engagements</p>
-            <ul className="text-[12px] text-brand dark:text-[#D1D5DB] space-y-0.5">
-              {visibleEngagements.map((e) => (
-                <li key={e.id} className="truncate">• {e.name}</li>
-              ))}
-              {remainder > 0 && (
-                <li className="text-[#6B7280]">and {remainder} more…</li>
-              )}
-            </ul>
-          </div>
+          {groups.map((group) => (
+            <div key={group.key} className="border border-surface-border dark:border-dark-border rounded-[6px] p-3 flex flex-col gap-2">
+              <div className="flex items-center justify-between">
+                <p className="text-[13px] font-medium text-brand dark:text-[#EDEEF0]">{group.label}</p>
+                <span className="text-[11px] text-[#6B7280]">{group.engagements.length} engagement{group.engagements.length !== 1 ? 's' : ''}</span>
+              </div>
+              <div>
+                <p className={labelCls}>Fee Amount (optional)</p>
+                <input
+                  type="text"
+                  placeholder="$0.00"
+                  value={feeAmounts[group.key] ?? ''}
+                  onChange={(e) => setFeeAmounts((prev) => ({ ...prev, [group.key]: e.target.value }))}
+                  className={inputCls}
+                />
+                <p className="text-[11px] text-[#6B7280] mt-1">Leave blank to use the fee from the template.</p>
+              </div>
+              <div className="overflow-y-auto max-h-[120px]">
+                <ul className="text-[12px] text-brand dark:text-[#D1D5DB] space-y-0.5">
+                  {group.engagements.map((e) => (
+                    <li key={e.id} className="truncate">• {e.name}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          ))}
 
           {showErrors && partialErrors.length > 0 && (
             <div className="rounded-[6px] bg-[#FEF2F2] dark:bg-[#2D0707] border border-[#FECACA] dark:border-[#7F1D1D] px-3 py-2.5">
