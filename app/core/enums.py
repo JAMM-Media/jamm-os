@@ -171,6 +171,7 @@ class NotificationType(str, Enum):
     irs_auth_expiry = "irs_auth_expiry"
     irs_auth_missing = "irs_auth_missing"
     extension_deadline = "extension_deadline"
+    client_anniversary = "client_anniversary"
 
 
 class NotificationChannel(str, Enum):
@@ -196,3 +197,4 @@ class NotificationEventType(str, Enum):
     irs_auth_expiry = "irs_auth_expiry"
     irs_auth_missing = "irs_auth_missing"
     extension_deadline = "extension_deadline"
+    client_anniversary = "client_anniversary"
