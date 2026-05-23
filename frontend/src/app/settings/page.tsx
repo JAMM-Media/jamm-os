@@ -13,7 +13,6 @@ import { settingsApi, type FirmDetails, type StaffMember } from '@/lib/api/setti
 import AutomationsTab from '@/components/settings/AutomationsTab'
 import SecurityTab from '@/components/settings/SecurityTab'
 import FeeScheduleTab from '@/components/settings/FeeScheduleTab'
-import LetterTemplatesTab from '@/components/settings/LetterTemplatesTab'
 
 const TABS = [
   { key: 'profile', label: 'Profile' },
@@ -22,7 +21,6 @@ const TABS = [
   { key: 'security', label: 'Security' },
   { key: 'automations', label: 'Automations' },
   { key: 'fee_schedule', label: 'Fee Schedule' },
-  { key: 'letter_templates', label: 'Letter Templates' },
 ]
 
 function formatRoleLabel(role: string): string {
@@ -150,7 +148,6 @@ export default function SettingsPage() {
             if (tab.key === 'automations') return canSeeAutomations
             if (tab.key === 'security') return canSeeSecurity
             if (tab.key === 'fee_schedule') return isFirmOwner
-            if (tab.key === 'letter_templates') return isFirmOwner
             return true
           }).map((tab) => (
             <button
@@ -504,10 +501,6 @@ export default function SettingsPage() {
           />
         )}
 
-        {/* Letter Templates tab */}
-        {activeTab === 'letter_templates' && isFirmOwner && (
-          <LetterTemplatesTab />
-        )}
 
       </div>
     </AppShell>

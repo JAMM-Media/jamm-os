@@ -2,10 +2,17 @@
 """
 Tax organizer service — seeding and business logic.
 
-Three default templates are seeded on firm creation:
+Seven default templates are seeded on firm creation:
 - Individual (1040) — personal income, dependents, deductions, life events
 - Business (1120/1065/1120S) — business income, expenses, payroll, assets
 - Rental Property — rental income, expenses, property details
+- Estate & Trust (1041) — fiduciary info, income, deductions, distributions
+- Non-Profit (990) — governance, revenue, expenses, program services
+- Payroll & Bookkeeping — payroll details, bookkeeping, reporting needs
+- New Client Intake — personal info, filing history, income sources
+
+NOTE: Templates 4-7 are seeded for new firms only. Existing firms that
+already have the original three templates will not receive these automatically.
 """
 
 from uuid import UUID, uuid4
@@ -361,6 +368,436 @@ def _get_default_templates(firm_id: UUID) -> list[dict]:
                         {"id": "sale_price",
                          "label": "If sold, sale price",
                          "type": "number", "required": False},
+                    ]
+                },
+            ]
+        },
+        # ── Template 4 — Estate & Trust (1041) ────────────────────────────────
+        {
+            "id": uuid4(),
+            "firm_id": firm_id,
+            "name": "Estate & Trust Return (1041)",
+            "organizer_type": "custom",
+            "is_default": True,
+            "created_at": now,
+            "updated_at": now,
+            "sections": [
+                {
+                    "id": "estate_trust_info",
+                    "title": "Estate / Trust Information",
+                    "questions": [
+                        {"id": "legal_name_estate",
+                         "label": "Legal name of estate or trust",
+                         "type": "text", "required": True},
+                        {"id": "ein_estate",
+                         "label": "EIN of estate or trust",
+                         "type": "text", "required": True},
+                        {"id": "death_or_creation_date",
+                         "label": "Date of death or trust creation",
+                         "type": "text", "required": True},
+                        {"id": "estate_or_trust_type",
+                         "label": "Type: Estate or Trust",
+                         "type": "select", "required": True,
+                         "options": ["Estate", "Trust"]},
+                        {"id": "fiscal_year_end_estate",
+                         "label": "Fiscal year end",
+                         "type": "text", "required": False},
+                    ]
+                },
+                {
+                    "id": "fiduciary_info",
+                    "title": "Fiduciary Information",
+                    "questions": [
+                        {"id": "fiduciary_name",
+                         "label": "Fiduciary name",
+                         "type": "text", "required": True},
+                        {"id": "fiduciary_address",
+                         "label": "Fiduciary address",
+                         "type": "text", "required": False},
+                        {"id": "fiduciary_phone",
+                         "label": "Fiduciary phone",
+                         "type": "text", "required": False},
+                        {"id": "fiduciary_is_executor",
+                         "label": "Is fiduciary also the executor?",
+                         "type": "boolean", "required": False},
+                    ]
+                },
+                {
+                    "id": "estate_income",
+                    "title": "Income",
+                    "questions": [
+                        {"id": "interest_income",
+                         "label": "Interest income",
+                         "type": "number", "required": False},
+                        {"id": "dividend_income",
+                         "label": "Dividend income",
+                         "type": "number", "required": False},
+                        {"id": "business_income",
+                         "label": "Business income",
+                         "type": "number", "required": False},
+                        {"id": "capital_gains_losses",
+                         "label": "Capital gains or losses",
+                         "type": "boolean", "required": False},
+                        {"id": "rental_income_estate",
+                         "label": "Rental income",
+                         "type": "number", "required": False},
+                        {"id": "other_income_description",
+                         "label": "Other income description",
+                         "type": "textarea", "required": False},
+                    ]
+                },
+                {
+                    "id": "estate_deductions",
+                    "title": "Deductions",
+                    "questions": [
+                        {"id": "fiduciary_fees",
+                         "label": "Fiduciary fees paid",
+                         "type": "number", "required": False},
+                        {"id": "attorney_accounting_fees",
+                         "label": "Attorney and accounting fees",
+                         "type": "number", "required": False},
+                        {"id": "charitable_contributions_estate",
+                         "label": "Charitable contributions",
+                         "type": "boolean", "required": False},
+                        {"id": "other_deductions",
+                         "label": "Other deductions",
+                         "type": "textarea", "required": False},
+                    ]
+                },
+                {
+                    "id": "distributions",
+                    "title": "Distributions",
+                    "questions": [
+                        {"id": "distributions_made",
+                         "label": "Were distributions made to beneficiaries?",
+                         "type": "boolean", "required": True},
+                        {"id": "total_distributions",
+                         "label": "Total distributions made",
+                         "type": "number", "required": False},
+                        {"id": "beneficiary_count",
+                         "label": "Number of beneficiaries",
+                         "type": "number", "required": False},
+                    ]
+                },
+            ]
+        },
+        # ── Template 5 — Non-Profit (990) ─────────────────────────────────────
+        {
+            "id": uuid4(),
+            "firm_id": firm_id,
+            "name": "Non-Profit Return (990)",
+            "organizer_type": "custom",
+            "is_default": True,
+            "created_at": now,
+            "updated_at": now,
+            "sections": [
+                {
+                    "id": "org_info",
+                    "title": "Organization Information",
+                    "questions": [
+                        {"id": "org_legal_name",
+                         "label": "Legal name of organization",
+                         "type": "text", "required": True},
+                        {"id": "org_ein",
+                         "label": "EIN",
+                         "type": "text", "required": True},
+                        {"id": "form_990_type",
+                         "label": "Type of 990: 990, 990-EZ, or 990-N",
+                         "type": "select", "required": True,
+                         "options": ["990", "990-EZ", "990-N"]},
+                        {"id": "mission_statement",
+                         "label": "Mission statement",
+                         "type": "textarea", "required": True},
+                        {"id": "website",
+                         "label": "Website",
+                         "type": "text", "required": False},
+                    ]
+                },
+                {
+                    "id": "governance",
+                    "title": "Governance",
+                    "questions": [
+                        {"id": "voting_board_members",
+                         "label": "Number of voting board members",
+                         "type": "number", "required": True},
+                        {"id": "independent_board_members",
+                         "label": "Number of independent board members",
+                         "type": "number", "required": False},
+                        {"id": "conflict_of_interest_policy",
+                         "label": "Did the organization have a conflict of interest policy?",
+                         "type": "boolean", "required": False},
+                        {"id": "board_meeting_minutes",
+                         "label": "Were board meeting minutes documented?",
+                         "type": "boolean", "required": False},
+                    ]
+                },
+                {
+                    "id": "org_revenue",
+                    "title": "Revenue",
+                    "questions": [
+                        {"id": "total_contributions_grants",
+                         "label": "Total contributions and grants",
+                         "type": "number", "required": True},
+                        {"id": "program_service_revenue",
+                         "label": "Program service revenue",
+                         "type": "number", "required": False},
+                        {"id": "investment_income_org",
+                         "label": "Investment income",
+                         "type": "number", "required": False},
+                        {"id": "other_revenue",
+                         "label": "Other revenue",
+                         "type": "number", "required": False},
+                    ]
+                },
+                {
+                    "id": "org_expenses",
+                    "title": "Expenses",
+                    "questions": [
+                        {"id": "program_service_expenses",
+                         "label": "Total program service expenses",
+                         "type": "number", "required": True},
+                        {"id": "management_general_expenses",
+                         "label": "Management and general expenses",
+                         "type": "number", "required": False},
+                        {"id": "fundraising_expenses",
+                         "label": "Fundraising expenses",
+                         "type": "number", "required": False},
+                    ]
+                },
+                {
+                    "id": "program_services",
+                    "title": "Program Services",
+                    "questions": [
+                        {"id": "largest_program_services",
+                         "label": "Describe your three largest program services",
+                         "type": "textarea", "required": True},
+                        {"id": "total_volunteers",
+                         "label": "Total number of volunteers",
+                         "type": "number", "required": False},
+                        {"id": "total_employees",
+                         "label": "Total number of employees",
+                         "type": "number", "required": False},
+                    ]
+                },
+            ]
+        },
+        # ── Template 6 — Payroll & Bookkeeping ────────────────────────────────
+        {
+            "id": uuid4(),
+            "firm_id": firm_id,
+            "name": "Payroll & Bookkeeping Engagement",
+            "organizer_type": "custom",
+            "is_default": True,
+            "created_at": now,
+            "updated_at": now,
+            "sections": [
+                {
+                    "id": "pb_business_info",
+                    "title": "Business Information",
+                    "questions": [
+                        {"id": "business_legal_name",
+                         "label": "Business legal name",
+                         "type": "text", "required": True},
+                        {"id": "business_ein",
+                         "label": "EIN",
+                         "type": "text", "required": True},
+                        {"id": "state_of_incorporation",
+                         "label": "State of incorporation",
+                         "type": "text", "required": False},
+                        {"id": "employee_count",
+                         "label": "Number of employees",
+                         "type": "number", "required": True},
+                        {"id": "pay_frequency",
+                         "label": "Pay frequency",
+                         "type": "select", "required": True,
+                         "options": ["Weekly", "Biweekly", "Semi-monthly", "Monthly"]},
+                    ]
+                },
+                {
+                    "id": "payroll_details",
+                    "title": "Payroll Details",
+                    "questions": [
+                        {"id": "has_hourly_employees",
+                         "label": "Do you have hourly employees?",
+                         "type": "boolean", "required": False},
+                        {"id": "has_salaried_employees",
+                         "label": "Do you have salaried employees?",
+                         "type": "boolean", "required": False},
+                        {"id": "offers_health_insurance",
+                         "label": "Do you offer health insurance?",
+                         "type": "boolean", "required": False},
+                        {"id": "offers_retirement_benefits",
+                         "label": "Do you offer retirement benefits?",
+                         "type": "boolean", "required": False},
+                        {"id": "multi_state_employees",
+                         "label": "Do you have employees in multiple states?",
+                         "type": "boolean", "required": False},
+                    ]
+                },
+                {
+                    "id": "bookkeeping_details",
+                    "title": "Bookkeeping Details",
+                    "questions": [
+                        {"id": "accounting_software",
+                         "label": "Accounting software currently used",
+                         "type": "text", "required": False},
+                        {"id": "bank_accounts_count",
+                         "label": "Bank accounts to reconcile",
+                         "type": "number", "required": False},
+                        {"id": "credit_card_accounts",
+                         "label": "Credit card accounts to reconcile",
+                         "type": "number", "required": False},
+                        {"id": "monthly_transactions",
+                         "label": "Approximate monthly transactions",
+                         "type": "number", "required": False},
+                        {"id": "needs_sales_tax_filing",
+                         "label": "Do you need sales tax filing?",
+                         "type": "boolean", "required": False},
+                    ]
+                },
+                {
+                    "id": "reporting_needs",
+                    "title": "Reporting Needs",
+                    "questions": [
+                        {"id": "financial_statements_frequency",
+                         "label": "How often do you need financial statements?",
+                         "type": "select", "required": False,
+                         "options": ["Monthly", "Quarterly", "Annually"]},
+                        {"id": "needs_cash_flow_reports",
+                         "label": "Do you need cash flow reports?",
+                         "type": "boolean", "required": False},
+                        {"id": "needs_budget_reports",
+                         "label": "Do you need budget vs actual reports?",
+                         "type": "boolean", "required": False},
+                        {"id": "other_reporting_needs",
+                         "label": "Any other reporting needs",
+                         "type": "textarea", "required": False},
+                    ]
+                },
+            ]
+        },
+        # ── Template 7 — New Client Intake ────────────────────────────────────
+        {
+            "id": uuid4(),
+            "firm_id": firm_id,
+            "name": "New Client Intake",
+            "organizer_type": "custom",
+            "is_default": True,
+            "created_at": now,
+            "updated_at": now,
+            "sections": [
+                {
+                    "id": "personal_info",
+                    "title": "Personal Information",
+                    "questions": [
+                        {"id": "full_legal_name",
+                         "label": "Full legal name",
+                         "type": "text", "required": True},
+                        {"id": "date_of_birth",
+                         "label": "Date of birth",
+                         "type": "text", "required": True},
+                        {"id": "ssn_last4",
+                         "label": "Social Security Number last 4 digits",
+                         "type": "text", "required": False},
+                        {"id": "current_address",
+                         "label": "Current address",
+                         "type": "text", "required": True},
+                        {"id": "phone_number",
+                         "label": "Phone number",
+                         "type": "text", "required": True},
+                        {"id": "email_address",
+                         "label": "Email address",
+                         "type": "text", "required": True},
+                        {"id": "preferred_contact_method",
+                         "label": "Preferred contact method",
+                         "type": "select", "required": False,
+                         "options": ["Email", "Phone", "Text"]},
+                    ]
+                },
+                {
+                    "id": "filing_info",
+                    "title": "Filing Information",
+                    "questions": [
+                        {"id": "filing_status",
+                         "label": "Filing status",
+                         "type": "select", "required": True,
+                         "options": ["Single", "Married Filing Jointly",
+                                     "Married Filing Separately",
+                                     "Head of Household", "Qualifying Widow(er)"]},
+                        {"id": "has_dependents",
+                         "label": "Do you have dependents?",
+                         "type": "boolean", "required": False},
+                        {"id": "dependents_ssn_list",
+                         "label": "If yes, list dependents and their SSN last 4",
+                         "type": "textarea", "required": False},
+                        {"id": "filing_status_changed",
+                         "label": "Did your filing status change this year?",
+                         "type": "boolean", "required": False},
+                    ]
+                },
+                {
+                    "id": "prior_tax_history",
+                    "title": "Prior Tax History",
+                    "questions": [
+                        {"id": "filed_last_year",
+                         "label": "Did you file a tax return last year?",
+                         "type": "boolean", "required": True},
+                        {"id": "prior_preparer",
+                         "label": "Who prepared your last return?",
+                         "type": "text", "required": False},
+                        {"id": "has_prior_return_copy",
+                         "label": "Do you have a copy of your prior year return?",
+                         "type": "boolean", "required": False},
+                        {"id": "owes_back_taxes",
+                         "label": "Do you owe any back taxes?",
+                         "type": "boolean", "required": False},
+                        {"id": "ever_audited",
+                         "label": "Have you ever been audited?",
+                         "type": "boolean", "required": False},
+                    ]
+                },
+                {
+                    "id": "income_sources",
+                    "title": "Income Sources",
+                    "questions": [
+                        {"id": "has_w2_income",
+                         "label": "W-2 employment income?",
+                         "type": "boolean", "required": False},
+                        {"id": "has_self_employment_income",
+                         "label": "Self-employment income?",
+                         "type": "boolean", "required": False},
+                        {"id": "has_investment_income",
+                         "label": "Investment income?",
+                         "type": "boolean", "required": False},
+                        {"id": "has_rental_income",
+                         "label": "Rental income?",
+                         "type": "boolean", "required": False},
+                        {"id": "has_retirement_distributions",
+                         "label": "Retirement distributions?",
+                         "type": "boolean", "required": False},
+                        {"id": "has_social_security_income",
+                         "label": "Social Security income?",
+                         "type": "boolean", "required": False},
+                        {"id": "other_income_sources",
+                         "label": "Any other income sources?",
+                         "type": "textarea", "required": False},
+                    ]
+                },
+                {
+                    "id": "how_did_you_find_us",
+                    "title": "How Did You Find Us",
+                    "questions": [
+                        {"id": "referral_source",
+                         "label": "How did you hear about our firm?",
+                         "type": "select", "required": False,
+                         "options": ["Referral", "Google Search", "Social Media",
+                                     "Walking By", "Other"]},
+                        {"id": "referral_name",
+                         "label": "If referral, who referred you?",
+                         "type": "text", "required": False},
+                        {"id": "what_can_we_help",
+                         "label": "What are you hoping we can help you with?",
+                         "type": "textarea", "required": False},
                     ]
                 },
             ]

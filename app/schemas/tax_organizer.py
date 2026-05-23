@@ -18,6 +18,7 @@ class TaxOrganizerTemplateBase(BaseModel):
     organizer_type: str = "custom"
     sections: list = []
     is_default: bool = False
+    is_active: bool = True
 
     @field_validator("organizer_type")
     @classmethod
@@ -36,6 +37,7 @@ class TaxOrganizerTemplateCreate(TaxOrganizerTemplateBase):
 class TaxOrganizerTemplateUpdate(BaseModel):
     name: Optional[str] = None
     sections: Optional[list] = None
+    is_active: Optional[bool] = None
 
 
 class TaxOrganizerTemplateOut(TaxOrganizerTemplateBase):

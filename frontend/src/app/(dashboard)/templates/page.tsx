@@ -11,6 +11,9 @@ import { clientsApi } from '@/lib/api'
 import api from '@/lib/api'
 import { formatEngagementType } from '@/lib/utils'
 import { Pencil, Trash2, LayoutTemplate, X, Plus, Loader2 } from 'lucide-react'
+import { cn } from '@/lib/utils'
+import LetterTemplatesTab from '@/components/settings/LetterTemplatesTab'
+import TaxOrganizerTemplates from '@/components/templates/TaxOrganizerTemplates'
 
 // ---- Types ----
 
@@ -464,7 +467,6 @@ function UseTemplateModal({ template, onClose }: UseTemplateModalProps) {
         </div>
 
         <div className="px-5 py-4 space-y-4">
-          {/* Preview section */}
           <div className="bg-surface-card dark:bg-[#252525] rounded-lg p-4 space-y-2">
             <p className="text-[13px] font-medium text-brand dark:text-[#EDEEF0]">{template.name}</p>
             {template.description && (
@@ -503,7 +505,6 @@ function UseTemplateModal({ template, onClose }: UseTemplateModalProps) {
             )}
           </div>
 
-          {/* Client selection */}
           <div>
             <label className="block text-[12px] font-medium text-[#374151] dark:text-[#9CA3AF] mb-1">
               Client <span className="text-red-500">*</span>
@@ -535,7 +536,6 @@ function UseTemplateModal({ template, onClose }: UseTemplateModalProps) {
             )}
           </div>
 
-          {/* Engagement name */}
           <div>
             <label className="block text-[12px] font-medium text-[#374151] dark:text-[#9CA3AF] mb-1">
               Engagement name
@@ -549,7 +549,6 @@ function UseTemplateModal({ template, onClose }: UseTemplateModalProps) {
             />
           </div>
 
-          {/* Tax year */}
           <div>
             <label className="block text-[12px] font-medium text-[#374151] dark:text-[#9CA3AF] mb-1">
               Tax year
@@ -648,11 +647,23 @@ function TemplateCard({ template, isManager, onEdit, onDelete, onUse }: Template
   )
 }
 
+// ---- Sub-tab definitions ----
+
+type SubTab = 'engagement' | 'letters' | 'tax_organizers'
+
+const SUB_TABS: { key: SubTab; label: string }[] = [
+  { key: 'engagement', label: 'Engagement Templates' },
+  { key: 'letters', label: 'Engagement Letters' },
+  { key: 'tax_organizers', label: 'Tax Organizers' },
+]
+
 // ---- Main Page ----
 
 export default function TemplatesPage() {
   const { user } = useAuth()
   const isManager = user?.role === 'firm_owner' || user?.role === 'manager'
+
+  const [activeTab, setActiveTab] = useState<SubTab>('engagement')
 
   const [templates, setTemplates] = useState<Template[]>([])
   const [loading, setLoading] = useState(true)
@@ -694,18 +705,21 @@ export default function TemplatesPage() {
     }
   }
 
+  const activeTabLabel = SUB_TABS.find((t) => t.key === activeTab)?.label ?? ''
+
   return (
     <AppShell>
-      <div className="flex flex-col p-6 gap-6">
+      <div className="flex flex-col p-6 gap-0">
         {/* Header */}
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between mb-1">
           <div className="flex items-center gap-2">
             <LayoutTemplate className="h-5 w-5 text-[#6B7280]" />
-            <h1 className="text-[20px] font-medium text-brand dark:text-[#EDEEF0]">
-              Engagement Templates
-            </h1>
+            <div>
+              <h1 className="text-[20px] font-medium text-brand dark:text-[#EDEEF0]">Templates</h1>
+              <p className="text-[12px] text-[#6B7280]">{activeTabLabel}</p>
+            </div>
           </div>
-          {isManager && (
+          {isManager && activeTab === 'engagement' && (
             <button
               onClick={() => setCreateOpen(true)}
               className="h-9 px-4 rounded-[6px] bg-brand dark:bg-brand-btn text-white text-[13px] font-medium hover:opacity-90 transition-opacity flex items-center gap-1.5"
@@ -715,45 +729,76 @@ export default function TemplatesPage() {
           )}
         </div>
 
-        {/* Template list */}
-        {loading ? (
-          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <div key={i} className="h-32 rounded-card bg-[#D5D8DE] dark:bg-[#333] animate-pulse" />
-            ))}
-          </div>
-        ) : templates.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-24 gap-3">
-            <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-surface-card dark:bg-dark-card border border-[0.5px] border-surface-border dark:border-dark-border">
-              <LayoutTemplate className="h-6 w-6 text-[#9CA3AF]" />
-            </div>
-            <p className="text-[13px] font-medium text-brand dark:text-[#EDEEF0]">No templates yet</p>
-            <p className="text-[12px] text-[#6B7280] text-center max-w-sm">
-              Create your first template to speed up engagement creation.
-            </p>
-            {isManager && (
-              <button
-                onClick={() => setCreateOpen(true)}
-                className="mt-2 h-9 px-4 rounded-[6px] bg-brand dark:bg-brand-btn text-white text-[13px] font-medium hover:opacity-90 transition-opacity"
-              >
-                Create Template
-              </button>
+        {/* Sub-tab bar */}
+        <div className="flex items-end gap-0 border-b border-surface-border dark:border-dark-border mb-6">
+          {SUB_TABS.map((tab) => (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              className={cn(
+                'px-4 py-2.5 text-[13px] transition-colors relative',
+                activeTab === tab.key
+                  ? 'text-brand dark:text-[#4A7FA5] font-medium'
+                  : 'text-[#6B7280] hover:text-brand dark:hover:text-[#EDEEF0] font-normal',
+              )}
+            >
+              {tab.label}
+              {activeTab === tab.key && (
+                <span className="absolute bottom-0 left-0 right-0 h-[2px] bg-brand dark:bg-[#4A7FA5]" />
+              )}
+            </button>
+          ))}
+        </div>
+
+        {/* Engagement Templates tab */}
+        {activeTab === 'engagement' && (
+          <>
+            {loading ? (
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <div key={i} className="h-32 rounded-card bg-[#D5D8DE] dark:bg-[#333] animate-pulse" />
+                ))}
+              </div>
+            ) : templates.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-24 gap-3">
+                <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-surface-card dark:bg-dark-card border border-[0.5px] border-surface-border dark:border-dark-border">
+                  <LayoutTemplate className="h-6 w-6 text-[#9CA3AF]" />
+                </div>
+                <p className="text-[13px] font-medium text-brand dark:text-[#EDEEF0]">No templates yet</p>
+                <p className="text-[12px] text-[#6B7280] text-center max-w-sm">
+                  Create your first template to speed up engagement creation.
+                </p>
+                {isManager && (
+                  <button
+                    onClick={() => setCreateOpen(true)}
+                    className="mt-2 h-9 px-4 rounded-[6px] bg-brand dark:bg-brand-btn text-white text-[13px] font-medium hover:opacity-90 transition-opacity"
+                  >
+                    Create Template
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                {templates.map((tmpl) => (
+                  <TemplateCard
+                    key={tmpl.id}
+                    template={tmpl}
+                    isManager={isManager}
+                    onEdit={() => setEditTemplate(tmpl)}
+                    onDelete={() => setDeleteTarget(tmpl)}
+                    onUse={() => setUseTemplate(tmpl)}
+                  />
+                ))}
+              </div>
             )}
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-            {templates.map((tmpl) => (
-              <TemplateCard
-                key={tmpl.id}
-                template={tmpl}
-                isManager={isManager}
-                onEdit={() => setEditTemplate(tmpl)}
-                onDelete={() => setDeleteTarget(tmpl)}
-                onUse={() => setUseTemplate(tmpl)}
-              />
-            ))}
-          </div>
+          </>
         )}
+
+        {/* Engagement Letters tab */}
+        {activeTab === 'letters' && <LetterTemplatesTab />}
+
+        {/* Tax Organizers tab */}
+        {activeTab === 'tax_organizers' && <TaxOrganizerTemplates />}
       </div>
 
       {/* Create modal */}
