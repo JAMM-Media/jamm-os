@@ -36,6 +36,12 @@ interface Template {
   notes: string | null
   is_active: boolean
   use_count: number
+  is_recurring: boolean
+  recurrence_cadence: string | null
+  recurrence_day: number | null
+  recurrence_month: number | null
+  recurrence_advance_days: number | null
+  last_spawned_at: string | null
   created_at: string
   updated_at: string
 }
@@ -52,6 +58,12 @@ function mapTemplate(raw: Record<string, unknown>): Template {
     notes: raw.notes ? String(raw.notes) : null,
     is_active: Boolean(raw.is_active ?? true),
     use_count: Number(raw.use_count ?? 0),
+    is_recurring: Boolean(raw.is_recurring ?? false),
+    recurrence_cadence: raw.recurrence_cadence ? String(raw.recurrence_cadence) : null,
+    recurrence_day: raw.recurrence_day != null ? Number(raw.recurrence_day) : null,
+    recurrence_month: raw.recurrence_month != null ? Number(raw.recurrence_month) : null,
+    recurrence_advance_days: raw.recurrence_advance_days != null ? Number(raw.recurrence_advance_days) : 14,
+    last_spawned_at: raw.last_spawned_at ? String(raw.last_spawned_at) : null,
     created_at: String(raw.created_at ?? ''),
     updated_at: String(raw.updated_at ?? ''),
   }
@@ -79,6 +91,11 @@ const ENGAGEMENT_TYPES = [
 
 // ---- Create/Edit Modal ----
 
+const MONTH_NAMES = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+]
+
 interface TemplateFormData {
   name: string
   description: string
@@ -87,6 +104,11 @@ interface TemplateFormData {
   task_templates: { title: string; description: string }[]
   document_checklist: string[]
   notes: string
+  is_recurring: boolean
+  recurrence_cadence: string
+  recurrence_day: string
+  recurrence_month: string
+  recurrence_advance_days: string
 }
 
 function emptyForm(): TemplateFormData {
@@ -98,6 +120,11 @@ function emptyForm(): TemplateFormData {
     task_templates: [],
     document_checklist: [],
     notes: '',
+    is_recurring: false,
+    recurrence_cadence: '',
+    recurrence_day: '',
+    recurrence_month: '',
+    recurrence_advance_days: '14',
   }
 }
 
@@ -110,6 +137,11 @@ function templateToForm(t: Template): TemplateFormData {
     task_templates: t.task_templates.map((tt) => ({ title: tt.title, description: tt.description ?? '' })),
     document_checklist: [...t.document_checklist],
     notes: t.notes ?? '',
+    is_recurring: t.is_recurring,
+    recurrence_cadence: t.recurrence_cadence ?? '',
+    recurrence_day: t.recurrence_day != null ? String(t.recurrence_day) : '',
+    recurrence_month: t.recurrence_month != null ? String(t.recurrence_month) : '',
+    recurrence_advance_days: t.recurrence_advance_days != null ? String(t.recurrence_advance_days) : '14',
   }
 }
 
@@ -173,6 +205,11 @@ function TemplateModal({ editTemplate, onClose, onSaved }: TemplateModalProps) {
         .map((t, i) => ({ title: t.title.trim(), description: t.description.trim() || null, order: i })),
       document_checklist: form.document_checklist.filter((d) => d.trim()),
       notes: form.notes.trim() || null,
+      is_recurring: form.is_recurring,
+      recurrence_cadence: form.is_recurring ? form.recurrence_cadence || null : null,
+      recurrence_day: form.is_recurring && form.recurrence_day ? Number(form.recurrence_day) : null,
+      recurrence_month: form.is_recurring && form.recurrence_cadence === 'annually' && form.recurrence_month ? Number(form.recurrence_month) : null,
+      recurrence_advance_days: form.is_recurring && form.recurrence_advance_days ? Number(form.recurrence_advance_days) : null,
     }
     try {
       if (editTemplate) {
@@ -356,6 +393,104 @@ function TemplateModal({ editTemplate, onClose, onSaved }: TemplateModalProps) {
               className="w-full px-3 py-2 rounded-md border border-[#D1D5DB] dark:border-[#444] bg-white dark:bg-[#252525] text-[13px] text-[#374151] dark:text-[#EDEEF0] placeholder:text-[#9CA3AF] focus:outline-none focus:border-brand-light resize-none"
             />
             <p className="text-[11px] text-[#9CA3AF] mt-1">Only visible to staff, not clients</p>
+          </div>
+
+          {/* Repeat section */}
+          <div className="border-t border-[#E5E7EB] dark:border-[#333] pt-4">
+            <div className="flex items-center justify-between">
+              <span className="text-[12px] font-medium text-[#374151] dark:text-[#9CA3AF]">
+                Repeat this template on a schedule
+              </span>
+              <button
+                type="button"
+                onClick={() => setField('is_recurring', !form.is_recurring)}
+                className={cn(
+                  'relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none',
+                  form.is_recurring ? 'bg-brand dark:bg-brand-btn' : 'bg-[#D1D5DB] dark:bg-[#555]',
+                )}
+                role="switch"
+                aria-checked={form.is_recurring}
+              >
+                <span
+                  className={cn(
+                    'pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow transition duration-200',
+                    form.is_recurring ? 'translate-x-4' : 'translate-x-0',
+                  )}
+                />
+              </button>
+            </div>
+
+            {form.is_recurring && (
+              <div className="mt-4 space-y-3">
+                {/* Cadence */}
+                <div>
+                  <label className="block text-[12px] font-medium text-[#374151] dark:text-[#9CA3AF] mb-1">
+                    Cadence <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    value={form.recurrence_cadence}
+                    onChange={(e) => setField('recurrence_cadence', e.target.value)}
+                    className="w-full h-9 px-3 rounded-md border border-[#D1D5DB] dark:border-[#444] bg-white dark:bg-[#252525] text-[13px] text-[#374151] dark:text-[#EDEEF0] focus:outline-none focus:border-brand-light"
+                  >
+                    <option value="">— Select cadence —</option>
+                    <option value="monthly">Monthly</option>
+                    <option value="quarterly">Quarterly</option>
+                    <option value="annually">Annually</option>
+                  </select>
+                </div>
+
+                {/* Day of month */}
+                <div>
+                  <label className="block text-[12px] font-medium text-[#374151] dark:text-[#9CA3AF] mb-1">
+                    Create on day <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="28"
+                    value={form.recurrence_day}
+                    onChange={(e) => setField('recurrence_day', e.target.value)}
+                    placeholder="e.g. 1"
+                    className="w-full h-9 px-3 rounded-md border border-[#D1D5DB] dark:border-[#444] bg-white dark:bg-[#252525] text-[13px] text-[#374151] dark:text-[#EDEEF0] placeholder:text-[#9CA3AF] focus:outline-none focus:border-brand-light"
+                  />
+                  <p className="text-[11px] text-[#9CA3AF] mt-0.5">We cap at day 28 to avoid month-end issues.</p>
+                </div>
+
+                {/* Month of year — only for annually */}
+                {form.recurrence_cadence === 'annually' && (
+                  <div>
+                    <label className="block text-[12px] font-medium text-[#374151] dark:text-[#9CA3AF] mb-1">
+                      Month <span className="text-red-500">*</span>
+                    </label>
+                    <select
+                      value={form.recurrence_month}
+                      onChange={(e) => setField('recurrence_month', e.target.value)}
+                      className="w-full h-9 px-3 rounded-md border border-[#D1D5DB] dark:border-[#444] bg-white dark:bg-[#252525] text-[13px] text-[#374151] dark:text-[#EDEEF0] focus:outline-none focus:border-brand-light"
+                    >
+                      <option value="">— Select month —</option>
+                      {MONTH_NAMES.map((m, i) => (
+                        <option key={i + 1} value={String(i + 1)}>{m}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {/* Advance days */}
+                <div>
+                  <label className="block text-[12px] font-medium text-[#374151] dark:text-[#9CA3AF] mb-1">
+                    Create this many days before the due date
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={form.recurrence_advance_days}
+                    onChange={(e) => setField('recurrence_advance_days', e.target.value)}
+                    className="w-full h-9 px-3 rounded-md border border-[#D1D5DB] dark:border-[#444] bg-white dark:bg-[#252525] text-[13px] text-[#374151] dark:text-[#EDEEF0] placeholder:text-[#9CA3AF] focus:outline-none focus:border-brand-light"
+                  />
+                  <p className="text-[11px] text-[#9CA3AF] mt-0.5">Leave at 14 to give staff two weeks of lead time.</p>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -596,12 +731,35 @@ interface TemplateCardProps {
   onUse: () => void
 }
 
+function recurringLabel(template: Template): string | null {
+  if (!template.is_recurring || !template.recurrence_cadence) return null
+  const day = template.recurrence_day ?? '?'
+  if (template.recurrence_cadence === 'monthly') return `Repeats monthly on day ${day}`
+  if (template.recurrence_cadence === 'quarterly') return `Repeats quarterly on day ${day}`
+  if (template.recurrence_cadence === 'annually') {
+    const monthName = template.recurrence_month ? MONTH_NAMES[template.recurrence_month - 1] : '?'
+    return `Repeats annually on ${monthName} ${day}`
+  }
+  return null
+}
+
 function TemplateCard({ template, isManager, onEdit, onDelete, onUse }: TemplateCardProps) {
+  const recurringText = recurringLabel(template)
   return (
     <div className="bg-surface-card dark:bg-dark-card rounded-card border border-[0.5px] border-surface-border dark:border-dark-border p-4">
       <div className="flex items-start justify-between gap-3 mb-2">
         <div className="flex-1 min-w-0">
-          <p className="text-[13px] font-medium text-brand dark:text-[#EDEEF0] truncate">{template.name}</p>
+          <div className="flex items-center gap-2 flex-wrap">
+            <p className="text-[13px] font-medium text-brand dark:text-[#EDEEF0] truncate">{template.name}</p>
+            {template.is_recurring && (
+              <span className="px-2 py-0.5 rounded-full text-[11px] font-medium" style={{ background: '#DBEAFE', color: '#1E40AF' }}>
+                Recurring
+              </span>
+            )}
+          </div>
+          {recurringText && (
+            <p className="text-[11px] text-[#6B7280] mt-0.5">{recurringText}</p>
+          )}
           {template.description && (
             <p className="text-[12px] text-[#6B7280] mt-0.5 line-clamp-2">{template.description}</p>
           )}

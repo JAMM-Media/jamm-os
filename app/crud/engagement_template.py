@@ -61,3 +61,14 @@ def increment_use_count(db: Session, template_id: UUID, firm_id: UUID) -> None:
     if template:
         template.use_count += 1
         db.commit()
+
+
+def list_active_recurring_templates(db: Session) -> list[EngagementTemplate]:
+    """Returns all recurring templates across all firms where is_recurring=True and is_active=True.
+    Used exclusively by the scheduler job."""
+    stmt = (
+        select(EngagementTemplate)
+        .where(EngagementTemplate.is_recurring == True)
+        .where(EngagementTemplate.is_active == True)
+    )
+    return list(db.execute(stmt).scalars().all())

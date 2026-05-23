@@ -33,6 +33,7 @@ from app.models.document_expiry import DocumentExpiry
 from app.models.qc_checklist import (
     QcChecklistTemplate, QcChecklistItem
 )
+from app.models.recurring_engagement_log import RecurringEngagementLog
 
 settings = get_settings()
 

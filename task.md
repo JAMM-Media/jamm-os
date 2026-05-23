@@ -1,694 +1,317 @@
-═══════════════════════════════════════════════════════════════
-STANDING RULES — READ BEFORE DOING ANYTHING
-═══════════════════════════════════════════════════════════════
-- Backend lives at /var/www/jammpx
-- Frontend lives at /var/www/jammpx/frontend
-- Always activate the virtual environment before running any
-  backend command: source .venv/bin/activate
-- Never use && to chain commands — run them one at a time
-- All migrations follow this exact sequence:
-    1. alembic current — confirm starting state
-    2. alembic revision --autogenerate -m "description"
-    3. Read the generated file in full before running it
-    4. If it touches anything beyond the target table,
-       delete it and write a clean manual migration
-    5. alembic upgrade head
-    6. alembic current — confirm at head
-- After any backend change: systemctl restart jammpx.service
-- After any frontend change: push to GitHub — Vercel
-  auto-deploys
-- Never modify alembic env.py imports unless adding a new model
-- Never chain commands with &&
+# STANDING RULES — READ FIRST, NEVER VIOLATE
 
-═══════════════════════════════════════════════════════════════
-MIGRATION PROCEDURE
-═══════════════════════════════════════════════════════════════
-Current head: 0033_add_document_expiries_table
-Next migrations: 0034 and 0035
+- Backend: FastAPI, PostgreSQL, SQLAlchemy ORM 2.0 (Mapped[] syntax only), Pydantic v2, Alembic
+- Every model: UUID primary key, firm_id FK, created_at + updated_at (timezone-aware)
+- Every module: XBase, XCreate, XUpdate, XOut Pydantic schemas
+- Routers are thin — zero business logic, ever
+- All list endpoints use PaginatedResponse[T]
+- Tenant isolation absolute — every query scoped to firm_id
+- Service layer only for business logic and event logging
+- Background tasks create their own SessionLocal() in try/finally — never inherit request session
+- Never use native_enum=True for enums with dots or special characters
+- Always use string names in relationship() to avoid circular imports
+- Every generated file starts with a path comment
 
-═══════════════════════════════════════════════════════════════
-TASK: Internal QC Checklists
-═══════════════════════════════════════════════════════════════
+# MIGRATION RULES — FOLLOW EVERY TIME
 
-WHAT WE ARE BUILDING
-Two new models:
-- QcChecklistTemplate — firm-level template tied to an
-  engagement type, contains a list of item titles
-- QcChecklistItem — per-engagement checklist items,
-  auto-populated from the template when an engagement is
-  created, plus free-form items staff can add manually
+1. alembic current — verify starting state (must be at 0034)
+2. Write a clean manual migration — do NOT use autogenerate (it picks up noise from existing drift)
+3. alembic upgrade head
+4. alembic current — confirm at new head
 
-Templates are managed in the Templates page under a new
-QC Checklists sub-tab. The Deleted sub-tab gets a fourth
-internal sub-tab for deleted QC templates.
+# PHASE 0035 — RECURRING ENGAGEMENTS
 
-Each engagement gets a QC Checklist tab between Tasks and
-Documents. Staff check off items before marking complete.
-A soft warning fires if unchecked items remain when staff
-try to mark the engagement complete.
+## What we are building
 
-═══════════════════════════════════════════════════════════════
-STEP 1 — Create QcChecklistTemplate model
-═══════════════════════════════════════════════════════════════
+A recurring engagement system. A firm configures a recurrence schedule on an engagement template. A daily scheduler job reads all active recurring templates and creates engagements automatically on a calendar-based cadence. The scheduler also auto-creates tasks and a document request from the template definition when it spawns a new engagement — same logic already used when a user manually applies a template.
 
-Create new file: app/models/qc_checklist.py
+This is infrastructure, not an automation rule. It does not live in the automations tab.
 
-Two models in one file:
+---
 
-MODEL 1 — QcChecklistTemplate
+## STEP 1 — DATABASE MIGRATION
 
-    __tablename__ = "qc_checklist_templates"
+Create a clean manual migration file at:
+`alembic/versions/0035_recurring_engagements.py`
 
-    id: UUID primary key, default uuid4
-    firm_id: UUID FK to firms.id CASCADE, indexed
-    name: String(200) nullable=False
-    engagement_type: String(50) nullable=True
-        — if set, auto-applies to that engagement type
-        — if null, manual-apply only
-    items: JSON nullable=False default=list
-        — list of strings, each is a checklist item title
-        — example: ["Verify prior year carryforward",
-                    "Confirm bank account for direct deposit"]
-    is_active: Boolean default=True nullable=False
-    created_at: DateTime timezone=True server_default now
-    updated_at: DateTime timezone=True onupdate now
+Add the following four columns to the existing `engagement_templates` table:
 
-    Relationships:
-        firm: relationship("Firm")
+```
+is_recurring         BOOLEAN    NOT NULL DEFAULT FALSE
+recurrence_cadence   VARCHAR(20) NULLABLE  -- values: 'monthly', 'quarterly', 'annually'
+recurrence_day       INTEGER    NULLABLE  -- day of month (1-28) to create the engagement
+recurrence_month     INTEGER    NULLABLE  -- month of year (1-12), only used when cadence = 'annually'
+recurrence_advance_days INTEGER NULLABLE DEFAULT 14  -- how many days before due date to create it
+last_spawned_at      TIMESTAMP WITH TIME ZONE NULLABLE  -- tracks when we last created an engagement from this template
+```
 
-MODEL 2 — QcChecklistItem
+Add a new table `recurring_engagement_log`:
+```
+id              UUID PRIMARY KEY DEFAULT gen_random_uuid()
+firm_id         UUID NOT NULL FK → firms.id ON DELETE CASCADE
+template_id     UUID NOT NULL FK → engagement_templates.id ON DELETE CASCADE
+client_id       UUID NOT NULL FK → clients.id ON DELETE CASCADE
+engagement_id   UUID NOT NULL FK → engagements.id ON DELETE CASCADE
+spawned_at      TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
+```
 
-    __tablename__ = "qc_checklist_items"
+Add indexes:
+- `engagement_templates.is_recurring` (for efficient scheduler query)
+- `recurring_engagement_log.template_id`
+- `recurring_engagement_log.firm_id`
 
-    id: UUID primary key, default uuid4
-    firm_id: UUID FK to firms.id CASCADE, indexed
-    engagement_id: UUID FK to engagements.id CASCADE,
-        indexed
-    title: String(500) nullable=False
-    is_checked: Boolean default=False nullable=False
-    checked_by_id: UUID FK to users.id SET NULL nullable
-    checked_at: DateTime timezone=True nullable=True
-    is_from_template: Boolean default=False nullable=False
-        — True if auto-populated from a template
-        — False if manually added by staff
-    order: Integer default=0 nullable=False
-    created_at: DateTime timezone=True server_default now
+---
 
-    Relationships:
-        firm: relationship("Firm")
-        engagement: relationship("Engagement")
-        checked_by: relationship("User",
-            foreign_keys=[checked_by_id])
+## STEP 2 — UPDATE THE MODEL
 
-═══════════════════════════════════════════════════════════════
-STEP 2 — Register models
-═══════════════════════════════════════════════════════════════
+File: `app/models/engagement_template.py`
 
-File: migrations/env.py
-Add:
-    from app.models.qc_checklist import (
-        QcChecklistTemplate, QcChecklistItem
+Add the six new columns to the `EngagementTemplate` class using Mapped[] syntax:
+
+```python
+is_recurring: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+recurrence_cadence: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+recurrence_day: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+recurrence_month: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+recurrence_advance_days: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, default=14)
+last_spawned_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+```
+
+Create a new model file: `app/models/recurring_engagement_log.py`
+
+```python
+# app/models/recurring_engagement_log.py
+import uuid
+from datetime import datetime, timezone
+from sqlalchemy import ForeignKey, DateTime
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+from app.db.base_class import Base
+
+class RecurringEngagementLog(Base):
+    __tablename__ = "recurring_engagement_log"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    firm_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("firms.id", ondelete="CASCADE"), nullable=False, index=True)
+    template_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("engagement_templates.id", ondelete="CASCADE"), nullable=False, index=True)
+    client_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("clients.id", ondelete="CASCADE"), nullable=False)
+    engagement_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("engagements.id", ondelete="CASCADE"), nullable=False)
+    spawned_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False
     )
+```
 
-File: app/models/__init__.py
-Add:
-    from app.models.qc_checklist import (
-        QcChecklistTemplate, QcChecklistItem
+Import `RecurringEngagementLog` in `alembic/env.py` so it is present for future autogenerate runs.
+
+---
+
+## STEP 3 — UPDATE SCHEMAS
+
+File: `app/schemas/engagement_template.py`
+
+Add the new fields to `EngagementTemplateBase`:
+
+```python
+is_recurring: bool = False
+recurrence_cadence: Optional[str] = None   # 'monthly', 'quarterly', 'annually'
+recurrence_day: Optional[int] = None       # 1–28
+recurrence_month: Optional[int] = None     # 1–12, annually only
+recurrence_advance_days: Optional[int] = 14
+```
+
+Add a Pydantic validator to `EngagementTemplateBase` that enforces:
+- If `is_recurring` is True, `recurrence_cadence` must be one of `monthly`, `quarterly`, `annually`
+- If `is_recurring` is True, `recurrence_day` must be between 1 and 28
+- If `recurrence_cadence` is `annually`, `recurrence_month` must be between 1 and 12
+
+Add `last_spawned_at: Optional[datetime] = None` to `EngagementTemplateOut` only (read-only, not settable by clients).
+
+Add `is_recurring` and `last_spawned_at` to `EngagementTemplateUpdate` as optional fields.
+
+---
+
+## STEP 4 — UPDATE CRUD
+
+File: `app/crud/engagement_template.py`
+
+Add one new function:
+
+```python
+def list_active_recurring_templates(db: Session) -> list[EngagementTemplate]:
+    """Returns all recurring templates across all firms where is_recurring=True and is_active=True.
+    Used exclusively by the scheduler job."""
+    stmt = (
+        select(EngagementTemplate)
+        .where(EngagementTemplate.is_recurring == True)
+        .where(EngagementTemplate.is_active == True)
     )
+    return db.execute(stmt).scalars().all()
+```
+
+---
+
+## STEP 5 — RECURRING SERVICE
+
+Create: `app/services/recurring_engagement_service.py`
+
+This is the scheduler job. It runs daily at 8:30 UTC (staggered from existing jobs at 8:00 and 8:15).
+
+Logic:
+
+```
+def spawn_recurring_engagements() -> None:
+    Creates its own SessionLocal() in try/finally.
+    
+    1. Call list_active_recurring_templates(db) — gets all recurring templates across all firms
+    
+    2. For each template, get all active clients for that firm:
+       SELECT clients WHERE firm_id = template.firm_id AND is_active = True
+    
+    3. For each client, determine if we should spawn an engagement today:
+       - Call should_spawn(template, client, db) — see logic below
+    
+    4. If should_spawn returns True:
+       - Create an Engagement from the template fields:
+         name = template.name
+         description = template.description
+         engagement_type = template.engagement_type
+         firm_id = template.firm_id
+         client_id = client.id
+         status = "planning"
+         start_date = today
+         end_date = None (filing deadline handling below)
+       
+       - If template.engagement_type is set and maps to a known IRS deadline,
+         set filing_deadline using the same deadline logic used in engagement creation.
+         Do not duplicate that logic — import and call the existing deadline calculator
+         from app/services/engagement_service.py or wherever it lives. If no such
+         function exists, leave filing_deadline as None for now.
+       
+       - Create tasks from template.task_templates (same pattern as existing template apply logic)
+       
+       - If template.document_checklist is non-empty, create a DocumentRequest with
+         those items (same pattern as existing template apply logic)
+       
+       - Write to recurring_engagement_log: template_id, client_id, engagement_id, firm_id
+       
+       - Update template.last_spawned_at = now() and commit
+       
+       - Fire-and-forget audit log: action="engagement.recurring_spawn",
+         entity_type="engagement", entity_id=new_engagement.id, actor_type="system"
+    
+    5. Log summary: "Recurring engagement check complete: N engagements spawned"
+    
+    Wrap entire function in try/except/finally. Errors logged, never raised.
+```
+
+`should_spawn(template, client, db)` logic:
+
+```
+Determines whether today is the day to create a new recurring engagement for this client.
+
+Rules:
+1. Check recurring_engagement_log for this template + client combo.
+   Get the most recent spawned_at date.
+
+2. If never spawned before, check if today matches the spawn date:
+   - monthly: today.day == template.recurrence_day
+   - quarterly: today.day == template.recurrence_day AND today.month in [1,4,7,10]
+   - annually: today.day == template.recurrence_day AND today.month == template.recurrence_month
+   If it matches → spawn.
+
+3. If previously spawned, check that enough time has elapsed since last spawn:
+   - monthly: last_spawned_at < first day of current month
+   - quarterly: last_spawned_at < first day of current quarter
+   - annually: last_spawned_at.year < current year
+   AND today matches the spawn day condition above.
+   If both → spawn. Otherwise → skip.
+
+4. Return True if spawn, False if skip.
+```
+
+---
+
+## STEP 6 — WIRE SCHEDULER JOB
+
+File: `app/main.py`
+
+Add import:
+```python
+from app.services.recurring_engagement_service import spawn_recurring_engagements
+```
+
+Add to the scheduler in the lifespan function (after existing jobs):
+```python
+scheduler.add_job(
+    spawn_recurring_engagements,
+    trigger="cron",
+    hour=8,
+    minute=30,
+    id="recurring_engagement_spawn",
+    replace_existing=True,
+)
+```
 
-═══════════════════════════════════════════════════════════════
-STEP 3 — Create Pydantic schemas
-═══════════════════════════════════════════════════════════════
-
-Create new file: app/schemas/qc_checklist.py
-
-    from datetime import datetime
-    from typing import Optional, List
-    import uuid
-    from pydantic import BaseModel, ConfigDict
-
-    class QcChecklistTemplateBase(BaseModel):
-        name: str
-        engagement_type: Optional[str] = None
-        items: List[str] = []
-
-    class QcChecklistTemplateCreate(QcChecklistTemplateBase):
-        pass
-
-    class QcChecklistTemplateUpdate(BaseModel):
-        name: Optional[str] = None
-        engagement_type: Optional[str] = None
-        items: Optional[List[str]] = None
-        is_active: Optional[bool] = None
-
-    class QcChecklistTemplateOut(QcChecklistTemplateBase):
-        id: uuid.UUID
-        firm_id: uuid.UUID
-        is_active: bool
-        created_at: datetime
-        updated_at: datetime
-        model_config = ConfigDict(from_attributes=True)
-
-    class QcChecklistItemBase(BaseModel):
-        title: str
-        order: int = 0
-
-    class QcChecklistItemCreate(QcChecklistItemBase):
-        engagement_id: uuid.UUID
-        is_from_template: bool = False
-
-    class QcChecklistItemUpdate(BaseModel):
-        title: Optional[str] = None
-        is_checked: Optional[bool] = None
-        order: Optional[int] = None
-
-    class QcChecklistItemOut(QcChecklistItemBase):
-        id: uuid.UUID
-        firm_id: uuid.UUID
-        engagement_id: uuid.UUID
-        is_checked: bool
-        checked_by_id: Optional[uuid.UUID] = None
-        checked_at: Optional[datetime] = None
-        is_from_template: bool
-        created_at: datetime
-        model_config = ConfigDict(from_attributes=True)
-
-═══════════════════════════════════════════════════════════════
-STEP 4 — Create CRUD functions
-═══════════════════════════════════════════════════════════════
-
-Create new file: app/crud/qc_checklist.py
-
-    from sqlalchemy.orm import Session
-    from sqlalchemy import select
-    from app.models.qc_checklist import (
-        QcChecklistTemplate, QcChecklistItem
-    )
-    from app.schemas.qc_checklist import (
-        QcChecklistTemplateCreate, QcChecklistTemplateUpdate,
-        QcChecklistItemCreate, QcChecklistItemUpdate
-    )
-    import uuid
-    from datetime import datetime, timezone
-
-    # --- Template CRUD ---
-
-    def create_template(db, firm_id, data):
-        obj = QcChecklistTemplate(firm_id=firm_id,
-            **data.model_dump())
-        db.add(obj)
-        db.commit()
-        db.refresh(obj)
-        return obj
-
-    def list_templates(db, firm_id, include_inactive=False):
-        stmt = select(QcChecklistTemplate).where(
-            QcChecklistTemplate.firm_id == firm_id
-        )
-        if not include_inactive:
-            stmt = stmt.where(
-                QcChecklistTemplate.is_active == True
-            )
-        return db.execute(stmt.order_by(
-            QcChecklistTemplate.name
-        )).scalars().all()
-
-    def get_template(db, firm_id, template_id):
-        return db.execute(
-            select(QcChecklistTemplate).where(
-                QcChecklistTemplate.id == template_id,
-                QcChecklistTemplate.firm_id == firm_id,
-            )
-        ).scalars().first()
-
-    def update_template(db, obj, data):
-        for field, value in data.model_dump(
-            exclude_unset=True
-        ).items():
-            setattr(obj, field, value)
-        db.commit()
-        db.refresh(obj)
-        return obj
-
-    def soft_delete_template(db, obj):
-        obj.is_active = False
-        db.commit()
-
-    def restore_template(db, obj):
-        obj.is_active = True
-        db.commit()
-
-    def get_template_for_engagement_type(
-        db, firm_id, engagement_type
-    ):
-        return db.execute(
-            select(QcChecklistTemplate).where(
-                QcChecklistTemplate.firm_id == firm_id,
-                QcChecklistTemplate.engagement_type
-                    == engagement_type,
-                QcChecklistTemplate.is_active == True,
-            )
-        ).scalars().first()
-
-    # --- Item CRUD ---
-
-    def create_item(db, firm_id, data):
-        obj = QcChecklistItem(firm_id=firm_id,
-            **data.model_dump())
-        db.add(obj)
-        db.commit()
-        db.refresh(obj)
-        return obj
-
-    def list_items(db, firm_id, engagement_id):
-        return db.execute(
-            select(QcChecklistItem)
-            .where(
-                QcChecklistItem.firm_id == firm_id,
-                QcChecklistItem.engagement_id
-                    == engagement_id,
-            )
-            .order_by(
-                QcChecklistItem.order,
-                QcChecklistItem.created_at,
-            )
-        ).scalars().all()
-
-    def get_item(db, firm_id, item_id):
-        return db.execute(
-            select(QcChecklistItem).where(
-                QcChecklistItem.id == item_id,
-                QcChecklistItem.firm_id == firm_id,
-            )
-        ).scalars().first()
-
-    def check_item(db, obj, user_id):
-        obj.is_checked = True
-        obj.checked_by_id = user_id
-        obj.checked_at = datetime.now(timezone.utc)
-        db.commit()
-        db.refresh(obj)
-        return obj
-
-    def uncheck_item(db, obj):
-        obj.is_checked = False
-        obj.checked_by_id = None
-        obj.checked_at = None
-        db.commit()
-        db.refresh(obj)
-        return obj
-
-    def update_item(db, obj, data):
-        for field, value in data.model_dump(
-            exclude_unset=True
-        ).items():
-            setattr(obj, field, value)
-        db.commit()
-        db.refresh(obj)
-        return obj
-
-    def delete_item(db, obj):
-        db.delete(obj)
-        db.commit()
-
-    def populate_from_template(
-        db, firm_id, engagement_id, engagement_type
-    ):
-        template = get_template_for_engagement_type(
-            db, firm_id, engagement_type
-        )
-        if not template:
-            return []
-        items = []
-        for i, title in enumerate(template.items):
-            item = QcChecklistItem(
-                firm_id=firm_id,
-                engagement_id=engagement_id,
-                title=title,
-                order=i,
-                is_from_template=True,
-            )
-            db.add(item)
-            items.append(item)
-        db.commit()
-        return items
-
-═══════════════════════════════════════════════════════════════
-STEP 5 — Create API router
-═══════════════════════════════════════════════════════════════
-
-Create new file: app/api/qc_checklists.py
-
-router prefix: /qc-checklists
-tags: ["QC Checklists"]
-
-TEMPLATE ENDPOINTS — manager or above only:
-
-    GET /qc-checklists/templates/
-    Query param: include_inactive: bool = False
-    Response: list[QcChecklistTemplateOut]
-
-    POST /qc-checklists/templates/
-    Body: QcChecklistTemplateCreate
-    Response: QcChecklistTemplateOut, 201
-
-    PATCH /qc-checklists/templates/{template_id}
-    Body: QcChecklistTemplateUpdate
-    Response: QcChecklistTemplateOut
-    404 if not found
-
-    DELETE /qc-checklists/templates/{template_id}
-    Response: 204
-    Logic: soft delete — set is_active=False
-
-    POST /qc-checklists/templates/{template_id}/restore
-    Response: QcChecklistTemplateOut
-    Logic: restore soft-deleted template
-
-ITEM ENDPOINTS — staff or above:
-
-    GET /qc-checklists/items/?engagement_id={uuid}
-    Response: list[QcChecklistItemOut]
-    engagement_id is required
-
-    POST /qc-checklists/items/
-    Body: QcChecklistItemCreate
-    Response: QcChecklistItemOut, 201
-    Logic: verify engagement belongs to firm
-
-    PATCH /qc-checklists/items/{item_id}/check
-    Response: QcChecklistItemOut
-    Logic: mark checked, set checked_by to current user id,
-        set checked_at to now
-
-    PATCH /qc-checklists/items/{item_id}/uncheck
-    Response: QcChecklistItemOut
-    Logic: clear checked_by and checked_at
-
-    PATCH /qc-checklists/items/{item_id}
-    Body: QcChecklistItemUpdate (title and order only)
-    Response: QcChecklistItemOut
-
-    DELETE /qc-checklists/items/{item_id}
-    Response: 204
-    Logic: hard delete — staff can delete items they added
-
-Register in app/main.py:
-    from app.api.qc_checklists import (
-        router as qc_checklists_router
-    )
-    app.include_router(qc_checklists_router)
-
-═══════════════════════════════════════════════════════════════
-STEP 6 — Auto-populate on engagement creation
-═══════════════════════════════════════════════════════════════
-
-File: app/api/engagements.py
-
-Find the POST endpoint that creates a new engagement.
-After the engagement is created and committed, add:
-
-    from app.crud.qc_checklist import populate_from_template
-
-    if engagement.engagement_type:
-        populate_from_template(
-            db=db,
-            firm_id=current_firm.id,
-            engagement_id=engagement.id,
-            engagement_type=engagement.engagement_type,
-        )
-
-This must run after db.commit() on the engagement creation
-so the engagement.id exists. Do not wrap in try/except —
-if population fails the engagement still exists, the checklist
-just starts empty.
-
-Also find the endpoint or service that creates engagements
-from templates (UseTemplate flow). Apply the same
-populate_from_template call there too, after the engagement
-is committed.
-
-═══════════════════════════════════════════════════════════════
-STEP 7 — Migration
-═══════════════════════════════════════════════════════════════
-
-Do NOT use autogenerate — write a clean manual migration.
-
-Create file:
-migrations/versions/0034_add_qc_checklist_tables.py
-
-    revision = '0034_add_qc_checklist_tables'
-    down_revision = '0033_add_document_expiries_table'
-
-    def upgrade():
-        op.create_table(
-            'qc_checklist_templates',
-            sa.Column('id', sa.UUID(), nullable=False),
-            sa.Column('firm_id', sa.UUID(), nullable=False),
-            sa.Column('name', sa.String(200),
-                nullable=False),
-            sa.Column('engagement_type', sa.String(50),
-                nullable=True),
-            sa.Column('items', sa.JSON(), nullable=False,
-                server_default='[]'),
-            sa.Column('is_active', sa.Boolean(),
-                nullable=False, server_default='true'),
-            sa.Column('created_at',
-                sa.DateTime(timezone=True),
-                server_default=sa.text('now()'),
-                nullable=False),
-            sa.Column('updated_at',
-                sa.DateTime(timezone=True),
-                server_default=sa.text('now()'),
-                nullable=False),
-            sa.ForeignKeyConstraint(['firm_id'],
-                ['firms.id'], ondelete='CASCADE'),
-            sa.PrimaryKeyConstraint('id'),
-        )
-        op.create_index(
-            'ix_qc_checklist_templates_firm_id',
-            'qc_checklist_templates', ['firm_id']
-        )
-
-        op.create_table(
-            'qc_checklist_items',
-            sa.Column('id', sa.UUID(), nullable=False),
-            sa.Column('firm_id', sa.UUID(), nullable=False),
-            sa.Column('engagement_id', sa.UUID(),
-                nullable=False),
-            sa.Column('title', sa.String(500),
-                nullable=False),
-            sa.Column('is_checked', sa.Boolean(),
-                nullable=False, server_default='false'),
-            sa.Column('checked_by_id', sa.UUID(),
-                nullable=True),
-            sa.Column('checked_at',
-                sa.DateTime(timezone=True), nullable=True),
-            sa.Column('is_from_template', sa.Boolean(),
-                nullable=False, server_default='false'),
-            sa.Column('order', sa.Integer(),
-                nullable=False, server_default='0'),
-            sa.Column('created_at',
-                sa.DateTime(timezone=True),
-                server_default=sa.text('now()'),
-                nullable=False),
-            sa.ForeignKeyConstraint(['firm_id'],
-                ['firms.id'], ondelete='CASCADE'),
-            sa.ForeignKeyConstraint(['engagement_id'],
-                ['engagements.id'], ondelete='CASCADE'),
-            sa.ForeignKeyConstraint(['checked_by_id'],
-                ['users.id'], ondelete='SET NULL'),
-            sa.PrimaryKeyConstraint('id'),
-        )
-        op.create_index(
-            'ix_qc_checklist_items_firm_id',
-            'qc_checklist_items', ['firm_id']
-        )
-        op.create_index(
-            'ix_qc_checklist_items_engagement_id',
-            'qc_checklist_items', ['engagement_id']
-        )
-
-    def downgrade():
-        op.drop_index('ix_qc_checklist_items_engagement_id',
-            table_name='qc_checklist_items')
-        op.drop_index('ix_qc_checklist_items_firm_id',
-            table_name='qc_checklist_items')
-        op.drop_table('qc_checklist_items')
-        op.drop_index(
-            'ix_qc_checklist_templates_firm_id',
-            table_name='qc_checklist_templates')
-        op.drop_table('qc_checklist_templates')
-
-Then run:
-    alembic upgrade head
-    alembic current — confirm 0034 at head
-
-═══════════════════════════════════════════════════════════════
-STEP 8 — Frontend: QC Checklists tab in Templates page
-═══════════════════════════════════════════════════════════════
-
-File: frontend/src/app/(dashboard)/templates/page.tsx
-
-1. Add 'qc_checklists' to the SUB_TABS array, before
-   'deleted':
-       { key: 'qc_checklists', label: 'QC Checklists' }
-
-2. Add the render block alongside the others:
-       {activeTab === 'qc_checklists' && (
-           <QcChecklistTemplatesTab />
-       )}
-
-3. Import the new component:
-       import QcChecklistTemplatesTab from
-           '@/components/templates/QcChecklistTemplatesTab'
-
-Create new file:
-frontend/src/components/templates/QcChecklistTemplatesTab.tsx
-
-This component manages QC checklist templates. Follow the
-exact same visual pattern as the Engagement Templates tab.
-
-LAYOUT:
-- Toolbar: search input left, "+ New QC Checklist" button
-  right (manager+ only)
-- Template list: each template as a card row showing:
-    name — 13px weight 500 brand color
-    engagement_type — formatted label or "All engagement
-      types" if null — 12px muted
-    item count — "N items" — 11px muted
-    Edit button and Delete button on hover (manager+ only)
-- Empty state: "No QC checklist templates yet. Create one
-  to standardize your review process."
-
-CREATE/EDIT MODAL:
-Fields:
-- Template name — text input, required
-- Engagement type — dropdown, same ENGAGEMENT_TYPES
-  constant used in the engagement templates tab, plus
-  an "All engagement types (manual only)" option that
-  sets engagement_type to null
-- Checklist items — dynamic list:
-    Each item is a text input with a drag handle and
-    a remove button
-    "+ Add item" button appends a new empty input
-    Items are stored as a JSON array of strings
-- Save calls POST /qc-checklists/templates/ for create
-  or PATCH /qc-checklists/templates/{id} for edit
-
-DELETE:
-- Soft delete — calls DELETE /qc-checklists/templates/{id}
-- Confirmation modal before deleting
-- Deleted templates move to the Deleted tab
-
-Data fetching:
-- On mount: GET /qc-checklists/templates/
-- After create/edit/delete: invalidate and refetch
-
-═══════════════════════════════════════════════════════════════
-STEP 9 — Frontend: Deleted tab QC sub-tab
-═══════════════════════════════════════════════════════════════
-
-File: frontend/src/components/templates/DeletedTemplates.tsx
-
-The Deleted tab currently has three internal sub-tabs:
-Engagement Templates, Letter Templates, Tax Organizers.
-
-Add a fourth internal sub-tab: QC Checklists
-
-The QC Checklists deleted sub-tab:
-- Fetches GET /qc-checklists/templates/?include_inactive=true
-- Filters client-side to show only is_active=false templates
-- Shows each deleted template with name, engagement_type,
-  item count
-- Restore button calls POST
-  /qc-checklists/templates/{id}/restore
-- Same visual pattern as the other deleted sub-tabs
-
-═══════════════════════════════════════════════════════════════
-STEP 10 — Frontend: QC Checklist tab on engagement detail
-═══════════════════════════════════════════════════════════════
-
-File: frontend/src/app/engagements/[id]/page.tsx
-
-1. Add 'checklist' to the TABS array between tasks and
-   documents:
-       { key: 'checklist', label: 'QC Checklist' }
-
-2. Add render block:
-       {activeTab === 'checklist' && (
-           <QcChecklistTab
-               engagementId={engagementId}
-               engagementStatus={engagement.status}
-               onStatusChange={refetchEngagement}
-           />
-       )}
-
-3. Import:
-       import { QcChecklistTab } from
-           '@/components/engagements/QcChecklistTab'
-
-Create new file:
-frontend/src/components/engagements/QcChecklistTab.tsx
-
-LAYOUT:
-- Section header "QC Checklist" with item count badge
-  showing "N of M complete"
-- Checklist items list:
-    Each item row:
-    - Checkbox left — clicking calls check/uncheck endpoint
-    - Title text — strikethrough when checked, muted color
-    - "Added from template" pill (10px, muted) if
-      is_from_template is true
-    - Checked by name + timestamp (11px muted) when checked
-    - Delete button on hover for manually added items only
-      (staff+ can delete their own, manager+ can delete any)
-- Below the list: "+ Add item" text input inline
-    Pressing Enter or clicking Add calls POST
-    /qc-checklists/items/ with is_from_template=false
-- Empty state: "No checklist items. Add one below or
-  create a QC template for this engagement type in
-  Templates."
-
-SOFT WARNING on engagement completion:
-The engagement detail page has a status dropdown or
-complete button. Find where status is changed to
-'completed' or 'complete'. Before the API call fires,
-check if there are any unchecked items:
-
-    const uncheckedCount = items.filter(
-        i => !i.is_checked
-    ).length
-
-    if (uncheckedCount > 0) {
-        const confirmed = window.confirm(
-            `${uncheckedCount} checklist item${
-                uncheckedCount > 1 ? 's are' : ' is'
-            } not checked. Mark engagement as complete
-            anyway?`
-        )
-        if (!confirmed) return
-    }
-
-If the engagement status change lives in a component
-outside QcChecklistTab, pass the unchecked count up via
-a callback or store it in a ref the parent can read.
-Use whichever approach fits the existing pattern in
-the engagement detail page.
-
-Data fetching:
-- On mount: GET /qc-checklists/items/?engagement_id={id}
-- After check/uncheck/add/delete: optimistic UI where
-  possible, refetch on error
-
-═══════════════════════════════════════════════════════════════
-STEP 11 — Restart and verify
-═══════════════════════════════════════════════════════════════
-
-On the server:
-    git pull origin main
-    alembic upgrade head
-    alembic current — confirm 0034
-    systemctl restart jammpx.service
-    systemctl status jammpx.service
-    journalctl -u jammpx.service -n 20 --no-pager
+---
+
+## STEP 7 — FRONTEND: TEMPLATE CREATE/EDIT MODAL
+
+File: `frontend/src/components/settings/EngagementTemplatesTab.tsx`
+(or wherever the template create/edit modal lives — find it in the codebase)
+
+Add a "Repeat" section to the template create and edit modals. This section appears below the existing fields.
+
+UI spec:
+
+**Toggle row:**
+- Label: "Repeat this template on a schedule"
+- Toggle switch (same style as automations tab). Default OFF.
+- When OFF: all fields below are hidden.
+- When ON: fields below appear.
+
+**When toggle is ON, show:**
+
+1. Cadence select (required):
+   - Label: "Cadence"
+   - Options: Monthly / Quarterly / Annually
+
+2. Day of month (required):
+   - Label: "Create on day"
+   - Number input, 1–28. Helper text: "We cap at day 28 to avoid month-end issues."
+
+3. Month of year (only shown when cadence = Annually):
+   - Label: "Month"
+   - Select: January through December (values 1–12)
+
+4. Advance days (optional):
+   - Label: "Create this many days before the due date"
+   - Number input, default 14. Helper text: "Leave at 14 to give staff two weeks of lead time."
+   - NOTE: This field is informational for now — it is stored but the scheduler currently creates on the exact cadence date, not N days before a due date. Do not implement advance-days offset logic in the scheduler yet. Just store the value.
+
+All new fields are included in the create and update POST/PATCH payloads to the existing template endpoints. No new endpoints needed — the existing PATCH /api/v1/engagement-templates/{id} endpoint now accepts and persists the new fields.
+
+---
+
+## STEP 8 — FRONTEND: TEMPLATE LIST — RECURRING INDICATOR
+
+In the template list (wherever templates are displayed in the Settings page), add a small "Recurring" pill badge next to the template name when `is_recurring = true`.
+
+Badge spec: same pill style as other badges in the app. Use the blue status color (#DBEAFE bg, #1E40AF text). Text: "Recurring". 11px, weight 500.
+
+Also show the cadence below the template name in muted text when is_recurring is true:
+- monthly → "Repeats monthly on day {recurrence_day}"
+- quarterly → "Repeats quarterly on day {recurrence_day}"
+- annually → "Repeats annually on {month name} {recurrence_day}"
+
+---
+
+## STEP 9 — VERIFY
+
+After all steps:
+1. alembic current — confirm head is 0035
+2. Confirm the scheduler job is registered in main.py at 8:30 UTC
+3. Confirm the EngagementTemplate model has all 6 new fields
+4. Confirm the recurring_engagement_log table exists in the DB
+5. Confirm the frontend modal shows the Repeat toggle and fields
+6. Restart: systemctl restart jammpx.service

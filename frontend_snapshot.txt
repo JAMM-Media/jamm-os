@@ -1932,6 +1932,7 @@ import { cn } from '@/lib/utils'
 import LetterTemplatesTab from '@/components/settings/LetterTemplatesTab'
 import TaxOrganizerTemplates from '@/components/templates/TaxOrganizerTemplates'
 import DeletedTemplates from '@/components/templates/DeletedTemplates'
+import QcChecklistTemplatesTab from '@/components/templates/QcChecklistTemplatesTab'
 
 // ---- Types ----
 
@@ -2567,12 +2568,13 @@ function TemplateCard({ template, isManager, onEdit, onDelete, onUse }: Template
 
 // ---- Sub-tab definitions ----
 
-type SubTab = 'engagement' | 'letters' | 'tax_organizers' | 'deleted'
+type SubTab = 'engagement' | 'letters' | 'tax_organizers' | 'qc_checklists' | 'deleted'
 
 const SUB_TABS: { key: SubTab; label: string }[] = [
   { key: 'engagement', label: 'Engagement Templates' },
   { key: 'letters', label: 'Engagement Letters' },
   { key: 'tax_organizers', label: 'Tax Organizers' },
+  { key: 'qc_checklists', label: 'QC Checklists' },
   { key: 'deleted', label: 'Deleted' },
 ]
 
@@ -2718,6 +2720,9 @@ export default function TemplatesPage() {
 
         {/* Tax Organizers tab */}
         {activeTab === 'tax_organizers' && <TaxOrganizerTemplates />}
+
+        {/* QC Checklists tab */}
+        {activeTab === 'qc_checklists' && <QcChecklistTemplatesTab />}
 
         {/* Deleted tab */}
         {activeTab === 'deleted' && <DeletedTemplates />}
@@ -6008,6 +6013,7 @@ import api from '@/lib/api'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { IrsAuthBadge } from '@/components/clients/IrsAuthBadge'
 import { IrsAuthTab } from '@/components/clients/IrsAuthTab'
+import { DocumentExpirySection } from '@/components/clients/DocumentExpirySection'
 import { PortalPreview } from '@/components/clients/PortalPreview'
 import { HealthDot } from '@/components/clients/HealthDot'
 import { EditClientModal } from '@/components/clients/EditClientModal'
@@ -6385,6 +6391,11 @@ function ClientDetailContent() {
                 </div>
               )}
             </div>
+          </div>
+
+          {/* Document Expiry Tracking */}
+          <div className="bg-surface-card dark:bg-dark-card rounded-card p-4">
+            <DocumentExpirySection clientId={clientId} />
           </div>
           </div>
           </div>
@@ -7890,12 +7901,14 @@ import { NotesTab, NotesPanel, useNotes } from '@/components/notes'
 import { cn, formatEngagementType } from '@/lib/utils'
 import api from '@/lib/api'
 import { FileText } from 'lucide-react'
+import { QcChecklistTab } from '@/components/engagements/QcChecklistTab'
 
 type BadgeVariant = Parameters<typeof StatusBadge>[0]['variant']
 
 const TABS = [
   { key: 'overview', label: 'Overview' },
   { key: 'tasks', label: 'Tasks' },
+  { key: 'checklist', label: 'QC Checklist' },
   { key: 'documents', label: 'Documents' },
 ]
 
@@ -7918,6 +7931,7 @@ export default function EngagementDetailPage() {
   const [showModal, setShowModal] = useState(false)
   const [isEditOpen, setIsEditOpen] = useState(false)
   const [sendLetterOpen, setSendLetterOpen] = useState(false)
+  const [uncheckedQcCount, setUncheckedQcCount] = useState(0)
 
   const { unreadCount } = useNotes({ entityType: 'engagement', entityId: id })
 
@@ -8137,6 +8151,15 @@ export default function EngagementDetailPage() {
           </>
         )}
 
+        {/* QC CHECKLIST TAB */}
+        {activeTab === 'checklist' && (
+          <QcChecklistTab
+            engagementId={id}
+            engagementStatus={engagement.status}
+            onUncheckedCountChange={setUncheckedQcCount}
+          />
+        )}
+
         {/* DOCUMENTS TAB */}
         {activeTab === 'documents' && (
           <>
@@ -8265,6 +8288,7 @@ export default function EngagementDetailPage() {
             description: engagement.description ?? undefined,
           }}
           onSuccess={() => { refetch(); setIsEditOpen(false) }}
+          uncheckedQcCount={uncheckedQcCount}
         />
       )}
       <SendEngagementLetterModal
@@ -10924,6 +10948,371 @@ export function ClientTable({ clients }: ClientTableProps) {
 
 
 ================================================================================
+FILE: frontend\src\components\clients\DocumentExpirySection.tsx
+================================================================================
+// frontend/src/components/clients/DocumentExpirySection.tsx
+'use client'
+
+import { useState } from 'react'
+import { toast } from 'sonner'
+import { CalendarClock } from 'lucide-react'
+import { useAuth } from '@/lib/hooks/useAuth'
+import { useFetch } from '@/lib/hooks/useFetch'
+import {
+  documentExpiryApi,
+  type DocumentExpiryRecord,
+  type DocumentExpiryCreatePayload,
+} from '@/lib/api/documentExpiryApi'
+import { documentsApi, type Document } from '@/lib/api/documents'
+import { Modal } from '@/components/ui/Modal'
+
+const DOCUMENT_TYPES = [
+  'Engagement Letter',
+  'Power of Attorney',
+  'State Authorization',
+  'Other',
+]
+
+function getExpiryStatus(expiresOn: string): 'expired' | 'expiring_soon' | 'active' {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const expiry = new Date(expiresOn)
+  expiry.setHours(0, 0, 0, 0)
+  if (expiry < today) return 'expired'
+  const daysLeft = Math.round((expiry.getTime() - today.getTime()) / 86400000)
+  if (daysLeft <= 60) return 'expiring_soon'
+  return 'active'
+}
+
+function getDaysLeft(expiresOn: string): number {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const expiry = new Date(expiresOn)
+  expiry.setHours(0, 0, 0, 0)
+  return Math.round((expiry.getTime() - today.getTime()) / 86400000)
+}
+
+function fmtDate(d: string): string {
+  return new Date(d).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  })
+}
+
+const STATUS_BADGE: Record<
+  'expired' | 'expiring_soon' | 'active',
+  { bg: string; text: string; label: string }
+> = {
+  active: { bg: '#D1FAE5', text: '#065F46', label: 'Active' },
+  expiring_soon: { bg: '#FEF3C7', text: '#92400E', label: 'Expiring Soon' },
+  expired: { bg: '#FEE2E2', text: '#991B1B', label: 'Expired' },
+}
+
+interface AddModalProps {
+  clientId: string
+  onClose: () => void
+  onSuccess: () => void
+}
+
+function AddExpiryModal({ clientId, onClose, onSuccess }: AddModalProps) {
+  const [documentType, setDocumentType] = useState('')
+  const [description, setDescription] = useState('')
+  const [expiresOn, setExpiresOn] = useState('')
+  const [documentId, setDocumentId] = useState('')
+  const [isSaving, setIsSaving] = useState(false)
+
+  const { data: docsRaw } = useFetch(
+    () => documentsApi.list(0, 100, clientId).then((r) => r.items),
+    [clientId]
+  )
+  const clientDocs: Document[] = Array.isArray(docsRaw) ? docsRaw : []
+
+  async function handleSave() {
+    if (!documentType) {
+      toast.error('Please select a document type.')
+      return
+    }
+    if (!expiresOn) {
+      toast.error('Please enter an expiry date.')
+      return
+    }
+
+    const payload: DocumentExpiryCreatePayload = {
+      client_id: clientId,
+      document_type: documentType,
+      expires_on: expiresOn,
+      ...(description ? { description } : {}),
+      ...(documentId ? { document_id: documentId } : {}),
+    }
+
+    setIsSaving(true)
+    try {
+      await documentExpiryApi.create(payload)
+      toast.success('Document expiry record added.')
+      onSuccess()
+    } catch {
+      toast.error('Failed to add expiry record. Please try again.')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title="Add Document Expiry"
+      size="md"
+      footer={
+        <>
+          <button
+            type="button"
+            onClick={onClose}
+            className="h-8 px-3 rounded-[6px] text-[12px] font-medium text-[#6B7280] hover:text-brand dark:hover:text-[#EDEEF0] transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={isSaving}
+            className="h-8 px-3 rounded-[6px] bg-brand dark:bg-brand-btn text-white text-[12px] font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
+          >
+            {isSaving ? 'Saving…' : 'Save'}
+          </button>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-4">
+        {/* Document type */}
+        <div className="flex flex-col gap-1.5">
+          <span className="text-[12px] font-medium text-brand dark:text-[#EDEEF0]">
+            Document Type <span className="text-[#991B1B]">*</span>
+          </span>
+          <select
+            value={documentType}
+            onChange={(e) => setDocumentType(e.target.value)}
+            className="h-8 px-2.5 rounded-[6px] border border-[0.5px] border-surface-border dark:border-dark-border bg-surface-page dark:bg-dark-page text-[12px] text-brand dark:text-[#EDEEF0] focus:outline-none focus:ring-1 focus:ring-brand"
+          >
+            <option value="">Select type…</option>
+            {DOCUMENT_TYPES.map((t) => (
+              <option key={t} value={t}>{t}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* Description */}
+        <div className="flex flex-col gap-1.5">
+          <span className="text-[12px] font-medium text-brand dark:text-[#EDEEF0]">
+            Description{' '}
+            <span className="text-[11px] font-normal text-[#6B7280]">(optional)</span>
+          </span>
+          <input
+            type="text"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="e.g. 2024 engagement letter"
+            className="h-8 px-2.5 rounded-[6px] border border-[0.5px] border-surface-border dark:border-dark-border bg-surface-page dark:bg-dark-page text-[12px] text-brand dark:text-[#EDEEF0] placeholder:text-[#9CA3AF] focus:outline-none focus:ring-1 focus:ring-brand"
+          />
+        </div>
+
+        {/* Expiry date */}
+        <div className="flex flex-col gap-1.5">
+          <span className="text-[12px] font-medium text-brand dark:text-[#EDEEF0]">
+            Expiry Date <span className="text-[#991B1B]">*</span>
+          </span>
+          <input
+            type="date"
+            value={expiresOn}
+            onChange={(e) => setExpiresOn(e.target.value)}
+            className="h-8 px-2.5 rounded-[6px] border border-[0.5px] border-surface-border dark:border-dark-border bg-surface-page dark:bg-dark-page text-[12px] text-brand dark:text-[#EDEEF0] focus:outline-none focus:ring-1 focus:ring-brand"
+          />
+        </div>
+
+        {/* Linked document */}
+        <div className="flex flex-col gap-1.5">
+          <span className="text-[12px] font-medium text-brand dark:text-[#EDEEF0]">
+            Linked Document{' '}
+            <span className="text-[11px] font-normal text-[#6B7280]">(optional)</span>
+          </span>
+          <select
+            value={documentId}
+            onChange={(e) => setDocumentId(e.target.value)}
+            className="h-8 px-2.5 rounded-[6px] border border-[0.5px] border-surface-border dark:border-dark-border bg-surface-page dark:bg-dark-page text-[12px] text-brand dark:text-[#EDEEF0] focus:outline-none focus:ring-1 focus:ring-brand"
+          >
+            <option value="">None</option>
+            {clientDocs.map((doc) => (
+              <option key={doc.id} value={doc.id}>
+                {doc.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
+interface DocumentExpirySectionProps {
+  clientId: string
+}
+
+export function DocumentExpirySection({ clientId }: DocumentExpirySectionProps) {
+  const { user } = useAuth()
+  const canManage = user?.role === 'manager' || user?.role === 'firm_owner'
+  const [showModal, setShowModal] = useState(false)
+
+  const {
+    data: expiriesRaw,
+    isLoading,
+    refetch,
+  } = useFetch(
+    () =>
+      documentExpiryApi
+        .list(clientId)
+        .then((r) => r.data as DocumentExpiryRecord[]),
+    [clientId]
+  )
+
+  const expiries: DocumentExpiryRecord[] = Array.isArray(expiriesRaw) ? expiriesRaw : []
+
+  function handleModalSuccess() {
+    setShowModal(false)
+    refetch()
+  }
+
+  return (
+    <>
+      {/* Header row */}
+      <div className="flex items-center justify-between mb-4">
+        <span
+          style={{ fontSize: 16, fontWeight: 500 }}
+          className="text-brand dark:text-[#EDEEF0]"
+        >
+          Document Expiry Tracking
+        </span>
+        {canManage && (
+          <button
+            type="button"
+            onClick={() => setShowModal(true)}
+            style={{ height: 32, borderRadius: 6, fontSize: 12, fontWeight: 500 }}
+            className="px-3 bg-[#1F3148] text-white hover:opacity-90 transition-opacity"
+          >
+            + Add
+          </button>
+        )}
+      </div>
+
+      {/* Content */}
+      {isLoading ? (
+        <div className="flex flex-col gap-3">
+          {Array.from({ length: 2 }).map((_, i) => (
+            <div
+              key={i}
+              className="h-20 rounded-[8px] bg-[#D5D8DE] dark:bg-[#444444] animate-pulse"
+            />
+          ))}
+        </div>
+      ) : expiries.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-16 gap-[10px]">
+          <div className="flex items-center justify-center w-10 h-10 rounded-[10px] bg-surface-card dark:bg-dark-card border border-[0.5px] border-surface-border dark:border-dark-border">
+            <CalendarClock className="h-[18px] w-[18px] text-[#6B7280]" />
+          </div>
+          <p className="text-[13px] font-medium text-brand dark:text-[#EDEEF0]">
+            No documents tracked for expiry.
+          </p>
+          <p className="text-[12px] text-[#6B7280] text-center max-w-xs">
+            Add one to get alerts before they lapse.
+          </p>
+          {canManage && (
+            <button
+              type="button"
+              onClick={() => setShowModal(true)}
+              style={{ height: 32, borderRadius: 6, fontSize: 12, fontWeight: 500 }}
+              className="mt-1 px-3 bg-[#1F3148] text-white hover:opacity-90 transition-opacity"
+            >
+              + Add
+            </button>
+          )}
+        </div>
+      ) : (
+        <div className="flex flex-col gap-3">
+          {expiries.map((rec) => {
+            const statusKey = getExpiryStatus(rec.expires_on)
+            const badge = STATUS_BADGE[statusKey]
+            const daysLeft = getDaysLeft(rec.expires_on)
+
+            return (
+              <div
+                key={rec.id}
+                style={{ borderRadius: 8, padding: '12px 14px' }}
+                className="bg-[#EDEEF0] dark:bg-[#383838]"
+              >
+                {/* Top row */}
+                <div className="flex items-center justify-between mb-1">
+                  <span
+                    style={{ fontSize: 13, fontWeight: 500 }}
+                    className="text-brand dark:text-[#EDEEF0]"
+                  >
+                    {rec.document_type}
+                  </span>
+                  <span
+                    style={{
+                      height: 22,
+                      fontSize: 11,
+                      fontWeight: 500,
+                      borderRadius: 9999,
+                      padding: '0 10px',
+                      background: badge.bg,
+                      color: badge.text,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                    }}
+                  >
+                    {badge.label}
+                  </span>
+                </div>
+
+                {/* Description */}
+                {rec.description && (
+                  <p style={{ fontSize: 12 }} className="text-[#6B7280] mb-0.5">
+                    {rec.description}
+                  </p>
+                )}
+
+                {/* Expiry date */}
+                <p style={{ fontSize: 12 }} className="text-[#6B7280] mb-0.5">
+                  Expires {fmtDate(rec.expires_on)}
+                </p>
+
+                {/* Days until expiry */}
+                <p style={{ fontSize: 11 }} className="text-[#9CA3AF]">
+                  {daysLeft < 0
+                    ? `${Math.abs(daysLeft)} days ago`
+                    : daysLeft === 0
+                    ? 'Expires today'
+                    : `in ${daysLeft} days`}
+                </p>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {showModal && (
+        <AddExpiryModal
+          clientId={clientId}
+          onClose={() => setShowModal(false)}
+          onSuccess={handleModalSuccess}
+        />
+      )}
+    </>
+  )
+}
+
+
+================================================================================
 FILE: frontend\src\components\clients\EditClientModal.tsx
 ================================================================================
 // path: frontend/src/components/clients/EditClientModal.tsx
@@ -12486,10 +12875,14 @@ FILE: frontend\src\components\documents\DocumentTable.tsx
 // frontend/src/components/documents/DocumentTable.tsx
 'use client'
 
+import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { toast } from 'sonner'
 import { MockDocument, formatFileSize } from '@/lib/mock/documents'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { FileText } from 'lucide-react'
+import { useAuth } from '@/lib/hooks/useAuth'
+import { documentsApi } from '@/lib/api/documents'
 
 interface DocumentTableProps {
   documents: MockDocument[]
@@ -12497,6 +12890,29 @@ interface DocumentTableProps {
 
 export function DocumentTable({ documents }: DocumentTableProps) {
   const router = useRouter()
+  const { user } = useAuth()
+  const isStaff = user && user.role !== 'client_portal_user'
+
+  // Local optimistic overrides: doc.id -> is_superseded
+  const [supersededOverrides, setSupersededOverrides] = useState<Record<string, boolean>>({})
+
+  function getIsSuperseded(doc: MockDocument): boolean {
+    if (doc.id in supersededOverrides) return supersededOverrides[doc.id]
+    return doc.is_superseded ?? false
+  }
+
+  async function handleToggleSuperseded(e: React.MouseEvent, doc: MockDocument) {
+    e.stopPropagation()
+    const next = !getIsSuperseded(doc)
+    setSupersededOverrides((prev) => ({ ...prev, [doc.id]: next }))
+    try {
+      await documentsApi.patchSuperseded(doc.id, next)
+      toast.success(next ? 'Document marked as superseded' : 'Document marked as current')
+    } catch {
+      setSupersededOverrides((prev) => ({ ...prev, [doc.id]: !next }))
+      toast.error('Could not update document — please try again')
+    }
+  }
 
   return (
     <div className="rounded-modal border border-[0.5px] border-surface-border dark:border-dark-border overflow-hidden">
@@ -12514,60 +12930,85 @@ export function DocumentTable({ documents }: DocumentTableProps) {
           </tr>
         </thead>
         <tbody>
-          {documents.map((doc, i) => (
-            <tr
-              key={doc.id}
-              onClick={() => router.push(`/documents/${doc.id}`)}
-              className={[
-                'group cursor-pointer transition-colors',
-                'bg-surface-page dark:bg-dark-page',
-                'hover:bg-[#DDDFE3] dark:hover:bg-[#323232]',
-                i !== documents.length - 1
-                  ? 'border-b border-[0.5px] border-[#D5D8DE] dark:border-dark-card'
-                  : '',
-              ].join(' ')}
-            >
-              <td className="px-4 py-3">
-                <div className="flex items-center gap-2">
-                  <FileText className="h-4 w-4 text-[#6B7280] flex-shrink-0" />
-                  <span className="text-[12px] font-medium text-brand dark:text-[#EDEEF0]">
-                    {doc.name}
+          {documents.map((doc, i) => {
+            const superseded = getIsSuperseded(doc)
+            return (
+              <tr
+                key={doc.id}
+                onClick={() => router.push(`/documents/${doc.id}`)}
+                className={[
+                  'group cursor-pointer transition-colors',
+                  'bg-surface-page dark:bg-dark-page',
+                  'hover:bg-[#DDDFE3] dark:hover:bg-[#323232]',
+                  superseded ? 'opacity-50' : '',
+                  i !== documents.length - 1
+                    ? 'border-b border-[0.5px] border-[#D5D8DE] dark:border-dark-card'
+                    : '',
+                ].join(' ')}
+              >
+                <td className="px-4 py-3">
+                  <div className="flex items-center gap-2">
+                    <FileText className="h-4 w-4 text-[#6B7280] flex-shrink-0" />
+                    <span
+                      className={[
+                        'text-[12px] font-medium text-brand dark:text-[#EDEEF0]',
+                        superseded ? 'line-through' : '',
+                      ].join(' ')}
+                    >
+                      {doc.name}
+                    </span>
+                    {superseded && (
+                      <span
+                        className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[11px] font-medium"
+                        style={{ backgroundColor: '#E5E7EB', color: '#6B7280' }}
+                      >
+                        Superseded
+                      </span>
+                    )}
+                    {isStaff && (
+                      <button
+                        onClick={(e) => handleToggleSuperseded(e, doc)}
+                        className="opacity-0 group-hover:opacity-100 transition-opacity text-[11px] text-[#6B7280] bg-transparent border-none cursor-pointer ml-1"
+                      >
+                        {superseded ? 'Mark as current' : 'Mark as superseded'}
+                      </button>
+                    )}
+                  </div>
+                </td>
+                <td className="px-4 py-3">
+                  <span
+                    onClick={(e) => { e.stopPropagation(); router.push(`/clients/${doc.clientId}`) }}
+                    className="text-[12px] text-brand-light hover:underline cursor-pointer"
+                  >
+                    {doc.clientName}
                   </span>
-                </div>
-              </td>
-              <td className="px-4 py-3">
-                <span
-                  onClick={(e) => { e.stopPropagation(); router.push(`/clients/${doc.clientId}`) }}
-                  className="text-[12px] text-brand-light hover:underline cursor-pointer"
-                >
-                  {doc.clientName}
-                </span>
-              </td>
-              <td className="px-4 py-3">
-                <span className="text-[12px] text-[#374151] dark:text-[#9CA3AF]">
-                  {doc.engagementTitle}
-                </span>
-              </td>
-              <td className="px-4 py-3">
-                <span className="text-[12px] text-[#374151] dark:text-[#9CA3AF]">
-                  {doc.uploadedBy}
-                </span>
-              </td>
-              <td className="px-4 py-3">
-                <span className="text-[12px] text-[#374151] dark:text-[#9CA3AF]">
-                  {doc.uploadedAt}
-                </span>
-              </td>
-              <td className="px-4 py-3">
-                <span className="text-[12px] text-[#374151] dark:text-[#9CA3AF]">
-                  {formatFileSize(doc.fileSizeKb)}
-                </span>
-              </td>
-              <td className="px-4 py-3">
-                <StatusBadge variant={doc.status} />
-              </td>
-            </tr>
-          ))}
+                </td>
+                <td className="px-4 py-3">
+                  <span className="text-[12px] text-[#374151] dark:text-[#9CA3AF]">
+                    {doc.engagementTitle}
+                  </span>
+                </td>
+                <td className="px-4 py-3">
+                  <span className="text-[12px] text-[#374151] dark:text-[#9CA3AF]">
+                    {doc.uploadedBy}
+                  </span>
+                </td>
+                <td className="px-4 py-3">
+                  <span className="text-[12px] text-[#374151] dark:text-[#9CA3AF]">
+                    {doc.uploadedAt}
+                  </span>
+                </td>
+                <td className="px-4 py-3">
+                  <span className="text-[12px] text-[#374151] dark:text-[#9CA3AF]">
+                    {formatFileSize(doc.fileSizeKb)}
+                  </span>
+                </td>
+                <td className="px-4 py-3">
+                  <StatusBadge variant={doc.status} />
+                </td>
+              </tr>
+            )
+          })}
         </tbody>
       </table>
     </div>
@@ -13180,6 +13621,7 @@ interface EditEngagementModalProps {
   onClose: () => void
   engagement: { id: string; name: string; status: string; engagementType?: string; endDate?: string; description?: string }
   onSuccess: () => void
+  uncheckedQcCount?: number
 }
 
 interface FormState {
@@ -13200,7 +13642,7 @@ function toFormState(engagement: EditEngagementModalProps['engagement']): FormSt
   }
 }
 
-export function EditEngagementModal({ isOpen, onClose, engagement, onSuccess }: EditEngagementModalProps) {
+export function EditEngagementModal({ isOpen, onClose, engagement, onSuccess, uncheckedQcCount = 0 }: EditEngagementModalProps) {
   const [form, setForm] = useState<FormState>(() => toFormState(engagement))
   const [nameError, setNameError] = useState('')
   const [saving, setSaving] = useState(false)
@@ -13234,6 +13676,13 @@ export function EditEngagementModal({ isOpen, onClose, engagement, onSuccess }: 
     if (Object.keys(patch).length === 0) {
       onClose()
       return
+    }
+
+    if (patch.status === 'completed' && uncheckedQcCount > 0) {
+      const confirmed = window.confirm(
+        `${uncheckedQcCount} checklist item${uncheckedQcCount > 1 ? 's are' : ' is'} not checked. Mark engagement as complete anyway?`
+      )
+      if (!confirmed) return
     }
 
     setSaving(true)
@@ -14286,6 +14735,281 @@ export function NewEngagementModal({
 
       </div>
     </Modal>
+  )
+}
+
+
+================================================================================
+FILE: frontend\src\components\engagements\QcChecklistTab.tsx
+================================================================================
+'use client'
+
+import { useState, useCallback, useEffect, useRef } from 'react'
+import { toast } from 'sonner'
+import { Trash2, Loader2 } from 'lucide-react'
+import api from '@/lib/api'
+import { useAuth } from '@/lib/hooks/useAuth'
+
+interface QcItem {
+  id: string
+  title: string
+  is_checked: boolean
+  checked_by_id: string | null
+  checked_at: string | null
+  is_from_template: boolean
+  order: number
+}
+
+interface Props {
+  engagementId: string
+  engagementStatus: string
+  onUncheckedCountChange?: (count: number) => void
+}
+
+export function QcChecklistTab({ engagementId, engagementStatus: _engagementStatus, onUncheckedCountChange }: Props) {
+  const { user } = useAuth()
+  const isManager = user?.role === 'firm_owner' || user?.role === 'manager'
+
+  const [items, setItems] = useState<QcItem[]>([])
+  const [loading, setLoading] = useState(true)
+  const [newTitle, setNewTitle] = useState('')
+  const [adding, setAdding] = useState(false)
+  const [togglingId, setTogglingId] = useState<string | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+
+  const onUncheckedCountChangeRef = useRef(onUncheckedCountChange)
+  onUncheckedCountChangeRef.current = onUncheckedCountChange
+
+  const fetchItems = useCallback(async () => {
+    setLoading(true)
+    try {
+      const { data } = await api.get(`/qc-checklists/items/?engagement_id=${engagementId}`)
+      const all: QcItem[] = Array.isArray(data)
+        ? data.map((i: Record<string, unknown>) => ({
+            id: String(i.id),
+            title: String(i.title ?? ''),
+            is_checked: Boolean(i.is_checked),
+            checked_by_id: i.checked_by_id ? String(i.checked_by_id) : null,
+            checked_at: i.checked_at ? String(i.checked_at) : null,
+            is_from_template: Boolean(i.is_from_template),
+            order: Number(i.order ?? 0),
+          }))
+        : []
+      setItems(all)
+      onUncheckedCountChangeRef.current?.(all.filter((i) => !i.is_checked).length)
+    } catch {
+      toast.error('Failed to load QC checklist')
+    } finally {
+      setLoading(false)
+    }
+  }, [engagementId])
+
+  useEffect(() => { fetchItems() }, [fetchItems])
+
+  async function handleToggle(item: QcItem) {
+    setTogglingId(item.id)
+    try {
+      const endpoint = item.is_checked
+        ? `/qc-checklists/items/${item.id}/uncheck`
+        : `/qc-checklists/items/${item.id}/check`
+      const { data } = await api.patch(endpoint)
+      setItems((prev) => {
+        const next = prev.map((i) =>
+          i.id === item.id
+            ? {
+                ...i,
+                is_checked: Boolean((data as Record<string, unknown>).is_checked),
+                checked_by_id: (data as Record<string, unknown>).checked_by_id
+                  ? String((data as Record<string, unknown>).checked_by_id)
+                  : null,
+                checked_at: (data as Record<string, unknown>).checked_at
+                  ? String((data as Record<string, unknown>).checked_at)
+                  : null,
+              }
+            : i
+        )
+        onUncheckedCountChangeRef.current?.(next.filter((i) => !i.is_checked).length)
+        return next
+      })
+    } catch {
+      toast.error('Failed to update item')
+    } finally {
+      setTogglingId(null)
+    }
+  }
+
+  async function handleAddItem() {
+    const title = newTitle.trim()
+    if (!title) return
+    setAdding(true)
+    try {
+      const { data } = await api.post('/qc-checklists/items/', {
+        engagement_id: engagementId,
+        title,
+        is_from_template: false,
+        order: items.length,
+      })
+      const newItem: QcItem = {
+        id: String((data as Record<string, unknown>).id),
+        title: String((data as Record<string, unknown>).title ?? ''),
+        is_checked: false,
+        checked_by_id: null,
+        checked_at: null,
+        is_from_template: false,
+        order: Number((data as Record<string, unknown>).order ?? items.length),
+      }
+      setItems((prev) => {
+        const next = [...prev, newItem]
+        onUncheckedCountChangeRef.current?.(next.filter((i) => !i.is_checked).length)
+        return next
+      })
+      setNewTitle('')
+    } catch {
+      toast.error('Failed to add item')
+    } finally {
+      setAdding(false)
+    }
+  }
+
+  async function handleDelete(item: QcItem) {
+    setDeletingId(item.id)
+    try {
+      await api.delete(`/qc-checklists/items/${item.id}`)
+      setItems((prev) => {
+        const next = prev.filter((i) => i.id !== item.id)
+        onUncheckedCountChangeRef.current?.(next.filter((i) => !i.is_checked).length)
+        return next
+      })
+    } catch {
+      toast.error('Failed to delete item')
+    } finally {
+      setDeletingId(null)
+    }
+  }
+
+  function formatCheckedAt(checkedAt: string | null) {
+    if (!checkedAt) return ''
+    const d = new Date(checkedAt)
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+  }
+
+  const checkedCount = items.filter((i) => i.is_checked).length
+  const totalCount = items.length
+
+  if (loading) {
+    return (
+      <div className="flex flex-col gap-2">
+        {[1, 2, 3].map((i) => (
+          <div key={i} className="h-10 rounded-[8px] bg-[#D5D8DE] dark:bg-[#333] animate-pulse" />
+        ))}
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      {/* Header */}
+      <div className="flex items-center gap-2">
+        <span className="text-[13px] font-medium text-brand dark:text-[#EDEEF0]">QC Checklist</span>
+        <span className="px-2 py-0.5 rounded-full bg-[#E5E7EB] dark:bg-[#333] text-[11px] font-medium text-[#6B7280]">
+          {checkedCount} of {totalCount} complete
+        </span>
+      </div>
+
+      {/* Item list */}
+      {items.length === 0 ? (
+        <p className="text-[12px] text-[#6B7280] py-4 text-center">
+          No checklist items. Add one below or create a QC template for this engagement type in Templates.
+        </p>
+      ) : (
+        <div className="flex flex-col divide-y divide-surface-border dark:divide-dark-border border border-[0.5px] border-surface-border dark:border-dark-border rounded-[8px] overflow-hidden">
+          {items.map((item) => (
+            <div
+              key={item.id}
+              className="flex items-start gap-3 px-4 py-3 bg-surface-card dark:bg-dark-card group hover:bg-[#F9FAFB] dark:hover:bg-[#252525] transition-colors"
+            >
+              {/* Checkbox */}
+              <button
+                onClick={() => handleToggle(item)}
+                disabled={togglingId === item.id}
+                className="mt-0.5 flex-shrink-0 w-4 h-4 rounded border border-[#D1D5DB] dark:border-[#555] flex items-center justify-center transition-colors hover:border-brand disabled:opacity-50"
+                style={{ background: item.is_checked ? '#1F3148' : 'transparent' }}
+              >
+                {togglingId === item.id ? (
+                  <Loader2 className="h-2.5 w-2.5 animate-spin text-white" />
+                ) : item.is_checked ? (
+                  <svg className="h-2.5 w-2.5 text-white" fill="none" viewBox="0 0 12 12" stroke="currentColor" strokeWidth={2.5}>
+                    <polyline points="2,6 5,9 10,3" />
+                  </svg>
+                ) : null}
+              </button>
+
+              {/* Content */}
+              <div className="flex-1 min-w-0">
+                <span
+                  className={
+                    'text-[13px] ' +
+                    (item.is_checked
+                      ? 'line-through text-[#9CA3AF]'
+                      : 'text-brand dark:text-[#EDEEF0]')
+                  }
+                >
+                  {item.title}
+                </span>
+                <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                  {item.is_from_template && (
+                    <span className="text-[10px] text-[#9CA3AF] px-1.5 py-0.5 rounded bg-[#F3F4F6] dark:bg-[#333]">
+                      From template
+                    </span>
+                  )}
+                  {item.is_checked && item.checked_at && (
+                    <span className="text-[11px] text-[#9CA3AF]">
+                      Checked {formatCheckedAt(item.checked_at)}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Delete button — manual items only, or manager can delete any */}
+              {(!item.is_from_template || isManager) && (
+                <button
+                  onClick={() => handleDelete(item)}
+                  disabled={deletingId === item.id}
+                  className="opacity-0 group-hover:opacity-100 flex-shrink-0 p-1 rounded text-[#9CA3AF] hover:text-red-500 hover:bg-[#FEF2F2] dark:hover:bg-red-900/20 transition-all disabled:opacity-50"
+                >
+                  {deletingId === item.id ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Trash2 className="h-3.5 w-3.5" />
+                  )}
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Add item inline */}
+      <div className="flex items-center gap-2">
+        <input
+          type="text"
+          value={newTitle}
+          onChange={(e) => setNewTitle(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') handleAddItem() }}
+          placeholder="+ Add item..."
+          disabled={adding}
+          className="flex-1 h-9 px-3 rounded-md border border-[#D1D5DB] dark:border-[#444] bg-white dark:bg-[#252525] text-[13px] text-[#374151] dark:text-[#EDEEF0] placeholder:text-[#9CA3AF] focus:outline-none focus:border-brand-light disabled:opacity-50"
+        />
+        <button
+          onClick={handleAddItem}
+          disabled={adding || !newTitle.trim()}
+          className="h-9 px-3 rounded-md bg-brand dark:bg-brand-btn text-white text-[12px] font-medium hover:opacity-90 disabled:opacity-50 transition-opacity flex items-center gap-1"
+        >
+          {adding && <Loader2 className="h-3 w-3 animate-spin" />}
+          Add
+        </button>
+      </div>
+    </div>
   )
 }
 
@@ -20573,6 +21297,14 @@ interface DeletedLetterTemplate {
   is_active: boolean
 }
 
+interface DeletedQcTemplate {
+  id: string
+  name: string
+  engagement_type: string | null
+  items: string[]
+  is_active: boolean
+}
+
 const ORGANIZER_TYPE_LABELS: Record<string, string> = {
   individual: 'Individual',
   business: 'Business',
@@ -20580,12 +21312,13 @@ const ORGANIZER_TYPE_LABELS: Record<string, string> = {
   custom: 'Custom',
 }
 
-type InternalTab = 'engagement' | 'tax_organizers' | 'letters'
+type InternalTab = 'engagement' | 'tax_organizers' | 'letters' | 'qc_checklists'
 
 const INTERNAL_TABS: { key: InternalTab; label: string }[] = [
   { key: 'engagement', label: 'Engagement Templates' },
   { key: 'tax_organizers', label: 'Tax Organizers' },
   { key: 'letters', label: 'Engagement Letters' },
+  { key: 'qc_checklists', label: 'QC Checklists' },
 ]
 
 // ── Engagement Templates deleted sub-tab ──────────────────────────────────────
@@ -20871,6 +21604,103 @@ function DeletedLetterTemplates() {
   )
 }
 
+// ── QC Checklists deleted sub-tab ─────────────────────────────────────────────
+
+function DeletedQcTemplates() {
+  const [templates, setTemplates] = useState<DeletedQcTemplate[]>([])
+  const [loading, setLoading] = useState(true)
+  const [restoring, setRestoring] = useState<string | null>(null)
+
+  const fetchTemplates = useCallback(async () => {
+    setLoading(true)
+    try {
+      const { data } = await api.get('/qc-checklists/templates/?include_inactive=true')
+      const all = Array.isArray(data) ? data : []
+      setTemplates(
+        all
+          .filter((t: Record<string, unknown>) => t.is_active === false)
+          .map((t: Record<string, unknown>) => ({
+            id: String(t.id),
+            name: String(t.name ?? ''),
+            engagement_type: t.engagement_type ? String(t.engagement_type) : null,
+            items: Array.isArray(t.items) ? (t.items as string[]) : [],
+            is_active: Boolean(t.is_active),
+          }))
+      )
+    } catch {
+      toast.error('Failed to load deleted QC checklist templates')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => { fetchTemplates() }, [fetchTemplates])
+
+  async function handleRestore(id: string) {
+    setRestoring(id)
+    try {
+      await api.post(`/qc-checklists/templates/${id}/restore`)
+      toast.success('Template restored')
+      setTemplates((prev) => prev.filter((t) => t.id !== id))
+    } catch {
+      toast.error('Failed to restore template')
+    } finally {
+      setRestoring(null)
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="flex flex-col gap-2">
+        {[1, 2, 3].map((i) => (
+          <div key={i} className="h-14 rounded-[8px] bg-[#D5D8DE] dark:bg-[#444] animate-pulse" />
+        ))}
+      </div>
+    )
+  }
+
+  if (templates.length === 0) {
+    return (
+      <p className="text-[13px] text-[#9CA3AF] py-8 text-center">
+        No deleted QC checklist templates
+      </p>
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      {templates.map((t) => (
+        <div
+          key={t.id}
+          className="bg-surface-card dark:bg-dark-card rounded-[8px] p-3 flex items-center justify-between"
+        >
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-[13px] font-medium text-[#9CA3AF]">{t.name}</span>
+            {t.engagement_type && (
+              <span className="px-2 py-0.5 rounded-full bg-blue-100/50 dark:bg-blue-900/20 text-[10px] font-medium text-blue-500/70 dark:text-blue-400/60">
+                {formatEngagementType(t.engagement_type)}
+              </span>
+            )}
+            <span className="px-2 py-0.5 rounded-full bg-[#E5E7EB]/60 dark:bg-[#333]/60 text-[10px] font-medium text-[#9CA3AF]">
+              {t.items.length} item{t.items.length !== 1 ? 's' : ''}
+            </span>
+            <span className="px-2 py-0.5 rounded-full bg-red-100 dark:bg-red-900/20 text-[10px] font-medium text-red-500 dark:text-red-400">
+              Deleted
+            </span>
+          </div>
+          <button
+            onClick={() => handleRestore(t.id)}
+            disabled={restoring === t.id}
+            className="text-brand dark:text-[#4A7FA5] border border-surface-border dark:border-dark-border rounded-[6px] px-3 py-1.5 text-[12px] hover:bg-surface-card dark:hover:bg-dark-card disabled:opacity-50 transition-colors flex-shrink-0"
+          >
+            {restoring === t.id ? 'Restoring…' : 'Restore'}
+          </button>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 // ── Main Component ────────────────────────────────────────────────────────────
 
 export default function DeletedTemplates() {
@@ -20904,7 +21734,401 @@ export default function DeletedTemplates() {
         {activeTab === 'engagement' && <DeletedEngagementTemplates />}
         {activeTab === 'tax_organizers' && <DeletedTaxOrganizerTemplates />}
         {activeTab === 'letters' && <DeletedLetterTemplates />}
+        {activeTab === 'qc_checklists' && <DeletedQcTemplates />}
       </div>
+    </div>
+  )
+}
+
+
+================================================================================
+FILE: frontend\src\components\templates\QcChecklistTemplatesTab.tsx
+================================================================================
+'use client'
+
+import { useState, useCallback, useEffect } from 'react'
+import { toast } from 'sonner'
+import { Plus, Pencil, Trash2, X, Loader2 } from 'lucide-react'
+import api from '@/lib/api'
+import { useAuth } from '@/lib/hooks/useAuth'
+import { formatEngagementType } from '@/lib/utils'
+
+const ENGAGEMENT_TYPES = [
+  { value: 'tax_return_1040', label: 'Tax Return — 1040' },
+  { value: 'tax_return_1120', label: 'Tax Return — 1120' },
+  { value: 'tax_return_1120s', label: 'Tax Return — 1120-S' },
+  { value: 'tax_return_1065', label: 'Tax Return — 1065' },
+  { value: 'tax_return_1041', label: 'Tax Return — 1041' },
+  { value: 'tax_return_706', label: 'Tax Return — 706' },
+  { value: 'amended_return_1040x', label: 'Amended — 1040-X' },
+  { value: 'extension_4868', label: 'Extension — 4868' },
+  { value: 'extension_7004', label: 'Extension — 7004' },
+  { value: 'extension_8868', label: 'Extension — 8868' },
+  { value: 'payroll_tax_941', label: 'Payroll — 941' },
+  { value: 'tax_planning_advisory', label: 'Tax Planning Advisory' },
+  { value: 'bookkeeping_monthly', label: 'Bookkeeping — Monthly' },
+  { value: 'bookkeeping_quarterly', label: 'Bookkeeping — Quarterly' },
+  { value: 'audit_representation', label: 'Audit Representation' },
+  { value: 'other_advisory', label: 'Other Advisory' },
+  { value: 'custom', label: 'Custom' },
+]
+
+interface QcTemplate {
+  id: string
+  name: string
+  engagement_type: string | null
+  items: string[]
+  is_active: boolean
+}
+
+interface ModalProps {
+  editTemplate: QcTemplate | null
+  onClose: () => void
+  onSaved: () => void
+}
+
+function QcTemplateModal({ editTemplate, onClose, onSaved }: ModalProps) {
+  const [name, setName] = useState(editTemplate?.name ?? '')
+  const [engagementType, setEngagementType] = useState(editTemplate?.engagement_type ?? '')
+  const [items, setItems] = useState<string[]>(editTemplate?.items ?? [])
+  const [saving, setSaving] = useState(false)
+
+  function addItem() {
+    setItems((prev) => [...prev, ''])
+  }
+
+  function updateItem(idx: number, value: string) {
+    setItems((prev) => {
+      const next = [...prev]
+      next[idx] = value
+      return next
+    })
+  }
+
+  function removeItem(idx: number) {
+    setItems((prev) => prev.filter((_, i) => i !== idx))
+  }
+
+  async function handleSave() {
+    if (!name.trim()) {
+      toast.error('Template name is required')
+      return
+    }
+    setSaving(true)
+    const body = {
+      name: name.trim(),
+      engagement_type: engagementType || null,
+      items: items.filter((i) => i.trim()),
+    }
+    try {
+      if (editTemplate) {
+        await api.patch(`/qc-checklists/templates/${editTemplate.id}`, body)
+        toast.success('Template updated')
+      } else {
+        await api.post('/qc-checklists/templates/', body)
+        toast.success('Template created')
+      }
+      onSaved()
+      onClose()
+    } catch {
+      toast.error('Failed to save template')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      <div className="bg-white dark:bg-[#1E1E1E] rounded-xl shadow-xl w-full max-w-xl max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-[#E5E7EB] dark:border-[#333]">
+          <h2 className="text-[15px] font-medium text-brand dark:text-[#EDEEF0]">
+            {editTemplate ? 'Edit QC Checklist' : 'New QC Checklist'}
+          </h2>
+          <button onClick={onClose} className="text-[#6B7280] hover:text-brand dark:hover:text-[#EDEEF0] transition-colors">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="px-5 py-4 space-y-4">
+          <div>
+            <label className="block text-[12px] font-medium text-[#374151] dark:text-[#9CA3AF] mb-1">
+              Template name <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g. 1040 QC Checklist"
+              className="w-full h-9 px-3 rounded-md border border-[#D1D5DB] dark:border-[#444] bg-white dark:bg-[#252525] text-[13px] text-[#374151] dark:text-[#EDEEF0] placeholder:text-[#9CA3AF] focus:outline-none focus:border-brand-light"
+            />
+          </div>
+
+          <div>
+            <label className="block text-[12px] font-medium text-[#374151] dark:text-[#9CA3AF] mb-1">
+              Engagement type
+            </label>
+            <select
+              value={engagementType}
+              onChange={(e) => setEngagementType(e.target.value)}
+              className="w-full h-9 px-3 rounded-md border border-[#D1D5DB] dark:border-[#444] bg-white dark:bg-[#252525] text-[13px] text-[#374151] dark:text-[#EDEEF0] focus:outline-none focus:border-brand-light"
+            >
+              <option value="">All engagement types (manual only)</option>
+              {ENGAGEMENT_TYPES.map((et) => (
+                <option key={et.value} value={et.value}>{et.label}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-[12px] font-medium text-[#374151] dark:text-[#9CA3AF]">
+                Checklist items
+              </label>
+              <button
+                type="button"
+                onClick={addItem}
+                className="flex items-center gap-1 text-[11px] text-brand-light hover:underline"
+              >
+                <Plus className="h-3 w-3" /> Add item
+              </button>
+            </div>
+            <div className="space-y-2">
+              {items.map((item, idx) => (
+                <div key={idx} className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={item}
+                    onChange={(e) => updateItem(idx, e.target.value)}
+                    placeholder="e.g. Verify prior year carryforward"
+                    className="flex-1 h-8 px-3 rounded-md border border-[#D1D5DB] dark:border-[#444] bg-white dark:bg-[#252525] text-[12px] text-[#374151] dark:text-[#EDEEF0] placeholder:text-[#9CA3AF] focus:outline-none focus:border-brand-light"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removeItem(idx)}
+                    className="text-[#9CA3AF] hover:text-red-500 transition-colors flex-shrink-0"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ))}
+              {items.length === 0 && (
+                <p className="text-[11px] text-[#9CA3AF]">No items yet. Click &ldquo;Add item&rdquo; to add one.</p>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-2 px-5 py-4 border-t border-[#E5E7EB] dark:border-[#333]">
+          <button
+            onClick={onClose}
+            className="h-8 px-4 text-[12px] font-medium text-[#6B7280] hover:text-brand dark:hover:text-[#EDEEF0] transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="h-8 px-4 rounded-md bg-brand dark:bg-brand-btn text-white text-[12px] font-medium hover:opacity-90 disabled:opacity-60 transition-opacity flex items-center gap-1.5"
+          >
+            {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+            {editTemplate ? 'Save Changes' : 'Create Template'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export default function QcChecklistTemplatesTab() {
+  const { user } = useAuth()
+  const isManager = user?.role === 'firm_owner' || user?.role === 'manager'
+
+  const [templates, setTemplates] = useState<QcTemplate[]>([])
+  const [loading, setLoading] = useState(true)
+  const [search, setSearch] = useState('')
+  const [createOpen, setCreateOpen] = useState(false)
+  const [editTemplate, setEditTemplate] = useState<QcTemplate | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<QcTemplate | null>(null)
+  const [deleting, setDeleting] = useState(false)
+
+  const fetchTemplates = useCallback(async () => {
+    setLoading(true)
+    try {
+      const { data } = await api.get('/qc-checklists/templates/')
+      const all = Array.isArray(data) ? data : []
+      setTemplates(
+        all.map((t: Record<string, unknown>) => ({
+          id: String(t.id),
+          name: String(t.name ?? ''),
+          engagement_type: t.engagement_type ? String(t.engagement_type) : null,
+          items: Array.isArray(t.items) ? (t.items as string[]) : [],
+          is_active: Boolean(t.is_active ?? true),
+        }))
+      )
+    } catch {
+      toast.error('Failed to load QC checklist templates')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => { fetchTemplates() }, [fetchTemplates])
+
+  async function handleDelete() {
+    if (!deleteTarget) return
+    setDeleting(true)
+    try {
+      await api.delete(`/qc-checklists/templates/${deleteTarget.id}`)
+      toast.success('Template deleted')
+      setDeleteTarget(null)
+      fetchTemplates()
+    } catch {
+      toast.error('Failed to delete template')
+    } finally {
+      setDeleting(false)
+    }
+  }
+
+  const filtered = templates.filter((t) =>
+    t.name.toLowerCase().includes(search.toLowerCase())
+  )
+
+  return (
+    <div className="flex flex-col gap-4">
+      {/* Toolbar */}
+      <div className="flex items-center justify-between gap-3">
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search QC checklists..."
+          className="h-9 px-3 rounded-md border border-[#D1D5DB] dark:border-[#444] bg-white dark:bg-[#252525] text-[13px] text-[#374151] dark:text-[#EDEEF0] placeholder:text-[#9CA3AF] focus:outline-none focus:border-brand-light w-64"
+        />
+        {isManager && (
+          <button
+            onClick={() => setCreateOpen(true)}
+            className="h-9 px-4 rounded-[6px] bg-brand dark:bg-brand-btn text-white text-[13px] font-medium hover:opacity-90 transition-opacity flex items-center gap-1.5"
+          >
+            <Plus className="h-4 w-4" /> New QC Checklist
+          </button>
+        )}
+      </div>
+
+      {/* List */}
+      {loading ? (
+        <div className="flex flex-col gap-2">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="h-14 rounded-[8px] bg-[#D5D8DE] dark:bg-[#333] animate-pulse" />
+          ))}
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-24 gap-3">
+          <p className="text-[13px] font-medium text-brand dark:text-[#EDEEF0]">
+            {search ? 'No matching templates' : 'No QC checklist templates yet'}
+          </p>
+          <p className="text-[12px] text-[#6B7280] text-center max-w-sm">
+            {search ? 'Try a different search term.' : 'Create one to standardize your review process.'}
+          </p>
+          {isManager && !search && (
+            <button
+              onClick={() => setCreateOpen(true)}
+              className="mt-2 h-9 px-4 rounded-[6px] bg-brand dark:bg-brand-btn text-white text-[13px] font-medium hover:opacity-90 transition-opacity"
+            >
+              Create Template
+            </button>
+          )}
+        </div>
+      ) : (
+        <div className="flex flex-col gap-2">
+          {filtered.map((t) => (
+            <div
+              key={t.id}
+              className="bg-surface-card dark:bg-dark-card rounded-[8px] border border-[0.5px] border-surface-border dark:border-dark-border p-3 flex items-center justify-between group"
+            >
+              <div className="flex flex-col gap-0.5 min-w-0">
+                <span className="text-[13px] font-medium text-brand dark:text-[#EDEEF0] truncate">
+                  {t.name}
+                </span>
+                <div className="flex items-center gap-2">
+                  <span className="text-[12px] text-[#6B7280]">
+                    {t.engagement_type
+                      ? formatEngagementType(t.engagement_type)
+                      : 'All engagement types'}
+                  </span>
+                  <span className="text-[11px] text-[#9CA3AF]">·</span>
+                  <span className="text-[11px] text-[#9CA3AF]">
+                    {t.items.length} item{t.items.length !== 1 ? 's' : ''}
+                  </span>
+                </div>
+              </div>
+              {isManager && (
+                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+                  <button
+                    onClick={() => setEditTemplate(t)}
+                    className="p-1.5 rounded text-[#6B7280] hover:text-brand dark:hover:text-[#EDEEF0] hover:bg-[#F3F4F6] dark:hover:bg-[#333] transition-colors"
+                    title="Edit"
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    onClick={() => setDeleteTarget(t)}
+                    className="p-1.5 rounded text-[#6B7280] hover:text-red-500 hover:bg-[#FEF2F2] dark:hover:bg-red-900/20 transition-colors"
+                    title="Delete"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Create modal */}
+      {createOpen && (
+        <QcTemplateModal
+          editTemplate={null}
+          onClose={() => setCreateOpen(false)}
+          onSaved={fetchTemplates}
+        />
+      )}
+
+      {/* Edit modal */}
+      {editTemplate && (
+        <QcTemplateModal
+          editTemplate={editTemplate}
+          onClose={() => setEditTemplate(null)}
+          onSaved={fetchTemplates}
+        />
+      )}
+
+      {/* Delete confirm */}
+      {deleteTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white dark:bg-[#1E1E1E] rounded-xl shadow-xl w-full max-w-sm p-6">
+            <h3 className="text-[15px] font-medium text-brand dark:text-[#EDEEF0] mb-2">Delete template?</h3>
+            <p className="text-[13px] text-[#6B7280] mb-6">
+              &ldquo;{deleteTarget.name}&rdquo; will be archived and moved to Deleted.
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setDeleteTarget(null)}
+                className="h-8 px-4 text-[12px] font-medium text-[#6B7280] hover:text-brand transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDelete}
+                disabled={deleting}
+                className="h-8 px-4 rounded-md bg-red-600 text-white text-[12px] font-medium hover:bg-red-700 disabled:opacity-60 transition-colors flex items-center gap-1.5"
+              >
+                {deleting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -23168,6 +24392,59 @@ export const dashboardApi = {
 
 
 ================================================================================
+FILE: frontend\src\lib\api\documentExpiryApi.ts
+================================================================================
+// frontend/src/lib/api/documentExpiryApi.ts
+import api from '@/lib/api'
+
+export interface DocumentExpiryRecord {
+  id: string
+  firm_id: string
+  client_id: string
+  document_id: string | null
+  document_type: string
+  description: string | null
+  expires_on: string
+  status: string
+  expiry_notification_sent: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface DocumentExpiryCreatePayload {
+  client_id: string
+  document_type: string
+  description?: string
+  expires_on: string
+  status?: string
+  document_id?: string
+}
+
+export interface DocumentExpiryUpdatePayload {
+  document_type?: string
+  description?: string
+  expires_on?: string
+  status?: string
+}
+
+export const documentExpiryApi = {
+  list: (clientId: string) =>
+    api.get<DocumentExpiryRecord[]>('/document-expiries/', {
+      params: { client_id: clientId },
+    }),
+
+  create: (payload: DocumentExpiryCreatePayload) =>
+    api.post<DocumentExpiryRecord>('/document-expiries/', payload),
+
+  update: (expiryId: string, payload: DocumentExpiryUpdatePayload) =>
+    api.patch<DocumentExpiryRecord>(`/document-expiries/${expiryId}`, payload),
+
+  delete: (expiryId: string) =>
+    api.delete(`/document-expiries/${expiryId}`),
+}
+
+
+================================================================================
 FILE: frontend\src\lib\api\documentRequests.ts
 ================================================================================
 // path: frontend/src/lib/api/documentRequests.ts
@@ -23241,6 +24518,7 @@ export interface Document {
   uploadedAt: string
   fileType: string
   fileSizeKb: number
+  is_superseded: boolean
 }
 
 function mapDocument(raw: Record<string, unknown>): Document {
@@ -23262,6 +24540,7 @@ function mapDocument(raw: Record<string, unknown>): Document {
     fileSizeKb: raw.size_bytes
       ? Math.round(Number(raw.size_bytes) / 1024 * 10) / 10
       : Number(raw.file_size_kb ?? raw.fileSizeKb ?? 0),
+    is_superseded: Boolean(raw.is_superseded ?? false),
   }
 }
 
@@ -23296,6 +24575,10 @@ export const documentsApi = {
       headers: { 'Content-Type': 'multipart/form-data' },
     })
     return mapDocument(data)
+  },
+
+  patchSuperseded: async (id: string, is_superseded: boolean): Promise<void> => {
+    await api.patch(`/documents/${id}/superseded`, { is_superseded })
   },
 }
 
@@ -24545,6 +25828,7 @@ export interface MockDocument {
   uploadedAt: string
   fileType: string
   fileSizeKb: number
+  is_superseded?: boolean
 }
 
 export const mockDocuments: MockDocument[] = [

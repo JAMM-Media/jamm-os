@@ -5,6 +5,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from apscheduler.schedulers.background import BackgroundScheduler
 from app.services.anniversary_service import check_client_anniversaries, check_document_expiries
+from app.services.recurring_engagement_service import spawn_recurring_engagements
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
 from slowapi import _rate_limit_exceeded_handler
@@ -73,6 +74,14 @@ async def lifespan(app: FastAPI):
         hour=8,
         minute=15,
         id="document_expiry_check",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        spawn_recurring_engagements,
+        trigger="cron",
+        hour=8,
+        minute=30,
+        id="recurring_engagement_spawn",
         replace_existing=True,
     )
     scheduler.start()

@@ -10,6 +10,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base_class import Base
 
 
+
 class EngagementTemplate(Base):
     __tablename__ = "engagement_templates"
 
@@ -48,6 +49,24 @@ class EngagementTemplate(Base):
     )
     use_count: Mapped[int] = mapped_column(
         Integer, default=0, nullable=False
+    )
+    is_recurring: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False
+    )
+    recurrence_cadence: Mapped[Optional[str]] = mapped_column(
+        String(20), nullable=True
+    )
+    recurrence_day: Mapped[Optional[int]] = mapped_column(
+        Integer, nullable=True
+    )
+    recurrence_month: Mapped[Optional[int]] = mapped_column(
+        Integer, nullable=True
+    )
+    recurrence_advance_days: Mapped[Optional[int]] = mapped_column(
+        Integer, nullable=True, default=14
+    )
+    last_spawned_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
