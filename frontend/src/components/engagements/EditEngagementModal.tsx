@@ -32,6 +32,7 @@ interface EditEngagementModalProps {
   onClose: () => void
   engagement: { id: string; name: string; status: string; engagementType?: string; endDate?: string; description?: string }
   onSuccess: () => void
+  uncheckedQcCount?: number
 }
 
 interface FormState {
@@ -52,7 +53,7 @@ function toFormState(engagement: EditEngagementModalProps['engagement']): FormSt
   }
 }
 
-export function EditEngagementModal({ isOpen, onClose, engagement, onSuccess }: EditEngagementModalProps) {
+export function EditEngagementModal({ isOpen, onClose, engagement, onSuccess, uncheckedQcCount = 0 }: EditEngagementModalProps) {
   const [form, setForm] = useState<FormState>(() => toFormState(engagement))
   const [nameError, setNameError] = useState('')
   const [saving, setSaving] = useState(false)
@@ -86,6 +87,13 @@ export function EditEngagementModal({ isOpen, onClose, engagement, onSuccess }: 
     if (Object.keys(patch).length === 0) {
       onClose()
       return
+    }
+
+    if (patch.status === 'completed' && uncheckedQcCount > 0) {
+      const confirmed = window.confirm(
+        `${uncheckedQcCount} checklist item${uncheckedQcCount > 1 ? 's are' : ' is'} not checked. Mark engagement as complete anyway?`
+      )
+      if (!confirmed) return
     }
 
     setSaving(true)

@@ -1,7 +1,7 @@
 # app/services/anniversary_service.py
 
 import logging
-from datetime import datetime, timezone, timedelta
+from datetime import date, datetime, timezone, timedelta
 
 from sqlalchemy import select, func, extract
 
@@ -84,5 +84,59 @@ def check_client_anniversaries() -> None:
 
     except Exception as e:
         logger.error("Anniversary check failed: %s", str(e))
+    finally:
+        db.close()
+
+
+def check_document_expiries() -> None:
+    from app.db.session import SessionLocal
+    from app.crud.document_expiry import get_expiring_soon
+    from app.models.user import User
+    from app.core.enums import UserRole, RecipientType, NotificationType
+    from app.services.notification_service import NotificationService
+    from sqlalchemy import select
+
+    db = SessionLocal()
+    try:
+        expiring = get_expiring_soon(db, days_ahead=60)
+        for expiry in expiring:
+            days_left = (expiry.expires_on - date.today()).days
+            recipients = db.execute(
+                select(User).where(
+                    User.firm_id == expiry.firm_id,
+                    User.role.in_([
+                        UserRole.firm_owner,
+                        UserRole.manager,
+                    ]),
+                    User.is_active == True,
+                )
+            ).scalars().all()
+            for recipient in recipients:
+                NotificationService.create_notification(
+                    db=db,
+                    firm_id=expiry.firm_id,
+                    recipient_id=recipient.id,
+                    recipient_type=RecipientType.staff,
+                    title="Document expiring soon",
+                    body=(
+                        f"{expiry.document_type}"
+                        f" for client expires in"
+                        f" {days_left} days"
+                        f" ({expiry.expires_on})."
+                    ),
+                    notification_type=(
+                        NotificationType.document_expiry_alert
+                    ),
+                    related_entity_type="client",
+                    related_entity_id=expiry.client_id,
+                )
+            expiry.expiry_notification_sent = True
+            db.commit()
+        logger.info(
+            "Document expiry check complete: %d expiring soon",
+            len(expiring),
+        )
+    except Exception as e:
+        logger.error("Document expiry check failed: %s", str(e))
     finally:
         db.close()

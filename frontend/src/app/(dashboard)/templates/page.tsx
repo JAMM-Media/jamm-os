@@ -15,6 +15,7 @@ import { cn } from '@/lib/utils'
 import LetterTemplatesTab from '@/components/settings/LetterTemplatesTab'
 import TaxOrganizerTemplates from '@/components/templates/TaxOrganizerTemplates'
 import DeletedTemplates from '@/components/templates/DeletedTemplates'
+import QcChecklistTemplatesTab from '@/components/templates/QcChecklistTemplatesTab'
 
 // ---- Types ----
 
@@ -650,12 +651,13 @@ function TemplateCard({ template, isManager, onEdit, onDelete, onUse }: Template
 
 // ---- Sub-tab definitions ----
 
-type SubTab = 'engagement' | 'letters' | 'tax_organizers' | 'deleted'
+type SubTab = 'engagement' | 'letters' | 'tax_organizers' | 'qc_checklists' | 'deleted'
 
 const SUB_TABS: { key: SubTab; label: string }[] = [
   { key: 'engagement', label: 'Engagement Templates' },
   { key: 'letters', label: 'Engagement Letters' },
   { key: 'tax_organizers', label: 'Tax Organizers' },
+  { key: 'qc_checklists', label: 'QC Checklists' },
   { key: 'deleted', label: 'Deleted' },
 ]
 
@@ -801,6 +803,9 @@ export default function TemplatesPage() {
 
         {/* Tax Organizers tab */}
         {activeTab === 'tax_organizers' && <TaxOrganizerTemplates />}
+
+        {/* QC Checklists tab */}
+        {activeTab === 'qc_checklists' && <QcChecklistTemplatesTab />}
 
         {/* Deleted tab */}
         {activeTab === 'deleted' && <DeletedTemplates />}

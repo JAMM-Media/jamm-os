@@ -29,6 +29,10 @@ from app.models.extension import Extension
 from app.models.tax_organizer import TaxOrganizerTemplate, TaxOrganizer
 from app.models.transcript_request import TranscriptRequest
 from app.models.behavioral_event import BehavioralEvent
+from app.models.document_expiry import DocumentExpiry
+from app.models.qc_checklist import (
+    QcChecklistTemplate, QcChecklistItem
+)
 
 settings = get_settings()
 

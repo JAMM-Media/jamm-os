@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import select, func
 
 from app.crud import engagement as crud_engagement
+from app.crud.qc_checklist import populate_from_template
 from app.models.engagement import Engagement
 from app.models.task import Task
 from app.models.document import Document
@@ -26,6 +27,14 @@ async def create_engagement(
     background_tasks: BackgroundTasks,
 ):
     engagement = crud_engagement.create_engagement(db, payload, firm_id=firm_id)
+
+    if engagement.engagement_type:
+        populate_from_template(
+            db=db,
+            firm_id=firm_id,
+            engagement_id=engagement.id,
+            engagement_type=engagement.engagement_type,
+        )
 
     await emit_event(
         event=TriggerEvent.engagement_created,

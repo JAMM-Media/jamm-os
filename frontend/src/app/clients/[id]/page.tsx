@@ -21,6 +21,7 @@ import api from '@/lib/api'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { IrsAuthBadge } from '@/components/clients/IrsAuthBadge'
 import { IrsAuthTab } from '@/components/clients/IrsAuthTab'
+import { DocumentExpirySection } from '@/components/clients/DocumentExpirySection'
 import { PortalPreview } from '@/components/clients/PortalPreview'
 import { HealthDot } from '@/components/clients/HealthDot'
 import { EditClientModal } from '@/components/clients/EditClientModal'
@@ -398,6 +399,11 @@ function ClientDetailContent() {
                 </div>
               )}
             </div>
+          </div>
+
+          {/* Document Expiry Tracking */}
+          <div className="bg-surface-card dark:bg-dark-card rounded-card p-4">
+            <DocumentExpirySection clientId={clientId} />
           </div>
           </div>
           </div>

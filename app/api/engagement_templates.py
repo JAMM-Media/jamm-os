@@ -20,6 +20,7 @@ from app.schemas.engagement_template import (
     EngagementTemplateOut,
 )
 from app.crud import engagement_template as crud_et
+from app.crud.qc_checklist import populate_from_template
 from app.core.tax_deadlines import get_filing_deadline
 from app.dependencies.auth import get_current_user
 from app.dependencies.tenant import get_current_firm
@@ -176,6 +177,14 @@ def use_template(
 
     db.commit()
     db.refresh(engagement)
+
+    if engagement.engagement_type:
+        populate_from_template(
+            db=db,
+            firm_id=current_firm.id,
+            engagement_id=engagement.id,
+            engagement_type=engagement.engagement_type,
+        )
 
     crud_et.increment_use_count(db, template_id, current_firm.id)
 

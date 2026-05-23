@@ -31,6 +31,14 @@ interface DeletedLetterTemplate {
   is_active: boolean
 }
 
+interface DeletedQcTemplate {
+  id: string
+  name: string
+  engagement_type: string | null
+  items: string[]
+  is_active: boolean
+}
+
 const ORGANIZER_TYPE_LABELS: Record<string, string> = {
   individual: 'Individual',
   business: 'Business',
@@ -38,12 +46,13 @@ const ORGANIZER_TYPE_LABELS: Record<string, string> = {
   custom: 'Custom',
 }
 
-type InternalTab = 'engagement' | 'tax_organizers' | 'letters'
+type InternalTab = 'engagement' | 'tax_organizers' | 'letters' | 'qc_checklists'
 
 const INTERNAL_TABS: { key: InternalTab; label: string }[] = [
   { key: 'engagement', label: 'Engagement Templates' },
   { key: 'tax_organizers', label: 'Tax Organizers' },
   { key: 'letters', label: 'Engagement Letters' },
+  { key: 'qc_checklists', label: 'QC Checklists' },
 ]
 
 // ── Engagement Templates deleted sub-tab ──────────────────────────────────────
@@ -329,6 +338,103 @@ function DeletedLetterTemplates() {
   )
 }
 
+// ── QC Checklists deleted sub-tab ─────────────────────────────────────────────
+
+function DeletedQcTemplates() {
+  const [templates, setTemplates] = useState<DeletedQcTemplate[]>([])
+  const [loading, setLoading] = useState(true)
+  const [restoring, setRestoring] = useState<string | null>(null)
+
+  const fetchTemplates = useCallback(async () => {
+    setLoading(true)
+    try {
+      const { data } = await api.get('/qc-checklists/templates/?include_inactive=true')
+      const all = Array.isArray(data) ? data : []
+      setTemplates(
+        all
+          .filter((t: Record<string, unknown>) => t.is_active === false)
+          .map((t: Record<string, unknown>) => ({
+            id: String(t.id),
+            name: String(t.name ?? ''),
+            engagement_type: t.engagement_type ? String(t.engagement_type) : null,
+            items: Array.isArray(t.items) ? (t.items as string[]) : [],
+            is_active: Boolean(t.is_active),
+          }))
+      )
+    } catch {
+      toast.error('Failed to load deleted QC checklist templates')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => { fetchTemplates() }, [fetchTemplates])
+
+  async function handleRestore(id: string) {
+    setRestoring(id)
+    try {
+      await api.post(`/qc-checklists/templates/${id}/restore`)
+      toast.success('Template restored')
+      setTemplates((prev) => prev.filter((t) => t.id !== id))
+    } catch {
+      toast.error('Failed to restore template')
+    } finally {
+      setRestoring(null)
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="flex flex-col gap-2">
+        {[1, 2, 3].map((i) => (
+          <div key={i} className="h-14 rounded-[8px] bg-[#D5D8DE] dark:bg-[#444] animate-pulse" />
+        ))}
+      </div>
+    )
+  }
+
+  if (templates.length === 0) {
+    return (
+      <p className="text-[13px] text-[#9CA3AF] py-8 text-center">
+        No deleted QC checklist templates
+      </p>
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      {templates.map((t) => (
+        <div
+          key={t.id}
+          className="bg-surface-card dark:bg-dark-card rounded-[8px] p-3 flex items-center justify-between"
+        >
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-[13px] font-medium text-[#9CA3AF]">{t.name}</span>
+            {t.engagement_type && (
+              <span className="px-2 py-0.5 rounded-full bg-blue-100/50 dark:bg-blue-900/20 text-[10px] font-medium text-blue-500/70 dark:text-blue-400/60">
+                {formatEngagementType(t.engagement_type)}
+              </span>
+            )}
+            <span className="px-2 py-0.5 rounded-full bg-[#E5E7EB]/60 dark:bg-[#333]/60 text-[10px] font-medium text-[#9CA3AF]">
+              {t.items.length} item{t.items.length !== 1 ? 's' : ''}
+            </span>
+            <span className="px-2 py-0.5 rounded-full bg-red-100 dark:bg-red-900/20 text-[10px] font-medium text-red-500 dark:text-red-400">
+              Deleted
+            </span>
+          </div>
+          <button
+            onClick={() => handleRestore(t.id)}
+            disabled={restoring === t.id}
+            className="text-brand dark:text-[#4A7FA5] border border-surface-border dark:border-dark-border rounded-[6px] px-3 py-1.5 text-[12px] hover:bg-surface-card dark:hover:bg-dark-card disabled:opacity-50 transition-colors flex-shrink-0"
+          >
+            {restoring === t.id ? 'Restoring…' : 'Restore'}
+          </button>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 // ── Main Component ────────────────────────────────────────────────────────────
 
 export default function DeletedTemplates() {
@@ -362,6 +468,7 @@ export default function DeletedTemplates() {
         {activeTab === 'engagement' && <DeletedEngagementTemplates />}
         {activeTab === 'tax_organizers' && <DeletedTaxOrganizerTemplates />}
         {activeTab === 'letters' && <DeletedLetterTemplates />}
+        {activeTab === 'qc_checklists' && <DeletedQcTemplates />}
       </div>
     </div>
   )

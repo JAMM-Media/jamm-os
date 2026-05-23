@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from apscheduler.schedulers.background import BackgroundScheduler
-from app.services.anniversary_service import check_client_anniversaries
+from app.services.anniversary_service import check_client_anniversaries, check_document_expiries
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
 from slowapi import _rate_limit_exceeded_handler
@@ -45,6 +45,8 @@ from app.api.reports import router as reports_router
 from app.api.dashboard import router as dashboard_router
 from app.api.settings import router as settings_router
 from app.api.engagement_templates import router as engagement_templates_router
+from app.api.document_expiries import router as document_expiries_router
+from app.api.qc_checklists import router as qc_checklists_router
 
 from app.db.base_class import Base
 from app.core.config import get_settings
@@ -63,6 +65,14 @@ async def lifespan(app: FastAPI):
         hour=8,
         minute=0,
         id="client_anniversary_check",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        check_document_expiries,
+        trigger="cron",
+        hour=8,
+        minute=15,
+        id="document_expiry_check",
         replace_existing=True,
     )
     scheduler.start()
@@ -140,6 +150,8 @@ app.include_router(reports_router)
 app.include_router(dashboard_router, prefix="/dashboard", tags=["dashboard"])
 app.include_router(settings_router)
 app.include_router(engagement_templates_router, prefix="/api/v1")
+app.include_router(document_expiries_router)
+app.include_router(qc_checklists_router)
 
 
 @app.get("/")

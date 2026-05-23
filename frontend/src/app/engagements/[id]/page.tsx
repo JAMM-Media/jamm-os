@@ -20,12 +20,14 @@ import { NotesTab, NotesPanel, useNotes } from '@/components/notes'
 import { cn, formatEngagementType } from '@/lib/utils'
 import api from '@/lib/api'
 import { FileText } from 'lucide-react'
+import { QcChecklistTab } from '@/components/engagements/QcChecklistTab'
 
 type BadgeVariant = Parameters<typeof StatusBadge>[0]['variant']
 
 const TABS = [
   { key: 'overview', label: 'Overview' },
   { key: 'tasks', label: 'Tasks' },
+  { key: 'checklist', label: 'QC Checklist' },
   { key: 'documents', label: 'Documents' },
 ]
 
@@ -48,6 +50,7 @@ export default function EngagementDetailPage() {
   const [showModal, setShowModal] = useState(false)
   const [isEditOpen, setIsEditOpen] = useState(false)
   const [sendLetterOpen, setSendLetterOpen] = useState(false)
+  const [uncheckedQcCount, setUncheckedQcCount] = useState(0)
 
   const { unreadCount } = useNotes({ entityType: 'engagement', entityId: id })
 
@@ -267,6 +270,15 @@ export default function EngagementDetailPage() {
           </>
         )}
 
+        {/* QC CHECKLIST TAB */}
+        {activeTab === 'checklist' && (
+          <QcChecklistTab
+            engagementId={id}
+            engagementStatus={engagement.status}
+            onUncheckedCountChange={setUncheckedQcCount}
+          />
+        )}
+
         {/* DOCUMENTS TAB */}
         {activeTab === 'documents' && (
           <>
@@ -395,6 +407,7 @@ export default function EngagementDetailPage() {
             description: engagement.description ?? undefined,
           }}
           onSuccess={() => { refetch(); setIsEditOpen(false) }}
+          uncheckedQcCount={uncheckedQcCount}
         />
       )}
       <SendEngagementLetterModal
