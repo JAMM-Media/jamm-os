@@ -3,7 +3,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { toast } from 'sonner'
-import { Pencil, Trash2, AlertTriangle, Check } from 'lucide-react'
+import { Pencil, Trash2, AlertTriangle, Check, ChevronDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import api from '@/lib/api'
 
@@ -22,7 +22,6 @@ const ACTIVITY_TYPES = [
   'Research',
   'Admin',
   'Other',
-  'Custom',
 ]
 
 function roundToNearest15(date: Date): string {
@@ -131,6 +130,9 @@ export default function DailyTab({ selectedUserId, currentUserId, userRole }: Da
   const [form, setForm] = useState<EntryForm>({ ...EMPTY_FORM, startTime: roundToNearest15(new Date()) })
   const [engSearch, setEngSearch] = useState('')
   const [engDropOpen, setEngDropOpen] = useState(false)
+  const [taskOpen, setTaskOpen] = useState(false)
+  const [taskSearch, setTaskSearch] = useState('')
+  const [actOpen, setActOpen] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [submittingDay, setSubmittingDay] = useState(false)
   const [endTimeError, setEndTimeError] = useState('')
@@ -142,10 +144,12 @@ export default function DailyTab({ selectedUserId, currentUserId, userRole }: Da
   const [duplicateWarning, setDuplicateWarning] = useState(false)
   const [pendingPayload, setPendingPayload] = useState<Record<string, unknown> | null>(null)
   const engDropRef = useRef<HTMLDivElement>(null)
+  const taskRef = useRef<HTMLDivElement>(null)
+  const actRef = useRef<HTMLDivElement>(null)
 
   // Load engagements, clients, settings, entries
   useEffect(() => {
-    api.get('/api/v1/engagements/?limit=100').then((r) => {
+    api.get('/api/v1/engagements/?limit=100&status=active').then((r) => {
       setEngagements(r.data?.items ?? [])
     }).catch(() => {})
 
@@ -182,7 +186,7 @@ export default function DailyTab({ selectedUserId, currentUserId, userRole }: Da
 
   // Load tasks when engagement changes
   useEffect(() => {
-    if (!form.engagementId) { setTasks([]); return }
+    if (!form.engagementId) { setTasks([]); setTaskSearch(''); setTaskOpen(false); return }
     api
       .get(`/api/v1/tasks/?engagement_id=${form.engagementId}&limit=100`)
       .then((r) => setTasks(r.data?.items ?? []))
@@ -214,9 +218,37 @@ export default function DailyTab({ selectedUserId, currentUserId, userRole }: Da
         setEngDropOpen(false)
       }
     }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [])
+    if (engDropOpen) {
+      document.addEventListener('mousedown', handler)
+      return () => document.removeEventListener('mousedown', handler)
+    }
+  }, [engDropOpen])
+
+  // Close task dropdown on outside click
+  useEffect(() => {
+    function handler(e: MouseEvent) {
+      if (taskRef.current && !taskRef.current.contains(e.target as Node)) {
+        setTaskOpen(false)
+      }
+    }
+    if (taskOpen) {
+      document.addEventListener('mousedown', handler)
+      return () => document.removeEventListener('mousedown', handler)
+    }
+  }, [taskOpen])
+
+  // Close activity dropdown on outside click
+  useEffect(() => {
+    function handler(e: MouseEvent) {
+      if (actRef.current && !actRef.current.contains(e.target as Node)) {
+        setActOpen(false)
+      }
+    }
+    if (actOpen) {
+      document.addEventListener('mousedown', handler)
+      return () => document.removeEventListener('mousedown', handler)
+    }
+  }, [actOpen])
 
   function getEngLabel(eng: Engagement) {
     return `${eng.name}${clients[eng.client_id] ? ` — ${clients[eng.client_id]}` : ''}`
@@ -239,6 +271,8 @@ export default function DailyTab({ selectedUserId, currentUserId, userRole }: Da
     const eng = engagements.find((e) => e.id === id)
     if (eng) setEngSearch(getEngLabel(eng))
     setEngDropOpen(false)
+    setTaskSearch('')
+    setTaskOpen(false)
   }
 
   function checkDuplicate(payload: Record<string, unknown>): boolean {
@@ -256,7 +290,7 @@ export default function DailyTab({ selectedUserId, currentUserId, userRole }: Da
     try {
       await api.post('/api/v1/time-entries/', payload)
       const engId = form.engagementId
-      const actType = form.activityType === 'Custom' ? form.customActivity : form.activityType
+      const actType = form.activityType === 'Other' ? form.customActivity : form.activityType
       setForm({ ...EMPTY_FORM, engagementId: engId, activityType: actType, startTime: roundToNearest15(new Date()), hoursAutoFilled: false })
       const eng = engagements.find((e) => e.id === engId)
       if (eng) setEngSearch(getEngLabel(eng))
@@ -284,14 +318,14 @@ export default function DailyTab({ selectedUserId, currentUserId, userRole }: Da
 
     const payload: Record<string, unknown> = {
       engagement_id: form.engagementId,
-      description: form.notes || (form.activityType === 'Custom' ? form.customActivity : form.activityType),
+      description: form.notes || (form.activityType === 'Other' ? form.customActivity : form.activityType),
       hours: parseFloat(form.hours),
       hourly_rate: eng ? hourlyRate : 0,
       is_billable: form.isBillable,
       date: today,
       start_time: form.startTime || null,
       end_time: form.endTime || null,
-      activity_type: form.activityType === 'Custom' ? form.customActivity : form.activityType,
+      activity_type: form.activityType === 'Other' ? form.customActivity : form.activityType,
     }
 
     if (checkDuplicate(payload)) {
@@ -370,10 +404,7 @@ export default function DailyTab({ selectedUserId, currentUserId, userRole }: Da
   return (
     <div className="flex flex-col gap-4">
       {/* Entry form */}
-      <div
-        className="rounded-[8px] p-4 flex flex-col gap-4"
-        style={{ backgroundColor: 'var(--color-surface-card, #EDEEF0)' }}
-      >
+      <div className="bg-surface-card dark:bg-dark-card rounded-[8px] p-4 mb-4 flex flex-col gap-4">
         <p className="text-[13px] font-medium text-brand dark:text-[#EDEEF0]">
           Log time for {formatDateLabel(today)}
         </p>
@@ -397,7 +428,7 @@ export default function DailyTab({ selectedUserId, currentUserId, userRole }: Da
                   className={inputClass}
                 />
                 {engDropOpen && (
-                  <div className="absolute z-20 top-full mt-1 w-full bg-white dark:bg-dark-card border border-surface-border dark:border-dark-border rounded-[6px] shadow-lg max-h-56 overflow-y-auto">
+                  <div className="absolute z-50 top-full mt-1 w-full bg-white dark:bg-dark-card border border-surface-border dark:border-dark-border rounded-[6px] shadow-lg max-h-56 overflow-y-auto">
                     {assignedEngs().length > 0 && (
                       <>
                         {assignedEngs().map((eng) => (
@@ -428,7 +459,7 @@ export default function DailyTab({ selectedUserId, currentUserId, userRole }: Da
                       </button>
                     ))}
                     {filteredEngagements().length === 0 && (
-                      <div className="px-3 py-2 text-[13px] text-[#9CA3AF]">No engagements found</div>
+                      <div className="px-3 py-2 text-[13px] text-[#9CA3AF]">No active engagements found</div>
                     )}
                   </div>
                 )}
@@ -436,45 +467,105 @@ export default function DailyTab({ selectedUserId, currentUserId, userRole }: Da
             </div>
 
             {/* Task */}
-            <div className="flex flex-col gap-1.5">
+            <div className="flex flex-col gap-1.5" ref={taskRef}>
               <label className={labelClass}>Task</label>
-              <select
-                value={form.taskId}
-                onChange={(e) => setForm((f) => ({ ...f, taskId: e.target.value }))}
-                disabled={!form.engagementId}
-                className={inputClass}
-              >
-                <option value="">Select task (optional)</option>
-                {tasks
-                  .filter((t) => t.assigned_to === currentUserId)
-                  .map((t) => (
-                    <option key={t.id} value={t.id}>{t.title}</option>
-                  ))}
-                {tasks
-                  .filter((t) => t.assigned_to !== currentUserId)
-                  .map((t) => (
-                    <option key={t.id} value={t.id}>{t.title}</option>
-                  ))}
-              </select>
+              <div className="relative">
+                <button
+                  type="button"
+                  disabled={!form.engagementId}
+                  onClick={() => form.engagementId && setTaskOpen((o) => !o)}
+                  className={cn(inputClass, 'text-left flex items-center justify-between', !form.engagementId ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer')}
+                >
+                  <span className={form.taskId ? '' : 'text-[#9CA3AF]'}>
+                    {form.taskId
+                      ? (tasks.find((t) => t.id === form.taskId)?.title ?? 'Select task (optional)')
+                      : (form.engagementId ? 'Select task (optional)' : 'Select an engagement first')}
+                  </span>
+                  <ChevronDown className="h-3.5 w-3.5 text-[#9CA3AF] flex-shrink-0 ml-2" />
+                </button>
+                {taskOpen && form.engagementId && (
+                  <div className="absolute z-50 top-full mt-1 w-full bg-white dark:bg-dark-card border border-surface-border dark:border-dark-border rounded-[6px] shadow-lg">
+                    <div className="p-2 border-b border-surface-border dark:border-dark-border">
+                      <input
+                        type="text"
+                        value={taskSearch}
+                        onChange={(e) => setTaskSearch(e.target.value)}
+                        placeholder="Search tasks..."
+                        className={inputClass}
+                        autoFocus
+                      />
+                    </div>
+                    <div className="max-h-48 overflow-y-auto">
+                      {tasks
+                        .filter((t) => t.assigned_to === currentUserId)
+                        .filter((t) => !taskSearch || t.title.toLowerCase().includes(taskSearch.toLowerCase()))
+                        .map((t) => (
+                          <button
+                            key={t.id}
+                            type="button"
+                            onMouseDown={() => { setForm((f) => ({ ...f, taskId: t.id })); setTaskOpen(false); setTaskSearch('') }}
+                            className="w-full text-left px-3 py-2 text-[13px] hover:bg-[#F3F4F6] dark:hover:bg-[#2A2A2A]"
+                          >
+                            {t.title}
+                          </button>
+                        ))}
+                      {tasks
+                        .filter((t) => t.assigned_to !== currentUserId)
+                        .filter((t) => !taskSearch || t.title.toLowerCase().includes(taskSearch.toLowerCase()))
+                        .map((t) => (
+                          <button
+                            key={t.id}
+                            type="button"
+                            onMouseDown={() => { setForm((f) => ({ ...f, taskId: t.id })); setTaskOpen(false); setTaskSearch('') }}
+                            className="w-full text-left px-3 py-2 text-[13px] hover:bg-[#F3F4F6] dark:hover:bg-[#2A2A2A]"
+                          >
+                            {t.title}
+                          </button>
+                        ))}
+                      {tasks.filter((t) => !taskSearch || t.title.toLowerCase().includes(taskSearch.toLowerCase())).length === 0 && (
+                        <div className="px-3 py-2 text-[13px] text-[#9CA3AF]">
+                          {tasks.length === 0 ? 'No tasks found for this engagement' : 'No matching tasks'}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Activity type */}
-            <div className="flex flex-col gap-1.5">
+            <div className="flex flex-col gap-1.5" ref={actRef}>
               <label className={labelClass}>Activity Type *</label>
-              <select
-                value={form.activityType}
-                onChange={(e) => setForm((f) => ({ ...f, activityType: e.target.value }))}
-                className={inputClass}
-              >
-                <option value="">Select activity...</option>
-                {ACTIVITY_TYPES.map((a) => (
-                  <option key={a} value={a}>{a}</option>
-                ))}
-              </select>
-              {form.activityType === 'Custom' && (
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setActOpen((o) => !o)}
+                  className={cn(inputClass, 'text-left flex items-center justify-between cursor-pointer')}
+                >
+                  <span className={form.activityType ? '' : 'text-[#9CA3AF]'}>
+                    {form.activityType || 'Select activity...'}
+                  </span>
+                  <ChevronDown className="h-3.5 w-3.5 text-[#9CA3AF] flex-shrink-0 ml-2" />
+                </button>
+                {actOpen && (
+                  <div className="absolute z-50 top-full mt-1 w-full bg-white dark:bg-dark-card border border-surface-border dark:border-dark-border rounded-[6px] shadow-lg max-h-56 overflow-y-auto">
+                    {ACTIVITY_TYPES.map((a) => (
+                      <button
+                        key={a}
+                        type="button"
+                        onMouseDown={() => { setForm((f) => ({ ...f, activityType: a })); setActOpen(false) }}
+                        className="w-full text-left px-3 py-2 text-[13px] hover:bg-[#F3F4F6] dark:hover:bg-[#2A2A2A]"
+                      >
+                        {a}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              {form.activityType === 'Other' && (
                 <input
                   type="text"
-                  placeholder="Custom activity..."
+                  placeholder="Describe activity..."
                   value={form.customActivity}
                   onChange={(e) => setForm((f) => ({ ...f, customActivity: e.target.value }))}
                   className={inputClass}
