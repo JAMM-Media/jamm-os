@@ -2,7 +2,7 @@
 'use client'
 
 import { useState, useCallback, useEffect, useRef } from 'react'
-import { Pencil, Trash2, RotateCcw, X, GripVertical, Plus, MoreVertical } from 'lucide-react'
+import { Pencil, Trash2, X, GripVertical, Plus, MoreVertical } from 'lucide-react'
 import { toast } from 'sonner'
 import api from '@/lib/api'
 import { useAuth } from '@/lib/hooks/useAuth'
@@ -540,7 +540,6 @@ export default function TaxOrganizerTemplates() {
 
   const [allTemplates, setAllTemplates] = useState<TaxOrganizerTemplate[]>([])
   const [loading, setLoading] = useState(true)
-  const [view, setView] = useState<'active' | 'deleted'>('active')
   const [editorTemplate, setEditorTemplate] = useState<TaxOrganizerTemplate | null | undefined>(undefined)
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
 
@@ -558,9 +557,7 @@ export default function TaxOrganizerTemplates() {
 
   useEffect(() => { fetchTemplates() }, [fetchTemplates])
 
-  const templates = allTemplates.filter((t) =>
-    view === 'active' ? t.is_active !== false : t.is_active === false
-  )
+  const templates = allTemplates.filter((t) => t.is_active !== false)
 
   async function handleDelete(id: string) {
     try {
@@ -570,16 +567,6 @@ export default function TaxOrganizerTemplates() {
       toast.success('Template deleted')
     } catch {
       toast.error('Failed to delete template')
-    }
-  }
-
-  async function handleRestore(id: string) {
-    try {
-      await api.patch(`/tax-organizers/templates/${id}`, { is_active: true })
-      setAllTemplates((prev) => prev.map((t) => t.id === id ? { ...t, is_active: true } : t))
-      toast.success('Template restored')
-    } catch {
-      toast.error('Failed to restore template')
     }
   }
 
@@ -599,7 +586,7 @@ export default function TaxOrganizerTemplates() {
             Reusable templates for client tax organizers.
           </p>
         </div>
-        {isManager && view === 'active' && (
+        {isManager && (
           <button
             onClick={() => setEditorTemplate(null)}
             className="h-9 px-4 rounded-[6px] bg-brand dark:bg-brand-btn text-white text-[13px] font-medium hover:opacity-90 transition-opacity flex items-center gap-1.5"
@@ -607,24 +594,6 @@ export default function TaxOrganizerTemplates() {
             <Plus className="h-4 w-4" /> New Template
           </button>
         )}
-      </div>
-
-      {/* Active / Deleted toggle */}
-      <div className="flex items-center gap-0 self-start rounded-[6px] border border-surface-border dark:border-dark-border overflow-hidden">
-        {(['active', 'deleted'] as const).map((v) => (
-          <button
-            key={v}
-            onClick={() => setView(v)}
-            className={cn(
-              'h-8 px-3 text-[12px] font-medium transition-colors',
-              view === v
-                ? 'bg-brand dark:bg-brand-btn text-white'
-                : 'bg-surface-card dark:bg-dark-card text-[#6B7280] hover:text-brand',
-            )}
-          >
-            {v.charAt(0).toUpperCase() + v.slice(1)}
-          </button>
-        ))}
       </div>
 
       {/* Template list */}
@@ -637,9 +606,9 @@ export default function TaxOrganizerTemplates() {
       ) : templates.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 gap-2.5">
           <p className="text-[13px] font-medium text-brand dark:text-[#EDEEF0]">
-            {view === 'active' ? 'No templates yet' : 'No deleted templates'}
+            No templates yet
           </p>
-          {view === 'active' && isManager && (
+          {isManager && (
             <p className="text-[12px] text-[#6B7280]">
               Click &ldquo;New Template&rdquo; to create your first template.
             </p>
@@ -681,48 +650,36 @@ export default function TaxOrganizerTemplates() {
               {/* Actions */}
               {isManager && (
                 <div className="flex items-center gap-2 flex-shrink-0">
-                  {view === 'active' ? (
-                    <>
+                  <button
+                    onClick={() => setEditorTemplate(t)}
+                    className="p-1.5 rounded text-[#6B7280] hover:text-brand dark:hover:text-[#EDEEF0] hover:bg-[#F3F4F6] dark:hover:bg-[#333] transition-colors"
+                    title="Edit template"
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </button>
+                  {deleteConfirm === t.id ? (
+                    <div className="flex items-center gap-1">
+                      <span className="text-[11px] text-[#6B7280]">Delete?</span>
                       <button
-                        onClick={() => setEditorTemplate(t)}
-                        className="p-1.5 rounded text-[#6B7280] hover:text-brand dark:hover:text-[#EDEEF0] hover:bg-[#F3F4F6] dark:hover:bg-[#333] transition-colors"
-                        title="Edit template"
+                        onClick={() => handleDelete(t.id)}
+                        className="h-7 px-2 rounded-[4px] bg-[#991B1B] text-white text-[11px] font-medium"
                       >
-                        <Pencil className="h-3.5 w-3.5" />
+                        Yes
                       </button>
-                      {deleteConfirm === t.id ? (
-                        <div className="flex items-center gap-1">
-                          <span className="text-[11px] text-[#6B7280]">Delete?</span>
-                          <button
-                            onClick={() => handleDelete(t.id)}
-                            className="h-7 px-2 rounded-[4px] bg-[#991B1B] text-white text-[11px] font-medium"
-                          >
-                            Yes
-                          </button>
-                          <button
-                            onClick={() => setDeleteConfirm(null)}
-                            className="h-7 px-2 rounded-[4px] border border-surface-border dark:border-dark-border text-[11px] text-[#6B7280]"
-                          >
-                            No
-                          </button>
-                        </div>
-                      ) : (
-                        <button
-                          onClick={() => setDeleteConfirm(t.id)}
-                          className="p-1.5 rounded text-[#6B7280] hover:text-red-500 hover:bg-[#FEF2F2] dark:hover:bg-red-900/20 transition-colors"
-                          title="Delete template"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      )}
-                    </>
+                      <button
+                        onClick={() => setDeleteConfirm(null)}
+                        className="h-7 px-2 rounded-[4px] border border-surface-border dark:border-dark-border text-[11px] text-[#6B7280]"
+                      >
+                        No
+                      </button>
+                    </div>
                   ) : (
                     <button
-                      onClick={() => handleRestore(t.id)}
-                      className="flex items-center gap-1.5 h-7 px-3 rounded-[6px] border border-surface-border dark:border-dark-border text-[11px] font-medium text-brand dark:text-[#EDEEF0] hover:bg-[#F3F4F6] dark:hover:bg-[#333] transition-colors"
+                      onClick={() => setDeleteConfirm(t.id)}
+                      className="p-1.5 rounded text-[#6B7280] hover:text-red-500 hover:bg-[#FEF2F2] dark:hover:bg-red-900/20 transition-colors"
+                      title="Delete template"
                     >
-                      <RotateCcw className="h-3 w-3" />
-                      Restore
+                      <Trash2 className="h-3.5 w-3.5" />
                     </button>
                   )}
                 </div>

@@ -14,6 +14,7 @@ import { Pencil, Trash2, LayoutTemplate, X, Plus, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import LetterTemplatesTab from '@/components/settings/LetterTemplatesTab'
 import TaxOrganizerTemplates from '@/components/templates/TaxOrganizerTemplates'
+import DeletedTemplates from '@/components/templates/DeletedTemplates'
 
 // ---- Types ----
 
@@ -649,12 +650,13 @@ function TemplateCard({ template, isManager, onEdit, onDelete, onUse }: Template
 
 // ---- Sub-tab definitions ----
 
-type SubTab = 'engagement' | 'letters' | 'tax_organizers'
+type SubTab = 'engagement' | 'letters' | 'tax_organizers' | 'deleted'
 
 const SUB_TABS: { key: SubTab; label: string }[] = [
   { key: 'engagement', label: 'Engagement Templates' },
   { key: 'letters', label: 'Engagement Letters' },
   { key: 'tax_organizers', label: 'Tax Organizers' },
+  { key: 'deleted', label: 'Deleted' },
 ]
 
 // ---- Main Page ----
@@ -799,6 +801,9 @@ export default function TemplatesPage() {
 
         {/* Tax Organizers tab */}
         {activeTab === 'tax_organizers' && <TaxOrganizerTemplates />}
+
+        {/* Deleted tab */}
+        {activeTab === 'deleted' && <DeletedTemplates />}
       </div>
 
       {/* Create modal */}
