@@ -1,7 +1,7 @@
 // path: frontend/src/components/settings/PortalBrandingTab.tsx
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { toast } from 'sonner'
 import { Upload, X, Loader2 } from 'lucide-react'
 import api from '@/lib/api'
@@ -30,7 +30,6 @@ export default function PortalBrandingTab() {
   const [uploading, setUploading] = useState(false)
   const [logoPreviewUrl, setLogoPreviewUrl] = useState<string | null>(null)
   const [saveConfirmed, setSaveConfirmed] = useState(false)
-  const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     api.get('/users/firm').then((res) => {
@@ -96,7 +95,6 @@ export default function PortalBrandingTab() {
       toast.error('Logo upload failed. Please try again.')
     } finally {
       setUploading(false)
-      if (fileInputRef.current) fileInputRef.current.value = ''
     }
   }
 
@@ -228,13 +226,17 @@ export default function PortalBrandingTab() {
               onError={() => setLogoPreviewUrl(null)}
             />
             <div className="flex-1" />
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              disabled={uploading}
-              className="text-[12px] font-medium text-brand-light hover:underline disabled:opacity-50"
+            <label
+              className={`text-[12px] font-medium text-brand-light hover:underline cursor-pointer ${uploading ? 'opacity-50 pointer-events-none' : ''}`}
             >
               Replace
-            </button>
+              <input
+                type="file"
+                accept="image/png,image/jpeg,image/jpg,image/svg+xml,image/webp"
+                onChange={handleFileSelect}
+                style={{ display: 'none' }}
+              />
+            </label>
             <button
               onClick={handleRemoveLogo}
               disabled={saving || uploading}
@@ -245,10 +247,8 @@ export default function PortalBrandingTab() {
             </button>
           </div>
         ) : (
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            disabled={uploading}
-            className="flex flex-col items-center justify-center gap-2 h-24 rounded-[6px] border border-dashed border-surface-border dark:border-dark-border hover:border-brand-light dark:hover:border-brand-light transition-colors disabled:opacity-50 cursor-pointer"
+          <label
+            className={`flex flex-col items-center justify-center gap-2 h-24 rounded-[6px] border border-dashed border-surface-border dark:border-dark-border hover:border-brand-light dark:hover:border-brand-light transition-colors cursor-pointer ${uploading ? 'opacity-50 pointer-events-none' : ''}`}
           >
             {uploading ? (
               <>
@@ -266,16 +266,15 @@ export default function PortalBrandingTab() {
                 </span>
               </>
             )}
-          </button>
+            <input
+              type="file"
+              accept="image/png,image/jpeg,image/jpg,image/svg+xml,image/webp"
+              onChange={handleFileSelect}
+              style={{ display: 'none' }}
+            />
+          </label>
         )}
 
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/png,image/jpeg,image/jpg,image/svg+xml,image/webp"
-          onChange={handleFileSelect}
-          style={{ display: 'none' }}
-        />
         <p className={hintClass}>
           Displayed in the portal top bar instead of your firm name when set.
         </p>
