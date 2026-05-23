@@ -52,22 +52,23 @@ export default function PortalBrandingTab() {
     }).finally(() => setLoading(false))
   }, [])
 
-  async function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
 
     if (!ACCEPTED_TYPES.includes(file.type)) {
       toast.error('Logo must be PNG, JPG, SVG, or WEBP')
+      e.target.value = ''
       return
     }
     if (file.size > MAX_BYTES) {
       toast.error('Logo must be 2MB or smaller')
+      e.target.value = ''
       return
     }
 
     setUploading(true)
     try {
-      // Step 1: Get presigned PUT URL
       const { data } = await api.post('/firms/logo/upload-url', {
         file_name: file.name,
         file_type: file.type,
@@ -75,7 +76,6 @@ export default function PortalBrandingTab() {
       })
       const { upload_url, s3_key } = data as { upload_url: string; s3_key: string }
 
-      // Step 2: PUT file directly to S3
       const putRes = await fetch(upload_url, {
         method: 'PUT',
         body: file,
@@ -83,18 +83,15 @@ export default function PortalBrandingTab() {
       })
       if (!putRes.ok) throw new Error('S3 upload failed')
 
-      // Step 3: Save s3_key to firm settings immediately
       await api.patch('/users/firm/settings', { portal_logo_s3_key: s3_key })
-
-      // Step 4: Update local state
       setBranding((b) => ({ ...b, portal_logo_s3_key: s3_key }))
-      // Bust the preview cache with a timestamp
       setLogoPreviewUrl(`${API_BASE}/api/v1/firms/logo/${firmId}?t=${Date.now()}`)
       toast.success('Logo uploaded')
     } catch {
       toast.error('Logo upload failed. Please try again.')
     } finally {
       setUploading(false)
+      e.target.value = ''
     }
   }
 
@@ -215,7 +212,7 @@ export default function PortalBrandingTab() {
 
       {/* Logo Upload */}
       <div className="flex flex-col gap-1.5">
-        <label className={labelClass}>Firm logo</label>
+        <span className={labelClass}>Firm logo</span>
 
         {logoPreviewUrl ? (
           <div className="flex items-center gap-3 p-3 rounded-[6px] border border-surface-border dark:border-dark-border bg-surface-page dark:bg-dark-page">
@@ -226,17 +223,18 @@ export default function PortalBrandingTab() {
               onError={() => setLogoPreviewUrl(null)}
             />
             <div className="flex-1" />
-            <label
-              className={`text-[12px] font-medium text-brand-light hover:underline cursor-pointer ${uploading ? 'opacity-50 pointer-events-none' : ''}`}
-            >
-              Replace
+            <div className="relative">
+              <span className={`text-[12px] font-medium text-brand-light hover:underline cursor-pointer ${uploading ? 'opacity-50 pointer-events-none' : ''}`}>
+                Replace
+              </span>
               <input
                 type="file"
                 accept="image/png,image/jpeg,image/jpg,image/svg+xml,image/webp"
-                onChange={handleFileSelect}
-                style={{ display: 'none' }}
+                onChange={handleFileChange}
+                disabled={uploading}
+                className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
               />
-            </label>
+            </div>
             <button
               onClick={handleRemoveLogo}
               disabled={saving || uploading}
@@ -247,32 +245,29 @@ export default function PortalBrandingTab() {
             </button>
           </div>
         ) : (
-          <label
-            className={`flex flex-col items-center justify-center gap-2 h-24 rounded-[6px] border border-dashed border-surface-border dark:border-dark-border hover:border-brand-light dark:hover:border-brand-light transition-colors cursor-pointer ${uploading ? 'opacity-50 pointer-events-none' : ''}`}
-          >
-            {uploading ? (
-              <>
-                <Loader2 className="w-5 h-5 text-[#6B7280] animate-spin" />
-                <span className="text-[12px] text-[#6B7280]">Uploading…</span>
-              </>
-            ) : (
-              <>
-                <Upload className="w-5 h-5 text-[#6B7280]" />
-                <span className="text-[12px] text-[#6B7280]">
-                  Click to upload logo
-                </span>
-                <span className="text-[11px] text-[#9CA3AF]">
-                  PNG, JPG, SVG, WEBP — max 2MB
-                </span>
-              </>
-            )}
+          <div className="relative h-24 rounded-[6px] border border-dashed border-surface-border dark:border-dark-border hover:border-brand-light dark:hover:border-brand-light transition-colors">
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 pointer-events-none">
+              {uploading ? (
+                <>
+                  <Loader2 className="w-5 h-5 text-[#6B7280] animate-spin" />
+                  <span className="text-[12px] text-[#6B7280]">Uploading…</span>
+                </>
+              ) : (
+                <>
+                  <Upload className="w-5 h-5 text-[#6B7280]" />
+                  <span className="text-[12px] text-[#6B7280]">Click to upload logo</span>
+                  <span className="text-[11px] text-[#9CA3AF]">PNG, JPG, SVG, WEBP — max 2MB</span>
+                </>
+              )}
+            </div>
             <input
               type="file"
               accept="image/png,image/jpeg,image/jpg,image/svg+xml,image/webp"
-              onChange={handleFileSelect}
-              style={{ display: 'none' }}
+              onChange={handleFileChange}
+              disabled={uploading}
+              className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
             />
-          </label>
+          </div>
         )}
 
         <p className={hintClass}>
@@ -282,7 +277,7 @@ export default function PortalBrandingTab() {
 
       {/* Brand Color */}
       <div className="flex flex-col gap-1.5">
-        <label className={labelClass}>Portal top bar color</label>
+        <span className={labelClass}>Portal top bar color</span>
         <div className="flex items-center gap-2">
           <input
             type="color"
@@ -315,7 +310,6 @@ export default function PortalBrandingTab() {
       <div className="flex flex-col gap-1.5">
         <span className={labelClass}>Preview</span>
         <div className="rounded-[8px] overflow-hidden border border-surface-border dark:border-dark-border">
-          {/* Top bar */}
           <div
             className="flex items-center justify-between px-4 h-11"
             style={{ backgroundColor: previewColor }}
@@ -341,7 +335,6 @@ export default function PortalBrandingTab() {
               <span className="text-[10px] font-medium text-white">JD</span>
             </div>
           </div>
-          {/* Simulated tab row */}
           <div className="flex items-center gap-0 px-4 h-9 bg-[#252525] border-b border-[#383838]">
             {['To-do', 'Documents', 'Invoices'].map((t, i) => (
               <span
