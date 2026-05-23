@@ -150,8 +150,10 @@ export default function DailyTab({ selectedUserId, currentUserId, userRole }: Da
 
   // Load engagements, clients, settings, entries
   useEffect(() => {
-    api.get('/api/v1/engagements/?limit=100').then((r) => {
-      setEngagements(r.data?.items ?? [])
+    api.get('/engagements/', { params: { limit: 100 } }).then((r) => {
+      const raw = r.data
+      const items = Array.isArray(raw) ? raw : (raw?.items ?? raw?.engagements ?? [])
+      setEngagements(items)
     }).catch(() => {})
 
     api.get('/api/v1/clients/?limit=100').then((r) => {
@@ -189,8 +191,12 @@ export default function DailyTab({ selectedUserId, currentUserId, userRole }: Da
   useEffect(() => {
     if (!form.engagementId) { setTasks([]); setTaskSearch(''); setTaskOpen(false); return }
     api
-      .get(`/api/v1/tasks/?engagement_id=${form.engagementId}&limit=100`)
-      .then((r) => setTasks(r.data?.items ?? []))
+      .get('/tasks/', { params: { engagement_id: form.engagementId, limit: 100 } })
+      .then((r) => {
+        const raw = r.data
+        const items = Array.isArray(raw) ? raw : (raw?.items ?? raw?.tasks ?? [])
+        setTasks(items)
+      })
       .catch(() => setTasks([]))
   }, [form.engagementId])
 
