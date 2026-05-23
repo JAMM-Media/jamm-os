@@ -222,6 +222,7 @@ export default function FirmChatPage() {
   const [pendingFile, setPendingFile] = useState<File | null>(null)
   const [pendingFileKey, setPendingFileKey] = useState<string | null>(null)
   const [fileUploading, setFileUploading] = useState(false)
+  const [sendHint, setSendHint] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const toolbarRef = useRef<HTMLDivElement>(null)
   const dropdownRef = useRef<HTMLDivElement>(null)
@@ -376,6 +377,11 @@ export default function FirmChatPage() {
   }
 
   const handleSend = () => {
+    if (fileUploading) {
+      setSendHint(true)
+      setTimeout(() => setSendHint(false), 3000)
+      return
+    }
     if (!composeValue.trim() || !activeChannelId) return
     let body = composeValue.trim()
     linkedEntities.forEach((link, token) => {
@@ -948,13 +954,20 @@ export default function FirmChatPage() {
                     } rounded-lg px-3 py-2 text-[13px] text-[#374151] dark:text-[#9CA3AF] placeholder:text-[#9CA3AF] outline-none transition-colors overflow-hidden`}
                     style={{ minHeight: '40px', maxHeight: '160px' }}
                   />
-                  <button
-                    onClick={handleSend}
-                    disabled={!composeValue.trim() || fileUploading}
-                    className="bg-brand dark:bg-brand-btn text-white text-[12px] font-medium rounded-md h-8 px-3 flex-shrink-0 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed hover:opacity-90"
-                  >
-                    Send
-                  </button>
+                  <div className="flex flex-col items-end flex-shrink-0">
+                    <button
+                      onClick={handleSend}
+                      disabled={!composeValue.trim()}
+                      className="bg-brand dark:bg-brand-btn text-white text-[12px] font-medium rounded-md h-8 px-3 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed hover:opacity-90"
+                    >
+                      Send
+                    </button>
+                    {sendHint && (
+                      <p className="text-[11px] text-[#F59E0B] mt-1">
+                        Please wait for the file to finish uploading
+                      </p>
+                    )}
+                  </div>
                 </div>
               </div>
             </>

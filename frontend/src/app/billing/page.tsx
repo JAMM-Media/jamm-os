@@ -22,6 +22,7 @@ export default function BillingPage() {
   const [search, setSearch] = useState('')
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [bulkLoading, setBulkLoading] = useState(false)
+  const [bulkSendHint, setBulkSendHint] = useState(false)
   const [voidConfirmOpen, setVoidConfirmOpen] = useState(false)
   const [newInvoiceOpen, setNewInvoiceOpen] = useState(false)
   const [localInvoices, setLocalInvoices] = useState<Invoice[]>([])
@@ -198,18 +199,25 @@ export default function BillingPage() {
               </span>
 
               {/* Send Selected */}
-              <div className="relative group">
+              <div className="flex flex-col items-center">
                 <button
-                  disabled={bulkLoading || !canSend}
-                  onClick={handleBulkSend}
-                  className="text-white text-[12px] border border-white/30 rounded px-3 py-1.5 hover:bg-white/10 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                  disabled={bulkLoading}
+                  onClick={() => {
+                    if (!canSend) {
+                      setBulkSendHint(true)
+                      setTimeout(() => setBulkSendHint(false), 3000)
+                    } else {
+                      handleBulkSend()
+                    }
+                  }}
+                  className={`text-white text-[12px] border border-white/30 rounded px-3 py-1.5 hover:bg-white/10 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap cursor-pointer${!canSend ? ' opacity-50' : ''}`}
                 >
                   Send Selected
                 </button>
-                {!canSend && selCount > 0 && (
-                  <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 bg-[#111827] text-white text-[11px] rounded px-2 py-1 whitespace-nowrap pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity">
+                {bulkSendHint && (
+                  <p className="text-[11px] text-[#F59E0B] mt-1">
                     Select only draft invoices to send in bulk
-                  </div>
+                  </p>
                 )}
               </div>
 
