@@ -32,3 +32,4 @@ from app.models.firm_chat import Channel, FirmMessage, FirmMessageRead
 from app.models.tax_organizer import TaxOrganizerTemplate, TaxOrganizer
 from app.models.transcript_request import TranscriptRequest
 from app.models.behavioral_event import BehavioralEvent
+from app.models.engagement_template import EngagementTemplate

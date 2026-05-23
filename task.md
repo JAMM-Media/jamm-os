@@ -1,497 +1,380 @@
 == STANDING RULES — ENFORCE ALWAYS ==
 
 Project: JAMM PX
-Backend: FastAPI + PostgreSQL on DigitalOcean droplet, Uvicorn + Gunicorn
-Frontend: Next.js 14+ App Router, TypeScript, Tailwind CSS, shadcn/ui
-All backend files start with a path comment.
+Backend: FastAPI + PostgreSQL on DigitalOcean droplet
+Frontend: Next.js 14+ App Router, TypeScript, Tailwind CSS
+All files start with a path comment.
 All frontend files start with a path comment.
 Never use && to chain commands — run them sequentially.
-Never modify the database schema without following the
-migration procedure exactly.
 Tenant isolation is absolute — every query scoped to firm_id.
 Routers are thin — no business logic in routers ever.
 Never use native_enum=True for enums — always use
 sa.Enum(MyEnum, native_enum=False).
+TypeScript must pass clean before committing.
 
-== MIGRATION PROCEDURE — FOLLOW EVERY TIME ==
+== TASK: Engagement Templates — Full Feature Build ==
 
-1. alembic current
-2. alembic revision --autogenerate -m "description"
-3. Read the generated file in full
-4. If it contains tables beyond what was just added, delete
-   it and write a clean manual migration
-5. Do NOT run alembic upgrade head locally — Andrew runs
-   this on the droplet
-
-== TASK: Staff Timesheets — Full Feature Build ==
-
-Build a complete timesheet system as a new first-class
-sidebar tab. Staff see only their own entries. Managers and
-firm owners see all staff with filter controls. Six view
-tabs: Daily, Weekly, Biweekly, Monthly, Quarterly, Yearly.
-Daily is the active entry surface. All other tabs are
-read-and-edit with CSV export.
+Allow firms to save any engagement as a reusable template
+and create new engagements from a template with one click.
+Templates pre-populate engagement type, tasks, document
+checklist, and assigned staff. This is a base product
+feature — not an upsell.
 
 Read these files before writing any code:
-- app/models/time_entry.py
-- app/schemas/time_entry.py
-- app/api/time_entries.py
-- app/crud/time_entry.py
-- app/services/time_entry_service.py
-- app/core/enums.py (for NotificationType)
-- app/crud/notification.py
-- frontend/src/components/layout/Sidebar.tsx
-- frontend/src/app/(dashboard)/billing/page.tsx
-  (to understand existing time entry UI patterns)
+- app/models/engagement.py
+- app/models/task.py
+- app/schemas/engagement.py
+- app/api/engagements.py
+- frontend/src/app/(dashboard)/engagements/page.tsx
+- frontend/src/app/clients/[id]/page.tsx
 
-Report what existing fields are on TimeEntry before writing
-any code.
+Report what fields exist on Engagement and Task models
+before writing any code.
 
-== PHASE 1 — BACKEND: EXTEND TIME ENTRY MODEL ==
+== PHASE 1 — BACKEND: ENGAGEMENT TEMPLATE MODEL ==
 
-Read the TimeEntry model first. Then add the following
-fields via migration.
+Read the Engagement model first. Then create a new model:
 
-Fields to add to the TimeEntry model in
-app/models/time_entry.py:
+File: app/models/engagement_template.py
 
-  start_time: Mapped[Optional[time]] = mapped_column(
-      Time, nullable=True
-  )
-  end_time: Mapped[Optional[time]] = mapped_column(
-      Time, nullable=True
-  )
-  activity_type: Mapped[Optional[str]] = mapped_column(
-      String(100), nullable=True
-  )
-  is_submitted: Mapped[bool] = mapped_column(
-      Boolean, default=False, nullable=False
-  )
-  submitted_at: Mapped[Optional[datetime]] = mapped_column(
-      DateTime(timezone=True), nullable=True
-  )
-  is_approved: Mapped[bool] = mapped_column(
-      Boolean, default=False, nullable=False
-  )
-  approved_at: Mapped[Optional[datetime]] = mapped_column(
-      DateTime(timezone=True), nullable=True
-  )
-  approved_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(
-      ForeignKey("users.id", ondelete="SET NULL"),
-      nullable=True
-  )
-  edited_after_submission: Mapped[bool] = mapped_column(
-      Boolean, default=False, nullable=False
-  )
-  edit_note: Mapped[Optional[str]] = mapped_column(
-      String(500), nullable=True
-  )
+class EngagementTemplate(Base):
+    __tablename__ = "engagement_templates"
 
-Add the import for time at the top of the model file:
-  from datetime import date, datetime, time, timezone
+    id: Mapped[uuid.UUID] = mapped_column(
+        primary_key=True, default=uuid.uuid4
+    )
+    firm_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("firms.id", ondelete="CASCADE"),
+        nullable=False, index=True
+    )
+    name: Mapped[str] = mapped_column(
+        String(200), nullable=False
+    )
+    description: Mapped[Optional[str]] = mapped_column(
+        Text, nullable=True
+    )
+    engagement_type: Mapped[Optional[str]] = mapped_column(
+        String(100), nullable=True
+    )
+    estimated_hours: Mapped[Optional[float]] = mapped_column(
+        Numeric(6, 2), nullable=True
+    )
+    # JSON array of task template objects:
+    # [{ title, description, order }]
+    task_templates: Mapped[list] = mapped_column(
+        JSON, nullable=False, default=list
+    )
+    # JSON array of document request item strings:
+    # ["W-2", "1099-INT", ...]
+    document_checklist: Mapped[list] = mapped_column(
+        JSON, nullable=False, default=list
+    )
+    # Internal notes shown to staff when using template
+    notes: Mapped[Optional[str]] = mapped_column(
+        Text, nullable=True
+    )
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, default=True, nullable=False
+    )
+    use_count: Mapped[int] = mapped_column(
+        Integer, default=0, nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False
+    )
 
-Add to app/schemas/time_entry.py:
-- All new fields to TimeEntryOut
-- start_time, end_time, activity_type to TimeEntryCreate
-  and TimeEntryUpdate
-- is_submitted, is_approved, edited_after_submission,
-  edit_note to TimeEntryOut only — clients never set these
-  directly
+    firm: Mapped["Firm"] = relationship(
+        "Firm", back_populates="engagement_templates"
+    )
 
-Write the migration file manually following the procedure.
-The revision should chain from 0027. Do NOT run it locally.
+Add to app/models/firm.py:
+    engagement_templates: Mapped[list["EngagementTemplate"]] =
+        relationship("EngagementTemplate",
+        back_populates="firm",
+        cascade="all, delete-orphan")
 
-== PHASE 2 — BACKEND: NEW TIMESHEET ENDPOINTS ==
+Add the import to app/models/__init__.py or wherever
+models are imported for alembic to detect them.
 
-File: app/api/time_entries.py
+Write the migration manually — chain from 0029:
+File: migrations/versions/0030_add_engagement_templates.py
 
-Add these endpoints after the existing ones. Read the
-existing router before adding anything.
+Do NOT run alembic upgrade head locally.
 
-ENDPOINT 1 — Submit daily entries
-POST /time-entries/submit-day
-- Requires staff_or_above role
-- Body: { date: date }
-- Logic: Find all time entries for current_user.id and
-  firm_id where entry.date == submitted date and
-  is_submitted == False
-- Mark each is_submitted = True, submitted_at = now
-- If no entries found: return 400 "No unsubmitted entries
-  for this date"
-- Returns: { submitted_count: int, date: str }
+== PHASE 2 — BACKEND: SCHEMAS ==
 
-ENDPOINT 2 — Get timesheet summary for a date range
-GET /time-entries/summary
-- Requires staff_or_above role
-- Query params: start_date, end_date, user_id (optional,
-  manager+ only)
-- Staff: always scoped to their own user_id regardless of
-  query param
-- Manager+: can pass any user_id in the firm, or omit for
-  all staff
-- Returns list of summary rows grouped by user and date:
-  [{ user_id, user_name, date, total_hours, billable_hours,
-  billable_pct, entry_count, is_submitted, has_edits }]
-- has_edits = any entry in that user+date group has
-  edited_after_submission = True
+File: app/schemas/engagement_template.py
 
-ENDPOINT 3 — Edit submitted entry (with manager notification)
-PATCH /time-entries/{entry_id}/submitted-edit
-- Requires staff_or_above role
-- Body: { hours, start_time, end_time, activity_type,
-  description, edit_note } — all optional
-- If entry.is_submitted == False: return 400 "Entry has
-  not been submitted — use the regular edit endpoint"
-- Staff can only edit their own entries
-- Apply the changes, set edited_after_submission = True,
-  set edit_note from body if provided
-- Fire a notification to all managers and firm_owners in
-  the firm:
-  title: "Timesheet entry edited after submission"
-  body: "{user.full_name} edited a submitted time entry
-    for {entry.date}. {edit_note if provided}"
-  notification_type: NotificationType.system
-  related_entity_type: "time_entry"
-  related_entity_id: entry.id
-- Returns updated TimeEntryOut
+class TaskTemplateItem(BaseModel):
+    title: str
+    description: Optional[str] = None
+    order: int = 0
 
-ENDPOINT 4 — Approve a submitted entry
-POST /time-entries/{entry_id}/approve
-- Requires manager_or_above role
-- Sets is_approved = True, approved_at = now,
-  approved_by_id = current_user.id
-- Returns updated TimeEntryOut
+class EngagementTemplateBase(BaseModel):
+    name: str
+    description: Optional[str] = None
+    engagement_type: Optional[str] = None
+    estimated_hours: Optional[float] = None
+    task_templates: list[TaskTemplateItem] = []
+    document_checklist: list[str] = []
+    notes: Optional[str] = None
 
-ENDPOINT 5 — Get CSV export
-GET /time-entries/export
-- Requires staff_or_above role
-- Query params: start_date, end_date, user_id (optional,
-  manager+ only), format="csv"
-- Staff: scoped to own entries only
-- Returns a CSV file response with headers:
-  Date, Staff, Engagement, Activity Type, Description,
-  Start Time, End Time, Hours, Billable, Rate, Value,
-  Submitted, Approved
-- Use fastapi.responses.StreamingResponse with
-  media_type="text/csv"
-- Set header:
-  Content-Disposition: attachment;
-  filename="timesheets_{start_date}_{end_date}.csv"
+class EngagementTemplateCreate(EngagementTemplateBase):
+    pass
 
-ENDPOINT 6 — Get firm settings for timesheets
-This reads from the existing firm settings. Check if Firm
-model has a timesheet_approval_required field. If not,
-this endpoint just returns { approval_required: false }
-as a placeholder — the settings toggle is built in Phase 4.
+class EngagementTemplateUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    engagement_type: Optional[str] = None
+    estimated_hours: Optional[float] = None
+    task_templates: Optional[list[TaskTemplateItem]] = None
+    document_checklist: Optional[list[str]] = None
+    notes: Optional[str] = None
+    is_active: Optional[bool] = None
 
-GET /time-entries/settings
-- Requires manager_or_above role
-- Returns { approval_required: bool }
+class EngagementTemplateOut(EngagementTemplateBase):
+    id: uuid.UUID
+    firm_id: uuid.UUID
+    is_active: bool
+    use_count: int
+    created_at: datetime
+    updated_at: datetime
 
-== PHASE 3 — FRONTEND: SIDEBAR AND PAGE SHELL ==
+    model_config = ConfigDict(from_attributes=True)
 
-SIDEBAR UPDATE
-File: frontend/src/components/layout/Sidebar.tsx
+== PHASE 3 — BACKEND: CRUD ==
 
-Read this file first. Add Timesheets to navItems between
-Tasks and Calendar:
-  { href: '/timesheets', label: 'Timesheets',
-    icon: Clock }
+File: app/crud/engagement_template.py
 
-Import Clock from lucide-react — add to existing import.
+Functions needed:
+- list_templates(db, firm_id, active_only=True)
+  Returns all templates for firm ordered by use_count
+  desc then name asc
+- get_template(db, template_id, firm_id)
+  Returns single template or None
+- create_template(db, template_in, firm_id)
+  Creates and returns template
+- update_template(db, template, payload)
+  Updates and returns template
+- delete_template(db, template)
+  Soft delete — sets is_active=False
+- increment_use_count(db, template_id, firm_id)
+  Increments use_count by 1
 
-PAGE SHELL
-Create: frontend/src/app/(dashboard)/timesheets/page.tsx
+== PHASE 4 — BACKEND: API ROUTER ==
 
-This is the top-level page. It renders the tab bar and
-the active tab content.
+File: app/api/engagement_templates.py
 
-Tab bar: Daily | Weekly | Biweekly | Monthly | Quarterly
-| Yearly
+router = APIRouter(
+    prefix="/engagement-templates",
+    tags=["Engagement Templates"]
+)
 
-Active tab indicator: 2px border-bottom #1F3148 light /
-#4A7FA5 dark. Inactive tabs: text-[#6B7280].
+Endpoints:
 
-Page header:
-- Left: "Timesheets" — 20px weight 500 #1F3148
-- Right (manager+ only): Staff filter dropdown
-  Default: "All Staff" for managers, hidden for staff
-  Shows list of firm users from GET /users/?limit=100
-  Selecting a user filters all tabs to that user
+GET / — list all active templates for firm
+  require_staff_or_above
+  Returns list[EngagementTemplateOut]
 
-Tab content is rendered below the tab bar. Each tab is a
-separate component imported from the timesheets components
-directory.
+POST / — create a new template
+  require_manager_or_above
+  Body: EngagementTemplateCreate
+  Returns EngagementTemplateOut, 201
 
-Create the following empty component files that will be
-filled in Phase 4:
-- frontend/src/app/(dashboard)/timesheets/DailyTab.tsx
-- frontend/src/app/(dashboard)/timesheets/WeeklyTab.tsx
-- frontend/src/app/(dashboard)/timesheets/BiweeklyTab.tsx
-- frontend/src/app/(dashboard)/timesheets/MonthlyTab.tsx
-- frontend/src/app/(dashboard)/timesheets/QuarterlyTab.tsx
-- frontend/src/app/(dashboard)/timesheets/YearlyTab.tsx
+GET /{template_id} — get single template
+  require_staff_or_above
+  Returns EngagementTemplateOut
 
-Each empty component just renders a placeholder div for now:
-  <div className="p-6 text-[13px] text-[#6B7280]">
-    Loading...
-  </div>
+PATCH /{template_id} — update template
+  require_manager_or_above
+  Body: EngagementTemplateUpdate
+  Returns EngagementTemplateOut
 
-== PHASE 4 — FRONTEND: DAILY TAB ==
+DELETE /{template_id} — soft delete
+  require_manager_or_above
+  Sets is_active=False
+  Returns { message: "Template deleted" }
 
-File: frontend/src/app/(dashboard)/timesheets/DailyTab.tsx
-
-This is the primary entry surface. Props:
-  interface DailyTabProps {
-    selectedUserId: string | null  // null = current user
-    currentUserId: string
-    userRole: string
+POST /{template_id}/use — create engagement from template
+  require_staff_or_above
+  Body: {
+    client_id: UUID,
+    engagement_name: Optional[str],  # overrides template name
+    assigned_staff_id: Optional[UUID],
+    tax_year: Optional[int]
   }
+  Logic:
+  1. Get template, verify belongs to firm
+  2. Create engagement using template fields:
+     - name: payload.engagement_name or template.name
+     - engagement_type: template.engagement_type
+     - client_id: payload.client_id
+     - assigned_staff_id: payload.assigned_staff_id
+     - Use existing engagement creation logic
+  3. For each item in template.task_templates:
+     Create a Task linked to the engagement with:
+     - title: task_template.title
+     - description: task_template.description
+     - client_id: engagement.client_id
+     - engagement_id: engagement.id
+     - firm_id: firm_id
+     - order: task_template.order
+  4. If template.document_checklist is not empty:
+     Create a DocumentRequest linked to the engagement
+     with items from template.document_checklist
+     Use the existing document request creation pattern
+  5. Increment template use_count
+  6. Return { engagement_id, tasks_created, doc_request_created }
 
-LAYOUT:
-Top section — Entry form (always visible)
-Bottom section — Today's submitted and pending entries
+Register the router in app/main.py:
+  from app.api.engagement_templates import router as
+    engagement_templates_router
+  app.include_router(engagement_templates_router,
+    prefix="/api/v1")
 
-ENTRY FORM:
-Card surface bg #EDEEF0 dark:#383838, 8px radius,
-padding 16px, margin-bottom 16px.
+== PHASE 5 — FRONTEND: TEMPLATES PAGE ==
 
-Form header: "Log time for {today's date formatted as
-'Monday, May 22'}" — 13px weight 500
+Create: frontend/src/app/(dashboard)/templates/page.tsx
 
-Form fields in a responsive grid (2-col on wide, 1-col
-narrow):
+This is a new top-level page. Add it to the sidebar
+between Engagements and Tasks.
 
-1. Engagement — required
-   Dropdown populated from GET /engagements/?limit=100
-   Shows assigned engagements first (where
-   assigned_staff_id == current user), then all others
-   separated by a divider "— Other engagements —"
-   Searchable — typing filters the list
-   Display: "{engagement.name} — {client.name}"
+File: frontend/src/components/layout/Sidebar.tsx
+Add between Engagements and Tasks:
+  { href: '/templates', label: 'Templates',
+    icon: LayoutTemplate }
+Import LayoutTemplate from lucide-react.
 
-2. Task — optional
-   Dropdown populated from GET /tasks/?engagement_id=X
-   after engagement is selected
-   Shows tasks assigned to current user first
-   Display: task.title
+TEMPLATES PAGE LAYOUT:
 
-3. Activity Type — required
-   Dropdown with preset options:
-   Tax Preparation, Client Meeting, Document Review,
-   Review & Sign-off, Client Communication, Research,
-   Admin, Other
-   Plus a free-text "Custom" option that shows a text
-   input
+Header row:
+- Left: "Engagement Templates" — 20px weight 500
+- Right: "+ New Template" button — manager+ only
 
-4. Start Time — optional
-   Time picker input, type="time"
-   Default: current time rounded to nearest 15 minutes
+Two sections:
 
-5. End Time — optional
-   Time picker input, type="time"
-   Must be after Start Time — show inline error if not
-   When both are set: auto-calculate and display duration
-   below the end time field: "2h 30m"
-
-6. Hours — required
-   Number input, min 0.25, max 24, step 0.25
-   Auto-populated from Start/End time difference if both
-   are set, but remains editable
-   If user manually edits hours after auto-fill, clear
-   the auto-fill and keep manual value
-
-7. Billable toggle — yes/no
-   Default: yes for engagement-linked entries
-   Pill toggle, brand blue when on
-
-8. Notes — optional
-   Textarea, 2 rows, max 500 chars
-   Placeholder: "What did you work on?"
-
-Below the form fields:
-- "Add Entry" button — #1F3148 bg, white text, full width
-  Validates required fields before adding
-  On success: adds entry to today's pending list below,
-  clears form fields (keep engagement and activity type
-  selected for fast repeat entry)
-  Shows soft duplicate warning if same engagement +
-  activity type + overlapping time already exists today:
-  "This looks similar to an entry you already logged
-  today. Add anyway?"
-
-TODAY'S ENTRIES:
-Below the form, two sections:
-
-PENDING ENTRIES (not yet submitted):
-Section label: "Pending — not yet submitted"
-11px uppercase letter-spacing muted color
-
-Each entry row:
-- Date chip (today) — muted
-- Engagement name + client name — 12px weight 500
-- Activity type — 12px muted
-- Start–End time if set, else hours — 12px
-- Billable indicator — small green dot if billable
-- Edit icon — pencil, opens inline edit (same fields)
-- Delete icon — trash, confirm before delete
-
-Running total below pending entries:
-"X entries · Y.Z hours · $N.NN billable value"
-
-SUBMIT DAY BUTTON:
-Below pending entries. Only shows if there are pending
-entries.
-"Submit Day" — full width, #1F3148 bg white text
-On click: POST /time-entries/submit-day { date: today }
-On success: move all pending entries to submitted section,
-show success toast "Day submitted"
-
-SUBMITTED ENTRIES:
-Section label: "Submitted"
-Same row layout as pending but:
-- No edit/delete icons (edit triggers the submitted-edit
-  flow)
-- Show edit icon with a warning color if manager+ — on
-  click show a warning modal: "Editing a submitted entry
-  will notify all managers. Continue?" then open edit form
-- Approved entries show a small green checkmark badge
-- If approval mode is on (from settings): show "Pending
-  approval" badge on unapproved submitted entries
+SECTION 1 — TEMPLATE LIST:
+Fetch from GET /engagement-templates/
+Each template card:
+- Template name — 13px weight 500
+- Description — 12px muted, truncated to 2 lines
+- Engagement type badge if set — small pill
+- Task count — "X tasks" — 11px muted
+- Doc checklist count — "X documents" — 11px muted
+- Use count — "Used X times" — 11px muted
+- Two action buttons (manager+ only):
+  Edit (pencil icon) — opens edit modal
+  Delete (trash icon) — confirm then soft delete
+- "Use Template" button — available to all staff
+  Opens the Use Template modal
 
 EMPTY STATE:
-If no entries at all today:
-"Nothing logged yet today. Add your first entry above."
+"No templates yet. Create your first template to speed
+up engagement creation."
 
-== PHASE 5 — FRONTEND: AGGREGATE TABS ==
+SECTION 2 — CREATE/EDIT TEMPLATE MODAL:
 
-Each aggregate tab (Weekly, Biweekly, Monthly, Quarterly,
-Yearly) follows the same pattern with different date ranges.
+Modal opens when "+ New Template" or Edit is clicked.
 
-Create a shared component:
-frontend/src/app/(dashboard)/timesheets/AggregateTab.tsx
+Fields:
+1. Template name — required, text input
+2. Description — optional, textarea 2 rows
+3. Engagement type — dropdown with existing engagement
+   types from the codebase enums
+4. Estimated hours — optional, number input
+5. Tasks section:
+   - Label: "Default Tasks"
+   - List of task title inputs with drag handle and
+     remove button
+   - "+ Add Task" button appends a new empty task row
+   - Minimum 0 tasks
+6. Document checklist section:
+   - Label: "Document Checklist"
+   - List of document name text inputs with remove button
+   - "+ Add Document" button appends new empty row
+   - Placeholder examples: "W-2", "1099-INT", "Prior year return"
+7. Internal notes — optional, textarea 2 rows
+   Helper text: "Only visible to staff, not clients"
 
-Props:
-  interface AggregateTabProps {
-    period: 'weekly' | 'biweekly' | 'monthly' |
-            'quarterly' | 'yearly'
-    selectedUserId: string | null
-    currentUserId: string
-    userRole: string
-  }
+Save button: POST / for new, PATCH /{id} for edit
+On success: refresh template list, close modal
 
-DATE RANGE CALCULATION:
-  weekly: current Mon–Sun
-  biweekly: last two Mon–Sun periods
-  monthly: first to last day of current month
-  quarterly: first to last day of current quarter
-  yearly: Jan 1 to Dec 31 of current year
+USE TEMPLATE MODAL:
 
-NAVIGATION:
-Left/right arrow buttons to go to previous/next period.
-Center: period label e.g. "May 12 – May 18, 2026" or
-"May 2026" or "Q2 2026"
+Opens when "Use Template" is clicked on any template card.
+Shows a preview of what will be created:
+- Template name and description
+- Engagement type
+- List of tasks that will be created
+- Document checklist items
 
-MANAGER SUMMARY (manager+ only, shown above detail):
-Summary row per staff member:
-  Name | Total Hours | Billable Hours | Billable % |
-  Entries | Status indicator
+Form fields:
+1. Client — required, searchable dropdown
+   GET /clients/?limit=100
+   Search filters by name
+2. Engagement name — optional, defaults to template name
+   Text input, editable
+3. Assign to staff — optional, dropdown
+   GET /users/?limit=100, filter to staff roles
+4. Tax year — optional, number input
 
-Status indicator:
-  Green dot — all entries submitted and approved
-  Amber dot — some submitted, some pending
-  Red dot — entries exist but none submitted
+"Create Engagement" button:
+POST /engagement-templates/{id}/use
+On success: show toast "Engagement created successfully"
+with a "View Engagement" link that navigates to
+/engagements/{engagement_id}
+Close modal after 2 seconds or on link click.
 
-Overtime flag: if total hours > 40 for weekly/biweekly
-periods (normalized), show amber highlight on that row.
-If > 50 hours show red highlight.
+== PHASE 6 — FRONTEND: SAVE AS TEMPLATE FROM EXISTING
+ENGAGEMENT ==
 
-DETAIL TABLE:
-Columns: Date | Staff (manager only) | Engagement |
-Activity | Start | End | Hours | Billable | Notes |
-Submitted | Approved | Actions
+File: frontend/src/app/(dashboard)/engagements/page.tsx
+or the engagement detail page — read first to find the
+right location.
 
-Actions column:
-- Staff viewing own entries: edit icon only if not
-  submitted, warning edit icon if submitted
-- Manager viewing any entry: approve button if submitted
-  but not approved, warning edit icon always
+Add a "Save as Template" option to each engagement row's
+action menu (the ... menu or equivalent).
 
-EDIT FLOW FOR SUBMITTED ENTRIES:
-Show a modal with warning: "Editing this submitted entry
-will notify all managers. Add a note explaining the
-change (optional):" with a textarea for edit_note.
-On confirm: PATCH /time-entries/{id}/submitted-edit
+When clicked: open a modal pre-populated with:
+- Template name: engagement name
+- Engagement type: engagement's type
+- Tasks: fetched from GET /tasks/?engagement_id={id}
+  Pre-populate task titles from existing tasks
+- Document checklist: fetched from document requests
+  linked to this engagement if any
 
-CSV EXPORT:
-Top right of each aggregate tab: "Export CSV" button
-On click: GET /time-entries/export with the current
-period's date range and user filter
-Triggers browser file download.
+Staff can review and edit before saving. Then POST to
+/engagement-templates/ to create the template.
 
-Update each of the six tab component files to import and
-use the correct tab component:
-- WeeklyTab, BiweeklyTab, MonthlyTab, QuarterlyTab,
-  YearlyTab all import AggregateTab and pass the correct
-  period prop
-- DailyTab renders the full daily entry form
+Show toast "Template saved" on success.
 
-== PHASE 6 — SETTINGS: APPROVAL TOGGLE ==
-
-Read the existing Settings page to understand the tab
-structure.
-
-File: frontend/src/components/settings/ (list files)
-
-Add a new "Timesheets" section to the existing Firm
-settings tab (not a new tab — add it as a new section
-within the Firm tab below the existing firm settings).
-
-The section has one toggle:
-  Label: "Require manager approval for submitted
-  timesheets"
-  Helper text: "When on, submitted entries show as
-  Pending Approval until a manager approves them."
-  Default: off
-
-This requires a new field on the Firm model:
-  timesheet_approval_required: bool, default False
-
-Add this field to:
-- app/models/firm.py
-- app/schemas/firm.py (FirmOut and FirmUpdate)
-
-Write a migration for this field. Chain from 0028.
-
-The toggle calls PATCH /firms/me with
-{ timesheet_approval_required: bool }
-The existing PATCH /firms/me endpoint should already
-handle this if FirmUpdate includes the field.
-
-== PHASE 7 — TYPESCRIPT, MIGRATION, AND GIT ==
+== PHASE 7 — TYPESCRIPT AND GIT ==
 
 Run: npx tsc --noEmit from the frontend directory.
-Fix all TypeScript errors before proceeding.
-
-Then confirm all migration files exist:
-- 0028_add_timesheet_fields_to_time_entries.py
-- 0029_add_timesheet_approval_to_firms.py
+Fix all TypeScript errors before committing.
 
 Then:
 git add .
-git commit -m "add timesheets — full feature build"
+git commit -m "add engagement templates — full feature build"
 git push
 
 == PHASE 8 — VERIFY ==
 
 1. List every file created or modified
-2. Confirm migration files exist and chain correctly
-3. Confirm all six endpoints exist in the router
-4. Confirm DailyTab renders the entry form and both
-   entry sections
-5. Confirm AggregateTab handles all five period types
-6. Confirm the approval toggle exists in Firm settings
-7. Confirm TypeScript passes clean
-8. List exactly what Andrew needs to run on the droplet
-
-Do not restart services — Andrew handles deployment.
+2. Confirm migration file chains from 0029
+3. Confirm all 6 endpoints exist in the router
+4. Confirm the sidebar shows Templates between
+   Engagements and Tasks
+5. Confirm Use Template modal creates engagement + tasks
+   + document request
+6. Confirm Save as Template works from engagement view
+7. TypeScript passes clean
+8. List what Andrew needs to run on the droplet

@@ -22,6 +22,7 @@ import {
   CalendarDays,
   Bell,
   Clock,
+  LayoutTemplate,
 } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { cn } from '@/lib/utils'
@@ -33,6 +34,7 @@ const navItems = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/clients', label: 'Clients', icon: Users },
   { href: '/engagements', label: 'Engagements', icon: Briefcase },
+  { href: '/templates', label: 'Templates', icon: LayoutTemplate },
   { href: '/tasks', label: 'Tasks', icon: CheckSquare },
   { href: '/timesheets', label: 'Timesheets', icon: Clock },
   { href: '/calendar', label: 'Calendar', icon: CalendarDays },

@@ -4,6 +4,7 @@
 import { useRouter } from 'next/navigation'
 import { type Engagement } from '@/lib/api'
 import { StatusBadge } from '@/components/ui/StatusBadge'
+import { BookmarkPlus } from 'lucide-react'
 
 function formatTypeDisplay(engagementType: string | null | undefined): string {
   if (!engagementType) return '—'
@@ -50,6 +51,7 @@ interface EngagementTableProps {
   selectedIds?: Set<string>
   onSelect?: (id: string, checked: boolean) => void
   onSelectAll?: (checked: boolean) => void
+  onSaveAsTemplate?: (engagement: Engagement) => void
 }
 
 export function EngagementTable({
@@ -59,6 +61,7 @@ export function EngagementTable({
   selectedIds,
   onSelect,
   onSelectAll,
+  onSaveAsTemplate,
 }: EngagementTableProps) {
   const router = useRouter()
   const hasSelection = selectedIds !== undefined
@@ -82,7 +85,7 @@ export function EngagementTable({
                 />
               </th>
             )}
-            {['Engagement', 'Client', 'Type', 'Due Date', 'Status'].map((col) => (
+            {['Engagement', 'Client', 'Type', 'Due Date', 'Status', ''].map((col) => (
               <th
                 key={col}
                 className="px-4 py-2.5 text-left text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em] whitespace-nowrap"
@@ -148,6 +151,17 @@ export function EngagementTable({
                 <td className="px-4 py-3">
                   <StatusBadge variant={eng.status as Parameters<typeof StatusBadge>[0]['variant']} />
                 </td>
+                {onSaveAsTemplate && (
+                  <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
+                    <button
+                      onClick={() => onSaveAsTemplate(eng)}
+                      title="Save as template"
+                      className="p-1.5 rounded text-[#9CA3AF] hover:text-brand-light hover:bg-[#F3F4F6] dark:hover:bg-[#333] transition-colors opacity-0 group-hover:opacity-100"
+                    >
+                      <BookmarkPlus className="h-3.5 w-3.5" />
+                    </button>
+                  </td>
+                )}
               </tr>
             )
           })}

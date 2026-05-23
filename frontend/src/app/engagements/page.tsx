@@ -9,6 +9,7 @@ import { EngagementTable } from '@/components/engagements/EngagementTable'
 import { EngagementCard } from '@/components/engagements/EngagementCard'
 import { EngagementEmptyState } from '@/components/engagements/EngagementEmptyState'
 import { NewEngagementModal } from '@/components/engagements/NewEngagementModal'
+import { SaveAsTemplateModal } from '@/components/engagements/SaveAsTemplateModal'
 import { engagementsApi, clientsApi, type Engagement } from '@/lib/api'
 import { useFetch } from '@/lib/hooks/useFetch'
 import { Search, X, ChevronDown } from 'lucide-react'
@@ -29,6 +30,7 @@ export default function EngagementsPage() {
   const [bulkLoading, setBulkLoading] = useState(false)
   const [statusDropOpen, setStatusDropOpen] = useState(false)
   const [statusOverrides, setStatusOverrides] = useState<Record<string, string>>({})
+  const [saveAsTemplateEngagement, setSaveAsTemplateEngagement] = useState<Engagement | null>(null)
 
   const { data, isLoading, error } = useFetch(() => engagementsApi.list(0, 100), [])
   const { data: clientsData, isLoading: clientsLoading } = useFetch(() => clientsApi.list(0, 100), [])
@@ -284,6 +286,7 @@ export default function EngagementsPage() {
             selectedIds={selectedIds}
             onSelect={handleSelect}
             onSelectAll={handleSelectAll}
+            onSaveAsTemplate={setSaveAsTemplateEngagement}
           />
         ) : (
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
@@ -298,6 +301,13 @@ export default function EngagementsPage() {
           onClose={() => setModalOpen(false)}
           onAdd={handleAdd}
         />
+
+        {saveAsTemplateEngagement && (
+          <SaveAsTemplateModal
+            engagement={saveAsTemplateEngagement}
+            onClose={() => setSaveAsTemplateEngagement(null)}
+          />
+        )}
 
         {/* Floating bulk action bar */}
         {selCount > 0 && (

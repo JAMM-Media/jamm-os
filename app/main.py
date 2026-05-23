@@ -42,6 +42,7 @@ from app.api.transcript_requests import router as transcript_requests_router
 from app.api.reports import router as reports_router
 from app.api.dashboard import router as dashboard_router
 from app.api.settings import router as settings_router
+from app.api.engagement_templates import router as engagement_templates_router
 
 from app.db.base_class import Base
 from app.core.config import get_settings
@@ -123,6 +124,7 @@ app.include_router(transcript_requests_router)
 app.include_router(reports_router)
 app.include_router(dashboard_router, prefix="/dashboard", tags=["dashboard"])
 app.include_router(settings_router)
+app.include_router(engagement_templates_router, prefix="/api/v1")
 
 
 @app.get("/")

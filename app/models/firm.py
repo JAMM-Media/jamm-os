@@ -238,3 +238,9 @@ class Firm(Base):
         uselist=False,
         cascade="all, delete-orphan",
     )
+
+    engagement_templates: Mapped[list["EngagementTemplate"]] = relationship(
+        "EngagementTemplate",
+        back_populates="firm",
+        cascade="all, delete-orphan",
+    )
