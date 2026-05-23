@@ -536,10 +536,16 @@ def portal_me(
 ):
     """Return identity info for the authenticated portal client."""
     firm = db.execute(select(Firm).where(Firm.id == current_client.firm_id)).scalar_one_or_none()
+    settings = firm.settings or {} if firm else {}
+    firm_id_str = str(current_client.firm_id)
+    has_logo = bool(settings.get("portal_logo_s3_key"))
     return {
         "client_id": str(current_client.id),
         "client_name": current_client.name,
         "firm_name": firm.name if firm else "",
+        "portal_display_name": settings.get("portal_display_name") or (firm.name if firm else ""),
+        "portal_logo_url": f"/api/v1/firms/logo/{firm_id_str}" if has_logo else None,
+        "portal_brand_color": settings.get("portal_brand_color") or "#1F3148",
     }
 
 
@@ -1114,6 +1120,20 @@ def portal_save_organizer(
         responses=payload.responses,
         submit=payload.submit,
     )
+
+    if payload.submit and updated.status == "submitted":
+        log_event(
+            firm_id=portal_client.firm_id,
+            event_type="portal.organizer_submitted",
+            entity_type="tax_organizer",
+            entity_id=updated.id,
+            actor_type="client",
+            actor_id=portal_client.id,
+            metadata={
+                "tax_year": updated.tax_year,
+                "engagement_id": str(updated.engagement_id) if updated.engagement_id else None,
+            }
+        )
 
     return {
         "id": str(updated.id),

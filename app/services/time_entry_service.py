@@ -80,6 +80,19 @@ def update_time_entry(
         return None, "billed"
 
     updated = crud_time_entry.update_time_entry(db, entry, payload)
+    log_event(
+        firm_id=updated.firm_id,
+        event_type="time_entry.edited",
+        entity_type="time_entry",
+        entity_id=updated.id,
+        actor_type="staff",
+        actor_id=current_user.id,
+        metadata={
+            "hours": float(updated.hours) if updated.hours else None,
+            "is_billable": updated.is_billable,
+            "engagement_id": str(updated.engagement_id) if updated.engagement_id else None,
+        }
+    )
     return updated, None
 
 

@@ -26,6 +26,7 @@ from app.dependencies.auth import get_current_user
 from app.dependencies.tenant import get_current_firm
 from app.dependencies.roles import require_staff_or_above, require_manager_or_above
 from app.models.user import User
+from app.services.behavioral_log import log_event
 
 router = APIRouter(
     prefix="/engagement-templates",
@@ -55,8 +56,25 @@ def create_template(
     db: Session = Depends(get_db),
     current_firm: Firm = Depends(get_current_firm),
     _: object = Depends(require_manager_or_above),
+    current_user: User = Depends(get_current_user),
 ):
-    return crud_et.create_template(db, payload, current_firm.id)
+    template = crud_et.create_template(db, payload, current_firm.id)
+    log_event(
+        firm_id=current_firm.id,
+        event_type="engagement_template.created",
+        entity_type="engagement_template",
+        entity_id=template.id,
+        actor_type="staff",
+        actor_id=current_user.id,
+        metadata={
+            "name": template.name,
+            "engagement_type": str(template.engagement_type) if template.engagement_type else None,
+            "task_count": len(template.task_templates) if template.task_templates else 0,
+            "has_document_checklist": bool(template.document_checklist),
+            "is_recurring": bool(getattr(template, "is_recurring", False)),
+        }
+    )
+    return template
 
 
 @router.get("/{template_id}", response_model=EngagementTemplateOut)
@@ -79,11 +97,25 @@ def update_template(
     db: Session = Depends(get_db),
     current_firm: Firm = Depends(get_current_firm),
     _: object = Depends(require_manager_or_above),
+    current_user: User = Depends(get_current_user),
 ):
     template = crud_et.get_template(db, template_id, current_firm.id)
     if not template:
         raise HTTPException(status_code=404, detail="Template not found")
-    return crud_et.update_template(db, template, payload)
+    updated = crud_et.update_template(db, template, payload)
+    log_event(
+        firm_id=current_firm.id,
+        event_type="engagement_template.updated",
+        entity_type="engagement_template",
+        entity_id=updated.id,
+        actor_type="staff",
+        actor_id=current_user.id,
+        metadata={
+            "name": updated.name,
+            "is_recurring": bool(getattr(updated, "is_recurring", False)),
+        }
+    )
+    return updated
 
 
 @router.delete("/{template_id}")
@@ -92,11 +124,21 @@ def delete_template(
     db: Session = Depends(get_db),
     current_firm: Firm = Depends(get_current_firm),
     _: object = Depends(require_manager_or_above),
+    current_user: User = Depends(get_current_user),
 ):
     template = crud_et.get_template(db, template_id, current_firm.id)
     if not template:
         raise HTTPException(status_code=404, detail="Template not found")
     crud_et.delete_template(db, template)
+    log_event(
+        firm_id=current_firm.id,
+        event_type="engagement_template.deleted",
+        entity_type="engagement_template",
+        entity_id=template_id,
+        actor_type="staff",
+        actor_id=current_user.id,
+        metadata={}
+    )
     return {"message": "Template deleted"}
 
 
@@ -107,6 +149,7 @@ def use_template(
     db: Session = Depends(get_db),
     current_firm: Firm = Depends(get_current_firm),
     _: object = Depends(require_staff_or_above),
+    current_user: User = Depends(get_current_user),
 ):
     template = crud_et.get_template(db, template_id, current_firm.id)
     if not template:
@@ -187,6 +230,21 @@ def use_template(
         )
 
     crud_et.increment_use_count(db, template_id, current_firm.id)
+
+    log_event(
+        firm_id=current_firm.id,
+        event_type="engagement_template.used",
+        entity_type="engagement_template",
+        entity_id=template_id,
+        actor_type="staff",
+        actor_id=current_user.id,
+        metadata={
+            "client_id": str(payload.client_id),
+            "engagement_id": str(engagement.id),
+            "tasks_created": tasks_created,
+            "doc_request_created": doc_request_created,
+        }
+    )
 
     return {
         "engagement_id": str(engagement.id),

@@ -25,6 +25,7 @@ from app.schemas.tax_organizer import (
     TaxOrganizerWithTemplate,
 )
 from app.services.audit_service import write_audit_log
+from app.services.behavioral_log import log_event
 from app.services.event_bus import emit_event
 from app.core.enums import TriggerEvent
 
@@ -124,6 +125,21 @@ async def send_organizer(
         db=db,
         request=payload,
         firm_id=current_firm.id,
+    )
+
+    log_event(
+        firm_id=current_firm.id,
+        event_type="tax_organizer.sent",
+        entity_type="tax_organizer",
+        entity_id=organizer.id,
+        actor_type="staff",
+        actor_id=current_user.id,
+        metadata={
+            "client_id": str(payload.client_id),
+            "engagement_id": str(payload.engagement_id),
+            "template_id": str(payload.template_id),
+            "tax_year": organizer.tax_year,
+        }
     )
 
     write_audit_log(

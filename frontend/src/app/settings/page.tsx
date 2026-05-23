@@ -13,6 +13,7 @@ import { settingsApi, type FirmDetails, type StaffMember } from '@/lib/api/setti
 import AutomationsTab from '@/components/settings/AutomationsTab'
 import SecurityTab from '@/components/settings/SecurityTab'
 import FeeScheduleTab from '@/components/settings/FeeScheduleTab'
+import PortalBrandingTab from '@/components/settings/PortalBrandingTab'
 
 const TABS = [
   { key: 'profile', label: 'Profile' },
@@ -21,6 +22,7 @@ const TABS = [
   { key: 'security', label: 'Security' },
   { key: 'automations', label: 'Automations' },
   { key: 'fee_schedule', label: 'Fee Schedule' },
+  { key: 'portal_branding', label: 'Portal' },
 ]
 
 function formatRoleLabel(role: string): string {
@@ -148,6 +150,7 @@ export default function SettingsPage() {
             if (tab.key === 'automations') return canSeeAutomations
             if (tab.key === 'security') return canSeeSecurity
             if (tab.key === 'fee_schedule') return isFirmOwner
+            if (tab.key === 'portal_branding') return isFirmOwner
             return true
           }).map((tab) => (
             <button
@@ -500,6 +503,9 @@ export default function SettingsPage() {
             onSaved={() => { /* firmData will refetch on next focus */ }}
           />
         )}
+
+        {/* Portal Branding tab */}
+        {activeTab === 'portal_branding' && isFirmOwner && <PortalBrandingTab />}
 
 
       </div>

@@ -1,8 +1,11 @@
 # app/api/firms.py
 
 import logging
+import uuid as _uuid
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, File, UploadFile
+from fastapi.responses import RedirectResponse
+from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 from sqlalchemy.orm import Session
@@ -17,6 +20,7 @@ from app.dependencies.roles import require_firm_owner, require_system_admin
 from app.models.user import User
 from app.services.automation_presets import seed_firm_presets
 from app.services.tax_organizer_service import seed_firm_organizer_templates
+from app.services import s3 as s3_service
 
 router = APIRouter(prefix="/firms", tags=["firms"])
 
@@ -73,6 +77,82 @@ def list_firms(
 ):
     query = crud_firm.get_firms(db)
     return paginate(query, limit=limit, offset=offset)
+
+
+# ---------------------------------------------------------
+# LOGO UPLOAD URL — firm_owner only
+# ---------------------------------------------------------
+
+LOGO_ALLOWED_TYPES = {
+    "image/png", "image/jpeg", "image/jpg", "image/svg+xml", "image/webp"
+}
+LOGO_MAX_SIZE = 2 * 1024 * 1024  # 2MB
+
+class LogoUploadUrlRequest(BaseModel):
+    file_name: str
+    file_type: str
+    file_size: int
+
+class LogoUploadUrlResponse(BaseModel):
+    upload_url: str
+    s3_key: str
+
+
+@router.post("/logo/upload-url", response_model=LogoUploadUrlResponse)
+def get_logo_upload_url(
+    body: LogoUploadUrlRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_firm_owner),
+):
+    """
+    Returns a presigned PUT URL so the browser can upload the logo directly to S3.
+    The frontend PUTs the file to upload_url, then calls PATCH /users/firm/settings
+    with portal_logo_s3_key set to s3_key.
+    """
+    if body.file_type not in LOGO_ALLOWED_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail="Logo must be PNG, JPG, SVG, or WEBP"
+        )
+    if body.file_size > LOGO_MAX_SIZE:
+        raise HTTPException(
+            status_code=400,
+            detail="Logo must be 2MB or smaller"
+        )
+
+    ext = body.file_name.rsplit(".", 1)[-1].lower() if "." in body.file_name else "png"
+    s3_key = f"logos/{current_user.firm_id}/{_uuid.uuid4()}.{ext}"
+    upload_url = s3_service.generate_presigned_put_url(s3_key, body.file_type)
+
+    return LogoUploadUrlResponse(upload_url=upload_url, s3_key=s3_key)
+
+
+# ---------------------------------------------------------
+# LOGO SERVE — public, no auth required
+# ---------------------------------------------------------
+
+@router.get("/logo/{firm_id}")
+def get_firm_logo(
+    firm_id: _uuid.UUID,
+    db: Session = Depends(get_db),
+):
+    """
+    Public endpoint — no auth required.
+    Returns a 302 redirect to a fresh presigned S3 URL for the firm's logo.
+    Returns 404 if the firm has no logo configured.
+    Used as the img src for portal top bar and login page.
+    """
+    firm = crud_firm.get_firm(db, firm_id)
+    if not firm:
+        raise HTTPException(status_code=404, detail="Firm not found")
+
+    settings = firm.settings or {}
+    s3_key = settings.get("portal_logo_s3_key")
+    if not s3_key:
+        raise HTTPException(status_code=404, detail="No logo configured")
+
+    presigned_url = s3_service.generate_presigned_url(s3_key)
+    return RedirectResponse(url=presigned_url, status_code=302)
 
 
 # ---------------------------------------------------------

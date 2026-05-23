@@ -3,7 +3,7 @@
 from datetime import date, datetime, timezone, timedelta
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import select, func
+from sqlalchemy import select, func, case
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
@@ -16,7 +16,7 @@ from app.models.engagement import Engagement
 from app.models.client import Client
 from app.models.user import User
 from app.models.signature_envelope import SignatureEnvelope
-from app.core.enums import InvoiceStatus
+from app.core.enums import InvoiceStatus, UserRole
 from app.schemas.dashboard import (
     DashboardMetricsOut,
     OverdueEngagementItem,
@@ -154,19 +154,34 @@ def get_dashboard_metrics(
     ]
 
     # --- Staff Utilization (current ISO week) ---
+    # Start from User so staff with zero hours still appear
     util_stmt = (
         select(
-            TimeEntry.user_id,
+            User.id.label("user_id"),
             User.full_name,
-            func.coalesce(func.sum(TimeEntry.hours), 0).label("hours_this_week"),
+            func.coalesce(
+                func.sum(
+                    case(
+                        (
+                            (TimeEntry.date >= start_of_week) & (TimeEntry.date <= end_of_week),
+                            TimeEntry.hours,
+                        ),
+                        else_=0,
+                    )
+                ),
+                0,
+            ).label("hours_this_week"),
         )
-        .join(User, TimeEntry.user_id == User.id)
+        .outerjoin(
+            TimeEntry,
+            (TimeEntry.user_id == User.id) & (TimeEntry.firm_id == current_firm.id),
+        )
         .where(
-            TimeEntry.firm_id == current_firm.id,
-            TimeEntry.date >= start_of_week,
-            TimeEntry.date <= end_of_week,
+            User.firm_id == current_firm.id,
+            User.is_active == True,
+            User.role != UserRole.client_portal_user,
         )
-        .group_by(TimeEntry.user_id, User.full_name)
+        .group_by(User.id, User.full_name)
     )
     util_rows = db.execute(util_stmt).all()
     staff_utilization = [

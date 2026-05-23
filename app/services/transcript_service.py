@@ -31,6 +31,7 @@ from app.models.firm import Firm
 from app.models.client import Client
 from app.schemas.transcript_request import TranscriptRequestCreate
 from app.services.audit_service import write_audit_log
+from app.services.behavioral_log import log_event
 
 logger = logging.getLogger(__name__)
 
@@ -94,6 +95,20 @@ def request_transcript(
         action="transcript_request.submitted",
         entity_type="transcript_request",
         entity_id=transcript.id,
+    )
+
+    log_event(
+        firm_id=firm.id,
+        event_type="transcript_request.created",
+        entity_type="transcript_request",
+        entity_id=transcript.id,
+        actor_type="staff",
+        actor_id=requested_by_user_id,
+        metadata={
+            "client_id": str(client.id),
+            "transcript_type": str(request_in.transcript_type) if hasattr(request_in, "transcript_type") else None,
+            "authorization_required": True,
+        }
     )
 
     return {

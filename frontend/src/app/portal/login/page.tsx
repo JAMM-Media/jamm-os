@@ -89,7 +89,7 @@ export default function PortalLoginPage() {
       >
         {/* Top bar echo */}
         <div className="flex items-center gap-2 mb-5">
-          <span className="text-[12px] font-[500] text-white">Your Firm</span>
+          <span className="text-[12px] font-[500] text-white">Client Portal</span>
           <span className="text-[10px]" style={{ color: '#7DA3C4' }}>
             Client Portal
           </span>

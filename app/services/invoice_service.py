@@ -144,8 +144,8 @@ def mark_invoice_paid(
         metadata={
             "amount": float(invoice.total_amount) if invoice.total_amount else None,
             "payment_method": payment_method,
-            "days_since_sent": (datetime.now(timezone.utc) - invoice.updated_at).days
-                if invoice.updated_at else None,
+            "days_since_sent": (datetime.now(timezone.utc) - invoice.sent_at).days
+                if hasattr(invoice, 'sent_at') and invoice.sent_at else None,
             "client_id": str(invoice.client_id) if invoice.client_id else None,
         }
     )

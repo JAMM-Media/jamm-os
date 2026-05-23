@@ -16,6 +16,7 @@ from app.models.document_request import DocumentRequest
 from app.crud.engagement_template import list_active_recurring_templates
 from app.core.tax_deadlines import get_filing_deadline
 from app.services.audit_service import write_audit_log
+from app.services.behavioral_log import log_event
 
 logger = logging.getLogger(__name__)
 
@@ -164,6 +165,21 @@ def spawn_recurring_engagements() -> None:
                         actor_type="system",
                         entity_type="engagement",
                         entity_id=engagement.id,
+                    )
+
+                    log_event(
+                        firm_id=template.firm_id,
+                        event_type="engagement.recurring_spawned",
+                        entity_type="engagement",
+                        entity_id=engagement.id,
+                        actor_type="system",
+                        actor_id=None,
+                        metadata={
+                            "template_id": str(template.id),
+                            "client_id": str(client.id),
+                            "cadence": template.recurrence_cadence,
+                            "engagement_type": str(template.engagement_type) if template.engagement_type else None,
+                        }
                     )
 
                     spawned_count += 1

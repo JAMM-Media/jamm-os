@@ -1,11 +1,14 @@
 // frontend/src/components/portal/PortalShell.tsx
 'use client'
 
+import { useState } from 'react'
 import { cn } from '@/lib/utils'
 import { usePortalUnreadMessages } from './usePortalUnreadMessages'
 
 interface PortalShellProps {
   firmName: string
+  logoUrl?: string
+  brandColor?: string
   clientName: string
   activeTab: string
   onTabChange: (tab: string) => void
@@ -22,12 +25,15 @@ const TABS = [
 
 export function PortalShell({
   firmName,
+  logoUrl,
+  brandColor = '#1F3148',
   clientName,
   activeTab,
   onTabChange,
   children,
 }: PortalShellProps) {
   const { unreadCount, markAsRead } = usePortalUnreadMessages()
+  const [logoError, setLogoError] = useState(false)
 
   function handleTabChange(key: string) {
     if (key === 'messages') markAsRead()
@@ -36,12 +42,24 @@ export function PortalShell({
 
   return (
     <div className="min-h-screen bg-[#2D2D2D] flex flex-col">
-      {/* Top bar — always #1F3148 */}
-      <div className="flex items-center justify-between px-5 h-12 bg-[#1F3148] flex-shrink-0">
+      {/* Top bar */}
+      <div
+        className="flex items-center justify-between px-5 h-12 flex-shrink-0"
+        style={{ backgroundColor: brandColor }}
+      >
         <div className="flex items-center gap-2">
-          <span className="text-[12px] font-medium text-white">
-            {firmName}
-          </span>
+          {logoUrl && !logoError ? (
+            <img
+              src={logoUrl}
+              alt={firmName}
+              className="h-6 max-w-[120px] object-contain"
+              onError={() => setLogoError(true)}
+            />
+          ) : (
+            <span className="text-[12px] font-medium text-white">
+              {firmName}
+            </span>
+          )}
           <span className="text-[10px] text-[#7DA3C4]">
             Client Portal
           </span>

@@ -18,6 +18,9 @@ interface PortalMe {
   client_id: string
   client_name: string
   firm_name: string
+  portal_display_name: string
+  portal_logo_url: string | null
+  portal_brand_color: string
 }
 
 export default function PortalPage() {
@@ -59,10 +62,15 @@ export default function PortalPage() {
   }
 
   const firstName = me.client_name.split(' ')[0]
+  const logoImgSrc = me.portal_logo_url
+    ? `${process.env.NEXT_PUBLIC_API_URL ?? ''}${me.portal_logo_url}`
+    : undefined
 
   return (
     <PortalShell
-      firmName={me.firm_name}
+      firmName={me.portal_display_name || me.firm_name}
+      logoUrl={logoImgSrc}
+      brandColor={me.portal_brand_color || '#1F3148'}
       clientName={me.client_name}
       activeTab={activeTab}
       onTabChange={setActiveTab}

@@ -19,6 +19,7 @@ from app.dependencies.auth import get_current_user
 from app.dependencies.tenant import get_current_firm
 from app.dependencies.roles import require_firm_owner, require_staff_or_above
 from app.services.audit_service import write_audit_log
+from app.services import s3 as s3_service
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -115,6 +116,23 @@ def update_my_firm_settings(
 
     if "fee_schedule" in payload:
         previous_schedule = current_settings.get("fee_schedule", {})
+
+    # If portal_logo_s3_key is being replaced, delete the old logo from S3
+    old_logo_key = current_settings.get("portal_logo_s3_key")
+    new_logo_key = payload.get("portal_logo_s3_key")
+    if new_logo_key is not None and old_logo_key and old_logo_key != new_logo_key:
+        try:
+            s3_service.delete_object(old_logo_key)
+        except Exception:
+            pass  # Never fail a settings save because of S3 cleanup
+
+    if new_logo_key == "":
+        # Explicit empty string means remove logo — also delete from S3
+        if old_logo_key:
+            try:
+                s3_service.delete_object(old_logo_key)
+            except Exception:
+                pass
 
     updated = crud_firm.update_firm(
         db,
