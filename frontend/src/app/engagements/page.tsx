@@ -803,8 +803,8 @@ function BulkSendLetterModal({ open, onClose, selectedIds, engagements, clientMa
   const labelCls = 'text-[12px] font-medium text-[#374151] dark:text-[#D1D5DB] mb-1'
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 px-4 pb-24">
-      <div className="bg-white dark:bg-[#1E2A3B] rounded-[10px] shadow-xl w-full max-w-lg flex flex-col max-h-[90vh]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 pb-20">
+      <div className="bg-white dark:bg-[#1E2A3B] rounded-[10px] shadow-xl w-full max-w-lg flex flex-col max-h-[75vh]">
         {/* Header */}
         <div className="px-6 pt-5 pb-4 border-b border-surface-border dark:border-dark-border flex-shrink-0">
           <h2 className="text-[15px] font-semibold text-brand dark:text-[#EDEEF0]">
