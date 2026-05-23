@@ -274,7 +274,7 @@ export default function PortalBrandingTab() {
           type="file"
           accept="image/png,image/jpeg,image/jpg,image/svg+xml,image/webp"
           onChange={handleFileSelect}
-          className="hidden"
+          style={{ display: 'none' }}
         />
         <p className={hintClass}>
           Displayed in the portal top bar instead of your firm name when set.
