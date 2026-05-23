@@ -19,6 +19,7 @@ class DocumentOut(BaseModel):
     size_bytes: int
     category: Optional[str] = "other"
     visibility: str = "internal"
+    is_superseded: bool = False
     created_at: datetime
     updated_at: datetime
     envelope_status: Optional[str] = None
@@ -28,6 +29,10 @@ class DocumentOut(BaseModel):
     uploaded_by_name: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class DocumentSupersededUpdate(BaseModel):
+    is_superseded: bool
 
 
 class DocumentDownloadResponse(BaseModel):

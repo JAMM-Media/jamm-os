@@ -19,6 +19,7 @@ export interface MockDocument {
   uploadedAt: string
   fileType: string
   fileSizeKb: number
+  is_superseded?: boolean
 }
 
 export const mockDocuments: MockDocument[] = [

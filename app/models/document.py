@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import String, Integer, DateTime, ForeignKey
+from sqlalchemy import Boolean, String, Integer, DateTime, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base_class import Base
@@ -68,6 +68,10 @@ class Document(Base):
         String(50),
         nullable=True,
         default="other",
+    )
+
+    is_superseded: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
     )
 
     # Visibility controls whether this document appears in the client portal.

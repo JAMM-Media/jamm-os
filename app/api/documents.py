@@ -21,7 +21,7 @@ from app.models.firm import Firm
 from app.models.user import User
 from app.models.client import Client
 from app.models.engagement import Engagement
-from app.schemas.document import DocumentOut, DocumentDownloadResponse, AuditLogOut
+from app.schemas.document import DocumentOut, DocumentDownloadResponse, AuditLogOut, DocumentSupersededUpdate
 from app.schemas.pagination import PaginatedResponse
 from app.crud import document as crud_document
 from app.dependencies.auth import get_current_user
@@ -228,3 +228,23 @@ def get_audit_log(
     return crud_document.list_audit_logs(
         db, firm_id=current_firm.id, document_id=document_id
     ).all()
+
+
+# -----------------------------------------------------------------------
+# PATCH /documents/{document_id}/superseded — Mark/unmark as superseded
+# -----------------------------------------------------------------------
+@router.patch("/{document_id}/superseded", response_model=DocumentOut)
+def patch_document_superseded(
+    document_id: uuid.UUID,
+    body: DocumentSupersededUpdate,
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    _: object = Depends(require_staff_or_above),
+):
+    doc = crud_document.get_document(db, document_id=document_id, firm_id=current_firm.id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    doc.is_superseded = body.is_superseded
+    db.commit()
+    db.refresh(doc)
+    return DocumentOut.model_validate(doc)

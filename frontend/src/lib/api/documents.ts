@@ -13,6 +13,7 @@ export interface Document {
   uploadedAt: string
   fileType: string
   fileSizeKb: number
+  is_superseded: boolean
 }
 
 function mapDocument(raw: Record<string, unknown>): Document {
@@ -34,6 +35,7 @@ function mapDocument(raw: Record<string, unknown>): Document {
     fileSizeKb: raw.size_bytes
       ? Math.round(Number(raw.size_bytes) / 1024 * 10) / 10
       : Number(raw.file_size_kb ?? raw.fileSizeKb ?? 0),
+    is_superseded: Boolean(raw.is_superseded ?? false),
   }
 }
 
@@ -68,5 +70,9 @@ export const documentsApi = {
       headers: { 'Content-Type': 'multipart/form-data' },
     })
     return mapDocument(data)
+  },
+
+  patchSuperseded: async (id: string, is_superseded: boolean): Promise<void> => {
+    await api.patch(`/documents/${id}/superseded`, { is_superseded })
   },
 }
