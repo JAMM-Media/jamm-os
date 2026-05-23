@@ -333,6 +333,7 @@ export default function EngagementsPage() {
           onClose={() => setBulkLetterOpen(false)}
           selectedIds={selectedIds}
           engagements={filtered}
+          clientMap={clientMap}
           onSuccess={() => {
             setBulkLetterOpen(false)
             setSelectedIds(new Set())
@@ -341,7 +342,7 @@ export default function EngagementsPage() {
 
         {/* Floating bulk action bar */}
         {selCount > 0 && (
-          <div className={`fixed ${bulkLetterOpen ? 'bottom-24' : 'bottom-6'} left-1/2 -translate-x-1/2 z-50`}>
+          <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50">
             <div className="bg-[#1F3148] dark:bg-[#1A2535] rounded-lg shadow-lg px-5 py-3 flex items-center gap-3">
               <span className="text-[13px] text-white font-medium whitespace-nowrap">
                 {selCount} selected
@@ -688,6 +689,7 @@ interface BulkSendLetterModalProps {
   onClose: () => void
   selectedIds: Set<string>
   engagements: Engagement[]
+  clientMap: Record<string, string>
   onSuccess: () => void
 }
 
@@ -697,7 +699,7 @@ interface LetterTemplate {
   engagement_type: string | null
 }
 
-function BulkSendLetterModal({ open, onClose, selectedIds, engagements, onSuccess }: BulkSendLetterModalProps) {
+function BulkSendLetterModal({ open, onClose, selectedIds, engagements, clientMap, onSuccess }: BulkSendLetterModalProps) {
   const [templates, setTemplates] = useState<LetterTemplate[]>([])
   const [templateId, setTemplateId] = useState('')
   const [feeAmounts, setFeeAmounts] = useState<Record<string, string>>({})
@@ -801,7 +803,7 @@ function BulkSendLetterModal({ open, onClose, selectedIds, engagements, onSucces
   const labelCls = 'text-[12px] font-medium text-[#374151] dark:text-[#D1D5DB] mb-1'
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 px-4 pb-24">
       <div className="bg-white dark:bg-[#1E2A3B] rounded-[10px] shadow-xl w-full max-w-lg flex flex-col max-h-[90vh]">
         {/* Header */}
         <div className="px-6 pt-5 pb-4 border-b border-surface-border dark:border-dark-border flex-shrink-0">
@@ -856,9 +858,14 @@ function BulkSendLetterModal({ open, onClose, selectedIds, engagements, onSucces
                 <p className="text-[11px] text-[#6B7280] mt-1">Leave blank to use the fee from the template.</p>
               </div>
               <div className="overflow-y-auto max-h-[120px]">
-                <ul className="text-[12px] text-brand dark:text-[#D1D5DB] space-y-0.5">
+                <ul className="text-[12px] space-y-1">
                   {group.engagements.map((e) => (
-                    <li key={e.id} className="truncate">• {e.name}</li>
+                    <li key={e.id} className="flex items-baseline gap-1.5 min-w-0">
+                      <span className="truncate font-medium text-brand dark:text-[#EDEEF0]">• {e.name}</span>
+                      <span className="text-[#6B7280] whitespace-nowrap flex-shrink-0">
+                        — {clientMap[e.clientId] ?? 'Unknown client'}
+                      </span>
+                    </li>
                   ))}
                 </ul>
               </div>
