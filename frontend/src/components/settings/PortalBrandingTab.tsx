@@ -15,7 +15,6 @@ interface BrandingState {
 const VALID_HEX = /^#[0-9A-Fa-f]{6}$/
 const ACCEPTED_TYPES = ['image/png', 'image/jpeg', 'image/jpg', 'image/svg+xml', 'image/webp']
 const MAX_BYTES = 2 * 1024 * 1024
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? ''
 
 export default function PortalBrandingTab() {
   const [loading, setLoading] = useState(true)
@@ -47,7 +46,7 @@ export default function PortalBrandingTab() {
         portal_brand_color: (settings.portal_brand_color as string) || '#1F3148',
       })
       if (settings.portal_logo_s3_key) {
-        setLogoPreviewUrl(`${API_BASE}/api/v1/firms/logo/${data.id}`)
+        setLogoPreviewUrl(`/api/backend/firms/logo/${data.id}`)
       }
     }).finally(() => setLoading(false))
   }, [])
@@ -77,7 +76,7 @@ export default function PortalBrandingTab() {
       if (!putRes.ok) throw new Error('S3 upload failed')
       await api.patch('/users/firm/settings', { portal_logo_s3_key: s3_key })
       setBranding((b) => ({ ...b, portal_logo_s3_key: s3_key }))
-      setLogoPreviewUrl(`${API_BASE}/api/v1/firms/logo/${firmId}?t=${Date.now()}`)
+      setLogoPreviewUrl(`/api/backend/firms/logo/${firmId}?t=${Date.now()}`)
       toast.success('Logo uploaded')
     } catch {
       toast.error('Logo upload failed. Please try again.')

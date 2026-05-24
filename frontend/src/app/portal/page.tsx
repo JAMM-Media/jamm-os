@@ -63,7 +63,7 @@ export default function PortalPage() {
 
   const firstName = me.client_name.split(' ')[0]
   const logoImgSrc = me.portal_logo_url
-    ? `${process.env.NEXT_PUBLIC_API_URL ?? ''}${me.portal_logo_url}`
+    ? `/api/backend${me.portal_logo_url}`
     : undefined
 
   return (
