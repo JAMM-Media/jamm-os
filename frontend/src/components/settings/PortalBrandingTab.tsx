@@ -58,12 +58,12 @@ export default function PortalBrandingTab() {
 
     if (!ACCEPTED_TYPES.includes(file.type)) {
       toast.error('Logo must be PNG, JPG, SVG, or WEBP')
-      e.target.value = ''
+      (e.target as HTMLInputElement).value = ''
       return
     }
     if (file.size > MAX_BYTES) {
       toast.error('Logo must be 2MB or smaller')
-      e.target.value = ''
+      (e.target as HTMLInputElement).value = ''
       return
     }
 
@@ -91,7 +91,7 @@ export default function PortalBrandingTab() {
       toast.error('Logo upload failed. Please try again.')
     } finally {
       setUploading(false)
-      e.target.value = ''
+      (e.target as HTMLInputElement).value = ''
     }
   }
 
