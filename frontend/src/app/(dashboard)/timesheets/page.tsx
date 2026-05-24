@@ -42,7 +42,7 @@ export default function TimesheetsPage() {
   useEffect(() => {
     if (!isManagerOrAbove) return
     api
-      .get('/api/v1/users/?limit=100')
+      .get('/users/?limit=100')
       .then((r) => {
         const items: StaffUser[] = (r.data?.items ?? []).filter(
           (u: StaffUser & { role?: string }) =>
