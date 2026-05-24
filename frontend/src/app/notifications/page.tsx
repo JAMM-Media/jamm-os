@@ -91,8 +91,28 @@ export default function NotificationsPage() {
     if (path) router.push(path)
   }
 
-  // Unique notification types for the type filter dropdown
-  const uniqueTypes = Array.from(new Set(notifications.map((n) => n.notification_type)))
+  const NOTIFICATION_TYPE_LABELS: Record<string, string> = {
+    'mention': '@ Mention',
+    'task.assigned': 'Task Assigned',
+    'task.completed': 'Task Completed',
+    'task.overdue': 'Task Overdue',
+    'engagement.deadline_approaching': 'Deadline Approaching',
+    'engagement.completed': 'Engagement Completed',
+    'document_request.completed': 'Documents Received',
+    'document_request.reminder_sent': 'Document Reminder Sent',
+    'invoice.paid': 'Invoice Paid',
+    'invoice.overdue': 'Invoice Overdue',
+    'invoice.reminder_sent': 'Invoice Reminder Sent',
+    'irs_authorization.expiry_approaching': 'IRS Auth Expiring',
+    'portal.first_login': 'Client Portal Login',
+    'firm_chat.message': 'Firm Chat Message',
+    'anniversary': 'Client Anniversary',
+    'automation.fired': 'Automation Fired',
+  }
+
+  const uniqueTypes = Array.from(
+    new Set(notifications.map((n) => n.notification_type))
+  ).sort()
 
   return (
     <AppShell>
@@ -131,7 +151,11 @@ export default function NotificationsPage() {
             className="text-[12px] h-8 px-2 rounded-[6px] border border-surface-border dark:border-dark-border bg-surface-card dark:bg-dark-card text-brand dark:text-[#EDEEF0] cursor-pointer"
           >
             <option value="all">All Types</option>
-            {uniqueTypes.map((t) => <option key={t} value={t}>{t}</option>)}
+            {uniqueTypes.map((t) => (
+              <option key={t} value={t}>
+                {NOTIFICATION_TYPE_LABELS[t] ?? t}
+              </option>
+            ))}
           </select>
 
           <select

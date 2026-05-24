@@ -34,6 +34,7 @@ export default function TimesheetsPage() {
   const { user } = useAuth()
   const [activeTab, setActiveTab] = useState<TabKey>('daily')
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null)
+  const [billableFilter, setBillableFilter] = useState<string>('all')
   const [staffList, setStaffList] = useState<StaffUser[]>([])
 
   const isManagerOrAbove =
@@ -66,22 +67,33 @@ export default function TimesheetsPage() {
           >
             Timesheets
           </h1>
-          {isManagerOrAbove && (
+          <div className="flex items-center gap-2">
             <select
-              value={selectedUserId ?? ''}
-              onChange={(e) =>
-                setSelectedUserId(e.target.value === '' ? null : e.target.value)
-              }
+              value={billableFilter}
+              onChange={(e) => setBillableFilter(e.target.value)}
               className="h-8 px-2 rounded-[6px] border border-[0.5px] border-surface-border dark:border-dark-border bg-surface-page dark:bg-dark-page text-[13px] text-brand dark:text-[#EDEEF0] focus:outline-none"
             >
-              <option value="">All Staff</option>
-              {staffList.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.full_name || s.email}
-                </option>
-              ))}
+              <option value="all">All Entries</option>
+              <option value="billable">Billable Only</option>
+              <option value="non_billable">Non-Billable Only</option>
             </select>
-          )}
+            {isManagerOrAbove && (
+              <select
+                value={selectedUserId ?? ''}
+                onChange={(e) =>
+                  setSelectedUserId(e.target.value === '' ? null : e.target.value)
+                }
+                className="h-8 px-2 rounded-[6px] border border-[0.5px] border-surface-border dark:border-dark-border bg-surface-page dark:bg-dark-page text-[13px] text-brand dark:text-[#EDEEF0] focus:outline-none"
+              >
+                <option value="">All Staff</option>
+                {staffList.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.full_name || s.email}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
         </div>
 
         {/* Tab bar */}
@@ -111,6 +123,7 @@ export default function TimesheetsPage() {
             selectedUserId={selectedUserId}
             currentUserId={user.id}
             userRole={user.role}
+            billableFilter={billableFilter}
           />
         )}
         {activeTab === 'weekly' && (
@@ -118,6 +131,7 @@ export default function TimesheetsPage() {
             selectedUserId={selectedUserId}
             currentUserId={user.id}
             userRole={user.role}
+            billableFilter={billableFilter}
           />
         )}
         {activeTab === 'biweekly' && (
@@ -125,6 +139,7 @@ export default function TimesheetsPage() {
             selectedUserId={selectedUserId}
             currentUserId={user.id}
             userRole={user.role}
+            billableFilter={billableFilter}
           />
         )}
         {activeTab === 'monthly' && (
@@ -132,6 +147,7 @@ export default function TimesheetsPage() {
             selectedUserId={selectedUserId}
             currentUserId={user.id}
             userRole={user.role}
+            billableFilter={billableFilter}
           />
         )}
         {activeTab === 'quarterly' && (
@@ -139,6 +155,7 @@ export default function TimesheetsPage() {
             selectedUserId={selectedUserId}
             currentUserId={user.id}
             userRole={user.role}
+            billableFilter={billableFilter}
           />
         )}
         {activeTab === 'yearly' && (
@@ -146,6 +163,7 @@ export default function TimesheetsPage() {
             selectedUserId={selectedUserId}
             currentUserId={user.id}
             userRole={user.role}
+            billableFilter={billableFilter}
           />
         )}
       </div>

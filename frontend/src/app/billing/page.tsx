@@ -26,6 +26,9 @@ export default function BillingPage() {
   const [voidConfirmOpen, setVoidConfirmOpen] = useState(false)
   const [newInvoiceOpen, setNewInvoiceOpen] = useState(false)
   const [localInvoices, setLocalInvoices] = useState<Invoice[]>([])
+  const [clientFilter, setClientFilter] = useState<string>('all')
+  const [statusFilter, setStatusFilter] = useState<string>('all')
+  const [dueDateSort, setDueDateSort] = useState<string>('asc')
 
   const { data, isLoading, error } = useFetch(() => invoicesApi.list(0, 50), [])
   const { data: clientsData, isLoading: clientsLoading } = useFetch(() => clientsApi.list(0, 100), [])
@@ -36,14 +39,20 @@ export default function BillingPage() {
     (clientsData?.items ?? []).map((c) => [c.id, c.name])
   )
 
-  const filtered = invoices.filter((inv) => {
-    const q = search.toLowerCase()
-    const clientName = (clientMap[inv.clientId] ?? '').toLowerCase()
-    return (
-      inv.invoiceNumber.toLowerCase().includes(q) ||
-      clientName.includes(q)
-    )
-  })
+  const filtered = invoices
+    .filter((inv) => {
+      const q = search.toLowerCase()
+      const clientName = (clientMap[inv.clientId] ?? '').toLowerCase()
+      if (q && !inv.invoiceNumber.toLowerCase().includes(q) && !clientName.includes(q)) return false
+      if (clientFilter !== 'all' && inv.clientId !== clientFilter) return false
+      if (statusFilter !== 'all' && inv.status !== statusFilter) return false
+      return true
+    })
+    .sort((a, b) => {
+      const aDate = a.dueDate ? new Date(a.dueDate).getTime() : Infinity
+      const bDate = b.dueDate ? new Date(b.dueDate).getTime() : Infinity
+      return dueDateSort === 'asc' ? aDate - bDate : bDate - aDate
+    })
 
   function handleSelect(id: string, checked: boolean) {
     setSelectedIds((prev) => {
@@ -148,6 +157,59 @@ export default function BillingPage() {
           </button>
         </div>
 
+        <div className="flex items-center gap-2 flex-wrap">
+          <select
+            value={clientFilter}
+            onChange={(e) => setClientFilter(e.target.value)}
+            className="text-[12px] h-8 px-2 rounded-[6px] border border-surface-border dark:border-dark-border bg-surface-card dark:bg-dark-card text-brand dark:text-[#EDEEF0] cursor-pointer"
+          >
+            <option value="all">All Clients</option>
+            {(clientsData?.items ?? [])
+              .slice()
+              .sort((a, b) => a.name.localeCompare(b.name))
+              .map((c) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+          </select>
+
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="text-[12px] h-8 px-2 rounded-[6px] border border-surface-border dark:border-dark-border bg-surface-card dark:bg-dark-card text-brand dark:text-[#EDEEF0] cursor-pointer"
+          >
+            <option value="all">All Statuses</option>
+            <option value="draft">Draft</option>
+            <option value="sent">Sent</option>
+            <option value="paid">Paid</option>
+            <option value="overdue">Overdue</option>
+            <option value="void">Void</option>
+          </select>
+
+          <select
+            value={dueDateSort}
+            onChange={(e) => setDueDateSort(e.target.value)}
+            className="text-[12px] h-8 px-2 rounded-[6px] border border-surface-border dark:border-dark-border bg-surface-card dark:bg-dark-card text-brand dark:text-[#EDEEF0] cursor-pointer"
+          >
+            <option value="asc">Due Date ↑ Earliest</option>
+            <option value="desc">Due Date ↓ Latest</option>
+          </select>
+
+          {(clientFilter !== 'all' || statusFilter !== 'all') && (
+            <button
+              onClick={() => { setClientFilter('all'); setStatusFilter('all'); setDueDateSort('asc') }}
+              className="text-[11px] text-[#6B7280] hover:text-brand underline"
+            >
+              Clear filters
+            </button>
+          )}
+
+          {(clientFilter !== 'all' || statusFilter !== 'all') && (
+            <span className="text-[11px] text-[#6B7280]">
+              Showing {filtered.length} of {invoices.length} invoices
+            </span>
+          )}
+        </div>
+
         {/* Content */}
         {isLoading ? (
           <div className="rounded-modal border border-[0.5px] border-surface-border dark:border-dark-border overflow-hidden">
@@ -162,7 +224,7 @@ export default function BillingPage() {
               </div>
             ))}
           </div>
-        ) : filtered.length === 0 && search === '' ? (
+        ) : filtered.length === 0 && search === '' && clientFilter === 'all' && statusFilter === 'all' ? (
           <BillingEmptyState onNew={() => {}} />
         ) : filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center flex-1 py-24 gap-2">

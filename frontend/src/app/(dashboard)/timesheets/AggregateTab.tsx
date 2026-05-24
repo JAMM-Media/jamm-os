@@ -14,6 +14,7 @@ export interface AggregateTabProps {
   selectedUserId: string | null
   currentUserId: string
   userRole: string
+  billableFilter?: string
 }
 
 interface SummaryRow {
@@ -141,6 +142,7 @@ export default function AggregateTab({
   selectedUserId,
   currentUserId,
   userRole,
+  billableFilter = 'all',
 }: AggregateTabProps) {
   const isManagerOrAbove = userRole === 'firm_owner' || userRole === 'manager'
   const [offset, setOffset] = useState(0)
@@ -236,7 +238,12 @@ export default function AggregateTab({
     }
   }
 
-  const userGroups = groupByUser(summary)
+  const summaryRows = summary.filter((row) => {
+    if (billableFilter === 'billable') return row.billable_hours > 0
+    if (billableFilter === 'non_billable') return row.billable_hours === 0
+    return true
+  })
+  const userGroups = groupByUser(summaryRows)
 
   const WEEKLY_OT_HOURS = (period === 'weekly' || period === 'biweekly') ? 40 : Infinity
 
@@ -373,7 +380,11 @@ export default function AggregateTab({
               </tr>
             </thead>
             <tbody>
-              {entries.map((entry, i) => {
+              {entries.filter((e) => {
+                if (billableFilter === 'billable') return e.is_billable === true
+                if (billableFilter === 'non_billable') return e.is_billable === false
+                return true
+              }).map((entry, i) => {
                 const isOwn = entry.user_id === currentUserId
                 return (
                   <tr

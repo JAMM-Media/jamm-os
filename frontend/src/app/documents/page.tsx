@@ -7,7 +7,7 @@ import { ViewToggle } from '@/components/ui/ViewToggle'
 import { DocumentTable } from '@/components/documents/DocumentTable'
 import { DocumentCard } from '@/components/documents/DocumentCard'
 import { DocumentEmptyState } from '@/components/documents/DocumentEmptyState'
-import { documentsApi } from '@/lib/api'
+import { documentsApi, clientsApi } from '@/lib/api'
 import { useFetch } from '@/lib/hooks/useFetch'
 import { Search } from 'lucide-react'
 
@@ -16,11 +16,18 @@ type ViewMode = 'table' | 'card'
 export default function DocumentsPage() {
   const [view, setView] = useState<ViewMode>('table')
   const [search, setSearch] = useState('')
+  const [clientFilter, setClientFilter] = useState<string>('all')
+  const [engagementFilter, setEngagementFilter] = useState<string>('all')
+  const [statusFilter, setStatusFilter] = useState<string>('all')
   const [uploading, setUploading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const { data, isLoading, error } = useFetch(() => documentsApi.list(), [])
+  const { data: clientsData } = useFetch(() => clientsApi.list(0, 100), [])
   const documents = data?.items ?? []
+  const uniqueEngagements = Array.from(
+    new Set(documents.map((d) => d.engagementTitle).filter(Boolean))
+  ).sort()
 
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
@@ -37,11 +44,18 @@ export default function DocumentsPage() {
     }
   }
 
-  const filtered = documents.filter((d) =>
-    d.name.toLowerCase().includes(search.toLowerCase()) ||
-    d.clientName.toLowerCase().includes(search.toLowerCase()) ||
-    d.engagementTitle.toLowerCase().includes(search.toLowerCase())
-  )
+  const filtered = documents.filter((d) => {
+    if (
+      search &&
+      !d.name.toLowerCase().includes(search.toLowerCase()) &&
+      !d.clientName.toLowerCase().includes(search.toLowerCase()) &&
+      !d.engagementTitle.toLowerCase().includes(search.toLowerCase())
+    ) return false
+    if (clientFilter !== 'all' && d.clientId !== clientFilter) return false
+    if (engagementFilter !== 'all' && d.engagementTitle !== engagementFilter) return false
+    if (statusFilter !== 'all' && d.status !== statusFilter) return false
+    return true
+  })
 
   if (error) {
     return (
@@ -90,6 +104,61 @@ export default function DocumentsPage() {
           </button>
         </div>
 
+        <div className="flex items-center gap-2 flex-wrap">
+          <select
+            value={clientFilter}
+            onChange={(e) => { setClientFilter(e.target.value); setEngagementFilter('all') }}
+            className="text-[12px] h-8 px-2 rounded-[6px] border border-surface-border dark:border-dark-border bg-surface-card dark:bg-dark-card text-brand dark:text-[#EDEEF0] cursor-pointer"
+          >
+            <option value="all">All Clients</option>
+            {(clientsData?.items ?? [])
+              .slice()
+              .sort((a, b) => a.name.localeCompare(b.name))
+              .map((c) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+          </select>
+
+          <select
+            value={engagementFilter}
+            onChange={(e) => setEngagementFilter(e.target.value)}
+            className="text-[12px] h-8 px-2 rounded-[6px] border border-surface-border dark:border-dark-border bg-surface-card dark:bg-dark-card text-brand dark:text-[#EDEEF0] cursor-pointer"
+          >
+            <option value="all">All Engagements</option>
+            {uniqueEngagements.map((title) => (
+              <option key={title} value={title}>{title}</option>
+            ))}
+          </select>
+
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="text-[12px] h-8 px-2 rounded-[6px] border border-surface-border dark:border-dark-border bg-surface-card dark:bg-dark-card text-brand dark:text-[#EDEEF0] cursor-pointer"
+          >
+            <option value="all">All Statuses</option>
+            <option value="uploaded">Uploaded</option>
+            <option value="pending">Pending</option>
+            <option value="pending_signature">Pending Signature</option>
+            <option value="signed">Signed</option>
+            <option value="rejected">Rejected</option>
+          </select>
+
+          {(clientFilter !== 'all' || engagementFilter !== 'all' || statusFilter !== 'all') && (
+            <button
+              onClick={() => { setClientFilter('all'); setEngagementFilter('all'); setStatusFilter('all') }}
+              className="text-[11px] text-[#6B7280] hover:text-brand underline"
+            >
+              Clear filters
+            </button>
+          )}
+
+          {(clientFilter !== 'all' || engagementFilter !== 'all' || statusFilter !== 'all') && (
+            <span className="text-[11px] text-[#6B7280]">
+              Showing {filtered.length} of {documents.length} documents
+            </span>
+          )}
+        </div>
+
         {/* Content */}
         {isLoading ? (
           <div className="rounded-modal border border-[0.5px] border-surface-border dark:border-dark-border overflow-hidden">
@@ -104,7 +173,7 @@ export default function DocumentsPage() {
               </div>
             ))}
           </div>
-        ) : filtered.length === 0 && search === '' ? (
+        ) : filtered.length === 0 && search === '' && clientFilter === 'all' && engagementFilter === 'all' && statusFilter === 'all' ? (
           <DocumentEmptyState onUpload={() => fileInputRef.current?.click()} />
         ) : filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center flex-1 py-24 gap-2">
