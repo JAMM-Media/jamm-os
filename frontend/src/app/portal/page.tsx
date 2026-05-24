@@ -26,6 +26,7 @@ interface PortalMe {
   portal_tab_bar_color: string
   portal_accent_color: string
   portal_avatar_color: string
+  portal_subtitle_color: string
 }
 
 export default function PortalPage() {
@@ -80,16 +81,17 @@ export default function PortalPage() {
       tabBarColor={me.portal_tab_bar_color}
       accentColor={me.portal_accent_color}
       avatarColor={me.portal_avatar_color}
+      subtitleColor={me.portal_subtitle_color}
       portalMode={me.portal_mode}
       clientName={me.client_name}
       activeTab={activeTab}
       onTabChange={setActiveTab}
     >
-      {activeTab === 'todo' && <PortalTodo clientFirstName={firstName} />}
-      {activeTab === 'documents' && <PortalDocuments firmName={me.firm_name} />}
+      {activeTab === 'todo' && <PortalTodo clientFirstName={firstName} accentColor={me.portal_accent_color} />}
+      {activeTab === 'documents' && <PortalDocuments firmName={me.portal_display_name || me.firm_name} accentColor={me.portal_accent_color} />}
       {activeTab === 'invoices' && (
         <Elements stripe={stripePromise}>
-          <PortalInvoices />
+          <PortalInvoices accentColor={me.portal_accent_color} />
         </Elements>
       )}
       {activeTab === 'messages' && (

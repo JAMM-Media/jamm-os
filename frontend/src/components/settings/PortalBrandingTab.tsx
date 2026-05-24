@@ -12,6 +12,7 @@ interface ColorSet {
   tab_bar: string
   accent: string
   avatar: string
+  subtitle: string
 }
 
 interface BrandingState {
@@ -28,6 +29,7 @@ const DARK_DEFAULTS: ColorSet = {
   tab_bar: '#252525',
   accent: '#4A7FA5',
   avatar: '#3A6A94',
+  subtitle: '#7DA3C4',
 }
 
 const LIGHT_DEFAULTS: ColorSet = {
@@ -36,6 +38,7 @@ const LIGHT_DEFAULTS: ColorSet = {
   tab_bar: '#EDEEF0',
   accent: '#1F3148',
   avatar: '#1F3148',
+  subtitle: '#7DA3C4',
 }
 
 const VALID_HEX = /^#[0-9A-Fa-f]{6}$/
@@ -48,6 +51,7 @@ const COLOR_LABELS = [
   { key: 'tab_bar', label: 'Tab bar' },
   { key: 'accent', label: 'Accent (tabs & buttons)' },
   { key: 'avatar', label: 'Client avatar' },
+  { key: 'subtitle', label: 'Subtitle text ("Client Portal")' },
 ] as const
 
 export default function PortalBrandingTab() {
@@ -238,27 +242,32 @@ export default function PortalBrandingTab() {
         {/* Color pickers */}
         <div className="flex flex-col gap-2">
           {COLOR_LABELS.map(({ key, label }) => {
-            const value = colors[key]
-            return (
-              <div key={key} className="flex items-center gap-3">
-                <input
-                  type="color"
-                  value={VALID_HEX.test(value) ? value : '#1F3148'}
-                  onChange={(e) => setColor(mode, key, e.target.value)}
-                  className="w-8 h-8 rounded cursor-pointer border border-surface-border dark:border-dark-border p-0.5 flex-shrink-0"
-                />
-                <input
-                  type="text"
-                  value={value}
-                  onChange={(e) => setColor(mode, key, e.target.value)}
-                  maxLength={7}
-                  placeholder="#000000"
-                  className="w-28 rounded-[6px] border border-surface-border dark:border-dark-border bg-surface-page dark:bg-dark-page text-[12px] text-brand dark:text-[#EDEEF0] px-2 py-1 focus:outline-none focus:ring-1 focus:ring-brand"
-                />
-                <span className="text-[12px] text-[#6B7280]">{label}</span>
-              </div>
-            )
-          })}
+          const value = colors[key]
+          return (
+            <div key={key} className="flex items-center gap-3">
+              <input
+                type="color"
+                value={VALID_HEX.test(value) ? value : '#1F3148'}
+                onChange={(e) => setColor(mode, key, e.target.value)}
+                className="w-8 h-8 rounded cursor-pointer border border-surface-border dark:border-dark-border p-0.5 flex-shrink-0"
+              />
+              <input
+                type="text"
+                defaultValue={value}
+                key={`${mode}-${key}-${value}`}
+                onBlur={(e) => {
+                  const v = e.target.value.trim()
+                  if (VALID_HEX.test(v)) setColor(mode, key, v)
+                  else e.target.value = value
+                }}
+                maxLength={7}
+                placeholder="#000000"
+                className="w-28 rounded-[6px] border border-surface-border dark:border-dark-border bg-surface-page dark:bg-dark-page text-[12px] text-brand dark:text-[#EDEEF0] px-2 py-1 focus:outline-none focus:ring-1 focus:ring-brand"
+              />
+              <span className="text-[12px] text-[#6B7280]">{label}</span>
+            </div>
+          )
+        })}
         </div>
 
         {/* Mini preview */}
@@ -270,7 +279,7 @@ export default function PortalBrandingTab() {
               ) : (
                 <span className="text-[11px] font-medium text-white">{branding.portal_display_name || firmName}</span>
               )}
-              <span className="text-[9px]" style={{ color: '#7DA3C4' }}>Client Portal</span>
+              <span className="text-[9px]" style={{ color: VALID_HEX.test(colors.subtitle) ? colors.subtitle : '#7DA3C4' }}>Client Portal</span>
             </div>
             <div className="w-5 h-5 rounded-full flex items-center justify-center" style={{ backgroundColor: previewAvatar }}>
               <span className="text-[9px] font-medium text-white">JD</span>

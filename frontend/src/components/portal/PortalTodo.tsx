@@ -47,7 +47,7 @@ function EngagementBadge({ status }: { status: string }) {
   )
 }
 
-function ActionCard({ item }: { item: ActionItem }) {
+function ActionCard({ item, accentColor }: { item: ActionItem; accentColor: string }) {
   return (
     <div
       className="flex items-center justify-between gap-4 bg-[#383838] rounded-[8px] px-5 py-4"
@@ -66,7 +66,10 @@ function ActionCard({ item }: { item: ActionItem }) {
       {item.completed ? (
         <CheckCircle2 className="h-5 w-5 text-[#10B981] flex-shrink-0" />
       ) : (
-        <button className="flex-shrink-0 h-10 px-4 rounded-[6px] bg-[#3A6A94] text-[#EDEEF0] text-[13px] font-medium hover:opacity-90 transition-opacity whitespace-nowrap">
+        <button
+          className="flex-shrink-0 h-10 px-4 rounded-[6px] text-white text-[13px] font-medium hover:opacity-90 transition-opacity whitespace-nowrap"
+          style={{ backgroundColor: accentColor }}
+        >
           {item.type === 'document-request'
             ? 'Upload'
             : item.type === 'signature'
@@ -80,9 +83,10 @@ function ActionCard({ item }: { item: ActionItem }) {
 
 interface PortalTodoProps {
   clientFirstName: string
+  accentColor?: string
 }
 
-export function PortalTodo({ clientFirstName }: PortalTodoProps) {
+export function PortalTodo({ clientFirstName, accentColor = '#3A6A94' }: PortalTodoProps) {
   const [items, setItems] = useState<ActionItem[]>([])
   const [engagements, setEngagements] = useState<PortalDashboard['active_engagements']>([])
   const [loading, setLoading] = useState(true)
@@ -153,7 +157,7 @@ export function PortalTodo({ clientFirstName }: PortalTodoProps) {
           </p>
           <div className="flex flex-col gap-3">
             {active.map((item) => (
-              <ActionCard key={item.id} item={item} />
+              <ActionCard key={item.id} item={item} accentColor={accentColor} />
             ))}
           </div>
         </div>
@@ -185,7 +189,7 @@ export function PortalTodo({ clientFirstName }: PortalTodoProps) {
           </p>
           <div className="flex flex-col gap-3">
             {completed.map((item) => (
-              <ActionCard key={item.id} item={item} />
+              <ActionCard key={item.id} item={item} accentColor={accentColor} />
             ))}
           </div>
         </div>

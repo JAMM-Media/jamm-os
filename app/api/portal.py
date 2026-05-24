@@ -547,6 +547,7 @@ def portal_me(
         "tab_bar": "#252525",
         "accent": "#4A7FA5",
         "avatar": "#3A6A94",
+        "subtitle": "#7DA3C4",
     }
     light_defaults = {
         "top_bar": "#1F3148",
@@ -554,6 +555,7 @@ def portal_me(
         "tab_bar": "#EDEEF0",
         "accent": "#1F3148",
         "avatar": "#1F3148",
+        "subtitle": "#7DA3C4",
     }
 
     if portal_mode == "light":
@@ -575,6 +577,7 @@ def portal_me(
         "portal_tab_bar_color": colors["tab_bar"],
         "portal_accent_color": colors["accent"],
         "portal_avatar_color": colors["avatar"],
+        "portal_subtitle_color": colors["subtitle"],
     }
 
 

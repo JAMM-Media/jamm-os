@@ -12,6 +12,7 @@ interface PortalShellProps {
   tabBarColor?: string
   accentColor?: string
   avatarColor?: string
+  subtitleColor?: string
   portalMode?: 'light' | 'dark'
   clientName: string
   activeTab: string
@@ -27,6 +28,7 @@ export function PortalShell({
   tabBarColor = '#252525',
   accentColor = '#4A7FA5',
   avatarColor = '#3A6A94',
+  subtitleColor = '#7DA3C4',
   portalMode = 'dark',
   clientName,
   activeTab,
@@ -66,7 +68,7 @@ export function PortalShell({
           ) : (
             <span className="text-[12px] font-medium text-white">{firmName}</span>
           )}
-          <span className="text-[10px]" style={{ color: '#7DA3C4' }}>Client Portal</span>
+          <span className="text-[10px]" style={{ color: subtitleColor }}>Client Portal</span>
         </div>
         <div
           className="w-8 h-8 rounded-full flex items-center justify-center cursor-pointer"

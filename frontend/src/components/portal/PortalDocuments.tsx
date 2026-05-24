@@ -13,9 +13,10 @@ function formatFileSize(kb: number): string {
 
 interface PortalDocumentsProps {
   firmName: string
+  accentColor?: string
 }
 
-export function PortalDocuments({ firmName }: PortalDocumentsProps) {
+export function PortalDocuments({ firmName, accentColor = '#3A6A94' }: PortalDocumentsProps) {
   const [documents, setDocuments] = useState<PortalDocumentItem[]>([])
   const [loading, setLoading] = useState(true)
   const [fetchError, setFetchError] = useState(false)
@@ -64,7 +65,8 @@ export function PortalDocuments({ firmName }: PortalDocumentsProps) {
           <p className="text-[13px] text-[#9CA3AF]">Failed to load documents.</p>
           <button
             onClick={fetchDocuments}
-            className="h-8 px-4 rounded-[6px] bg-[#3A6A94] text-[#EDEEF0] text-[12px] font-medium hover:opacity-90 transition-opacity"
+            className="h-8 px-4 rounded-[6px] text-white text-[12px] font-medium hover:opacity-90 transition-opacity"
+            style={{ backgroundColor: accentColor }}
           >
             Retry
           </button>
@@ -81,7 +83,8 @@ export function PortalDocuments({ firmName }: PortalDocumentsProps) {
         </p>
         <button
           onClick={() => fileInputRef.current?.click()}
-          className="flex items-center gap-1.5 h-8 px-3 rounded-[6px] bg-[#3A6A94] text-[#EDEEF0] text-[12px] font-medium hover:opacity-90 transition-opacity"
+          className="flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-white text-[12px] font-medium hover:opacity-90 transition-opacity"
+          style={{ backgroundColor: accentColor }}
         >
           <Upload className="h-3.5 w-3.5" />
           Upload

@@ -62,9 +62,10 @@ interface PaymentFormProps {
   clientSecret: string
   onSuccess: () => void
   onCancel: () => void
+  accentColor?: string
 }
 
-function PaymentForm({ clientSecret, onSuccess, onCancel }: PaymentFormProps) {
+function PaymentForm({ clientSecret, onSuccess, onCancel, accentColor = '#3A6A94' }: PaymentFormProps) {
   const stripe = useStripe()
   const elements = useElements()
   const { resolvedTheme } = useTheme()
@@ -121,7 +122,7 @@ function PaymentForm({ clientSecret, onSuccess, onCancel }: PaymentFormProps) {
 
   const wrapperBg = isDark ? '#2A2A2A' : '#F0F1F3'
   const wrapperBorder = isDark ? '#484848' : '#C8CDD6'
-  const confirmBg = isDark ? '#3A6A94' : '#1F3148'
+  const confirmBg = accentColor
   const cancelText = isDark ? '#EDEEF0' : '#1F3148'
 
   return (
@@ -220,7 +221,7 @@ function PaymentForm({ clientSecret, onSuccess, onCancel }: PaymentFormProps) {
   )
 }
 
-export function PortalInvoices() {
+export function PortalInvoices({ accentColor = '#3A6A94' }: { accentColor?: string }) {
   const [invoices, setInvoices] = useState<PortalInvoiceItem[]>([])
   const [loading, setLoading] = useState(true)
   const [fetchError, setFetchError] = useState(false)
@@ -299,7 +300,8 @@ export function PortalInvoices() {
           <p className="text-[13px] text-[#9CA3AF]">Failed to load invoices.</p>
           <button
             onClick={fetchInvoices}
-            className="h-8 px-4 rounded-[6px] bg-[#3A6A94] text-[#EDEEF0] text-[12px] font-medium hover:opacity-90 transition-opacity"
+            className="h-8 px-4 rounded-[6px] text-white text-[12px] font-medium hover:opacity-90 transition-opacity"
+            style={{ backgroundColor: accentColor }}
           >
             Retry
           </button>
@@ -370,7 +372,8 @@ export function PortalInvoices() {
                     <button
                       onClick={() => handlePayNow(inv.id)}
                       disabled={payLoading === inv.id}
-                      className="h-10 px-4 rounded-[6px] bg-[#3A6A94] text-[#EDEEF0] text-[13px] font-medium hover:opacity-90 transition-opacity flex items-center justify-center gap-1.5 disabled:opacity-60"
+                      className="h-10 px-4 rounded-[6px] text-white text-[13px] font-medium hover:opacity-90 transition-opacity flex items-center justify-center gap-1.5 disabled:opacity-60"
+                      style={{ backgroundColor: accentColor }}
                     >
                       {payLoading === inv.id ? (
                         <Loader2 className="w-3 h-3 animate-spin" />
@@ -385,6 +388,7 @@ export function PortalInvoices() {
                     clientSecret={clientSecrets[inv.id]}
                     onSuccess={() => handlePaymentSuccess(inv.id)}
                     onCancel={() => setActivePayId(null)}
+                    accentColor={accentColor}
                   />
                 )}
               </div>
