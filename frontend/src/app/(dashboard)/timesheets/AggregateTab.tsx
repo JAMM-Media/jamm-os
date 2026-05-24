@@ -15,6 +15,7 @@ export interface AggregateTabProps {
   currentUserId: string
   userRole: string
   billableFilter?: string
+  engagementFilter?: string
 }
 
 interface SummaryRow {
@@ -143,6 +144,7 @@ export default function AggregateTab({
   currentUserId,
   userRole,
   billableFilter = 'all',
+  engagementFilter = 'all',
 }: AggregateTabProps) {
   const isManagerOrAbove = userRole === 'firm_owner' || userRole === 'manager'
   const [offset, setOffset] = useState(0)
@@ -164,7 +166,7 @@ export default function AggregateTab({
     !isManagerOrAbove ? currentUserId : selectedUserId ?? undefined
 
   useEffect(() => {
-    api.get('/api/v1/engagements/?limit=100').then((r) => {
+    api.get('/engagements/?limit=100').then((r) => {
       const map: Record<string, string> = {}
       for (const e of r.data?.items ?? []) map[e.id] = e.name
       setEngagements(map)
@@ -383,6 +385,7 @@ export default function AggregateTab({
               {entries.filter((e) => {
                 if (billableFilter === 'billable') return e.is_billable === true
                 if (billableFilter === 'non_billable') return e.is_billable === false
+                if (engagementFilter !== 'all' && e.engagement_id !== engagementFilter) return false
                 return true
               }).map((entry, i) => {
                 const isOwn = entry.user_id === currentUserId

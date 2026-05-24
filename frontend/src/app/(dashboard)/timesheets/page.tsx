@@ -35,10 +35,19 @@ export default function TimesheetsPage() {
   const [activeTab, setActiveTab] = useState<TabKey>('daily')
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null)
   const [billableFilter, setBillableFilter] = useState<string>('all')
+  const [engagementFilter, setEngagementFilter] = useState<string>('all')
   const [staffList, setStaffList] = useState<StaffUser[]>([])
+  const [engagementList, setEngagementList] = useState<{ id: string; name: string }[]>([])
 
   const isManagerOrAbove =
     user?.role === 'firm_owner' || user?.role === 'manager'
+
+  useEffect(() => {
+    api.get('/engagements/?limit=100').then((r) => {
+      const items = r.data?.items ?? []
+      setEngagementList(items.map((e: { id: string; name: string }) => ({ id: e.id, name: e.name })))
+    }).catch(() => {})
+  }, [])
 
   useEffect(() => {
     if (!isManagerOrAbove) return
@@ -76,6 +85,19 @@ export default function TimesheetsPage() {
               <option value="all">All Entries</option>
               <option value="billable">Billable Only</option>
               <option value="non_billable">Non-Billable Only</option>
+            </select>
+            <select
+              value={engagementFilter}
+              onChange={(e) => setEngagementFilter(e.target.value)}
+              className="h-8 px-2 rounded-[6px] border border-[0.5px] border-surface-border dark:border-dark-border bg-surface-page dark:bg-dark-page text-[13px] text-brand dark:text-[#EDEEF0] focus:outline-none"
+            >
+              <option value="all">All Engagements</option>
+              {engagementList
+                .slice()
+                .sort((a, b) => a.name.localeCompare(b.name))
+                .map((e) => (
+                  <option key={e.id} value={e.id}>{e.name}</option>
+                ))}
             </select>
             {isManagerOrAbove && (
               <select
@@ -124,6 +146,7 @@ export default function TimesheetsPage() {
             currentUserId={user.id}
             userRole={user.role}
             billableFilter={billableFilter}
+            engagementFilter={engagementFilter}
           />
         )}
         {activeTab === 'weekly' && (
@@ -132,6 +155,7 @@ export default function TimesheetsPage() {
             currentUserId={user.id}
             userRole={user.role}
             billableFilter={billableFilter}
+            engagementFilter={engagementFilter}
           />
         )}
         {activeTab === 'biweekly' && (
@@ -140,6 +164,7 @@ export default function TimesheetsPage() {
             currentUserId={user.id}
             userRole={user.role}
             billableFilter={billableFilter}
+            engagementFilter={engagementFilter}
           />
         )}
         {activeTab === 'monthly' && (
@@ -148,6 +173,7 @@ export default function TimesheetsPage() {
             currentUserId={user.id}
             userRole={user.role}
             billableFilter={billableFilter}
+            engagementFilter={engagementFilter}
           />
         )}
         {activeTab === 'quarterly' && (
@@ -156,6 +182,7 @@ export default function TimesheetsPage() {
             currentUserId={user.id}
             userRole={user.role}
             billableFilter={billableFilter}
+            engagementFilter={engagementFilter}
           />
         )}
         {activeTab === 'yearly' && (
@@ -164,6 +191,7 @@ export default function TimesheetsPage() {
             currentUserId={user.id}
             userRole={user.role}
             billableFilter={billableFilter}
+            engagementFilter={engagementFilter}
           />
         )}
       </div>

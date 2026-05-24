@@ -12,6 +12,7 @@ export interface DailyTabProps {
   currentUserId: string
   userRole: string
   billableFilter?: string
+  engagementFilter?: string
 }
 
 const ACTIVITY_TYPES = [
@@ -116,7 +117,7 @@ const EMPTY_FORM: EntryForm = {
   hoursAutoFilled: false,
 }
 
-export default function DailyTab({ selectedUserId, currentUserId, userRole, billableFilter = 'all' }: DailyTabProps) {
+export default function DailyTab({ selectedUserId, currentUserId, userRole, billableFilter = 'all', engagementFilter = 'all' }: DailyTabProps) {
   const today = toDateString(new Date())
   const isManagerOrAbove = userRole === 'firm_owner' || userRole === 'manager'
   const effectiveUserId = selectedUserId ?? currentUserId
@@ -400,11 +401,13 @@ export default function DailyTab({ selectedUserId, currentUserId, userRole, bill
   const pending = entries.filter((e) => !e.is_submitted).filter((e) => {
     if (billableFilter === 'billable') return e.is_billable === true
     if (billableFilter === 'non_billable') return e.is_billable === false
+    if (engagementFilter !== 'all' && e.engagement_id !== engagementFilter) return false
     return true
   })
   const submitted = entries.filter((e) => e.is_submitted).filter((e) => {
     if (billableFilter === 'billable') return e.is_billable === true
     if (billableFilter === 'non_billable') return e.is_billable === false
+    if (engagementFilter !== 'all' && e.engagement_id !== engagementFilter) return false
     return true
   })
 
