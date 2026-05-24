@@ -40,11 +40,7 @@ export default function LoginPage() {
     const result = await login(email, password, showTotp ? totpCode : undefined)
     setIsLoading(false)
     if (result.success) {
-      if (result.role === 'staff') {
-        router.push('/tasks')
-      } else {
-        router.push('/dashboard')
-      }
+      router.push('/dashboard')
     } else {
       if (result.message?.toLowerCase().includes('magic link')) {
         setError('Your firm requires magic link login. Check your email for a login link.')
