@@ -63,9 +63,10 @@ interface PaymentFormProps {
   onSuccess: () => void
   onCancel: () => void
   accentColor?: string
+  cardColor?: string
 }
 
-function PaymentForm({ clientSecret, onSuccess, onCancel, accentColor = '#3A6A94' }: PaymentFormProps) {
+function PaymentForm({ clientSecret, onSuccess, onCancel, accentColor = '#3A6A94', cardColor = '#383838' }: PaymentFormProps) {
   const stripe = useStripe()
   const elements = useElements()
   const { resolvedTheme } = useTheme()
@@ -120,7 +121,7 @@ function PaymentForm({ clientSecret, onSuccess, onCancel, accentColor = '#3A6A94
     }
   }
 
-  const wrapperBg = isDark ? '#2A2A2A' : '#F0F1F3'
+  const wrapperBg = cardColor
   const wrapperBorder = isDark ? '#484848' : '#C8CDD6'
   const confirmBg = accentColor
   const cancelText = isDark ? '#EDEEF0' : '#1F3148'
@@ -221,7 +222,7 @@ function PaymentForm({ clientSecret, onSuccess, onCancel, accentColor = '#3A6A94
   )
 }
 
-export function PortalInvoices({ accentColor = '#3A6A94' }: { accentColor?: string }) {
+export function PortalInvoices({ accentColor = '#3A6A94', cardColor = '#383838' }: { accentColor?: string; cardColor?: string }) {
   const [invoices, setInvoices] = useState<PortalInvoiceItem[]>([])
   const [loading, setLoading] = useState(true)
   const [fetchError, setFetchError] = useState(false)
@@ -287,7 +288,7 @@ export function PortalInvoices({ accentColor = '#3A6A94' }: { accentColor?: stri
     return (
       <div className="p-5 flex flex-col gap-3 max-w-2xl mx-auto">
         {[1, 2, 3].map((i) => (
-          <div key={i} className="h-14 rounded-[8px] bg-[#383838] animate-pulse" />
+          <div key={i} className="h-14 rounded-[8px] animate-pulse" style={{ backgroundColor: cardColor }} />
         ))}
       </div>
     )
@@ -296,7 +297,7 @@ export function PortalInvoices({ accentColor = '#3A6A94' }: { accentColor?: stri
   if (fetchError) {
     return (
       <div className="p-5 max-w-2xl mx-auto">
-        <div className="bg-[#383838] rounded-[8px] px-4 py-6 flex flex-col items-center gap-3">
+        <div className="rounded-[8px] px-4 py-6 flex flex-col items-center gap-3" style={{ backgroundColor: cardColor }}>
           <p className="text-[13px] text-[#9CA3AF]">Failed to load invoices.</p>
           <button
             onClick={fetchInvoices}
@@ -327,7 +328,7 @@ export function PortalInvoices({ accentColor = '#3A6A94' }: { accentColor?: stri
     <div className="p-6 flex flex-col gap-5 max-w-2xl mx-auto">
       {/* Outstanding balance summary */}
       {unpaid.length > 0 && (
-        <div className="bg-[#383838] rounded-[8px] px-5 py-4">
+        <div className="rounded-[8px] px-5 py-4" style={{ backgroundColor: cardColor }}>
           <p className="text-[12px] text-[#9CA3AF] uppercase tracking-[0.05em]">
             Outstanding balance
           </p>
@@ -353,7 +354,7 @@ export function PortalInvoices({ accentColor = '#3A6A94' }: { accentColor?: stri
           <div className="flex flex-col gap-3">
             {unpaid.map((inv) => (
               <div key={inv.id}>
-                <div className="flex items-center justify-between bg-[#383838] rounded-[8px] px-5 py-4">
+                <div className="flex items-center justify-between rounded-[8px] px-5 py-4" style={{ backgroundColor: cardColor }}>
                   <div className="flex flex-col gap-0.5">
                     <p className="text-[14px] font-medium text-[#EDEEF0]">
                       {inv.invoice_number}
@@ -389,6 +390,7 @@ export function PortalInvoices({ accentColor = '#3A6A94' }: { accentColor?: stri
                     onSuccess={() => handlePaymentSuccess(inv.id)}
                     onCancel={() => setActivePayId(null)}
                     accentColor={accentColor}
+                    cardColor={cardColor}
                   />
                 )}
               </div>
@@ -407,7 +409,8 @@ export function PortalInvoices({ accentColor = '#3A6A94' }: { accentColor?: stri
             {paid.map((inv) => (
               <div
                 key={inv.id}
-                className="flex items-center justify-between bg-[#383838] rounded-[8px] px-5 py-4 opacity-70"
+                className="flex items-center justify-between rounded-[8px] px-5 py-4 opacity-70"
+                style={{ backgroundColor: cardColor }}
               >
                 <div className="flex flex-col gap-0.5">
                   <p className="text-[12px] font-medium text-[#EDEEF0]">

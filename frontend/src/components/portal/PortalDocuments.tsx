@@ -14,9 +14,10 @@ function formatFileSize(kb: number): string {
 interface PortalDocumentsProps {
   firmName: string
   accentColor?: string
+  cardColor?: string
 }
 
-export function PortalDocuments({ firmName, accentColor = '#3A6A94' }: PortalDocumentsProps) {
+export function PortalDocuments({ firmName, accentColor = '#3A6A94', cardColor = '#383838' }: PortalDocumentsProps) {
   const [documents, setDocuments] = useState<PortalDocumentItem[]>([])
   const [loading, setLoading] = useState(true)
   const [fetchError, setFetchError] = useState(false)
@@ -52,7 +53,7 @@ export function PortalDocuments({ firmName, accentColor = '#3A6A94' }: PortalDoc
     return (
       <div className="p-5 flex flex-col gap-3 max-w-2xl mx-auto">
         {[1, 2, 3].map((i) => (
-          <div key={i} className="h-14 rounded-[8px] bg-[#383838] animate-pulse" />
+          <div key={i} className="h-14 rounded-[8px] animate-pulse" style={{ backgroundColor: cardColor }} />
         ))}
       </div>
     )
@@ -61,7 +62,7 @@ export function PortalDocuments({ firmName, accentColor = '#3A6A94' }: PortalDoc
   if (fetchError) {
     return (
       <div className="p-5 max-w-2xl mx-auto">
-        <div className="bg-[#383838] rounded-[8px] px-4 py-6 flex flex-col items-center gap-3">
+        <div className="rounded-[8px] px-4 py-6 flex flex-col items-center gap-3" style={{ backgroundColor: cardColor }}>
           <p className="text-[13px] text-[#9CA3AF]">Failed to load documents.</p>
           <button
             onClick={fetchDocuments}
@@ -115,7 +116,8 @@ export function PortalDocuments({ firmName, accentColor = '#3A6A94' }: PortalDoc
           {documents.map((doc) => (
             <div
               key={doc.id}
-              className="flex items-center gap-3 bg-[#383838] rounded-[8px] px-5 py-4"
+              className="flex items-center gap-3 rounded-[8px] px-5 py-4"
+              style={{ backgroundColor: cardColor }}
             >
               <FileText className="h-5 w-5 text-[#9CA3AF] flex-shrink-0" />
               <div className="flex-1 min-w-0">

@@ -6,6 +6,7 @@ import { Check } from 'lucide-react'
 
 interface PortalOrganizerProps {
   clientId: string
+  cardColor?: string
 }
 
 interface OrganizerListItem {
@@ -56,7 +57,7 @@ const inputClass =
   'w-full rounded-[6px] border border-[#484848] bg-[#2D2D2D] focus:border-[#4A7FA5] text-[#EDEEF0] text-[13px] px-3 py-2 outline-none transition-colors'
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-export default function PortalOrganizer({ clientId: _clientId }: PortalOrganizerProps) {
+export default function PortalOrganizer({ clientId: _clientId, cardColor = '#383838' }: PortalOrganizerProps) {
   const [organizers, setOrganizers] = useState<OrganizerListItem[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -187,10 +188,9 @@ export default function PortalOrganizer({ clientId: _clientId }: PortalOrganizer
               disabled={readOnly}
               onClick={() => handleAnswerChange(q.id, opt)}
               className={`px-4 py-1.5 rounded-full text-[13px] font-medium transition-colors disabled:cursor-default ${
-                value === opt
-                  ? 'bg-[#3A6A94] text-[#EDEEF0]'
-                  : 'bg-[#383838] text-[#9CA3AF] hover:text-[#EDEEF0]'
+                value === opt ? 'text-white' : 'text-[#9CA3AF] hover:text-[#EDEEF0]'
               }`}
+              style={{ backgroundColor: value === opt ? '#3A6A94' : cardColor }}
             >
               {opt}
             </button>
@@ -283,7 +283,7 @@ export default function PortalOrganizer({ clientId: _clientId }: PortalOrganizer
     return (
       <div className="p-5 max-w-2xl mx-auto w-full flex flex-col gap-3">
         {[1, 2].map((i) => (
-          <div key={i} className="h-16 rounded-[8px] bg-[#383838] animate-pulse" />
+          <div key={i} className="h-16 rounded-[8px] animate-pulse" style={{ backgroundColor: cardColor }} />
         ))}
       </div>
     )
@@ -316,7 +316,7 @@ export default function PortalOrganizer({ clientId: _clientId }: PortalOrganizer
           )}
 
           {sections.map((section, si) => (
-            <div key={si} className="bg-[#383838] rounded-[8px] p-5 flex flex-col gap-4">
+            <div key={si} className="rounded-[8px] p-5 flex flex-col gap-4" style={{ backgroundColor: cardColor }}>
               <div>
                 <p className="text-[16px] font-medium text-[#EDEEF0]">{section.title}</p>
                 {section.description && (
@@ -358,7 +358,7 @@ export default function PortalOrganizer({ clientId: _clientId }: PortalOrganizer
           Section {currentSection + 1} of {sections.length}
         </p>
 
-        <div className="bg-[#383838] rounded-[8px] p-5 flex flex-col gap-4">
+        <div className="rounded-[8px] p-5 flex flex-col gap-4" style={{ backgroundColor: cardColor }}>
           <div>
             <p className="text-[16px] font-medium text-[#EDEEF0]">{section.title}</p>
             {section.description && (
@@ -404,7 +404,7 @@ export default function PortalOrganizer({ clientId: _clientId }: PortalOrganizer
     <div className="p-5 max-w-2xl mx-auto w-full flex flex-col gap-3">
       {loading ? (
         [1, 2].map((i) => (
-          <div key={i} className="h-16 rounded-[8px] bg-[#383838] animate-pulse" />
+          <div key={i} className="h-16 rounded-[8px] animate-pulse" style={{ backgroundColor: cardColor }} />
         ))
       ) : organizers.length === 0 ? (
         <div className="text-[13px] text-[#9CA3AF] py-12 text-center">
@@ -418,7 +418,7 @@ export default function PortalOrganizer({ clientId: _clientId }: PortalOrganizer
           const isSent = org.status === 'sent'
 
           return (
-            <div key={org.id} className="bg-[#383838] rounded-[8px] p-4 flex flex-col gap-2">
+            <div key={org.id} className="rounded-[8px] p-4 flex flex-col gap-2" style={{ backgroundColor: cardColor }}>
               <div className="flex items-center justify-between">
                 <p className="text-[14px] font-medium text-[#EDEEF0]">{org.tax_year}</p>
                 {isSubmitted && (

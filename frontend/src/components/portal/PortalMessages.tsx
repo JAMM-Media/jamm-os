@@ -14,6 +14,8 @@ interface MessageWithOptimistic extends PortalMessage {
 interface PortalMessagesProps {
   clientId: string
   firmName: string
+  cardColor?: string
+  accentColor?: string
 }
 
 function formatTimestamp(iso: string): string {
@@ -25,7 +27,7 @@ function formatTimestamp(iso: string): string {
   )
 }
 
-export function PortalMessages({ clientId, firmName }: PortalMessagesProps) {
+export function PortalMessages({ clientId, firmName, cardColor = '#383838', accentColor = '#3A6A94' }: PortalMessagesProps) {
   const [messages, setMessages] = useState<MessageWithOptimistic[]>([])
   const [loading, setLoading] = useState(true)
   const [draft, setDraft] = useState('')
@@ -82,7 +84,7 @@ export function PortalMessages({ clientId, firmName }: PortalMessagesProps) {
     return (
       <div className="p-5 flex flex-col gap-3 max-w-2xl mx-auto">
         {[1, 2].map((i) => (
-          <div key={i} className="h-16 rounded-[6px] bg-[#383838] animate-pulse" />
+          <div key={i} className="h-16 rounded-[6px] animate-pulse" style={{ backgroundColor: cardColor }} />
         ))}
       </div>
     )
@@ -109,9 +111,8 @@ export function PortalMessages({ clientId, firmName }: PortalMessagesProps) {
                 </span>
               )}
               <div
-                className={`rounded-[8px] px-3 py-2 max-w-[75%] ${
-                  msg.sender_role === 'client' ? 'bg-[#3A6A94]' : 'bg-[#383838]'
-                } ${msg.optimistic ? 'opacity-60' : ''}`}
+                className={`rounded-[8px] px-3 py-2 max-w-[75%] ${msg.optimistic ? 'opacity-60' : ''}`}
+                style={{ backgroundColor: msg.sender_role === 'client' ? accentColor : cardColor }}
               >
                 <p className="text-[13px] text-[#EDEEF0] leading-relaxed">{msg.body}</p>
               </div>

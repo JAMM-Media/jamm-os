@@ -548,6 +548,7 @@ def portal_me(
         "accent": "#4A7FA5",
         "avatar": "#3A6A94",
         "subtitle": "#7DA3C4",
+        "card": "#383838",
     }
     light_defaults = {
         "top_bar": "#1F3148",
@@ -556,6 +557,7 @@ def portal_me(
         "accent": "#1F3148",
         "avatar": "#1F3148",
         "subtitle": "#7DA3C4",
+        "card": "#EDEEF0",
     }
 
     if portal_mode == "light":
@@ -578,6 +580,7 @@ def portal_me(
         "portal_accent_color": colors["accent"],
         "portal_avatar_color": colors["avatar"],
         "portal_subtitle_color": colors["subtitle"],
+        "portal_card_color": colors["card"],
     }
 
 

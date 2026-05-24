@@ -13,6 +13,7 @@ interface ColorSet {
   accent: string
   avatar: string
   subtitle: string
+  card: string
 }
 
 interface BrandingState {
@@ -30,6 +31,7 @@ const DARK_DEFAULTS: ColorSet = {
   accent: '#4A7FA5',
   avatar: '#3A6A94',
   subtitle: '#7DA3C4',
+  card: '#383838',
 }
 
 const LIGHT_DEFAULTS: ColorSet = {
@@ -39,6 +41,7 @@ const LIGHT_DEFAULTS: ColorSet = {
   accent: '#1F3148',
   avatar: '#1F3148',
   subtitle: '#7DA3C4',
+  card: '#EDEEF0',
 }
 
 const VALID_HEX = /^#[0-9A-Fa-f]{6}$/
@@ -52,6 +55,7 @@ const COLOR_LABELS = [
   { key: 'accent', label: 'Accent (tabs & buttons)' },
   { key: 'avatar', label: 'Client avatar' },
   { key: 'subtitle', label: 'Subtitle text ("Client Portal")' },
+  { key: 'card', label: 'Card / item background' },
 ] as const
 
 export default function PortalBrandingTab() {
@@ -300,8 +304,10 @@ export default function PortalBrandingTab() {
               </span>
             ))}
           </div>
-          <div className="h-8 flex items-center justify-center" style={{ backgroundColor: previewPage }}>
-            <span className="text-[10px]" style={{ color: mode === 'light' ? '#6B7280' : '#9CA3AF' }}>Page background</span>
+          <div className="px-3 py-2" style={{ backgroundColor: previewPage }}>
+            <div className="rounded-[4px] px-3 py-2" style={{ backgroundColor: VALID_HEX.test(colors.card) ? colors.card : (mode === 'dark' ? '#383838' : '#EDEEF0') }}>
+              <span className="text-[10px]" style={{ color: mode === 'light' ? '#1F3148' : '#EDEEF0' }}>Card item</span>
+            </div>
           </div>
         </div>
       </div>

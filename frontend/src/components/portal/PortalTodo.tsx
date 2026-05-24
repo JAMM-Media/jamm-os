@@ -47,11 +47,11 @@ function EngagementBadge({ status }: { status: string }) {
   )
 }
 
-function ActionCard({ item, accentColor }: { item: ActionItem; accentColor: string }) {
+function ActionCard({ item, accentColor, cardColor }: { item: ActionItem; accentColor: string; cardColor: string }) {
   return (
     <div
-      className="flex items-center justify-between gap-4 bg-[#383838] rounded-[8px] px-5 py-4"
-      style={{ opacity: item.completed ? 0.7 : 1 }}
+      className="flex items-center justify-between gap-4 rounded-[8px] px-5 py-4"
+      style={{ backgroundColor: cardColor, opacity: item.completed ? 0.7 : 1 }}
     >
       <div className="flex items-start gap-3 min-w-0">
         <div className="flex-shrink-0 mt-0.5">{getIcon(item.type)}</div>
@@ -84,9 +84,10 @@ function ActionCard({ item, accentColor }: { item: ActionItem; accentColor: stri
 interface PortalTodoProps {
   clientFirstName: string
   accentColor?: string
+  cardColor?: string
 }
 
-export function PortalTodo({ clientFirstName, accentColor = '#3A6A94' }: PortalTodoProps) {
+export function PortalTodo({ clientFirstName, accentColor = '#3A6A94', cardColor = '#383838' }: PortalTodoProps) {
   const [items, setItems] = useState<ActionItem[]>([])
   const [engagements, setEngagements] = useState<PortalDashboard['active_engagements']>([])
   const [loading, setLoading] = useState(true)
@@ -133,7 +134,7 @@ export function PortalTodo({ clientFirstName, accentColor = '#3A6A94' }: PortalT
     return (
       <div className="p-5 flex flex-col gap-3 max-w-2xl mx-auto">
         {[1, 2, 3].map((i) => (
-          <div key={i} className="h-16 rounded-[8px] bg-[#383838] animate-pulse" />
+          <div key={i} className="h-16 rounded-[8px] animate-pulse" style={{ backgroundColor: cardColor }} />
         ))}
       </div>
     )
@@ -157,7 +158,7 @@ export function PortalTodo({ clientFirstName, accentColor = '#3A6A94' }: PortalT
           </p>
           <div className="flex flex-col gap-3">
             {active.map((item) => (
-              <ActionCard key={item.id} item={item} accentColor={accentColor} />
+              <ActionCard key={item.id} item={item} accentColor={accentColor} cardColor={cardColor} />
             ))}
           </div>
         </div>
@@ -172,7 +173,8 @@ export function PortalTodo({ clientFirstName, accentColor = '#3A6A94' }: PortalT
             {engagements.map((eng) => (
               <div
                 key={eng.id}
-                className="flex items-center justify-between bg-[#383838] rounded-[8px] px-4 py-3"
+                className="flex items-center justify-between rounded-[8px] px-4 py-3"
+                style={{ backgroundColor: cardColor }}
               >
                 <p className="text-[14px] font-medium text-[#EDEEF0]">{eng.name}</p>
                 <EngagementBadge status={eng.status} />
@@ -189,7 +191,7 @@ export function PortalTodo({ clientFirstName, accentColor = '#3A6A94' }: PortalT
           </p>
           <div className="flex flex-col gap-3">
             {completed.map((item) => (
-              <ActionCard key={item.id} item={item} accentColor={accentColor} />
+              <ActionCard key={item.id} item={item} accentColor={accentColor} cardColor={cardColor} />
             ))}
           </div>
         </div>
