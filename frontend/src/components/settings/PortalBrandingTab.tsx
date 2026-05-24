@@ -53,7 +53,7 @@ export default function PortalBrandingTab() {
   }, [])
 
   async function handleFileChange(e: React.FormEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
+    const file = (e.target as HTMLInputElement).files?.[0]
     if (!file) return
 
     if (!ACCEPTED_TYPES.includes(file.type)) {
