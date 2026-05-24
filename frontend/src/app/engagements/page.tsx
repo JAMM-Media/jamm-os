@@ -25,6 +25,8 @@ export default function EngagementsPage() {
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [categoryFilter, setCategoryFilter] = useState<string>('all')
   const [formFilter, setFormFilter] = useState<string>('all')
+  const [clientFilter, setClientFilter] = useState<string>('all')
+  const [dueDateSort, setDueDateSort] = useState<string>('asc')
   const [localEngagements, setLocalEngagements] = useState<Engagement[]>([])
   const [modalOpen, setModalOpen] = useState(false)
   const [bulkCreateOpen, setBulkCreateOpen] = useState(false)
@@ -58,13 +60,20 @@ export default function EngagementsPage() {
     return 'other'
   }
 
-  const filtered = allEngagements.filter((e) => {
-    if (search && !e.name.toLowerCase().includes(search.toLowerCase())) return false
-    if (statusFilter !== 'all' && e.status !== statusFilter) return false
-    if (categoryFilter !== 'all' && getEngagementCategory(e.engagementType) !== categoryFilter) return false
-    if (formFilter !== 'all' && e.engagementType !== formFilter) return false
-    return true
-  })
+  const filtered = allEngagements
+    .filter((e) => {
+      if (search && !e.name.toLowerCase().includes(search.toLowerCase())) return false
+      if (statusFilter !== 'all' && e.status !== statusFilter) return false
+      if (categoryFilter !== 'all' && getEngagementCategory(e.engagementType) !== categoryFilter) return false
+      if (formFilter !== 'all' && e.engagementType !== formFilter) return false
+      if (clientFilter !== 'all' && e.clientId !== clientFilter) return false
+      return true
+    })
+    .sort((a, b) => {
+      const aDate = a.filingDeadline ? new Date(a.filingDeadline).getTime() : Infinity
+      const bDate = b.filingDeadline ? new Date(b.filingDeadline).getTime() : Infinity
+      return dueDateSort === 'asc' ? aDate - bDate : bDate - aDate
+    })
 
   function handleAdd(engagement: Engagement) {
     setLocalEngagements((prev) => [engagement, ...prev])
@@ -247,16 +256,41 @@ export default function EngagementsPage() {
             </select>
           )}
 
-          {(statusFilter !== 'all' || categoryFilter !== 'all' || formFilter !== 'all') && (
+          {/* Client filter */}
+          <select
+            value={clientFilter}
+            onChange={(e) => setClientFilter(e.target.value)}
+            className="text-[12px] h-8 px-2 rounded-[6px] border border-surface-border dark:border-dark-border bg-surface-card dark:bg-dark-card text-brand dark:text-[#EDEEF0] cursor-pointer"
+          >
+            <option value="all">All Clients</option>
+            {(clientsData?.items ?? [])
+              .slice()
+              .sort((a, b) => a.name.localeCompare(b.name))
+              .map((c) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+          </select>
+
+          {/* Due date sort */}
+          <select
+            value={dueDateSort}
+            onChange={(e) => setDueDateSort(e.target.value)}
+            className="text-[12px] h-8 px-2 rounded-[6px] border border-surface-border dark:border-dark-border bg-surface-card dark:bg-dark-card text-brand dark:text-[#EDEEF0] cursor-pointer"
+          >
+            <option value="asc">Due Date ↑ Earliest</option>
+            <option value="desc">Due Date ↓ Latest</option>
+          </select>
+
+          {(statusFilter !== 'all' || categoryFilter !== 'all' || formFilter !== 'all' || clientFilter !== 'all') && (
             <button
-              onClick={() => { setStatusFilter('all'); setCategoryFilter('all'); setFormFilter('all') }}
+              onClick={() => { setStatusFilter('all'); setCategoryFilter('all'); setFormFilter('all'); setClientFilter('all'); setDueDateSort('asc') }}
               className="text-[11px] text-[#6B7280] hover:text-brand underline"
             >
               Clear filters
             </button>
           )}
 
-          {(statusFilter !== 'all' || categoryFilter !== 'all' || formFilter !== 'all') && (
+          {(statusFilter !== 'all' || categoryFilter !== 'all' || formFilter !== 'all' || clientFilter !== 'all') && (
             <span className="text-[11px] text-[#6B7280]">
               Showing {filtered.length} of {allEngagements.length} engagements
             </span>

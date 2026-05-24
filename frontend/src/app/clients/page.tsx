@@ -17,16 +17,25 @@ type ViewMode = 'table' | 'card'
 export default function ClientsPage() {
   const [view, setView] = useState<ViewMode>('table')
   const [search, setSearch] = useState('')
+  const [entityFilter, setEntityFilter] = useState<string>('all')
+  const [statusFilter, setStatusFilter] = useState<string>('all')
   const [localClients, setLocalClients] = useState<Client[]>([])
   const [modalOpen, setModalOpen] = useState(false)
 
   const { data, isLoading, error, refetch } = useFetch(() => clientsApi.list(), [])
   const clients = [...localClients, ...(data?.items ?? [])]
 
-  const filtered = clients.filter((c) =>
-    c.name.toLowerCase().includes(search.toLowerCase()) ||
-    (c.email ?? '').toLowerCase().includes(search.toLowerCase())
-  )
+  const filtered = clients.filter((c) => {
+    if (
+      search &&
+      !c.name.toLowerCase().includes(search.toLowerCase()) &&
+      !(c.email ?? '').toLowerCase().includes(search.toLowerCase())
+    ) return false
+    if (entityFilter !== 'all' && c.entityType !== entityFilter) return false
+    if (statusFilter === 'active' && !c.isActive) return false
+    if (statusFilter === 'inactive' && c.isActive) return false
+    return true
+  })
 
   function handleAddClient(client: Client) {
     setLocalClients((prev) => [client, ...prev])
@@ -70,6 +79,45 @@ export default function ClientsPage() {
           >
             + New Client
           </button>
+        </div>
+
+        <div className="flex items-center gap-2 flex-wrap">
+          <select
+            value={entityFilter}
+            onChange={(e) => setEntityFilter(e.target.value)}
+            className="text-[12px] h-8 px-2 rounded-[6px] border border-surface-border dark:border-dark-border bg-surface-card dark:bg-dark-card text-brand dark:text-[#EDEEF0] cursor-pointer"
+          >
+            <option value="all">All Entity Types</option>
+            <option value="individual">Individual</option>
+            <option value="business">Business</option>
+            <option value="trust">Trust</option>
+            <option value="estate">Estate</option>
+          </select>
+
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="text-[12px] h-8 px-2 rounded-[6px] border border-surface-border dark:border-dark-border bg-surface-card dark:bg-dark-card text-brand dark:text-[#EDEEF0] cursor-pointer"
+          >
+            <option value="all">All Clients</option>
+            <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
+          </select>
+
+          {(entityFilter !== 'all' || statusFilter !== 'all') && (
+            <button
+              onClick={() => { setEntityFilter('all'); setStatusFilter('all') }}
+              className="text-[11px] text-[#6B7280] hover:text-brand underline"
+            >
+              Clear filters
+            </button>
+          )}
+
+          {(entityFilter !== 'all' || statusFilter !== 'all') && (
+            <span className="text-[11px] text-[#6B7280]">
+              Showing {filtered.length} of {clients.length} clients
+            </span>
+          )}
         </div>
 
         {/* Content */}

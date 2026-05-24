@@ -27,6 +27,8 @@ export default function TasksPage() {
   const [view, setView] = useState<ViewMode>('table')
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('all')
+  const [clientFilter, setClientFilter] = useState<string>('all')
+  const [dueDateSort, setDueDateSort] = useState<string>('asc')
   const { user } = useAuth()
   const [myTasksOnly, setMyTasksOnly] = useState(false)
   useEffect(() => {
@@ -72,17 +74,14 @@ export default function TasksPage() {
     .filter((t) => {
       if (search && !t.title.toLowerCase().includes(search.toLowerCase())) return false
       if (statusFilter !== 'all' && t.status !== statusFilter) return false
+      if (clientFilter !== 'all' && t.clientId !== clientFilter) return false
       if (myTasksOnly && t.assignedTo !== user?.id) return false
       return true
     })
     .sort((a, b) => {
-      // When not filtering to my tasks, sort user's own tasks to the top
-      if (!myTasksOnly) {
-        const aMe = a.assignedTo === user?.id ? 0 : 1
-        const bMe = b.assignedTo === user?.id ? 0 : 1
-        return aMe - bMe
-      }
-      return 0
+      const aDate = a.dueDate ? new Date(a.dueDate).getTime() : Infinity
+      const bDate = b.dueDate ? new Date(b.dueDate).getTime() : Infinity
+      return dueDateSort === 'asc' ? aDate - bDate : bDate - aDate
     })
 
   function handleAdd(task: Task) {
@@ -213,6 +212,31 @@ export default function TasksPage() {
             <option value="done">Done</option>
           </select>
 
+          {/* Client filter */}
+          <select
+            value={clientFilter}
+            onChange={(e) => setClientFilter(e.target.value)}
+            className="text-[12px] h-8 px-2 rounded-[6px] border border-surface-border dark:border-dark-border bg-surface-card dark:bg-dark-card text-brand dark:text-[#EDEEF0] cursor-pointer"
+          >
+            <option value="all">All Clients</option>
+            {(clientsData?.items ?? [])
+              .slice()
+              .sort((a, b) => a.name.localeCompare(b.name))
+              .map((c) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+          </select>
+
+          {/* Due date sort */}
+          <select
+            value={dueDateSort}
+            onChange={(e) => setDueDateSort(e.target.value)}
+            className="text-[12px] h-8 px-2 rounded-[6px] border border-surface-border dark:border-dark-border bg-surface-card dark:bg-dark-card text-brand dark:text-[#EDEEF0] cursor-pointer"
+          >
+            <option value="asc">Due Date ↑ Earliest</option>
+            <option value="desc">Due Date ↓ Latest</option>
+          </select>
+
           <button
             onClick={() => setMyTasksOnly((prev) => !prev)}
             className={`text-[12px] h-8 px-3 rounded-[6px] border font-medium transition-colors ${
@@ -224,16 +248,16 @@ export default function TasksPage() {
             My Tasks
           </button>
 
-          {(statusFilter !== 'all' || myTasksOnly) && (
+          {(statusFilter !== 'all' || myTasksOnly || clientFilter !== 'all') && (
             <button
-              onClick={() => { setStatusFilter('all'); setMyTasksOnly(false) }}
+              onClick={() => { setStatusFilter('all'); setMyTasksOnly(false); setClientFilter('all'); setDueDateSort('asc') }}
               className="text-[11px] text-[#6B7280] hover:text-brand underline"
             >
               Clear filters
             </button>
           )}
 
-          {(statusFilter !== 'all' || myTasksOnly) && (
+          {(statusFilter !== 'all' || myTasksOnly || clientFilter !== 'all') && (
             <span className="text-[11px] text-[#6B7280]">
               Showing {filtered.length} of {allTasks.length} tasks
             </span>
