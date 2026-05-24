@@ -52,7 +52,7 @@ export default function PortalBrandingTab() {
     }).finally(() => setLoading(false))
   }, [])
 
-  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+  async function handleFileChange(e: React.FormEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
 
@@ -230,7 +230,7 @@ export default function PortalBrandingTab() {
               <input
                 type="file"
                 accept="image/png,image/jpeg,image/jpg,image/svg+xml,image/webp"
-                onChange={handleFileChange}
+                onInput={handleFileChange}
                 disabled={uploading}
                 className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
               />
@@ -263,7 +263,7 @@ export default function PortalBrandingTab() {
             <input
               type="file"
               accept="image/png,image/jpeg,image/jpg,image/svg+xml,image/webp"
-              onChange={handleFileChange}
+              onInput={handleFileChange}
               disabled={uploading}
               className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
             />
