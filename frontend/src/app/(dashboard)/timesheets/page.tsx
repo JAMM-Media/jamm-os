@@ -37,15 +37,27 @@ export default function TimesheetsPage() {
   const [billableFilter, setBillableFilter] = useState<string>('all')
   const [engagementFilter, setEngagementFilter] = useState<string>('all')
   const [staffList, setStaffList] = useState<StaffUser[]>([])
-  const [engagementList, setEngagementList] = useState<{ id: string; name: string }[]>([])
+  const [engagementList, setEngagementList] = useState<{ id: string; name: string; clientName: string }[]>([])
+  const [clientMap, setClientMap] = useState<Record<string, string>>({})
 
   const isManagerOrAbove =
     user?.role === 'firm_owner' || user?.role === 'manager'
 
   useEffect(() => {
-    api.get('/engagements/?limit=100').then((r) => {
-      const items = r.data?.items ?? []
-      setEngagementList(items.map((e: { id: string; name: string }) => ({ id: e.id, name: e.name })))
+    api.get('/clients/?limit=100').then((r) => {
+      const map: Record<string, string> = {}
+      for (const c of r.data?.items ?? []) map[c.id] = c.name
+      setClientMap(map)
+      return map
+    }).then((map) => {
+      return api.get('/engagements/?limit=100').then((r) => {
+        const items = r.data?.items ?? []
+        setEngagementList(items.map((e: { id: string; name: string; client_id?: string }) => ({
+          id: e.id,
+          name: e.name,
+          clientName: map[e.client_id ?? ''] ?? '',
+        })))
+      })
     }).catch(() => {})
   }, [])
 
@@ -96,7 +108,9 @@ export default function TimesheetsPage() {
                 .slice()
                 .sort((a, b) => a.name.localeCompare(b.name))
                 .map((e) => (
-                  <option key={e.id} value={e.id}>{e.name}</option>
+                  <option key={e.id} value={e.id}>
+                    {e.name}{e.clientName ? ` (${e.clientName})` : ''}
+                  </option>
                 ))}
             </select>
             {isManagerOrAbove && (

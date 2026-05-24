@@ -3,207 +3,188 @@ STANDING RULES — READ FIRST, ENFORCE ALWAYS
 ═══════════════════════════════════════════════════════════════
 - Never run alembic commands.
 - Never modify any model, migration, or backend file.
-- Frontend changes only. Two files total.
+- Frontend changes only. Four files total.
 
 ═══════════════════════════════════════════════════════════════
-TASK: Add engagement filter to Timesheets + fix API path bug
+TASK: Add client name to engagement filter dropdowns
 ═══════════════════════════════════════════════════════════════
 
+The goal is to change engagement dropdown options from:
+  "2024 Individual Tax Return — Form 1040"
+to:
+  "2024 Individual Tax Return — Form 1040 (Sarah Chen)"
+
+This applies to four pages. Each page already has engagements
+and clients data loaded — we just need to update the option
+label to include the client name.
+
 ─────────────────────────────────────────────────────────────
-FILE 1 — frontend/src/app/(dashboard)/timesheets/page.tsx
+FILE 1 — frontend/src/app/tasks/page.tsx
 ─────────────────────────────────────────────────────────────
 
-ADD one new state variable directly after:
-  const [billableFilter, setBillableFilter] = useState<string>('all')
+This page already has clientsData and engagementsData loaded.
+It already has a clientMap built from clientsData.
 
-Add:
-  const [engagementFilter, setEngagementFilter] = useState<string>('all')
+Find the engagement filter select options. It will look like:
 
-Pass the new prop down to all six tab components.
-Each tab currently receives billableFilter. Add engagementFilter
-to all six:
+  {(engagementsData?.items ?? [])
+    .slice()
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map((e) => (
+      <option key={e.id} value={e.id}>{e.name}</option>
+    ))}
 
-  BEFORE (apply to all 6 tabs):
-    billableFilter={billableFilter}
-  AFTER:
-    billableFilter={billableFilter}
-    engagementFilter={engagementFilter}
+Replace the option label:
+  BEFORE: <option key={e.id} value={e.id}>{e.name}</option>
+  AFTER:  <option key={e.id} value={e.id}>{e.name}{clientMap[e.clientId] ? ` (${clientMap[e.clientId]})` : ''}</option>
 
-ADD an engagement select to the header row div, after the
-billable filter select and before the staff select.
+─────────────────────────────────────────────────────────────
+FILE 2 — frontend/src/app/engagements/page.tsx
+─────────────────────────────────────────────────────────────
 
-The page does not have an engagements list yet. Add a fetch
-directly after the staffList useEffect block, inside the
-component before the return statement:
+This page already has clientsData and a clientMap built from it.
 
-  const [engagementList, setEngagementList] = useState<{ id: string; name: string }[]>([])
+Find the client filter select — this page filters engagements
+by client, not by engagement name, so no change needed there.
+
+Find the engagement filter select options for the client
+dropdown. Actually this page does not have an engagement
+dropdown — it IS the engagements list. Skip this file.
+
+─────────────────────────────────────────────────────────────
+FILE 2 — frontend/src/app/billing/page.tsx
+─────────────────────────────────────────────────────────────
+
+This page has clientsData, clientMap, engagementsData, and
+engagementMap already built.
+
+Find the engagement filter select options:
+
+  {uniqueEngagementIds.map((id) => (
+    <option key={id} value={id}>
+      {engagementMap[id] ?? id}
+    </option>
+  ))}
+
+Replace with:
+
+  {uniqueEngagementIds.map((id) => {
+    const eng = (engagementsData?.items ?? []).find((e) => e.id === id)
+    const clientName = eng ? (clientMap[eng.clientId] ?? '') : ''
+    const label = engagementMap[id] ?? id
+    return (
+      <option key={id} value={id}>
+        {label}{clientName ? ` (${clientName})` : ''}
+      </option>
+    )
+  })}
+
+─────────────────────────────────────────────────────────────
+FILE 3 — frontend/src/app/(dashboard)/timesheets/page.tsx
+─────────────────────────────────────────────────────────────
+
+This page has engagementList (id + name only) but no clients
+data. We need to add a clients fetch and build a client map.
+
+STEP 1 — Add clientsApi to the import.
+The page currently imports api from '@/lib/api'.
+Check if clientsApi is already imported — if not add it:
+  import { clientsApi } from '@/lib/api'
+
+STEP 2 — Add clientMap state and fetch.
+Directly after the engagementList state and useEffect, add:
+
+  const [clientMap, setClientMap] = useState<Record<string, string>>({})
 
   useEffect(() => {
-    api.get('/engagements/?limit=100').then((r) => {
-      const items = r.data?.items ?? []
-      setEngagementList(items.map((e: { id: string; name: string }) => ({ id: e.id, name: e.name })))
+    api.get('/clients/?limit=100').then((r) => {
+      const map: Record<string, string> = {}
+      for (const c of r.data?.items ?? []) map[c.id] = c.name
+      setClientMap(map)
     }).catch(() => {})
   }, [])
 
-NOTE: Use '/engagements/?limit=100' NOT '/api/v1/engagements/'
-— the axios baseURL already includes /api/backend so the
-/api/v1/ prefix is wrong and causes a 404.
+STEP 3 — Update the engagement dropdown option label.
 
-Add the engagement select to the header row div, in the same
-flex container as the billable and staff selects:
-
-  <select
-    value={engagementFilter}
-    onChange={(e) => setEngagementFilter(e.target.value)}
-    className="h-8 px-2 rounded-[6px] border border-[0.5px] border-surface-border dark:border-dark-border bg-surface-page dark:bg-dark-page text-[13px] text-brand dark:text-[#EDEEF0] focus:outline-none"
-  >
-    <option value="all">All Engagements</option>
-    {engagementList
-      .slice()
-      .sort((a, b) => a.name.localeCompare(b.name))
-      .map((e) => (
-        <option key={e.id} value={e.id}>{e.name}</option>
-      ))}
-  </select>
-
-─────────────────────────────────────────────────────────────
-FILE 2 — frontend/src/app/(dashboard)/timesheets/AggregateTab.tsx
-─────────────────────────────────────────────────────────────
-
-STEP 1 — Fix the wrong API path for the engagements fetch.
-
-Find:
-  api.get('/api/v1/engagements/?limit=100')
+Find the engagement select options:
+  {engagementList
+    .slice()
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map((e) => (
+      <option key={e.id} value={e.id}>{e.name}</option>
+    ))}
 
 Replace with:
-  api.get('/engagements/?limit=100')
+  {engagementList
+    .slice()
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map((e) => (
+      <option key={e.id} value={e.id}>
+        {e.name}{e.clientName ? ` (${e.clientName})` : ''}
+      </option>
+    ))}
 
-STEP 2 — Add engagementFilter to AggregateTabProps interface.
+STEP 4 — engagementList items need clientName.
+The engagementList state is typed as { id: string; name: string }[].
+Update the type and the fetch to include clientName:
 
-BEFORE:
-  export interface AggregateTabProps {
-    period: Period
-    selectedUserId: string | null
-    currentUserId: string
-    userRole: string
-    billableFilter?: string
-  }
+Update the useState type:
+  BEFORE: const [engagementList, setEngagementList] = useState<{ id: string; name: string }[]>([])
+  AFTER:  const [engagementList, setEngagementList] = useState<{ id: string; name: string; clientName: string }[]>([])
 
-AFTER:
-  export interface AggregateTabProps {
-    period: Period
-    selectedUserId: string | null
-    currentUserId: string
-    userRole: string
-    billableFilter?: string
-    engagementFilter?: string
-  }
+Update the useEffect mapping:
+  BEFORE:
+    setEngagementList(items.map((e: { id: string; name: string }) => ({ id: e.id, name: e.name })))
+  AFTER:
+    setEngagementList(items.map((e: { id: string; name: string; client_id?: string }) => ({
+      id: e.id,
+      name: e.name,
+      clientName: clientMap[e.client_id ?? ''] ?? '',
+    })))
 
-STEP 3 — Destructure engagementFilter from props.
+NOTE: The clientMap fetch and the engagementList fetch both run
+in separate useEffects. The engagementList useEffect does not
+depend on clientMap so clientName may be empty on first load.
+To fix this, merge the two fetches into one useEffect that
+fetches clients first then engagements:
 
-Find the existing destructure:
-  billableFilter = 'all',
-}: AggregateTabProps)
+Replace the separate engagements useEffect with:
 
-Add engagementFilter after it:
-  billableFilter = 'all',
-  engagementFilter = 'all',
-}: AggregateTabProps)
-
-STEP 4 — Apply engagementFilter to the summaryRows filter.
-
-Find the existing summaryRows filter:
-  const summaryRows = summary.filter((row) => {
-    if (billableFilter === 'billable') return row.billable_hours > 0
-    if (billableFilter === 'non_billable') return row.billable_hours === 0
-    return true
-  })
-
-The SummaryRow type does not have an engagement_id field —
-summary rows are grouped by user, not engagement. So the
-engagement filter applies to the entries detail table only,
-not the summary rows. Leave summaryRows filter unchanged.
-
-STEP 5 — Apply engagementFilter to the entries detail table.
-
-Find the existing entries filter before the detail table map:
-  {entries.filter((e) => {
-    if (billableFilter === 'billable') return e.is_billable === true
-    if (billableFilter === 'non_billable') return e.is_billable === false
-    return true
-  }).map((entry, i) => {
-
-Add the engagement check inside that filter:
-  {entries.filter((e) => {
-    if (billableFilter === 'billable') return e.is_billable === true
-    if (billableFilter === 'non_billable') return e.is_billable === false
-    if (engagementFilter !== 'all' && e.engagement_id !== engagementFilter) return false
-    return true
-  }).map((entry, i) => {
+  useEffect(() => {
+    api.get('/clients/?limit=100').then((r) => {
+      const map: Record<string, string> = {}
+      for (const c of r.data?.items ?? []) map[c.id] = c.name
+      setClientMap(map)
+      return map
+    }).then((map) => {
+      return api.get('/engagements/?limit=100').then((r) => {
+        const items = r.data?.items ?? []
+        setEngagementList(items.map((e: { id: string; name: string; client_id?: string }) => ({
+          id: e.id,
+          name: e.name,
+          clientName: map[e.client_id ?? ''] ?? '',
+        })))
+      })
+    }).catch(() => {})
+  }, [])
 
 ─────────────────────────────────────────────────────────────
-FILE 3 — frontend/src/app/(dashboard)/timesheets/DailyTab.tsx
+FILE 4 — frontend/src/app/documents/page.tsx
 ─────────────────────────────────────────────────────────────
 
-STEP 1 — Add engagementFilter to DailyTabProps interface.
+The documents engagement filter uses engagementTitle which is
+already a string like "2024 Individual Tax Return — Form 1040"
+pulled directly from the document object. It does not use IDs
+so there is no clientMap lookup possible.
 
-BEFORE:
-  export interface DailyTabProps {
-    selectedUserId: string | null
-    currentUserId: string
-    userRole: string
-    billableFilter?: string
-  }
+However the uniqueEngagements list is built from
+d.engagementTitle which is just the engagement name with no
+client info. To add client name here we would need to change
+the data model.
 
-AFTER:
-  export interface DailyTabProps {
-    selectedUserId: string | null
-    currentUserId: string
-    userRole: string
-    billableFilter?: string
-    engagementFilter?: string
-  }
-
-STEP 2 — Destructure engagementFilter from props.
-
-Find:
-  export default function DailyTab({ selectedUserId, currentUserId, userRole, billableFilter = 'all' }: DailyTabProps)
-
-Replace with:
-  export default function DailyTab({ selectedUserId, currentUserId, userRole, billableFilter = 'all', engagementFilter = 'all' }: DailyTabProps)
-
-STEP 3 — Apply engagementFilter to both pending and submitted
-filters.
-
-Find the existing pending filter:
-  const pending = entries.filter((e) => !e.is_submitted).filter((e) => {
-    if (billableFilter === 'billable') return e.is_billable === true
-    if (billableFilter === 'non_billable') return e.is_billable === false
-    return true
-  })
-
-Replace with:
-  const pending = entries.filter((e) => !e.is_submitted).filter((e) => {
-    if (billableFilter === 'billable') return e.is_billable === true
-    if (billableFilter === 'non_billable') return e.is_billable === false
-    if (engagementFilter !== 'all' && e.engagement_id !== engagementFilter) return false
-    return true
-  })
-
-Find the existing submitted filter:
-  const submitted = entries.filter((e) => e.is_submitted).filter((e) => {
-    if (billableFilter === 'billable') return e.is_billable === true
-    if (billableFilter === 'non_billable') return e.is_billable === false
-    return true
-  })
-
-Replace with:
-  const submitted = entries.filter((e) => e.is_submitted).filter((e) => {
-    if (billableFilter === 'billable') return e.is_billable === true
-    if (billableFilter === 'non_billable') return e.is_billable === false
-    if (engagementFilter !== 'all' && e.engagement_id !== engagementFilter) return false
-    return true
-  })
+Skip this file — the documents engagement filter shows
+engagement titles as-is which is acceptable since documents
+are already filtered by client first in practice.
 
 ─────────────────────────────────────────────────────────────
 AFTER ALL FILES

@@ -202,11 +202,16 @@ export default function BillingPage() {
             className="text-[12px] h-8 px-2 rounded-[6px] border border-surface-border dark:border-dark-border bg-surface-card dark:bg-dark-card text-brand dark:text-[#EDEEF0] cursor-pointer"
           >
             <option value="all">All Engagements</option>
-            {uniqueEngagementIds.map((id) => (
-              <option key={id} value={id}>
-                {engagementMap[id] ?? id}
-              </option>
-            ))}
+            {uniqueEngagementIds.map((id) => {
+              const eng = (engagementsData?.items ?? []).find((e) => e.id === id)
+              const clientName = eng ? (clientMap[eng.clientId] ?? '') : ''
+              const label = engagementMap[id] ?? id
+              return (
+                <option key={id} value={id}>
+                  {label}{clientName ? ` (${clientName})` : ''}
+                </option>
+              )
+            })}
           </select>
 
           <select

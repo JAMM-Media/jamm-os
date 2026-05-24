@@ -398,14 +398,18 @@ export default function LoginPage() {
   const [magicSent, setMagicSent] = useState(false)
   const [magicError, setMagicError] = useState('')
 
-  const { login, isAuthenticated } = useAuth()
+  const { login, isAuthenticated, user } = useAuth()
   const router = useRouter()
 
   useEffect(() => {
     if (isAuthenticated) {
-      router.push('/dashboard')
+      if (user?.role === 'staff') {
+        router.push('/tasks')
+      } else {
+        router.push('/dashboard')
+      }
     }
-  }, [isAuthenticated, router])
+  }, [isAuthenticated, user, router])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -2963,6 +2967,8 @@ export interface AggregateTabProps {
   selectedUserId: string | null
   currentUserId: string
   userRole: string
+  billableFilter?: string
+  engagementFilter?: string
 }
 
 interface SummaryRow {
@@ -3090,6 +3096,8 @@ export default function AggregateTab({
   selectedUserId,
   currentUserId,
   userRole,
+  billableFilter = 'all',
+  engagementFilter = 'all',
 }: AggregateTabProps) {
   const isManagerOrAbove = userRole === 'firm_owner' || userRole === 'manager'
   const [offset, setOffset] = useState(0)
@@ -3111,7 +3119,7 @@ export default function AggregateTab({
     !isManagerOrAbove ? currentUserId : selectedUserId ?? undefined
 
   useEffect(() => {
-    api.get('/api/v1/engagements/?limit=100').then((r) => {
+    api.get('/engagements/?limit=100').then((r) => {
       const map: Record<string, string> = {}
       for (const e of r.data?.items ?? []) map[e.id] = e.name
       setEngagements(map)
@@ -3185,7 +3193,12 @@ export default function AggregateTab({
     }
   }
 
-  const userGroups = groupByUser(summary)
+  const summaryRows = summary.filter((row) => {
+    if (billableFilter === 'billable') return row.billable_hours > 0
+    if (billableFilter === 'non_billable') return row.billable_hours === 0
+    return true
+  })
+  const userGroups = groupByUser(summaryRows)
 
   const WEEKLY_OT_HOURS = (period === 'weekly' || period === 'biweekly') ? 40 : Infinity
 
@@ -3322,7 +3335,12 @@ export default function AggregateTab({
               </tr>
             </thead>
             <tbody>
-              {entries.map((entry, i) => {
+              {entries.filter((e) => {
+                if (billableFilter === 'billable') return e.is_billable === true
+                if (billableFilter === 'non_billable') return e.is_billable === false
+                if (engagementFilter !== 'all' && e.engagement_id !== engagementFilter) return false
+                return true
+              }).map((entry, i) => {
                 const isOwn = entry.user_id === currentUserId
                 return (
                   <tr
@@ -3549,6 +3567,8 @@ export interface DailyTabProps {
   selectedUserId: string | null
   currentUserId: string
   userRole: string
+  billableFilter?: string
+  engagementFilter?: string
 }
 
 const ACTIVITY_TYPES = [
@@ -3653,7 +3673,7 @@ const EMPTY_FORM: EntryForm = {
   hoursAutoFilled: false,
 }
 
-export default function DailyTab({ selectedUserId, currentUserId, userRole }: DailyTabProps) {
+export default function DailyTab({ selectedUserId, currentUserId, userRole, billableFilter = 'all', engagementFilter = 'all' }: DailyTabProps) {
   const today = toDateString(new Date())
   const isManagerOrAbove = userRole === 'firm_owner' || userRole === 'manager'
   const effectiveUserId = selectedUserId ?? currentUserId
@@ -3934,8 +3954,18 @@ export default function DailyTab({ selectedUserId, currentUserId, userRole }: Da
     }
   }
 
-  const pending = entries.filter((e) => !e.is_submitted)
-  const submitted = entries.filter((e) => e.is_submitted)
+  const pending = entries.filter((e) => !e.is_submitted).filter((e) => {
+    if (billableFilter === 'billable') return e.is_billable === true
+    if (billableFilter === 'non_billable') return e.is_billable === false
+    if (engagementFilter !== 'all' && e.engagement_id !== engagementFilter) return false
+    return true
+  })
+  const submitted = entries.filter((e) => e.is_submitted).filter((e) => {
+    if (billableFilter === 'billable') return e.is_billable === true
+    if (billableFilter === 'non_billable') return e.is_billable === false
+    if (engagementFilter !== 'all' && e.engagement_id !== engagementFilter) return false
+    return true
+  })
 
   const totalHours = pending.reduce((s, e) => s + Number(e.hours), 0)
   const billableValue = pending
@@ -4641,15 +4671,25 @@ export default function TimesheetsPage() {
   const { user } = useAuth()
   const [activeTab, setActiveTab] = useState<TabKey>('daily')
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null)
+  const [billableFilter, setBillableFilter] = useState<string>('all')
+  const [engagementFilter, setEngagementFilter] = useState<string>('all')
   const [staffList, setStaffList] = useState<StaffUser[]>([])
+  const [engagementList, setEngagementList] = useState<{ id: string; name: string }[]>([])
 
   const isManagerOrAbove =
     user?.role === 'firm_owner' || user?.role === 'manager'
 
   useEffect(() => {
+    api.get('/engagements/?limit=100').then((r) => {
+      const items = r.data?.items ?? []
+      setEngagementList(items.map((e: { id: string; name: string }) => ({ id: e.id, name: e.name })))
+    }).catch(() => {})
+  }, [])
+
+  useEffect(() => {
     if (!isManagerOrAbove) return
     api
-      .get('/api/v1/users/?limit=100')
+      .get('/users/?limit=100')
       .then((r) => {
         const items: StaffUser[] = (r.data?.items ?? []).filter(
           (u: StaffUser & { role?: string }) =>
@@ -4673,22 +4713,46 @@ export default function TimesheetsPage() {
           >
             Timesheets
           </h1>
-          {isManagerOrAbove && (
+          <div className="flex items-center gap-2">
             <select
-              value={selectedUserId ?? ''}
-              onChange={(e) =>
-                setSelectedUserId(e.target.value === '' ? null : e.target.value)
-              }
+              value={billableFilter}
+              onChange={(e) => setBillableFilter(e.target.value)}
               className="h-8 px-2 rounded-[6px] border border-[0.5px] border-surface-border dark:border-dark-border bg-surface-page dark:bg-dark-page text-[13px] text-brand dark:text-[#EDEEF0] focus:outline-none"
             >
-              <option value="">All Staff</option>
-              {staffList.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.full_name || s.email}
-                </option>
-              ))}
+              <option value="all">All Entries</option>
+              <option value="billable">Billable Only</option>
+              <option value="non_billable">Non-Billable Only</option>
             </select>
-          )}
+            <select
+              value={engagementFilter}
+              onChange={(e) => setEngagementFilter(e.target.value)}
+              className="h-8 px-2 rounded-[6px] border border-[0.5px] border-surface-border dark:border-dark-border bg-surface-page dark:bg-dark-page text-[13px] text-brand dark:text-[#EDEEF0] focus:outline-none"
+            >
+              <option value="all">All Engagements</option>
+              {engagementList
+                .slice()
+                .sort((a, b) => a.name.localeCompare(b.name))
+                .map((e) => (
+                  <option key={e.id} value={e.id}>{e.name}</option>
+                ))}
+            </select>
+            {isManagerOrAbove && (
+              <select
+                value={selectedUserId ?? ''}
+                onChange={(e) =>
+                  setSelectedUserId(e.target.value === '' ? null : e.target.value)
+                }
+                className="h-8 px-2 rounded-[6px] border border-[0.5px] border-surface-border dark:border-dark-border bg-surface-page dark:bg-dark-page text-[13px] text-brand dark:text-[#EDEEF0] focus:outline-none"
+              >
+                <option value="">All Staff</option>
+                {staffList.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.full_name || s.email}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
         </div>
 
         {/* Tab bar */}
@@ -4718,6 +4782,8 @@ export default function TimesheetsPage() {
             selectedUserId={selectedUserId}
             currentUserId={user.id}
             userRole={user.role}
+            billableFilter={billableFilter}
+            engagementFilter={engagementFilter}
           />
         )}
         {activeTab === 'weekly' && (
@@ -4725,6 +4791,8 @@ export default function TimesheetsPage() {
             selectedUserId={selectedUserId}
             currentUserId={user.id}
             userRole={user.role}
+            billableFilter={billableFilter}
+            engagementFilter={engagementFilter}
           />
         )}
         {activeTab === 'biweekly' && (
@@ -4732,6 +4800,8 @@ export default function TimesheetsPage() {
             selectedUserId={selectedUserId}
             currentUserId={user.id}
             userRole={user.role}
+            billableFilter={billableFilter}
+            engagementFilter={engagementFilter}
           />
         )}
         {activeTab === 'monthly' && (
@@ -4739,6 +4809,8 @@ export default function TimesheetsPage() {
             selectedUserId={selectedUserId}
             currentUserId={user.id}
             userRole={user.role}
+            billableFilter={billableFilter}
+            engagementFilter={engagementFilter}
           />
         )}
         {activeTab === 'quarterly' && (
@@ -4746,6 +4818,8 @@ export default function TimesheetsPage() {
             selectedUserId={selectedUserId}
             currentUserId={user.id}
             userRole={user.role}
+            billableFilter={billableFilter}
+            engagementFilter={engagementFilter}
           />
         )}
         {activeTab === 'yearly' && (
@@ -4753,6 +4827,8 @@ export default function TimesheetsPage() {
             selectedUserId={selectedUserId}
             currentUserId={user.id}
             userRole={user.role}
+            billableFilter={billableFilter}
+            engagementFilter={engagementFilter}
           />
         )}
       </div>
@@ -5120,7 +5196,7 @@ import { InvoiceCard } from '@/components/billing/InvoiceCard'
 import { BillingEmptyState } from '@/components/billing/BillingEmptyState'
 import { BillingSummary } from '@/components/billing/BillingSummary'
 import { NewInvoiceModal } from '@/components/billing/NewInvoiceModal'
-import { invoicesApi, clientsApi } from '@/lib/api'
+import { invoicesApi, clientsApi, engagementsApi } from '@/lib/api'
 import { useFetch } from '@/lib/hooks/useFetch'
 import { Search, X } from 'lucide-react'
 import type { Invoice } from '@/lib/api'
@@ -5136,9 +5212,14 @@ export default function BillingPage() {
   const [voidConfirmOpen, setVoidConfirmOpen] = useState(false)
   const [newInvoiceOpen, setNewInvoiceOpen] = useState(false)
   const [localInvoices, setLocalInvoices] = useState<Invoice[]>([])
+  const [clientFilter, setClientFilter] = useState<string>('all')
+  const [engagementFilter, setEngagementFilter] = useState<string>('all')
+  const [statusFilter, setStatusFilter] = useState<string>('all')
+  const [dueDateSort, setDueDateSort] = useState<string>('asc')
 
   const { data, isLoading, error } = useFetch(() => invoicesApi.list(0, 50), [])
   const { data: clientsData, isLoading: clientsLoading } = useFetch(() => clientsApi.list(0, 100), [])
+  const { data: engagementsData } = useFetch(() => engagementsApi.list(0, 100), [])
   const serverInvoices = data?.items ?? []
   const invoices = [...localInvoices, ...serverInvoices]
 
@@ -5146,14 +5227,29 @@ export default function BillingPage() {
     (clientsData?.items ?? []).map((c) => [c.id, c.name])
   )
 
-  const filtered = invoices.filter((inv) => {
-    const q = search.toLowerCase()
-    const clientName = (clientMap[inv.clientId] ?? '').toLowerCase()
-    return (
-      inv.invoiceNumber.toLowerCase().includes(q) ||
-      clientName.includes(q)
-    )
-  })
+  const engagementMap: Record<string, string> = Object.fromEntries(
+    (engagementsData?.items ?? []).map((e) => [e.id, e.name])
+  )
+
+  const uniqueEngagementIds = Array.from(
+    new Set(invoices.map((inv) => inv.engagementId).filter(Boolean))
+  ) as string[]
+
+  const filtered = invoices
+    .filter((inv) => {
+      const q = search.toLowerCase()
+      const clientName = (clientMap[inv.clientId] ?? '').toLowerCase()
+      if (q && !inv.invoiceNumber.toLowerCase().includes(q) && !clientName.includes(q)) return false
+      if (clientFilter !== 'all' && inv.clientId !== clientFilter) return false
+      if (statusFilter !== 'all' && inv.status !== statusFilter) return false
+      if (engagementFilter !== 'all' && inv.engagementId !== engagementFilter) return false
+      return true
+    })
+    .sort((a, b) => {
+      const aDate = a.dueDate ? new Date(a.dueDate).getTime() : Infinity
+      const bDate = b.dueDate ? new Date(b.dueDate).getTime() : Infinity
+      return dueDateSort === 'asc' ? aDate - bDate : bDate - aDate
+    })
 
   function handleSelect(id: string, checked: boolean) {
     setSelectedIds((prev) => {
@@ -5258,6 +5354,72 @@ export default function BillingPage() {
           </button>
         </div>
 
+        <div className="flex items-center gap-2 flex-wrap">
+          <select
+            value={clientFilter}
+            onChange={(e) => setClientFilter(e.target.value)}
+            className="text-[12px] h-8 px-2 rounded-[6px] border border-surface-border dark:border-dark-border bg-surface-card dark:bg-dark-card text-brand dark:text-[#EDEEF0] cursor-pointer"
+          >
+            <option value="all">All Clients</option>
+            {(clientsData?.items ?? [])
+              .slice()
+              .sort((a, b) => a.name.localeCompare(b.name))
+              .map((c) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+          </select>
+
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="text-[12px] h-8 px-2 rounded-[6px] border border-surface-border dark:border-dark-border bg-surface-card dark:bg-dark-card text-brand dark:text-[#EDEEF0] cursor-pointer"
+          >
+            <option value="all">All Statuses</option>
+            <option value="draft">Draft</option>
+            <option value="sent">Sent</option>
+            <option value="paid">Paid</option>
+            <option value="overdue">Overdue</option>
+            <option value="void">Void</option>
+          </select>
+
+          <select
+            value={engagementFilter}
+            onChange={(e) => setEngagementFilter(e.target.value)}
+            className="text-[12px] h-8 px-2 rounded-[6px] border border-surface-border dark:border-dark-border bg-surface-card dark:bg-dark-card text-brand dark:text-[#EDEEF0] cursor-pointer"
+          >
+            <option value="all">All Engagements</option>
+            {uniqueEngagementIds.map((id) => (
+              <option key={id} value={id}>
+                {engagementMap[id] ?? id}
+              </option>
+            ))}
+          </select>
+
+          <select
+            value={dueDateSort}
+            onChange={(e) => setDueDateSort(e.target.value)}
+            className="text-[12px] h-8 px-2 rounded-[6px] border border-surface-border dark:border-dark-border bg-surface-card dark:bg-dark-card text-brand dark:text-[#EDEEF0] cursor-pointer"
+          >
+            <option value="asc">Due Date ↑ Earliest</option>
+            <option value="desc">Due Date ↓ Latest</option>
+          </select>
+
+          {(clientFilter !== 'all' || engagementFilter !== 'all' || statusFilter !== 'all') && (
+            <button
+              onClick={() => { setClientFilter('all'); setEngagementFilter('all'); setStatusFilter('all'); setDueDateSort('asc') }}
+              className="text-[11px] text-[#6B7280] hover:text-brand underline"
+            >
+              Clear filters
+            </button>
+          )}
+
+          {(clientFilter !== 'all' || engagementFilter !== 'all' || statusFilter !== 'all') && (
+            <span className="text-[11px] text-[#6B7280]">
+              Showing {filtered.length} of {invoices.length} invoices
+            </span>
+          )}
+        </div>
+
         {/* Content */}
         {isLoading ? (
           <div className="rounded-modal border border-[0.5px] border-surface-border dark:border-dark-border overflow-hidden">
@@ -5272,7 +5434,7 @@ export default function BillingPage() {
               </div>
             ))}
           </div>
-        ) : filtered.length === 0 && search === '' ? (
+        ) : filtered.length === 0 && search === '' && clientFilter === 'all' && engagementFilter === 'all' && statusFilter === 'all' ? (
           <BillingEmptyState onNew={() => {}} />
         ) : filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center flex-1 py-24 gap-2">
@@ -6042,16 +6204,25 @@ type ViewMode = 'table' | 'card'
 export default function ClientsPage() {
   const [view, setView] = useState<ViewMode>('table')
   const [search, setSearch] = useState('')
+  const [entityFilter, setEntityFilter] = useState<string>('all')
+  const [statusFilter, setStatusFilter] = useState<string>('all')
   const [localClients, setLocalClients] = useState<Client[]>([])
   const [modalOpen, setModalOpen] = useState(false)
 
   const { data, isLoading, error, refetch } = useFetch(() => clientsApi.list(), [])
   const clients = [...localClients, ...(data?.items ?? [])]
 
-  const filtered = clients.filter((c) =>
-    c.name.toLowerCase().includes(search.toLowerCase()) ||
-    (c.email ?? '').toLowerCase().includes(search.toLowerCase())
-  )
+  const filtered = clients.filter((c) => {
+    if (
+      search &&
+      !c.name.toLowerCase().includes(search.toLowerCase()) &&
+      !(c.email ?? '').toLowerCase().includes(search.toLowerCase())
+    ) return false
+    if (entityFilter !== 'all' && c.entityType !== entityFilter) return false
+    if (statusFilter === 'active' && !c.isActive) return false
+    if (statusFilter === 'inactive' && c.isActive) return false
+    return true
+  })
 
   function handleAddClient(client: Client) {
     setLocalClients((prev) => [client, ...prev])
@@ -6095,6 +6266,45 @@ export default function ClientsPage() {
           >
             + New Client
           </button>
+        </div>
+
+        <div className="flex items-center gap-2 flex-wrap">
+          <select
+            value={entityFilter}
+            onChange={(e) => setEntityFilter(e.target.value)}
+            className="text-[12px] h-8 px-2 rounded-[6px] border border-surface-border dark:border-dark-border bg-surface-card dark:bg-dark-card text-brand dark:text-[#EDEEF0] cursor-pointer"
+          >
+            <option value="all">All Entity Types</option>
+            <option value="individual">Individual</option>
+            <option value="business">Business</option>
+            <option value="trust">Trust</option>
+            <option value="estate">Estate</option>
+          </select>
+
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="text-[12px] h-8 px-2 rounded-[6px] border border-surface-border dark:border-dark-border bg-surface-card dark:bg-dark-card text-brand dark:text-[#EDEEF0] cursor-pointer"
+          >
+            <option value="all">All Clients</option>
+            <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
+          </select>
+
+          {(entityFilter !== 'all' || statusFilter !== 'all') && (
+            <button
+              onClick={() => { setEntityFilter('all'); setStatusFilter('all') }}
+              className="text-[11px] text-[#6B7280] hover:text-brand underline"
+            >
+              Clear filters
+            </button>
+          )}
+
+          {(entityFilter !== 'all' || statusFilter !== 'all') && (
+            <span className="text-[11px] text-[#6B7280]">
+              Showing {filtered.length} of {clients.length} clients
+            </span>
+          )}
         </div>
 
         {/* Content */}
@@ -7391,7 +7601,7 @@ import { ViewToggle } from '@/components/ui/ViewToggle'
 import { DocumentTable } from '@/components/documents/DocumentTable'
 import { DocumentCard } from '@/components/documents/DocumentCard'
 import { DocumentEmptyState } from '@/components/documents/DocumentEmptyState'
-import { documentsApi } from '@/lib/api'
+import { documentsApi, clientsApi } from '@/lib/api'
 import { useFetch } from '@/lib/hooks/useFetch'
 import { Search } from 'lucide-react'
 
@@ -7400,11 +7610,18 @@ type ViewMode = 'table' | 'card'
 export default function DocumentsPage() {
   const [view, setView] = useState<ViewMode>('table')
   const [search, setSearch] = useState('')
+  const [clientFilter, setClientFilter] = useState<string>('all')
+  const [engagementFilter, setEngagementFilter] = useState<string>('all')
+  const [statusFilter, setStatusFilter] = useState<string>('all')
   const [uploading, setUploading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const { data, isLoading, error } = useFetch(() => documentsApi.list(), [])
+  const { data: clientsData } = useFetch(() => clientsApi.list(0, 100), [])
   const documents = data?.items ?? []
+  const uniqueEngagements = Array.from(
+    new Set(documents.map((d) => d.engagementTitle).filter(Boolean))
+  ).sort()
 
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
@@ -7421,11 +7638,18 @@ export default function DocumentsPage() {
     }
   }
 
-  const filtered = documents.filter((d) =>
-    d.name.toLowerCase().includes(search.toLowerCase()) ||
-    d.clientName.toLowerCase().includes(search.toLowerCase()) ||
-    d.engagementTitle.toLowerCase().includes(search.toLowerCase())
-  )
+  const filtered = documents.filter((d) => {
+    if (
+      search &&
+      !d.name.toLowerCase().includes(search.toLowerCase()) &&
+      !d.clientName.toLowerCase().includes(search.toLowerCase()) &&
+      !d.engagementTitle.toLowerCase().includes(search.toLowerCase())
+    ) return false
+    if (clientFilter !== 'all' && d.clientId !== clientFilter) return false
+    if (engagementFilter !== 'all' && d.engagementTitle !== engagementFilter) return false
+    if (statusFilter !== 'all' && d.status !== statusFilter) return false
+    return true
+  })
 
   if (error) {
     return (
@@ -7474,6 +7698,61 @@ export default function DocumentsPage() {
           </button>
         </div>
 
+        <div className="flex items-center gap-2 flex-wrap">
+          <select
+            value={clientFilter}
+            onChange={(e) => { setClientFilter(e.target.value); setEngagementFilter('all') }}
+            className="text-[12px] h-8 px-2 rounded-[6px] border border-surface-border dark:border-dark-border bg-surface-card dark:bg-dark-card text-brand dark:text-[#EDEEF0] cursor-pointer"
+          >
+            <option value="all">All Clients</option>
+            {(clientsData?.items ?? [])
+              .slice()
+              .sort((a, b) => a.name.localeCompare(b.name))
+              .map((c) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+          </select>
+
+          <select
+            value={engagementFilter}
+            onChange={(e) => setEngagementFilter(e.target.value)}
+            className="text-[12px] h-8 px-2 rounded-[6px] border border-surface-border dark:border-dark-border bg-surface-card dark:bg-dark-card text-brand dark:text-[#EDEEF0] cursor-pointer"
+          >
+            <option value="all">All Engagements</option>
+            {uniqueEngagements.map((title) => (
+              <option key={title} value={title}>{title}</option>
+            ))}
+          </select>
+
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="text-[12px] h-8 px-2 rounded-[6px] border border-surface-border dark:border-dark-border bg-surface-card dark:bg-dark-card text-brand dark:text-[#EDEEF0] cursor-pointer"
+          >
+            <option value="all">All Statuses</option>
+            <option value="uploaded">Uploaded</option>
+            <option value="pending">Pending</option>
+            <option value="pending_signature">Pending Signature</option>
+            <option value="signed">Signed</option>
+            <option value="rejected">Rejected</option>
+          </select>
+
+          {(clientFilter !== 'all' || engagementFilter !== 'all' || statusFilter !== 'all') && (
+            <button
+              onClick={() => { setClientFilter('all'); setEngagementFilter('all'); setStatusFilter('all') }}
+              className="text-[11px] text-[#6B7280] hover:text-brand underline"
+            >
+              Clear filters
+            </button>
+          )}
+
+          {(clientFilter !== 'all' || engagementFilter !== 'all' || statusFilter !== 'all') && (
+            <span className="text-[11px] text-[#6B7280]">
+              Showing {filtered.length} of {documents.length} documents
+            </span>
+          )}
+        </div>
+
         {/* Content */}
         {isLoading ? (
           <div className="rounded-modal border border-[0.5px] border-surface-border dark:border-dark-border overflow-hidden">
@@ -7488,7 +7767,7 @@ export default function DocumentsPage() {
               </div>
             ))}
           </div>
-        ) : filtered.length === 0 && search === '' ? (
+        ) : filtered.length === 0 && search === '' && clientFilter === 'all' && engagementFilter === 'all' && statusFilter === 'all' ? (
           <DocumentEmptyState onUpload={() => fileInputRef.current?.click()} />
         ) : filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center flex-1 py-24 gap-2">
@@ -7692,6 +7971,8 @@ export default function EngagementsPage() {
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [categoryFilter, setCategoryFilter] = useState<string>('all')
   const [formFilter, setFormFilter] = useState<string>('all')
+  const [clientFilter, setClientFilter] = useState<string>('all')
+  const [dueDateSort, setDueDateSort] = useState<string>('asc')
   const [localEngagements, setLocalEngagements] = useState<Engagement[]>([])
   const [modalOpen, setModalOpen] = useState(false)
   const [bulkCreateOpen, setBulkCreateOpen] = useState(false)
@@ -7725,13 +8006,20 @@ export default function EngagementsPage() {
     return 'other'
   }
 
-  const filtered = allEngagements.filter((e) => {
-    if (search && !e.name.toLowerCase().includes(search.toLowerCase())) return false
-    if (statusFilter !== 'all' && e.status !== statusFilter) return false
-    if (categoryFilter !== 'all' && getEngagementCategory(e.engagementType) !== categoryFilter) return false
-    if (formFilter !== 'all' && e.engagementType !== formFilter) return false
-    return true
-  })
+  const filtered = allEngagements
+    .filter((e) => {
+      if (search && !e.name.toLowerCase().includes(search.toLowerCase())) return false
+      if (statusFilter !== 'all' && e.status !== statusFilter) return false
+      if (categoryFilter !== 'all' && getEngagementCategory(e.engagementType) !== categoryFilter) return false
+      if (formFilter !== 'all' && e.engagementType !== formFilter) return false
+      if (clientFilter !== 'all' && e.clientId !== clientFilter) return false
+      return true
+    })
+    .sort((a, b) => {
+      const aDate = a.filingDeadline ? new Date(a.filingDeadline).getTime() : Infinity
+      const bDate = b.filingDeadline ? new Date(b.filingDeadline).getTime() : Infinity
+      return dueDateSort === 'asc' ? aDate - bDate : bDate - aDate
+    })
 
   function handleAdd(engagement: Engagement) {
     setLocalEngagements((prev) => [engagement, ...prev])
@@ -7914,16 +8202,41 @@ export default function EngagementsPage() {
             </select>
           )}
 
-          {(statusFilter !== 'all' || categoryFilter !== 'all' || formFilter !== 'all') && (
+          {/* Client filter */}
+          <select
+            value={clientFilter}
+            onChange={(e) => setClientFilter(e.target.value)}
+            className="text-[12px] h-8 px-2 rounded-[6px] border border-surface-border dark:border-dark-border bg-surface-card dark:bg-dark-card text-brand dark:text-[#EDEEF0] cursor-pointer"
+          >
+            <option value="all">All Clients</option>
+            {(clientsData?.items ?? [])
+              .slice()
+              .sort((a, b) => a.name.localeCompare(b.name))
+              .map((c) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+          </select>
+
+          {/* Due date sort */}
+          <select
+            value={dueDateSort}
+            onChange={(e) => setDueDateSort(e.target.value)}
+            className="text-[12px] h-8 px-2 rounded-[6px] border border-surface-border dark:border-dark-border bg-surface-card dark:bg-dark-card text-brand dark:text-[#EDEEF0] cursor-pointer"
+          >
+            <option value="asc">Due Date ↑ Earliest</option>
+            <option value="desc">Due Date ↓ Latest</option>
+          </select>
+
+          {(statusFilter !== 'all' || categoryFilter !== 'all' || formFilter !== 'all' || clientFilter !== 'all') && (
             <button
-              onClick={() => { setStatusFilter('all'); setCategoryFilter('all'); setFormFilter('all') }}
+              onClick={() => { setStatusFilter('all'); setCategoryFilter('all'); setFormFilter('all'); setClientFilter('all'); setDueDateSort('asc') }}
               className="text-[11px] text-[#6B7280] hover:text-brand underline"
             >
               Clear filters
             </button>
           )}
 
-          {(statusFilter !== 'all' || categoryFilter !== 'all' || formFilter !== 'all') && (
+          {(statusFilter !== 'all' || categoryFilter !== 'all' || formFilter !== 'all' || clientFilter !== 'all') && (
             <span className="text-[11px] text-[#6B7280]">
               Showing {filtered.length} of {allEngagements.length} engagements
             </span>
@@ -9104,8 +9417,28 @@ export default function NotificationsPage() {
     if (path) router.push(path)
   }
 
-  // Unique notification types for the type filter dropdown
-  const uniqueTypes = Array.from(new Set(notifications.map((n) => n.notification_type)))
+  const NOTIFICATION_TYPE_LABELS: Record<string, string> = {
+    'mention': '@ Mention',
+    'task.assigned': 'Task Assigned',
+    'task.completed': 'Task Completed',
+    'task.overdue': 'Task Overdue',
+    'engagement.deadline_approaching': 'Deadline Approaching',
+    'engagement.completed': 'Engagement Completed',
+    'document_request.completed': 'Documents Received',
+    'document_request.reminder_sent': 'Document Reminder Sent',
+    'invoice.paid': 'Invoice Paid',
+    'invoice.overdue': 'Invoice Overdue',
+    'invoice.reminder_sent': 'Invoice Reminder Sent',
+    'irs_authorization.expiry_approaching': 'IRS Auth Expiring',
+    'portal.first_login': 'Client Portal Login',
+    'firm_chat.message': 'Firm Chat Message',
+    'anniversary': 'Client Anniversary',
+    'automation.fired': 'Automation Fired',
+  }
+
+  const uniqueTypes = Array.from(
+    new Set(notifications.map((n) => n.notification_type))
+  ).sort()
 
   return (
     <AppShell>
@@ -9144,7 +9477,11 @@ export default function NotificationsPage() {
             className="text-[12px] h-8 px-2 rounded-[6px] border border-surface-border dark:border-dark-border bg-surface-card dark:bg-dark-card text-brand dark:text-[#EDEEF0] cursor-pointer"
           >
             <option value="all">All Types</option>
-            {uniqueTypes.map((t) => <option key={t} value={t}>{t}</option>)}
+            {uniqueTypes.map((t) => (
+              <option key={t} value={t}>
+                {NOTIFICATION_TYPE_LABELS[t] ?? t}
+              </option>
+            ))}
           </select>
 
           <select
@@ -10622,7 +10959,7 @@ FILE: frontend\src\app\tasks\page.tsx
 // path: frontend/src/app/tasks/page.tsx
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { toast } from 'sonner'
 import { AppShell } from '@/components/layout/AppShell'
 import { ViewToggle } from '@/components/ui/ViewToggle'
@@ -10648,7 +10985,15 @@ export default function TasksPage() {
   const [view, setView] = useState<ViewMode>('table')
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('all')
+  const [clientFilter, setClientFilter] = useState<string>('all')
+  const [dueDateSort, setDueDateSort] = useState<string>('asc')
+  const { user } = useAuth()
   const [myTasksOnly, setMyTasksOnly] = useState(false)
+  useEffect(() => {
+    if (user?.role === 'staff') {
+      setMyTasksOnly(true)
+    }
+  }, [user?.role])
   const [localTasks, setLocalTasks] = useState<Task[]>([])
   const [modalOpen, setModalOpen] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
@@ -10658,7 +11003,6 @@ export default function TasksPage() {
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [statusOverrides, setStatusOverrides] = useState<Record<string, string>>({})
 
-  const { user } = useAuth()
   const { data, isLoading, error, refetch } = useFetch(() => tasksApi.list(0, 100), [])
   const { data: clientsData, isLoading: clientsLoading } = useFetch(() => clientsApi.list(0, 100), [])
   const { data: engagementsData, isLoading: engagementsLoading } = useFetch(() => engagementsApi.list(0, 100), [])
@@ -10688,17 +11032,14 @@ export default function TasksPage() {
     .filter((t) => {
       if (search && !t.title.toLowerCase().includes(search.toLowerCase())) return false
       if (statusFilter !== 'all' && t.status !== statusFilter) return false
+      if (clientFilter !== 'all' && t.clientId !== clientFilter) return false
       if (myTasksOnly && t.assignedTo !== user?.id) return false
       return true
     })
     .sort((a, b) => {
-      // When not filtering to my tasks, sort user's own tasks to the top
-      if (!myTasksOnly) {
-        const aMe = a.assignedTo === user?.id ? 0 : 1
-        const bMe = b.assignedTo === user?.id ? 0 : 1
-        return aMe - bMe
-      }
-      return 0
+      const aDate = a.dueDate ? new Date(a.dueDate).getTime() : Infinity
+      const bDate = b.dueDate ? new Date(b.dueDate).getTime() : Infinity
+      return dueDateSort === 'asc' ? aDate - bDate : bDate - aDate
     })
 
   function handleAdd(task: Task) {
@@ -10829,6 +11170,31 @@ export default function TasksPage() {
             <option value="done">Done</option>
           </select>
 
+          {/* Client filter */}
+          <select
+            value={clientFilter}
+            onChange={(e) => setClientFilter(e.target.value)}
+            className="text-[12px] h-8 px-2 rounded-[6px] border border-surface-border dark:border-dark-border bg-surface-card dark:bg-dark-card text-brand dark:text-[#EDEEF0] cursor-pointer"
+          >
+            <option value="all">All Clients</option>
+            {(clientsData?.items ?? [])
+              .slice()
+              .sort((a, b) => a.name.localeCompare(b.name))
+              .map((c) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+          </select>
+
+          {/* Due date sort */}
+          <select
+            value={dueDateSort}
+            onChange={(e) => setDueDateSort(e.target.value)}
+            className="text-[12px] h-8 px-2 rounded-[6px] border border-surface-border dark:border-dark-border bg-surface-card dark:bg-dark-card text-brand dark:text-[#EDEEF0] cursor-pointer"
+          >
+            <option value="asc">Due Date ↑ Earliest</option>
+            <option value="desc">Due Date ↓ Latest</option>
+          </select>
+
           <button
             onClick={() => setMyTasksOnly((prev) => !prev)}
             className={`text-[12px] h-8 px-3 rounded-[6px] border font-medium transition-colors ${
@@ -10840,16 +11206,16 @@ export default function TasksPage() {
             My Tasks
           </button>
 
-          {(statusFilter !== 'all' || myTasksOnly) && (
+          {(statusFilter !== 'all' || myTasksOnly || clientFilter !== 'all') && (
             <button
-              onClick={() => { setStatusFilter('all'); setMyTasksOnly(false) }}
+              onClick={() => { setStatusFilter('all'); setMyTasksOnly(false); setClientFilter('all'); setDueDateSort('asc') }}
               className="text-[11px] text-[#6B7280] hover:text-brand underline"
             >
               Clear filters
             </button>
           )}
 
-          {(statusFilter !== 'all' || myTasksOnly) && (
+          {(statusFilter !== 'all' || myTasksOnly || clientFilter !== 'all') && (
             <span className="text-[11px] text-[#6B7280]">
               Showing {filtered.length} of {allTasks.length} tasks
             </span>
