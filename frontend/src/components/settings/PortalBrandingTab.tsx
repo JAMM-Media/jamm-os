@@ -46,7 +46,7 @@ const LIGHT_DEFAULTS: ColorSet = {
   avatar: '#1F3148',
   subtitle: '#7DA3C4',
   card: '#EDEEF0',
-  text_primary: '#1F3148',
+  text_primary: '#111111',
   text_muted: '#6B7280',
 }
 

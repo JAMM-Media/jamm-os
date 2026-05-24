@@ -34,11 +34,11 @@ function EngagementBadge({ status, accentColor }: { status: string; accentColor:
   const getStyle = (): React.CSSProperties => {
     switch (status) {
       case 'active':
-        return { backgroundColor: accentColor + '33', color: accentColor, border: `1px solid ${accentColor}66` }
+        return { backgroundColor: accentColor, color: '#FFFFFF' }
       case 'in_progress':
-        return { backgroundColor: accentColor + '33', color: accentColor, border: `1px solid ${accentColor}66` }
+        return { backgroundColor: accentColor, color: '#FFFFFF' }
       case 'in_review':
-        return { backgroundColor: '#DBEAFE', color: '#1E40AF' }
+        return { backgroundColor: '#FEF3C7', color: '#92400E' }
       case 'completed':
         return { backgroundColor: '#D1FAE5', color: '#065F46' }
       case 'overdue':
