@@ -1,153 +1,313 @@
-# TASK — Portal card background color customization
+# TASK — Portal light mode text colors, status badges, and message compose
 
 ## OVERVIEW
-Add a `card` color to the portal ColorSet. This controls the background of action item cards, document rows, invoice rows, message bubbles, and organizer cards — everywhere #383838 is currently hardcoded.
-
-Default dark card: #383838
-Default light card: #EDEEF0
-
----
-
-## PART 1 — Add card color to backend and branding
-
-### 1A — Add card to portal_me defaults
-FILE: app/api/portal.py
-
-In dark_defaults add:
-```python
-        "card": "#383838",
-```
-
-In light_defaults add:
-```python
-        "card": "#EDEEF0",
-```
-
-In the return dict add after portal_subtitle_color:
-```python
-        "portal_card_color": colors["card"],
-```
-
-### 1B — Add card to ColorSet and defaults
-FILE: frontend/src/components/settings/PortalBrandingTab.tsx
-
-Add `card: string` to ColorSet interface.
-
-Add `card: '#383838'` to DARK_DEFAULTS.
-Add `card: '#EDEEF0'` to LIGHT_DEFAULTS.
-
-Add to COLOR_LABELS after subtitle:
-```tsx
-  { key: 'card', label: 'Card / item background' },
-```
-
-Add to the mini preview in ColorSection — find the page background swatch div and add a card preview row above it:
-```tsx
-          <div className="px-3 py-2" style={{ backgroundColor: previewPage }}>
-            <div className="rounded-[4px] px-3 py-2" style={{ backgroundColor: VALID_HEX.test(colors.card) ? colors.card : (mode === 'dark' ? '#383838' : '#EDEEF0') }}>
-              <span className="text-[10px]" style={{ color: mode === 'light' ? '#1F3148' : '#EDEEF0' }}>Card item</span>
-            </div>
-          </div>
-```
-Replace the existing page background swatch div with this (it already shows page color as the outer wrapper).
+Five fixes:
+1. Add portalMode prop to all portal components so text adapts light/dark
+2. Fix hardcoded dark text colors in PortalTodo, PortalDocuments, PortalInvoices, PortalMessages, PortalOrganizer
+3. Fix status badge colors so they work in both modes
+4. Fix message compose box to use cardColor and accentColor
+5. Pass portalMode from portal/page.tsx to all components
 
 ---
 
-## PART 2 — Pass cardColor through portal page
+## PART 1 — Pass portalMode from portal/page.tsx
 FILE: frontend/src/app/portal/page.tsx
 
-Add to PortalMe interface:
-```tsx
-  portal_card_color: string
-```
+Add `portal_mode: 'light' | 'dark'` to PortalMe interface if not already there.
 
-Pass to each portal component:
-- PortalTodo: add `cardColor={me.portal_card_color}`
-- PortalDocuments: add `cardColor={me.portal_card_color}`
-- PortalInvoices: add `cardColor={me.portal_card_color}`
-- PortalMessages: add `cardColor={me.portal_card_color}` (find the PortalMessages usage)
-- PortalOrganizer: add `cardColor={me.portal_card_color}` (find the PortalOrganizer usage)
+Update every tab component to also receive portalMode:
+- `<PortalTodo ... portalMode={me.portal_mode} />`
+- `<PortalDocuments ... portalMode={me.portal_mode} />`
+- `<PortalInvoices ... portalMode={me.portal_mode} />`
+- `<PortalMessages ... portalMode={me.portal_mode} />`
+- `<PortalOrganizer ... portalMode={me.portal_mode} />`
 
 ---
 
-## PART 3 — Update PortalTodo
+## PART 2 — Update PortalTodo
 FILE: frontend/src/components/portal/PortalTodo.tsx
 
-Add `cardColor?: string` to PortalTodoProps.
-Add `cardColor = '#383838'` to destructuring.
-Add `cardColor: string` to ActionCard props.
-Pass `cardColor={cardColor}` to all ActionCard usages.
+### 2A — Add portalMode prop
+Add `portalMode?: 'light' | 'dark'` to PortalTodoProps.
+Add `portalMode = 'dark'` to destructuring.
 
-In ActionCard, replace:
+### 2B — Derive text color variables at the top of PortalTodo function body:
 ```tsx
-      className="flex items-center justify-between gap-4 bg-[#383838] rounded-[8px] px-5 py-4"
+  const primaryText = portalMode === 'light' ? '#1F3148' : '#EDEEF0'
+  const mutedText = portalMode === 'light' ? '#6B7280' : '#9CA3AF'
+  const iconColor = portalMode === 'light' ? '#6B7280' : '#9CA3AF'
+```
+
+### 2C — Pass primaryText, mutedText, iconColor to ActionCard:
+Update ActionCard signature:
+```tsx
+function ActionCard({ item, accentColor, cardColor, primaryText, mutedText, iconColor }: {
+  item: ActionItem
+  accentColor: string
+  cardColor: string
+  primaryText: string
+  mutedText: string
+  iconColor: string
+}) {
+```
+
+Update all ActionCard usages to pass these three new props.
+
+### 2D — Update ActionCard text colors:
+Replace:
+```tsx
+          <p className="text-[14px] font-medium text-[#EDEEF0] leading-tight">{item.title}</p>
+          <p className="text-[13px] text-[#9CA3AF] mt-0.5 leading-snug">{item.description}</p>
 ```
 With:
 ```tsx
-      className="flex items-center justify-between gap-4 rounded-[8px] px-5 py-4"
-      style={{ backgroundColor: cardColor, opacity: item.completed ? 0.7 : 1 }}
+          <p className="text-[14px] font-medium leading-tight" style={{ color: primaryText }}>{item.title}</p>
+          <p className="text-[13px] mt-0.5 leading-snug" style={{ color: mutedText }}>{item.description}</p>
 ```
-Note: move the opacity from the style prop on the outer div into the same style object.
 
-Also find the loading skeleton div with `bg-[#383838]` and replace with:
+Replace the due date line:
 ```tsx
-          <div key={i} className="h-16 rounded-[8px] animate-pulse" style={{ backgroundColor: cardColor }} />
+            <p className="text-[13px] text-[#9CA3AF] mt-1">Due {item.dueDate}</p>
+```
+With:
+```tsx
+            <p className="text-[13px] mt-1" style={{ color: mutedText }}>Due {item.dueDate}</p>
 ```
 
-Find the engagement rows with `bg-[#383838]` and replace with inline style.
+Update getIcon to accept and use iconColor:
+```tsx
+function getIcon(type: ActionItem['type'], iconColor: string) {
+  if (type === 'document-request') return <FileUp className="h-5 w-5" style={{ color: iconColor }} />
+  if (type === 'signature') return <PenLine className="h-5 w-5" style={{ color: iconColor }} />
+  return <CreditCard className="h-5 w-5" style={{ color: iconColor }} />
+}
+```
+Update the getIcon call in ActionCard to pass iconColor.
+
+### 2E — Fix status badge colors
+Replace the entire STATUS_COLORS constant and EngagementBadge function with:
+
+```tsx
+function EngagementBadge({ status, accentColor }: { status: string; accentColor: string }) {
+  // Semantic color mapping — works in both light and dark modes
+  const getStyle = (): React.CSSProperties => {
+    switch (status) {
+      case 'active':
+      case 'in_progress':
+        return { backgroundColor: accentColor + '33', color: accentColor, border: `1px solid ${accentColor}66` }
+      case 'completed':
+        return { backgroundColor: '#D1FAE5', color: '#065F46' }
+      case 'overdue':
+      case 'blocked':
+        return { backgroundColor: '#FEE2E2', color: '#991B1B' }
+      case 'planning':
+      case 'draft':
+      case 'pending':
+      default:
+        return { backgroundColor: accentColor + '22', color: accentColor, border: `1px solid ${accentColor}44` }
+    }
+  }
+  return (
+    <span
+      className="text-[10px] font-medium px-1.5 py-0.5 rounded-[4px] capitalize"
+      style={getStyle()}
+    >
+      {status.replace(/_/g, ' ')}
+    </span>
+  )
+}
+```
+
+Update EngagementBadge usage to pass accentColor:
+```tsx
+<EngagementBadge status={eng.status} accentColor={accentColor} />
+```
+
+Also update engagement name text color. Find:
+```tsx
+                  <p className="text-[14px] font-medium text-[#EDEEF0]">{eng.name}</p>
+```
+Replace with:
+```tsx
+                  <p className="text-[14px] font-medium" style={{ color: primaryText }}>{eng.name}</p>
+```
+
+Also fix the greeting and count text. Find:
+```tsx
+        <p className="text-[18px] font-medium text-[#EDEEF0]">Hello, {clientFirstName}</p>
+        <p className="text-[14px] text-[#9CA3AF] mt-0.5">
+```
+Replace with:
+```tsx
+        <p className="text-[18px] font-medium" style={{ color: primaryText }}>Hello, {clientFirstName}</p>
+        <p className="text-[14px] mt-0.5" style={{ color: mutedText }}>
+```
+
+Fix the section labels. Find:
+```tsx
+          <p className="text-[12px] font-medium text-[#9CA3AF] uppercase tracking-[0.05em] mb-2">
+            Action needed
+          </p>
+```
+Replace with:
+```tsx
+          <p className="text-[12px] font-medium uppercase tracking-[0.05em] mb-2" style={{ color: mutedText }}>
+            Action needed
+          </p>
+```
+Do the same for the "Active engagements" section label.
 
 ---
 
-## PART 4 — Update PortalDocuments
+## PART 3 — Update PortalDocuments
 FILE: frontend/src/components/portal/PortalDocuments.tsx
 
-Add `cardColor?: string` to PortalDocumentsProps.
-Add `cardColor = '#383838'` to destructuring.
+Add `portalMode?: 'light' | 'dark'` to PortalDocumentsProps with default `'dark'`.
 
-Replace all instances of `bg-[#383838]` with `style={{ backgroundColor: cardColor }}` (removing the className bg reference). There are three: the error state div, the skeleton divs, and the document row divs.
-
----
-
-## PART 5 — Update PortalInvoices
-FILE: frontend/src/components/portal/PortalInvoices.tsx
-
-Add `cardColor?: string` to the PortalInvoices props.
-Add `cardColor = '#383838'` to destructuring.
-
-Replace the `wrapperBg` variable in PaymentForm — it currently uses:
+At top of function body add:
 ```tsx
-  const wrapperBg = isDark ? '#2A2A2A' : '#F0F1F3'
+  const primaryText = portalMode === 'light' ? '#1F3148' : '#EDEEF0'
+  const mutedText = portalMode === 'light' ? '#6B7280' : '#9CA3AF'
 ```
-Pass cardColor to PaymentForm as a prop and use it instead. Add `cardColor?: string` to PaymentFormProps and pass it from PortalInvoices.
 
-Replace all `bg-[#383838]` in PortalInvoices with inline style={{ backgroundColor: cardColor }}.
+Replace hardcoded text colors in document rows:
+- `text-[#EDEEF0]` → `style={{ color: primaryText }}`
+- `text-[#9CA3AF]` → `style={{ color: mutedText }}`
+
+Also find the "Documents (N)" section label and update its text color to mutedText.
 
 ---
 
-## PART 6 — Update PortalMessages
+## PART 4 — Update PortalMessages
 FILE: frontend/src/components/portal/PortalMessages.tsx
 
-Read the file first to understand its structure.
+Add `portalMode?: 'light' | 'dark'` to PortalMessagesProps with default `'dark'`.
 
-Add `cardColor?: string` to its props interface with default `'#383838'`.
+At top of function body add:
+```tsx
+  const primaryText = portalMode === 'light' ? '#1F3148' : '#EDEEF0'
+  const mutedText = portalMode === 'light' ? '#6B7280' : '#9CA3AF'
+  const borderColor = portalMode === 'light' ? '#C8CDD6' : '#383838'
+  const inputBorder = portalMode === 'light' ? '#C8CDD6' : '#484848'
+  const inputFocusBorder = portalMode === 'light' ? '#1F3148' : '#3A6A94'
+```
 
-Replace hardcoded `bg-[#383838]` on message bubbles (firm-side messages) with inline style. Client message bubbles use accentColor — check if accentColor is already a prop; if not add it too with default `'#3A6A94'`.
+Fix message text. Find:
+```tsx
+                <p className="text-[13px] text-[#EDEEF0] leading-relaxed">{msg.body}</p>
+```
+Replace with:
+```tsx
+                <p className="text-[13px] leading-relaxed" style={{ color: primaryText }}>{msg.body}</p>
+```
+
+Fix timestamp text from `text-[#9CA3AF]` to inline style with mutedText.
+
+Fix "No messages yet" text from `text-[#9CA3AF]` to mutedText.
+
+Fix compose box — find the border-t div and the textarea and send button:
+
+Find:
+```tsx
+      <div className="border-t border-[#383838] p-4 max-w-2xl mx-auto w-full">
+        <div className="flex items-end gap-2">
+          <textarea
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="Message your accountant..."
+            rows={2}
+            className="flex-1 bg-[#383838] border border-[#484848] rounded-[6px] px-3 py-2 text-[13px] text-[#EDEEF0] placeholder:text-[#6B7280] resize-none focus:outline-none focus:border-[#3A6A94]"
+          />
+          <button
+            onClick={handleSend}
+            disabled={!draft.trim() || sending}
+            className="h-9 w-9 rounded-[6px] bg-[#3A6A94] text-[#EDEEF0] flex items-center justify-center disabled:opacity-40 hover:opacity-90 transition-opacity flex-shrink-0"
+          >
+```
+
+Replace with:
+```tsx
+      <div className="border-t p-4 max-w-2xl mx-auto w-full" style={{ borderColor }}>
+        <div className="flex items-end gap-2">
+          <textarea
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="Message your accountant..."
+            rows={2}
+            className="flex-1 rounded-[6px] px-3 py-2 text-[13px] resize-none focus:outline-none"
+            style={{
+              backgroundColor: cardColor,
+              border: `1px solid ${inputBorder}`,
+              color: primaryText,
+              outlineColor: inputFocusBorder,
+            }}
+          />
+          <button
+            onClick={handleSend}
+            disabled={!draft.trim() || sending}
+            className="h-9 w-9 rounded-[6px] flex items-center justify-center disabled:opacity-40 hover:opacity-90 transition-opacity flex-shrink-0"
+            style={{ backgroundColor: accentColor, color: '#FFFFFF' }}
+          >
+```
 
 ---
 
-## PART 7 — Update PortalOrganizer
+## PART 5 — Update PortalOrganizer
 FILE: frontend/src/components/portal/PortalOrganizer.tsx
 
-Read the file first.
+Add `portalMode?: 'light' | 'dark'` to PortalOrganizerProps with default `'dark'`.
 
-Add `cardColor?: string` prop with default `'#383838'`.
-Replace `bg-[#383838]` instances with inline style={{ backgroundColor: cardColor }}.
+At top of function body add:
+```tsx
+  const primaryText = portalMode === 'light' ? '#1F3148' : '#EDEEF0'
+  const mutedText = portalMode === 'light' ? '#6B7280' : '#9CA3AF'
+```
+
+Replace hardcoded `text-[#EDEEF0]` with `style={{ color: primaryText }}` and `text-[#9CA3AF]` with `style={{ color: mutedText }}` throughout the component.
+
+Also update the hardcoded input field class. Find:
+```tsx
+  'w-full rounded-[6px] border border-[#484848] bg-[#2D2D2D] focus:border-[#4A7FA5] text-[#EDEEF0] text-[13px] px-3 py-2 outline-none transition-colors'
+```
+This is a constant — it can't use dynamic values directly. Replace it with a function that takes portalMode:
+```tsx
+function getInputClass(portalMode: 'light' | 'dark') {
+  return portalMode === 'light'
+    ? 'w-full rounded-[6px] border border-[#C8CDD6] bg-white focus:border-[#1F3148] text-[#1F3148] text-[13px] px-3 py-2 outline-none transition-colors'
+    : 'w-full rounded-[6px] border border-[#484848] bg-[#2D2D2D] focus:border-[#4A7FA5] text-[#EDEEF0] text-[13px] px-3 py-2 outline-none transition-colors'
+}
+```
+Replace all uses of the old constant with `getInputClass(portalMode)`.
+
+---
+
+## PART 6 — Update PortalInvoices for text colors
+FILE: frontend/src/components/portal/PortalInvoices.tsx
+
+Add `portalMode?: 'light' | 'dark'` to the PortalInvoices props with default `'dark'`.
+
+At top of PortalInvoices function body add:
+```tsx
+  const primaryText = portalMode === 'light' ? '#1F3148' : '#EDEEF0'
+  const mutedText = portalMode === 'light' ? '#6B7280' : '#9CA3AF'
+```
+
+Replace hardcoded `text-[#EDEEF0]` and `text-[#9CA3AF]` in invoice rows with inline styles.
+
+Pass portalMode to PaymentForm as well. Add `portalMode?: 'light' | 'dark'` to PaymentFormProps and update the `isDark` derivation:
+```tsx
+  const isDark = portalMode !== 'light'
+```
 
 ---
 
 ## VERIFICATION
-1. Light mode portal shows light card backgrounds (#EDEEF0) on all action items, docs, invoices
-2. Dark mode portal unchanged — still #383838
-3. Customizing card color in Settings → Portal updates all cards
-4. No TypeScript errors
-5. Loading skeletons also use cardColor so they match
+1. Light mode portal shows dark text (#1F3148) on all cards and content areas
+2. Planning/draft/pending badges use accent color with semi-transparent background
+3. Completed badge stays green
+4. Overdue/blocked badge is red
+5. Message compose textarea uses cardColor background and primaryText
+6. Send button uses accentColor
+7. No TypeScript errors

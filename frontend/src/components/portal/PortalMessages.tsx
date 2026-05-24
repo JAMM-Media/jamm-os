@@ -16,6 +16,7 @@ interface PortalMessagesProps {
   firmName: string
   cardColor?: string
   accentColor?: string
+  portalMode?: 'light' | 'dark'
 }
 
 function formatTimestamp(iso: string): string {
@@ -27,7 +28,13 @@ function formatTimestamp(iso: string): string {
   )
 }
 
-export function PortalMessages({ clientId, firmName, cardColor = '#383838', accentColor = '#3A6A94' }: PortalMessagesProps) {
+export function PortalMessages({ clientId, firmName, cardColor = '#383838', accentColor = '#3A6A94', portalMode = 'dark' }: PortalMessagesProps) {
+  const primaryText = portalMode === 'light' ? '#1F3148' : '#EDEEF0'
+  const mutedText = portalMode === 'light' ? '#6B7280' : '#9CA3AF'
+  const borderColor = portalMode === 'light' ? '#C8CDD6' : '#383838'
+  const inputBorder = portalMode === 'light' ? '#C8CDD6' : '#484848'
+  const inputFocusBorder = portalMode === 'light' ? '#1F3148' : '#3A6A94'
+
   const [messages, setMessages] = useState<MessageWithOptimistic[]>([])
   const [loading, setLoading] = useState(true)
   const [draft, setDraft] = useState('')
@@ -95,7 +102,7 @@ export function PortalMessages({ clientId, firmName, cardColor = '#383838', acce
       <div className="p-5 space-y-4 max-w-2xl mx-auto w-full">
         {messages.length === 0 ? (
           <div className="flex items-center justify-center py-24">
-            <p className="text-[12px] text-[#9CA3AF]">No messages yet.</p>
+            <p className="text-[12px]" style={{ color: mutedText }}>No messages yet.</p>
           </div>
         ) : (
           messages.map((msg) => (
@@ -106,7 +113,7 @@ export function PortalMessages({ clientId, firmName, cardColor = '#383838', acce
               }`}
             >
               {msg.sender_role !== 'client' && (
-                <span className="text-[11px] text-[#9CA3AF] px-1">
+                <span className="text-[11px] px-1" style={{ color: mutedText }}>
                   {msg.sender_name ?? firmName}
                 </span>
               )}
@@ -114,9 +121,9 @@ export function PortalMessages({ clientId, firmName, cardColor = '#383838', acce
                 className={`rounded-[8px] px-3 py-2 max-w-[75%] ${msg.optimistic ? 'opacity-60' : ''}`}
                 style={{ backgroundColor: msg.sender_role === 'client' ? accentColor : cardColor }}
               >
-                <p className="text-[13px] text-[#EDEEF0] leading-relaxed">{msg.body}</p>
+                <p className="text-[13px] leading-relaxed" style={{ color: primaryText }}>{msg.body}</p>
               </div>
-              <span className="text-[10px] text-[#9CA3AF] px-1">
+              <span className="text-[10px] px-1" style={{ color: mutedText }}>
                 {formatTimestamp(msg.created_at)}
               </span>
             </div>
@@ -125,7 +132,7 @@ export function PortalMessages({ clientId, firmName, cardColor = '#383838', acce
         <div ref={bottomRef} />
       </div>
 
-      <div className="border-t border-[#383838] p-4 max-w-2xl mx-auto w-full">
+      <div className="border-t p-4 max-w-2xl mx-auto w-full" style={{ borderColor }}>
         <div className="flex items-end gap-2">
           <textarea
             value={draft}
@@ -133,12 +140,19 @@ export function PortalMessages({ clientId, firmName, cardColor = '#383838', acce
             onKeyDown={handleKeyDown}
             placeholder="Message your accountant..."
             rows={2}
-            className="flex-1 bg-[#383838] border border-[#484848] rounded-[6px] px-3 py-2 text-[13px] text-[#EDEEF0] placeholder:text-[#6B7280] resize-none focus:outline-none focus:border-[#3A6A94]"
+            className="flex-1 rounded-[6px] px-3 py-2 text-[13px] resize-none focus:outline-none"
+            style={{
+              backgroundColor: cardColor,
+              border: `1px solid ${inputBorder}`,
+              color: primaryText,
+              outlineColor: inputFocusBorder,
+            }}
           />
           <button
             onClick={handleSend}
             disabled={!draft.trim() || sending}
-            className="h-9 w-9 rounded-[6px] bg-[#3A6A94] text-[#EDEEF0] flex items-center justify-center disabled:opacity-40 hover:opacity-90 transition-opacity flex-shrink-0"
+            className="h-9 w-9 rounded-[6px] flex items-center justify-center disabled:opacity-40 hover:opacity-90 transition-opacity flex-shrink-0"
+            style={{ backgroundColor: accentColor, color: '#FFFFFF' }}
           >
             {sending ? (
               <Loader2 className="w-3.5 h-3.5 animate-spin" />

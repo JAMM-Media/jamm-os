@@ -7,6 +7,7 @@ import { Check } from 'lucide-react'
 interface PortalOrganizerProps {
   clientId: string
   cardColor?: string
+  portalMode?: 'light' | 'dark'
 }
 
 interface OrganizerListItem {
@@ -53,11 +54,17 @@ function portalFetch(path: string, options?: RequestInit): Promise<Response> {
   })
 }
 
-const inputClass =
-  'w-full rounded-[6px] border border-[#484848] bg-[#2D2D2D] focus:border-[#4A7FA5] text-[#EDEEF0] text-[13px] px-3 py-2 outline-none transition-colors'
+function getInputClass(portalMode: 'light' | 'dark') {
+  return portalMode === 'light'
+    ? 'w-full rounded-[6px] border border-[#C8CDD6] bg-white focus:border-[#1F3148] text-[#1F3148] text-[13px] px-3 py-2 outline-none transition-colors'
+    : 'w-full rounded-[6px] border border-[#484848] bg-[#2D2D2D] focus:border-[#4A7FA5] text-[#EDEEF0] text-[13px] px-3 py-2 outline-none transition-colors'
+}
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-export default function PortalOrganizer({ clientId: _clientId, cardColor = '#383838' }: PortalOrganizerProps) {
+export default function PortalOrganizer({ clientId: _clientId, cardColor = '#383838', portalMode = 'dark' }: PortalOrganizerProps) {
+  const primaryText = portalMode === 'light' ? '#1F3148' : '#EDEEF0'
+  const mutedText = portalMode === 'light' ? '#6B7280' : '#9CA3AF'
+
   const [organizers, setOrganizers] = useState<OrganizerListItem[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -175,6 +182,7 @@ export default function PortalOrganizer({ clientId: _clientId, cardColor = '#383
   function renderQuestion(q: Question) {
     const value = responses[q.id] ?? ''
     const hint = requiredHints[q.id]
+    const inputClass = getInputClass(portalMode)
 
     let input: React.ReactNode
 
@@ -188,9 +196,12 @@ export default function PortalOrganizer({ clientId: _clientId, cardColor = '#383
               disabled={readOnly}
               onClick={() => handleAnswerChange(q.id, opt)}
               className={`px-4 py-1.5 rounded-full text-[13px] font-medium transition-colors disabled:cursor-default ${
-                value === opt ? 'text-white' : 'text-[#9CA3AF] hover:text-[#EDEEF0]'
+                value === opt ? 'text-white' : ''
               }`}
-              style={{ backgroundColor: value === opt ? '#3A6A94' : cardColor }}
+              style={{
+                backgroundColor: value === opt ? '#3A6A94' : cardColor,
+                color: value === opt ? '#FFFFFF' : mutedText,
+              }}
             >
               {opt}
             </button>
@@ -247,7 +258,7 @@ export default function PortalOrganizer({ clientId: _clientId, cardColor = '#383
 
     return (
       <div key={q.id} className="flex flex-col gap-1">
-        <label className="text-[13px] text-[#9CA3AF]">
+        <label className="text-[13px]" style={{ color: mutedText }}>
           {q.label}
           {q.required && !readOnly && <span className="text-amber-400 ml-0.5">*</span>}
         </label>
@@ -263,15 +274,16 @@ export default function PortalOrganizer({ clientId: _clientId, cardColor = '#383
         <div className="w-12 h-12 rounded-full bg-green-600 flex items-center justify-center">
           <Check className="h-6 w-6 text-white" />
         </div>
-        <p className="text-[16px] font-medium text-[#EDEEF0] text-center">
+        <p className="text-[16px] font-medium text-center" style={{ color: primaryText }}>
           Thank you! Your tax organizer has been submitted.
         </p>
-        <p className="text-[13px] text-[#9CA3AF] text-center">
+        <p className="text-[13px] text-center" style={{ color: mutedText }}>
           Your accountant will review your responses.
         </p>
         <button
           onClick={closeOrganizer}
-          className="mt-4 px-6 py-2 rounded-[6px] bg-[#3A6A94] text-[#EDEEF0] text-[13px] font-medium hover:bg-[#4A7FA5] transition-colors"
+          className="mt-4 px-6 py-2 rounded-[6px] bg-[#3A6A94] text-[13px] font-medium hover:bg-[#4A7FA5] transition-colors"
+          style={{ color: '#EDEEF0' }}
         >
           Back to organizers
         </button>
@@ -297,7 +309,8 @@ export default function PortalOrganizer({ clientId: _clientId, cardColor = '#383
         <div className="p-5 max-w-2xl mx-auto w-full flex flex-col gap-4">
           <button
             onClick={closeOrganizer}
-            className="self-start text-[13px] text-[#9CA3AF] hover:text-[#EDEEF0] transition-colors"
+            className="self-start text-[13px] transition-colors"
+            style={{ color: mutedText }}
           >
             ← Back to organizers
           </button>
@@ -318,9 +331,9 @@ export default function PortalOrganizer({ clientId: _clientId, cardColor = '#383
           {sections.map((section, si) => (
             <div key={si} className="rounded-[8px] p-5 flex flex-col gap-4" style={{ backgroundColor: cardColor }}>
               <div>
-                <p className="text-[16px] font-medium text-[#EDEEF0]">{section.title}</p>
+                <p className="text-[16px] font-medium" style={{ color: primaryText }}>{section.title}</p>
                 {section.description && (
-                  <p className="text-[12px] text-[#9CA3AF] mt-1">{section.description}</p>
+                  <p className="text-[12px] mt-1" style={{ color: mutedText }}>{section.description}</p>
                 )}
               </div>
               <div className="flex flex-col gap-4">
@@ -332,7 +345,8 @@ export default function PortalOrganizer({ clientId: _clientId, cardColor = '#383
           <div className="flex justify-center">
             <button
               onClick={closeOrganizer}
-              className="px-6 h-9 rounded-[6px] border border-[#484848] text-[#9CA3AF] text-[13px] hover:text-[#EDEEF0] transition-colors"
+              className="px-6 h-9 rounded-[6px] text-[13px] transition-colors"
+              style={{ border: `1px solid ${mutedText}`, color: mutedText }}
             >
               Close
             </button>
@@ -349,20 +363,21 @@ export default function PortalOrganizer({ clientId: _clientId, cardColor = '#383
       <div className="p-5 max-w-2xl mx-auto w-full flex flex-col gap-4">
         <button
           onClick={closeOrganizer}
-          className="self-start text-[13px] text-[#9CA3AF] hover:text-[#EDEEF0] transition-colors"
+          className="self-start text-[13px] transition-colors"
+          style={{ color: mutedText }}
         >
           ← Back to organizers
         </button>
 
-        <p className="text-[12px] text-[#9CA3AF] text-center">
+        <p className="text-[12px] text-center" style={{ color: mutedText }}>
           Section {currentSection + 1} of {sections.length}
         </p>
 
         <div className="rounded-[8px] p-5 flex flex-col gap-4" style={{ backgroundColor: cardColor }}>
           <div>
-            <p className="text-[16px] font-medium text-[#EDEEF0]">{section.title}</p>
+            <p className="text-[16px] font-medium" style={{ color: primaryText }}>{section.title}</p>
             {section.description && (
-              <p className="text-[12px] text-[#9CA3AF] mt-1">{section.description}</p>
+              <p className="text-[12px] mt-1" style={{ color: mutedText }}>{section.description}</p>
             )}
           </div>
           <div className="flex flex-col gap-4">
@@ -377,21 +392,24 @@ export default function PortalOrganizer({ clientId: _clientId, cardColor = '#383
               setRequiredHints({})
             }}
             disabled={isFirst}
-            className="flex-1 h-9 rounded-[6px] border border-[#484848] text-[#9CA3AF] text-[13px] hover:text-[#EDEEF0] disabled:opacity-0 transition-colors"
+            className="flex-1 h-9 rounded-[6px] text-[13px] disabled:opacity-0 transition-colors"
+            style={{ border: `1px solid ${mutedText}`, color: mutedText }}
           >
             Previous
           </button>
           <button
             onClick={() => saveProgress(false)}
             disabled={saving}
-            className="flex-1 h-9 rounded-[6px] border border-[#484848] text-[#9CA3AF] text-[13px] hover:text-[#EDEEF0] transition-colors"
+            className="flex-1 h-9 rounded-[6px] text-[13px] transition-colors"
+            style={{ border: `1px solid ${mutedText}`, color: mutedText }}
           >
             {savedNotice ? 'Saved' : saving ? 'Saving...' : 'Save Progress'}
           </button>
           <button
             onClick={handleNext}
             disabled={saving}
-            className="flex-1 h-9 rounded-[6px] bg-[#1F3148] text-[#EDEEF0] text-[13px] font-medium hover:opacity-90 disabled:opacity-60 transition-opacity"
+            className="flex-1 h-9 rounded-[6px] text-[13px] font-medium hover:opacity-90 disabled:opacity-60 transition-opacity"
+            style={{ backgroundColor: '#1F3148', color: '#EDEEF0' }}
           >
             {isLast ? 'Submit' : 'Next'}
           </button>
@@ -407,7 +425,7 @@ export default function PortalOrganizer({ clientId: _clientId, cardColor = '#383
           <div key={i} className="h-16 rounded-[8px] animate-pulse" style={{ backgroundColor: cardColor }} />
         ))
       ) : organizers.length === 0 ? (
-        <div className="text-[13px] text-[#9CA3AF] py-12 text-center">
+        <div className="text-[13px] py-12 text-center" style={{ color: mutedText }}>
           Your accountant hasn&apos;t sent you a tax organizer yet. Check back here when your tax
           preparation begins.
         </div>
@@ -420,7 +438,7 @@ export default function PortalOrganizer({ clientId: _clientId, cardColor = '#383
           return (
             <div key={org.id} className="rounded-[8px] p-4 flex flex-col gap-2" style={{ backgroundColor: cardColor }}>
               <div className="flex items-center justify-between">
-                <p className="text-[14px] font-medium text-[#EDEEF0]">{org.tax_year}</p>
+                <p className="text-[14px] font-medium" style={{ color: primaryText }}>{org.tax_year}</p>
                 {isSubmitted && (
                   <span className="flex items-center gap-1 text-[12px] text-green-400 font-medium">
                     <Check className="h-3.5 w-3.5" /> Submitted
@@ -435,13 +453,14 @@ export default function PortalOrganizer({ clientId: _clientId, cardColor = '#383
               </div>
 
               {org.client_message && (
-                <p className="text-[12px] text-[#9CA3AF] italic">{org.client_message}</p>
+                <p className="text-[12px] italic" style={{ color: mutedText }}>{org.client_message}</p>
               )}
 
               {!isSubmitted && (
                 <button
                   onClick={() => openOrganizer(org.id, false)}
-                  className="self-start px-4 py-1.5 rounded-[6px] bg-[#3A6A94] text-[#EDEEF0] text-[12px] font-medium hover:bg-[#4A7FA5] transition-colors"
+                  className="self-start px-4 py-1.5 rounded-[6px] bg-[#3A6A94] text-[12px] font-medium hover:bg-[#4A7FA5] transition-colors"
+                  style={{ color: '#EDEEF0' }}
                 >
                   {isInProgress ? 'Continue' : 'Complete Now'}
                 </button>
@@ -449,7 +468,8 @@ export default function PortalOrganizer({ clientId: _clientId, cardColor = '#383
               {isSubmitted && (
                 <button
                   onClick={() => openOrganizer(org.id, true)}
-                  className="self-start px-4 py-1.5 rounded-[6px] border border-[#484848] text-[#9CA3AF] text-[12px] hover:text-[#EDEEF0] transition-colors"
+                  className="self-start px-4 py-1.5 rounded-[6px] text-[12px] transition-colors"
+                  style={{ border: `1px solid ${mutedText}`, color: mutedText }}
                 >
                   View Submission
                 </button>

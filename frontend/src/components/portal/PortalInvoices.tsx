@@ -2,7 +2,6 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { useTheme } from 'next-themes'
 import {
   CardNumberElement,
   CardExpiryElement,
@@ -64,13 +63,13 @@ interface PaymentFormProps {
   onCancel: () => void
   accentColor?: string
   cardColor?: string
+  portalMode?: 'light' | 'dark'
 }
 
-function PaymentForm({ clientSecret, onSuccess, onCancel, accentColor = '#3A6A94', cardColor = '#383838' }: PaymentFormProps) {
+function PaymentForm({ clientSecret, onSuccess, onCancel, accentColor = '#3A6A94', cardColor = '#383838', portalMode = 'dark' }: PaymentFormProps) {
   const stripe = useStripe()
   const elements = useElements()
-  const { resolvedTheme } = useTheme()
-  const isDark = resolvedTheme !== 'light'
+  const isDark = portalMode !== 'light'
   const [loading, setLoading] = useState(false)
   const [stripeError, setStripeError] = useState<string | null>(null)
 
@@ -222,7 +221,9 @@ function PaymentForm({ clientSecret, onSuccess, onCancel, accentColor = '#3A6A94
   )
 }
 
-export function PortalInvoices({ accentColor = '#3A6A94', cardColor = '#383838' }: { accentColor?: string; cardColor?: string }) {
+export function PortalInvoices({ accentColor = '#3A6A94', cardColor = '#383838', portalMode = 'dark' }: { accentColor?: string; cardColor?: string; portalMode?: 'light' | 'dark' }) {
+  const primaryText = portalMode === 'light' ? '#1F3148' : '#EDEEF0'
+  const mutedText = portalMode === 'light' ? '#6B7280' : '#9CA3AF'
   const [invoices, setInvoices] = useState<PortalInvoiceItem[]>([])
   const [loading, setLoading] = useState(true)
   const [fetchError, setFetchError] = useState(false)
@@ -298,7 +299,7 @@ export function PortalInvoices({ accentColor = '#3A6A94', cardColor = '#383838' 
     return (
       <div className="p-5 max-w-2xl mx-auto">
         <div className="rounded-[8px] px-4 py-6 flex flex-col items-center gap-3" style={{ backgroundColor: cardColor }}>
-          <p className="text-[13px] text-[#9CA3AF]">Failed to load invoices.</p>
+          <p className="text-[13px]" style={{ color: mutedText }}>Failed to load invoices.</p>
           <button
             onClick={fetchInvoices}
             className="h-8 px-4 rounded-[6px] text-white text-[12px] font-medium hover:opacity-90 transition-opacity"
@@ -315,8 +316,8 @@ export function PortalInvoices({ accentColor = '#3A6A94', cardColor = '#383838' 
     return (
       <div className="p-5 max-w-2xl mx-auto">
         <div className="flex flex-col items-center gap-1 py-12">
-          <p className="text-[13px] font-medium text-[#EDEEF0]">No invoices yet.</p>
-          <p className="text-[12px] text-[#9CA3AF]">
+          <p className="text-[13px] font-medium" style={{ color: primaryText }}>No invoices yet.</p>
+          <p className="text-[12px]" style={{ color: mutedText }}>
             Invoices from your accountant will appear here.
           </p>
         </div>
@@ -329,10 +330,10 @@ export function PortalInvoices({ accentColor = '#3A6A94', cardColor = '#383838' 
       {/* Outstanding balance summary */}
       {unpaid.length > 0 && (
         <div className="rounded-[8px] px-5 py-4" style={{ backgroundColor: cardColor }}>
-          <p className="text-[12px] text-[#9CA3AF] uppercase tracking-[0.05em]">
+          <p className="text-[12px] uppercase tracking-[0.05em]" style={{ color: mutedText }}>
             Outstanding balance
           </p>
-          <p className="text-[24px] font-medium text-[#EDEEF0] mt-0.5">
+          <p className="text-[24px] font-medium mt-0.5" style={{ color: primaryText }}>
             {formatCurrency(totalOutstanding)}
           </p>
         </div>
@@ -340,7 +341,7 @@ export function PortalInvoices({ accentColor = '#3A6A94', cardColor = '#383838' 
 
       {/* All-paid message */}
       {unpaid.length === 0 && paid.length > 0 && (
-        <p className="text-[12px] text-[#9CA3AF] text-center py-4">
+        <p className="text-[12px] text-center py-4" style={{ color: mutedText }}>
           You&apos;re all caught up — no outstanding invoices.
         </p>
       )}
@@ -348,7 +349,7 @@ export function PortalInvoices({ accentColor = '#3A6A94', cardColor = '#383838' 
       {/* Unpaid invoices */}
       {unpaid.length > 0 && (
         <div>
-          <p className="text-[12px] font-medium text-[#9CA3AF] uppercase tracking-[0.05em] mb-2">
+          <p className="text-[12px] font-medium uppercase tracking-[0.05em] mb-2" style={{ color: mutedText }}>
             Due
           </p>
           <div className="flex flex-col gap-3">
@@ -356,18 +357,18 @@ export function PortalInvoices({ accentColor = '#3A6A94', cardColor = '#383838' 
               <div key={inv.id}>
                 <div className="flex items-center justify-between rounded-[8px] px-5 py-4" style={{ backgroundColor: cardColor }}>
                   <div className="flex flex-col gap-0.5">
-                    <p className="text-[14px] font-medium text-[#EDEEF0]">
+                    <p className="text-[14px] font-medium" style={{ color: primaryText }}>
                       {inv.invoice_number}
                     </p>
                     <div className="flex items-center gap-2">
                       <StatusBadge status={inv.status} />
-                      <p className="text-[13px] text-[#9CA3AF]">
+                      <p className="text-[13px]" style={{ color: mutedText }}>
                         Due {formatDate(inv.due_date)}
                       </p>
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
-                    <span className="text-[15px] font-medium text-[#EDEEF0]">
+                    <span className="text-[15px] font-medium" style={{ color: primaryText }}>
                       {formatCurrency(Number(inv.total_amount))}
                     </span>
                     <button
@@ -391,6 +392,7 @@ export function PortalInvoices({ accentColor = '#3A6A94', cardColor = '#383838' 
                     onCancel={() => setActivePayId(null)}
                     accentColor={accentColor}
                     cardColor={cardColor}
+                    portalMode={portalMode}
                   />
                 )}
               </div>
@@ -402,7 +404,7 @@ export function PortalInvoices({ accentColor = '#3A6A94', cardColor = '#383838' 
       {/* Paid invoices */}
       {paid.length > 0 && (
         <div>
-          <p className="text-[12px] font-medium text-[#9CA3AF] uppercase tracking-[0.05em] mb-2">
+          <p className="text-[12px] font-medium uppercase tracking-[0.05em] mb-2" style={{ color: mutedText }}>
             Paid
           </p>
           <div className="flex flex-col gap-3">
@@ -413,10 +415,10 @@ export function PortalInvoices({ accentColor = '#3A6A94', cardColor = '#383838' 
                 style={{ backgroundColor: cardColor }}
               >
                 <div className="flex flex-col gap-0.5">
-                  <p className="text-[12px] font-medium text-[#EDEEF0]">
+                  <p className="text-[12px] font-medium" style={{ color: primaryText }}>
                     {inv.invoice_number}
                   </p>
-                  <p className="text-[11px] text-[#9CA3AF]">
+                  <p className="text-[11px]" style={{ color: mutedText }}>
                     Paid · {formatDate(inv.due_date)}
                   </p>
                 </div>

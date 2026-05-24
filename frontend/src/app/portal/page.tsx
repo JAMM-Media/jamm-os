@@ -88,18 +88,18 @@ export default function PortalPage() {
       activeTab={activeTab}
       onTabChange={setActiveTab}
     >
-      {activeTab === 'todo' && <PortalTodo clientFirstName={firstName} accentColor={me.portal_accent_color} cardColor={me.portal_card_color} />}
-      {activeTab === 'documents' && <PortalDocuments firmName={me.portal_display_name || me.firm_name} accentColor={me.portal_accent_color} cardColor={me.portal_card_color} />}
+      {activeTab === 'todo' && <PortalTodo clientFirstName={firstName} accentColor={me.portal_accent_color} cardColor={me.portal_card_color} portalMode={me.portal_mode} />}
+      {activeTab === 'documents' && <PortalDocuments firmName={me.portal_display_name || me.firm_name} accentColor={me.portal_accent_color} cardColor={me.portal_card_color} portalMode={me.portal_mode} />}
       {activeTab === 'invoices' && (
         <Elements stripe={stripePromise}>
-          <PortalInvoices accentColor={me.portal_accent_color} cardColor={me.portal_card_color} />
+          <PortalInvoices accentColor={me.portal_accent_color} cardColor={me.portal_card_color} portalMode={me.portal_mode} />
         </Elements>
       )}
       {activeTab === 'messages' && (
-        <PortalMessages clientId={me.client_id} firmName={me.firm_name} cardColor={me.portal_card_color} accentColor={me.portal_accent_color} />
+        <PortalMessages clientId={me.client_id} firmName={me.firm_name} cardColor={me.portal_card_color} accentColor={me.portal_accent_color} portalMode={me.portal_mode} />
       )}
       {activeTab === 'organizer' && (
-        <PortalOrganizer clientId={me.client_id} cardColor={me.portal_card_color} />
+        <PortalOrganizer clientId={me.client_id} cardColor={me.portal_card_color} portalMode={me.portal_mode} />
       )}
     </PortalShell>
   )

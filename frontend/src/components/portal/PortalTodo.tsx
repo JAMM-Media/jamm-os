@@ -15,10 +15,10 @@ interface ActionItem {
   completed: boolean
 }
 
-function getIcon(type: ActionItem['type']) {
-  if (type === 'document-request') return <FileUp className="h-5 w-5 text-[#9CA3AF]" />
-  if (type === 'signature') return <PenLine className="h-5 w-5 text-[#9CA3AF]" />
-  return <CreditCard className="h-5 w-5 text-[#9CA3AF]" />
+function getIcon(type: ActionItem['type'], iconColor: string) {
+  if (type === 'document-request') return <FileUp className="h-5 w-5" style={{ color: iconColor }} />
+  if (type === 'signature') return <PenLine className="h-5 w-5" style={{ color: iconColor }} />
+  return <CreditCard className="h-5 w-5" style={{ color: iconColor }} />
 }
 
 function formatDate(iso: string | null | undefined): string {
@@ -30,36 +30,54 @@ function formatDate(iso: string | null | undefined): string {
   })
 }
 
-const STATUS_COLORS: Record<string, string> = {
-  active: 'bg-[#1E3A5F] text-[#7DA3C4]',
-  in_progress: 'bg-[#1E3A5F] text-[#7DA3C4]',
-  pending: 'bg-[#292524] text-[#78716C]',
-  completed: 'bg-[#14532D] text-[#86EFAC]',
-  archived: 'bg-[#292524] text-[#78716C]',
-}
-
-function EngagementBadge({ status }: { status: string }) {
-  const cls = STATUS_COLORS[status] ?? 'bg-[#292524] text-[#78716C]'
+function EngagementBadge({ status, accentColor }: { status: string; accentColor: string }) {
+  const getStyle = (): React.CSSProperties => {
+    switch (status) {
+      case 'active':
+      case 'in_progress':
+        return { backgroundColor: accentColor + '33', color: accentColor, border: `1px solid ${accentColor}66` }
+      case 'completed':
+        return { backgroundColor: '#D1FAE5', color: '#065F46' }
+      case 'overdue':
+      case 'blocked':
+        return { backgroundColor: '#FEE2E2', color: '#991B1B' }
+      case 'planning':
+      case 'draft':
+      case 'pending':
+      default:
+        return { backgroundColor: accentColor + '22', color: accentColor, border: `1px solid ${accentColor}44` }
+    }
+  }
   return (
-    <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-[4px] capitalize ${cls}`}>
+    <span
+      className="text-[10px] font-medium px-1.5 py-0.5 rounded-[4px] capitalize"
+      style={getStyle()}
+    >
       {status.replace(/_/g, ' ')}
     </span>
   )
 }
 
-function ActionCard({ item, accentColor, cardColor }: { item: ActionItem; accentColor: string; cardColor: string }) {
+function ActionCard({ item, accentColor, cardColor, primaryText, mutedText, iconColor }: {
+  item: ActionItem
+  accentColor: string
+  cardColor: string
+  primaryText: string
+  mutedText: string
+  iconColor: string
+}) {
   return (
     <div
       className="flex items-center justify-between gap-4 rounded-[8px] px-5 py-4"
       style={{ backgroundColor: cardColor, opacity: item.completed ? 0.7 : 1 }}
     >
       <div className="flex items-start gap-3 min-w-0">
-        <div className="flex-shrink-0 mt-0.5">{getIcon(item.type)}</div>
+        <div className="flex-shrink-0 mt-0.5">{getIcon(item.type, iconColor)}</div>
         <div className="min-w-0">
-          <p className="text-[14px] font-medium text-[#EDEEF0] leading-tight">{item.title}</p>
-          <p className="text-[13px] text-[#9CA3AF] mt-0.5 leading-snug">{item.description}</p>
+          <p className="text-[14px] font-medium leading-tight" style={{ color: primaryText }}>{item.title}</p>
+          <p className="text-[13px] mt-0.5 leading-snug" style={{ color: mutedText }}>{item.description}</p>
           {item.dueDate && !item.completed && (
-            <p className="text-[13px] text-[#9CA3AF] mt-1">Due {item.dueDate}</p>
+            <p className="text-[13px] mt-1" style={{ color: mutedText }}>Due {item.dueDate}</p>
           )}
         </div>
       </div>
@@ -85,9 +103,14 @@ interface PortalTodoProps {
   clientFirstName: string
   accentColor?: string
   cardColor?: string
+  portalMode?: 'light' | 'dark'
 }
 
-export function PortalTodo({ clientFirstName, accentColor = '#3A6A94', cardColor = '#383838' }: PortalTodoProps) {
+export function PortalTodo({ clientFirstName, accentColor = '#3A6A94', cardColor = '#383838', portalMode = 'dark' }: PortalTodoProps) {
+  const primaryText = portalMode === 'light' ? '#1F3148' : '#EDEEF0'
+  const mutedText = portalMode === 'light' ? '#6B7280' : '#9CA3AF'
+  const iconColor = portalMode === 'light' ? '#6B7280' : '#9CA3AF'
+
   const [items, setItems] = useState<ActionItem[]>([])
   const [engagements, setEngagements] = useState<PortalDashboard['active_engagements']>([])
   const [loading, setLoading] = useState(true)
@@ -143,8 +166,8 @@ export function PortalTodo({ clientFirstName, accentColor = '#3A6A94', cardColor
   return (
     <div className="p-6 flex flex-col gap-6 max-w-2xl mx-auto">
       <div>
-        <p className="text-[18px] font-medium text-[#EDEEF0]">Hello, {clientFirstName}</p>
-        <p className="text-[14px] text-[#9CA3AF] mt-0.5">
+        <p className="text-[18px] font-medium" style={{ color: primaryText }}>Hello, {clientFirstName}</p>
+        <p className="text-[14px] mt-0.5" style={{ color: mutedText }}>
           {active.length === 0
             ? "You're all caught up."
             : `You have ${active.length} item${active.length !== 1 ? 's' : ''} that need${active.length === 1 ? 's' : ''} your attention.`}
@@ -153,12 +176,12 @@ export function PortalTodo({ clientFirstName, accentColor = '#3A6A94', cardColor
 
       {active.length > 0 && (
         <div>
-          <p className="text-[12px] font-medium text-[#9CA3AF] uppercase tracking-[0.05em] mb-2">
+          <p className="text-[12px] font-medium uppercase tracking-[0.05em] mb-2" style={{ color: mutedText }}>
             Action needed
           </p>
           <div className="flex flex-col gap-3">
             {active.map((item) => (
-              <ActionCard key={item.id} item={item} accentColor={accentColor} cardColor={cardColor} />
+              <ActionCard key={item.id} item={item} accentColor={accentColor} cardColor={cardColor} primaryText={primaryText} mutedText={mutedText} iconColor={iconColor} />
             ))}
           </div>
         </div>
@@ -166,7 +189,7 @@ export function PortalTodo({ clientFirstName, accentColor = '#3A6A94', cardColor
 
       {engagements.length > 0 && (
         <div>
-          <p className="text-[12px] font-medium text-[#9CA3AF] uppercase tracking-[0.05em] mb-2">
+          <p className="text-[12px] font-medium uppercase tracking-[0.05em] mb-2" style={{ color: mutedText }}>
             Active engagements
           </p>
           <div className="flex flex-col gap-3">
@@ -176,8 +199,8 @@ export function PortalTodo({ clientFirstName, accentColor = '#3A6A94', cardColor
                 className="flex items-center justify-between rounded-[8px] px-4 py-3"
                 style={{ backgroundColor: cardColor }}
               >
-                <p className="text-[14px] font-medium text-[#EDEEF0]">{eng.name}</p>
-                <EngagementBadge status={eng.status} />
+                <p className="text-[14px] font-medium" style={{ color: primaryText }}>{eng.name}</p>
+                <EngagementBadge status={eng.status} accentColor={accentColor} />
               </div>
             ))}
           </div>
@@ -186,12 +209,12 @@ export function PortalTodo({ clientFirstName, accentColor = '#3A6A94', cardColor
 
       {completed.length > 0 && (
         <div>
-          <p className="text-[12px] font-medium text-[#9CA3AF] uppercase tracking-[0.05em] mb-2">
+          <p className="text-[12px] font-medium uppercase tracking-[0.05em] mb-2" style={{ color: mutedText }}>
             Completed
           </p>
           <div className="flex flex-col gap-3">
             {completed.map((item) => (
-              <ActionCard key={item.id} item={item} accentColor={accentColor} cardColor={cardColor} />
+              <ActionCard key={item.id} item={item} accentColor={accentColor} cardColor={cardColor} primaryText={primaryText} mutedText={mutedText} iconColor={iconColor} />
             ))}
           </div>
         </div>

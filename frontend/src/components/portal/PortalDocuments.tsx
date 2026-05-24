@@ -15,9 +15,13 @@ interface PortalDocumentsProps {
   firmName: string
   accentColor?: string
   cardColor?: string
+  portalMode?: 'light' | 'dark'
 }
 
-export function PortalDocuments({ firmName, accentColor = '#3A6A94', cardColor = '#383838' }: PortalDocumentsProps) {
+export function PortalDocuments({ firmName, accentColor = '#3A6A94', cardColor = '#383838', portalMode = 'dark' }: PortalDocumentsProps) {
+  const primaryText = portalMode === 'light' ? '#1F3148' : '#EDEEF0'
+  const mutedText = portalMode === 'light' ? '#6B7280' : '#9CA3AF'
+
   const [documents, setDocuments] = useState<PortalDocumentItem[]>([])
   const [loading, setLoading] = useState(true)
   const [fetchError, setFetchError] = useState(false)
@@ -63,7 +67,7 @@ export function PortalDocuments({ firmName, accentColor = '#3A6A94', cardColor =
     return (
       <div className="p-5 max-w-2xl mx-auto">
         <div className="rounded-[8px] px-4 py-6 flex flex-col items-center gap-3" style={{ backgroundColor: cardColor }}>
-          <p className="text-[13px] text-[#9CA3AF]">Failed to load documents.</p>
+          <p className="text-[13px]" style={{ color: mutedText }}>Failed to load documents.</p>
           <button
             onClick={fetchDocuments}
             className="h-8 px-4 rounded-[6px] text-white text-[12px] font-medium hover:opacity-90 transition-opacity"
@@ -79,7 +83,7 @@ export function PortalDocuments({ firmName, accentColor = '#3A6A94', cardColor =
   return (
     <div className="p-6 flex flex-col gap-5 max-w-2xl mx-auto">
       <div className="flex items-center justify-between">
-        <p className="text-[12px] font-medium text-[#9CA3AF] uppercase tracking-[0.05em]">
+        <p className="text-[12px] font-medium uppercase tracking-[0.05em]" style={{ color: mutedText }}>
           Documents ({documents.length})
         </p>
         <button
@@ -106,8 +110,8 @@ export function PortalDocuments({ firmName, accentColor = '#3A6A94', cardColor =
 
       {documents.length === 0 ? (
         <div className="flex flex-col items-center gap-1 py-12">
-          <p className="text-[13px] font-medium text-[#EDEEF0]">No documents yet.</p>
-          <p className="text-[12px] text-[#9CA3AF]">
+          <p className="text-[13px] font-medium" style={{ color: primaryText }}>No documents yet.</p>
+          <p className="text-[12px]" style={{ color: mutedText }}>
             Your firm will share documents here.
           </p>
         </div>
@@ -119,15 +123,15 @@ export function PortalDocuments({ firmName, accentColor = '#3A6A94', cardColor =
               className="flex items-center gap-3 rounded-[8px] px-5 py-4"
               style={{ backgroundColor: cardColor }}
             >
-              <FileText className="h-5 w-5 text-[#9CA3AF] flex-shrink-0" />
+              <FileText className="h-5 w-5 flex-shrink-0" style={{ color: mutedText }} />
               <div className="flex-1 min-w-0">
-                <p className="text-[14px] font-medium text-[#EDEEF0] truncate">{doc.name}</p>
-                <p className="text-[12px] text-[#9CA3AF]">
+                <p className="text-[14px] font-medium truncate" style={{ color: primaryText }}>{doc.name}</p>
+                <p className="text-[12px]" style={{ color: mutedText }}>
                   {doc.file_type} · {formatFileSize(doc.file_size_kb)} ·{' '}
                   {doc.uploaded_at.split('T')[0]}
                 </p>
               </div>
-              <span className="text-[12px] text-[#9CA3AF] flex-shrink-0">
+              <span className="text-[12px] flex-shrink-0" style={{ color: mutedText }}>
                 {doc.uploaded_by === 'firm' ? firmName : 'Uploaded by you'}
               </span>
             </div>
