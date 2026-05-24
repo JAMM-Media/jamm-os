@@ -63,7 +63,7 @@ export default function PortalPage() {
 
   const firstName = me.client_name.split(' ')[0]
   const logoImgSrc = me.portal_logo_url
-    ? `https://api.jammpx.com${me.portal_logo_url}`
+    ? `https://api.jammpx.com${me.portal_logo_url?.replace('/api/v1', '')}`
     : undefined
 
   return (
