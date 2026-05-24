@@ -46,7 +46,7 @@ export default function PortalBrandingTab() {
         portal_brand_color: (settings.portal_brand_color as string) || '#1F3148',
       })
       if (settings.portal_logo_s3_key) {
-        setLogoPreviewUrl(`/api/backend/firms/logo/${data.id}`)
+        setLogoPreviewUrl(`${process.env.NEXT_PUBLIC_API_URL ?? 'https://api.jammpx.com'}/api/v1/firms/logo/${data.id}`)
       }
     }).finally(() => setLoading(false))
   }, [])
@@ -76,7 +76,7 @@ export default function PortalBrandingTab() {
       if (!putRes.ok) throw new Error('S3 upload failed')
       await api.patch('/users/firm/settings', { portal_logo_s3_key: s3_key })
       setBranding((b) => ({ ...b, portal_logo_s3_key: s3_key }))
-      setLogoPreviewUrl(`/api/backend/firms/logo/${firmId}?t=${Date.now()}`)
+      setLogoPreviewUrl(`${process.env.NEXT_PUBLIC_API_URL ?? 'https://api.jammpx.com'}/api/v1/firms/logo/${firmId}?t=${Date.now()}`)
       toast.success('Logo uploaded')
     } catch {
       toast.error('Logo upload failed. Please try again.')
