@@ -8,6 +8,8 @@ interface PortalOrganizerProps {
   clientId: string
   cardColor?: string
   portalMode?: 'light' | 'dark'
+  textPrimary?: string
+  textMuted?: string
 }
 
 interface OrganizerListItem {
@@ -61,9 +63,9 @@ function getInputClass(portalMode: 'light' | 'dark') {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-export default function PortalOrganizer({ clientId: _clientId, cardColor = '#383838', portalMode = 'dark' }: PortalOrganizerProps) {
-  const primaryText = portalMode === 'light' ? '#1F3148' : '#EDEEF0'
-  const mutedText = portalMode === 'light' ? '#6B7280' : '#9CA3AF'
+export default function PortalOrganizer({ clientId: _clientId, cardColor = '#383838', portalMode = 'dark', textPrimary = '#EDEEF0', textMuted = '#9CA3AF' }: PortalOrganizerProps) {
+  const primaryText = textPrimary
+  const mutedText = textMuted
 
   const [organizers, setOrganizers] = useState<OrganizerListItem[]>([])
   const [loading, setLoading] = useState(true)

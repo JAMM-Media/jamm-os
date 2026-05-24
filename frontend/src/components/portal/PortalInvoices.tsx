@@ -221,9 +221,9 @@ function PaymentForm({ clientSecret, onSuccess, onCancel, accentColor = '#3A6A94
   )
 }
 
-export function PortalInvoices({ accentColor = '#3A6A94', cardColor = '#383838', portalMode = 'dark' }: { accentColor?: string; cardColor?: string; portalMode?: 'light' | 'dark' }) {
-  const primaryText = portalMode === 'light' ? '#1F3148' : '#EDEEF0'
-  const mutedText = portalMode === 'light' ? '#6B7280' : '#9CA3AF'
+export function PortalInvoices({ accentColor = '#3A6A94', cardColor = '#383838', portalMode = 'dark', textPrimary = '#EDEEF0', textMuted = '#9CA3AF' }: { accentColor?: string; cardColor?: string; portalMode?: 'light' | 'dark'; textPrimary?: string; textMuted?: string }) {
+  const primaryText = textPrimary
+  const mutedText = textMuted
   const [invoices, setInvoices] = useState<PortalInvoiceItem[]>([])
   const [loading, setLoading] = useState(true)
   const [fetchError, setFetchError] = useState(false)

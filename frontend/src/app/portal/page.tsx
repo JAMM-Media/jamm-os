@@ -28,6 +28,8 @@ interface PortalMe {
   portal_avatar_color: string
   portal_subtitle_color: string
   portal_card_color: string
+  portal_text_primary: string
+  portal_text_muted: string
 }
 
 export default function PortalPage() {
@@ -88,18 +90,18 @@ export default function PortalPage() {
       activeTab={activeTab}
       onTabChange={setActiveTab}
     >
-      {activeTab === 'todo' && <PortalTodo clientFirstName={firstName} accentColor={me.portal_accent_color} cardColor={me.portal_card_color} portalMode={me.portal_mode} />}
-      {activeTab === 'documents' && <PortalDocuments firmName={me.portal_display_name || me.firm_name} accentColor={me.portal_accent_color} cardColor={me.portal_card_color} portalMode={me.portal_mode} />}
+      {activeTab === 'todo' && <PortalTodo clientFirstName={firstName} accentColor={me.portal_accent_color} cardColor={me.portal_card_color} portalMode={me.portal_mode} textPrimary={me.portal_text_primary} textMuted={me.portal_text_muted} />}
+      {activeTab === 'documents' && <PortalDocuments firmName={me.portal_display_name || me.firm_name} accentColor={me.portal_accent_color} cardColor={me.portal_card_color} portalMode={me.portal_mode} textPrimary={me.portal_text_primary} textMuted={me.portal_text_muted} />}
       {activeTab === 'invoices' && (
         <Elements stripe={stripePromise}>
-          <PortalInvoices accentColor={me.portal_accent_color} cardColor={me.portal_card_color} portalMode={me.portal_mode} />
+          <PortalInvoices accentColor={me.portal_accent_color} cardColor={me.portal_card_color} portalMode={me.portal_mode} textPrimary={me.portal_text_primary} textMuted={me.portal_text_muted} />
         </Elements>
       )}
       {activeTab === 'messages' && (
-        <PortalMessages clientId={me.client_id} firmName={me.firm_name} cardColor={me.portal_card_color} accentColor={me.portal_accent_color} portalMode={me.portal_mode} />
+        <PortalMessages clientId={me.client_id} firmName={me.firm_name} cardColor={me.portal_card_color} accentColor={me.portal_accent_color} portalMode={me.portal_mode} textPrimary={me.portal_text_primary} textMuted={me.portal_text_muted} />
       )}
       {activeTab === 'organizer' && (
-        <PortalOrganizer clientId={me.client_id} cardColor={me.portal_card_color} portalMode={me.portal_mode} />
+        <PortalOrganizer clientId={me.client_id} cardColor={me.portal_card_color} portalMode={me.portal_mode} textPrimary={me.portal_text_primary} textMuted={me.portal_text_muted} />
       )}
     </PortalShell>
   )

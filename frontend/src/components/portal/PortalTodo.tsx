@@ -34,18 +34,25 @@ function EngagementBadge({ status, accentColor }: { status: string; accentColor:
   const getStyle = (): React.CSSProperties => {
     switch (status) {
       case 'active':
+        return { backgroundColor: accentColor + '33', color: accentColor, border: `1px solid ${accentColor}66` }
       case 'in_progress':
         return { backgroundColor: accentColor + '33', color: accentColor, border: `1px solid ${accentColor}66` }
+      case 'in_review':
+        return { backgroundColor: '#DBEAFE', color: '#1E40AF' }
       case 'completed':
         return { backgroundColor: '#D1FAE5', color: '#065F46' }
       case 'overdue':
       case 'blocked':
         return { backgroundColor: '#FEE2E2', color: '#991B1B' }
+      case 'awaiting_docs':
+        return { backgroundColor: '#FEF3C7', color: '#92400E' }
       case 'planning':
       case 'draft':
-      case 'pending':
+      case 'archived':
+      case 'cancelled':
+      case 'not_started':
       default:
-        return { backgroundColor: accentColor + '22', color: accentColor, border: `1px solid ${accentColor}44` }
+        return { backgroundColor: '#E5E7EB', color: '#1F3148', border: '0.5px solid #1F3148' }
     }
   }
   return (
@@ -104,11 +111,13 @@ interface PortalTodoProps {
   accentColor?: string
   cardColor?: string
   portalMode?: 'light' | 'dark'
+  textPrimary?: string
+  textMuted?: string
 }
 
-export function PortalTodo({ clientFirstName, accentColor = '#3A6A94', cardColor = '#383838', portalMode = 'dark' }: PortalTodoProps) {
-  const primaryText = portalMode === 'light' ? '#1F3148' : '#EDEEF0'
-  const mutedText = portalMode === 'light' ? '#6B7280' : '#9CA3AF'
+export function PortalTodo({ clientFirstName, accentColor = '#3A6A94', cardColor = '#383838', portalMode = 'dark', textPrimary = '#EDEEF0', textMuted = '#9CA3AF' }: PortalTodoProps) {
+  const primaryText = textPrimary
+  const mutedText = textMuted
   const iconColor = portalMode === 'light' ? '#6B7280' : '#9CA3AF'
 
   const [items, setItems] = useState<ActionItem[]>([])

@@ -16,11 +16,13 @@ interface PortalDocumentsProps {
   accentColor?: string
   cardColor?: string
   portalMode?: 'light' | 'dark'
+  textPrimary?: string
+  textMuted?: string
 }
 
-export function PortalDocuments({ firmName, accentColor = '#3A6A94', cardColor = '#383838', portalMode = 'dark' }: PortalDocumentsProps) {
-  const primaryText = portalMode === 'light' ? '#1F3148' : '#EDEEF0'
-  const mutedText = portalMode === 'light' ? '#6B7280' : '#9CA3AF'
+export function PortalDocuments({ firmName, accentColor = '#3A6A94', cardColor = '#383838', portalMode = 'dark', textPrimary = '#EDEEF0', textMuted = '#9CA3AF' }: PortalDocumentsProps) {
+  const primaryText = textPrimary
+  const mutedText = textMuted
 
   const [documents, setDocuments] = useState<PortalDocumentItem[]>([])
   const [loading, setLoading] = useState(true)

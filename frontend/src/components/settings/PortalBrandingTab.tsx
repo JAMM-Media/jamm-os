@@ -14,6 +14,8 @@ interface ColorSet {
   avatar: string
   subtitle: string
   card: string
+  text_primary: string
+  text_muted: string
 }
 
 interface BrandingState {
@@ -32,6 +34,8 @@ const DARK_DEFAULTS: ColorSet = {
   avatar: '#3A6A94',
   subtitle: '#7DA3C4',
   card: '#383838',
+  text_primary: '#EDEEF0',
+  text_muted: '#9CA3AF',
 }
 
 const LIGHT_DEFAULTS: ColorSet = {
@@ -42,6 +46,8 @@ const LIGHT_DEFAULTS: ColorSet = {
   avatar: '#1F3148',
   subtitle: '#7DA3C4',
   card: '#EDEEF0',
+  text_primary: '#1F3148',
+  text_muted: '#6B7280',
 }
 
 const VALID_HEX = /^#[0-9A-Fa-f]{6}$/
@@ -56,6 +62,8 @@ const COLOR_LABELS = [
   { key: 'avatar', label: 'Client avatar' },
   { key: 'subtitle', label: 'Subtitle text ("Client Portal")' },
   { key: 'card', label: 'Card / item background' },
+  { key: 'text_primary', label: 'Primary text' },
+  { key: 'text_muted', label: 'Secondary text' },
 ] as const
 
 export default function PortalBrandingTab() {

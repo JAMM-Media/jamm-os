@@ -17,6 +17,8 @@ interface PortalMessagesProps {
   cardColor?: string
   accentColor?: string
   portalMode?: 'light' | 'dark'
+  textPrimary?: string
+  textMuted?: string
 }
 
 function formatTimestamp(iso: string): string {
@@ -28,9 +30,9 @@ function formatTimestamp(iso: string): string {
   )
 }
 
-export function PortalMessages({ clientId, firmName, cardColor = '#383838', accentColor = '#3A6A94', portalMode = 'dark' }: PortalMessagesProps) {
-  const primaryText = portalMode === 'light' ? '#1F3148' : '#EDEEF0'
-  const mutedText = portalMode === 'light' ? '#6B7280' : '#9CA3AF'
+export function PortalMessages({ clientId, firmName, cardColor = '#383838', accentColor = '#3A6A94', portalMode = 'dark', textPrimary = '#EDEEF0', textMuted = '#9CA3AF' }: PortalMessagesProps) {
+  const primaryText = textPrimary
+  const mutedText = textMuted
   const borderColor = portalMode === 'light' ? '#C8CDD6' : '#383838'
   const inputBorder = portalMode === 'light' ? '#C8CDD6' : '#484848'
   const inputFocusBorder = portalMode === 'light' ? '#1F3148' : '#3A6A94'

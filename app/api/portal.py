@@ -549,6 +549,8 @@ def portal_me(
         "avatar": "#3A6A94",
         "subtitle": "#7DA3C4",
         "card": "#383838",
+        "text_primary": "#EDEEF0",
+        "text_muted": "#9CA3AF",
     }
     light_defaults = {
         "top_bar": "#1F3148",
@@ -558,6 +560,8 @@ def portal_me(
         "avatar": "#1F3148",
         "subtitle": "#7DA3C4",
         "card": "#EDEEF0",
+        "text_primary": "#1F3148",
+        "text_muted": "#6B7280",
     }
 
     if portal_mode == "light":
@@ -581,6 +585,8 @@ def portal_me(
         "portal_avatar_color": colors["avatar"],
         "portal_subtitle_color": colors["subtitle"],
         "portal_card_color": colors["card"],
+        "portal_text_primary": colors["text_primary"],
+        "portal_text_muted": colors["text_muted"],
     }
 
 
