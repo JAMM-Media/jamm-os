@@ -177,9 +177,8 @@ export default function PortalBrandingTab() {
 
       {/* Display Name */}
       <div className="flex flex-col gap-1.5">
-        <label htmlFor="portal-display-name" className={labelClass}>Firm name in portal</label>
+        <label className={labelClass}>Firm name in portal</label>
         <input
-          id="portal-display-name"
           type="text"
           value={branding.portal_display_name}
           onChange={(e) => setBranding((b) => ({ ...b, portal_display_name: e.target.value }))}
@@ -194,24 +193,6 @@ export default function PortalBrandingTab() {
       <div className="flex flex-col gap-1.5">
         <span className={labelClass}>Firm logo</span>
 
-        {/* The actual file input — always in the DOM, always connected to its label via id */}
-        <input
-          id="logo-upload-input"
-          type="file"
-          accept="image/png,image/jpeg,image/jpg,image/svg+xml,image/webp"
-          onChange={handleInputChange}
-          disabled={uploading}
-          style={{ position: 'fixed', top: '-9999px', left: '-9999px', width: '1px', height: '1px' }}
-        />
-        <input
-          id="logo-replace-input"
-          type="file"
-          accept="image/png,image/jpeg,image/jpg,image/svg+xml,image/webp"
-          onChange={handleInputChange}
-          disabled={uploading}
-          style={{ position: 'fixed', top: '-9999px', left: '-9999px', width: '1px', height: '1px' }}
-        />
-
         {logoPreviewUrl ? (
           <div className="flex items-center gap-3 p-3 rounded-[6px] border border-surface-border dark:border-dark-border bg-surface-page dark:bg-dark-page">
             <img
@@ -221,11 +202,15 @@ export default function PortalBrandingTab() {
               onError={() => setLogoPreviewUrl(null)}
             />
             <div className="flex-1" />
-            <label
-              htmlFor="logo-replace-input"
-              className={`text-[12px] font-medium text-brand-light hover:underline cursor-pointer ${uploading ? 'opacity-50 pointer-events-none' : ''}`}
-            >
+            <label className={`text-[12px] font-medium text-brand-light hover:underline cursor-pointer ${uploading ? 'opacity-50 pointer-events-none' : ''}`}>
               Replace
+              <input
+                type="file"
+                accept="image/png,image/jpeg,image/jpg,image/svg+xml,image/webp"
+                onChange={handleInputChange}
+                disabled={uploading}
+                style={{ display: 'none' }}
+              />
             </label>
             <button
               type="button"
@@ -238,10 +223,7 @@ export default function PortalBrandingTab() {
             </button>
           </div>
         ) : (
-          <label
-            htmlFor="logo-upload-input"
-            className={`flex flex-col items-center justify-center gap-2 h-24 rounded-[6px] border border-dashed border-surface-border dark:border-dark-border hover:border-brand-light dark:hover:border-brand-light transition-colors cursor-pointer ${uploading ? 'opacity-50 pointer-events-none' : ''}`}
-          >
+          <label className={`flex flex-col items-center justify-center gap-2 h-24 rounded-[6px] border border-dashed border-surface-border dark:border-dark-border hover:border-brand-light dark:hover:border-brand-light transition-colors cursor-pointer ${uploading ? 'opacity-50 pointer-events-none' : ''}`}>
             {uploading ? (
               <>
                 <Loader2 className="w-5 h-5 text-[#6B7280] animate-spin" />
@@ -254,6 +236,13 @@ export default function PortalBrandingTab() {
                 <span className="text-[11px] text-[#9CA3AF]">PNG, JPG, SVG, WEBP — max 2MB</span>
               </>
             )}
+            <input
+              type="file"
+              accept="image/png,image/jpeg,image/jpg,image/svg+xml,image/webp"
+              onChange={handleInputChange}
+              disabled={uploading}
+              style={{ display: 'none' }}
+            />
           </label>
         )}
 
