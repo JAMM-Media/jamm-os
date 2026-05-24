@@ -1,7 +1,7 @@
 // path: frontend/src/components/settings/PortalBrandingTab.tsx
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { toast } from 'sonner'
 import { Upload, X, Loader2 } from 'lucide-react'
 import api from '@/lib/api'
@@ -30,6 +30,8 @@ export default function PortalBrandingTab() {
   const [uploading, setUploading] = useState(false)
   const [logoPreviewUrl, setLogoPreviewUrl] = useState<string | null>(null)
   const [saveConfirmed, setSaveConfirmed] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const replaceInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     api.get('/users/firm').then((res) => {
@@ -52,21 +54,15 @@ export default function PortalBrandingTab() {
     }).finally(() => setLoading(false))
   }, [])
 
-  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (!file) return
-
+  async function processFile(file: File) {
     if (!ACCEPTED_TYPES.includes(file.type)) {
       toast.error('Logo must be PNG, JPG, SVG, or WEBP')
-      e.target.value = ''
       return
     }
     if (file.size > MAX_BYTES) {
       toast.error('Logo must be 2MB or smaller')
-      e.target.value = ''
       return
     }
-
     setUploading(true)
     try {
       const { data } = await api.post('/firms/logo/upload-url', {
@@ -75,14 +71,12 @@ export default function PortalBrandingTab() {
         file_size: file.size,
       })
       const { upload_url, s3_key } = data as { upload_url: string; s3_key: string }
-
       const putRes = await fetch(upload_url, {
         method: 'PUT',
         body: file,
         headers: { 'Content-Type': file.type },
       })
       if (!putRes.ok) throw new Error('S3 upload failed')
-
       await api.patch('/users/firm/settings', { portal_logo_s3_key: s3_key })
       setBranding((b) => ({ ...b, portal_logo_s3_key: s3_key }))
       setLogoPreviewUrl(`${API_BASE}/api/v1/firms/logo/${firmId}?t=${Date.now()}`)
@@ -91,8 +85,14 @@ export default function PortalBrandingTab() {
       toast.error('Logo upload failed. Please try again.')
     } finally {
       setUploading(false)
-      e.target.value = ''
+      if (inputRef.current) inputRef.current.value = ''
+      if (replaceInputRef.current) replaceInputRef.current.value = ''
     }
+  }
+
+  function handleInputChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (file) processFile(file)
   }
 
   async function handleRemoveLogo() {
@@ -159,25 +159,12 @@ export default function PortalBrandingTab() {
         <span className="text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em]">Setup status</span>
         <div className="flex flex-col gap-1.5">
           {[
-            {
-              done: branding.portal_display_name !== firmName && branding.portal_display_name.trim() !== '',
-              label: 'Display name customized',
-            },
-            {
-              done: !!branding.portal_logo_s3_key,
-              label: 'Firm logo uploaded',
-            },
-            {
-              done: branding.portal_brand_color !== '#1F3148',
-              label: 'Brand color set',
-            },
+            { done: branding.portal_display_name !== firmName && branding.portal_display_name.trim() !== '', label: 'Display name customized' },
+            { done: !!branding.portal_logo_s3_key, label: 'Firm logo uploaded' },
+            { done: branding.portal_brand_color !== '#1F3148', label: 'Brand color set' },
           ].map(({ done, label }) => (
             <div key={label} className="flex items-center gap-2">
-              <div
-                className={`w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0 ${
-                  done ? 'bg-[#D1FAE5]' : 'bg-[#E5E7EB] dark:bg-[#333333]'
-                }`}
-              >
+              <div className={`w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0 ${done ? 'bg-[#D1FAE5]' : 'bg-[#E5E7EB] dark:bg-[#333333]'}`}>
                 {done ? (
                   <svg className="w-2.5 h-2.5 text-[#065F46]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
@@ -186,9 +173,7 @@ export default function PortalBrandingTab() {
                   <div className="w-1.5 h-1.5 rounded-full bg-[#D1D5DB] dark:bg-[#555]" />
                 )}
               </div>
-              <span className={`text-[12px] ${done ? 'text-[#065F46] dark:text-[#34D399]' : 'text-[#6B7280]'}`}>
-                {label}
-              </span>
+              <span className={`text-[12px] ${done ? 'text-[#065F46] dark:text-[#34D399]' : 'text-[#6B7280]'}`}>{label}</span>
             </div>
           ))}
         </div>
@@ -205,14 +190,28 @@ export default function PortalBrandingTab() {
           maxLength={100}
           className={inputClass}
         />
-        <p className={hintClass}>
-          The name your clients see in the portal top bar. Defaults to your firm name.
-        </p>
+        <p className={hintClass}>The name your clients see in the portal top bar. Defaults to your firm name.</p>
       </div>
 
       {/* Logo Upload */}
       <div className="flex flex-col gap-1.5">
         <span className={labelClass}>Firm logo</span>
+
+        {/* Hidden inputs — one for new upload, one for replace */}
+        <input
+          ref={inputRef}
+          type="file"
+          accept="image/png,image/jpeg,image/jpg,image/svg+xml,image/webp"
+          onChange={handleInputChange}
+          style={{ position: 'absolute', width: '1px', height: '1px', opacity: 0, pointerEvents: 'none' }}
+        />
+        <input
+          ref={replaceInputRef}
+          type="file"
+          accept="image/png,image/jpeg,image/jpg,image/svg+xml,image/webp"
+          onChange={handleInputChange}
+          style={{ position: 'absolute', width: '1px', height: '1px', opacity: 0, pointerEvents: 'none' }}
+        />
 
         {logoPreviewUrl ? (
           <div className="flex items-center gap-3 p-3 rounded-[6px] border border-surface-border dark:border-dark-border bg-surface-page dark:bg-dark-page">
@@ -223,19 +222,16 @@ export default function PortalBrandingTab() {
               onError={() => setLogoPreviewUrl(null)}
             />
             <div className="flex-1" />
-            <div className="relative">
-              <span className={`text-[12px] font-medium text-brand-light hover:underline cursor-pointer ${uploading ? 'opacity-50 pointer-events-none' : ''}`}>
-                Replace
-              </span>
-              <input
-                type="file"
-                accept="image/png,image/jpeg,image/jpg,image/svg+xml,image/webp"
-                onInput={handleFileChange}
-                disabled={uploading}
-                className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
-              />
-            </div>
             <button
+              type="button"
+              onClick={() => replaceInputRef.current?.click()}
+              disabled={uploading}
+              className="text-[12px] font-medium text-brand-light hover:underline disabled:opacity-50"
+            >
+              Replace
+            </button>
+            <button
+              type="button"
               onClick={handleRemoveLogo}
               disabled={saving || uploading}
               className="text-[12px] font-medium text-[#DC2626] hover:underline disabled:opacity-50 flex items-center gap-1"
@@ -245,34 +241,28 @@ export default function PortalBrandingTab() {
             </button>
           </div>
         ) : (
-          <div className="relative h-24 rounded-[6px] border border-dashed border-surface-border dark:border-dark-border hover:border-brand-light dark:hover:border-brand-light transition-colors">
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 pointer-events-none">
-              {uploading ? (
-                <>
-                  <Loader2 className="w-5 h-5 text-[#6B7280] animate-spin" />
-                  <span className="text-[12px] text-[#6B7280]">Uploading…</span>
-                </>
-              ) : (
-                <>
-                  <Upload className="w-5 h-5 text-[#6B7280]" />
-                  <span className="text-[12px] text-[#6B7280]">Click to upload logo</span>
-                  <span className="text-[11px] text-[#9CA3AF]">PNG, JPG, SVG, WEBP — max 2MB</span>
-                </>
-              )}
-            </div>
-            <input
-              type="file"
-              accept="image/png,image/jpeg,image/jpg,image/svg+xml,image/webp"
-              onInput={handleFileChange}
-              disabled={uploading}
-              className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
-            />
-          </div>
+          <button
+            type="button"
+            onClick={() => inputRef.current?.click()}
+            disabled={uploading}
+            className="flex flex-col items-center justify-center gap-2 h-24 rounded-[6px] border border-dashed border-surface-border dark:border-dark-border hover:border-brand-light dark:hover:border-brand-light transition-colors disabled:opacity-50 cursor-pointer w-full"
+          >
+            {uploading ? (
+              <>
+                <Loader2 className="w-5 h-5 text-[#6B7280] animate-spin" />
+                <span className="text-[12px] text-[#6B7280]">Uploading…</span>
+              </>
+            ) : (
+              <>
+                <Upload className="w-5 h-5 text-[#6B7280]" />
+                <span className="text-[12px] text-[#6B7280]">Click to upload logo</span>
+                <span className="text-[11px] text-[#9CA3AF]">PNG, JPG, SVG, WEBP — max 2MB</span>
+              </>
+            )}
+          </button>
         )}
 
-        <p className={hintClass}>
-          Displayed in the portal top bar instead of your firm name when set.
-        </p>
+        <p className={hintClass}>Displayed in the portal top bar instead of your firm name when set.</p>
       </div>
 
       {/* Brand Color */}
@@ -295,6 +285,7 @@ export default function PortalBrandingTab() {
           />
           <span className="text-[11px] text-[#6B7280]">hex</span>
           <button
+            type="button"
             onClick={() => setBranding((b) => ({ ...b, portal_brand_color: '#1F3148' }))}
             className="text-[11px] text-[#6B7280] hover:text-brand-light ml-1"
           >
@@ -316,20 +307,11 @@ export default function PortalBrandingTab() {
           >
             <div className="flex items-center gap-2">
               {logoPreviewUrl ? (
-                <img
-                  src={logoPreviewUrl}
-                  alt=""
-                  className="h-6 max-w-[120px] object-contain"
-                  onError={() => {}}
-                />
+                <img src={logoPreviewUrl} alt="" className="h-6 max-w-[120px] object-contain" onError={() => {}} />
               ) : (
-                <span className="text-[12px] font-medium text-white">
-                  {branding.portal_display_name || firmName}
-                </span>
+                <span className="text-[12px] font-medium text-white">{branding.portal_display_name || firmName}</span>
               )}
-              <span className="text-[10px]" style={{ color: '#7DA3C4' }}>
-                Client Portal
-              </span>
+              <span className="text-[10px]" style={{ color: '#7DA3C4' }}>Client Portal</span>
             </div>
             <div className="w-6 h-6 rounded-full bg-[#3A6A94] flex items-center justify-center">
               <span className="text-[10px] font-medium text-white">JD</span>
@@ -337,25 +319,21 @@ export default function PortalBrandingTab() {
           </div>
           <div className="flex items-center gap-0 px-4 h-9 bg-[#252525] border-b border-[#383838]">
             {['To-do', 'Documents', 'Invoices'].map((t, i) => (
-              <span
-                key={t}
-                className={`px-3 py-2 text-[12px] ${i === 0 ? 'text-[#EDEEF0] font-medium border-b-2 border-[#4A7FA5]' : 'text-[#9CA3AF]'}`}
-              >
+              <span key={t} className={`px-3 py-2 text-[12px] ${i === 0 ? 'text-[#EDEEF0] font-medium border-b-2 border-[#4A7FA5]' : 'text-[#9CA3AF]'}`}>
                 {t}
               </span>
             ))}
           </div>
         </div>
         {saveConfirmed && (
-          <p className="text-[11px] text-[#065F46] dark:text-[#34D399] mt-1">
-            Changes are live in the client portal.
-          </p>
+          <p className="text-[11px] text-[#065F46] dark:text-[#34D399] mt-1">Changes are live in the client portal.</p>
         )}
       </div>
 
       {/* Save */}
       <div>
         <button
+          type="button"
           onClick={handleSave}
           disabled={saving || uploading}
           className="h-9 px-5 rounded-[6px] bg-brand text-white text-[13px] font-medium hover:opacity-90 disabled:opacity-50 transition-opacity"
