@@ -10,7 +10,7 @@ import { InvoiceCard } from '@/components/billing/InvoiceCard'
 import { BillingEmptyState } from '@/components/billing/BillingEmptyState'
 import { BillingSummary } from '@/components/billing/BillingSummary'
 import { NewInvoiceModal } from '@/components/billing/NewInvoiceModal'
-import { invoicesApi, clientsApi } from '@/lib/api'
+import { invoicesApi, clientsApi, engagementsApi } from '@/lib/api'
 import { useFetch } from '@/lib/hooks/useFetch'
 import { Search, X } from 'lucide-react'
 import type { Invoice } from '@/lib/api'
@@ -27,17 +27,27 @@ export default function BillingPage() {
   const [newInvoiceOpen, setNewInvoiceOpen] = useState(false)
   const [localInvoices, setLocalInvoices] = useState<Invoice[]>([])
   const [clientFilter, setClientFilter] = useState<string>('all')
+  const [engagementFilter, setEngagementFilter] = useState<string>('all')
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [dueDateSort, setDueDateSort] = useState<string>('asc')
 
   const { data, isLoading, error } = useFetch(() => invoicesApi.list(0, 50), [])
   const { data: clientsData, isLoading: clientsLoading } = useFetch(() => clientsApi.list(0, 100), [])
+  const { data: engagementsData } = useFetch(() => engagementsApi.list(0, 100), [])
   const serverInvoices = data?.items ?? []
   const invoices = [...localInvoices, ...serverInvoices]
 
   const clientMap: Record<string, string> = Object.fromEntries(
     (clientsData?.items ?? []).map((c) => [c.id, c.name])
   )
+
+  const engagementMap: Record<string, string> = Object.fromEntries(
+    (engagementsData?.items ?? []).map((e) => [e.id, e.name])
+  )
+
+  const uniqueEngagementIds = Array.from(
+    new Set(invoices.map((inv) => inv.engagementId).filter(Boolean))
+  ) as string[]
 
   const filtered = invoices
     .filter((inv) => {
@@ -46,6 +56,7 @@ export default function BillingPage() {
       if (q && !inv.invoiceNumber.toLowerCase().includes(q) && !clientName.includes(q)) return false
       if (clientFilter !== 'all' && inv.clientId !== clientFilter) return false
       if (statusFilter !== 'all' && inv.status !== statusFilter) return false
+      if (engagementFilter !== 'all' && inv.engagementId !== engagementFilter) return false
       return true
     })
     .sort((a, b) => {
@@ -186,6 +197,19 @@ export default function BillingPage() {
           </select>
 
           <select
+            value={engagementFilter}
+            onChange={(e) => setEngagementFilter(e.target.value)}
+            className="text-[12px] h-8 px-2 rounded-[6px] border border-surface-border dark:border-dark-border bg-surface-card dark:bg-dark-card text-brand dark:text-[#EDEEF0] cursor-pointer"
+          >
+            <option value="all">All Engagements</option>
+            {uniqueEngagementIds.map((id) => (
+              <option key={id} value={id}>
+                {engagementMap[id] ?? id}
+              </option>
+            ))}
+          </select>
+
+          <select
             value={dueDateSort}
             onChange={(e) => setDueDateSort(e.target.value)}
             className="text-[12px] h-8 px-2 rounded-[6px] border border-surface-border dark:border-dark-border bg-surface-card dark:bg-dark-card text-brand dark:text-[#EDEEF0] cursor-pointer"
@@ -194,16 +218,16 @@ export default function BillingPage() {
             <option value="desc">Due Date ↓ Latest</option>
           </select>
 
-          {(clientFilter !== 'all' || statusFilter !== 'all') && (
+          {(clientFilter !== 'all' || engagementFilter !== 'all' || statusFilter !== 'all') && (
             <button
-              onClick={() => { setClientFilter('all'); setStatusFilter('all'); setDueDateSort('asc') }}
+              onClick={() => { setClientFilter('all'); setEngagementFilter('all'); setStatusFilter('all'); setDueDateSort('asc') }}
               className="text-[11px] text-[#6B7280] hover:text-brand underline"
             >
               Clear filters
             </button>
           )}
 
-          {(clientFilter !== 'all' || statusFilter !== 'all') && (
+          {(clientFilter !== 'all' || engagementFilter !== 'all' || statusFilter !== 'all') && (
             <span className="text-[11px] text-[#6B7280]">
               Showing {filtered.length} of {invoices.length} invoices
             </span>
@@ -224,7 +248,7 @@ export default function BillingPage() {
               </div>
             ))}
           </div>
-        ) : filtered.length === 0 && search === '' && clientFilter === 'all' && statusFilter === 'all' ? (
+        ) : filtered.length === 0 && search === '' && clientFilter === 'all' && engagementFilter === 'all' && statusFilter === 'all' ? (
           <BillingEmptyState onNew={() => {}} />
         ) : filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center flex-1 py-24 gap-2">
