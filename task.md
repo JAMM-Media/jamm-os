@@ -1,58 +1,102 @@
-# TASK — Three small fixes
+═══════════════════════════════════════════════════════════════
+STANDING RULES — READ FIRST, ENFORCE ALWAYS
+═══════════════════════════════════════════════════════════════
+- Never run alembic commands.
+- Never modify any model, migration, or backend file.
+- Frontend changes only.
 
-## FIX 1 — Light mode primary text default to black
-FILE: frontend/src/components/settings/PortalBrandingTab.tsx
+═══════════════════════════════════════════════════════════════
+TASK: Staff login redirect + auto My Tasks filter
+═══════════════════════════════════════════════════════════════
 
-Find LIGHT_DEFAULTS and change:
-```
-  text_primary: '#1F3148',
-```
-To:
-```
-  text_primary: '#111111',
-```
+TWO files to edit. Do both before committing.
 
-FILE: app/api/portal.py
+─────────────────────────────────────────────────────────────
+CHANGE 1 — frontend/src/app/login/page.tsx
+─────────────────────────────────────────────────────────────
 
-Find light_defaults and change:
-```python
-        "text_primary": "#1F3148",
-```
-To:
-```python
-        "text_primary": "#111111",
-```
+The login page currently has two places that push to '/dashboard'
+regardless of role. Update both to redirect staff to '/tasks'
+instead.
 
----
+Step 1: The useAuth import line already exists. Add user to the
+destructured values:
+  BEFORE: const { login, isAuthenticated } = useAuth()
+  AFTER:  const { login, isAuthenticated, user } = useAuth()
 
-## FIX 2 — Status badge colors in EngagementBadge
-FILE: frontend/src/components/portal/PortalTodo.tsx
+Step 2: The useEffect that fires when isAuthenticated changes:
+  BEFORE:
+    useEffect(() => {
+      if (isAuthenticated) {
+        router.push('/dashboard')
+      }
+    }, [isAuthenticated, router])
 
-Find the getStyle switch in EngagementBadge. Replace the entire switch body with:
+  AFTER:
+    useEffect(() => {
+      if (isAuthenticated) {
+        if (user?.role === 'staff') {
+          router.push('/tasks')
+        } else {
+          router.push('/dashboard')
+        }
+      }
+    }, [isAuthenticated, user, router])
 
-```tsx
-    switch (status) {
-      case 'active':
-        return { backgroundColor: accentColor, color: '#FFFFFF' }
-      case 'in_progress':
-        return { backgroundColor: accentColor, color: '#FFFFFF' }
-      case 'in_review':
-        return { backgroundColor: '#FEF3C7', color: '#92400E' }
-      case 'completed':
-        return { backgroundColor: '#D1FAE5', color: '#065F46' }
-      case 'overdue':
-      case 'blocked':
-        return { backgroundColor: '#FEE2E2', color: '#991B1B' }
-      case 'awaiting_docs':
-        return { backgroundColor: '#FEF3C7', color: '#92400E' }
-      case 'planning':
-      case 'draft':
-      case 'archived':
-      case 'cancelled':
-      case 'not_started':
-      default:
-        return { backgroundColor: '#E5E7EB', color: '#1F3148', border: '0.5px solid #1F3148' }
+Step 3: Inside handleSubmit, after result.success:
+  BEFORE:
+    if (result.success) {
+      router.push('/dashboard')
     }
-```
 
-No other changes.
+  AFTER:
+    if (result.success) {
+      if (result.role === 'staff') {
+        router.push('/tasks')
+      } else {
+        router.push('/dashboard')
+      }
+    }
+
+NOTE: result.role may not be available — if it isn't, the
+useEffect in Step 2 will catch it anyway since isAuthenticated
+flips after login. Step 3 is a best-effort fast path. Do not
+break anything trying to force result.role — just apply it
+if the field is clearly present in the result object.
+
+─────────────────────────────────────────────────────────────
+CHANGE 2 — frontend/src/app/(dashboard)/tasks/page.tsx
+─────────────────────────────────────────────────────────────
+
+The tasks page has this state initialization:
+  const [myTasksOnly, setMyTasksOnly] = useState(false)
+
+And it already imports useAuth and has access to user.
+
+Change the initialization so staff users start with the
+My Tasks filter pre-enabled:
+
+  BEFORE:
+    const [myTasksOnly, setMyTasksOnly] = useState(false)
+
+  AFTER:
+    const { user } = useAuth()
+    const [myTasksOnly, setMyTasksOnly] = useState(false)
+
+  Then add a useEffect directly below:
+    useEffect(() => {
+      if (user?.role === 'staff') {
+        setMyTasksOnly(true)
+      }
+    }, [user?.role])
+
+IMPORTANT: Check if useAuth is already imported and if user is
+already destructured on the tasks page before adding them —
+do not duplicate imports or variable declarations. Only add
+what is missing.
+
+─────────────────────────────────────────────────────────────
+AFTER BOTH CHANGES
+─────────────────────────────────────────────────────────────
+Confirm both files were modified and report the exact lines
+changed in each file. Do not run any backend commands.

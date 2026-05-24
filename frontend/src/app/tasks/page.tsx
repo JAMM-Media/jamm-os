@@ -1,7 +1,7 @@
 // path: frontend/src/app/tasks/page.tsx
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { toast } from 'sonner'
 import { AppShell } from '@/components/layout/AppShell'
 import { ViewToggle } from '@/components/ui/ViewToggle'
@@ -27,7 +27,13 @@ export default function TasksPage() {
   const [view, setView] = useState<ViewMode>('table')
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('all')
+  const { user } = useAuth()
   const [myTasksOnly, setMyTasksOnly] = useState(false)
+  useEffect(() => {
+    if (user?.role === 'staff') {
+      setMyTasksOnly(true)
+    }
+  }, [user?.role])
   const [localTasks, setLocalTasks] = useState<Task[]>([])
   const [modalOpen, setModalOpen] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
@@ -37,7 +43,6 @@ export default function TasksPage() {
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [statusOverrides, setStatusOverrides] = useState<Record<string, string>>({})
 
-  const { user } = useAuth()
   const { data, isLoading, error, refetch } = useFetch(() => tasksApi.list(0, 100), [])
   const { data: clientsData, isLoading: clientsLoading } = useFetch(() => clientsApi.list(0, 100), [])
   const { data: engagementsData, isLoading: engagementsLoading } = useFetch(() => engagementsApi.list(0, 100), [])

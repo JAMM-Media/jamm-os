@@ -9267,7 +9267,16 @@ interface PortalMe {
   firm_name: string
   portal_display_name: string
   portal_logo_url: string | null
-  portal_brand_color: string
+  portal_mode: 'light' | 'dark'
+  portal_top_bar_color: string
+  portal_page_color: string
+  portal_tab_bar_color: string
+  portal_accent_color: string
+  portal_avatar_color: string
+  portal_subtitle_color: string
+  portal_card_color: string
+  portal_text_primary: string
+  portal_text_muted: string
 }
 
 export default function PortalPage() {
@@ -9310,30 +9319,36 @@ export default function PortalPage() {
 
   const firstName = me.client_name.split(' ')[0]
   const logoImgSrc = me.portal_logo_url
-    ? `${process.env.NEXT_PUBLIC_API_URL ?? ''}${me.portal_logo_url}`
+    ? `https://api.jammpx.com${me.portal_logo_url}`
     : undefined
 
   return (
     <PortalShell
       firmName={me.portal_display_name || me.firm_name}
       logoUrl={logoImgSrc}
-      brandColor={me.portal_brand_color || '#1F3148'}
+      brandColor={me.portal_top_bar_color}
+      pageColor={me.portal_page_color}
+      tabBarColor={me.portal_tab_bar_color}
+      accentColor={me.portal_accent_color}
+      avatarColor={me.portal_avatar_color}
+      subtitleColor={me.portal_subtitle_color}
+      portalMode={me.portal_mode}
       clientName={me.client_name}
       activeTab={activeTab}
       onTabChange={setActiveTab}
     >
-      {activeTab === 'todo' && <PortalTodo clientFirstName={firstName} />}
-      {activeTab === 'documents' && <PortalDocuments firmName={me.firm_name} />}
+      {activeTab === 'todo' && <PortalTodo clientFirstName={firstName} accentColor={me.portal_accent_color} cardColor={me.portal_card_color} portalMode={me.portal_mode} textPrimary={me.portal_text_primary} textMuted={me.portal_text_muted} />}
+      {activeTab === 'documents' && <PortalDocuments firmName={me.portal_display_name || me.firm_name} accentColor={me.portal_accent_color} cardColor={me.portal_card_color} portalMode={me.portal_mode} textPrimary={me.portal_text_primary} textMuted={me.portal_text_muted} />}
       {activeTab === 'invoices' && (
         <Elements stripe={stripePromise}>
-          <PortalInvoices />
+          <PortalInvoices accentColor={me.portal_accent_color} cardColor={me.portal_card_color} portalMode={me.portal_mode} textPrimary={me.portal_text_primary} textMuted={me.portal_text_muted} />
         </Elements>
       )}
       {activeTab === 'messages' && (
-        <PortalMessages clientId={me.client_id} firmName={me.firm_name} />
+        <PortalMessages clientId={me.client_id} firmName={me.firm_name} cardColor={me.portal_card_color} accentColor={me.portal_accent_color} portalMode={me.portal_mode} textPrimary={me.portal_text_primary} textMuted={me.portal_text_muted} />
       )}
       {activeTab === 'organizer' && (
-        <PortalOrganizer clientId={me.client_id} />
+        <PortalOrganizer clientId={me.client_id} cardColor={me.portal_card_color} portalMode={me.portal_mode} textPrimary={me.portal_text_primary} textMuted={me.portal_text_muted} />
       )}
     </PortalShell>
   )
@@ -17458,9 +17473,17 @@ function formatFileSize(kb: number): string {
 
 interface PortalDocumentsProps {
   firmName: string
+  accentColor?: string
+  cardColor?: string
+  portalMode?: 'light' | 'dark'
+  textPrimary?: string
+  textMuted?: string
 }
 
-export function PortalDocuments({ firmName }: PortalDocumentsProps) {
+export function PortalDocuments({ firmName, accentColor = '#3A6A94', cardColor = '#383838', portalMode = 'dark', textPrimary = '#EDEEF0', textMuted = '#9CA3AF' }: PortalDocumentsProps) {
+  const primaryText = textPrimary
+  const mutedText = textMuted
+
   const [documents, setDocuments] = useState<PortalDocumentItem[]>([])
   const [loading, setLoading] = useState(true)
   const [fetchError, setFetchError] = useState(false)
@@ -17496,7 +17519,7 @@ export function PortalDocuments({ firmName }: PortalDocumentsProps) {
     return (
       <div className="p-5 flex flex-col gap-3 max-w-2xl mx-auto">
         {[1, 2, 3].map((i) => (
-          <div key={i} className="h-14 rounded-[8px] bg-[#383838] animate-pulse" />
+          <div key={i} className="h-14 rounded-[8px] animate-pulse" style={{ backgroundColor: cardColor }} />
         ))}
       </div>
     )
@@ -17505,11 +17528,12 @@ export function PortalDocuments({ firmName }: PortalDocumentsProps) {
   if (fetchError) {
     return (
       <div className="p-5 max-w-2xl mx-auto">
-        <div className="bg-[#383838] rounded-[8px] px-4 py-6 flex flex-col items-center gap-3">
-          <p className="text-[13px] text-[#9CA3AF]">Failed to load documents.</p>
+        <div className="rounded-[8px] px-4 py-6 flex flex-col items-center gap-3" style={{ backgroundColor: cardColor }}>
+          <p className="text-[13px]" style={{ color: mutedText }}>Failed to load documents.</p>
           <button
             onClick={fetchDocuments}
-            className="h-8 px-4 rounded-[6px] bg-[#3A6A94] text-[#EDEEF0] text-[12px] font-medium hover:opacity-90 transition-opacity"
+            className="h-8 px-4 rounded-[6px] text-white text-[12px] font-medium hover:opacity-90 transition-opacity"
+            style={{ backgroundColor: accentColor }}
           >
             Retry
           </button>
@@ -17521,12 +17545,13 @@ export function PortalDocuments({ firmName }: PortalDocumentsProps) {
   return (
     <div className="p-6 flex flex-col gap-5 max-w-2xl mx-auto">
       <div className="flex items-center justify-between">
-        <p className="text-[12px] font-medium text-[#9CA3AF] uppercase tracking-[0.05em]">
+        <p className="text-[12px] font-medium uppercase tracking-[0.05em]" style={{ color: mutedText }}>
           Documents ({documents.length})
         </p>
         <button
           onClick={() => fileInputRef.current?.click()}
-          className="flex items-center gap-1.5 h-8 px-3 rounded-[6px] bg-[#3A6A94] text-[#EDEEF0] text-[12px] font-medium hover:opacity-90 transition-opacity"
+          className="flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-white text-[12px] font-medium hover:opacity-90 transition-opacity"
+          style={{ backgroundColor: accentColor }}
         >
           <Upload className="h-3.5 w-3.5" />
           Upload
@@ -17547,8 +17572,8 @@ export function PortalDocuments({ firmName }: PortalDocumentsProps) {
 
       {documents.length === 0 ? (
         <div className="flex flex-col items-center gap-1 py-12">
-          <p className="text-[13px] font-medium text-[#EDEEF0]">No documents yet.</p>
-          <p className="text-[12px] text-[#9CA3AF]">
+          <p className="text-[13px] font-medium" style={{ color: primaryText }}>No documents yet.</p>
+          <p className="text-[12px]" style={{ color: mutedText }}>
             Your firm will share documents here.
           </p>
         </div>
@@ -17557,17 +17582,18 @@ export function PortalDocuments({ firmName }: PortalDocumentsProps) {
           {documents.map((doc) => (
             <div
               key={doc.id}
-              className="flex items-center gap-3 bg-[#383838] rounded-[8px] px-5 py-4"
+              className="flex items-center gap-3 rounded-[8px] px-5 py-4"
+              style={{ backgroundColor: cardColor }}
             >
-              <FileText className="h-5 w-5 text-[#9CA3AF] flex-shrink-0" />
+              <FileText className="h-5 w-5 flex-shrink-0" style={{ color: mutedText }} />
               <div className="flex-1 min-w-0">
-                <p className="text-[14px] font-medium text-[#EDEEF0] truncate">{doc.name}</p>
-                <p className="text-[12px] text-[#9CA3AF]">
+                <p className="text-[14px] font-medium truncate" style={{ color: primaryText }}>{doc.name}</p>
+                <p className="text-[12px]" style={{ color: mutedText }}>
                   {doc.file_type} · {formatFileSize(doc.file_size_kb)} ·{' '}
                   {doc.uploaded_at.split('T')[0]}
                 </p>
               </div>
-              <span className="text-[12px] text-[#9CA3AF] flex-shrink-0">
+              <span className="text-[12px] flex-shrink-0" style={{ color: mutedText }}>
                 {doc.uploaded_by === 'firm' ? firmName : 'Uploaded by you'}
               </span>
             </div>
@@ -17586,7 +17612,6 @@ FILE: frontend\src\components\portal\PortalInvoices.tsx
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { useTheme } from 'next-themes'
 import {
   CardNumberElement,
   CardExpiryElement,
@@ -17646,13 +17671,15 @@ interface PaymentFormProps {
   clientSecret: string
   onSuccess: () => void
   onCancel: () => void
+  accentColor?: string
+  cardColor?: string
+  portalMode?: 'light' | 'dark'
 }
 
-function PaymentForm({ clientSecret, onSuccess, onCancel }: PaymentFormProps) {
+function PaymentForm({ clientSecret, onSuccess, onCancel, accentColor = '#3A6A94', cardColor = '#383838', portalMode = 'dark' }: PaymentFormProps) {
   const stripe = useStripe()
   const elements = useElements()
-  const { resolvedTheme } = useTheme()
-  const isDark = resolvedTheme !== 'light'
+  const isDark = portalMode !== 'light'
   const [loading, setLoading] = useState(false)
   const [stripeError, setStripeError] = useState<string | null>(null)
 
@@ -17703,9 +17730,9 @@ function PaymentForm({ clientSecret, onSuccess, onCancel }: PaymentFormProps) {
     }
   }
 
-  const wrapperBg = isDark ? '#2A2A2A' : '#F0F1F3'
+  const wrapperBg = cardColor
   const wrapperBorder = isDark ? '#484848' : '#C8CDD6'
-  const confirmBg = isDark ? '#3A6A94' : '#1F3148'
+  const confirmBg = accentColor
   const cancelText = isDark ? '#EDEEF0' : '#1F3148'
 
   return (
@@ -17804,7 +17831,9 @@ function PaymentForm({ clientSecret, onSuccess, onCancel }: PaymentFormProps) {
   )
 }
 
-export function PortalInvoices() {
+export function PortalInvoices({ accentColor = '#3A6A94', cardColor = '#383838', portalMode = 'dark', textPrimary = '#EDEEF0', textMuted = '#9CA3AF' }: { accentColor?: string; cardColor?: string; portalMode?: 'light' | 'dark'; textPrimary?: string; textMuted?: string }) {
+  const primaryText = textPrimary
+  const mutedText = textMuted
   const [invoices, setInvoices] = useState<PortalInvoiceItem[]>([])
   const [loading, setLoading] = useState(true)
   const [fetchError, setFetchError] = useState(false)
@@ -17870,7 +17899,7 @@ export function PortalInvoices() {
     return (
       <div className="p-5 flex flex-col gap-3 max-w-2xl mx-auto">
         {[1, 2, 3].map((i) => (
-          <div key={i} className="h-14 rounded-[8px] bg-[#383838] animate-pulse" />
+          <div key={i} className="h-14 rounded-[8px] animate-pulse" style={{ backgroundColor: cardColor }} />
         ))}
       </div>
     )
@@ -17879,11 +17908,12 @@ export function PortalInvoices() {
   if (fetchError) {
     return (
       <div className="p-5 max-w-2xl mx-auto">
-        <div className="bg-[#383838] rounded-[8px] px-4 py-6 flex flex-col items-center gap-3">
-          <p className="text-[13px] text-[#9CA3AF]">Failed to load invoices.</p>
+        <div className="rounded-[8px] px-4 py-6 flex flex-col items-center gap-3" style={{ backgroundColor: cardColor }}>
+          <p className="text-[13px]" style={{ color: mutedText }}>Failed to load invoices.</p>
           <button
             onClick={fetchInvoices}
-            className="h-8 px-4 rounded-[6px] bg-[#3A6A94] text-[#EDEEF0] text-[12px] font-medium hover:opacity-90 transition-opacity"
+            className="h-8 px-4 rounded-[6px] text-white text-[12px] font-medium hover:opacity-90 transition-opacity"
+            style={{ backgroundColor: accentColor }}
           >
             Retry
           </button>
@@ -17896,8 +17926,8 @@ export function PortalInvoices() {
     return (
       <div className="p-5 max-w-2xl mx-auto">
         <div className="flex flex-col items-center gap-1 py-12">
-          <p className="text-[13px] font-medium text-[#EDEEF0]">No invoices yet.</p>
-          <p className="text-[12px] text-[#9CA3AF]">
+          <p className="text-[13px] font-medium" style={{ color: primaryText }}>No invoices yet.</p>
+          <p className="text-[12px]" style={{ color: mutedText }}>
             Invoices from your accountant will appear here.
           </p>
         </div>
@@ -17909,11 +17939,11 @@ export function PortalInvoices() {
     <div className="p-6 flex flex-col gap-5 max-w-2xl mx-auto">
       {/* Outstanding balance summary */}
       {unpaid.length > 0 && (
-        <div className="bg-[#383838] rounded-[8px] px-5 py-4">
-          <p className="text-[12px] text-[#9CA3AF] uppercase tracking-[0.05em]">
+        <div className="rounded-[8px] px-5 py-4" style={{ backgroundColor: cardColor }}>
+          <p className="text-[12px] uppercase tracking-[0.05em]" style={{ color: mutedText }}>
             Outstanding balance
           </p>
-          <p className="text-[24px] font-medium text-[#EDEEF0] mt-0.5">
+          <p className="text-[24px] font-medium mt-0.5" style={{ color: primaryText }}>
             {formatCurrency(totalOutstanding)}
           </p>
         </div>
@@ -17921,7 +17951,7 @@ export function PortalInvoices() {
 
       {/* All-paid message */}
       {unpaid.length === 0 && paid.length > 0 && (
-        <p className="text-[12px] text-[#9CA3AF] text-center py-4">
+        <p className="text-[12px] text-center py-4" style={{ color: mutedText }}>
           You&apos;re all caught up — no outstanding invoices.
         </p>
       )}
@@ -17929,32 +17959,33 @@ export function PortalInvoices() {
       {/* Unpaid invoices */}
       {unpaid.length > 0 && (
         <div>
-          <p className="text-[12px] font-medium text-[#9CA3AF] uppercase tracking-[0.05em] mb-2">
+          <p className="text-[12px] font-medium uppercase tracking-[0.05em] mb-2" style={{ color: mutedText }}>
             Due
           </p>
           <div className="flex flex-col gap-3">
             {unpaid.map((inv) => (
               <div key={inv.id}>
-                <div className="flex items-center justify-between bg-[#383838] rounded-[8px] px-5 py-4">
+                <div className="flex items-center justify-between rounded-[8px] px-5 py-4" style={{ backgroundColor: cardColor }}>
                   <div className="flex flex-col gap-0.5">
-                    <p className="text-[14px] font-medium text-[#EDEEF0]">
+                    <p className="text-[14px] font-medium" style={{ color: primaryText }}>
                       {inv.invoice_number}
                     </p>
                     <div className="flex items-center gap-2">
                       <StatusBadge status={inv.status} />
-                      <p className="text-[13px] text-[#9CA3AF]">
+                      <p className="text-[13px]" style={{ color: mutedText }}>
                         Due {formatDate(inv.due_date)}
                       </p>
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
-                    <span className="text-[15px] font-medium text-[#EDEEF0]">
+                    <span className="text-[15px] font-medium" style={{ color: primaryText }}>
                       {formatCurrency(Number(inv.total_amount))}
                     </span>
                     <button
                       onClick={() => handlePayNow(inv.id)}
                       disabled={payLoading === inv.id}
-                      className="h-10 px-4 rounded-[6px] bg-[#3A6A94] text-[#EDEEF0] text-[13px] font-medium hover:opacity-90 transition-opacity flex items-center justify-center gap-1.5 disabled:opacity-60"
+                      className="h-10 px-4 rounded-[6px] text-white text-[13px] font-medium hover:opacity-90 transition-opacity flex items-center justify-center gap-1.5 disabled:opacity-60"
+                      style={{ backgroundColor: accentColor }}
                     >
                       {payLoading === inv.id ? (
                         <Loader2 className="w-3 h-3 animate-spin" />
@@ -17969,6 +18000,9 @@ export function PortalInvoices() {
                     clientSecret={clientSecrets[inv.id]}
                     onSuccess={() => handlePaymentSuccess(inv.id)}
                     onCancel={() => setActivePayId(null)}
+                    accentColor={accentColor}
+                    cardColor={cardColor}
+                    portalMode={portalMode}
                   />
                 )}
               </div>
@@ -17980,20 +18014,21 @@ export function PortalInvoices() {
       {/* Paid invoices */}
       {paid.length > 0 && (
         <div>
-          <p className="text-[12px] font-medium text-[#9CA3AF] uppercase tracking-[0.05em] mb-2">
+          <p className="text-[12px] font-medium uppercase tracking-[0.05em] mb-2" style={{ color: mutedText }}>
             Paid
           </p>
           <div className="flex flex-col gap-3">
             {paid.map((inv) => (
               <div
                 key={inv.id}
-                className="flex items-center justify-between bg-[#383838] rounded-[8px] px-5 py-4 opacity-70"
+                className="flex items-center justify-between rounded-[8px] px-5 py-4 opacity-70"
+                style={{ backgroundColor: cardColor }}
               >
                 <div className="flex flex-col gap-0.5">
-                  <p className="text-[12px] font-medium text-[#EDEEF0]">
+                  <p className="text-[12px] font-medium" style={{ color: primaryText }}>
                     {inv.invoice_number}
                   </p>
-                  <p className="text-[11px] text-[#9CA3AF]">
+                  <p className="text-[11px]" style={{ color: mutedText }}>
                     Paid · {formatDate(inv.due_date)}
                   </p>
                 </div>
@@ -18029,6 +18064,11 @@ interface MessageWithOptimistic extends PortalMessage {
 interface PortalMessagesProps {
   clientId: string
   firmName: string
+  cardColor?: string
+  accentColor?: string
+  portalMode?: 'light' | 'dark'
+  textPrimary?: string
+  textMuted?: string
 }
 
 function formatTimestamp(iso: string): string {
@@ -18040,7 +18080,13 @@ function formatTimestamp(iso: string): string {
   )
 }
 
-export function PortalMessages({ clientId, firmName }: PortalMessagesProps) {
+export function PortalMessages({ clientId, firmName, cardColor = '#383838', accentColor = '#3A6A94', portalMode = 'dark', textPrimary = '#EDEEF0', textMuted = '#9CA3AF' }: PortalMessagesProps) {
+  const primaryText = textPrimary
+  const mutedText = textMuted
+  const borderColor = portalMode === 'light' ? '#C8CDD6' : '#383838'
+  const inputBorder = portalMode === 'light' ? '#C8CDD6' : '#484848'
+  const inputFocusBorder = portalMode === 'light' ? '#1F3148' : '#3A6A94'
+
   const [messages, setMessages] = useState<MessageWithOptimistic[]>([])
   const [loading, setLoading] = useState(true)
   const [draft, setDraft] = useState('')
@@ -18097,7 +18143,7 @@ export function PortalMessages({ clientId, firmName }: PortalMessagesProps) {
     return (
       <div className="p-5 flex flex-col gap-3 max-w-2xl mx-auto">
         {[1, 2].map((i) => (
-          <div key={i} className="h-16 rounded-[6px] bg-[#383838] animate-pulse" />
+          <div key={i} className="h-16 rounded-[6px] animate-pulse" style={{ backgroundColor: cardColor }} />
         ))}
       </div>
     )
@@ -18108,7 +18154,7 @@ export function PortalMessages({ clientId, firmName }: PortalMessagesProps) {
       <div className="p-5 space-y-4 max-w-2xl mx-auto w-full">
         {messages.length === 0 ? (
           <div className="flex items-center justify-center py-24">
-            <p className="text-[12px] text-[#9CA3AF]">No messages yet.</p>
+            <p className="text-[12px]" style={{ color: mutedText }}>No messages yet.</p>
           </div>
         ) : (
           messages.map((msg) => (
@@ -18119,18 +18165,17 @@ export function PortalMessages({ clientId, firmName }: PortalMessagesProps) {
               }`}
             >
               {msg.sender_role !== 'client' && (
-                <span className="text-[11px] text-[#9CA3AF] px-1">
+                <span className="text-[11px] px-1" style={{ color: mutedText }}>
                   {msg.sender_name ?? firmName}
                 </span>
               )}
               <div
-                className={`rounded-[8px] px-3 py-2 max-w-[75%] ${
-                  msg.sender_role === 'client' ? 'bg-[#3A6A94]' : 'bg-[#383838]'
-                } ${msg.optimistic ? 'opacity-60' : ''}`}
+                className={`rounded-[8px] px-3 py-2 max-w-[75%] ${msg.optimistic ? 'opacity-60' : ''}`}
+                style={{ backgroundColor: msg.sender_role === 'client' ? accentColor : cardColor }}
               >
-                <p className="text-[13px] text-[#EDEEF0] leading-relaxed">{msg.body}</p>
+                <p className="text-[13px] leading-relaxed" style={{ color: primaryText }}>{msg.body}</p>
               </div>
-              <span className="text-[10px] text-[#9CA3AF] px-1">
+              <span className="text-[10px] px-1" style={{ color: mutedText }}>
                 {formatTimestamp(msg.created_at)}
               </span>
             </div>
@@ -18139,7 +18184,7 @@ export function PortalMessages({ clientId, firmName }: PortalMessagesProps) {
         <div ref={bottomRef} />
       </div>
 
-      <div className="border-t border-[#383838] p-4 max-w-2xl mx-auto w-full">
+      <div className="border-t p-4 max-w-2xl mx-auto w-full" style={{ borderColor }}>
         <div className="flex items-end gap-2">
           <textarea
             value={draft}
@@ -18147,12 +18192,19 @@ export function PortalMessages({ clientId, firmName }: PortalMessagesProps) {
             onKeyDown={handleKeyDown}
             placeholder="Message your accountant..."
             rows={2}
-            className="flex-1 bg-[#383838] border border-[#484848] rounded-[6px] px-3 py-2 text-[13px] text-[#EDEEF0] placeholder:text-[#6B7280] resize-none focus:outline-none focus:border-[#3A6A94]"
+            className="flex-1 rounded-[6px] px-3 py-2 text-[13px] resize-none focus:outline-none"
+            style={{
+              backgroundColor: cardColor,
+              border: `1px solid ${inputBorder}`,
+              color: primaryText,
+              outlineColor: inputFocusBorder,
+            }}
           />
           <button
             onClick={handleSend}
             disabled={!draft.trim() || sending}
-            className="h-9 w-9 rounded-[6px] bg-[#3A6A94] text-[#EDEEF0] flex items-center justify-center disabled:opacity-40 hover:opacity-90 transition-opacity flex-shrink-0"
+            className="h-9 w-9 rounded-[6px] flex items-center justify-center disabled:opacity-40 hover:opacity-90 transition-opacity flex-shrink-0"
+            style={{ backgroundColor: accentColor, color: '#FFFFFF' }}
           >
             {sending ? (
               <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -18178,6 +18230,10 @@ import { Check } from 'lucide-react'
 
 interface PortalOrganizerProps {
   clientId: string
+  cardColor?: string
+  portalMode?: 'light' | 'dark'
+  textPrimary?: string
+  textMuted?: string
 }
 
 interface OrganizerListItem {
@@ -18224,11 +18280,17 @@ function portalFetch(path: string, options?: RequestInit): Promise<Response> {
   })
 }
 
-const inputClass =
-  'w-full rounded-[6px] border border-[#484848] bg-[#2D2D2D] focus:border-[#4A7FA5] text-[#EDEEF0] text-[13px] px-3 py-2 outline-none transition-colors'
+function getInputClass(portalMode: 'light' | 'dark') {
+  return portalMode === 'light'
+    ? 'w-full rounded-[6px] border border-[#C8CDD6] bg-white focus:border-[#1F3148] text-[#1F3148] text-[13px] px-3 py-2 outline-none transition-colors'
+    : 'w-full rounded-[6px] border border-[#484848] bg-[#2D2D2D] focus:border-[#4A7FA5] text-[#EDEEF0] text-[13px] px-3 py-2 outline-none transition-colors'
+}
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-export default function PortalOrganizer({ clientId: _clientId }: PortalOrganizerProps) {
+export default function PortalOrganizer({ clientId: _clientId, cardColor = '#383838', portalMode = 'dark', textPrimary = '#EDEEF0', textMuted = '#9CA3AF' }: PortalOrganizerProps) {
+  const primaryText = textPrimary
+  const mutedText = textMuted
+
   const [organizers, setOrganizers] = useState<OrganizerListItem[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -18346,6 +18408,7 @@ export default function PortalOrganizer({ clientId: _clientId }: PortalOrganizer
   function renderQuestion(q: Question) {
     const value = responses[q.id] ?? ''
     const hint = requiredHints[q.id]
+    const inputClass = getInputClass(portalMode)
 
     let input: React.ReactNode
 
@@ -18359,10 +18422,12 @@ export default function PortalOrganizer({ clientId: _clientId }: PortalOrganizer
               disabled={readOnly}
               onClick={() => handleAnswerChange(q.id, opt)}
               className={`px-4 py-1.5 rounded-full text-[13px] font-medium transition-colors disabled:cursor-default ${
-                value === opt
-                  ? 'bg-[#3A6A94] text-[#EDEEF0]'
-                  : 'bg-[#383838] text-[#9CA3AF] hover:text-[#EDEEF0]'
+                value === opt ? 'text-white' : ''
               }`}
+              style={{
+                backgroundColor: value === opt ? '#3A6A94' : cardColor,
+                color: value === opt ? '#FFFFFF' : mutedText,
+              }}
             >
               {opt}
             </button>
@@ -18419,7 +18484,7 @@ export default function PortalOrganizer({ clientId: _clientId }: PortalOrganizer
 
     return (
       <div key={q.id} className="flex flex-col gap-1">
-        <label className="text-[13px] text-[#9CA3AF]">
+        <label className="text-[13px]" style={{ color: mutedText }}>
           {q.label}
           {q.required && !readOnly && <span className="text-amber-400 ml-0.5">*</span>}
         </label>
@@ -18435,15 +18500,16 @@ export default function PortalOrganizer({ clientId: _clientId }: PortalOrganizer
         <div className="w-12 h-12 rounded-full bg-green-600 flex items-center justify-center">
           <Check className="h-6 w-6 text-white" />
         </div>
-        <p className="text-[16px] font-medium text-[#EDEEF0] text-center">
+        <p className="text-[16px] font-medium text-center" style={{ color: primaryText }}>
           Thank you! Your tax organizer has been submitted.
         </p>
-        <p className="text-[13px] text-[#9CA3AF] text-center">
+        <p className="text-[13px] text-center" style={{ color: mutedText }}>
           Your accountant will review your responses.
         </p>
         <button
           onClick={closeOrganizer}
-          className="mt-4 px-6 py-2 rounded-[6px] bg-[#3A6A94] text-[#EDEEF0] text-[13px] font-medium hover:bg-[#4A7FA5] transition-colors"
+          className="mt-4 px-6 py-2 rounded-[6px] bg-[#3A6A94] text-[13px] font-medium hover:bg-[#4A7FA5] transition-colors"
+          style={{ color: '#EDEEF0' }}
         >
           Back to organizers
         </button>
@@ -18455,7 +18521,7 @@ export default function PortalOrganizer({ clientId: _clientId }: PortalOrganizer
     return (
       <div className="p-5 max-w-2xl mx-auto w-full flex flex-col gap-3">
         {[1, 2].map((i) => (
-          <div key={i} className="h-16 rounded-[8px] bg-[#383838] animate-pulse" />
+          <div key={i} className="h-16 rounded-[8px] animate-pulse" style={{ backgroundColor: cardColor }} />
         ))}
       </div>
     )
@@ -18469,7 +18535,8 @@ export default function PortalOrganizer({ clientId: _clientId }: PortalOrganizer
         <div className="p-5 max-w-2xl mx-auto w-full flex flex-col gap-4">
           <button
             onClick={closeOrganizer}
-            className="self-start text-[13px] text-[#9CA3AF] hover:text-[#EDEEF0] transition-colors"
+            className="self-start text-[13px] transition-colors"
+            style={{ color: mutedText }}
           >
             ← Back to organizers
           </button>
@@ -18488,11 +18555,11 @@ export default function PortalOrganizer({ clientId: _clientId }: PortalOrganizer
           )}
 
           {sections.map((section, si) => (
-            <div key={si} className="bg-[#383838] rounded-[8px] p-5 flex flex-col gap-4">
+            <div key={si} className="rounded-[8px] p-5 flex flex-col gap-4" style={{ backgroundColor: cardColor }}>
               <div>
-                <p className="text-[16px] font-medium text-[#EDEEF0]">{section.title}</p>
+                <p className="text-[16px] font-medium" style={{ color: primaryText }}>{section.title}</p>
                 {section.description && (
-                  <p className="text-[12px] text-[#9CA3AF] mt-1">{section.description}</p>
+                  <p className="text-[12px] mt-1" style={{ color: mutedText }}>{section.description}</p>
                 )}
               </div>
               <div className="flex flex-col gap-4">
@@ -18504,7 +18571,8 @@ export default function PortalOrganizer({ clientId: _clientId }: PortalOrganizer
           <div className="flex justify-center">
             <button
               onClick={closeOrganizer}
-              className="px-6 h-9 rounded-[6px] border border-[#484848] text-[#9CA3AF] text-[13px] hover:text-[#EDEEF0] transition-colors"
+              className="px-6 h-9 rounded-[6px] text-[13px] transition-colors"
+              style={{ border: `1px solid ${mutedText}`, color: mutedText }}
             >
               Close
             </button>
@@ -18521,20 +18589,21 @@ export default function PortalOrganizer({ clientId: _clientId }: PortalOrganizer
       <div className="p-5 max-w-2xl mx-auto w-full flex flex-col gap-4">
         <button
           onClick={closeOrganizer}
-          className="self-start text-[13px] text-[#9CA3AF] hover:text-[#EDEEF0] transition-colors"
+          className="self-start text-[13px] transition-colors"
+          style={{ color: mutedText }}
         >
           ← Back to organizers
         </button>
 
-        <p className="text-[12px] text-[#9CA3AF] text-center">
+        <p className="text-[12px] text-center" style={{ color: mutedText }}>
           Section {currentSection + 1} of {sections.length}
         </p>
 
-        <div className="bg-[#383838] rounded-[8px] p-5 flex flex-col gap-4">
+        <div className="rounded-[8px] p-5 flex flex-col gap-4" style={{ backgroundColor: cardColor }}>
           <div>
-            <p className="text-[16px] font-medium text-[#EDEEF0]">{section.title}</p>
+            <p className="text-[16px] font-medium" style={{ color: primaryText }}>{section.title}</p>
             {section.description && (
-              <p className="text-[12px] text-[#9CA3AF] mt-1">{section.description}</p>
+              <p className="text-[12px] mt-1" style={{ color: mutedText }}>{section.description}</p>
             )}
           </div>
           <div className="flex flex-col gap-4">
@@ -18549,21 +18618,24 @@ export default function PortalOrganizer({ clientId: _clientId }: PortalOrganizer
               setRequiredHints({})
             }}
             disabled={isFirst}
-            className="flex-1 h-9 rounded-[6px] border border-[#484848] text-[#9CA3AF] text-[13px] hover:text-[#EDEEF0] disabled:opacity-0 transition-colors"
+            className="flex-1 h-9 rounded-[6px] text-[13px] disabled:opacity-0 transition-colors"
+            style={{ border: `1px solid ${mutedText}`, color: mutedText }}
           >
             Previous
           </button>
           <button
             onClick={() => saveProgress(false)}
             disabled={saving}
-            className="flex-1 h-9 rounded-[6px] border border-[#484848] text-[#9CA3AF] text-[13px] hover:text-[#EDEEF0] transition-colors"
+            className="flex-1 h-9 rounded-[6px] text-[13px] transition-colors"
+            style={{ border: `1px solid ${mutedText}`, color: mutedText }}
           >
             {savedNotice ? 'Saved' : saving ? 'Saving...' : 'Save Progress'}
           </button>
           <button
             onClick={handleNext}
             disabled={saving}
-            className="flex-1 h-9 rounded-[6px] bg-[#1F3148] text-[#EDEEF0] text-[13px] font-medium hover:opacity-90 disabled:opacity-60 transition-opacity"
+            className="flex-1 h-9 rounded-[6px] text-[13px] font-medium hover:opacity-90 disabled:opacity-60 transition-opacity"
+            style={{ backgroundColor: '#1F3148', color: '#EDEEF0' }}
           >
             {isLast ? 'Submit' : 'Next'}
           </button>
@@ -18576,10 +18648,10 @@ export default function PortalOrganizer({ clientId: _clientId }: PortalOrganizer
     <div className="p-5 max-w-2xl mx-auto w-full flex flex-col gap-3">
       {loading ? (
         [1, 2].map((i) => (
-          <div key={i} className="h-16 rounded-[8px] bg-[#383838] animate-pulse" />
+          <div key={i} className="h-16 rounded-[8px] animate-pulse" style={{ backgroundColor: cardColor }} />
         ))
       ) : organizers.length === 0 ? (
-        <div className="text-[13px] text-[#9CA3AF] py-12 text-center">
+        <div className="text-[13px] py-12 text-center" style={{ color: mutedText }}>
           Your accountant hasn&apos;t sent you a tax organizer yet. Check back here when your tax
           preparation begins.
         </div>
@@ -18590,9 +18662,9 @@ export default function PortalOrganizer({ clientId: _clientId }: PortalOrganizer
           const isSent = org.status === 'sent'
 
           return (
-            <div key={org.id} className="bg-[#383838] rounded-[8px] p-4 flex flex-col gap-2">
+            <div key={org.id} className="rounded-[8px] p-4 flex flex-col gap-2" style={{ backgroundColor: cardColor }}>
               <div className="flex items-center justify-between">
-                <p className="text-[14px] font-medium text-[#EDEEF0]">{org.tax_year}</p>
+                <p className="text-[14px] font-medium" style={{ color: primaryText }}>{org.tax_year}</p>
                 {isSubmitted && (
                   <span className="flex items-center gap-1 text-[12px] text-green-400 font-medium">
                     <Check className="h-3.5 w-3.5" /> Submitted
@@ -18607,13 +18679,14 @@ export default function PortalOrganizer({ clientId: _clientId }: PortalOrganizer
               </div>
 
               {org.client_message && (
-                <p className="text-[12px] text-[#9CA3AF] italic">{org.client_message}</p>
+                <p className="text-[12px] italic" style={{ color: mutedText }}>{org.client_message}</p>
               )}
 
               {!isSubmitted && (
                 <button
                   onClick={() => openOrganizer(org.id, false)}
-                  className="self-start px-4 py-1.5 rounded-[6px] bg-[#3A6A94] text-[#EDEEF0] text-[12px] font-medium hover:bg-[#4A7FA5] transition-colors"
+                  className="self-start px-4 py-1.5 rounded-[6px] bg-[#3A6A94] text-[12px] font-medium hover:bg-[#4A7FA5] transition-colors"
+                  style={{ color: '#EDEEF0' }}
                 >
                   {isInProgress ? 'Continue' : 'Complete Now'}
                 </button>
@@ -18621,7 +18694,8 @@ export default function PortalOrganizer({ clientId: _clientId }: PortalOrganizer
               {isSubmitted && (
                 <button
                   onClick={() => openOrganizer(org.id, true)}
-                  className="self-start px-4 py-1.5 rounded-[6px] border border-[#484848] text-[#9CA3AF] text-[12px] hover:text-[#EDEEF0] transition-colors"
+                  className="self-start px-4 py-1.5 rounded-[6px] text-[12px] transition-colors"
+                  style={{ border: `1px solid ${mutedText}`, color: mutedText }}
                 >
                   View Submission
                 </button>
@@ -18642,31 +18716,34 @@ FILE: frontend\src\components\portal\PortalShell.tsx
 'use client'
 
 import { useState } from 'react'
-import { cn } from '@/lib/utils'
 import { usePortalUnreadMessages } from './usePortalUnreadMessages'
 
 interface PortalShellProps {
   firmName: string
   logoUrl?: string
   brandColor?: string
+  pageColor?: string
+  tabBarColor?: string
+  accentColor?: string
+  avatarColor?: string
+  subtitleColor?: string
+  portalMode?: 'light' | 'dark'
   clientName: string
   activeTab: string
   onTabChange: (tab: string) => void
   children: React.ReactNode
 }
 
-const TABS = [
-  { key: 'todo', label: 'To-do' },
-  { key: 'documents', label: 'Documents' },
-  { key: 'invoices', label: 'Invoices' },
-  { key: 'messages', label: 'Messages' },
-  { key: 'organizer', label: 'Tax Organizer' },
-]
-
 export function PortalShell({
   firmName,
   logoUrl,
-  brandColor = '#1F3148',
+  brandColor = '#1A2535',
+  pageColor = '#2D2D2D',
+  tabBarColor = '#252525',
+  accentColor = '#4A7FA5',
+  avatarColor = '#3A6A94',
+  subtitleColor = '#7DA3C4',
+  portalMode = 'dark',
   clientName,
   activeTab,
   onTabChange,
@@ -18675,13 +18752,20 @@ export function PortalShell({
   const { unreadCount, markAsRead } = usePortalUnreadMessages()
   const [logoError, setLogoError] = useState(false)
 
-  function handleTabChange(key: string) {
-    if (key === 'messages') markAsRead()
-    onTabChange(key)
-  }
+  const isLight = portalMode === 'light'
+  const primaryText = isLight ? '#1F3148' : '#EDEEF0'
+  const mutedText = isLight ? '#6B7280' : '#9CA3AF'
+  const tabBorder = isLight ? '#C8CDD6' : '#383838'
+
+  const tabs = [
+    { key: 'todo', label: 'To-do' },
+    { key: 'documents', label: 'Documents' },
+    { key: 'invoices', label: 'Invoices' },
+    { key: 'messages', label: 'Messages', badge: unreadCount > 0 ? unreadCount : null },
+  ]
 
   return (
-    <div className="min-h-screen bg-[#2D2D2D] flex flex-col">
+    <div className="min-h-screen flex flex-col" style={{ backgroundColor: pageColor }}>
       {/* Top bar */}
       <div
         className="flex items-center justify-between px-5 h-12 flex-shrink-0"
@@ -18696,63 +18780,59 @@ export function PortalShell({
               onError={() => setLogoError(true)}
             />
           ) : (
-            <span className="text-[12px] font-medium text-white">
-              {firmName}
-            </span>
+            <span className="text-[12px] font-medium text-white">{firmName}</span>
           )}
-          <span className="text-[10px] text-[#7DA3C4]">
-            Client Portal
-          </span>
+          <span className="text-[10px]" style={{ color: subtitleColor }}>Client Portal</span>
         </div>
-        {/* Avatar */}
-        <div className="w-7 h-7 rounded-full bg-[#3A6A94] flex items-center justify-center">
+        <div
+          className="w-8 h-8 rounded-full flex items-center justify-center cursor-pointer"
+          style={{ backgroundColor: avatarColor }}
+        >
           <span className="text-[11px] font-medium text-white">
-            {clientName.split(' ').map((n) => n[0]).join('').slice(0, 2)}
+            {clientName?.charAt(0).toUpperCase() ?? '?'}
           </span>
         </div>
       </div>
 
-      {/* Tab row */}
-      <div className="flex items-end gap-0 px-5 bg-[#252525] border-b border-[#383838] flex-shrink-0">
-        {TABS.map((tab) => (
-          <button
-            key={tab.key}
-            onClick={() => handleTabChange(tab.key)}
-            className={cn(
-              'px-4 py-2.5 text-[13px] relative transition-colors flex items-center gap-1.5',
-              activeTab === tab.key
-                ? 'text-[#EDEEF0] font-medium'
-                : 'text-[#9CA3AF] hover:text-[#EDEEF0] font-normal'
-            )}
-          >
-            {tab.label}
-            {tab.key === 'messages' && unreadCount > 0 && (
-              <span
-                className="inline-flex items-center justify-center bg-brand dark:bg-brand-btn text-[#EDEEF0]"
-                style={{
-                  height: 18,
-                  minWidth: 18,
-                  padding: '0 6px',
-                  borderRadius: 9999,
-                  fontSize: 11,
-                  fontWeight: 500,
-                  lineHeight: 1,
-                }}
-              >
-                {unreadCount > 99 ? '99+' : unreadCount}
-              </span>
-            )}
-            {activeTab === tab.key && (
-              <span className="absolute bottom-0 left-0 right-0 h-[2px] bg-[#4A7FA5]" />
-            )}
-          </button>
-        ))}
+      {/* Tab bar */}
+      <div
+        className="flex items-center px-4 flex-shrink-0 border-b"
+        style={{ backgroundColor: tabBarColor, borderColor: tabBorder }}
+      >
+        {tabs.map((tab) => {
+          const isActive = activeTab === tab.key
+          return (
+            <button
+              key={tab.key}
+              type="button"
+              onClick={() => {
+                onTabChange(tab.key)
+                if (tab.key === 'messages') markAsRead()
+              }}
+              className="relative flex items-center gap-1.5 px-3 py-2.5 text-[12px] font-medium transition-colors"
+              style={{
+                color: isActive ? primaryText : mutedText,
+                borderBottom: isActive ? `2px solid ${accentColor}` : '2px solid transparent',
+              }}
+            >
+              {tab.label}
+              {tab.badge && (
+                <span
+                  className="text-[10px] font-medium text-white px-1.5 py-0.5 rounded-full"
+                  style={{ backgroundColor: accentColor }}
+                >
+                  {tab.badge > 99 ? '99+' : tab.badge}
+                </span>
+              )}
+            </button>
+          )
+        })}
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto">
+      <main className="flex-1 overflow-y-auto">
         {children}
-      </div>
+      </main>
     </div>
   )
 }
@@ -18778,10 +18858,10 @@ interface ActionItem {
   completed: boolean
 }
 
-function getIcon(type: ActionItem['type']) {
-  if (type === 'document-request') return <FileUp className="h-5 w-5 text-[#9CA3AF]" />
-  if (type === 'signature') return <PenLine className="h-5 w-5 text-[#9CA3AF]" />
-  return <CreditCard className="h-5 w-5 text-[#9CA3AF]" />
+function getIcon(type: ActionItem['type'], iconColor: string) {
+  if (type === 'document-request') return <FileUp className="h-5 w-5" style={{ color: iconColor }} />
+  if (type === 'signature') return <PenLine className="h-5 w-5" style={{ color: iconColor }} />
+  return <CreditCard className="h-5 w-5" style={{ color: iconColor }} />
 }
 
 function formatDate(iso: string | null | undefined): string {
@@ -18793,43 +18873,71 @@ function formatDate(iso: string | null | undefined): string {
   })
 }
 
-const STATUS_COLORS: Record<string, string> = {
-  active: 'bg-[#1E3A5F] text-[#7DA3C4]',
-  in_progress: 'bg-[#1E3A5F] text-[#7DA3C4]',
-  pending: 'bg-[#292524] text-[#78716C]',
-  completed: 'bg-[#14532D] text-[#86EFAC]',
-  archived: 'bg-[#292524] text-[#78716C]',
-}
-
-function EngagementBadge({ status }: { status: string }) {
-  const cls = STATUS_COLORS[status] ?? 'bg-[#292524] text-[#78716C]'
+function EngagementBadge({ status, accentColor }: { status: string; accentColor: string }) {
+  const getStyle = (): React.CSSProperties => {
+    switch (status) {
+      case 'active':
+        return { backgroundColor: accentColor, color: '#FFFFFF' }
+      case 'in_progress':
+        return { backgroundColor: accentColor, color: '#FFFFFF' }
+      case 'in_review':
+        return { backgroundColor: '#FEF3C7', color: '#92400E' }
+      case 'completed':
+        return { backgroundColor: '#D1FAE5', color: '#065F46' }
+      case 'overdue':
+      case 'blocked':
+        return { backgroundColor: '#FEE2E2', color: '#991B1B' }
+      case 'awaiting_docs':
+        return { backgroundColor: '#FEF3C7', color: '#92400E' }
+      case 'planning':
+      case 'draft':
+      case 'archived':
+      case 'cancelled':
+      case 'not_started':
+      default:
+        return { backgroundColor: '#E5E7EB', color: '#1F3148', border: '0.5px solid #1F3148' }
+    }
+  }
   return (
-    <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-[4px] capitalize ${cls}`}>
+    <span
+      className="text-[10px] font-medium px-1.5 py-0.5 rounded-[4px] capitalize"
+      style={getStyle()}
+    >
       {status.replace(/_/g, ' ')}
     </span>
   )
 }
 
-function ActionCard({ item }: { item: ActionItem }) {
+function ActionCard({ item, accentColor, cardColor, primaryText, mutedText, iconColor }: {
+  item: ActionItem
+  accentColor: string
+  cardColor: string
+  primaryText: string
+  mutedText: string
+  iconColor: string
+}) {
   return (
     <div
-      className="flex items-center justify-between gap-4 bg-[#383838] rounded-[8px] px-5 py-4"
-      style={{ opacity: item.completed ? 0.7 : 1 }}
+      className="flex items-center justify-between gap-4 rounded-[8px] px-5 py-4"
+      style={{ backgroundColor: cardColor, opacity: item.completed ? 0.7 : 1 }}
     >
       <div className="flex items-start gap-3 min-w-0">
-        <div className="flex-shrink-0 mt-0.5">{getIcon(item.type)}</div>
+        <div className="flex-shrink-0 mt-0.5">{getIcon(item.type, iconColor)}</div>
         <div className="min-w-0">
-          <p className="text-[14px] font-medium text-[#EDEEF0] leading-tight">{item.title}</p>
-          <p className="text-[13px] text-[#9CA3AF] mt-0.5 leading-snug">{item.description}</p>
+          <p className="text-[14px] font-medium leading-tight" style={{ color: primaryText }}>{item.title}</p>
+          <p className="text-[13px] mt-0.5 leading-snug" style={{ color: mutedText }}>{item.description}</p>
           {item.dueDate && !item.completed && (
-            <p className="text-[13px] text-[#9CA3AF] mt-1">Due {item.dueDate}</p>
+            <p className="text-[13px] mt-1" style={{ color: mutedText }}>Due {item.dueDate}</p>
           )}
         </div>
       </div>
       {item.completed ? (
         <CheckCircle2 className="h-5 w-5 text-[#10B981] flex-shrink-0" />
       ) : (
-        <button className="flex-shrink-0 h-10 px-4 rounded-[6px] bg-[#3A6A94] text-[#EDEEF0] text-[13px] font-medium hover:opacity-90 transition-opacity whitespace-nowrap">
+        <button
+          className="flex-shrink-0 h-10 px-4 rounded-[6px] text-white text-[13px] font-medium hover:opacity-90 transition-opacity whitespace-nowrap"
+          style={{ backgroundColor: accentColor }}
+        >
           {item.type === 'document-request'
             ? 'Upload'
             : item.type === 'signature'
@@ -18843,9 +18951,18 @@ function ActionCard({ item }: { item: ActionItem }) {
 
 interface PortalTodoProps {
   clientFirstName: string
+  accentColor?: string
+  cardColor?: string
+  portalMode?: 'light' | 'dark'
+  textPrimary?: string
+  textMuted?: string
 }
 
-export function PortalTodo({ clientFirstName }: PortalTodoProps) {
+export function PortalTodo({ clientFirstName, accentColor = '#3A6A94', cardColor = '#383838', portalMode = 'dark', textPrimary = '#EDEEF0', textMuted = '#9CA3AF' }: PortalTodoProps) {
+  const primaryText = textPrimary
+  const mutedText = textMuted
+  const iconColor = portalMode === 'light' ? '#6B7280' : '#9CA3AF'
+
   const [items, setItems] = useState<ActionItem[]>([])
   const [engagements, setEngagements] = useState<PortalDashboard['active_engagements']>([])
   const [loading, setLoading] = useState(true)
@@ -18892,7 +19009,7 @@ export function PortalTodo({ clientFirstName }: PortalTodoProps) {
     return (
       <div className="p-5 flex flex-col gap-3 max-w-2xl mx-auto">
         {[1, 2, 3].map((i) => (
-          <div key={i} className="h-16 rounded-[8px] bg-[#383838] animate-pulse" />
+          <div key={i} className="h-16 rounded-[8px] animate-pulse" style={{ backgroundColor: cardColor }} />
         ))}
       </div>
     )
@@ -18901,8 +19018,8 @@ export function PortalTodo({ clientFirstName }: PortalTodoProps) {
   return (
     <div className="p-6 flex flex-col gap-6 max-w-2xl mx-auto">
       <div>
-        <p className="text-[18px] font-medium text-[#EDEEF0]">Hello, {clientFirstName}</p>
-        <p className="text-[14px] text-[#9CA3AF] mt-0.5">
+        <p className="text-[18px] font-medium" style={{ color: primaryText }}>Hello, {clientFirstName}</p>
+        <p className="text-[14px] mt-0.5" style={{ color: mutedText }}>
           {active.length === 0
             ? "You're all caught up."
             : `You have ${active.length} item${active.length !== 1 ? 's' : ''} that need${active.length === 1 ? 's' : ''} your attention.`}
@@ -18911,12 +19028,12 @@ export function PortalTodo({ clientFirstName }: PortalTodoProps) {
 
       {active.length > 0 && (
         <div>
-          <p className="text-[12px] font-medium text-[#9CA3AF] uppercase tracking-[0.05em] mb-2">
+          <p className="text-[12px] font-medium uppercase tracking-[0.05em] mb-2" style={{ color: mutedText }}>
             Action needed
           </p>
           <div className="flex flex-col gap-3">
             {active.map((item) => (
-              <ActionCard key={item.id} item={item} />
+              <ActionCard key={item.id} item={item} accentColor={accentColor} cardColor={cardColor} primaryText={primaryText} mutedText={mutedText} iconColor={iconColor} />
             ))}
           </div>
         </div>
@@ -18924,17 +19041,18 @@ export function PortalTodo({ clientFirstName }: PortalTodoProps) {
 
       {engagements.length > 0 && (
         <div>
-          <p className="text-[12px] font-medium text-[#9CA3AF] uppercase tracking-[0.05em] mb-2">
+          <p className="text-[12px] font-medium uppercase tracking-[0.05em] mb-2" style={{ color: mutedText }}>
             Active engagements
           </p>
           <div className="flex flex-col gap-3">
             {engagements.map((eng) => (
               <div
                 key={eng.id}
-                className="flex items-center justify-between bg-[#383838] rounded-[8px] px-4 py-3"
+                className="flex items-center justify-between rounded-[8px] px-4 py-3"
+                style={{ backgroundColor: cardColor }}
               >
-                <p className="text-[14px] font-medium text-[#EDEEF0]">{eng.name}</p>
-                <EngagementBadge status={eng.status} />
+                <p className="text-[14px] font-medium" style={{ color: primaryText }}>{eng.name}</p>
+                <EngagementBadge status={eng.status} accentColor={accentColor} />
               </div>
             ))}
           </div>
@@ -18943,12 +19061,12 @@ export function PortalTodo({ clientFirstName }: PortalTodoProps) {
 
       {completed.length > 0 && (
         <div>
-          <p className="text-[12px] font-medium text-[#9CA3AF] uppercase tracking-[0.05em] mb-2">
+          <p className="text-[12px] font-medium uppercase tracking-[0.05em] mb-2" style={{ color: mutedText }}>
             Completed
           </p>
           <div className="flex flex-col gap-3">
             {completed.map((item) => (
-              <ActionCard key={item.id} item={item} />
+              <ActionCard key={item.id} item={item} accentColor={accentColor} cardColor={cardColor} primaryText={primaryText} mutedText={mutedText} iconColor={iconColor} />
             ))}
           </div>
         </div>
@@ -20471,67 +20589,116 @@ import { toast } from 'sonner'
 import { Upload, X, Loader2 } from 'lucide-react'
 import api from '@/lib/api'
 
+interface ColorSet {
+  top_bar: string
+  page: string
+  tab_bar: string
+  accent: string
+  avatar: string
+  subtitle: string
+  card: string
+  text_primary: string
+  text_muted: string
+}
+
 interface BrandingState {
   portal_display_name: string
   portal_logo_s3_key: string | null
-  portal_brand_color: string
+  portal_mode: 'light' | 'dark'
+  colors_dark: ColorSet
+  colors_light: ColorSet
+}
+
+const DARK_DEFAULTS: ColorSet = {
+  top_bar: '#1A2535',
+  page: '#2D2D2D',
+  tab_bar: '#252525',
+  accent: '#4A7FA5',
+  avatar: '#3A6A94',
+  subtitle: '#7DA3C4',
+  card: '#383838',
+  text_primary: '#EDEEF0',
+  text_muted: '#9CA3AF',
+}
+
+const LIGHT_DEFAULTS: ColorSet = {
+  top_bar: '#1F3148',
+  page: '#E4E6EA',
+  tab_bar: '#EDEEF0',
+  accent: '#1F3148',
+  avatar: '#1F3148',
+  subtitle: '#7DA3C4',
+  card: '#EDEEF0',
+  text_primary: '#111111',
+  text_muted: '#6B7280',
 }
 
 const VALID_HEX = /^#[0-9A-Fa-f]{6}$/
 const ACCEPTED_TYPES = ['image/png', 'image/jpeg', 'image/jpg', 'image/svg+xml', 'image/webp']
 const MAX_BYTES = 2 * 1024 * 1024
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? ''
+
+const COLOR_LABELS = [
+  { key: 'top_bar', label: 'Top bar' },
+  { key: 'page', label: 'Page background' },
+  { key: 'tab_bar', label: 'Tab bar' },
+  { key: 'accent', label: 'Accent (tabs & buttons)' },
+  { key: 'avatar', label: 'Client avatar' },
+  { key: 'subtitle', label: 'Subtitle text ("Client Portal")' },
+  { key: 'card', label: 'Card / item background' },
+  { key: 'text_primary', label: 'Primary text' },
+  { key: 'text_muted', label: 'Secondary text' },
+] as const
 
 export default function PortalBrandingTab() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [firmId, setFirmId] = useState<string | null>(null)
-  const [branding, setBranding] = useState<BrandingState>({
-    portal_display_name: '',
-    portal_logo_s3_key: null,
-    portal_brand_color: '#1F3148',
-  })
   const [firmName, setFirmName] = useState('')
   const [uploading, setUploading] = useState(false)
   const [logoPreviewUrl, setLogoPreviewUrl] = useState<string | null>(null)
   const [saveConfirmed, setSaveConfirmed] = useState(false)
+  const [branding, setBranding] = useState<BrandingState>({
+    portal_display_name: '',
+    portal_logo_s3_key: null,
+    portal_mode: 'dark',
+    colors_dark: { ...DARK_DEFAULTS },
+    colors_light: { ...LIGHT_DEFAULTS },
+  })
 
   useEffect(() => {
     api.get('/users/firm').then((res) => {
       const data = res.data as {
         id: string
         name: string
-        settings?: Record<string, string | null> | null
+        settings?: Record<string, unknown> | null
       }
       const settings = data.settings ?? {}
       setFirmId(data.id)
       setFirmName(data.name)
+      const savedDark = (settings.portal_colors_dark as Partial<ColorSet>) || {}
+      const savedLight = (settings.portal_colors_light as Partial<ColorSet>) || {}
       setBranding({
         portal_display_name: (settings.portal_display_name as string) || data.name,
         portal_logo_s3_key: (settings.portal_logo_s3_key as string | null) || null,
-        portal_brand_color: (settings.portal_brand_color as string) || '#1F3148',
+        portal_mode: (settings.portal_mode as 'light' | 'dark') || 'dark',
+        colors_dark: { ...DARK_DEFAULTS, ...savedDark },
+        colors_light: { ...LIGHT_DEFAULTS, ...savedLight },
       })
       if (settings.portal_logo_s3_key) {
-        setLogoPreviewUrl(`${API_BASE}/api/v1/firms/logo/${data.id}`)
+        setLogoPreviewUrl(`https://api.jammpx.com/firms/logo/${data.id}`)
       }
     }).finally(() => setLoading(false))
   }, [])
 
-  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (!file) return
-
+  async function processFile(file: File) {
     if (!ACCEPTED_TYPES.includes(file.type)) {
       toast.error('Logo must be PNG, JPG, SVG, or WEBP')
-      e.target.value = ''
       return
     }
     if (file.size > MAX_BYTES) {
       toast.error('Logo must be 2MB or smaller')
-      e.target.value = ''
       return
     }
-
     setUploading(true)
     try {
       const { data } = await api.post('/firms/logo/upload-url', {
@@ -20540,22 +20707,27 @@ export default function PortalBrandingTab() {
         file_size: file.size,
       })
       const { upload_url, s3_key } = data as { upload_url: string; s3_key: string }
-
       const putRes = await fetch(upload_url, {
         method: 'PUT',
         body: file,
         headers: { 'Content-Type': file.type },
       })
       if (!putRes.ok) throw new Error('S3 upload failed')
-
       await api.patch('/users/firm/settings', { portal_logo_s3_key: s3_key })
       setBranding((b) => ({ ...b, portal_logo_s3_key: s3_key }))
-      setLogoPreviewUrl(`${API_BASE}/api/v1/firms/logo/${firmId}?t=${Date.now()}`)
+      setLogoPreviewUrl(`https://api.jammpx.com/firms/logo/${firmId}?t=${Date.now()}`)
       toast.success('Logo uploaded')
     } catch {
       toast.error('Logo upload failed. Please try again.')
     } finally {
       setUploading(false)
+    }
+  }
+
+  function handleInputChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (file) {
+      processFile(file)
       e.target.value = ''
     }
   }
@@ -20575,15 +20747,18 @@ export default function PortalBrandingTab() {
   }
 
   async function handleSave() {
-    if (branding.portal_brand_color && !VALID_HEX.test(branding.portal_brand_color)) {
-      toast.error('Brand color must be a valid hex color — e.g. #1F3148')
+    const allColors = [...Object.values(branding.colors_dark), ...Object.values(branding.colors_light)]
+    if (allColors.some(c => !VALID_HEX.test(c))) {
+      toast.error('All colors must be valid hex values — e.g. #1F3148')
       return
     }
     setSaving(true)
     try {
       await api.patch('/users/firm/settings', {
         portal_display_name: branding.portal_display_name.trim() || firmName,
-        portal_brand_color: branding.portal_brand_color.trim() || '#1F3148',
+        portal_mode: branding.portal_mode,
+        portal_colors_dark: branding.colors_dark,
+        portal_colors_light: branding.colors_light,
       })
       toast.success('Portal branding saved')
       setSaveConfirmed(true)
@@ -20595,17 +20770,144 @@ export default function PortalBrandingTab() {
     }
   }
 
+  function setColor(mode: 'dark' | 'light', key: keyof ColorSet, value: string) {
+    setBranding((b) => ({
+      ...b,
+      [`colors_${mode}`]: { ...b[`colors_${mode}`], [key]: value },
+    }))
+  }
+
+  function resetColors(mode: 'dark' | 'light') {
+    setBranding((b) => ({
+      ...b,
+      [`colors_${mode}`]: mode === 'dark' ? { ...DARK_DEFAULTS } : { ...LIGHT_DEFAULTS },
+    }))
+  }
+
   const labelClass = 'text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em]'
-  const inputClass =
-    'w-full rounded-[6px] border border-surface-border dark:border-dark-border bg-surface-page dark:bg-dark-page text-[13px] text-brand dark:text-[#EDEEF0] px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-brand'
+  const inputClass = 'w-full rounded-[6px] border border-surface-border dark:border-dark-border bg-surface-page dark:bg-dark-page text-[13px] text-brand dark:text-[#EDEEF0] px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-brand'
   const hintClass = 'text-[11px] text-[#6B7280] mt-1'
-  const previewColor = VALID_HEX.test(branding.portal_brand_color)
-    ? branding.portal_brand_color
-    : '#1F3148'
+
+  function ColorSection({ mode }: { mode: 'dark' | 'light' }) {
+    const colors = mode === 'dark' ? branding.colors_dark : branding.colors_light
+    const isActive = branding.portal_mode === mode
+    const previewPage = VALID_HEX.test(colors.page) ? colors.page : (mode === 'dark' ? '#2D2D2D' : '#E4E6EA')
+    const previewTopBar = VALID_HEX.test(colors.top_bar) ? colors.top_bar : (mode === 'dark' ? '#1A2535' : '#1F3148')
+    const previewTabBar = VALID_HEX.test(colors.tab_bar) ? colors.tab_bar : (mode === 'dark' ? '#252525' : '#EDEEF0')
+    const previewAccent = VALID_HEX.test(colors.accent) ? colors.accent : (mode === 'dark' ? '#4A7FA5' : '#1F3148')
+    const previewAvatar = VALID_HEX.test(colors.avatar) ? colors.avatar : (mode === 'dark' ? '#3A6A94' : '#1F3148')
+    const primaryText = mode === 'light' ? '#1F3148' : '#EDEEF0'
+    const mutedText = '#9CA3AF'
+    const tabBorderColor = mode === 'light' ? '#C8CDD6' : '#383838'
+
+    return (
+      <div className={`flex flex-col gap-4 p-4 rounded-[8px] border ${isActive ? 'border-brand dark:border-brand-light' : 'border-surface-border dark:border-dark-border'}`}>
+        {/* Section header */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="text-[13px] font-medium text-brand dark:text-[#EDEEF0]">
+              {mode === 'dark' ? 'Dark mode' : 'Light mode'}
+            </span>
+            {isActive && (
+              <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-[#D1FAE5] text-[#065F46]">
+                Active
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => resetColors(mode)}
+              className="text-[11px] text-[#6B7280] hover:text-brand-light"
+            >
+              Reset to defaults
+            </button>
+            {!isActive && (
+              <button
+                type="button"
+                onClick={() => setBranding((b) => ({ ...b, portal_mode: mode }))}
+                className="text-[11px] font-medium text-brand-light hover:underline"
+              >
+                Set as active
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Color pickers */}
+        <div className="flex flex-col gap-2">
+          {COLOR_LABELS.map(({ key, label }) => {
+          const value = colors[key]
+          return (
+            <div key={key} className="flex items-center gap-3">
+              <input
+                type="color"
+                value={VALID_HEX.test(value) ? value : '#1F3148'}
+                onChange={(e) => setColor(mode, key, e.target.value)}
+                className="w-8 h-8 rounded cursor-pointer border border-surface-border dark:border-dark-border p-0.5 flex-shrink-0"
+              />
+              <input
+                type="text"
+                defaultValue={value}
+                key={`${mode}-${key}-${value}`}
+                onBlur={(e) => {
+                  const v = e.target.value.trim()
+                  if (VALID_HEX.test(v)) setColor(mode, key, v)
+                  else e.target.value = value
+                }}
+                maxLength={7}
+                placeholder="#000000"
+                className="w-28 rounded-[6px] border border-surface-border dark:border-dark-border bg-surface-page dark:bg-dark-page text-[12px] text-brand dark:text-[#EDEEF0] px-2 py-1 focus:outline-none focus:ring-1 focus:ring-brand"
+              />
+              <span className="text-[12px] text-[#6B7280]">{label}</span>
+            </div>
+          )
+        })}
+        </div>
+
+        {/* Mini preview */}
+        <div className="rounded-[6px] overflow-hidden border border-surface-border dark:border-dark-border">
+          <div className="flex items-center justify-between px-3 h-9" style={{ backgroundColor: previewTopBar }}>
+            <div className="flex items-center gap-1.5">
+              {logoPreviewUrl ? (
+                <img src={logoPreviewUrl} alt="" className="h-5 max-w-[80px] object-contain" onError={() => {}} />
+              ) : (
+                <span className="text-[11px] font-medium text-white">{branding.portal_display_name || firmName}</span>
+              )}
+              <span className="text-[9px]" style={{ color: VALID_HEX.test(colors.subtitle) ? colors.subtitle : '#7DA3C4' }}>Client Portal</span>
+            </div>
+            <div className="w-5 h-5 rounded-full flex items-center justify-center" style={{ backgroundColor: previewAvatar }}>
+              <span className="text-[9px] font-medium text-white">JD</span>
+            </div>
+          </div>
+          <div className="flex items-center px-2 h-7 border-b" style={{ backgroundColor: previewTabBar, borderColor: tabBorderColor }}>
+            {['To-do', 'Documents', 'Invoices'].map((t, i) => (
+              <span
+                key={t}
+                className="px-2 py-1 text-[10px]"
+                style={{
+                  color: i === 0 ? primaryText : mutedText,
+                  borderBottom: i === 0 ? `2px solid ${previewAccent}` : '2px solid transparent',
+                  fontWeight: i === 0 ? 500 : 400,
+                }}
+              >
+                {t}
+              </span>
+            ))}
+          </div>
+          <div className="px-3 py-2" style={{ backgroundColor: previewPage }}>
+            <div className="rounded-[4px] px-3 py-2" style={{ backgroundColor: VALID_HEX.test(colors.card) ? colors.card : (mode === 'dark' ? '#383838' : '#EDEEF0') }}>
+              <span className="text-[10px]" style={{ color: mode === 'light' ? '#1F3148' : '#EDEEF0' }}>Card item</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   if (loading) {
     return (
-      <div className="flex flex-col gap-6 max-w-lg">
+      <div className="flex flex-col gap-6 max-w-2xl">
         {[1, 2, 3].map((i) => (
           <div key={i} className="flex flex-col gap-1.5">
             <div className="h-3 w-24 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
@@ -20617,32 +20919,19 @@ export default function PortalBrandingTab() {
   }
 
   return (
-    <div className="flex flex-col gap-6 max-w-lg">
+    <div className="flex flex-col gap-6 max-w-2xl">
 
       {/* Setup status */}
       <div className="flex flex-col gap-2 p-3 rounded-[8px] bg-surface-card dark:bg-dark-card border border-surface-border dark:border-dark-border">
         <span className="text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em]">Setup status</span>
         <div className="flex flex-col gap-1.5">
           {[
-            {
-              done: branding.portal_display_name !== firmName && branding.portal_display_name.trim() !== '',
-              label: 'Display name customized',
-            },
-            {
-              done: !!branding.portal_logo_s3_key,
-              label: 'Firm logo uploaded',
-            },
-            {
-              done: branding.portal_brand_color !== '#1F3148',
-              label: 'Brand color set',
-            },
+            { done: branding.portal_display_name !== firmName && branding.portal_display_name.trim() !== '', label: 'Display name customized' },
+            { done: !!branding.portal_logo_s3_key, label: 'Firm logo uploaded' },
+            { done: JSON.stringify(branding.colors_dark) !== JSON.stringify(DARK_DEFAULTS) || JSON.stringify(branding.colors_light) !== JSON.stringify(LIGHT_DEFAULTS), label: 'Colors customized' },
           ].map(({ done, label }) => (
             <div key={label} className="flex items-center gap-2">
-              <div
-                className={`w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0 ${
-                  done ? 'bg-[#D1FAE5]' : 'bg-[#E5E7EB] dark:bg-[#333333]'
-                }`}
-              >
+              <div className={`w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0 ${done ? 'bg-[#D1FAE5]' : 'bg-[#E5E7EB] dark:bg-[#333333]'}`}>
                 {done ? (
                   <svg className="w-2.5 h-2.5 text-[#065F46]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
@@ -20651,9 +20940,7 @@ export default function PortalBrandingTab() {
                   <div className="w-1.5 h-1.5 rounded-full bg-[#D1D5DB] dark:bg-[#555]" />
                 )}
               </div>
-              <span className={`text-[12px] ${done ? 'text-[#065F46] dark:text-[#34D399]' : 'text-[#6B7280]'}`}>
-                {label}
-              </span>
+              <span className={`text-[12px] ${done ? 'text-[#065F46] dark:text-[#34D399]' : 'text-[#6B7280]'}`}>{label}</span>
             </div>
           ))}
         </div>
@@ -20670,15 +20957,28 @@ export default function PortalBrandingTab() {
           maxLength={100}
           className={inputClass}
         />
-        <p className={hintClass}>
-          The name your clients see in the portal top bar. Defaults to your firm name.
-        </p>
+        <p className={hintClass}>The name your clients see in the portal top bar. Defaults to your firm name.</p>
       </div>
 
       {/* Logo Upload */}
       <div className="flex flex-col gap-1.5">
         <span className={labelClass}>Firm logo</span>
-
+        <input
+          id="logo-upload-input"
+          type="file"
+          accept="image/png,image/jpeg,image/jpg,image/svg+xml,image/webp"
+          onChange={handleInputChange}
+          disabled={uploading}
+          style={{ display: 'none' }}
+        />
+        <input
+          id="logo-replace-input"
+          type="file"
+          accept="image/png,image/jpeg,image/jpg,image/svg+xml,image/webp"
+          onChange={handleInputChange}
+          disabled={uploading}
+          style={{ display: 'none' }}
+        />
         {logoPreviewUrl ? (
           <div className="flex items-center gap-3 p-3 rounded-[6px] border border-surface-border dark:border-dark-border bg-surface-page dark:bg-dark-page">
             <img
@@ -20688,145 +20988,59 @@ export default function PortalBrandingTab() {
               onError={() => setLogoPreviewUrl(null)}
             />
             <div className="flex-1" />
-            <div className="relative">
-              <span className={`text-[12px] font-medium text-brand-light hover:underline cursor-pointer ${uploading ? 'opacity-50 pointer-events-none' : ''}`}>
-                Replace
-              </span>
-              <input
-                type="file"
-                accept="image/png,image/jpeg,image/jpg,image/svg+xml,image/webp"
-                onChange={handleFileChange}
-                disabled={uploading}
-                className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
-              />
-            </div>
-            <button
-              onClick={handleRemoveLogo}
-              disabled={saving || uploading}
-              className="text-[12px] font-medium text-[#DC2626] hover:underline disabled:opacity-50 flex items-center gap-1"
-            >
+            <label htmlFor="logo-replace-input" className={`text-[12px] font-medium text-brand-light hover:underline cursor-pointer ${uploading ? 'opacity-50 pointer-events-none' : ''}`}>
+              Replace
+            </label>
+            <button type="button" onClick={handleRemoveLogo} disabled={saving || uploading} className="text-[12px] font-medium text-[#DC2626] hover:underline disabled:opacity-50 flex items-center gap-1">
               <X className="w-3 h-3" />
               Remove
             </button>
           </div>
         ) : (
-          <div className="relative h-24 rounded-[6px] border border-dashed border-surface-border dark:border-dark-border hover:border-brand-light dark:hover:border-brand-light transition-colors">
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 pointer-events-none">
-              {uploading ? (
-                <>
-                  <Loader2 className="w-5 h-5 text-[#6B7280] animate-spin" />
-                  <span className="text-[12px] text-[#6B7280]">Uploading…</span>
-                </>
-              ) : (
-                <>
-                  <Upload className="w-5 h-5 text-[#6B7280]" />
-                  <span className="text-[12px] text-[#6B7280]">Click to upload logo</span>
-                  <span className="text-[11px] text-[#9CA3AF]">PNG, JPG, SVG, WEBP — max 2MB</span>
-                </>
-              )}
-            </div>
-            <input
-              type="file"
-              accept="image/png,image/jpeg,image/jpg,image/svg+xml,image/webp"
-              onChange={handleFileChange}
-              disabled={uploading}
-              className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
-            />
-          </div>
+          <label htmlFor="logo-upload-input" className={`flex flex-col items-center justify-center gap-2 h-24 rounded-[6px] border border-dashed border-surface-border dark:border-dark-border hover:border-brand-light dark:hover:border-brand-light transition-colors cursor-pointer ${uploading ? 'opacity-50 pointer-events-none' : ''}`}>
+            {uploading ? (
+              <>
+                <Loader2 className="w-5 h-5 text-[#6B7280] animate-spin" />
+                <span className="text-[12px] text-[#6B7280]">Uploading…</span>
+              </>
+            ) : (
+              <>
+                <Upload className="w-5 h-5 text-[#6B7280]" />
+                <span className="text-[12px] text-[#6B7280]">Click to upload logo</span>
+                <span className="text-[11px] text-[#9CA3AF]">PNG, JPG, SVG, WEBP — max 2MB</span>
+              </>
+            )}
+          </label>
         )}
-
-        <p className={hintClass}>
-          Displayed in the portal top bar instead of your firm name when set.
-        </p>
+        <p className={hintClass}>Displayed in the portal top bar instead of your firm name when set.</p>
       </div>
 
-      {/* Brand Color */}
-      <div className="flex flex-col gap-1.5">
-        <span className={labelClass}>Portal top bar color</span>
-        <div className="flex items-center gap-2">
-          <input
-            type="color"
-            value={VALID_HEX.test(branding.portal_brand_color) ? branding.portal_brand_color : '#1F3148'}
-            onChange={(e) => setBranding((b) => ({ ...b, portal_brand_color: e.target.value }))}
-            className="w-9 h-9 rounded cursor-pointer border border-surface-border dark:border-dark-border p-0.5"
-          />
-          <input
-            type="text"
-            value={branding.portal_brand_color}
-            onChange={(e) => setBranding((b) => ({ ...b, portal_brand_color: e.target.value }))}
-            placeholder="#1F3148"
-            maxLength={7}
-            className={`${inputClass} w-32`}
-          />
-          <span className="text-[11px] text-[#6B7280]">hex</span>
-          <button
-            onClick={() => setBranding((b) => ({ ...b, portal_brand_color: '#1F3148' }))}
-            className="text-[11px] text-[#6B7280] hover:text-brand-light ml-1"
-          >
-            Reset to default
-          </button>
-        </div>
+      {/* Color sections — dark and light side by side on wide, stacked on narrow */}
+      <div className="flex flex-col gap-3">
+        <span className={labelClass}>Portal colors</span>
         <p className={hintClass}>
-          Match your firm&apos;s website color exactly. To find it: open your website, right-click any colored element, and select Inspect. Look for a value starting with # in the CSS panel.
+          Configure colors for both modes. Use &ldquo;Set as active&rdquo; to choose which mode your clients see.
+          To find your brand colors: right-click any element on your website → Inspect → look for a # value in the CSS panel.
         </p>
-      </div>
-
-      {/* Live preview */}
-      <div className="flex flex-col gap-1.5">
-        <span className={labelClass}>Preview</span>
-        <div className="rounded-[8px] overflow-hidden border border-surface-border dark:border-dark-border">
-          <div
-            className="flex items-center justify-between px-4 h-11"
-            style={{ backgroundColor: previewColor }}
-          >
-            <div className="flex items-center gap-2">
-              {logoPreviewUrl ? (
-                <img
-                  src={logoPreviewUrl}
-                  alt=""
-                  className="h-6 max-w-[120px] object-contain"
-                  onError={() => {}}
-                />
-              ) : (
-                <span className="text-[12px] font-medium text-white">
-                  {branding.portal_display_name || firmName}
-                </span>
-              )}
-              <span className="text-[10px]" style={{ color: '#7DA3C4' }}>
-                Client Portal
-              </span>
-            </div>
-            <div className="w-6 h-6 rounded-full bg-[#3A6A94] flex items-center justify-center">
-              <span className="text-[10px] font-medium text-white">JD</span>
-            </div>
-          </div>
-          <div className="flex items-center gap-0 px-4 h-9 bg-[#252525] border-b border-[#383838]">
-            {['To-do', 'Documents', 'Invoices'].map((t, i) => (
-              <span
-                key={t}
-                className={`px-3 py-2 text-[12px] ${i === 0 ? 'text-[#EDEEF0] font-medium border-b-2 border-[#4A7FA5]' : 'text-[#9CA3AF]'}`}
-              >
-                {t}
-              </span>
-            ))}
-          </div>
+        <div className="flex flex-col gap-4">
+          <ColorSection mode="dark" />
+          <ColorSection mode="light" />
         </div>
-        {saveConfirmed && (
-          <p className="text-[11px] text-[#065F46] dark:text-[#34D399] mt-1">
-            Changes are live in the client portal.
-          </p>
-        )}
       </div>
 
       {/* Save */}
-      <div>
+      <div className="flex items-center gap-3">
         <button
+          type="button"
           onClick={handleSave}
           disabled={saving || uploading}
           className="h-9 px-5 rounded-[6px] bg-brand text-white text-[13px] font-medium hover:opacity-90 disabled:opacity-50 transition-opacity"
         >
           {saving ? 'Saving…' : 'Save branding'}
         </button>
+        {saveConfirmed && (
+          <span className="text-[11px] text-[#065F46] dark:text-[#34D399]">Changes are live in the client portal.</span>
+        )}
       </div>
 
     </div>
