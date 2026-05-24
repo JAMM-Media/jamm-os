@@ -2,31 +2,32 @@
 'use client'
 
 import { useState } from 'react'
-import { cn } from '@/lib/utils'
 import { usePortalUnreadMessages } from './usePortalUnreadMessages'
 
 interface PortalShellProps {
   firmName: string
   logoUrl?: string
   brandColor?: string
+  pageColor?: string
+  tabBarColor?: string
+  accentColor?: string
+  avatarColor?: string
+  portalMode?: 'light' | 'dark'
   clientName: string
   activeTab: string
   onTabChange: (tab: string) => void
   children: React.ReactNode
 }
 
-const TABS = [
-  { key: 'todo', label: 'To-do' },
-  { key: 'documents', label: 'Documents' },
-  { key: 'invoices', label: 'Invoices' },
-  { key: 'messages', label: 'Messages' },
-  { key: 'organizer', label: 'Tax Organizer' },
-]
-
 export function PortalShell({
   firmName,
   logoUrl,
-  brandColor = '#1F3148',
+  brandColor = '#1A2535',
+  pageColor = '#2D2D2D',
+  tabBarColor = '#252525',
+  accentColor = '#4A7FA5',
+  avatarColor = '#3A6A94',
+  portalMode = 'dark',
   clientName,
   activeTab,
   onTabChange,
@@ -35,13 +36,20 @@ export function PortalShell({
   const { unreadCount, markAsRead } = usePortalUnreadMessages()
   const [logoError, setLogoError] = useState(false)
 
-  function handleTabChange(key: string) {
-    if (key === 'messages') markAsRead()
-    onTabChange(key)
-  }
+  const isLight = portalMode === 'light'
+  const primaryText = isLight ? '#1F3148' : '#EDEEF0'
+  const mutedText = isLight ? '#6B7280' : '#9CA3AF'
+  const tabBorder = isLight ? '#C8CDD6' : '#383838'
+
+  const tabs = [
+    { key: 'todo', label: 'To-do' },
+    { key: 'documents', label: 'Documents' },
+    { key: 'invoices', label: 'Invoices' },
+    { key: 'messages', label: 'Messages', badge: unreadCount > 0 ? unreadCount : null },
+  ]
 
   return (
-    <div className="min-h-screen bg-[#2D2D2D] flex flex-col">
+    <div className="min-h-screen flex flex-col" style={{ backgroundColor: pageColor }}>
       {/* Top bar */}
       <div
         className="flex items-center justify-between px-5 h-12 flex-shrink-0"
@@ -56,63 +64,59 @@ export function PortalShell({
               onError={() => setLogoError(true)}
             />
           ) : (
-            <span className="text-[12px] font-medium text-white">
-              {firmName}
-            </span>
+            <span className="text-[12px] font-medium text-white">{firmName}</span>
           )}
-          <span className="text-[10px] text-[#7DA3C4]">
-            Client Portal
-          </span>
+          <span className="text-[10px]" style={{ color: '#7DA3C4' }}>Client Portal</span>
         </div>
-        {/* Avatar */}
-        <div className="w-7 h-7 rounded-full bg-[#3A6A94] flex items-center justify-center">
+        <div
+          className="w-8 h-8 rounded-full flex items-center justify-center cursor-pointer"
+          style={{ backgroundColor: avatarColor }}
+        >
           <span className="text-[11px] font-medium text-white">
-            {clientName.split(' ').map((n) => n[0]).join('').slice(0, 2)}
+            {clientName?.charAt(0).toUpperCase() ?? '?'}
           </span>
         </div>
       </div>
 
-      {/* Tab row */}
-      <div className="flex items-end gap-0 px-5 bg-[#252525] border-b border-[#383838] flex-shrink-0">
-        {TABS.map((tab) => (
-          <button
-            key={tab.key}
-            onClick={() => handleTabChange(tab.key)}
-            className={cn(
-              'px-4 py-2.5 text-[13px] relative transition-colors flex items-center gap-1.5',
-              activeTab === tab.key
-                ? 'text-[#EDEEF0] font-medium'
-                : 'text-[#9CA3AF] hover:text-[#EDEEF0] font-normal'
-            )}
-          >
-            {tab.label}
-            {tab.key === 'messages' && unreadCount > 0 && (
-              <span
-                className="inline-flex items-center justify-center bg-brand dark:bg-brand-btn text-[#EDEEF0]"
-                style={{
-                  height: 18,
-                  minWidth: 18,
-                  padding: '0 6px',
-                  borderRadius: 9999,
-                  fontSize: 11,
-                  fontWeight: 500,
-                  lineHeight: 1,
-                }}
-              >
-                {unreadCount > 99 ? '99+' : unreadCount}
-              </span>
-            )}
-            {activeTab === tab.key && (
-              <span className="absolute bottom-0 left-0 right-0 h-[2px] bg-[#4A7FA5]" />
-            )}
-          </button>
-        ))}
+      {/* Tab bar */}
+      <div
+        className="flex items-center px-4 flex-shrink-0 border-b"
+        style={{ backgroundColor: tabBarColor, borderColor: tabBorder }}
+      >
+        {tabs.map((tab) => {
+          const isActive = activeTab === tab.key
+          return (
+            <button
+              key={tab.key}
+              type="button"
+              onClick={() => {
+                onTabChange(tab.key)
+                if (tab.key === 'messages') markAsRead()
+              }}
+              className="relative flex items-center gap-1.5 px-3 py-2.5 text-[12px] font-medium transition-colors"
+              style={{
+                color: isActive ? primaryText : mutedText,
+                borderBottom: isActive ? `2px solid ${accentColor}` : '2px solid transparent',
+              }}
+            >
+              {tab.label}
+              {tab.badge && (
+                <span
+                  className="text-[10px] font-medium text-white px-1.5 py-0.5 rounded-full"
+                  style={{ backgroundColor: accentColor }}
+                >
+                  {tab.badge > 99 ? '99+' : tab.badge}
+                </span>
+              )}
+            </button>
+          )
+        })}
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto">
+      <main className="flex-1 overflow-y-auto">
         {children}
-      </div>
+      </main>
     </div>
   )
 }

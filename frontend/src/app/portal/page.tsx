@@ -20,7 +20,12 @@ interface PortalMe {
   firm_name: string
   portal_display_name: string
   portal_logo_url: string | null
-  portal_brand_color: string
+  portal_mode: 'light' | 'dark'
+  portal_top_bar_color: string
+  portal_page_color: string
+  portal_tab_bar_color: string
+  portal_accent_color: string
+  portal_avatar_color: string
 }
 
 export default function PortalPage() {
@@ -63,14 +68,19 @@ export default function PortalPage() {
 
   const firstName = me.client_name.split(' ')[0]
   const logoImgSrc = me.portal_logo_url
-    ? `https://api.jammpx.com${me.portal_logo_url?.replace('/api/v1', '')}`
+    ? `https://api.jammpx.com${me.portal_logo_url}`
     : undefined
 
   return (
     <PortalShell
       firmName={me.portal_display_name || me.firm_name}
       logoUrl={logoImgSrc}
-      brandColor={me.portal_brand_color || '#1F3148'}
+      brandColor={me.portal_top_bar_color}
+      pageColor={me.portal_page_color}
+      tabBarColor={me.portal_tab_bar_color}
+      accentColor={me.portal_accent_color}
+      avatarColor={me.portal_avatar_color}
+      portalMode={me.portal_mode}
       clientName={me.client_name}
       activeTab={activeTab}
       onTabChange={setActiveTab}

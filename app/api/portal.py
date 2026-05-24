@@ -539,13 +539,42 @@ def portal_me(
     settings = firm.settings or {} if firm else {}
     firm_id_str = str(current_client.firm_id)
     has_logo = bool(settings.get("portal_logo_s3_key"))
+    portal_mode = settings.get("portal_mode", "dark")
+
+    dark_defaults = {
+        "top_bar": "#1A2535",
+        "page": "#2D2D2D",
+        "tab_bar": "#252525",
+        "accent": "#4A7FA5",
+        "avatar": "#3A6A94",
+    }
+    light_defaults = {
+        "top_bar": "#1F3148",
+        "page": "#E4E6EA",
+        "tab_bar": "#EDEEF0",
+        "accent": "#1F3148",
+        "avatar": "#1F3148",
+    }
+
+    if portal_mode == "light":
+        defaults = light_defaults
+        colors = {**light_defaults, **(settings.get("portal_colors_light") or {})}
+    else:
+        defaults = dark_defaults
+        colors = {**dark_defaults, **(settings.get("portal_colors_dark") or {})}
+
     return {
         "client_id": str(current_client.id),
         "client_name": current_client.name,
         "firm_name": firm.name if firm else "",
         "portal_display_name": settings.get("portal_display_name") or (firm.name if firm else ""),
-        "portal_logo_url": f"/api/v1/firms/logo/{firm_id_str}" if has_logo else None,
-        "portal_brand_color": settings.get("portal_brand_color") or "#1F3148",
+        "portal_logo_url": f"/firms/logo/{firm_id_str}" if has_logo else None,
+        "portal_mode": portal_mode,
+        "portal_top_bar_color": colors["top_bar"],
+        "portal_page_color": colors["page"],
+        "portal_tab_bar_color": colors["tab_bar"],
+        "portal_accent_color": colors["accent"],
+        "portal_avatar_color": colors["avatar"],
     }
 
 
