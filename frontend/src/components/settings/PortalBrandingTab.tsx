@@ -52,18 +52,18 @@ export default function PortalBrandingTab() {
     }).finally(() => setLoading(false))
   }, [])
 
-  async function handleFileChange(e: React.FormEvent<HTMLInputElement>) {
-    const file = (e.target as HTMLInputElement).files?.[0]
+  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
     if (!file) return
 
     if (!ACCEPTED_TYPES.includes(file.type)) {
       toast.error('Logo must be PNG, JPG, SVG, or WEBP')
-      (e.target as HTMLInputElement).value = ''
+      e.target.value = ''
       return
     }
     if (file.size > MAX_BYTES) {
       toast.error('Logo must be 2MB or smaller')
-      (e.target as HTMLInputElement).value = ''
+      e.target.value = ''
       return
     }
 
@@ -91,7 +91,7 @@ export default function PortalBrandingTab() {
       toast.error('Logo upload failed. Please try again.')
     } finally {
       setUploading(false)
-      (e.target as HTMLInputElement).value = ''
+      e.target.value = ''
     }
   }
 
