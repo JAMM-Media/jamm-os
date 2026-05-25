@@ -31,7 +31,7 @@ interface EditEngagementModalProps {
   isOpen: boolean
   onClose: () => void
   engagement: { id: string; name: string; status: string; engagementType?: string; endDate?: string; description?: string }
-  onSuccess: () => void
+  onSuccess: (opts?: { statusBecameCompleted?: boolean }) => void
   uncheckedQcCount?: number
 }
 
@@ -100,7 +100,9 @@ export function EditEngagementModal({ isOpen, onClose, engagement, onSuccess, un
     try {
       await engagementsApi.update(engagement.id, patch)
       toast.success('Engagement updated successfully')
-      onSuccess()
+      const statusBecameCompleted =
+        patch.status === 'completed' && original.status !== 'completed'
+      onSuccess({ statusBecameCompleted })
     } catch {
       toast.error('Failed to update engagement — please try again')
     } finally {

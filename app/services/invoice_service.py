@@ -11,7 +11,9 @@ from sqlalchemy.orm import Session
 
 from app.crud import invoice as crud_invoice
 from app.crud import time_entry as crud_time_entry
+from app.models.client import Client
 from app.models.engagement import Engagement
+from app.models.firm import Firm
 from app.models.invoice import Invoice
 from app.core.enums import InvoiceStatus, TriggerEvent
 from app.schemas.invoice import InvoiceCreate, InvoiceUpdate
@@ -123,6 +125,31 @@ async def send_invoice(
             actor_id=current_user_id,
             metadata={}
         )
+
+    try:
+        from app.services.email_service import EmailService
+        from app.core.config import get_settings as _get_settings
+        _settings = _get_settings()
+        firm = db.execute(select(Firm).where(Firm.id == firm_id)).scalar_one_or_none()
+        client = db.execute(select(Client).where(Client.id == result.client_id)).scalar_one_or_none()
+        if firm and client and client.email:
+            email_settings = EmailService.get_firm_email_settings(firm)
+            amount_due = f"${float(result.total_amount):,.2f}" if result.total_amount else "N/A"
+            due_date_str = result.due_date.strftime("%B %d, %Y") if result.due_date else "N/A"
+            EmailService.send_invoice_email(
+                to_email=client.email,
+                firm_name=firm.name,
+                recipient_name=client.name,
+                invoice_number=result.invoice_number,
+                amount_due=amount_due,
+                due_date=due_date_str,
+                payment_url=f"{_settings.FRONTEND_URL}/portal",
+                reply_to=email_settings["reply_to"],
+                display_name=email_settings["display_name"],
+            )
+    except Exception as _e:
+        import logging as _logging
+        _logging.getLogger(__name__).error("Invoice email failed: %s", str(_e))
 
     return result, None
 

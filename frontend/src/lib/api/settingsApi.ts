@@ -9,6 +9,7 @@ export interface FirmDetails {
   is_active: boolean
   staff_auth_policy: string
   settings: Record<string, unknown> | null
+  feature_flags: Record<string, boolean> | null
   created_at: string
   updated_at: string
 }

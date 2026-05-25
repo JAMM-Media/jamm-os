@@ -58,6 +58,13 @@ export default function SettingsPage() {
   const [approvalRequired, setApprovalRequired] = useState<boolean | null>(null)
   const [savingApproval, setSavingApproval] = useState(false)
 
+  const [emailReplyTo, setEmailReplyTo] = useState('')
+  const [emailDisplayName, setEmailDisplayName] = useState('')
+  const [savingEmail, setSavingEmail] = useState(false)
+
+  const [googleReviewUrl, setGoogleReviewUrl] = useState('')
+  const [savingReview, setSavingReview] = useState(false)
+
   const { data: firmData, isLoading: firmLoading } = useFetch<FirmDetails>(
     () => settingsApi.getMyFirm().then((r) => r.data as FirmDetails),
     []
@@ -106,6 +113,43 @@ export default function SettingsPage() {
       setApprovalRequired((firmData as FirmDetails & { timesheet_approval_required?: boolean }).timesheet_approval_required ?? false)
     }
   }, [firmData, approvalRequired])
+
+  useEffect(() => {
+    if (firmData?.settings) {
+      setEmailReplyTo((firmData.settings.email_reply_to as string) ?? '')
+      setEmailDisplayName((firmData.settings.email_display_name as string) ?? '')
+      setGoogleReviewUrl((firmData.settings.google_review_url as string) ?? '')
+    }
+  }, [firmData])
+
+  async function handleSaveEmailSettings() {
+    setSavingEmail(true)
+    try {
+      await api.patch('/settings/email', {
+        reply_to: emailReplyTo || null,
+        display_name: emailDisplayName || null,
+      })
+      toast.success('Email settings saved')
+    } catch {
+      toast.error('Failed to save email settings')
+    } finally {
+      setSavingEmail(false)
+    }
+  }
+
+  async function handleSaveReviewSettings() {
+    setSavingReview(true)
+    try {
+      await api.patch('/settings/review', {
+        google_review_url: googleReviewUrl || null,
+      })
+      toast.success('Review settings saved')
+    } catch {
+      toast.error('Failed to save review settings')
+    } finally {
+      setSavingReview(false)
+    }
+  }
 
   async function handleToggleApproval() {
     if (!isFirmOwner) return
@@ -306,6 +350,77 @@ export default function SettingsPage() {
                       )}
                       style={{ marginTop: '2px' }}
                     />
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Email Settings section */}
+            {isFirmOwner && (
+              <div className="bg-surface-card dark:bg-dark-card rounded-[10px] p-4 flex flex-col gap-3 max-w-lg" style={{ marginTop: '12px' }}>
+                <p className="text-[13px] font-medium text-brand dark:text-[#EDEEF0]">Email Settings</p>
+                <div className={fieldClass}>
+                  <label className={labelClass}>Reply-To Email Address</label>
+                  <input
+                    type="email"
+                    value={emailReplyTo}
+                    onChange={(e) => setEmailReplyTo(e.target.value)}
+                    placeholder="owner@yourfirm.com"
+                    className={inputClass}
+                  />
+                  <span className="text-[11px] text-[#6B7280]">
+                    When clients reply to emails from JAMM PX, their reply goes to this address.
+                  </span>
+                </div>
+                <div className={fieldClass}>
+                  <label className={labelClass}>Email Display Name</label>
+                  <input
+                    type="text"
+                    value={emailDisplayName}
+                    onChange={(e) => setEmailDisplayName(e.target.value)}
+                    placeholder={firmData?.name ?? 'Your firm name'}
+                    className={inputClass}
+                  />
+                  <span className="text-[11px] text-[#6B7280]">
+                    The name clients see in their inbox. Defaults to your firm name.
+                  </span>
+                </div>
+                <div className="flex justify-end">
+                  <button
+                    onClick={handleSaveEmailSettings}
+                    disabled={savingEmail}
+                    className="h-8 px-3 text-[13px] font-medium rounded-[6px] bg-brand text-white hover:bg-brand/90 transition-colors disabled:opacity-60"
+                  >
+                    {savingEmail ? 'Saving...' : 'Save'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Review Requests section */}
+            {isFirmOwner && (
+              <div className="bg-surface-card dark:bg-dark-card rounded-[10px] p-4 flex flex-col gap-3 max-w-lg" style={{ marginTop: '12px' }}>
+                <p className="text-[13px] font-medium text-brand dark:text-[#EDEEF0]">Review Requests</p>
+                <div className={fieldClass}>
+                  <label className={labelClass}>Google Review Link</label>
+                  <input
+                    type="text"
+                    value={googleReviewUrl}
+                    onChange={(e) => setGoogleReviewUrl(e.target.value)}
+                    placeholder="https://g.page/r/your-business/review"
+                    className={inputClass}
+                  />
+                  <span className="text-[11px] text-[#6B7280]">
+                    Clients who rate their experience 9 or 10 will be directed here to leave a public review.
+                  </span>
+                </div>
+                <div className="flex justify-end">
+                  <button
+                    onClick={handleSaveReviewSettings}
+                    disabled={savingReview}
+                    className="h-8 px-3 text-[13px] font-medium rounded-[6px] bg-brand text-white hover:bg-brand/90 transition-colors disabled:opacity-60"
+                  >
+                    {savingReview ? 'Saving...' : 'Save'}
                   </button>
                 </div>
               </div>

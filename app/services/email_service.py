@@ -25,7 +25,14 @@ class EmailService:
         return template.render(**context)
 
     @staticmethod
-    def _send(to_email: str, subject: str, html_body: str, from_name: str) -> None:
+    def _send(
+        to_email: str,
+        subject: str,
+        html_body: str,
+        from_name: str,
+        reply_to: str | None = None,
+        display_name: str | None = None,
+    ) -> None:
         """Send email via Postmark HTTP API. Raises on failure."""
         from app.core.config import get_settings
 
@@ -34,13 +41,16 @@ class EmailService:
         if not api_key:
             raise RuntimeError("POSTMARK_API_KEY is not configured — email not sent")
 
+        effective_name = display_name if display_name else from_name
         payload = {
-            "From": f"{from_name} <noreply@jammpx.com>",
+            "From": f"{effective_name} <noreply@jammpx.com>",
             "To": to_email,
             "Subject": subject,
             "HtmlBody": html_body,
             "MessageStream": "outbound",
         }
+        if reply_to:
+            payload["ReplyTo"] = reply_to
         headers = {
             "Accept": "application/json",
             "Content-Type": "application/json",
@@ -55,9 +65,24 @@ class EmailService:
             raise
 
     @staticmethod
-    def _send_raw(to_email: str, subject: str, html_body: str, from_name: str) -> None:
+    def _send_raw(
+        to_email: str,
+        subject: str,
+        html_body: str,
+        from_name: str,
+        reply_to: str | None = None,
+        display_name: str | None = None,
+    ) -> None:
         """Direct HTML send — used by magic link and portal invite flows."""
-        EmailService._send(to_email, subject, html_body, from_name)
+        EmailService._send(to_email, subject, html_body, from_name, reply_to, display_name)
+
+    @staticmethod
+    def get_firm_email_settings(firm) -> dict:
+        settings = firm.settings or {}
+        return {
+            "reply_to": settings.get("email_reply_to") or None,
+            "display_name": settings.get("email_display_name") or None,
+        }
 
     @staticmethod
     def send_notification_email(
@@ -88,6 +113,8 @@ class EmailService:
         document_request_title: str,
         items: list[str],
         portal_url: str,
+        reply_to: str | None = None,
+        display_name: str | None = None,
     ) -> bool:
         html = EmailService._render_template("document_request.html", {
             "firm_name": firm_name,
@@ -98,7 +125,7 @@ class EmailService:
             "portal_url": portal_url,
         })
         subject = f"[{firm_name}] Document Request: {document_request_title}"
-        EmailService._send(to_email, subject, html, firm_name)
+        EmailService._send(to_email, subject, html, firm_name, reply_to, display_name)
         return True
 
     @staticmethod
@@ -110,6 +137,8 @@ class EmailService:
         amount_due: str,
         due_date: str,
         payment_url: str,
+        reply_to: str | None = None,
+        display_name: str | None = None,
     ) -> bool:
         html = EmailService._render_template("invoice.html", {
             "firm_name": firm_name,
@@ -120,7 +149,7 @@ class EmailService:
             "payment_url": payment_url,
         })
         subject = f"[{firm_name}] Invoice {invoice_number} — Payment Due"
-        EmailService._send(to_email, subject, html, firm_name)
+        EmailService._send(to_email, subject, html, firm_name, reply_to, display_name)
         return True
 
     @staticmethod

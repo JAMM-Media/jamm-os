@@ -2,9 +2,13 @@
 
 from datetime import datetime, timezone
 from uuid import UUID
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.crud import document_request as crud
+from app.models.client import Client
+from app.models.engagement import Engagement
+from app.models.firm import Firm
 from app.services.behavioral_log import log_event
 
 
@@ -49,6 +53,31 @@ def create_document_request(
                 if hasattr(doc_request, 'client_id') else None,
         }
     )
+
+    try:
+        from app.services.email_service import EmailService
+        from app.core.config import get_settings as _get_settings
+        _settings = _get_settings()
+        firm = db.execute(select(Firm).where(Firm.id == firm_id)).scalar_one_or_none()
+        client = db.execute(select(Client).where(Client.id == doc_request.client_id)).scalar_one_or_none()
+        engagement = db.execute(select(Engagement).where(Engagement.id == doc_request.engagement_id)).scalar_one_or_none()
+        if firm and client and client.email:
+            email_settings = EmailService.get_firm_email_settings(firm)
+            items = [item.get("label", "") for item in (doc_request.checklist_items or [])]
+            EmailService.send_document_request_email(
+                to_email=client.email,
+                firm_name=firm.name,
+                recipient_name=client.name,
+                engagement_name=engagement.name if engagement else "",
+                document_request_title=doc_request.title,
+                items=items,
+                portal_url=f"{_settings.FRONTEND_URL}/portal",
+                reply_to=email_settings["reply_to"],
+                display_name=email_settings["display_name"],
+            )
+    except Exception as _e:
+        import logging as _logging
+        _logging.getLogger(__name__).error("Document request email failed: %s", str(_e))
 
     return doc_request
 

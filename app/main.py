@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from apscheduler.schedulers.background import BackgroundScheduler
 from app.services.anniversary_service import check_client_anniversaries, check_document_expiries
 from app.services.recurring_engagement_service import spawn_recurring_engagements
+from app.core.scheduler_lock import try_acquire_scheduler_lock, release_scheduler_lock
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
 from slowapi import _rate_limit_exceeded_handler
@@ -48,6 +49,7 @@ from app.api.settings import router as settings_router
 from app.api.engagement_templates import router as engagement_templates_router
 from app.api.document_expiries import router as document_expiries_router
 from app.api.qc_checklists import router as qc_checklists_router
+from app.api.review_requests import router as review_requests_router
 
 from app.db.base_class import Base
 from app.core.config import get_settings
@@ -59,36 +61,44 @@ settings = get_settings()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    scheduler = BackgroundScheduler()
-    scheduler.add_job(
-        check_client_anniversaries,
-        trigger="cron",
-        hour=8,
-        minute=0,
-        id="client_anniversary_check",
-        replace_existing=True,
-    )
-    scheduler.add_job(
-        check_document_expiries,
-        trigger="cron",
-        hour=8,
-        minute=15,
-        id="document_expiry_check",
-        replace_existing=True,
-    )
-    scheduler.add_job(
-        spawn_recurring_engagements,
-        trigger="cron",
-        hour=8,
-        minute=30,
-        id="recurring_engagement_spawn",
-        replace_existing=True,
-    )
-    scheduler.start()
+    scheduler = None
+    acquired = try_acquire_scheduler_lock()
+
+    if acquired:
+        scheduler = BackgroundScheduler()
+        scheduler.add_job(
+            check_client_anniversaries,
+            trigger="cron",
+            hour=8,
+            minute=0,
+            id="client_anniversary_check",
+            replace_existing=True,
+        )
+        scheduler.add_job(
+            check_document_expiries,
+            trigger="cron",
+            hour=8,
+            minute=15,
+            id="document_expiry_check",
+            replace_existing=True,
+        )
+        scheduler.add_job(
+            spawn_recurring_engagements,
+            trigger="cron",
+            hour=8,
+            minute=30,
+            id="recurring_engagement_spawn",
+            replace_existing=True,
+        )
+        scheduler.start()
+
     try:
         yield
     finally:
-        scheduler.shutdown(wait=False)
+        if scheduler:
+            scheduler.shutdown(wait=False)
+        if acquired:
+            release_scheduler_lock()
 
 
 app = FastAPI(
@@ -161,6 +171,7 @@ app.include_router(settings_router)
 app.include_router(engagement_templates_router, prefix="/api/v1")
 app.include_router(document_expiries_router)
 app.include_router(qc_checklists_router)
+app.include_router(review_requests_router)
 
 
 @app.get("/")

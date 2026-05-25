@@ -71,13 +71,21 @@ def generate_magic_link(
         try:
             firm = db.execute(select(Firm).where(Firm.id == firm_id)).scalar_one_or_none()
             firm_name = firm.name if firm else "Your Accounting Firm"
+            email_settings = EmailService.get_firm_email_settings(firm) if firm else {"reply_to": None, "display_name": None}
             magic_url = f"{settings.FRONTEND_URL}/portal/auth?token={raw_token}"
             html_body = (
                 f"<p>Click the link below to access your client portal. "
                 f"This link expires in {expiry_hours} hours and can only be used once.</p>"
                 f"<p><a href='{magic_url}'>{magic_url}</a></p>"
             )
-            EmailService._send_raw(client.email, "Your secure portal link", html_body, firm_name)
+            EmailService._send_raw(
+                client.email,
+                "Your secure portal link",
+                html_body,
+                firm_name,
+                reply_to=email_settings["reply_to"],
+                display_name=email_settings["display_name"],
+            )
         except Exception as e:
             logger.error("Magic link email failed: client_id=%s error=%s", client_id, str(e))
 

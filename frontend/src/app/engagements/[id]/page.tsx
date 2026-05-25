@@ -21,6 +21,8 @@ import { cn, formatEngagementType } from '@/lib/utils'
 import api from '@/lib/api'
 import { FileText } from 'lucide-react'
 import { QcChecklistTab } from '@/components/engagements/QcChecklistTab'
+import { useAuth } from '@/lib/hooks/useAuth'
+import { settingsApi, type FirmDetails } from '@/lib/api/settingsApi'
 
 type BadgeVariant = Parameters<typeof StatusBadge>[0]['variant']
 
@@ -45,14 +47,22 @@ export default function EngagementDetailPage() {
   const router = useRouter()
   const id = params.id as string
   const queryClient = useQueryClient()
+  const { user } = useAuth()
   const [activeTab, setActiveTab] = useState('overview')
   const [notesOpen, setNotesOpen] = useState(false)
   const [showModal, setShowModal] = useState(false)
   const [isEditOpen, setIsEditOpen] = useState(false)
   const [sendLetterOpen, setSendLetterOpen] = useState(false)
   const [uncheckedQcCount, setUncheckedQcCount] = useState(0)
+  const [showReviewModal, setShowReviewModal] = useState(false)
+  const [sendingReview, setSendingReview] = useState(false)
 
   const { unreadCount } = useNotes({ entityType: 'engagement', entityId: id })
+
+  const { data: firmData } = useFetch<FirmDetails>(
+    () => settingsApi.getMyFirm().then((r) => r.data as FirmDetails),
+    []
+  )
 
   const { data: engagement, isLoading, refetch } = useFetch(
     () => engagementsApi.get(id),
@@ -406,7 +416,16 @@ export default function EngagementDetailPage() {
             endDate: engagement.endDate ?? undefined,
             description: engagement.description ?? undefined,
           }}
-          onSuccess={() => { refetch(); setIsEditOpen(false) }}
+          onSuccess={(opts) => {
+            refetch()
+            setIsEditOpen(false)
+            const canSendReview =
+              user?.role === 'firm_owner' || user?.role === 'manager'
+            const flagEnabled = firmData?.feature_flags?.review_requests_enabled === true
+            if (opts?.statusBecameCompleted && canSendReview && flagEnabled) {
+              setShowReviewModal(true)
+            }
+          }}
           uncheckedQcCount={uncheckedQcCount}
         />
       )}
@@ -424,6 +443,54 @@ export default function EngagementDetailPage() {
         filingDeadline={engagement.filingDeadline ?? null}
         endDate={engagement.endDate ?? null}
       />
+
+      {/* Review request modal */}
+      {showReviewModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-[#EDEEF0] dark:bg-dark-card rounded-[10px] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] p-6 w-full max-w-sm shadow-lg">
+            <p className="text-[13px] font-medium text-brand dark:text-[#EDEEF0] mb-2">
+              Engagement Complete
+            </p>
+            <p className="text-[13px] text-[#374151] dark:text-[#9CA3AF] leading-relaxed mb-5">
+              Would you like to send {clientName || 'this client'} a review request? Happy clients
+              will be directed to your Google review page.
+            </p>
+            <div className="flex items-center justify-end gap-2">
+              <button
+                onClick={() => setShowReviewModal(false)}
+                className="h-9 px-3 rounded-[6px] border border-[0.5px] border-[#1F3148] dark:border-[#4A7FA5] text-[#1F3148] dark:text-[#EDEEF0] bg-transparent text-[13px] font-medium hover:bg-surface-page dark:hover:bg-dark-page transition-colors"
+              >
+                Skip
+              </button>
+              <button
+                disabled={sendingReview}
+                onClick={async () => {
+                  if (!engagement.clientId) return
+                  setSendingReview(true)
+                  try {
+                    await api.post('/review-requests/send', {
+                      client_id: engagement.clientId,
+                      engagement_id: engagement.id,
+                    })
+                    toast.success(`Review request sent to ${clientName || 'client'}`)
+                  } catch (err: unknown) {
+                    const detail =
+                      (err as { response?: { data?: { detail?: string } } })?.response?.data
+                        ?.detail
+                    toast.error(detail ?? 'Failed to send review request')
+                  } finally {
+                    setSendingReview(false)
+                    setShowReviewModal(false)
+                  }
+                }}
+                className="h-9 px-3 rounded-[6px] bg-[#1F3148] dark:bg-brand-btn text-white text-[13px] font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
+              >
+                {sendingReview ? 'Sending...' : 'Send Request'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </AppShell>
   )
 }
