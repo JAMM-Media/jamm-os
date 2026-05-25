@@ -1,7 +1,7 @@
 // frontend/src/app/review/page.tsx
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 
 type ViewState =
@@ -59,7 +59,7 @@ const mutedStyle: React.CSSProperties = {
   fontFamily: 'Inter, sans-serif',
 }
 
-export default function ReviewPage() {
+function ReviewPageInner() {
   const searchParams = useSearchParams()
   const score = searchParams.get('score')
   const firm = searchParams.get('firm')
@@ -228,5 +228,23 @@ export default function ReviewPage() {
         </div>
       )}
     </div>
+  )
+}
+
+export default function ReviewPage() {
+  return (
+    <Suspense fallback={
+      <div style={{
+        minHeight: '100vh',
+        background: '#E4E6EA',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}>
+        <p style={{ fontSize: '13px', color: '#6B7280' }}>Loading...</p>
+      </div>
+    }>
+      <ReviewPageInner />
+    </Suspense>
   )
 }
