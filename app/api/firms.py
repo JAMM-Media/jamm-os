@@ -66,6 +66,12 @@ def update_my_firm(
     return crud_firm.update_firm(db, firm, payload)
 
 
+_ALLOWED_FIRM_TYPES = {"tax_prep", "bookkeeping", "advisory"}
+
+class ConciergeSettingsUpdate(BaseModel):
+    firm_type: Optional[str] = None
+
+
 # ---------------------------------------------------------
 # UPDATE CONCIERGE SETTINGS — firm_owner only
 # ---------------------------------------------------------
@@ -121,12 +127,6 @@ class LogoUploadUrlRequest(BaseModel):
 class LogoUploadUrlResponse(BaseModel):
     upload_url: str
     s3_key: str
-
-_ALLOWED_FIRM_TYPES = {"tax_prep", "bookkeeping", "advisory"}
-
-class ConciergeSettingsUpdate(BaseModel):
-    firm_type: Optional[str] = None
-
 
 @router.post("/logo/upload-url", response_model=LogoUploadUrlResponse)
 def get_logo_upload_url(
