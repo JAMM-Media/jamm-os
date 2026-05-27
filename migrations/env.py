@@ -34,6 +34,8 @@ from app.models.qc_checklist import (
     QcChecklistTemplate, QcChecklistItem
 )
 from app.models.recurring_engagement_log import RecurringEngagementLog
+from app.models.concierge_question_log import ConciergeQuestionLog
+from app.models.concierge_notification import ConciergeNotification
 
 settings = get_settings()
 

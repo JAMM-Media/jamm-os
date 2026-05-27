@@ -1,10 +1,13 @@
 # app/core/config.py
 
+import logging
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from functools import lru_cache
 from typing import Literal
 import os
+
+logger = logging.getLogger(__name__)
 
 
 class Settings(BaseSettings):
@@ -56,6 +59,9 @@ class Settings(BaseSettings):
     QUICKBOOKS_ENVIRONMENT: str = "sandbox"
     QUICKBOOKS_REALM_ID: str = ""
 
+    # Anthropic (Concierge)
+    ANTHROPIC_API_KEY: str = ""
+
     # Stripe
     stripe_secret_key: str | None = None
     stripe_publishable_key: str | None = None
@@ -84,4 +90,7 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
-    return Settings()
+    settings = Settings()
+    if not settings.ANTHROPIC_API_KEY:
+        logger.warning("ANTHROPIC_API_KEY is not configured — concierge endpoints will return HTTP 503")
+    return settings

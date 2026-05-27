@@ -2,6 +2,7 @@
 
 import logging
 import uuid as _uuid
+from typing import Optional
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status, Query, File, UploadFile
 from fastapi.responses import RedirectResponse
@@ -66,6 +67,30 @@ def update_my_firm(
 
 
 # ---------------------------------------------------------
+# UPDATE CONCIERGE SETTINGS — firm_owner only
+# ---------------------------------------------------------
+@router.patch("/me/concierge", response_model=FirmOut)
+def update_concierge_settings(
+    payload: ConciergeSettingsUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_firm_owner),
+):
+    if payload.firm_type is not None and payload.firm_type not in _ALLOWED_FIRM_TYPES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"firm_type must be one of: {', '.join(sorted(_ALLOWED_FIRM_TYPES))}",
+        )
+    firm = crud_firm.get_firm(db, current_user.firm_id)
+    if not firm:
+        raise HTTPException(status_code=404, detail="Firm not found")
+    if payload.firm_type is not None:
+        firm.firm_type = payload.firm_type
+    db.commit()
+    db.refresh(firm)
+    return firm
+
+
+# ---------------------------------------------------------
 # LIST — system_admin only
 # ---------------------------------------------------------
 @router.get("/", response_model=PaginatedResponse[FirmOut])
@@ -96,6 +121,11 @@ class LogoUploadUrlRequest(BaseModel):
 class LogoUploadUrlResponse(BaseModel):
     upload_url: str
     s3_key: str
+
+_ALLOWED_FIRM_TYPES = {"tax_prep", "bookkeeping", "advisory"}
+
+class ConciergeSettingsUpdate(BaseModel):
+    firm_type: Optional[str] = None
 
 
 @router.post("/logo/upload-url", response_model=LogoUploadUrlResponse)

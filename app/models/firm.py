@@ -107,6 +107,10 @@ class Firm(Base):
         server_default="false",
     )
 
+    concierge_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default='false')
+    firm_type: Mapped[Optional[str]] = mapped_column(String(30), nullable=True)
+    concierge_onboarded: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default='false')
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
