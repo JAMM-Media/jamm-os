@@ -11,7 +11,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision = "0021_portal_magic_link_fields"
-down_revision = "0020_client_import_and_categories"
+down_revision = "0020_client_import_cats"
 branch_labels = None
 depends_on = None
 

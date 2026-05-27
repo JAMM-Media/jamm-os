@@ -9,7 +9,7 @@ Create Date: 2026-04-15
 from alembic import op
 import sqlalchemy as sa
 
-revision = "0020_client_import_and_categories"
+revision = "0020_client_import_cats"
 down_revision = "0019_transcript_requests"
 branch_labels = None
 depends_on = None
