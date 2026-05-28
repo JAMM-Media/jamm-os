@@ -34,7 +34,7 @@ def upgrade() -> None:
         """
         UPDATE automation_rules
         SET default_actions = actions
-        WHERE default_actions = '[]'::json
+        WHERE default_actions::text = '[]'
            OR default_actions IS NULL
         """
     )
