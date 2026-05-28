@@ -26,7 +26,7 @@ def upgrade() -> None:
             'default_actions',
             sa.JSON(),
             nullable=False,
-            server_default=sa.text("'[]'::jsonb"),
+            server_default=sa.text("'[]'::json"),
         ),
     )
     # Backfill existing rows: copy actions → default_actions
@@ -34,7 +34,7 @@ def upgrade() -> None:
         """
         UPDATE automation_rules
         SET default_actions = actions
-        WHERE default_actions = '[]'::jsonb
+        WHERE default_actions = '[]'::json
            OR default_actions IS NULL
         """
     )
