@@ -17,9 +17,11 @@ the next worker to acquire it takes over scheduling.
 fcntl is Unix-only — this works on the DigitalOcean droplet.
 """
 
-import fcntl
 import logging
 import os
+import sys
+if sys.platform != "win32":
+    import fcntl
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +44,8 @@ def try_acquire_scheduler_lock() -> bool:
 
     try:
         _lock_fh = open(_LOCK_FILE_PATH, "w")
-        fcntl.flock(_lock_fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        if sys.platform != "win32":
+            fcntl.flock(_lock_fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
         _lock_fh.write(str(os.getpid()))
         _lock_fh.flush()
         logger.info(
@@ -70,7 +73,8 @@ def release_scheduler_lock() -> None:
     global _lock_fh
     if _lock_fh:
         try:
-            fcntl.flock(_lock_fh, fcntl.LOCK_UN)
+            if sys.platform != "win32":
+                fcntl.flock(_lock_fh, fcntl.LOCK_UN)
             _lock_fh.close()
         except Exception:
             pass
