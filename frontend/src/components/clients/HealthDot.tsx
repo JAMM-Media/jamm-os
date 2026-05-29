@@ -11,6 +11,12 @@ import {
   TooltipProvider,
 } from '@/components/ui/tooltip'
 
+const SEVERITY_COLOR: Record<string, string> = {
+  at_risk: '#E24B4A',
+  needs_attention: '#F59E0B',
+  healthy: '#10B981',
+}
+
 const STATUS_CONFIG = {
   healthy: { color: '#10B981', label: 'Healthy' },
   needs_attention: { color: '#F59E0B', label: 'Needs Attention' },
@@ -37,7 +43,8 @@ export function HealthDot({ clientId, showLabel = false }: HealthDotProps) {
     : null
   const color = isLoading || !config ? '#C8CDD6' : config.color
 
-  const hasReasons = data && data.reasons.length > 0
+  const hasReasons = data && data.reasons.length > 0 &&
+    !(data.reasons.length === 1 && data.reasons[0].severity === 'healthy')
 
   const dot = (
     <span
@@ -74,15 +81,15 @@ export function HealthDot({ clientId, showLabel = false }: HealthDotProps) {
               <div key={i} className="flex items-start gap-1.5">
                 <span
                   style={{
-                    width: 5,
-                    height: 5,
+                    width: 6,
+                    height: 6,
                     borderRadius: '50%',
-                    backgroundColor: color,
+                    backgroundColor: SEVERITY_COLOR[reason.severity] ?? color,
                     flexShrink: 0,
-                    marginTop: 5,
+                    marginTop: 4,
                   }}
                 />
-                <span className="text-[11px] leading-tight">{reason}</span>
+                <span className="text-[11px] leading-tight">{reason.text}</span>
               </div>
             ))}
           </div>

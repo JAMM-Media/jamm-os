@@ -25,3 +25,4 @@ alembic==1.13.3
 jinja2==3.1.4
 slowapi==0.1.9
 apscheduler>=3.10.0
+anthropic

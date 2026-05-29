@@ -37,9 +37,14 @@ export interface QBOARBalance {
   last_payment_date: string | null
 }
 
+export interface HealthReason {
+  severity: 'at_risk' | 'needs_attention' | 'healthy'
+  text: string
+}
+
 export interface ClientHealth {
   status: string
-  reasons: string[]
+  reasons: HealthReason[]
 }
 
 function mapClient(raw: Record<string, unknown>): Client {

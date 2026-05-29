@@ -8,188 +8,217 @@
 
 ---
 
-# TASK: Rewrite app/services/client_health_service.py cleanly
+# TASK: Structured health reasons with per-reason severity colors
 
-## What happened
-The file was corrupted by failed sed commands on the server.
-It now has a broken `if client is None` block and duplicate return
-statements at the bottom. This task replaces the entire file with
-the correct version.
+## What this does
+Two changes working together:
 
-## Instruction
-Replace the entire contents of `app/services/client_health_service.py`
-with exactly the following. Do not modify any logic — this is a
-clean rewrite of what was already built:
+1. Backend — change the health API response so each reason is a structured
+   object with a severity tag ("at_risk" or "needs_attention") and specific
+   text that names the exact engagement, invoice amount, or auth form.
 
+2. Frontend — update the HealthDot tooltip to render each reason with its
+   own colored dot matching that reason's severity, not the overall status.
+
+The initial dot color stays driven by the worst severity (red if anything
+is at_risk, amber if only needs_attention). The tooltip shows every reason
+with individual dot colors — red bullets for at_risk items, amber bullets
+for needs_attention items.
+
+---
+
+## Step 1 — Backend: app/services/client_health_service.py
+
+Change the reasons list from plain strings to structured dicts.
+Each reason is: {"severity": "at_risk" | "needs_attention", "text": "..."}
+
+The text should be as specific as possible using the data already available.
+
+### AT RISK reason text formats
+
+Overdue engagements — use eng.name and days past deadline:
 ```python
-# app/services/client_health_service.py
+deadline = effective_deadline(eng)
+days_past = (today - deadline).days
+at_risk_reasons.append({
+    "severity": "at_risk",
+    "text": f"{eng.name}: {days_past} day{'s' if days_past != 1 else ''} past deadline"
+})
+```
+Do this per engagement in a loop — one reason per engagement, not a count.
 
-from datetime import datetime, timezone, timedelta
-from uuid import UUID
+Urgent engagements (due within 3 days) — use eng.name and days remaining:
+```python
+deadline = effective_deadline(eng)
+days_left = (deadline - today).days
+at_risk_reasons.append({
+    "severity": "at_risk",
+    "text": f"{eng.name}: due in {days_left} day{'s' if days_left != 1 else ''}"
+})
+```
+Do this per engagement in a loop.
 
-from sqlalchemy.orm import Session
-from sqlalchemy import select
-
-from app.models.client import Client
-from app.models.invoice import Invoice
-from app.models.document_request import DocumentRequest
-from app.models.irs_authorization import IrsAuthorization
-from app.models.engagement import Engagement
-from app.core.enums import InvoiceStatus
-
-
-def _ensure_tz(dt: datetime) -> datetime:
-    if dt.tzinfo is None:
-        return dt.replace(tzinfo=timezone.utc)
-    return dt
-
-
-def compute_client_health(client_id: UUID, firm_id: UUID, db: Session) -> dict:
-    now = datetime.now(timezone.utc)
-    today = now.date()
-
-    client = db.execute(
-        select(Client).where(Client.id == client_id, Client.firm_id == firm_id)
-    ).scalar_one_or_none()
-
-    if client is None:
-        return {"status": "healthy", "reasons": []}
-
-    active_engagements = db.execute(
-        select(Engagement).where(
-            Engagement.client_id == client_id,
-            Engagement.firm_id == firm_id,
-            Engagement.status.notin_(["completed", "archived"]),
-            (Engagement.extended_deadline.isnot(None) | Engagement.filing_deadline.isnot(None)),
-        )
-    ).scalars().all()
-
-    invoices = db.execute(
-        select(Invoice).where(
-            Invoice.client_id == client_id,
-            Invoice.firm_id == firm_id,
-            Invoice.status.in_([InvoiceStatus.sent, InvoiceStatus.overdue]),
-            Invoice.is_deleted == False,
-        )
-    ).scalars().all()
-
-    doc_requests = db.execute(
-        select(DocumentRequest).where(
-            DocumentRequest.client_id == client_id,
-            DocumentRequest.firm_id == firm_id,
-            DocumentRequest.status != "completed",
-        )
-    ).scalars().all()
-
-    irs_auths = db.execute(
-        select(IrsAuthorization).where(
-            IrsAuthorization.client_id == client_id,
-            IrsAuthorization.firm_id == firm_id,
-        )
-    ).scalars().all()
-
-    def effective_deadline(eng):
-        return eng.extended_deadline or eng.filing_deadline
-
-    # --- AT RISK ---
-    at_risk_reasons = []
-
-    overdue_engs = [
-        eng for eng in active_engagements
-        if effective_deadline(eng) is not None and effective_deadline(eng) < today
-    ]
-    if overdue_engs:
-        count = len(overdue_engs)
-        at_risk_reasons.append(
-            f"{count} engagement{'s' if count > 1 else ''} past deadline"
-        )
-
-    urgent_engs = [
-        eng for eng in active_engagements
-        if effective_deadline(eng) is not None
-        and today <= effective_deadline(eng) <= today + timedelta(days=3)
-    ]
-    if urgent_engs:
-        count = len(urgent_engs)
-        at_risk_reasons.append(
-            f"{count} engagement{'s' if count > 1 else ''} due within 3 days"
-        )
-
-    overdue_invoices = [inv for inv in invoices if inv.status == InvoiceStatus.overdue]
-    if overdue_invoices:
-        count = len(overdue_invoices)
-        at_risk_reasons.append(
-            f"{count} overdue invoice{'s' if count > 1 else ''}"
-        )
-
-    # --- NEEDS ATTENTION ---
-    needs_attention_reasons = []
-
-    approaching_engs = [
-        eng for eng in active_engagements
-        if effective_deadline(eng) is not None
-        and today + timedelta(days=3) < effective_deadline(eng) <= today + timedelta(days=14)
-    ]
-    if approaching_engs:
-        count = len(approaching_engs)
-        needs_attention_reasons.append(
-            f"{count} engagement{'s' if count > 1 else ''} due within 14 days"
-        )
-
-    for inv in invoices:
-        if inv.status == InvoiceStatus.sent:
-            ref_date = inv.sent_at or inv.created_at
-            if ref_date is not None and (now - _ensure_tz(ref_date)).days >= 14:
-                needs_attention_reasons.append("Unpaid invoice older than 14 days")
-                break
-
-    stale_doc_requests = [
-        req for req in doc_requests
-        if (now - _ensure_tz(req.created_at)).days >= 7
-    ]
-    if stale_doc_requests:
-        count = len(stale_doc_requests)
-        needs_attention_reasons.append(
-            f"{count} document request{'s' if count > 1 else ''} open 7+ days"
-        )
-
-    cutoff = today + timedelta(days=60)
-    irs_expiring = any(
-        auth.status == "expiring_soon"
-        or (auth.valid_until is not None and auth.valid_until < cutoff)
-        for auth in irs_auths
-    )
-    if irs_expiring:
-        needs_attention_reasons.append("IRS authorization expiring within 60 days")
-
-    if not active_engagements:
-        any_engagement = db.execute(
-            select(Engagement)
-            .where(
-                Engagement.client_id == client_id,
-                Engagement.firm_id == firm_id,
-            )
-            .order_by(Engagement.updated_at.desc())
-            .limit(1)
-        ).scalar_one_or_none()
-        if any_engagement is not None:
-            if (now - _ensure_tz(any_engagement.updated_at)).days >= 30:
-                needs_attention_reasons.append("No engagement activity in 30+ days")
-
-    if at_risk_reasons:
-        return {"status": "at_risk", "reasons": at_risk_reasons + needs_attention_reasons}
-    elif needs_attention_reasons:
-        return {"status": "needs_attention", "reasons": needs_attention_reasons}
-    else:
-        return {"status": "healthy", "reasons": ["Everything is on track"]}
+Overdue invoices — include amount if available:
+```python
+for inv in overdue_invoices:
+    amount_str = f"${inv.total_amount:,.0f}" if inv.total_amount else "Invoice"
+    at_risk_reasons.append({
+        "severity": "at_risk",
+        "text": f"{amount_str} invoice overdue"
+    })
 ```
 
-## Verification
-After writing the file, run:
-`python -c "import ast; ast.parse(open('app/services/client_health_service.py').read()); print('Syntax OK')"`
+### NEEDS ATTENTION reason text formats
 
-If it prints Syntax OK, the file is clean. If it raises a SyntaxError,
-read the error and fix it before finishing.
+Approaching engagements (4-14 days):
+```python
+for eng in approaching_engs:
+    deadline = effective_deadline(eng)
+    days_left = (deadline - today).days
+    needs_attention_reasons.append({
+        "severity": "needs_attention",
+        "text": f"{eng.name}: due in {days_left} day{'s' if days_left != 1 else ''}"
+    })
+```
+Do this per engagement in a loop.
+
+Unpaid invoice (unchanged trigger logic, new text):
+```python
+needs_attention_reasons.append({
+    "severity": "needs_attention",
+    "text": "Unpaid invoice older than 14 days"
+})
+```
+
+Stale document requests — per request:
+```python
+for req in stale_doc_requests:
+    days_open = (now - _ensure_tz(req.created_at)).days
+    needs_attention_reasons.append({
+        "severity": "needs_attention",
+        "text": f"Document request open {days_open} days"
+    })
+```
+
+IRS authorization expiring — include days until expiry:
+```python
+for auth in irs_auths:
+    if auth.status == "expiring_soon" or (
+        auth.valid_until is not None and auth.valid_until < cutoff
+    ):
+        form = f"Form {auth.form_type}" if auth.form_type else "IRS authorization"
+        if auth.valid_until is not None:
+            days_left = (auth.valid_until - today).days
+            needs_attention_reasons.append({
+                "severity": "needs_attention",
+                "text": f"{form} expiring in {days_left} day{'s' if days_left != 1 else ''}"
+            })
+        else:
+            needs_attention_reasons.append({
+                "severity": "needs_attention",
+                "text": f"{form} expiring soon"
+            })
+```
+Replace the current `irs_expiring = any(...)` block with this loop.
+Remove the `if irs_expiring:` block that follows it.
+
+No engagement activity:
+```python
+needs_attention_reasons.append({
+    "severity": "needs_attention",
+    "text": "No engagement activity in 30+ days"
+})
+```
+
+### Final return block — unchanged structure, reasons are now dicts
+```python
+if at_risk_reasons:
+    return {"status": "at_risk", "reasons": at_risk_reasons + needs_attention_reasons}
+elif needs_attention_reasons:
+    return {"status": "needs_attention", "reasons": needs_attention_reasons}
+else:
+    return {"status": "healthy", "reasons": [{"severity": "healthy", "text": "Everything is on track"}]}
+```
+
+---
+
+## Step 2 — Frontend: frontend/src/lib/api/clients.ts
+
+Update the ClientHealth interface. The reasons array now contains objects:
+
+```typescript
+export interface HealthReason {
+  severity: 'at_risk' | 'needs_attention' | 'healthy'
+  text: string
+}
+
+export interface ClientHealth {
+  status: string
+  reasons: HealthReason[]
+}
+```
+
+---
+
+## Step 3 — Frontend: frontend/src/components/clients/HealthDot.tsx
+
+Update the tooltip to render each reason with its own severity-colored dot.
+
+Add a severity color map at the top of the file:
+```typescript
+const SEVERITY_COLOR: Record<string, string> = {
+  at_risk: '#E24B4A',
+  needs_attention: '#F59E0B',
+  healthy: '#10B981',
+}
+```
+
+Update the tooltip content section. Replace the current reasons.map block with:
+```tsx
+{data.reasons.map((reason, i) => (
+  <div key={i} className="flex items-start gap-1.5">
+    <span
+      style={{
+        width: 6,
+        height: 6,
+        borderRadius: '50%',
+        backgroundColor: SEVERITY_COLOR[reason.severity] ?? color,
+        flexShrink: 0,
+        marginTop: 4,
+      }}
+    />
+    <span className="text-[11px] leading-tight">{reason.text}</span>
+  </div>
+))}
+```
+
+Update the hasReasons check — reasons are now objects not strings:
+```typescript
+const hasReasons = data && data.reasons.length > 0 &&
+  !(data.reasons.length === 1 && data.reasons[0].severity === 'healthy')
+```
+
+---
+
+## Verification
+
+After changes, hit GET /clients/{id}/health and confirm the response looks like:
+```json
+{
+  "status": "at_risk",
+  "reasons": [
+    {"severity": "at_risk", "text": "2024 Tax Return — 1040: 12 days past deadline"},
+    {"severity": "needs_attention", "text": "IRS authorization expiring in 43 days"}
+  ]
+}
+```
+
+Then check the frontend tooltip shows a red dot next to the first reason
+and an amber dot next to the second.
+
+---
 
 ## Files to modify
-- app/services/client_health_service.py — full rewrite
+- app/services/client_health_service.py — structured reasons with severity tags
+- frontend/src/lib/api/clients.ts — update ClientHealth interface
+- frontend/src/components/clients/HealthDot.tsx — per-reason severity colors
