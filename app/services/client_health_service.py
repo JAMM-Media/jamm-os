@@ -45,7 +45,7 @@ def compute_client_health(client_id: UUID, firm_id: UUID, db: Session) -> dict:
             Invoice.client_id == client_id,
             Invoice.firm_id == firm_id,
             Invoice.status.in_([InvoiceStatus.sent, InvoiceStatus.overdue]),
-            Invoice.is_deleted == False,  # noqa: E712
+            Invoice.is_deleted == False,
         )
     ).scalars().all()
 
@@ -70,7 +70,6 @@ def compute_client_health(client_id: UUID, firm_id: UUID, db: Session) -> dict:
     # --- AT RISK ---
     at_risk_reasons = []
 
-    # 1. Any active engagement with deadline already passed
     overdue_engs = [
         eng for eng in active_engagements
         if effective_deadline(eng) is not None and effective_deadline(eng) < today
@@ -81,7 +80,6 @@ def compute_client_health(client_id: UUID, firm_id: UUID, db: Session) -> dict:
             f"{count} engagement{'s' if count > 1 else ''} past deadline"
         )
 
-    # 2. Any active engagement with deadline within 3 days
     urgent_engs = [
         eng for eng in active_engagements
         if effective_deadline(eng) is not None
@@ -93,7 +91,6 @@ def compute_client_health(client_id: UUID, firm_id: UUID, db: Session) -> dict:
             f"{count} engagement{'s' if count > 1 else ''} due within 3 days"
         )
 
-    # 3. Any overdue invoice (no longer requires stale portal login)
     overdue_invoices = [inv for inv in invoices if inv.status == InvoiceStatus.overdue]
     if overdue_invoices:
         count = len(overdue_invoices)
@@ -104,7 +101,6 @@ def compute_client_health(client_id: UUID, firm_id: UUID, db: Session) -> dict:
     # --- NEEDS ATTENTION ---
     needs_attention_reasons = []
 
-    # 1. Any active engagement with deadline within 14 days (but not within 3 — already caught above)
     approaching_engs = [
         eng for eng in active_engagements
         if effective_deadline(eng) is not None
@@ -116,7 +112,6 @@ def compute_client_health(client_id: UUID, firm_id: UUID, db: Session) -> dict:
             f"{count} engagement{'s' if count > 1 else ''} due within 14 days"
         )
 
-    # 2. Unpaid invoice sent 14+ days ago
     for inv in invoices:
         if inv.status == InvoiceStatus.sent:
             ref_date = inv.sent_at or inv.created_at
@@ -124,7 +119,6 @@ def compute_client_health(client_id: UUID, firm_id: UUID, db: Session) -> dict:
                 needs_attention_reasons.append("Unpaid invoice older than 14 days")
                 break
 
-    # 3. Open document request older than 7 days
     stale_doc_requests = [
         req for req in doc_requests
         if (now - _ensure_tz(req.created_at)).days >= 7
@@ -135,7 +129,6 @@ def compute_client_health(client_id: UUID, firm_id: UUID, db: Session) -> dict:
             f"{count} document request{'s' if count > 1 else ''} open 7+ days"
         )
 
-    # 4. IRS authorization expiring within 60 days
     cutoff = today + timedelta(days=60)
     irs_expiring = any(
         auth.status == "expiring_soon"
@@ -145,7 +138,6 @@ def compute_client_health(client_id: UUID, firm_id: UUID, db: Session) -> dict:
     if irs_expiring:
         needs_attention_reasons.append("IRS authorization expiring within 60 days")
 
-    # 5. No active engagements with deadlines AND no engagement activity in 30+ days
     if not active_engagements:
         any_engagement = db.execute(
             select(Engagement)
