@@ -61,6 +61,7 @@ class Settings(BaseSettings):
 
     # Anthropic (Concierge)
     ANTHROPIC_API_KEY: str = ""
+    ANTHROPIC_CONCIERGE_KEY: str = ""
 
     # Stripe
     stripe_secret_key: str | None = None
