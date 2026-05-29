@@ -106,4 +106,4 @@ class QBOARBalanceOut(BaseModel):
 
 class ClientHealthOut(BaseModel):
     status: str  # "healthy", "needs_attention", "at_risk"
-    reasons: list[str]
+    reasons: list[dict]
