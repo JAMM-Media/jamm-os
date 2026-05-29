@@ -4,6 +4,12 @@
 import { useQuery } from '@tanstack/react-query'
 import { clientsApi } from '@/lib/api/clients'
 import type { ClientHealth } from '@/lib/api/clients'
+import {
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+  TooltipProvider,
+} from '@/components/ui/tooltip'
 
 const STATUS_CONFIG = {
   healthy: { color: '#10B981', label: 'Healthy' },
@@ -26,14 +32,12 @@ export function HealthDot({ clientId, showLabel = false }: HealthDotProps) {
 
   if (isError) return null
 
-  const config = data ? STATUS_CONFIG[data.status as keyof typeof STATUS_CONFIG] ?? null : null
+  const config = data
+    ? STATUS_CONFIG[data.status as keyof typeof STATUS_CONFIG] ?? null
+    : null
   const color = isLoading || !config ? '#C8CDD6' : config.color
-  const tooltip =
-    isLoading || !data
-      ? undefined
-      : data.reasons.length === 0
-      ? 'Good'
-      : data.reasons.join('\n')
+
+  const hasReasons = data && data.reasons.length > 0
 
   const dot = (
     <span
@@ -48,27 +52,61 @@ export function HealthDot({ clientId, showLabel = false }: HealthDotProps) {
     />
   )
 
-  if (!showLabel) {
-    return (
-      <span title={tooltip} style={{ display: 'inline-flex', alignItems: 'center' }}>
-        {dot}
-      </span>
-    )
-  }
-
-  return (
+  const trigger = showLabel ? (
     <span
-      title={tooltip}
       style={{
         display: 'inline-flex',
         alignItems: 'center',
         gap: 6,
         fontSize: 12,
         color: isLoading || !config ? '#C8CDD6' : config.color,
+        cursor: hasReasons ? 'default' : undefined,
       }}
     >
       {dot}
       {!isLoading && config && config.label}
     </span>
+  ) : (
+    <span style={{ display: 'inline-flex', alignItems: 'center' }}>
+      {dot}
+    </span>
+  )
+
+  // No reasons — healthy or still loading — just render the dot/label with no tooltip
+  if (!hasReasons) {
+    return trigger
+  }
+
+  // Has reasons — wrap in tooltip showing each reason on its own line
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          {trigger}
+        </TooltipTrigger>
+        <TooltipContent
+          side="right"
+          className="max-w-[240px]"
+        >
+          <div className="flex flex-col gap-1">
+            {data.reasons.map((reason, i) => (
+              <div key={i} className="flex items-start gap-1.5">
+                <span
+                  style={{
+                    width: 5,
+                    height: 5,
+                    borderRadius: '50%',
+                    backgroundColor: color,
+                    flexShrink: 0,
+                    marginTop: 5,
+                  }}
+                />
+                <span className="text-[11px] leading-tight">{reason}</span>
+              </div>
+            ))}
+          </div>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   )
 }
