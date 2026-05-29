@@ -43,8 +43,7 @@ export function HealthDot({ clientId, showLabel = false }: HealthDotProps) {
     : null
   const color = isLoading || !config ? '#C8CDD6' : config.color
 
-  const hasReasons = data && data.reasons.length > 0 &&
-    !(data.reasons.length === 1 && data.reasons[0].severity === 'healthy')
+  const hasReasons = data && data.reasons.length > 0
 
   const dot = (
     <span
