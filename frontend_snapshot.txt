@@ -10,6 +10,7 @@ const PUBLIC_PATHS = [
   '/api/auth/logout',
   '/api/auth/me',
   '/portal',
+  '/review',
   '/_next',
   '/favicon.ico',
   '/favicon.svg',
@@ -8932,6 +8933,8 @@ import { cn, formatEngagementType } from '@/lib/utils'
 import api from '@/lib/api'
 import { FileText } from 'lucide-react'
 import { QcChecklistTab } from '@/components/engagements/QcChecklistTab'
+import { useAuth } from '@/lib/hooks/useAuth'
+import { settingsApi, type FirmDetails } from '@/lib/api/settingsApi'
 
 type BadgeVariant = Parameters<typeof StatusBadge>[0]['variant']
 
@@ -8956,14 +8959,22 @@ export default function EngagementDetailPage() {
   const router = useRouter()
   const id = params.id as string
   const queryClient = useQueryClient()
+  const { user } = useAuth()
   const [activeTab, setActiveTab] = useState('overview')
   const [notesOpen, setNotesOpen] = useState(false)
   const [showModal, setShowModal] = useState(false)
   const [isEditOpen, setIsEditOpen] = useState(false)
   const [sendLetterOpen, setSendLetterOpen] = useState(false)
   const [uncheckedQcCount, setUncheckedQcCount] = useState(0)
+  const [showReviewModal, setShowReviewModal] = useState(false)
+  const [sendingReview, setSendingReview] = useState(false)
 
   const { unreadCount } = useNotes({ entityType: 'engagement', entityId: id })
+
+  const { data: firmData } = useFetch<FirmDetails>(
+    () => settingsApi.getMyFirm().then((r) => r.data as FirmDetails),
+    []
+  )
 
   const { data: engagement, isLoading, refetch } = useFetch(
     () => engagementsApi.get(id),
@@ -9317,7 +9328,16 @@ export default function EngagementDetailPage() {
             endDate: engagement.endDate ?? undefined,
             description: engagement.description ?? undefined,
           }}
-          onSuccess={() => { refetch(); setIsEditOpen(false) }}
+          onSuccess={(opts) => {
+            refetch()
+            setIsEditOpen(false)
+            const canSendReview =
+              user?.role === 'firm_owner' || user?.role === 'manager'
+            const flagEnabled = firmData?.feature_flags?.review_requests_enabled === true
+            if (opts?.statusBecameCompleted && canSendReview && flagEnabled) {
+              setShowReviewModal(true)
+            }
+          }}
           uncheckedQcCount={uncheckedQcCount}
         />
       )}
@@ -9335,6 +9355,54 @@ export default function EngagementDetailPage() {
         filingDeadline={engagement.filingDeadline ?? null}
         endDate={engagement.endDate ?? null}
       />
+
+      {/* Review request modal */}
+      {showReviewModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-[#EDEEF0] dark:bg-dark-card rounded-[10px] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] p-6 w-full max-w-sm shadow-lg">
+            <p className="text-[13px] font-medium text-brand dark:text-[#EDEEF0] mb-2">
+              Engagement Complete
+            </p>
+            <p className="text-[13px] text-[#374151] dark:text-[#9CA3AF] leading-relaxed mb-5">
+              Would you like to send {clientName || 'this client'} a review request? Happy clients
+              will be directed to your Google review page.
+            </p>
+            <div className="flex items-center justify-end gap-2">
+              <button
+                onClick={() => setShowReviewModal(false)}
+                className="h-9 px-3 rounded-[6px] border border-[0.5px] border-[#1F3148] dark:border-[#4A7FA5] text-[#1F3148] dark:text-[#EDEEF0] bg-transparent text-[13px] font-medium hover:bg-surface-page dark:hover:bg-dark-page transition-colors"
+              >
+                Skip
+              </button>
+              <button
+                disabled={sendingReview}
+                onClick={async () => {
+                  if (!engagement.clientId) return
+                  setSendingReview(true)
+                  try {
+                    await api.post('/review-requests/send', {
+                      client_id: engagement.clientId,
+                      engagement_id: engagement.id,
+                    })
+                    toast.success(`Review request sent to ${clientName || 'client'}`)
+                  } catch (err: unknown) {
+                    const detail =
+                      (err as { response?: { data?: { detail?: string } } })?.response?.data
+                        ?.detail
+                    toast.error(detail ?? 'Failed to send review request')
+                  } finally {
+                    setSendingReview(false)
+                    setShowReviewModal(false)
+                  }
+                }}
+                className="h-9 px-3 rounded-[6px] bg-[#1F3148] dark:bg-brand-btn text-white text-[13px] font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
+              >
+                {sendingReview ? 'Sending...' : 'Send Request'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </AppShell>
   )
 }
@@ -10454,6 +10522,261 @@ export default function PortalSettingsPage() {
 
 
 ================================================================================
+FILE: frontend\src\app\review\page.tsx
+================================================================================
+// frontend/src/app/review/page.tsx
+'use client'
+
+import { useState, useEffect, useRef, Suspense } from 'react'
+import { useSearchParams } from 'next/navigation'
+
+type ViewState =
+  | { phase: 'loading' }
+  | { phase: 'google_review'; google_review_url: string }
+  | { phase: 'feedback_form' }
+  | { phase: 'feedback_submitted' }
+  | { phase: 'error' }
+
+const API_BASE = '/api/backend'
+
+const cardStyle: React.CSSProperties = {
+  background: '#EDEEF0',
+  borderRadius: 10,
+  border: '0.5px solid #C8CDD6',
+  padding: 32,
+  maxWidth: 480,
+  width: '100%',
+}
+
+const btnStyle: React.CSSProperties = {
+  width: '100%',
+  background: '#1F3148',
+  color: '#FFFFFF',
+  border: 'none',
+  borderRadius: 8,
+  height: 44,
+  fontSize: 15,
+  fontWeight: 500,
+  fontFamily: 'Inter, sans-serif',
+  cursor: 'pointer',
+  marginTop: 20,
+}
+
+const headingStyle: React.CSSProperties = {
+  fontSize: 16,
+  color: '#1F3148',
+  fontWeight: 500,
+  margin: '0 0 12px',
+  fontFamily: 'Inter, sans-serif',
+}
+
+const bodyStyle: React.CSSProperties = {
+  fontSize: 14,
+  color: '#374151',
+  lineHeight: 1.6,
+  margin: '0 0 0',
+  fontFamily: 'Inter, sans-serif',
+}
+
+const mutedStyle: React.CSSProperties = {
+  fontSize: 11,
+  color: '#9CA3AF',
+  marginTop: 12,
+  fontFamily: 'Inter, sans-serif',
+}
+
+function ReviewPageInner() {
+  const searchParams = useSearchParams()
+  const score = searchParams.get('score')
+  const firm = searchParams.get('firm')
+  const engagement = searchParams.get('engagement')
+
+  const [view, setView] = useState<ViewState>({ phase: 'loading' })
+  const [feedbackText, setFeedbackText] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const called = useRef(false)
+
+  useEffect(() => {
+    if (called.current) return
+    called.current = true
+
+    if (!score || !firm || !engagement) {
+      setView({ phase: 'error' })
+      return
+    }
+
+    fetch(`${API_BASE}/review-requests/record-score`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        score: Number(score),
+        firm_id: firm,
+        engagement_id: engagement,
+      }),
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error('bad response')
+        return res.json()
+      })
+      .then((data) => {
+        if (data.action === 'google_review') {
+          setView({ phase: 'google_review', google_review_url: data.google_review_url })
+        } else {
+          setView({ phase: 'feedback_form' })
+        }
+      })
+      .catch(() => setView({ phase: 'error' }))
+  }, [score, firm, engagement])
+
+  async function handleSubmitFeedback() {
+    if (!score || !firm || !engagement) return
+    setSubmitting(true)
+    try {
+      const res = await fetch(`${API_BASE}/review-requests/submit-feedback`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          score: Number(score),
+          firm_id: firm,
+          engagement_id: engagement,
+          feedback_text: feedbackText,
+        }),
+      })
+      if (!res.ok) throw new Error('bad response')
+      setView({ phase: 'feedback_submitted' })
+    } catch {
+      // keep form visible, let user retry
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div
+      style={{
+        minHeight: '100vh',
+        background: '#E4E6EA',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '32px 16px',
+        fontFamily: 'Inter, sans-serif',
+      }}
+    >
+      {view.phase === 'loading' && (
+        <div style={{ textAlign: 'center' }}>
+          <div
+            style={{
+              width: 28,
+              height: 28,
+              border: '3px solid #C8CDD6',
+              borderTopColor: '#1F3148',
+              borderRadius: '50%',
+              animation: 'spin 0.8s linear infinite',
+              margin: '0 auto 12px',
+            }}
+          />
+          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+          <p style={{ fontSize: 13, color: '#9CA3AF' }}>One moment...</p>
+        </div>
+      )}
+
+      {view.phase === 'google_review' && (
+        <div style={cardStyle}>
+          <p style={headingStyle}>Thank you!</p>
+          <p style={bodyStyle}>
+            We really appreciate you taking the time. Would you mind sharing your experience on
+            Google? It helps other businesses find us and only takes a moment.
+          </p>
+          <button
+            style={btnStyle}
+            onClick={() => window.open(view.google_review_url, '_blank')}
+          >
+            Leave a Google Review →
+          </button>
+          <p style={mutedStyle}>Thank you again for choosing us.</p>
+        </div>
+      )}
+
+      {view.phase === 'feedback_form' && (
+        <div style={cardStyle}>
+          <p style={headingStyle}>Thank you for the honest feedback.</p>
+          <p style={bodyStyle}>
+            We&apos;re still building and your input shapes what we improve next. What&apos;s one
+            thing that could have been better?
+          </p>
+          <textarea
+            value={feedbackText}
+            onChange={(e) => setFeedbackText(e.target.value)}
+            placeholder="Tell us what would make the experience better for you..."
+            style={{
+              width: '100%',
+              minHeight: 100,
+              background: '#F7F7F8',
+              border: '0.5px solid #C8CDD6',
+              borderRadius: 6,
+              fontSize: 14,
+              fontFamily: 'Inter, sans-serif',
+              padding: '10px 12px',
+              resize: 'vertical',
+              color: '#1F3148',
+              boxSizing: 'border-box',
+              marginTop: 16,
+              outline: 'none',
+            }}
+          />
+          <button
+            style={{ ...btnStyle, opacity: submitting ? 0.6 : 1 }}
+            onClick={handleSubmitFeedback}
+            disabled={submitting}
+          >
+            {submitting ? 'Submitting...' : 'Submit Feedback'}
+          </button>
+        </div>
+      )}
+
+      {view.phase === 'feedback_submitted' && (
+        <div style={{ ...cardStyle, textAlign: 'center' }}>
+          <p style={{ fontSize: 14, color: '#374151', margin: '0 0 6px' }}>
+            Got it — thank you.
+          </p>
+          <p style={{ fontSize: 12, color: '#6B7280', margin: 0 }}>
+            Your feedback goes directly to the team.
+          </p>
+        </div>
+      )}
+
+      {view.phase === 'error' && (
+        <div style={cardStyle}>
+          <p style={{ fontSize: 14, color: '#374151', margin: 0 }}>
+            Something went wrong. Please try again.
+          </p>
+        </div>
+      )}
+    </div>
+  )
+}
+
+export default function ReviewPage() {
+  return (
+    <Suspense fallback={
+      <div style={{
+        minHeight: '100vh',
+        background: '#E4E6EA',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}>
+        <p style={{ fontSize: '13px', color: '#6B7280' }}>Loading...</p>
+      </div>
+    }>
+      <ReviewPageInner />
+    </Suspense>
+  )
+}
+
+
+================================================================================
 FILE: frontend\src\app\settings\page.tsx
 ================================================================================
 // frontend/src/app/settings/page.tsx
@@ -10516,6 +10839,13 @@ export default function SettingsPage() {
   const [approvalRequired, setApprovalRequired] = useState<boolean | null>(null)
   const [savingApproval, setSavingApproval] = useState(false)
 
+  const [emailReplyTo, setEmailReplyTo] = useState('')
+  const [emailDisplayName, setEmailDisplayName] = useState('')
+  const [savingEmail, setSavingEmail] = useState(false)
+
+  const [googleReviewUrl, setGoogleReviewUrl] = useState('')
+  const [savingReview, setSavingReview] = useState(false)
+
   const { data: firmData, isLoading: firmLoading } = useFetch<FirmDetails>(
     () => settingsApi.getMyFirm().then((r) => r.data as FirmDetails),
     []
@@ -10564,6 +10894,43 @@ export default function SettingsPage() {
       setApprovalRequired((firmData as FirmDetails & { timesheet_approval_required?: boolean }).timesheet_approval_required ?? false)
     }
   }, [firmData, approvalRequired])
+
+  useEffect(() => {
+    if (firmData?.settings) {
+      setEmailReplyTo((firmData.settings.email_reply_to as string) ?? '')
+      setEmailDisplayName((firmData.settings.email_display_name as string) ?? '')
+      setGoogleReviewUrl((firmData.settings.google_review_url as string) ?? '')
+    }
+  }, [firmData])
+
+  async function handleSaveEmailSettings() {
+    setSavingEmail(true)
+    try {
+      await api.patch('/settings/email', {
+        reply_to: emailReplyTo || null,
+        display_name: emailDisplayName || null,
+      })
+      toast.success('Email settings saved')
+    } catch {
+      toast.error('Failed to save email settings')
+    } finally {
+      setSavingEmail(false)
+    }
+  }
+
+  async function handleSaveReviewSettings() {
+    setSavingReview(true)
+    try {
+      await api.patch('/settings/review', {
+        google_review_url: googleReviewUrl || null,
+      })
+      toast.success('Review settings saved')
+    } catch {
+      toast.error('Failed to save review settings')
+    } finally {
+      setSavingReview(false)
+    }
+  }
 
   async function handleToggleApproval() {
     if (!isFirmOwner) return
@@ -10764,6 +11131,77 @@ export default function SettingsPage() {
                       )}
                       style={{ marginTop: '2px' }}
                     />
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Email Settings section */}
+            {isFirmOwner && (
+              <div className="bg-surface-card dark:bg-dark-card rounded-[10px] p-4 flex flex-col gap-3 max-w-lg" style={{ marginTop: '12px' }}>
+                <p className="text-[13px] font-medium text-brand dark:text-[#EDEEF0]">Email Settings</p>
+                <div className={fieldClass}>
+                  <label className={labelClass}>Reply-To Email Address</label>
+                  <input
+                    type="email"
+                    value={emailReplyTo}
+                    onChange={(e) => setEmailReplyTo(e.target.value)}
+                    placeholder="owner@yourfirm.com"
+                    className={inputClass}
+                  />
+                  <span className="text-[11px] text-[#6B7280]">
+                    When clients reply to emails from JAMM PX, their reply goes to this address.
+                  </span>
+                </div>
+                <div className={fieldClass}>
+                  <label className={labelClass}>Email Display Name</label>
+                  <input
+                    type="text"
+                    value={emailDisplayName}
+                    onChange={(e) => setEmailDisplayName(e.target.value)}
+                    placeholder={firmData?.name ?? 'Your firm name'}
+                    className={inputClass}
+                  />
+                  <span className="text-[11px] text-[#6B7280]">
+                    The name clients see in their inbox. Defaults to your firm name.
+                  </span>
+                </div>
+                <div className="flex justify-end">
+                  <button
+                    onClick={handleSaveEmailSettings}
+                    disabled={savingEmail}
+                    className="h-8 px-3 text-[13px] font-medium rounded-[6px] bg-brand text-white hover:bg-brand/90 transition-colors disabled:opacity-60"
+                  >
+                    {savingEmail ? 'Saving...' : 'Save'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Review Requests section */}
+            {isFirmOwner && (
+              <div className="bg-surface-card dark:bg-dark-card rounded-[10px] p-4 flex flex-col gap-3 max-w-lg" style={{ marginTop: '12px' }}>
+                <p className="text-[13px] font-medium text-brand dark:text-[#EDEEF0]">Review Requests</p>
+                <div className={fieldClass}>
+                  <label className={labelClass}>Google Review Link</label>
+                  <input
+                    type="text"
+                    value={googleReviewUrl}
+                    onChange={(e) => setGoogleReviewUrl(e.target.value)}
+                    placeholder="https://g.page/r/your-business/review"
+                    className={inputClass}
+                  />
+                  <span className="text-[11px] text-[#6B7280]">
+                    Clients who rate their experience 9 or 10 will be directed here to leave a public review.
+                  </span>
+                </div>
+                <div className="flex justify-end">
+                  <button
+                    onClick={handleSaveReviewSettings}
+                    disabled={savingReview}
+                    className="h-8 px-3 text-[13px] font-medium rounded-[6px] bg-brand text-white hover:bg-brand/90 transition-colors disabled:opacity-60"
+                  >
+                    {savingReview ? 'Saving...' : 'Save'}
                   </button>
                 </div>
               </div>
@@ -14732,7 +15170,7 @@ interface EditEngagementModalProps {
   isOpen: boolean
   onClose: () => void
   engagement: { id: string; name: string; status: string; engagementType?: string; endDate?: string; description?: string }
-  onSuccess: () => void
+  onSuccess: (opts?: { statusBecameCompleted?: boolean }) => void
   uncheckedQcCount?: number
 }
 
@@ -14801,7 +15239,9 @@ export function EditEngagementModal({ isOpen, onClose, engagement, onSuccess, un
     try {
       await engagementsApi.update(engagement.id, patch)
       toast.success('Engagement updated successfully')
-      onSuccess()
+      const statusBecameCompleted =
+        patch.status === 'completed' && original.status !== 'completed'
+      onSuccess({ statusBecameCompleted })
     } catch {
       toast.error('Failed to update engagement — please try again')
     } finally {
@@ -26883,6 +27323,7 @@ export interface FirmDetails {
   is_active: boolean
   staff_auth_policy: string
   settings: Record<string, unknown> | null
+  feature_flags: Record<string, boolean> | null
   created_at: string
   updated_at: string
 }

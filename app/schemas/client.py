@@ -87,6 +87,7 @@ class ClientOut(ClientBase):
     id: UUID
     created_at: datetime
     updated_at: datetime
+    quickbooks_customer_id: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 

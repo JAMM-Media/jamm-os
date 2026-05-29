@@ -19,6 +19,7 @@ export interface Client {
   notes: string | null
   createdAt: string
   updatedAt: string
+  quickbooksCustomerId: string | null
 }
 
 export interface ClientDetail extends Client {}
@@ -60,6 +61,7 @@ function mapClient(raw: Record<string, unknown>): Client {
     notes: raw.notes ? String(raw.notes) : null,
     createdAt: String(raw.created_at ?? ''),
     updatedAt: String(raw.updated_at ?? ''),
+    quickbooksCustomerId: raw.quickbooks_customer_id ? String(raw.quickbooks_customer_id) : null,
   }
 }
 
