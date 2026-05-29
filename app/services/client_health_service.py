@@ -101,9 +101,6 @@ def compute_client_health(client_id: UUID, firm_id: UUID, db: Session) -> dict:
             f"{count} overdue invoice{'s' if count > 1 else ''}"
         )
 
-    if at_risk_reasons:
-        return {"status": "at_risk", "reasons": at_risk_reasons}
-
     # --- NEEDS ATTENTION ---
     needs_attention_reasons = []
 
@@ -163,7 +160,9 @@ def compute_client_health(client_id: UUID, firm_id: UUID, db: Session) -> dict:
             if (now - _ensure_tz(any_engagement.updated_at)).days >= 30:
                 needs_attention_reasons.append("No engagement activity in 30+ days")
 
-    if needs_attention_reasons:
+    if at_risk_reasons:
+        return {"status": "at_risk", "reasons": at_risk_reasons + needs_attention_reasons}
+    elif needs_attention_reasons:
         return {"status": "needs_attention", "reasons": needs_attention_reasons}
-
-    return {"status": "healthy", "reasons": []}
+    else:
+        return {"status": "healthy", "reasons": ["Everything is on track"]}
