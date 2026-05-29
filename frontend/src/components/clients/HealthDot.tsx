@@ -52,38 +52,19 @@ export function HealthDot({ clientId, showLabel = false }: HealthDotProps) {
     />
   )
 
-  const trigger = showLabel ? (
-    <span
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 6,
-        fontSize: 12,
-        color: isLoading || !config ? '#C8CDD6' : config.color,
-        cursor: hasReasons ? 'default' : undefined,
-      }}
-    >
-      {dot}
-      {!isLoading && config && config.label}
-    </span>
-  ) : (
-    <span style={{ display: 'inline-flex', alignItems: 'center' }}>
-      {dot}
-    </span>
-  )
-
   // No reasons — healthy or still loading — just render the dot/label with no tooltip
   if (!hasReasons) {
-    return trigger
+    if (showLabel) {
+      return <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: isLoading || !config ? '#C8CDD6' : config.color }}>{dot}{!isLoading && config && config.label}</span>
+    }
+    return <span style={{ display: 'inline-flex', alignItems: 'center' }}>{dot}</span>
   }
 
   // Has reasons — wrap in tooltip showing each reason on its own line
   return (
     <TooltipProvider>
       <Tooltip>
-        <TooltipTrigger asChild>
-          {trigger}
-        </TooltipTrigger>
+        <TooltipTrigger>{showLabel ? (<span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: isLoading || !config ? '#C8CDD6' : config.color, cursor: 'default' }}>{dot}{!isLoading && config && config.label}</span>) : (<span style={{ display: 'inline-flex', alignItems: 'center' }}>{dot}</span>)}</TooltipTrigger>
         <TooltipContent
           side="right"
           className="max-w-[240px]"
