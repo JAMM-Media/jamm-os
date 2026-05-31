@@ -1,0 +1,113 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e565]:
+    - complementary [ref=e566]:
+      - generic [ref=e567]:
+        - generic [ref=e568]: JAMM PX
+        - button "Collapse sidebar" [ref=e569]:
+          - img [ref=e570]
+      - navigation [ref=e572]:
+        - list [ref=e573]:
+          - listitem [ref=e574]:
+            - link "Dashboard" [ref=e575] [cursor=pointer]:
+              - /url: /dashboard
+              - img [ref=e577]
+              - generic [ref=e582]: Dashboard
+          - listitem [ref=e583]:
+            - link "Clients" [ref=e584] [cursor=pointer]:
+              - /url: /clients
+              - img [ref=e586]
+              - generic [ref=e591]: Clients
+          - listitem [ref=e592]:
+            - link "Engagements" [ref=e593] [cursor=pointer]:
+              - /url: /engagements
+              - img [ref=e595]
+              - generic [ref=e598]: Engagements
+          - listitem [ref=e599]:
+            - link "Templates" [ref=e600] [cursor=pointer]:
+              - /url: /templates
+              - img [ref=e602]
+              - generic [ref=e606]: Templates
+          - listitem [ref=e607]:
+            - link "Tasks" [ref=e608] [cursor=pointer]:
+              - /url: /tasks
+              - img [ref=e610]
+              - generic [ref=e613]: Tasks
+          - listitem [ref=e614]:
+            - link "Timesheets" [ref=e615] [cursor=pointer]:
+              - /url: /timesheets
+              - img [ref=e617]
+              - generic [ref=e620]: Timesheets
+          - listitem [ref=e621]:
+            - link "Calendar" [ref=e622] [cursor=pointer]:
+              - /url: /calendar
+              - img [ref=e624]
+              - generic [ref=e626]: Calendar
+          - listitem [ref=e627]:
+            - link "Documents" [ref=e628] [cursor=pointer]:
+              - /url: /documents
+              - img [ref=e630]
+              - generic [ref=e633]: Documents
+          - listitem [ref=e634]:
+            - link "Billing" [ref=e635] [cursor=pointer]:
+              - /url: /billing
+              - img [ref=e637]
+              - generic [ref=e639]: Billing
+          - listitem [ref=e640]:
+            - link "Firm Chat" [ref=e641] [cursor=pointer]:
+              - /url: /firm-chat
+              - img [ref=e643]
+              - generic [ref=e645]: Firm Chat
+          - listitem [ref=e646]:
+            - link "Notifications" [ref=e647] [cursor=pointer]:
+              - /url: /notifications
+              - img [ref=e649]
+              - generic [ref=e652]: Notifications
+      - generic [ref=e653]:
+        - button "Dark mode" [ref=e654]:
+          - img [ref=e655]
+          - generic [ref=e657]: Dark mode
+        - button "JAMM Concierge" [ref=e658]:
+          - img [ref=e659]
+          - generic [ref=e662]: JAMM Concierge
+        - link "Settings" [ref=e663] [cursor=pointer]:
+          - /url: /settings
+          - img [ref=e664]
+          - generic [ref=e667]: Settings
+        - button "Sign out" [ref=e668]:
+          - img [ref=e669]
+          - generic [ref=e672]: Sign out
+    - main [ref=e673]:
+      - generic [ref=e674]:
+        - generic [ref=e675]:
+          - button "Settings" [ref=e676]
+          - generic [ref=e677]: /
+          - generic [ref=e678]: Team
+        - heading "Team" [level=1] [ref=e679]
+        - generic [ref=e680]:
+          - paragraph [ref=e681]: Invite Team Member
+          - paragraph [ref=e682]: Add a staff member to your firm. Use the full Settings page to manage roles and view existing team members.
+          - button "Open full team settings" [ref=e683]
+    - generic [ref=e684]:
+      - generic [ref=e685]:
+        - generic [ref=e687]: JAMM Concierge
+        - generic [ref=e688]:
+          - generic [ref=e689]:
+            - button "Toggle autopilot mode" [ref=e690]:
+              - img [ref=e691]
+              - generic [ref=e693]: Autopilot
+            - generic: Autopilot mode. When on, JAMM Concierge will navigate the app and open the right screen for you. You always complete and save the action yourself.
+          - button "Close concierge panel" [ref=e694]:
+            - img [ref=e695]
+      - generic [ref=e699]:
+        - paragraph [ref=e700]: "Ask me anything about JAMM PX. Here are a few places to start:"
+        - button "What should I set up first after signing up?" [ref=e701]
+        - button "How do I import my existing clients?" [ref=e702]
+        - button "How does the client portal work?" [ref=e703]
+      - generic [ref=e705]:
+        - textbox "Ask anything about JAMM PX..." [ref=e706]
+        - button "Send message" [disabled] [ref=e707]:
+          - img [ref=e708]
+  - region "Notifications alt+T"
+  - button "Open Next.js Dev Tools" [ref=e39] [cursor=pointer]:
+    - img [ref=e40]
+  - alert [ref=e43]

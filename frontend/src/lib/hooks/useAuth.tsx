@@ -57,6 +57,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       })
       const data = await res.json()
       if (data.success) {
+        if (data.access_token) localStorage.setItem('access_token', data.access_token)
         const meRes = await fetch('/api/auth/me')
         const meData = await meRes.json()
         setUser(meData.user ?? null)

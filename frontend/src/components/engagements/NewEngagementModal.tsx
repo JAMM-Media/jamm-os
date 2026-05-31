@@ -8,6 +8,7 @@ import { TextInput } from '@/components/ui/TextInput'
 import { SelectInput } from '@/components/ui/SelectInput'
 import { type Engagement, clientsApi, engagementsApi } from '@/lib/api'
 import { toast } from 'sonner'
+import { setFormDirty } from '@/lib/events/conciergeEvents'
 import { useFetch } from '@/lib/hooks/useFetch'
 
 interface NewEngagementModalProps {
@@ -55,6 +56,7 @@ export function NewEngagementModal({
   }
 
   function handleChange(field: string, value: string) {
+    setFormDirty(true)
     setForm((prev) => {
       const next = { ...prev, [field]: value }
       if (field === 'engagementCategory') next.engagementType = ''
@@ -64,6 +66,7 @@ export function NewEngagementModal({
   }
 
   function handleClose() {
+    setFormDirty(false)
     setForm({
       name: '',
       clientId: preselectedClientId ?? '',

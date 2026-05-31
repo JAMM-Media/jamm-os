@@ -30,7 +30,7 @@ from app.core.security import get_password_hash
 
 
 DEMO_SLUG = "riverside-demo"
-DEMO_PASSWORD = "Demo2026!"
+DEMO_PASSWORD = "Demo2026x"
 
 
 def current_year_date(month: int, day: int) -> date:
@@ -68,6 +68,7 @@ def create_demo_firm(db):
         subscription_tier="professional",
         plan_override=True,
         is_active=True,
+        concierge_active=True,
         created_at=now(),
         updated_at=now(),
     )

@@ -1,8 +1,9 @@
 // path: frontend/src/app/(dashboard)/templates/page.tsx
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
+import { onConciergeAction, setFormDirty } from '@/lib/events/conciergeEvents'
 import { toast } from 'sonner'
 import { AppShell } from '@/components/layout/AppShell'
 import { useAuth } from '@/lib/hooks/useAuth'
@@ -158,6 +159,7 @@ function TemplateModal({ editTemplate, onClose, onSaved }: TemplateModalProps) {
   const [saving, setSaving] = useState(false)
 
   function setField<K extends keyof TemplateFormData>(key: K, value: TemplateFormData[K]) {
+    setFormDirty(true)
     setForm((prev) => ({ ...prev, [key]: value }))
   }
 
@@ -219,6 +221,7 @@ function TemplateModal({ editTemplate, onClose, onSaved }: TemplateModalProps) {
         await api.post('/api/v1/engagement-templates/', body)
         toast.success('Template created')
       }
+      setFormDirty(false)
       onSaved()
       onClose()
     } catch {
@@ -235,7 +238,7 @@ function TemplateModal({ editTemplate, onClose, onSaved }: TemplateModalProps) {
           <h2 className="text-[15px] font-medium text-brand dark:text-[#EDEEF0]">
             {editTemplate ? 'Edit Template' : 'New Template'}
           </h2>
-          <button onClick={onClose} className="text-[#6B7280] hover:text-brand dark:hover:text-[#EDEEF0] transition-colors">
+          <button onClick={() => { setFormDirty(false); onClose() }} className="text-[#6B7280] hover:text-brand dark:hover:text-[#EDEEF0] transition-colors">
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -834,6 +837,12 @@ export default function TemplatesPage() {
   const [useTemplate, setUseTemplate] = useState<Template | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Template | null>(null)
   const [deleting, setDeleting] = useState(false)
+
+  useEffect(() => {
+    return onConciergeAction((action) => {
+      if (action.modal === 'new-template') setCreateOpen(true)
+    })
+  }, [])
 
   const fetchTemplates = useCallback(async () => {
     setLoading(true)

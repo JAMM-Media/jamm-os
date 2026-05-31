@@ -1,7 +1,7 @@
 // path: frontend/src/app/clients/[id]/page.tsx
 'use client'
 
-import { Suspense, useState, useEffect } from 'react'
+import { Suspense, useState, useEffect, useRef } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import { AppShell } from '@/components/layout/AppShell'
@@ -26,6 +26,9 @@ import { PortalPreview } from '@/components/clients/PortalPreview'
 import { HealthDot } from '@/components/clients/HealthDot'
 import { EditClientModal } from '@/components/clients/EditClientModal'
 import TaxOrganizerTab from '@/components/tax-organizer/TaxOrganizerTab'
+import { NewEngagementModal } from '@/components/engagements/NewEngagementModal'
+import { onConciergeAction } from '@/lib/events/conciergeEvents'
+import type { Engagement } from '@/lib/api'
 
 function EngagementStatusBadge({ status }: { status: string }) {
   return <StatusBadge variant={status as Parameters<typeof StatusBadge>[0]['variant']} />
@@ -58,6 +61,26 @@ function ClientDetailContent() {
   const clientId = params.id as string
 
   const [isEditOpen, setIsEditOpen] = useState(false)
+  const [newEngagementOpen, setNewEngagementOpen] = useState(false)
+  const [portalLinkHighlight, setPortalLinkHighlight] = useState(false)
+  const portalLinkRef = useRef<HTMLButtonElement>(null)
+
+  useEffect(() => {
+    return onConciergeAction((action) => {
+      if (action.modal === 'new-engagement') {
+        setActiveTab('engagements')
+        setNewEngagementOpen(true)
+      }
+      if (action.modal === 'portal-magic-link') {
+        setActiveTab('overview')
+        setPortalLinkHighlight(true)
+        setTimeout(() => {
+          portalLinkRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        }, 100)
+        setTimeout(() => setPortalLinkHighlight(false), 3000)
+      }
+    })
+  }, [])
 
   const [clientMessages, setClientMessages] = useState<Array<{
     id: string
@@ -272,9 +295,10 @@ function ClientDetailContent() {
           <div className="flex items-center justify-end gap-2 mb-4">
             {(user?.role === 'firm_owner' || user?.role === 'manager') && (
               <button
+                ref={portalLinkRef}
                 onClick={handleSendPortalLink}
                 disabled={sendingPortalLink}
-                className="flex items-center gap-1.5 h-8 px-3 text-[12px] font-medium text-[#1F3148] dark:text-[#EDEEF0] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] rounded-md bg-transparent hover:bg-surface-card dark:hover:bg-dark-card transition-colors disabled:opacity-60"
+                className={`flex items-center gap-1.5 h-8 px-3 text-[12px] font-medium text-[#1F3148] dark:text-[#EDEEF0] border border-[0.5px] rounded-md bg-transparent hover:bg-surface-card dark:hover:bg-dark-card transition-colors disabled:opacity-60 ${portalLinkHighlight ? 'border-[#3A6A94] ring-2 ring-[#3A6A94]/40 animate-pulse' : 'border-[#C8CDD6] dark:border-[#484848]'}`}
               >
                 {sendingPortalLink ? (
                   <Loader2 className="h-[14px] w-[14px] animate-spin" />
@@ -666,6 +690,17 @@ function ClientDetailContent() {
           onSuccess={() => { refetchClient(); setIsEditOpen(false) }}
         />
       )}
+
+      <NewEngagementModal
+        open={newEngagementOpen}
+        onClose={() => setNewEngagementOpen(false)}
+        onAdd={(eng: Engagement) => {
+          setNewEngagementOpen(false)
+          // Refresh engagement list after creation
+          void eng
+        }}
+        preselectedClientId={clientId}
+      />
     </AppShell>
   )
 }

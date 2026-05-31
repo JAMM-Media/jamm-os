@@ -1,7 +1,7 @@
 // path: frontend/src/app/clients/page.tsx
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { AppShell } from '@/components/layout/AppShell'
 import { ViewToggle } from '@/components/ui/ViewToggle'
 import { ClientTable } from '@/components/clients/ClientTable'
@@ -11,6 +11,7 @@ import { NewClientModal } from '@/components/clients/NewClientModal'
 import { clientsApi, type Client } from '@/lib/api'
 import { useFetch } from '@/lib/hooks/useFetch'
 import { Search } from 'lucide-react'
+import { onConciergeAction } from '@/lib/events/conciergeEvents'
 
 type ViewMode = 'table' | 'card'
 
@@ -21,6 +22,16 @@ export default function ClientsPage() {
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [localClients, setLocalClients] = useState<Client[]>([])
   const [modalOpen, setModalOpen] = useState(false)
+  const [prefillName, setPrefillName] = useState<string | undefined>()
+
+  useEffect(() => {
+    return onConciergeAction((action) => {
+      if (action.modal === 'new-client') {
+        setPrefillName(action.fields?.name)
+        setModalOpen(true)
+      }
+    })
+  }, [])
 
   const { data, isLoading, error, refetch } = useFetch(() => clientsApi.list(), [])
   const clients = [...localClients, ...(data?.items ?? [])]
@@ -158,8 +169,9 @@ export default function ClientsPage() {
         {/* Modal */}
         <NewClientModal
           open={modalOpen}
-          onClose={() => setModalOpen(false)}
+          onClose={() => { setModalOpen(false); setPrefillName(undefined) }}
           onAdd={handleAddClient}
+          initialName={prefillName}
         />
 
       </div>

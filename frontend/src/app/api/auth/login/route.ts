@@ -14,7 +14,7 @@ export async function POST(request: NextRequest) {
 
     if (res.ok) {
       const data = await res.json()
-      const response = NextResponse.json({ success: true })
+      const response = NextResponse.json({ success: true, access_token: data.access_token })
       response.cookies.set('jamm_token', data.access_token, {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',

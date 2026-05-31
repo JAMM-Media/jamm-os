@@ -1,7 +1,7 @@
 // frontend/src/app/settings/page.tsx
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { AppShell } from '@/components/layout/AppShell'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { useFetch } from '@/lib/hooks/useFetch'
@@ -14,6 +14,7 @@ import AutomationsTab from '@/components/settings/AutomationsTab'
 import SecurityTab from '@/components/settings/SecurityTab'
 import FeeScheduleTab from '@/components/settings/FeeScheduleTab'
 import PortalBrandingTab from '@/components/settings/PortalBrandingTab'
+import { onConciergeAction, setFormDirty } from '@/lib/events/conciergeEvents'
 
 const TABS = [
   { key: 'profile', label: 'Profile' },
@@ -83,6 +84,18 @@ export default function SettingsPage() {
   const [inviteSubmitting, setInviteSubmitting] = useState(false)
   const [showInvitePassword, setShowInvitePassword] = useState(false)
   const [invitePasswordLocked, setInvitePasswordLocked] = useState(false)
+  const inviteFormRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    return onConciergeAction((action) => {
+      if (action.modal === 'invite-staff') {
+        setActiveTab('team')
+        setTimeout(() => {
+          inviteFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        }, 150)
+      }
+    })
+  }, [])
 
   async function handleInvite(e: React.FormEvent) {
     e.preventDefault()
@@ -94,6 +107,7 @@ export default function SettingsPage() {
         password: invitePassword,
         role: inviteRole,
       })
+      setFormDirty(false)
       toast.success('Team member added.')
       setInviteFullName('')
       setInviteEmail('')
@@ -517,6 +531,7 @@ export default function SettingsPage() {
 
             {isFirmOwner && (
               <div
+                ref={inviteFormRef}
                 className="bg-surface-card dark:bg-dark-card rounded-[10px] border border-surface-border dark:border-dark-border p-4 max-w-lg"
                 style={{ borderWidth: '0.5px', marginTop: '16px' }}
               >
@@ -535,7 +550,7 @@ export default function SettingsPage() {
                       required
                       autoComplete="off"
                       value={inviteFullName}
-                      onChange={(e) => setInviteFullName(e.target.value)}
+                      onChange={(e) => { setFormDirty(true); setInviteFullName(e.target.value) }}
                       className={inputClass}
                     />
                   </div>
@@ -546,7 +561,7 @@ export default function SettingsPage() {
                       required
                       autoComplete="off"
                       value={inviteEmail}
-                      onChange={(e) => setInviteEmail(e.target.value)}
+                      onChange={(e) => { setFormDirty(true); setInviteEmail(e.target.value) }}
                       className={inputClass}
                     />
                   </div>
@@ -558,7 +573,7 @@ export default function SettingsPage() {
                         required
                         autoComplete="new-password"
                         value={invitePassword}
-                        onChange={(e) => setInvitePassword(e.target.value)}
+                        onChange={(e) => { setFormDirty(true); setInvitePassword(e.target.value) }}
                         className={inputClass}
                       />
                       <button

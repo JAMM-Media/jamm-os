@@ -39,6 +39,7 @@ from app.api.retention import router as retention_router
 from app.api.notes import router as notes_router
 from app.api.messages import router as messages_router
 from app.api.firm_chat import router as firm_chat_router
+from app.api.concierge.route import router as concierge_router
 from app.api.irs_authorizations import router as irs_authorizations_router
 from app.api.extensions import router as extensions_router
 from app.api.tax_organizers import router as tax_organizers_router
@@ -161,6 +162,7 @@ app.include_router(retention_router)
 app.include_router(notes_router)
 app.include_router(messages_router, tags=["Messages"])
 app.include_router(firm_chat_router, tags=["Firm Chat"])
+app.include_router(concierge_router)
 app.include_router(irs_authorizations_router)
 app.include_router(extensions_router)
 app.include_router(tax_organizers_router)

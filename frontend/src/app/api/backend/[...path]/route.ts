@@ -102,11 +102,38 @@ async function proxyRequest(
       )
     }
 
+    // Pass streaming responses (SSE) through without buffering.
+    const contentType = res.headers.get('Content-Type') ?? ''
+    if (contentType.includes('text/event-stream') && res.body) {
+      const reader = res.body.getReader()
+      const stream = new ReadableStream({
+        start(controller) {
+          function pump() {
+            reader.read().then(({ done, value }) => {
+              if (done) { controller.close(); return }
+              controller.enqueue(value)
+              pump()
+            }).catch(() => { controller.close() })
+          }
+          pump()
+        },
+        cancel() { reader.cancel().catch(() => {}) },
+      })
+      return new NextResponse(stream, {
+        status: res.status,
+        headers: {
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          'X-Accel-Buffering': 'no',
+        },
+      })
+    }
+
     const data = await res.text()
     return new NextResponse(data, {
       status: res.status,
       headers: {
-        'Content-Type': res.headers.get('Content-Type') ?? 'application/json',
+        'Content-Type': contentType || 'application/json',
       },
     })
   } catch {

@@ -136,4 +136,9 @@ class User(Base):
     # Relationship back to the firm this user belongs to.
     firm: Mapped["Firm"] = relationship("Firm", back_populates="users")
 
-    time_entries: Mapped[list["TimeEntry"]] = relationship("TimeEntry", back_populates="user")
+    time_entries: Mapped[list["TimeEntry"]] = relationship(
+        "TimeEntry",
+        back_populates="user",
+        foreign_keys="[TimeEntry.user_id]",
+        primaryjoin="User.id == TimeEntry.user_id",
+    )
