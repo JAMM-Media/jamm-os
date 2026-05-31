@@ -1,4 +1,4 @@
-# STANDING RULES
+ STANDING RULES
 - Path comment at top of every file
 - Never use && to chain commands
 - Always use SQLAlchemy 2.0 Mapped[] syntax. Never use Column() style.
@@ -17,8 +17,11 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 ---
 
-Before starting: git add -A && git commit -m "checkpoint before [task name]"
-If anything breaks: git checkout . to restore
+# PRE-TASK — run before touching anything
+git add -A
+git commit -m "checkpoint before autopilot 3B fixes"
+python3 -c "from app.api.concierge.route import router; print('OK')"
+If the import fails, stop and report. Do not proceed.
 
 ---
 
@@ -31,31 +34,45 @@ If anything breaks: git checkout . to restore
 
 ---
 
+# POST-TASK — run after task completes
+find app/api/concierge/ -name "*.py" | sort
+ls migrations/versions/ | tail -5
+python3 -c "from app.api.concierge.route import router; print('OK')"
+find frontend/src/components/concierge/ -name "*.tsx" | sort
+
+---
+
 # Section 3: Task to perform
 
-Task: Fix three autopilot issues — panel closes on navigation, client resolver fails, modals not opening
+Task: Add navigation status line to JAMM Concierge autopilot
 
-Read frontend/src/components/concierge/ConciergePanel.tsx and frontend/src/lib/events/conciergeEvents.ts in full before writing anything.
+Read frontend/src/components/concierge/ConciergePanel.tsx in full before writing anything.
 
-Fix 1 — Panel stays open on navigation
-The panel closes when autopilot fires a navigation action. It must stay open. Find where router.push() is called after an action fires in ConciergePanel.tsx. Remove any logic that closes the panel when a navigation action fires. The panel should only close when the user clicks X.
+Fix 1 — Status message state
+Add a statusMessage state variable to ConciergePanel.tsx. Type is string, default is empty string.
 
-Fix 2 — Client resolver slug decoding
-The resolver at GET /concierge/clients/resolve?name= fails for "Patricia Nguyen". In ConciergePanel.tsx, find where the slug is extracted from the action route before calling the resolver. The slug may have hyphens instead of spaces. Add: replace hyphens with spaces and apply decodeURIComponent before passing to the resolver. In app/api/concierge/route.py, find the resolve endpoint and change the query to use LOWER(name) LIKE LOWER('%' || :name || '%').
+Fix 2 — Set status message after every autopilot action
+After every emitConciergeAction call, set statusMessage to a human-readable description of what just happened. Use these exact strings:
+- Navigation to /clients → "Navigated to Clients"
+- Navigation to /clients/[slug] → "Navigated to [client name]"
+- Navigation to /settings/team → "Navigated to Team Settings"
+- Navigation to /templates → "Navigated to Engagement Templates"
+- Navigation to /integrations → "Navigated to Integrations"
+- Navigation to /billing → "Navigated to Billing"
+- Modal or drawer opened → "Opened [modal name]"
 
-Fix 3 — Modal timing
-Actions 1, 5, and 7 navigate but the modal never opens because the event fires before the target page mounts its listener. In ConciergePanel.tsx, find where emitConciergeAction is called after router.push(). Wrap it in a 500ms delay: setTimeout(() => emitConciergeAction(action), 500).
+Fix 3 — Auto-clear status message
+Add a useEffect that watches statusMessage. When statusMessage is set to a non-empty string, clear it back to empty string after 2000ms. Cancel the timeout on cleanup.
 
-Fix 4 — Autopilot off nudge
-When autopilot is off and the model includes a CONCIERGE_ACTION: line in the response, replace the displayed response with: "To use autopilot navigation, turn on Autopilot using the toggle above." The CONCIERGE_ACTION line must be stripped from displayed text regardless of autopilot state.
+Fix 4 — Render status line
+Render the status message below the last assistant response in the chat area. Only render when statusMessage is non-empty. Use a small muted style. Add a Tailwind transition so it fades in on appear and fades out as it clears: use opacity-0 and opacity-100 with transition-opacity duration-500.
 
 After all steps:
-1. grep -n "isOpen\|setIsOpen\|router.push" frontend/src/components/concierge/ConciergePanel.tsx | head -20
-2. grep -n "resolve\|LOWER\|LIKE" app/api/concierge/route.py
-3. grep -n "setTimeout\|emitConciergeAction" frontend/src/components/concierge/ConciergePanel.tsx
-4. grep -n "autopilot\|CONCIERGE_ACTION" frontend/src/components/concierge/ConciergePanel.tsx | head -20
-5. python3 -c "from app.api.concierge.route import router; print('OK')"
-6. npm run build from frontend directory — zero TypeScript errors
-7. Browser test: autopilot ON, "add a client" — panel stays open, New Client modal opens
-8. Browser test: "create an engagement for Patricia Nguyen" — navigates, drawer opens
-9. Report exact lines changed in each file
+1. grep -n "statusMessage\|setStatusMessage" frontend/src/components/concierge/ConciergePanel.tsx
+2. grep -n "useEffect" frontend/src/components/concierge/ConciergePanel.tsx
+3. grep -n "transition-opacity\|opacity-0\|opacity-100" frontend/src/components/concierge/ConciergePanel.tsx
+4. npm run build from frontend directory — zero TypeScript errors
+5. Browser test: autopilot ON, "add a client" — status line "Navigated to Clients" appears below response and fades after 2 seconds
+6. Browser test: autopilot ON, "create an engagement for Patricia Nguyen" — status line "Navigated to Patricia Nguyen" appears and fades
+7. Report exact lines changed
+

@@ -7,7 +7,7 @@ from uuid import UUID
 import anthropic
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from starlette.responses import StreamingResponse
 
@@ -92,7 +92,7 @@ def resolve_client_by_name(
     client = db.execute(
         select(Client).where(
             Client.firm_id == current_firm.id,
-            Client.name.ilike(f"%{name}%"),
+            func.lower(Client.name).like(f"%{name.lower()}%"),
         ).limit(1)
     ).scalar_one_or_none()
     if client is None:

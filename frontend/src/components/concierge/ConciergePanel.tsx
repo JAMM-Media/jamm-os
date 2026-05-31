@@ -261,27 +261,26 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
           }
         }
 
-        // Autopilot action detection -- only when autopilot is on.
-        // Search for CONCIERGE_ACTION: as a substring because SSE streaming
-        // swallows newlines, so the marker may not be at the start of a line.
-        if (autopilotRef.current) {
-          const ACTION_MARKER = 'CONCIERGE_ACTION:'
-          const markerIdx = assembled.indexOf(ACTION_MARKER)
-          if (markerIdx !== -1) {
+        // Always strip CONCIERGE_ACTION: from displayed text.
+        // When autopilot is on, execute the action. When off, show a nudge.
+        // Search as a substring because SSE streaming swallows newlines.
+        const ACTION_MARKER = 'CONCIERGE_ACTION:'
+        const markerIdx = assembled.indexOf(ACTION_MARKER)
+        if (markerIdx !== -1) {
+          const cleanContent = assembled.slice(0, markerIdx).trim()
+          setMessages((prev) => {
+            const updated = [...prev]
+            updated[updated.length - 1] = {
+              role: 'concierge',
+              content: cleanContent,
+            }
+            return updated
+          })
+
+          if (autopilotRef.current) {
             try {
               const jsonStr = assembled.slice(markerIdx + ACTION_MARKER.length).trim()
               const action = JSON.parse(jsonStr) as ConciergeAction
-              const cleanContent = assembled.slice(0, markerIdx).trim()
-
-              setMessages((prev) => {
-                const updated = [...prev]
-                updated[updated.length - 1] = {
-                  role: 'concierge',
-                  content: cleanContent,
-                }
-                return updated
-              })
-
               const confirmText = buildActionConfirm(action)
 
               const doEmit = (emitAction: ConciergeAction) => {
@@ -307,12 +306,13 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
                 }
 
                 // Resolve /clients/[slug] to /clients/[uuid] when slug is not a UUID.
+                // Decode percent-encoding and replace hyphens with spaces before resolving.
                 let finalRoute = action.route
                 let finalAction: ConciergeAction = action
 
                 const clientSlugMatch = /^\/clients\/([^/]+)$/.exec(action.route)
                 if (clientSlugMatch) {
-                  const slug = clientSlugMatch[1]
+                  const slug = decodeURIComponent(clientSlugMatch[1]).replace(/-/g, ' ')
                   const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(slug)
                   if (!isUUID) {
                     try {
@@ -322,11 +322,10 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
                       finalRoute = `/clients/${res.data.id}`
                       finalAction = { ...action, route: finalRoute }
                     } catch (err: unknown) {
-                      const displayName = slug.replace(/-/g, ' ')
                       const msg =
                         (err as { response?: { status?: number } })?.response?.status === 404
-                          ? `I couldn't find a client matching '${displayName}'. Check the name and try again.`
-                          : `I couldn't find a client matching '${displayName}'. Check the name and try again.`
+                          ? `I couldn't find a client matching '${slug}'. Check the name and try again.`
+                          : `I couldn't find a client matching '${slug}'. Check the name and try again.`
                       setMessages((prev) => {
                         const updated = [...prev]
                         updated[updated.length - 1] = {
@@ -342,13 +341,22 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
 
                 router.push(finalRoute)
                 const emitAction = finalAction
-                setTimeout(() => doEmit(emitAction), 300)
+                setTimeout(() => doEmit(emitAction), 500)
               } else {
                 doEmit(action)
               }
             } catch {
               // Invalid JSON -- leave full text displayed as-is.
             }
+          } else {
+            setMessages((prev) => {
+              const updated = [...prev]
+              updated[updated.length - 1] = {
+                role: 'concierge',
+                content: 'To use autopilot navigation, turn on Autopilot using the toggle above.',
+              }
+              return updated
+            })
           }
         }
       } catch {

@@ -1,0 +1,233 @@
+- generic [ref=e1]:
+  - generic [ref=e253]:
+    - complementary [ref=e254]:
+      - generic [ref=e255]:
+        - generic [ref=e256]: JAMM PX
+        - button "Collapse sidebar" [ref=e257]:
+          - img [ref=e258]
+      - navigation [ref=e260]:
+        - list [ref=e261]:
+          - listitem [ref=e262]:
+            - link "Dashboard" [ref=e263] [cursor=pointer]:
+              - /url: /dashboard
+              - img [ref=e265]
+              - generic [ref=e270]: Dashboard
+          - listitem [ref=e271]:
+            - link "Clients" [ref=e272] [cursor=pointer]:
+              - /url: /clients
+              - img [ref=e274]
+              - generic [ref=e279]: Clients
+          - listitem [ref=e280]:
+            - link "Engagements" [ref=e281] [cursor=pointer]:
+              - /url: /engagements
+              - img [ref=e283]
+              - generic [ref=e286]: Engagements
+          - listitem [ref=e287]:
+            - link "Templates" [ref=e288] [cursor=pointer]:
+              - /url: /templates
+              - img [ref=e290]
+              - generic [ref=e294]: Templates
+          - listitem [ref=e295]:
+            - link "Tasks" [ref=e296] [cursor=pointer]:
+              - /url: /tasks
+              - img [ref=e298]
+              - generic [ref=e301]: Tasks
+          - listitem [ref=e302]:
+            - link "Timesheets" [ref=e303] [cursor=pointer]:
+              - /url: /timesheets
+              - img [ref=e305]
+              - generic [ref=e308]: Timesheets
+          - listitem [ref=e309]:
+            - link "Calendar" [ref=e310] [cursor=pointer]:
+              - /url: /calendar
+              - img [ref=e312]
+              - generic [ref=e314]: Calendar
+          - listitem [ref=e315]:
+            - link "Documents" [ref=e316] [cursor=pointer]:
+              - /url: /documents
+              - img [ref=e318]
+              - generic [ref=e321]: Documents
+          - listitem [ref=e322]:
+            - link "Billing" [ref=e323] [cursor=pointer]:
+              - /url: /billing
+              - img [ref=e325]
+              - generic [ref=e327]: Billing
+          - listitem [ref=e328]:
+            - link "Firm Chat" [ref=e329] [cursor=pointer]:
+              - /url: /firm-chat
+              - img [ref=e331]
+              - generic [ref=e333]: Firm Chat
+          - listitem [ref=e334]:
+            - link "Notifications" [ref=e335] [cursor=pointer]:
+              - /url: /notifications
+              - img [ref=e337]
+              - generic [ref=e340]: Notifications
+      - generic [ref=e341]:
+        - button "Dark mode" [ref=e342]:
+          - img [ref=e343]
+          - generic [ref=e345]: Dark mode
+        - button "JAMM Concierge" [ref=e346]:
+          - img [ref=e347]
+          - generic [ref=e350]: JAMM Concierge
+        - link "Settings" [ref=e351] [cursor=pointer]:
+          - /url: /settings
+          - img [ref=e352]
+          - generic [ref=e355]: Settings
+        - button "Sign out" [ref=e356]:
+          - img [ref=e357]
+          - generic [ref=e360]: Sign out
+    - main [ref=e361]:
+      - generic [ref=e362]:
+        - heading "Clients" [level=1] [ref=e363]
+        - generic [ref=e364]:
+          - generic [ref=e365]:
+            - img [ref=e366]
+            - textbox "Search clients..." [ref=e369]
+          - generic [ref=e370]:
+            - button "List view" [ref=e371]:
+              - img [ref=e372]
+            - button "Card view" [ref=e373]:
+              - img [ref=e374]
+          - button "+ New Client" [ref=e379]
+        - generic [ref=e380]:
+          - combobox [ref=e381] [cursor=pointer]:
+            - option "All Entity Types" [selected]
+            - option "Individual"
+            - option "Business"
+            - option "Trust"
+            - option "Estate"
+          - combobox [ref=e382] [cursor=pointer]:
+            - option "All Clients" [selected]
+            - option "Active"
+            - option "Inactive"
+        - table [ref=e384]:
+          - rowgroup [ref=e385]:
+            - row "Client Email Phone Entity Type Status" [ref=e386]:
+              - columnheader "Client" [ref=e387]
+              - columnheader "Email" [ref=e388]
+              - columnheader "Phone" [ref=e389]
+              - columnheader "Entity Type" [ref=e390]
+              - columnheader "Status" [ref=e391]
+              - columnheader [ref=e392]
+          - rowgroup [ref=e393]:
+            - row "Goldstein Family Trust trustee@goldstein-example.com — trust Active View →" [ref=e394] [cursor=pointer]:
+              - cell "Goldstein Family Trust" [ref=e395]:
+                - generic [ref=e396]:
+                  - generic "Good" [ref=e397]
+                  - generic [ref=e399]: Goldstein Family Trust
+              - cell "trustee@goldstein-example.com" [ref=e400]
+              - cell "—" [ref=e401]
+              - cell "trust" [ref=e402]
+              - cell "Active" [ref=e403]:
+                - generic [ref=e404]: Active
+              - cell "View →" [ref=e405]
+            - row "Robert & Carol Tanner rtanner@example.com — individual Active View →" [ref=e406] [cursor=pointer]:
+              - cell "Robert & Carol Tanner" [ref=e407]:
+                - generic [ref=e408]:
+                  - generic "Good" [ref=e409]
+                  - generic [ref=e411]: Robert & Carol Tanner
+              - cell "rtanner@example.com" [ref=e412]
+              - cell "—" [ref=e413]
+              - cell "individual" [ref=e414]
+              - cell "Active" [ref=e415]:
+                - generic [ref=e416]: Active
+              - cell "View →" [ref=e417]
+            - row "Brightline Properties LLC accounts@brightline-example.com — business Active View →" [ref=e418] [cursor=pointer]:
+              - cell "Brightline Properties LLC" [ref=e419]:
+                - generic [ref=e420]:
+                  - generic "Good" [ref=e421]
+                  - generic [ref=e423]: Brightline Properties LLC
+              - cell "accounts@brightline-example.com" [ref=e424]
+              - cell "—" [ref=e425]
+              - cell "business" [ref=e426]
+              - cell "Active" [ref=e427]:
+                - generic [ref=e428]: Active
+              - cell "View →" [ref=e429]
+            - row "Patricia Nguyen pnguyen@example.com — individual Active View →" [ref=e430] [cursor=pointer]:
+              - cell "Patricia Nguyen" [ref=e431]:
+                - generic [ref=e432]:
+                  - generic "Good" [ref=e433]
+                  - generic [ref=e435]: Patricia Nguyen
+              - cell "pnguyen@example.com" [ref=e436]
+              - cell "—" [ref=e437]
+              - cell "individual" [ref=e438]
+              - cell "Active" [ref=e439]:
+                - generic [ref=e440]: Active
+              - cell "View →" [ref=e441]
+            - row "Acme Consulting LLC finance@acme-example.com — business Active View →" [ref=e442] [cursor=pointer]:
+              - cell "Acme Consulting LLC" [ref=e443]:
+                - generic [ref=e444]:
+                  - generic "Overdue invoice" [ref=e445]
+                  - generic [ref=e447]: Acme Consulting LLC
+              - cell "finance@acme-example.com" [ref=e448]
+              - cell "—" [ref=e449]
+              - cell "business" [ref=e450]
+              - cell "Active" [ref=e451]:
+                - generic [ref=e452]: Active
+              - cell "View →" [ref=e453]
+            - row "Marcus & Diana Webb webb@example.com — individual Active View →" [ref=e454] [cursor=pointer]:
+              - cell "Marcus & Diana Webb" [ref=e455]:
+                - generic [ref=e456]:
+                  - generic "Good" [ref=e457]
+                  - generic [ref=e459]: Marcus & Diana Webb
+              - cell "webb@example.com" [ref=e460]
+              - cell "—" [ref=e461]
+              - cell "individual" [ref=e462]
+              - cell "Active" [ref=e463]:
+                - generic [ref=e464]: Active
+              - cell "View →" [ref=e465]
+        - dialog [ref=e466]:
+          - generic [ref=e468]:
+            - generic [ref=e469]:
+              - generic [ref=e470]: New Client
+              - button "Close modal" [ref=e471]:
+                - img [ref=e472]
+            - generic [ref=e476]:
+              - generic [ref=e477]:
+                - generic [ref=e478]:
+                  - generic [ref=e479]: Client Name
+                  - textbox "Acme Corp" [ref=e481]
+                - generic [ref=e482]:
+                  - generic [ref=e483]: Entity Type
+                  - combobox [ref=e484]:
+                    - option "Select type" [disabled] [selected]
+                    - option "Individual"
+                    - option "Business"
+                    - option "Trust"
+                    - option "Estate"
+              - generic [ref=e485]:
+                - generic [ref=e486]:
+                  - generic [ref=e487]: Email
+                  - textbox "jane@acmecorp.com" [ref=e488]
+                - generic [ref=e489]:
+                  - generic [ref=e490]: Phone
+                  - textbox "(212) 555-0100" [ref=e491]
+            - generic [ref=e492]:
+              - button "Cancel" [ref=e493]
+              - button "Save Client" [ref=e494]
+    - generic [ref=e496]:
+      - generic [ref=e497]:
+        - generic [ref=e498]:
+          - generic [ref=e500]: "?"
+          - generic [ref=e501]: JAMM Concierge
+        - generic [ref=e502]:
+          - generic [ref=e503]:
+            - button "Toggle autopilot mode" [ref=e504]:
+              - img [ref=e505]
+              - generic [ref=e507]: Autopilot
+            - generic: Autopilot mode. When on, JAMM Concierge will navigate the app and open the right screen for you. You always complete and save the action yourself.
+          - button "Close concierge panel" [ref=e508]:
+            - img [ref=e509]
+      - generic [ref=e513]:
+        - paragraph [ref=e514]: "Ask me anything about JAMM PX. Here are a few places to start:"
+        - button "What should I set up first after signing up?" [ref=e515]
+        - button "How do I import my existing clients?" [ref=e516]
+        - button "How does the client portal work?" [ref=e517]
+      - generic [ref=e519]:
+        - textbox "Ask anything about JAMM PX..." [active] [ref=e520]
+        - button "Send message" [disabled] [ref=e521]:
+          - img [ref=e522]
+  - region "Notifications alt+T"
+  - button "Open Next.js Dev Tools" [ref=e9] [cursor=pointer]:
+    - img [ref=e10]
+  - alert [ref=e250]
