@@ -44,35 +44,222 @@ find frontend/src/components/concierge/ -name "*.tsx" | sort
 
 # Section 3: Task to perform
 
-Task: Add navigation status line to JAMM Concierge autopilot
+Task: Rebuild JAMM Concierge autopilot — Phase 3B + 4A
 
-Read frontend/src/components/concierge/ConciergePanel.tsx in full before writing anything.
+Read frontend/src/components/concierge/ConciergePanel.tsx in full before writing anything. Do not remove or modify any existing functionality. Add everything below on top of what exists.
 
-Fix 1 — Status message state
-Add a statusMessage state variable to ConciergePanel.tsx. Type is string, default is empty string.
+---
 
-Fix 2 — Set status message after every autopilot action
-After every emitConciergeAction call, set statusMessage to a human-readable description of what just happened. Use these exact strings:
-- Navigation to /clients → "Navigated to Clients"
-- Navigation to /clients/[slug] → "Navigated to [client name]"
-- Navigation to /settings/team → "Navigated to Team Settings"
-- Navigation to /templates → "Navigated to Engagement Templates"
-- Navigation to /integrations → "Navigated to Integrations"
-- Navigation to /billing → "Navigated to Billing"
-- Modal or drawer opened → "Opened [modal name]"
+Step 1 — Create frontend/src/lib/events/conciergeEvents.ts
 
-Fix 3 — Auto-clear status message
-Add a useEffect that watches statusMessage. When statusMessage is set to a non-empty string, clear it back to empty string after 2000ms. Cancel the timeout on cleanup.
+Create the file. Content:
 
-Fix 4 — Render status line
-Render the status message below the last assistant response in the chat area. Only render when statusMessage is non-empty. Use a small muted style. Add a Tailwind transition so it fades in on appear and fades out as it clears: use opacity-0 and opacity-100 with transition-opacity duration-500.
+// frontend/src/lib/events/conciergeEvents.ts
+
+const CONCIERGE_ACTION_EVENT = 'jamm:concierge-action'
+
+export interface ConciergeAction {
+  type: 'navigate' | 'open-modal' | 'navigate-and-open'
+  route?: string
+  modal?: string
+  prefill?: Record<string, string>
+}
+
+export function emitConciergeAction(action: ConciergeAction) {
+  window.dispatchEvent(new CustomEvent(CONCIERGE_ACTION_EVENT, { detail: action }))
+}
+
+export function onConciergeAction(handler: (action: ConciergeAction) => void): () => void {
+  const listener = (e: Event) => handler((e as CustomEvent<ConciergeAction>).detail)
+  window.addEventListener(CONCIERGE_ACTION_EVENT, listener)
+  return () => window.removeEventListener(CONCIERGE_ACTION_EVENT, listener)
+}
+
+export function setFormDirty(dirty: boolean) {
+  window.dispatchEvent(new CustomEvent('jamm:form-dirty', { detail: { dirty } }))
+}
+
+---
+
+Step 2 — Add autopilot imports to ConciergePanel.tsx
+
+Add to the existing import block at the top:
+
+import { useRouter } from 'next/navigation'
+import { emitConciergeAction } from '@/lib/events/conciergeEvents'
+
+Add Zap to the lucide-react import line alongside X and Send.
+
+---
+
+Step 3 — Add autopilot state and router to ConciergePanel
+
+Inside the ConciergePanel function, after the existing state declarations, add:
+
+const router = useRouter()
+const autopilotRef = useRef(false)
+const [autopilotOn, setAutopilotOn] = useState(false)
+const [statusMessage, setStatusMessage] = useState('')
+
+Add a useEffect that syncs autopilotRef when autopilotOn changes:
+useEffect(() => { autopilotRef.current = autopilotOn }, [autopilotOn])
+
+Add a useEffect that watches statusMessage and clears it after 2000ms:
+useEffect(() => {
+  if (!statusMessage) return
+  const t = setTimeout(() => setStatusMessage(''), 2000)
+  return () => clearTimeout(t)
+}, [statusMessage])
+
+---
+
+Step 4 — Add action detection and execution
+
+Add this function inside ConciergePanel, before the return statement:
+
+function handleConciergeAction(raw: string): string {
+  const ACTION_MARKER = 'CONCIERGE_ACTION:'
+  const actionIndex = raw.indexOf(ACTION_MARKER)
+  if (actionIndex === -1) return raw
+
+  const beforeAction = raw.slice(0, actionIndex).trim()
+  const actionLine = raw.slice(actionIndex + ACTION_MARKER.length).split('\n')[0].trim()
+
+  if (!autopilotRef.current) {
+    return 'To use autopilot navigation, turn on Autopilot using the toggle above.'
+  }
+
+  try {
+    const action: ConciergeAction = JSON.parse(actionLine)
+    executeAction(action)
+  } catch {}
+
+  return beforeAction || ''
+}
+
+Add this function inside ConciergePanel, before the return statement:
+
+function executeAction(action: ConciergeAction) {
+  const routeToLabel: Record<string, string> = {
+    '/clients': 'Navigated to Clients',
+    '/settings/team': 'Navigated to Team Settings',
+    '/engagements/templates': 'Navigated to Engagement Templates',
+    '/settings/integrations': 'Navigated to Integrations',
+    '/settings/billing': 'Navigated to Billing',
+  }
+
+  if (action.route) {
+    const clientMatch = action.route.match(/^\/clients\/([^/]+)$/)
+    if (clientMatch) {
+      const name = decodeURIComponent(clientMatch[1]).replace(/-/g, ' ')
+      const capitalized = name.replace(/\b\w/g, c => c.toUpperCase())
+      setStatusMessage(`Navigated to ${capitalized}`)
+    } else {
+      setStatusMessage(routeToLabel[action.route] ?? `Navigated to ${action.route}`)
+    }
+    router.push(action.route)
+  }
+
+  if (action.modal) {
+    const modalLabel: Record<string, string> = {
+      'new-client': 'Opened New Client drawer',
+      'new-engagement': 'Opened New Engagement drawer',
+      'invite-staff': 'Opened Invite Staff modal',
+      'new-template': 'Opened New Template drawer',
+    }
+    setTimeout(() => {
+      emitConciergeAction(action)
+      setStatusMessage(modalLabel[action.modal ?? ''] ?? 'Opened modal')
+    }, 500)
+  } else if (action.route) {
+    setTimeout(() => emitConciergeAction(action), 500)
+  }
+}
+
+---
+
+Step 5 — Wire action detection into the streaming response
+
+In the sendMessages function, find where the final streamed content is written to messages. After streaming completes, in the finally block or after the while loop ends, add a post-processing step:
+
+After streaming is complete, read the last message content. Pass it through handleConciergeAction(content). Update the last message with the returned string.
+
+The exact location: after the while loop and remaining buffer processing, before setStreaming(false), add:
+
+setMessages((prev) => {
+  const updated = [...prev]
+  const last = updated[updated.length - 1]
+  if (last.role === 'concierge') {
+    updated[updated.length - 1] = {
+      role: 'concierge',
+      content: handleConciergeAction(last.content),
+    }
+  }
+  return updated
+})
+
+---
+
+Step 6 — Add autopilot toggle to the header
+
+In the header div, between the title span and the X button, add:
+
+<button
+  onClick={() => setAutopilotOn((v) => !v)}
+  title={autopilotOn ? 'Autopilot on. I\'ll navigate for you.' : 'Autopilot off'}
+  className={`flex items-center gap-1 text-[11px] px-2 py-1 rounded-[4px] border border-[0.5px] transition-colors ${
+    autopilotOn
+      ? 'border-[#4A7FA5] bg-[#EBF4FB] text-[#4A7FA5] dark:bg-[#1a3a52] dark:text-[#7ab8d8]'
+      : 'border-[#C8CDD6] bg-transparent text-[#6B7280] dark:border-[#484848]'
+  }`}
+>
+  <Zap className="h-3 w-3" />
+  Autopilot
+</button>
+
+Below that button, if autopilotOn is true, render:
+<span className="text-[10px] text-[#4A7FA5] ml-1">on</span>
+
+Wait — keep it simpler. Just render the button as above. The active state styling is sufficient.
+
+---
+
+Step 7 — Add status line render
+
+In the message feed div, after the messages.map block and before the messagesEndRef div, add:
+
+<p
+  className={`text-[11px] text-[#6B7280] text-center transition-opacity duration-500 ${statusMessage ? 'opacity-100' : 'opacity-0'}`}
+  style={{ minHeight: 16 }}
+>
+  {statusMessage}
+</p>
+
+---
+
+Step 8 — Add resolve endpoint call for client slug
+
+In executeAction, when a client route is detected (clientMatch), before calling router.push, call the resolve endpoint to confirm the client exists. If the resolve fails, show a status message "Could not find client" and do not navigate.
+
+The resolve endpoint is GET /api/backend/concierge/clients/resolve?name=[decoded name].
+Use the same auth header pattern already used in fetchContext.
+If res.ok and data.id exists, proceed with router.push.
+If not, setStatusMessage('Could not find client') and return.
+
+Make executeAction async for this step.
+
+---
 
 After all steps:
-1. grep -n "statusMessage\|setStatusMessage" frontend/src/components/concierge/ConciergePanel.tsx
-2. grep -n "useEffect" frontend/src/components/concierge/ConciergePanel.tsx
-3. grep -n "transition-opacity\|opacity-0\|opacity-100" frontend/src/components/concierge/ConciergePanel.tsx
-4. npm run build from frontend directory — zero TypeScript errors
-5. Browser test: autopilot ON, "add a client" — status line "Navigated to Clients" appears below response and fades after 2 seconds
-6. Browser test: autopilot ON, "create an engagement for Patricia Nguyen" — status line "Navigated to Patricia Nguyen" appears and fades
-7. Report exact lines changed
 
+1. ls -la frontend/src/lib/events/conciergeEvents.ts
+2. grep -n "autopilotOn\|autopilotRef\|statusMessage" frontend/src/components/concierge/ConciergePanel.tsx
+3. grep -n "emitConciergeAction\|useRouter\|Zap" frontend/src/components/concierge/ConciergePanel.tsx
+4. grep -n "CONCIERGE_ACTION\|handleConciergeAction\|executeAction" frontend/src/components/concierge/ConciergePanel.tsx
+5. grep -n "setTimeout\|resolve" frontend/src/components/concierge/ConciergePanel.tsx
+6. python3 -c "from app.api.concierge.route import router; print('OK')"
+7. npm run build from frontend directory — zero TypeScript errors
+8. Browser test: autopilot OFF, send any message that would trigger navigation — panel shows nudge text, no navigation fires
+9. Browser test: autopilot ON, "add a client" — navigates to /clients, New Client modal opens, status line appears and fades
+10. Browser test: autopilot ON, "create an engagement for Patricia Nguyen" — navigates to her page, engagement drawer opens, status line shows her name
+11. Report exact lines added in each file

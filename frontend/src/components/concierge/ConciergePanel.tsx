@@ -143,6 +143,16 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
   const [streaming, setStreaming] = useState(false)
   const [showStarters, setShowStarters] = useState(true)
   const [autopilot, setAutopilot] = useState(false)
+  const [statusMessage, setStatusMessage] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const pending = sessionStorage.getItem('jamm_concierge_status')
+      if (pending) {
+        sessionStorage.removeItem('jamm_concierge_status')
+        return pending
+      }
+    }
+    return ''
+  })
 
   // Keep a ref so the async sendMessages callback always reads current value.
   const autopilotRef = useRef(false)
@@ -160,6 +170,13 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
   useEffect(() => {
     if (!isOpen) setAutopilot(false)
   }, [isOpen])
+
+  // Auto-clear status message after 2 seconds.
+  useEffect(() => {
+    if (!statusMessage) return
+    const timer = setTimeout(() => setStatusMessage(''), 2000)
+    return () => clearTimeout(timer)
+  }, [statusMessage])
 
   const fetchNotifications = useCallback(async () => {
     try {
@@ -285,6 +302,10 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
 
               const doEmit = (emitAction: ConciergeAction) => {
                 emitConciergeAction(emitAction)
+                if (emitAction.modal && !emitAction.route) {
+                  const label = MODAL_LABELS[emitAction.modal] ?? emitAction.modal
+                  setStatusMessage(`Opened ${label}`)
+                }
                 if (confirmText) {
                   setMessages((prev) => {
                     const updated = [...prev]
@@ -309,6 +330,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
                 // Decode percent-encoding and replace hyphens with spaces before resolving.
                 let finalRoute = action.route
                 let finalAction: ConciergeAction = action
+                let resolvedClientName: string | undefined
 
                 const clientSlugMatch = /^\/clients\/([^/]+)$/.exec(action.route)
                 if (clientSlugMatch) {
@@ -321,6 +343,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
                       )
                       finalRoute = `/clients/${res.data.id}`
                       finalAction = { ...action, route: finalRoute }
+                      resolvedClientName = res.data.name as string
                     } catch (err: unknown) {
                       const msg =
                         (err as { response?: { status?: number } })?.response?.status === 404
@@ -339,7 +362,29 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
                   }
                 }
 
+                // Write to sessionStorage BEFORE push so the new AppShell instance
+                // can read it if this component unmounts during cross-page navigation.
+                let navStatus = ''
+                if (finalRoute === '/clients') {
+                  navStatus = 'Navigated to Clients'
+                } else if (finalRoute.startsWith('/clients/') && resolvedClientName) {
+                  navStatus = `Navigated to ${resolvedClientName}`
+                } else if (finalRoute.startsWith('/clients/')) {
+                  navStatus = 'Navigated to Client'
+                } else if (finalRoute === '/settings/team') {
+                  navStatus = 'Navigated to Team Settings'
+                } else if (finalRoute === '/engagements/templates' || finalRoute === '/templates') {
+                  navStatus = 'Navigated to Engagement Templates'
+                } else if (finalRoute === '/settings/integrations' || finalRoute === '/integrations') {
+                  navStatus = 'Navigated to Integrations'
+                } else if (finalRoute === '/billing' || finalRoute === '/settings/billing') {
+                  navStatus = 'Navigated to Billing'
+                }
+                if (navStatus) {
+                  sessionStorage.setItem('jamm_concierge_status', navStatus)
+                }
                 router.push(finalRoute)
+                if (navStatus) setStatusMessage(navStatus)
                 const emitAction = finalAction
                 setTimeout(() => doEmit(emitAction), 500)
               } else {
@@ -590,6 +635,11 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
               </div>
             </div>
           ))}
+          <p
+            className={`text-[11px] text-[#9CA3AF] px-1 transition-opacity duration-500 ${statusMessage ? 'opacity-100' : 'opacity-0'}`}
+          >
+            {statusMessage || ' '}
+          </p>
           <div ref={messagesEndRef} />
         </div>
 
