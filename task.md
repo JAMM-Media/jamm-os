@@ -44,72 +44,40 @@ find frontend/src/components/concierge/ -name "*.tsx" | sort
 
 # Section 3: Task to perform
 
-Task: Add autopilot instructions to app/api/concierge/prompts.py
+Task: Restyle autopilot toggle button and add indicator line in ConciergePanel.tsx
 
-Read app/api/concierge/prompts.py in full before writing anything. Do not modify any existing content. Add only what is specified below.
+Read frontend/src/components/concierge/ConciergePanel.tsx in full before writing anything.
 
----
+Fix 1 — Replace the autopilot toggle button
 
-Step 1 — Add autopilot block to PHASE_1_SYSTEM_PROMPT
+Find the existing autopilot toggle button. Replace it with exactly this:
 
-Find the line: WHAT JAMM PX DOES NOT DO
+<button
+  onClick={() => setAutopilotOn((v) => !v)}
+  title="Autopilot mode. When on, JAMM Concierge will navigate the app and open the right screen for you. You always complete and save the action yourself."
+  className={`flex items-center gap-1 text-[11px] font-medium px-2 py-1 rounded-[4px] border border-[0.5px] transition-all duration-150 ${
+    autopilotOn
+      ? 'border-[#1F3148] bg-[#1F3148] text-white dark:border-[#4A7FA5] dark:bg-[#4A7FA5]'
+      : 'border-[#C8CDD6] dark:border-[#484848] bg-transparent text-[#6B7280] dark:text-[#9CA3AF] hover:border-[#1F3148] hover:text-[#1F3148] dark:hover:border-[#4A7FA5] dark:hover:text-[#4A7FA5]'
+  }`}
+>
+  <Zap className={`h-3 w-3 transition-all ${autopilotOn ? 'fill-white stroke-white' : 'fill-none'}`} />
+  Autopilot
+</button>
 
-Insert this entire block immediately before that section:
+Fix 2 — Add indicator line below the header
 
----
+Find the header div (the flex div containing the logo, title, autopilot button, and X button). Immediately after the closing tag of that header div, add:
 
-AUTOPILOT MODE
+{autopilotOn && (
+  <div className="px-4 py-1 bg-[#EBF4FB] dark:bg-[#1a3a52] border-b border-[0.5px] border-[#C8CDD6] dark:border-[#484848]">
+    <p className="text-[11px] text-[#4A7FA5] dark:text-[#7ab8d8]">Autopilot on. I'll navigate for you.</p>
+  </div>
+)}
 
-When the firm has autopilot enabled, you can navigate the application and open modals on their behalf. You signal an action by appending a CONCIERGE_ACTION: line at the very end of your response, after all human-readable text. The frontend detects this line, strips it from the displayed response, and executes the action.
-
-CONCIERGE_ACTION format: a single line containing CONCIERGE_ACTION: followed by a JSON object with no line breaks.
-
-Supported actions and when to use them:
-
-"add a client" or "create a new client" or "new client":
-CONCIERGE_ACTION: {"type":"navigate-and-open","route":"/clients","modal":"new-client"}
-
-"add a client named [name]":
-CONCIERGE_ACTION: {"type":"navigate-and-open","route":"/clients","modal":"new-client","prefill":{"name":"[name]"}}
-
-"create an engagement for [client name]":
-CONCIERGE_ACTION: {"type":"navigate-and-open","route":"/clients/[client-name-slug]","modal":"new-engagement","prefill":{"client":"[client name]"}}
-
-"invite a staff member" or "add a staff member":
-CONCIERGE_ACTION: {"type":"navigate-and-open","route":"/settings/team","modal":"invite-staff"}
-
-"send a magic-link to [client name]":
-CONCIERGE_ACTION: {"type":"navigate-and-open","route":"/clients/[client-name-slug]","modal":"magic-link"}
-
-"create an engagement template":
-CONCIERGE_ACTION: {"type":"navigate-and-open","route":"/engagements/templates","modal":"new-template"}
-
-"connect QuickBooks":
-CONCIERGE_ACTION: {"type":"navigate","route":"/settings/integrations"}
-
-"connect Stripe":
-CONCIERGE_ACTION: {"type":"navigate","route":"/settings/billing"}
-
-Rules for emitting CONCIERGE_ACTION:
-- Only emit when the firm's request clearly maps to one of the supported actions above.
-- Always place CONCIERGE_ACTION: as the last line of the response with no text after it.
-- The client name slug is the client name lowercased with spaces replaced by hyphens. Example: "Patricia Nguyen" becomes "patricia-nguyen".
-- Never emit CONCIERGE_ACTION for questions, explanations, or anything that does not map to a supported action.
-- If you are not sure whether autopilot is enabled, do not emit CONCIERGE_ACTION. The frontend handles the off state.
-
-Example response for "add a client" with autopilot on:
-Opening the New Client drawer for you.
-CONCIERGE_ACTION: {"type":"navigate-and-open","route":"/clients","modal":"new-client"}
-
-Example response for "create an engagement for Patricia Nguyen" with autopilot on:
-Navigating to Patricia Nguyen and opening a new engagement.
-CONCIERGE_ACTION: {"type":"navigate-and-open","route":"/clients/patricia-nguyen","modal":"new-engagement","prefill":{"client":"Patricia Nguyen"}}
-
----
-
-After adding the block:
-1. grep -n "CONCIERGE_ACTION\|autopilot\|Autopilot" app/api/concierge/prompts.py
-2. python3 -c "from app.api.concierge.route import router; print('OK')"
-3. Print lines surrounding the insertion point to confirm placement:
-   grep -n "WHAT JAMM PX DOES NOT DO\|AUTOPILOT MODE" app/api/concierge/prompts.py
-4. Report exact line numbers where the block was inserted
+After all changes:
+1. grep -n "Autopilot mode. When on\|navigate for you\|fill-white\|autopilotOn" frontend/src/components/concierge/ConciergePanel.tsx
+2. sed -n between the autopilot button onClick line and 20 lines after it — print the exact block
+3. npm run build from frontend directory — zero TypeScript errors
+4. Browser test: confirm tooltip text appears on hover, ON state is dark navy filled, OFF state is outline, indicator line appears below header when on
+5. Report exact lines changed
