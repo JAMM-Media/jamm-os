@@ -1,0 +1,237 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e13]:
+    - complementary [ref=e14]:
+      - generic [ref=e15]:
+        - generic [ref=e16]: JAMM PX
+        - button "Collapse sidebar" [ref=e17]:
+          - img [ref=e18]
+      - navigation [ref=e20]:
+        - list [ref=e21]:
+          - listitem [ref=e22]:
+            - link "Dashboard" [ref=e23] [cursor=pointer]:
+              - /url: /dashboard
+              - img [ref=e25]
+              - generic [ref=e30]: Dashboard
+          - listitem [ref=e31]:
+            - link "Clients" [ref=e32] [cursor=pointer]:
+              - /url: /clients
+              - img [ref=e34]
+              - generic [ref=e39]: Clients
+          - listitem [ref=e40]:
+            - link "Engagements" [ref=e41] [cursor=pointer]:
+              - /url: /engagements
+              - img [ref=e43]
+              - generic [ref=e46]: Engagements
+          - listitem [ref=e47]:
+            - link "Templates" [ref=e48] [cursor=pointer]:
+              - /url: /templates
+              - img [ref=e50]
+              - generic [ref=e54]: Templates
+          - listitem [ref=e55]:
+            - link "Tasks" [ref=e56] [cursor=pointer]:
+              - /url: /tasks
+              - img [ref=e58]
+              - generic [ref=e61]: Tasks
+          - listitem [ref=e62]:
+            - link "Timesheets" [ref=e63] [cursor=pointer]:
+              - /url: /timesheets
+              - img [ref=e65]
+              - generic [ref=e68]: Timesheets
+          - listitem [ref=e69]:
+            - link "Calendar" [ref=e70] [cursor=pointer]:
+              - /url: /calendar
+              - img [ref=e72]
+              - generic [ref=e74]: Calendar
+          - listitem [ref=e75]:
+            - link "Documents" [ref=e76] [cursor=pointer]:
+              - /url: /documents
+              - img [ref=e78]
+              - generic [ref=e81]: Documents
+          - listitem [ref=e82]:
+            - link "Billing" [ref=e83] [cursor=pointer]:
+              - /url: /billing
+              - img [ref=e85]
+              - generic [ref=e87]: Billing
+          - listitem [ref=e88]:
+            - link "Firm Chat" [ref=e89] [cursor=pointer]:
+              - /url: /firm-chat
+              - img [ref=e91]
+              - generic [ref=e93]: Firm Chat
+          - listitem [ref=e94]:
+            - link "Notifications" [ref=e95] [cursor=pointer]:
+              - /url: /notifications
+              - img [ref=e97]
+              - generic [ref=e100]: Notifications
+      - generic [ref=e101]:
+        - button "Dark mode" [ref=e102]:
+          - img [ref=e103]
+          - generic [ref=e105]: Dark mode
+        - button "JAMM Concierge" [ref=e106]:
+          - img [ref=e107]
+          - generic [ref=e110]: JAMM Concierge
+        - link "Settings" [ref=e111] [cursor=pointer]:
+          - /url: /settings
+          - img [ref=e112]
+          - generic [ref=e115]: Settings
+        - button "Sign out" [ref=e116]:
+          - img [ref=e117]
+          - generic [ref=e120]: Sign out
+    - main [ref=e121]:
+      - generic [ref=e122]:
+        - generic [ref=e123]:
+          - heading "Dashboard" [level=1] [ref=e124]
+          - paragraph [ref=e125]: Priority work across all clients
+        - generic [ref=e126]:
+          - generic [ref=e127]:
+            - generic [ref=e128]: Revenue This Month
+            - generic [ref=e129]: $0
+            - generic [ref=e130]: 0 invoices paid
+          - link "Outstanding AR $4,750 4 unpaid" [ref=e131] [cursor=pointer]:
+            - /url: /billing
+            - generic [ref=e132]:
+              - generic [ref=e133]: Outstanding AR
+              - generic [ref=e134]: $4,750
+              - generic [ref=e135]: 4 unpaid
+          - generic [ref=e136]:
+            - generic [ref=e137]: Unbilled WIP
+            - generic [ref=e138]: $0
+            - generic [ref=e139]: 0.0 hours
+          - generic [ref=e140]:
+            - generic [ref=e141]: Overdue Engagements
+            - generic [ref=e142]: "4"
+        - generic [ref=e143]:
+          - generic [ref=e144]:
+            - generic [ref=e145]: Work in Progress
+            - generic [ref=e146]:
+              - paragraph [ref=e147]: $0
+              - paragraph [ref=e148]: 0 hrs unbilled
+          - paragraph [ref=e150]: No unbilled work in progress.
+        - generic [ref=e151]:
+          - generic [ref=e153]:
+            - generic [ref=e154]: Upcoming Deadlines
+            - generic [ref=e155]:
+              - paragraph [ref=e156]: No deadlines in the next 14 days.
+              - paragraph [ref=e157]: Your runway is clear — keep it that way.
+          - generic [ref=e159]:
+            - generic [ref=e160]: Staff Utilization
+            - generic [ref=e161]:
+              - generic [ref=e163]:
+                - generic [ref=e164]: James Okafor
+                - generic [ref=e165]: 0%
+              - generic [ref=e168]:
+                - generic [ref=e169]: Tom Reyes
+                - generic [ref=e170]: 0%
+              - generic [ref=e173]:
+                - generic [ref=e174]: Test Run
+                - generic [ref=e175]: 0%
+              - generic [ref=e178]:
+                - generic [ref=e179]: Priya Mehta
+                - generic [ref=e180]: 0%
+              - generic [ref=e183]:
+                - generic [ref=e184]: Sarah Chen
+                - generic [ref=e185]: 0%
+        - generic [ref=e187]:
+          - generic [ref=e188]:
+            - generic [ref=e189]: Overdue Engagements
+            - generic [ref=e190]: "4"
+          - table [ref=e192]:
+            - rowgroup [ref=e193]:
+              - row "Client Engagement Type Deadline Days Overdue Staff Action" [ref=e194]:
+                - columnheader "Client" [ref=e195]
+                - columnheader "Engagement Type" [ref=e196]
+                - columnheader "Deadline" [ref=e197]
+                - columnheader "Days Overdue" [ref=e198]
+                - columnheader "Staff" [ref=e199]
+                - columnheader "Action" [ref=e200]
+            - rowgroup [ref=e201]:
+              - row "Acme Consulting LLC Tax Return 1120s 2026-03-15 78d — Mark Complete" [ref=e202]:
+                - cell "Acme Consulting LLC" [ref=e203]
+                - cell "Tax Return 1120s" [ref=e204]
+                - cell "2026-03-15" [ref=e205]
+                - cell "78d" [ref=e206]:
+                  - generic [ref=e207]: 78d
+                - cell "—" [ref=e208]
+                - cell "Mark Complete" [ref=e209]:
+                  - button "Mark Complete" [ref=e210]
+              - row "Marcus & Diana Webb Tax Return 1040 2026-04-15 47d — Mark Complete" [ref=e211]:
+                - cell "Marcus & Diana Webb" [ref=e212]
+                - cell "Tax Return 1040" [ref=e213]
+                - cell "2026-04-15" [ref=e214]
+                - cell "47d" [ref=e215]:
+                  - generic [ref=e216]: 47d
+                - cell "—" [ref=e217]
+                - cell "Mark Complete" [ref=e218]:
+                  - button "Mark Complete" [ref=e219]
+              - row "Test Client 16 Tax Return 1040 2026-04-15 47d — Mark Complete" [ref=e220]:
+                - cell "Test Client 16" [ref=e221]
+                - cell "Tax Return 1040" [ref=e222]
+                - cell "2026-04-15" [ref=e223]
+                - cell "47d" [ref=e224]:
+                  - generic [ref=e225]: 47d
+                - cell "—" [ref=e226]
+                - cell "Mark Complete" [ref=e227]:
+                  - button "Mark Complete" [ref=e228]
+              - row "Test Client 20 Tax Return 1040 2026-04-15 47d — Mark Complete" [ref=e229]:
+                - cell "Test Client 20" [ref=e230]
+                - cell "Tax Return 1040" [ref=e231]
+                - cell "2026-04-15" [ref=e232]
+                - cell "47d" [ref=e233]:
+                  - generic [ref=e234]: 47d
+                - cell "—" [ref=e235]
+                - cell "Mark Complete" [ref=e236]:
+                  - button "Mark Complete" [ref=e237]
+        - generic [ref=e238]:
+          - generic [ref=e240]: Awaiting Signature
+          - paragraph [ref=e242]: No documents awaiting signature.
+    - generic [ref=e243]:
+      - generic [ref=e244]:
+        - generic [ref=e246]: JAMM Concierge
+        - generic [ref=e247]:
+          - generic [ref=e248]:
+            - button "Toggle autopilot mode" [ref=e249]:
+              - img [ref=e250]
+              - generic [ref=e252]: Autopilot
+            - generic: Autopilot mode. When on, JAMM Concierge will navigate the app and open the right screen for you. You always complete and save the action yourself.
+          - button "Close concierge panel" [ref=e253]:
+            - img [ref=e254]
+      - paragraph [ref=e286]: Autopilot on. I'll navigate for you.
+      - generic [ref=e257]:
+        - paragraph [ref=e295]: add a client
+        - paragraph [ref=e296]:
+          - text: Goto
+          - strong [ref=e297]: Clients
+          - text: in the main navigation, then click
+          - strong [ref=e298]: New Client
+          - text: .Fill in the required fields:-
+          - strong [ref=e299]: Name
+          - text: (required)-
+          - strong [ref=e300]: Email
+          - text: (required for portal access and QuickBooks sync)-
+          - strong [ref=e301]: EntityType
+          - text: (individual, business, trust, or estate)Optional fields include phone, company name, tax ID, and address.Click
+          - strong [ref=e302]: Save
+          - text: . The client is now in your system and you can createengagements for them.
+        - paragraph [ref=e305]: add a client
+        - paragraph [ref=e308]:
+          - text: Goto
+          - strong [ref=e309]: Clients
+          - text: in the main navigation, then click
+          - strong [ref=e310]: New Client
+          - text: .Fill in:-
+          - strong [ref=e311]: Name
+          - text: (required)-
+          - strong [ref=e312]: Email
+          - text: (required for portal access and QuickBooks sync)-
+          - strong [ref=e313]: Entity Type
+          - text: "(individual, business, trust, or estate)Optional: phone, company name, tax ID, address.Click"
+          - strong [ref=e314]: Save
+          - text: .
+        - paragraph [ref=e263]
+      - generic [ref=e265]:
+        - textbox "Ask anything about JAMM PX..." [ref=e266]
+        - button "Send message" [disabled] [ref=e267]:
+          - img [ref=e268]
+  - region "Notifications alt+T"
+  - button "Open Next.js Dev Tools" [ref=e9] [cursor=pointer]:
+    - img [ref=e10]
+  - alert [ref=e271]

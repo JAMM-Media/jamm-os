@@ -141,7 +141,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
   const [input, setInput] = useState('')
   const [streaming, setStreaming] = useState(false)
   const [showStarters, setShowStarters] = useState(true)
-  const [autopilot, setAutopilot] = useState(false)
+  const [autopilotOn,setAutopilotOn] = useState(false)
   const [formDirty, setFormDirtyState] = useState(false)
   const [statusMessage, setStatusMessage] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -156,7 +156,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
 
   // Keep a ref so the async sendMessages callback always reads current value.
   const autopilotRef = useRef(false)
-  useEffect(() => { autopilotRef.current = autopilot }, [autopilot])
+  useEffect(() => { autopilotRef.current = autopilotOn }, [autopilotOn])
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -168,7 +168,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
 
   // Reset autopilot when panel closes (session-only per spec).
   useEffect(() => {
-    if (!isOpen) setAutopilot(false)
+    if (!isOpen) setAutopilotOn(false)
   }, [isOpen])
 
   useEffect(() => {
@@ -510,11 +510,11 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
             {/* Autopilot toggle */}
             <div className="relative group">
               <button
-                onClick={() => setAutopilot((v) => !v)}
+                onClick={() => setAutopilotOn((v) => !v)}
                 aria-label="Toggle autopilot mode"
                 className={
                   'flex items-center gap-1 h-6 px-2 rounded-full text-[11px] font-medium transition-colors ' +
-                  (autopilot
+                  (autopilotOn
                     ? 'bg-[#1F3148] text-white dark:bg-[#4A7FA5]'
                     : 'bg-[#E5E7EB] text-[#6B7280] dark:bg-[#333333] dark:text-[#9CA3AF] hover:bg-[#D1D5DB] dark:hover:bg-[#404040]')
                 }
@@ -543,7 +543,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
         </div>
 
         {/* Autopilot status line */}
-        {autopilot && (
+        {autopilotOn && (
           <div className="px-4 py-1.5 border-b border-[0.5px] border-[#C8CDD6] dark:border-[#484848] flex-shrink-0">
             <p className="text-[11px] text-[#6B7280]">Autopilot on. I'll navigate for you.</p>
           </div>
