@@ -278,132 +278,17 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
           }
         }
 
-        // Always strip CONCIERGE_ACTION: from displayed text.
-        // When autopilot is on, execute the action. When off, show a nudge.
-        // Search as a substring because SSE streaming swallows newlines.
-        const ACTION_MARKER = 'CONCIERGE_ACTION:'
-        const markerIdx = assembled.indexOf(ACTION_MARKER)
-        if (markerIdx !== -1) {
-          const cleanContent = assembled.slice(0, markerIdx).trim()
-          setMessages((prev) => {
-            const updated = [...prev]
+        setMessages((prev) => {
+          const updated = [...prev]
+          const last = updated[updated.length - 1]
+          if (last.role === 'concierge') {
             updated[updated.length - 1] = {
               role: 'concierge',
-              content: cleanContent,
+              content: handleConciergeAction(last.content),
             }
-            return updated
-          })
-
-          if (autopilotRef.current) {
-            try {
-              const jsonStr = assembled.slice(markerIdx + ACTION_MARKER.length).trim()
-              const action = JSON.parse(jsonStr) as ConciergeAction
-              const confirmText = buildActionConfirm(action)
-
-              const doEmit = (emitAction: ConciergeAction) => {
-                emitConciergeAction(emitAction)
-                if (emitAction.modal && !emitAction.route) {
-                  const label = MODAL_LABELS[emitAction.modal] ?? emitAction.modal
-                  setStatusMessage(`Opened ${label}`)
-                }
-                if (confirmText) {
-                  setMessages((prev) => {
-                    const updated = [...prev]
-                    updated[updated.length - 1] = {
-                      ...updated[updated.length - 1],
-                      actionConfirm: confirmText,
-                    }
-                    return updated
-                  })
-                }
-              }
-
-              if (action.route) {
-                if (isFormDirty()) {
-                  const ok = window.confirm(
-                    'You have unsaved changes. Navigate away?',
-                  )
-                  if (!ok) return
-                }
-
-                // Resolve /clients/[slug] to /clients/[uuid] when slug is not a UUID.
-                // Decode percent-encoding and replace hyphens with spaces before resolving.
-                let finalRoute = action.route
-                let finalAction: ConciergeAction = action
-                let resolvedClientName: string | undefined
-
-                const clientSlugMatch = /^\/clients\/([^/]+)$/.exec(action.route)
-                if (clientSlugMatch) {
-                  const slug = decodeURIComponent(clientSlugMatch[1]).replace(/-/g, ' ')
-                  const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(slug)
-                  if (!isUUID) {
-                    try {
-                      const res = await api.get(
-                        `/concierge/clients/resolve?name=${encodeURIComponent(slug)}`,
-                      )
-                      finalRoute = `/clients/${res.data.id}`
-                      finalAction = { ...action, route: finalRoute }
-                      resolvedClientName = res.data.name as string
-                    } catch (err: unknown) {
-                      const msg =
-                        (err as { response?: { status?: number } })?.response?.status === 404
-                          ? `I couldn't find a client matching '${slug}'. Check the name and try again.`
-                          : `I couldn't find a client matching '${slug}'. Check the name and try again.`
-                      setMessages((prev) => {
-                        const updated = [...prev]
-                        updated[updated.length - 1] = {
-                          ...updated[updated.length - 1],
-                          actionConfirm: msg,
-                        }
-                        return updated
-                      })
-                      return
-                    }
-                  }
-                }
-
-                // Write to sessionStorage BEFORE push so the new AppShell instance
-                // can read it if this component unmounts during cross-page navigation.
-                let navStatus = ''
-                if (finalRoute === '/clients') {
-                  navStatus = 'Navigated to Clients'
-                } else if (finalRoute.startsWith('/clients/') && resolvedClientName) {
-                  navStatus = `Navigated to ${resolvedClientName}`
-                } else if (finalRoute.startsWith('/clients/')) {
-                  navStatus = 'Navigated to Client'
-                } else if (finalRoute === '/settings/team') {
-                  navStatus = 'Navigated to Team Settings'
-                } else if (finalRoute === '/engagements/templates' || finalRoute === '/templates') {
-                  navStatus = 'Navigated to Engagement Templates'
-                } else if (finalRoute === '/settings/integrations' || finalRoute === '/integrations') {
-                  navStatus = 'Navigated to Integrations'
-                } else if (finalRoute === '/billing' || finalRoute === '/settings/billing') {
-                  navStatus = 'Navigated to Billing'
-                }
-                if (navStatus) {
-                  sessionStorage.setItem('jamm_concierge_status', navStatus)
-                }
-                router.push(finalRoute)
-                if (navStatus) setStatusMessage(navStatus)
-                const emitAction = finalAction
-                setTimeout(() => doEmit(emitAction), 500)
-              } else {
-                doEmit(action)
-              }
-            } catch {
-              // Invalid JSON -- leave full text displayed as-is.
-            }
-          } else {
-            setMessages((prev) => {
-              const updated = [...prev]
-              updated[updated.length - 1] = {
-                role: 'concierge',
-                content: 'To use autopilot navigation, turn on Autopilot using the toggle above.',
-              }
-              return updated
-            })
           }
-        }
+          return updated
+        })
       } catch {
         setMessages((prev) => {
           const updated = [...prev]
@@ -456,6 +341,101 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
     const apiThread = [...messages, apiMsg]
     setMessages(newThread)
     await sendMessages(apiThread)
+  }
+
+  function handleConciergeAction(raw: string): string {
+    const ACTION_MARKER = 'CONCIERGE_ACTION:'
+    const actionIndex = raw.indexOf(ACTION_MARKER)
+    if (actionIndex === -1) return raw
+
+    const beforeAction = raw.slice(0, actionIndex).trim()
+    const actionLine = raw.slice(actionIndex + ACTION_MARKER.length).split('\n')[0].trim()
+
+    if (!autopilotRef.current) {
+      return 'To use autopilot navigation, turn on Autopilot using the toggle above.'
+    }
+
+    try {
+      const action: ConciergeAction = JSON.parse(actionLine)
+      void executeAction(action)
+    } catch {}
+
+    return beforeAction || ''
+  }
+
+  async function executeAction(action: ConciergeAction) {
+    const routeToLabel: Record<string, string> = {
+      '/clients': 'Navigated to Clients',
+      '/settings/team': 'Navigated to Team Settings',
+      '/engagements/templates': 'Navigated to Engagement Templates',
+      '/settings/integrations': 'Navigated to Integrations',
+      '/settings/billing': 'Navigated to Billing',
+    }
+
+    if (action.route) {
+      const clientMatch = action.route.match(/^\/clients\/([^/]+)$/)
+      if (clientMatch) {
+        const name = decodeURIComponent(clientMatch[1]).replace(/-/g, ' ')
+        const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(name)
+        if (!isUUID) {
+          const token = localStorage.getItem('access_token')
+          const fetchHeaders: Record<string, string> = {}
+          if (token) fetchHeaders['Authorization'] = `Bearer ${token}`
+          try {
+            const res = await fetch(
+              `/api/backend/concierge/clients/resolve?name=${encodeURIComponent(name)}`,
+              { headers: fetchHeaders }
+            )
+            if (!res.ok) {
+              setStatusMessage('Could not find client')
+              return
+            }
+            const data = await res.json() as { id?: string; name?: string }
+            if (!data.id) {
+              setStatusMessage('Could not find client')
+              return
+            }
+            const capitalized = (data.name ?? name).replace(/\b\w/g, c => c.toUpperCase())
+            const resolvedRoute = `/clients/${data.id}`
+            if (isFormDirty()) {
+              const ok = window.confirm('You have unsaved changes. Navigate away?')
+              if (!ok) return
+            }
+            sessionStorage.setItem('jamm_concierge_status', `Navigated to ${capitalized}`)
+            router.push(resolvedRoute)
+            setStatusMessage(`Navigated to ${capitalized}`)
+            setTimeout(() => emitConciergeAction({ ...action, route: resolvedRoute }), 500)
+          } catch {
+            setStatusMessage('Could not find client')
+          }
+          return
+        }
+      }
+
+      const navLabel = routeToLabel[action.route] ?? `Navigated to ${action.route}`
+      if (isFormDirty()) {
+        const ok = window.confirm('You have unsaved changes. Navigate away?')
+        if (!ok) return
+      }
+      sessionStorage.setItem('jamm_concierge_status', navLabel)
+      router.push(action.route)
+      setStatusMessage(navLabel)
+    }
+
+    if (action.modal) {
+      const modalLabel: Record<string, string> = {
+        'new-client': 'Opened New Client drawer',
+        'new-engagement': 'Opened New Engagement drawer',
+        'invite-staff': 'Opened Invite Staff modal',
+        'new-template': 'Opened New Template drawer',
+      }
+      setTimeout(() => {
+        emitConciergeAction(action)
+        setStatusMessage(modalLabel[action.modal ?? ''] ?? 'Opened modal')
+      }, 500)
+    } else if (action.route) {
+      setTimeout(() => emitConciergeAction(action), 500)
+    }
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -636,9 +616,10 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
             </div>
           ))}
           <p
-            className={`text-[11px] text-[#9CA3AF] px-1 transition-opacity duration-500 ${statusMessage ? 'opacity-100' : 'opacity-0'}`}
+            className={`text-[11px] text-[#6B7280] text-center transition-opacity duration-500 ${statusMessage ? 'opacity-100' : 'opacity-0'}`}
+            style={{ minHeight: 16 }}
           >
-            {statusMessage || ' '}
+            {statusMessage}
           </p>
           <div ref={messagesEndRef} />
         </div>

@@ -1,38 +1,33 @@
 // frontend/src/lib/events/conciergeEvents.ts
 
+const CONCIERGE_ACTION_EVENT = 'jamm:concierge-action'
+
 export interface ConciergeAction {
-  type: 'navigate' | 'open_modal' | 'prefill'
+  type: 'navigate' | 'open-modal' | 'navigate-and-open'
   route?: string
   modal?: string
-  fields?: Record<string, string>
+  prefill?: Record<string, string>
 }
 
-const EVENT_NAME = 'concierge:action'
+export function emitConciergeAction(action: ConciergeAction) {
+  window.dispatchEvent(new CustomEvent(CONCIERGE_ACTION_EVENT, { detail: action }))
+}
 
-// Module-level dirty-form flag. Form components can call setFormDirty(true)
-// when they have unsaved input and setFormDirty(false) on save or reset.
+export function onConciergeAction(handler: (action: ConciergeAction) => void): () => void {
+  const listener = (e: Event) => handler((e as CustomEvent<ConciergeAction>).detail)
+  window.addEventListener(CONCIERGE_ACTION_EVENT, listener)
+  return () => window.removeEventListener(CONCIERGE_ACTION_EVENT, listener)
+}
+
+// Module-level dirty-form flag. Form components call setFormDirty(true) when
+// they have unsaved input and setFormDirty(false) on save or reset.
 let _formDirty = false
 
-export function setFormDirty(dirty: boolean): void {
+export function setFormDirty(dirty: boolean) {
   _formDirty = dirty
+  window.dispatchEvent(new CustomEvent('jamm:form-dirty', { detail: { dirty } }))
 }
 
 export function isFormDirty(): boolean {
   return _formDirty
-}
-
-export function emitConciergeAction(action: ConciergeAction): void {
-  if (typeof window === 'undefined') return
-  window.dispatchEvent(new CustomEvent(EVENT_NAME, { detail: action }))
-}
-
-/** Register a handler and return the cleanup function. */
-export function onConciergeAction(
-  handler: (action: ConciergeAction) => void,
-): () => void {
-  const listener = (e: Event) => {
-    handler((e as CustomEvent<ConciergeAction>).detail)
-  }
-  window.addEventListener(EVENT_NAME, listener)
-  return () => window.removeEventListener(EVENT_NAME, listener)
 }

@@ -27,7 +27,7 @@ export default function ClientsPage() {
   useEffect(() => {
     return onConciergeAction((action) => {
       if (action.modal === 'new-client') {
-        setPrefillName(action.fields?.name)
+        setPrefillName(action.prefill?.name)
         setModalOpen(true)
       }
     })
