@@ -44,40 +44,20 @@ find frontend/src/components/concierge/ -name "*.tsx" | sort
 
 # Section 3: Task to perform
 
-Task: Restyle autopilot toggle button and add indicator line in ConciergePanel.tsx
+Task: Fix JSX parse error in ConciergePanel.tsx
 
 Read frontend/src/components/concierge/ConciergePanel.tsx in full before writing anything.
 
-Fix 1 — Replace the autopilot toggle button
+The file has a JSX parse error reported at line 511. The error is "Expression expected" near the closing fragment </>. This is caused by an unbalanced JSX tag somewhere in the file.
 
-Find the existing autopilot toggle button. Replace it with exactly this:
+Do the following:
+1. Read the entire file
+2. Count every opening and closing div, button, span, and fragment tag to find the mismatch
+3. Fix the unbalanced tag — add or remove exactly what is needed to balance the JSX tree
+4. Do not change any logic, styling, or content. Only fix the structural balance.
 
-<button
-  onClick={() => setAutopilotOn((v) => !v)}
-  title="Autopilot mode. When on, JAMM Concierge will navigate the app and open the right screen for you. You always complete and save the action yourself."
-  className={`flex items-center gap-1 text-[11px] font-medium px-2 py-1 rounded-[4px] border border-[0.5px] transition-all duration-150 ${
-    autopilotOn
-      ? 'border-[#1F3148] bg-[#1F3148] text-white dark:border-[#4A7FA5] dark:bg-[#4A7FA5]'
-      : 'border-[#C8CDD6] dark:border-[#484848] bg-transparent text-[#6B7280] dark:text-[#9CA3AF] hover:border-[#1F3148] hover:text-[#1F3148] dark:hover:border-[#4A7FA5] dark:hover:text-[#4A7FA5]'
-  }`}
->
-  <Zap className={`h-3 w-3 transition-all ${autopilotOn ? 'fill-white stroke-white' : 'fill-none'}`} />
-  Autopilot
-</button>
-
-Fix 2 — Add indicator line below the header
-
-Find the header div (the flex div containing the logo, title, autopilot button, and X button). Immediately after the closing tag of that header div, add:
-
-{autopilotOn && (
-  <div className="px-4 py-1 bg-[#EBF4FB] dark:bg-[#1a3a52] border-b border-[0.5px] border-[#C8CDD6] dark:border-[#484848]">
-    <p className="text-[11px] text-[#4A7FA5] dark:text-[#7ab8d8]">Autopilot on. I'll navigate for you.</p>
-  </div>
-)}
-
-After all changes:
-1. grep -n "Autopilot mode. When on\|navigate for you\|fill-white\|autopilotOn" frontend/src/components/concierge/ConciergePanel.tsx
-2. sed -n between the autopilot button onClick line and 20 lines after it — print the exact block
-3. npm run build from frontend directory — zero TypeScript errors
-4. Browser test: confirm tooltip text appears on hover, ON state is dark navy filled, OFF state is outline, indicator line appears below header when on
-5. Report exact lines changed
+After fixing:
+1. npm run build from frontend directory — must show zero TypeScript errors and zero parse errors
+2. grep -n "autopilotOn\|relative group\|justify-center" frontend/src/components/concierge/ConciergePanel.tsx
+3. sed -n '370,425p' frontend/src/components/concierge/ConciergePanel.tsx — print the full header block to confirm structure is intact
+4. Report exactly which line was added or removed and what it was

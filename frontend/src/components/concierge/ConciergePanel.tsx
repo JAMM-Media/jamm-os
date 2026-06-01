@@ -508,29 +508,18 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
 
           <div className="flex items-center gap-2">
             {/* Autopilot toggle */}
-            <div className="relative group">
-              <button
-                onClick={() => setAutopilotOn((v) => !v)}
-                aria-label="Toggle autopilot mode"
-                className={
-                  'flex items-center gap-1 h-6 px-2 rounded-full text-[11px] font-medium transition-colors ' +
-                  (autopilotOn
-                    ? 'bg-[#1F3148] text-white dark:bg-[#4A7FA5]'
-                    : 'bg-[#E5E7EB] text-[#6B7280] dark:bg-[#333333] dark:text-[#9CA3AF] hover:bg-[#D1D5DB] dark:hover:bg-[#404040]')
-                }
-              >
-                <Zap className="h-3 w-3" />
-                <span>Autopilot</span>
-              </button>
-              {/* Tooltip */}
-              <div
-                className="absolute right-0 top-8 z-50 w-64 p-2.5 rounded-[8px] bg-[#1F3148] text-white text-[11px] leading-[1.5] shadow-lg pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity"
-                style={{ transition: 'opacity 150ms' }}
-              >
-                Autopilot mode. When on, JAMM Concierge will navigate the app and open
-                the right screen for you. You always complete and save the action yourself.
-              </div>
-            </div>
+            <button
+              onClick={() => setAutopilotOn((v) => !v)}
+              title="Autopilot mode. When on, JAMM Concierge will navigate the app and open the right screen for you. You always complete and save the action yourself."
+              className={`flex items-center gap-1 text-[11px] font-medium px-2 py-1 rounded-[4px] border border-[0.5px] transition-all duration-150 ${
+                autopilotOn
+                  ? 'border-[#1F3148] bg-[#1F3148] text-white dark:border-[#4A7FA5] dark:bg-[#4A7FA5]'
+                  : 'border-[#C8CDD6] dark:border-[#484848] bg-transparent text-[#6B7280] dark:text-[#9CA3AF] hover:border-[#1F3148] hover:text-[#1F3148] dark:hover:border-[#4A7FA5] dark:hover:text-[#4A7FA5]'
+              }`}
+            >
+              <Zap className={`h-3 w-3 transition-all ${autopilotOn ? 'fill-white stroke-white' : 'fill-none'}`} />
+              Autopilot
+            </button>
 
             <button
               onClick={onClose}
@@ -542,10 +531,9 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
           </div>
         </div>
 
-        {/* Autopilot status line */}
         {autopilotOn && (
-          <div className="px-4 py-1.5 border-b border-[0.5px] border-[#C8CDD6] dark:border-[#484848] flex-shrink-0">
-            <p className="text-[11px] text-[#6B7280]">Autopilot on. I'll navigate for you.</p>
+          <div className="px-4 py-1 bg-[#EBF4FB] dark:bg-[#1a3a52] border-b border-[0.5px] border-[#C8CDD6] dark:border-[#484848]">
+            <p className="text-[11px] text-[#4A7FA5] dark:text-[#7ab8d8]">Autopilot on. I'll navigate for you.</p>
           </div>
         )}
 
