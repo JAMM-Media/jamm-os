@@ -17,11 +17,12 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 ---
 
-# PRE-TASK — run before touching anything
-git add -A
-git commit -m "checkpoint before autopilot 3B fixes"
+# PRE-TASK
+source .venv/bin/activate
 python3 -c "from app.api.concierge.route import router; print('OK')"
 If the import fails, stop and report. Do not proceed.
+git add -A
+git commit -m "checkpoint before [task name]"
 
 ---
 
@@ -44,20 +45,21 @@ find frontend/src/components/concierge/ -name "*.tsx" | sort
 
 # Section 3: Task to perform
 
-Task: Fix JSX parse error in ConciergePanel.tsx
+Task: Improve autopilot tooltip styling in ConciergePanel.tsx
 
 Read frontend/src/components/concierge/ConciergePanel.tsx in full before writing anything.
 
-The file has a JSX parse error reported at line 511. The error is "Expression expected" near the closing fragment </>. This is caused by an unbalanced JSX tag somewhere in the file.
+Find this exact div:
+<div className="absolute right-0 top-8 z-50 hidden group-hover:block w-56 rounded-[6px] bg-[#1F3148] text-white text-[11px] leading-[1.5] px-3 py-2 shadow-lg">
 
-Do the following:
-1. Read the entire file
-2. Count every opening and closing div, button, span, and fragment tag to find the mismatch
-3. Fix the unbalanced tag — add or remove exactly what is needed to balance the JSX tree
-4. Do not change any logic, styling, or content. Only fix the structural balance.
+Replace it with:
+<div className="absolute right-0 top-9 z-50 opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto transition-opacity duration-150 w-60 rounded-[8px] bg-[#1F3148] text-white text-[11px] leading-[1.6] px-4 py-3 shadow-xl">
+  <div className="absolute -top-1.5 right-4 w-3 h-3 bg-[#1F3148] rotate-45 rounded-sm" />
 
-After fixing:
-1. npm run build from frontend directory — must show zero TypeScript errors and zero parse errors
-2. grep -n "autopilotOn\|relative group\|justify-center" frontend/src/components/concierge/ConciergePanel.tsx
-3. sed -n '370,425p' frontend/src/components/concierge/ConciergePanel.tsx — print the full header block to confirm structure is intact
-4. Report exactly which line was added or removed and what it was
+Do not remove the closing </div> of the tooltip. Do not change any other part of the file.
+
+After the change:
+1. grep -n "rounded-\[8px\]\|opacity-0\|rotate-45\|top-9" frontend/src/components/concierge/ConciergePanel.tsx
+2. sed -n between the tooltip div line and 5 lines after it
+3. npm run build from frontend directory — zero TypeScript errors
+4. Report exact lines changed
