@@ -19,15 +19,6 @@ export function onConciergeAction(handler: (action: ConciergeAction) => void): (
   return () => window.removeEventListener(CONCIERGE_ACTION_EVENT, listener)
 }
 
-// Module-level dirty-form flag. Form components call setFormDirty(true) when
-// they have unsaved input and setFormDirty(false) on save or reset.
-let _formDirty = false
-
 export function setFormDirty(dirty: boolean) {
-  _formDirty = dirty
   window.dispatchEvent(new CustomEvent('jamm:form-dirty', { detail: { dirty } }))
-}
-
-export function isFormDirty(): boolean {
-  return _formDirty
 }

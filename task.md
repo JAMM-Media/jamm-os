@@ -44,39 +44,170 @@ find frontend/src/components/concierge/ -name "*.tsx" | sort
 
 # Section 3: Task to perform
 
-Task: Create frontend/src/lib/events/conciergeEvents.ts
+Task: Add autopilot to ConciergePanel.tsx
 
-Create the directory if it does not exist: frontend/src/lib/events/
+Read frontend/src/components/concierge/ConciergePanel.tsx in full before writing anything. Do not remove or modify any existing code. Only add what is specified below.
 
-Create the file frontend/src/lib/events/conciergeEvents.ts with exactly this content:
+---
 
-// frontend/src/lib/events/conciergeEvents.ts
+STEP 1 — Add imports
 
-const CONCIERGE_ACTION_EVENT = 'jamm:concierge-action'
+Find the existing import block at the top of the file. Add these two lines after the existing imports:
 
-export interface ConciergeAction {
-  type: 'navigate' | 'open-modal' | 'navigate-and-open'
-  route?: string
-  modal?: string
-  prefill?: Record<string, string>
+import { useRouter } from 'next/navigation'
+import { Zap } from 'lucide-react'
+import { emitConciergeAction, type ConciergeAction } from '@/lib/events/conciergeEvents'
+
+Verification — print lines 1 to 15 of the file:
+sed -n '1,15p' frontend/src/components/concierge/ConciergePanel.tsx
+
+Do not proceed to Step 2 until this output shows all three new imports.
+
+---
+
+STEP 2 — Add state and router
+
+Find the line: const hasInitialized = useRef(false)
+
+Add these lines immediately after it:
+
+const router = useRouter()
+const autopilotRef = useRef(false)
+const [autopilotOn, setAutopilotOn] = useState(false)
+const [statusMessage, setStatusMessage] = useState('')
+
+Then add these two useEffects after the existing useEffects:
+
+useEffect(() => { autopilotRef.current = autopilotOn }, [autopilotOn])
+
+useEffect(() => {
+  if (!statusMessage) return
+  const t = setTimeout(() => setStatusMessage(''), 2000)
+  return () => clearTimeout(t)
+}, [statusMessage])
+
+Verification — print the section containing hasInitialized and the new state:
+grep -n "hasInitialized\|autopilotRef\|autopilotOn\|statusMessage\|useRouter" frontend/src/components/concierge/ConciergePanel.tsx
+
+Do not proceed to Step 3 until all five variables appear in the output.
+
+---
+
+STEP 3 — Add handleConciergeAction and executeAction functions
+
+Add these two functions inside the ConciergePanel component, immediately before the return statement.
+
+function handleConciergeAction(raw: string): string {
+  const ACTION_MARKER = 'CONCIERGE_ACTION:'
+  const actionIndex = raw.indexOf(ACTION_MARKER)
+  if (actionIndex === -1) return raw
+  const beforeAction = raw.slice(0, actionIndex).trim()
+  const actionLine = raw.slice(actionIndex + ACTION_MARKER.length).split('\n')[0].trim()
+  if (!autopilotRef.current) {
+    return 'To use autopilot navigation, turn on Autopilot using the toggle above.'
+  }
+  try {
+    const action: ConciergeAction = JSON.parse(actionLine)
+    executeAction(action)
+  } catch {}
+  return beforeAction || ''
 }
 
-export function emitConciergeAction(action: ConciergeAction) {
-  window.dispatchEvent(new CustomEvent(CONCIERGE_ACTION_EVENT, { detail: action }))
+async function executeAction(action: ConciergeAction) {
+  const routeToLabel: Record<string, string> = {
+    '/clients': 'Navigated to Clients',
+    '/settings/team': 'Navigated to Team Settings',
+    '/engagements/templates': 'Navigated to Engagement Templates',
+    '/settings/integrations': 'Navigated to Integrations',
+    '/settings/billing': 'Navigated to Billing',
+  }
+  if (action.route) {
+    const clientMatch = action.route.match(/^\/clients\/([^/]+)$/)
+    if (clientMatch) {
+      const name = decodeURIComponent(clientMatch[1]).replace(/-/g, ' ')
+      const capitalized = name.replace(/\b\w/g, (c) => c.toUpperCase())
+      setStatusMessage(`Navigated to ${capitalized}`)
+    } else {
+      setStatusMessage(routeToLabel[action.route] ?? `Navigated to ${action.route}`)
+    }
+    router.push(action.route)
+  }
+  if (action.modal) {
+    const modalLabel: Record<string, string> = {
+      'new-client': 'Opened New Client drawer',
+      'new-engagement': 'Opened New Engagement drawer',
+      'invite-staff': 'Opened Invite Staff modal',
+      'new-template': 'Opened New Template drawer',
+    }
+    setTimeout(() => {
+      emitConciergeAction(action)
+      setStatusMessage(modalLabel[action.modal ?? ''] ?? 'Opened modal')
+    }, 500)
+  } else if (action.route) {
+    setTimeout(() => emitConciergeAction(action), 500)
+  }
 }
 
-export function onConciergeAction(handler: (action: ConciergeAction) => void): () => void {
-  const listener = (e: Event) => handler((e as CustomEvent<ConciergeAction>).detail)
-  window.addEventListener(CONCIERGE_ACTION_EVENT, listener)
-  return () => window.removeEventListener(CONCIERGE_ACTION_EVENT, listener)
-}
+Verification — print the last 80 lines of the file:
+tail -80 frontend/src/components/concierge/ConciergePanel.tsx
 
-export function setFormDirty(dirty: boolean) {
-  window.dispatchEvent(new CustomEvent('jamm:form-dirty', { detail: { dirty } }))
-}
+Do not proceed to Step 4 until handleConciergeAction and executeAction are visible in the output.
 
-After creating the file:
-1. ls -la frontend/src/lib/events/conciergeEvents.ts
-2. cat frontend/src/lib/events/conciergeEvents.ts
-3. npm run build from frontend directory — zero TypeScript errors
-4. Report the exact output of all three commands
+---
+
+STEP 4 — Add autopilot toggle to header and status line to message feed, wire action detection into streaming
+
+4a — Find the header div containing the JAMM Concierge title span and the X close button. Add this button between the title span and the X button:
+
+<button
+  onClick={() => setAutopilotOn((v) => !v)}
+  title={autopilotOn ? "Autopilot on. I'll navigate for you." : 'Autopilot off'}
+  className={`flex items-center gap-1 text-[11px] px-2 py-1 rounded-[4px] border border-[0.5px] transition-colors ${
+    autopilotOn
+      ? 'border-[#4A7FA5] bg-[#EBF4FB] text-[#4A7FA5] dark:bg-[#1a3a52] dark:text-[#7ab8d8]'
+      : 'border-[#C8CDD6] bg-transparent text-[#6B7280] dark:border-[#484848]'
+  }`}
+>
+  <Zap className="h-3 w-3" />
+  Autopilot
+</button>
+
+4b — Find the line: <div ref={messagesEndRef} />
+Add this immediately before it:
+
+<p
+  className={`text-[11px] text-[#6B7280] text-center transition-opacity duration-500 ${statusMessage ? 'opacity-100' : 'opacity-0'}`}
+  style={{ minHeight: 16 }}
+>
+  {statusMessage}
+</p>
+
+4c — Find the sendMessages function. After the streaming while loop completes and before setStreaming(false), add:
+
+setMessages((prev) => {
+  const updated = [...prev]
+  const last = updated[updated.length - 1]
+  if (last.role === 'concierge') {
+    updated[updated.length - 1] = {
+      role: 'concierge',
+      content: handleConciergeAction(last.content),
+    }
+  }
+  return updated
+})
+
+Verification — run all four of these and include every line of output:
+1. grep -n "Autopilot\|autopilotOn\|Zap" frontend/src/components/concierge/ConciergePanel.tsx
+2. grep -n "statusMessage\|minHeight" frontend/src/components/concierge/ConciergePanel.tsx
+3. grep -n "handleConciergeAction" frontend/src/components/concierge/ConciergePanel.tsx
+4. npm run build from frontend directory — zero TypeScript errors
+
+Do not report success unless all four verifications pass and the build is clean.
+
+---
+
+Final verification — browser tests:
+1. Open the app. Confirm the Autopilot button appears in the Concierge panel header next to the X button.
+2. Autopilot OFF, type "add a client" — confirm nudge text appears, no navigation fires.
+3. Autopilot ON, type "add a client" — confirm navigation to /clients, New Client modal opens, status line appears and fades.
+4. Report exactly what happened in each browser test including any errors in the console.

@@ -9,7 +9,6 @@ import { useAuth } from '@/lib/hooks/useAuth'
 import api from '@/lib/api'
 import {
   emitConciergeAction,
-  isFormDirty,
   type ConciergeAction,
 } from '@/lib/events/conciergeEvents'
 
@@ -143,6 +142,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
   const [streaming, setStreaming] = useState(false)
   const [showStarters, setShowStarters] = useState(true)
   const [autopilot, setAutopilot] = useState(false)
+  const [formDirty, setFormDirtyState] = useState(false)
   const [statusMessage, setStatusMessage] = useState(() => {
     if (typeof window !== 'undefined') {
       const pending = sessionStorage.getItem('jamm_concierge_status')
@@ -170,6 +170,14 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
   useEffect(() => {
     if (!isOpen) setAutopilot(false)
   }, [isOpen])
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      setFormDirtyState((e as CustomEvent<{ dirty: boolean }>).detail.dirty)
+    }
+    window.addEventListener('jamm:form-dirty', handler)
+    return () => window.removeEventListener('jamm:form-dirty', handler)
+  }, [])
 
   // Auto-clear status message after 2 seconds.
   useEffect(() => {
@@ -397,7 +405,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
             }
             const capitalized = (data.name ?? name).replace(/\b\w/g, c => c.toUpperCase())
             const resolvedRoute = `/clients/${data.id}`
-            if (isFormDirty()) {
+            if (formDirty) {
               const ok = window.confirm('You have unsaved changes. Navigate away?')
               if (!ok) return
             }
@@ -413,7 +421,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
       }
 
       const navLabel = routeToLabel[action.route] ?? `Navigated to ${action.route}`
-      if (isFormDirty()) {
+      if (formDirty) {
         const ok = window.confirm('You have unsaved changes. Navigate away?')
         if (!ok) return
       }
