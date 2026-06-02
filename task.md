@@ -67,29 +67,36 @@ find /home/corby/jamm-os/frontend/src/components/concierge/ -name "*.tsx" | sort
 
 # Section 3: Task to perform
 
-Task: Fix handleConciergeAction to show response text when autopilot is OFF in ConciergePanel.tsx
+Task: Fix prompts.py — require prose before CONCIERGE_ACTION and add autopilot-off behavior
 
 VERIFY BEFORE ACT:
 Run this and paste the full output:
-sed -n '383,397p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+sed -n '265,280p' /home/corby/jamm-os/app/api/concierge/prompts.py
 
 Paste before touching anything.
 
-Find this exact block:
-    if (!autopilotRef.current) {
-      return 'To use autopilot navigation, turn on Autopilot using the toggle above.'
-    }
+Make these two changes:
 
-Replace it with:
-    if (!autopilotRef.current) {
-      return beforeAction || 'To navigate, turn on Autopilot using the toggle above.'
-    }
+Change 1: Find this rule line:
+- Always place CONCIERGE_ACTION: as the last line of the response with no text after it.
+
+Replace with:
+- Always place CONCIERGE_ACTION: as the last line of the response with no text after it.
+- Always write at least one sentence of human-readable text before emitting CONCIERGE_ACTION. Never emit CONCIERGE_ACTION as the only line in a response.
+- If autopilot is off, never emit CONCIERGE_ACTION. Instead give a full prose answer explaining what the user should do and where to go.
+
+Change 2: Find the example response for "add a client":
+CONCIERGE_ACTION: {"type":"navigate-and-open","route":"/clients","modal":"new-client"}
+
+Replace with:
+Opening the New Client drawer for you now.
+CONCIERGE_ACTION: {"type":"navigate-and-open","route":"/clients","modal":"new-client"}
 
 Do not change anything else.
 
 VERIFY AFTER ACT:
-1. sed -n '383,397p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
-2. Confirm the change shows beforeAction in the return
-3. cd /home/corby/jamm-os/frontend
-4. npm run build — zero TypeScript errors
-5. Report exact line changed
+1. sed -n '265,280p' /home/corby/jamm-os/app/api/concierge/prompts.py
+2. Confirm new rules are present
+3. Confirm example has prose before the action line
+4. python3 -c "from app.api.concierge.route import router; print('OK')"
+5. Report exact lines changed
