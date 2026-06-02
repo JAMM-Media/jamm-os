@@ -142,6 +142,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
   const [streaming, setStreaming] = useState(false)
   const [showStarters, setShowStarters] = useState(true)
   const [autopilotOn,setAutopilotOn] = useState(false)
+  const [suggestions, setSuggestions] = useState<string[]>([])
   const [formDirty, setFormDirtyState] = useState(false)
   const [statusMessage, setStatusMessage] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -281,6 +282,22 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
           }
           return updated
         })
+        const lower = assembled.toLowerCase()
+        const chips: string[] = []
+        if (lower.includes('client') || lower.includes('import')) {
+          chips.push('Go to Clients', 'Import clients')
+        } else if (lower.includes('engagement')) {
+          chips.push('Go to Engagements', 'New engagement')
+        } else if (lower.includes('settings') || lower.includes('team') || lower.includes('staff')) {
+          chips.push('Go to Settings')
+        } else if (lower.includes('billing') || lower.includes('invoice') || lower.includes('stripe')) {
+          chips.push('Go to Billing')
+        } else if (lower.includes('document')) {
+          chips.push('Go to Documents')
+        } else {
+          chips.push('Go to Dashboard')
+        }
+        setSuggestions(chips.slice(0, 3))
       } catch {
         setMessages((prev) => {
           const updated = [...prev]
@@ -311,6 +328,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
     const msg = (text ?? input).trim()
     if (!msg || streaming) return
     setInput('')
+    setSuggestions([])
     const hardcoded = text ? HARDCODED_RESPONSES[text] : undefined
     if (hardcoded) {
       const userMsg: Message = { role: 'user', content: msg }
@@ -333,6 +351,21 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
     const apiThread = [...messages, apiMsg]
     setMessages(newThread)
     await sendMessages(apiThread)
+  }
+
+  function handleSuggestion(label: string) {
+    const routes: Record<string, string> = {
+      'Go to Clients': '/clients',
+      'Go to Engagements': '/engagements',
+      'Go to Settings': '/settings',
+      'Go to Billing': '/billing',
+      'Go to Documents': '/documents',
+      'Go to Dashboard': '/dashboard',
+      'Import clients': '/clients',
+      'New engagement': '/engagements',
+    }
+    const route = routes[label]
+    if (route) router.push(route)
   }
 
   function handleConciergeAction(raw: string): string {
@@ -566,7 +599,8 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
           )}
 
           {messages.map((msg, i) => (
-            <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} items-start gap-2`}>
+            <div key={i}>
+            <div className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} items-start gap-2`}>
               {msg.role === 'concierge' && (
                 <div className="flex-shrink-0 w-6 h-6 rounded-full bg-[#1F3148] flex items-center justify-center mt-1">
                   <span className="text-[9px] font-medium text-white">JC</span>
@@ -601,6 +635,20 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
                   <p className="text-[11px] text-[#6B7280] mt-1 italic">{msg.actionConfirm}</p>
                 )}
               </div>
+            </div>
+            {autopilotOn && suggestions.length > 0 && i === messages.length - 1 && msg.role === 'concierge' && (
+              <div className="flex flex-wrap gap-2 mt-2 ml-8">
+                {suggestions.map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => handleSuggestion(s)}
+                    className="text-[11px] font-medium px-3 py-1.5 rounded-full border border-[#C8CDD6] dark:border-[#484848] text-[#1F3148] dark:text-[#EDEEF0] bg-white dark:bg-[#2D2D2D] hover:border-[#4A7FA5] hover:text-[#4A7FA5] transition-colors"
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+            )}
             </div>
           ))}
           <p
