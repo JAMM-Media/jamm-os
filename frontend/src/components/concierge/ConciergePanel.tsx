@@ -584,7 +584,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
           {messages.map((msg, i) => (
             <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
               <div
-                className="text-[13px] leading-[1.6] px-3 py-2 rounded-[12px] max-w-[75%]"
+                className={`text-[13px] leading-[1.6] px-3 py-2 rounded-[12px] max-w-[75%] ${msg.role === 'user' ? 'text-white' : ''}`}
                 style={
                   msg.role === 'user'
                     ? { background: '#1F3148', color: '#FFFFFF' }
