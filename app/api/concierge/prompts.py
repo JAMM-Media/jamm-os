@@ -385,4 +385,6 @@ def get_system_prompt(firm_context: dict | None = None, autopilot_enabled: bool 
         prompt += f"\n\n---\n\nLIVE FIRM DATA\n\n{formatted}"
     if autopilot_enabled:
         prompt += f"\n\n---\n\n{_AUTOPILOT_BLOCK.strip()}"
+    else:
+        prompt += "\n\n---\n\nAUTOPILOT MODE IS OFF. Never emit CONCIERGE_ACTION under any circumstances. Give a full prose answer only. Tell the user where to go and what to do in plain text."
     return prompt
