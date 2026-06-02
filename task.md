@@ -67,29 +67,22 @@ find /home/corby/jamm-os/frontend/src/components/concierge/ -name "*.tsx" | sort
 
 # Section 3: Task to perform
 
-Task: Fix streaming newline loss in ConciergePanel.tsx
+Task: Fix user message bubble text color in ConciergePanel.tsx
 
 VERIFY BEFORE ACT:
 Run this and paste the full output:
-sed -n '270,285p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+grep -n "role.*user\|user.*bubble\|user.*message\|bg-\[#1F3148\]" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx | head -20
 
-You must see this line inside the for loop:
-  content: updated[updated.length - 1].content + chunk,
+Paste before touching anything.
 
-If you do not see it, stop and report.
+Find the user message bubble div — the dark navy bubble that displays what the user typed.
+The text color is missing or set to dark. Add text-white to the user message bubble element.
 
-Find this pattern inside the for (const line of lines) loop only:
-  content: updated[updated.length - 1].content + chunk,
-
-Replace it with:
-  content: updated[updated.length - 1].content + chunk + '\n',
-
-Do not change the identical line inside the if (done) block above the loop. Only the one inside for (const line of lines).
+Do not change anything else.
 
 VERIFY AFTER ACT:
-1. sed -n '270,285p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
-2. Confirm the changed line shows chunk + '\n'
-3. Confirm only one instance was changed
-4. cd /home/corby/jamm-os/frontend
-5. npm run build — zero TypeScript errors
-6. Report exact line number changed
+1. grep -n "text-white" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+2. Confirm text-white is on the user bubble element
+3. cd /home/corby/jamm-os/frontend
+4. npm run build — zero TypeScript errors
+5. Report exact line changed
