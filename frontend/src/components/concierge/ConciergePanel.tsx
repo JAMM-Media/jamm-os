@@ -592,17 +592,19 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
                 }
               >
                 {msg.content ? (
-                  <ReactMarkdown
-                    components={{
-                      p: ({ children }: { children?: React.ReactNode }) => <p className="mb-1 last:mb-0">{children}</p>,
-                      ol: ({ children }: { children?: React.ReactNode }) => <ol className="list-decimal pl-4 my-1 space-y-0.5">{children}</ol>,
-                      ul: ({ children }: { children?: React.ReactNode }) => <ul className="list-disc pl-4 my-1 space-y-0.5">{children}</ul>,
-                      li: ({ children }: { children?: React.ReactNode }) => <li className="leading-snug">{children}</li>,
-                      strong: ({ children }: { children?: React.ReactNode }) => <strong className="font-medium">{children}</strong>,
-                    }}
-                  >
-                    {msg.content}
-                  </ReactMarkdown>
+                  <div className="prose prose-sm max-w-none text-[13px] text-[#374151] dark:text-[#9CA3AF]">
+                    <ReactMarkdown
+                      components={{
+                        ul: ({node, ...props}) => <ul className="list-disc list-outside ml-4 my-1 space-y-0.5" {...props} />,
+                        ol: ({node, ...props}) => <ol className="list-decimal list-outside ml-4 my-1 space-y-0.5" {...props} />,
+                        li: ({node, ...props}) => <li className="leading-snug" {...props} />,
+                        p: ({node, ...props}) => <p className="mb-1 last:mb-0" {...props} />,
+                        strong: ({node, ...props}) => <strong className="font-medium text-[#1F3148] dark:text-[#EDEEF0]" {...props} />,
+                      }}
+                    >
+                      {msg.content}
+                    </ReactMarkdown>
+                  </div>
                 ) : streaming && i === messages.length - 1 ? (
                   <span className="text-[13px] text-[#6B7280] animate-pulse">Thinking...</span>
                 ) : null}
