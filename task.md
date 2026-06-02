@@ -67,25 +67,43 @@ find /home/corby/jamm-os/frontend/src/components/concierge/ -name "*.tsx" | sort
 
 # Section 3: Task to perform
 
-Task: Fix markdown rendering in ConciergePanel.tsx — nested bullets and spacing
+# Section 3: Task to perform
+
+Task: Fix markdown rendering in ConciergePanel.tsx — responses rendering as plain text
 
 VERIFY BEFORE ACT:
 Run this and paste the full output:
-grep -n "markdown\|prose\|ReactMarkdown\|remark\|rehype" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+grep -n "ReactMarkdown\|remark\|rehype\|markdown" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-Paste the output before touching anything.
+Then run:
+grep -n "role.*concierge\|concierge.*content\|message.*content" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-The AI response card is rendering nested bullet points as inline dashes instead of proper list items. Find the markdown renderer component used to display concierge responses.
+Paste both outputs before touching anything.
 
-Make these fixes:
-1. Ensure ReactMarkdown or equivalent is rendering ul, ol, and li elements with proper list styling
-2. Add Tailwind prose classes or explicit list styling so nested bullets render as indented list items not inline text
-3. Tighten paragraph spacing inside the response card
+The concierge response is rendering as raw text with no markdown parsing — bold markers showing as **, line breaks missing, bullets not rendering. The fix is to pipe the content through ReactMarkdown.
+
+If ReactMarkdown is not already installed, install it:
+cd /home/corby/jamm-os/frontend
+npm install react-markdown
+
+Then in the response rendering block, replace the raw text display with:
+<ReactMarkdown
+  className="prose prose-sm max-w-none text-[13px] text-[#374151] dark:text-[#9CA3AF]"
+  components={{
+    ul: ({node, ...props}) => <ul className="list-disc list-outside ml-4 my-1 space-y-0.5" {...props} />,
+    ol: ({node, ...props}) => <ol className="list-decimal list-outside ml-4 my-1 space-y-0.5" {...props} />,
+    li: ({node, ...props}) => <li className="leading-snug" {...props} />,
+    p: ({node, ...props}) => <p className="mb-1 last:mb-0" {...props} />,
+    strong: ({node, ...props}) => <strong className="font-medium text-[#1F3148] dark:text-[#EDEEF0]" {...props} />,
+  }}
+>
+  {message.content}
+</ReactMarkdown>
 
 Do not change anything outside the response rendering block.
 
 VERIFY AFTER ACT:
-1. grep -n "markdown\|prose\|ul\|ol\|li" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+1. grep -n "ReactMarkdown" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 2. cd /home/corby/jamm-os/frontend
 3. npm run build — zero TypeScript errors
 4. Report exact changes made
