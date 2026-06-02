@@ -389,7 +389,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
     const actionLine = raw.slice(actionIndex + ACTION_MARKER.length).split('\n')[0].trim()
 
     if (!autopilotRef.current) {
-      return 'To use autopilot navigation, turn on Autopilot using the toggle above.'
+      return beforeAction || 'To navigate, turn on Autopilot using the toggle above.'
     }
 
     try {
