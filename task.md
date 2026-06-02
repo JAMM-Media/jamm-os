@@ -67,44 +67,59 @@ find /home/corby/jamm-os/frontend/src/components/concierge/ -name "*.tsx" | sort
 
 # Section 3: Task to perform
 
-Task: Add JC sender badge to concierge response bubble in ConciergePanel.tsx
+Task: Add action suggestion chips after concierge responses in ConciergePanel.tsx
 
 VERIFY BEFORE ACT:
 Run this and paste the full output:
-grep -n "justify-start\|concierge.*bubble\|role.*concierge" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx | head -20
+grep -n "assembled\|setMessages\|role.*concierge\|autopilotOn" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx | tail -30
 
 Paste before touching anything.
 
-Find the concierge message bubble — the div that renders when msg.role === 'concierge'.
-Add a small JC badge to the top-left of the response, outside and above the bubble.
+After each concierge response renders, show 2-3 tappable action chips below the bubble when autopilot is ON. These chips suggest the next logical action based on the response content.
 
-The badge should:
-- Be a small circle, 24x24px
-- Background: #1F3148
-- Text: "JC" in white, 9px, font-medium
-- Sit to the left of the response bubble, vertically aligned to the top
-- Match the existing design system
+Changes needed:
 
-The structure should change from:
-  <div className="flex justify-start">
-    <div [bubble]>...</div>
-  </div>
+1. Add a suggestions state:
+const [suggestions, setSuggestions] = useState<string[]>([])
 
-To:
-  <div className="flex justify-start items-start gap-2">
-    {msg.role === 'concierge' && (
-      <div className="flex-shrink-0 w-6 h-6 rounded-full bg-[#1F3148] flex items-center justify-center mt-1">
-        <span className="text-[9px] font-medium text-white">JC</span>
-      </div>
-    )}
-    <div [bubble]>...</div>
-  </div>
+2. After the full response is assembled and set, generate suggestions. Use a simple keyword match on the assembled string:
+- If assembled includes "client" or "import" → suggest "Go to Clients", "Import clients"
+- If assembled includes "engagement" → suggest "Go to Engagements", "New engagement"
+- If assembled includes "settings" or "team" or "staff" → suggest "Go to Settings"
+- If assembled includes "billing" or "invoice" or "stripe" → suggest "Go to Billing"
+- If assembled includes "document" → suggest "Go to Documents"
+- Default → suggest "Go to Dashboard"
+Always limit to maximum 3 chips.
 
-Do not change the user bubble layout.
+3. Render chips below the last concierge message bubble when autopilotOn is true and suggestions.length > 0:
+<div className="flex flex-wrap gap-2 mt-2 ml-8">
+  {suggestions.map((s) => (
+    <button
+      key={s}
+      onClick={() => handleSuggestion(s)}
+      className="text-[11px] font-medium px-3 py-1.5 rounded-full border border-[#C8CDD6] dark:border-[#484848] text-[#1F3148] dark:text-[#EDEEF0] bg-white dark:bg-[#2D2D2D] hover:border-[#4A7FA5] hover:text-[#4A7FA5] transition-colors"
+    >
+      {s}
+    </button>
+  ))}
+</div>
+
+4. Add handleSuggestion function that navigates using the existing router:
+- "Go to Clients" → router.push('/clients')
+- "Go to Engagements" → router.push('/engagements')
+- "Go to Settings" → router.push('/settings')
+- "Go to Billing" → router.push('/billing')
+- "Go to Documents" → router.push('/documents')
+- "Go to Dashboard" → router.push('/dashboard')
+- "Import clients" → router.push('/clients')
+- "New engagement" → router.push('/engagements')
+
+5. Clear suggestions when user sends a new message.
+
+Do not change anything outside these additions.
 
 VERIFY AFTER ACT:
-1. grep -n "JC\|flex-shrink-0 w-6 h-6 rounded-full" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
-2. Confirm JC badge exists
-3. cd /home/corby/jamm-os/frontend
-4. npm run build — zero TypeScript errors
-5. Report exact changes made
+1. grep -n "suggestions\|handleSuggestion\|chips" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx | head -20
+2. cd /home/corby/jamm-os/frontend
+3. npm run build — zero TypeScript errors
+4. Report exact changes made
