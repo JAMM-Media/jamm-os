@@ -254,7 +254,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
             if (buffer.startsWith('data: ')) {
               const chunk = buffer.slice(6)
               if (chunk) {
-                assembled += chunk
+                assembled += chunk + '\n'
               }
             }
             break
@@ -265,7 +265,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
           for (const line of lines) {
             if (line.startsWith('data:')) {
               const chunk = line.replace(/^data:\s*/, '')
-              assembled += chunk
+              assembled += chunk + '\n'
             }
           }
         }
