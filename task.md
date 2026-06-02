@@ -67,24 +67,44 @@ find /home/corby/jamm-os/frontend/src/components/concierge/ -name "*.tsx" | sort
 
 # Section 3: Task to perform
 
-Task: Fix newline loss in assembled string in ConciergePanel.tsx
+Task: Add JC sender badge to concierge response bubble in ConciergePanel.tsx
 
 VERIFY BEFORE ACT:
 Run this and paste the full output:
-grep -n "assembled +=" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+grep -n "justify-start\|concierge.*bubble\|role.*concierge" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx | head -20
 
-Paste before touching anything. You should see 2 instances of assembled += chunk.
+Paste before touching anything.
 
-Change both instances of:
-  assembled += chunk
-to:
-  assembled += chunk + '\n'
+Find the concierge message bubble — the div that renders when msg.role === 'concierge'.
+Add a small JC badge to the top-left of the response, outside and above the bubble.
 
-Do not change anything else.
+The badge should:
+- Be a small circle, 24x24px
+- Background: #1F3148
+- Text: "JC" in white, 9px, font-medium
+- Sit to the left of the response bubble, vertically aligned to the top
+- Match the existing design system
+
+The structure should change from:
+  <div className="flex justify-start">
+    <div [bubble]>...</div>
+  </div>
+
+To:
+  <div className="flex justify-start items-start gap-2">
+    {msg.role === 'concierge' && (
+      <div className="flex-shrink-0 w-6 h-6 rounded-full bg-[#1F3148] flex items-center justify-center mt-1">
+        <span className="text-[9px] font-medium text-white">JC</span>
+      </div>
+    )}
+    <div [bubble]>...</div>
+  </div>
+
+Do not change the user bubble layout.
 
 VERIFY AFTER ACT:
-1. grep -n "assembled +=" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
-2. Confirm both instances show chunk + '\n'
+1. grep -n "JC\|flex-shrink-0 w-6 h-6 rounded-full" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+2. Confirm JC badge exists
 3. cd /home/corby/jamm-os/frontend
 4. npm run build — zero TypeScript errors
-5. Report exact line numbers changed
+5. Report exact changes made
