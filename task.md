@@ -67,22 +67,25 @@ find /home/corby/jamm-os/frontend/src/components/concierge/ -name "*.tsx" | sort
 
 # Section 3: Task to perform
 
-Task: Fix user message bubble text color in ConciergePanel.tsx
+Task: Fix user message text color overridden by prose wrapper in ConciergePanel.tsx
 
 VERIFY BEFORE ACT:
 Run this and paste the full output:
-grep -n "role.*user\|user.*bubble\|user.*message\|bg-\[#1F3148\]" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx | head -20
+sed -n '593,598p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-Paste before touching anything.
+You must see the prose wrapper div with hardcoded text-[#374151]. Paste before touching anything.
 
-Find the user message bubble div — the dark navy bubble that displays what the user typed.
-The text color is missing or set to dark. Add text-white to the user message bubble element.
+Find this exact line:
+  <div className="prose prose-sm max-w-none text-[13px] text-[#374151] dark:text-[#9CA3AF]">
+
+Replace it with:
+  <div className={`prose prose-sm max-w-none text-[13px] ${msg.role === 'user' ? 'text-white' : 'text-[#374151] dark:text-[#9CA3AF]'}`}>
 
 Do not change anything else.
 
 VERIFY AFTER ACT:
-1. grep -n "text-white" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
-2. Confirm text-white is on the user bubble element
+1. sed -n '593,598p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+2. Confirm the prose div now uses conditional text color
 3. cd /home/corby/jamm-os/frontend
 4. npm run build — zero TypeScript errors
 5. Report exact line changed
