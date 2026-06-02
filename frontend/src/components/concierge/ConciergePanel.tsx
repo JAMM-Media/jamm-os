@@ -255,14 +255,6 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
               const chunk = buffer.slice(6)
               if (chunk) {
                 assembled += chunk
-                setMessages((prev) => {
-                  const updated = [...prev]
-                  updated[updated.length - 1] = {
-                    role: 'concierge',
-                    content: updated[updated.length - 1].content + chunk,
-                  }
-                  return updated
-                })
               }
             }
             break
@@ -274,14 +266,6 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
             if (line.startsWith('data:')) {
               const chunk = line.replace(/^data:\s*/, '')
               assembled += chunk
-              setMessages((prev) => {
-                const updated = [...prev]
-                updated[updated.length - 1] = {
-                  role: 'concierge',
-                  content: updated[updated.length - 1].content + chunk + '\n',
-                }
-                return updated
-              })
             }
           }
         }
@@ -292,7 +276,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
           if (last.role === 'concierge') {
             updated[updated.length - 1] = {
               role: 'concierge',
-              content: handleConciergeAction(last.content),
+              content: handleConciergeAction(assembled),
             }
           }
           return updated
