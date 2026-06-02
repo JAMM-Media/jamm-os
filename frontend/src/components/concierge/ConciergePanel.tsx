@@ -508,18 +508,23 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
 
           <div className="flex items-center gap-2">
             {/* Autopilot toggle */}
-            <button
-              onClick={() => setAutopilotOn((v) => !v)}
-              title="Autopilot mode. When on, JAMM Concierge will navigate the app and open the right screen for you. You always complete and save the action yourself."
-              className={`flex items-center gap-1 text-[11px] font-medium px-2 py-1 rounded-[4px] border border-[0.5px] transition-all duration-150 ${
-                autopilotOn
-                  ? 'border-[#1F3148] bg-[#1F3148] text-white dark:border-[#4A7FA5] dark:bg-[#4A7FA5]'
-                  : 'border-[#C8CDD6] dark:border-[#484848] bg-transparent text-[#6B7280] dark:text-[#9CA3AF] hover:border-[#1F3148] hover:text-[#1F3148] dark:hover:border-[#4A7FA5] dark:hover:text-[#4A7FA5]'
-              }`}
-            >
-              <Zap className={`h-3 w-3 transition-all ${autopilotOn ? 'fill-white stroke-white' : 'fill-none'}`} />
-              Autopilot
-            </button>
+            <div className="relative group">
+              <button
+                onClick={() => setAutopilotOn((v) => !v)}
+                className={`flex items-center gap-1 text-[11px] font-medium px-2 py-1 rounded-[4px] border border-[0.5px] transition-all duration-150 ${
+                  autopilotOn
+                    ? 'border-[#1F3148] bg-[#1F3148] text-white dark:border-[#4A7FA5] dark:bg-[#4A7FA5]'
+                    : 'border-[#C8CDD6] dark:border-[#484848] bg-transparent text-[#6B7280] dark:text-[#9CA3AF] hover:border-[#1F3148] hover:text-[#1F3148] dark:hover:border-[#4A7FA5] dark:hover:text-[#4A7FA5]'
+                }`}
+              >
+                <Zap className={`h-3 w-3 transition-all ${autopilotOn ? 'fill-white stroke-white' : 'fill-none'}`} />
+                Autopilot
+              </button>
+              <div className="absolute right-8 top-8 z-50 opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto transition-opacity duration-150 w-60 rounded-[8px] bg-[#1F3148] text-white text-[11px] leading-[1.6] px-4 py-3 shadow-xl">
+                <div className="absolute -bottom-1.5 right-4 w-3 h-3 bg-[#1F3148] rotate-45 rounded-sm" />
+                Autopilot mode. When on, JAMM Concierge will navigate the app and open the right screen for you. You always complete and save the action yourself.
+              </div>
+            </div>
 
             <button
               onClick={onClose}
