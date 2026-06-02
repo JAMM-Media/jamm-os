@@ -67,43 +67,29 @@ find /home/corby/jamm-os/frontend/src/components/concierge/ -name "*.tsx" | sort
 
 # Section 3: Task to perform
 
-# Section 3: Task to perform
-
-Task: Fix markdown rendering in ConciergePanel.tsx — responses rendering as plain text
+Task: Fix streaming newline loss in ConciergePanel.tsx
 
 VERIFY BEFORE ACT:
 Run this and paste the full output:
-grep -n "ReactMarkdown\|remark\|rehype\|markdown" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+sed -n '270,285p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-Then run:
-grep -n "role.*concierge\|concierge.*content\|message.*content" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+You must see this line inside the for loop:
+  content: updated[updated.length - 1].content + chunk,
 
-Paste both outputs before touching anything.
+If you do not see it, stop and report.
 
-The concierge response is rendering as raw text with no markdown parsing — bold markers showing as **, line breaks missing, bullets not rendering. The fix is to pipe the content through ReactMarkdown.
+Find this pattern inside the for (const line of lines) loop only:
+  content: updated[updated.length - 1].content + chunk,
 
-If ReactMarkdown is not already installed, install it:
-cd /home/corby/jamm-os/frontend
-npm install react-markdown
+Replace it with:
+  content: updated[updated.length - 1].content + chunk + '\n',
 
-Then in the response rendering block, replace the raw text display with:
-<ReactMarkdown
-  className="prose prose-sm max-w-none text-[13px] text-[#374151] dark:text-[#9CA3AF]"
-  components={{
-    ul: ({node, ...props}) => <ul className="list-disc list-outside ml-4 my-1 space-y-0.5" {...props} />,
-    ol: ({node, ...props}) => <ol className="list-decimal list-outside ml-4 my-1 space-y-0.5" {...props} />,
-    li: ({node, ...props}) => <li className="leading-snug" {...props} />,
-    p: ({node, ...props}) => <p className="mb-1 last:mb-0" {...props} />,
-    strong: ({node, ...props}) => <strong className="font-medium text-[#1F3148] dark:text-[#EDEEF0]" {...props} />,
-  }}
->
-  {message.content}
-</ReactMarkdown>
-
-Do not change anything outside the response rendering block.
+Do not change the identical line inside the if (done) block above the loop. Only the one inside for (const line of lines).
 
 VERIFY AFTER ACT:
-1. grep -n "ReactMarkdown" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
-2. cd /home/corby/jamm-os/frontend
-3. npm run build — zero TypeScript errors
-4. Report exact changes made
+1. sed -n '270,285p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+2. Confirm the changed line shows chunk + '\n'
+3. Confirm only one instance was changed
+4. cd /home/corby/jamm-os/frontend
+5. npm run build — zero TypeScript errors
+6. Report exact line number changed
