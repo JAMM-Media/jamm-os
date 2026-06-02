@@ -67,52 +67,29 @@ find /home/corby/jamm-os/frontend/src/components/concierge/ -name "*.tsx" | sort
 
 # Section 3: Task to perform
 
-Task: Add current page context pill to input bar in ConciergePanel.tsx
+Task: Fix handleConciergeAction to show response text when autopilot is OFF in ConciergePanel.tsx
 
 VERIFY BEFORE ACT:
 Run this and paste the full output:
-grep -n "usePathname\|pathname\|input.*bar\|Ask anything" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx | head -20
+sed -n '383,397p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
 Paste before touching anything.
 
-Add a context pill above the input bar that shows the current page the user is on.
+Find this exact block:
+    if (!autopilotRef.current) {
+      return 'To use autopilot navigation, turn on Autopilot using the toggle above.'
+    }
 
-Changes needed:
-
-1. Import usePathname at the top of the file:
-import { usePathname } from 'next/navigation'
-
-2. Add pathname inside the component:
-const pathname = usePathname()
-
-3. Add a label map:
-const PAGE_LABELS: Record<string, string> = {
-  '/dashboard': 'Dashboard',
-  '/clients': 'Clients',
-  '/engagements': 'Engagements',
-  '/tasks': 'Tasks',
-  '/documents': 'Documents',
-  '/billing': 'Billing',
-  '/settings': 'Settings',
-  '/firm-chat': 'Firm Chat',
-}
-const currentPage = Object.entries(PAGE_LABELS).find(([k]) => pathname.startsWith(k))?.[1] ?? 'JAMM PX'
-
-4. Add the pill just above the input bar div:
-{currentPage && (
-  <div className="px-3 pt-2 pb-0">
-    <span className="inline-flex items-center gap-1 text-[10px] font-medium text-[#6B7280] dark:text-[#9CA3AF]">
-      <span className="w-1.5 h-1.5 rounded-full bg-[#4A7FA5]" />
-      You are on: {currentPage}
-    </span>
-  </div>
-)}
+Replace it with:
+    if (!autopilotRef.current) {
+      return beforeAction || 'To navigate, turn on Autopilot using the toggle above.'
+    }
 
 Do not change anything else.
 
 VERIFY AFTER ACT:
-1. grep -n "usePathname\|currentPage\|You are on" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
-2. Confirm all three are present
+1. sed -n '383,397p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+2. Confirm the change shows beforeAction in the return
 3. cd /home/corby/jamm-os/frontend
 4. npm run build — zero TypeScript errors
-5. Report exact changes made
+5. Report exact line changed
