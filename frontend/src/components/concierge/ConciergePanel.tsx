@@ -365,7 +365,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
       'New engagement': '/engagements',
     }
     const route = routes[label]
-    if (route) router.push(route)
+    if (route) setTimeout(() => router.push(route), 0)
   }
 
   function handleConciergeAction(raw: string): string {
