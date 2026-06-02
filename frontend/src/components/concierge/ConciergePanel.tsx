@@ -2,7 +2,7 @@
 'use client'
 
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, usePathname } from 'next/navigation'
 import { X, Send, Zap } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import { useAuth } from '@/lib/hooks/useAuth'
@@ -131,6 +131,18 @@ function buildActionConfirm(action: ConciergeAction): string {
 
 export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
   const router = useRouter()
+  const pathname = usePathname()
+  const PAGE_LABELS: Record<string, string> = {
+    '/dashboard': 'Dashboard',
+    '/clients': 'Clients',
+    '/engagements': 'Engagements',
+    '/tasks': 'Tasks',
+    '/documents': 'Documents',
+    '/billing': 'Billing',
+    '/settings': 'Settings',
+    '/firm-chat': 'Firm Chat',
+  }
+  const currentPage = Object.entries(PAGE_LABELS).find(([k]) => pathname.startsWith(k))?.[1] ?? 'JAMM PX'
   const { user } = useAuth()
   const logoUrl = user ? `/api/backend/firms/logo/${user.firm_id}` : null
   const initials =
@@ -660,6 +672,14 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
           <div ref={messagesEndRef} />
         </div>
 
+        {currentPage && (
+          <div className="px-3 pt-2 pb-0">
+            <span className="inline-flex items-center gap-1 text-[10px] font-medium text-[#6B7280] dark:text-[#9CA3AF]">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#4A7FA5]" />
+              You are on: {currentPage}
+            </span>
+          </div>
+        )}
         {/* Input area */}
         <div className="p-4 border-t border-[0.5px] border-[#C8CDD6] dark:border-[#484848] flex-shrink-0">
           <div className="flex items-end gap-2">
