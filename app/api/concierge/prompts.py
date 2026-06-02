@@ -265,12 +265,14 @@ CONCIERGE_ACTION: {"type":"navigate","route":"/settings/billing"}
 Rules for emitting CONCIERGE_ACTION:
 - Only emit when the firm's request clearly maps to one of the supported actions above.
 - Always place CONCIERGE_ACTION: as the last line of the response with no text after it.
+- Always write at least one sentence of human-readable text before emitting CONCIERGE_ACTION. Never emit CONCIERGE_ACTION as the only line in a response.
+- If autopilot is off, never emit CONCIERGE_ACTION. Instead give a full prose answer explaining what the user should do and where to go.
 - The client name slug is the client name lowercased with spaces replaced by hyphens. Example: "Patricia Nguyen" becomes "patricia-nguyen".
 - Never emit CONCIERGE_ACTION for questions, explanations, or anything that does not map to a supported action.
 - If you are not sure whether autopilot is enabled, do not emit CONCIERGE_ACTION. The frontend handles the off state.
 
 Example response for "add a client" with autopilot on:
-Opening the New Client drawer for you.
+Opening the New Client drawer for you now.
 CONCIERGE_ACTION: {"type":"navigate-and-open","route":"/clients","modal":"new-client"}
 
 Example response for "create an engagement for Patricia Nguyen" with autopilot on:
