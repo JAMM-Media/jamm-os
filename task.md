@@ -67,59 +67,27 @@ find /home/corby/jamm-os/frontend/src/components/concierge/ -name "*.tsx" | sort
 
 # Section 3: Task to perform
 
-Task: Add action suggestion chips after concierge responses in ConciergePanel.tsx
+Task: Fix router.push called during render in ConciergePanel.tsx
 
 VERIFY BEFORE ACT:
 Run this and paste the full output:
-grep -n "assembled\|setMessages\|role.*concierge\|autopilotOn" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx | tail -30
+grep -n "handleSuggestion\|router.push" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
 Paste before touching anything.
 
-After each concierge response renders, show 2-3 tappable action chips below the bubble when autopilot is ON. These chips suggest the next logical action based on the response content.
+Find the handleSuggestion function. Inside it, wrap the router.push call in a setTimeout with 0ms delay:
 
-Changes needed:
+Change:
+  router.push(route)
 
-1. Add a suggestions state:
-const [suggestions, setSuggestions] = useState<string[]>([])
+To:
+  setTimeout(() => router.push(route), 0)
 
-2. After the full response is assembled and set, generate suggestions. Use a simple keyword match on the assembled string:
-- If assembled includes "client" or "import" → suggest "Go to Clients", "Import clients"
-- If assembled includes "engagement" → suggest "Go to Engagements", "New engagement"
-- If assembled includes "settings" or "team" or "staff" → suggest "Go to Settings"
-- If assembled includes "billing" or "invoice" or "stripe" → suggest "Go to Billing"
-- If assembled includes "document" → suggest "Go to Documents"
-- Default → suggest "Go to Dashboard"
-Always limit to maximum 3 chips.
-
-3. Render chips below the last concierge message bubble when autopilotOn is true and suggestions.length > 0:
-<div className="flex flex-wrap gap-2 mt-2 ml-8">
-  {suggestions.map((s) => (
-    <button
-      key={s}
-      onClick={() => handleSuggestion(s)}
-      className="text-[11px] font-medium px-3 py-1.5 rounded-full border border-[#C8CDD6] dark:border-[#484848] text-[#1F3148] dark:text-[#EDEEF0] bg-white dark:bg-[#2D2D2D] hover:border-[#4A7FA5] hover:text-[#4A7FA5] transition-colors"
-    >
-      {s}
-    </button>
-  ))}
-</div>
-
-4. Add handleSuggestion function that navigates using the existing router:
-- "Go to Clients" → router.push('/clients')
-- "Go to Engagements" → router.push('/engagements')
-- "Go to Settings" → router.push('/settings')
-- "Go to Billing" → router.push('/billing')
-- "Go to Documents" → router.push('/documents')
-- "Go to Dashboard" → router.push('/dashboard')
-- "Import clients" → router.push('/clients')
-- "New engagement" → router.push('/engagements')
-
-5. Clear suggestions when user sends a new message.
-
-Do not change anything outside these additions.
+Do not change anything else.
 
 VERIFY AFTER ACT:
-1. grep -n "suggestions\|handleSuggestion\|chips" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx | head -20
-2. cd /home/corby/jamm-os/frontend
-3. npm run build — zero TypeScript errors
-4. Report exact changes made
+1. grep -n "setTimeout.*router\|router.push" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+2. Confirm router.push is wrapped in setTimeout
+3. cd /home/corby/jamm-os/frontend
+4. npm run build — zero TypeScript errors
+5. Report exact line changed
