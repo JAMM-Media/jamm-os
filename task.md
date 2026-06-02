@@ -67,27 +67,25 @@ find /home/corby/jamm-os/frontend/src/components/concierge/ -name "*.tsx" | sort
 
 # Section 3: Task to perform
 
-Task: Fix router.push called during render in ConciergePanel.tsx
+Task: Show action suggestion chips only when autopilot is OFF in ConciergePanel.tsx
 
 VERIFY BEFORE ACT:
 Run this and paste the full output:
-grep -n "handleSuggestion\|router.push" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+grep -n "autopilotOn.*suggestions\|suggestions.*autopilotOn\|suggestions.length" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
 Paste before touching anything.
 
-Find the handleSuggestion function. Inside it, wrap the router.push call in a setTimeout with 0ms delay:
+Find the chips render block — the div that maps over suggestions and renders buttons.
+It currently renders when: autopilotOn && suggestions.length > 0 && i === messages.length - 1 && msg.role === 'concierge'
 
-Change:
-  router.push(route)
-
-To:
-  setTimeout(() => router.push(route), 0)
+Change the condition to render when autopilot is OFF instead of ON:
+!autopilotOn && suggestions.length > 0 && i === messages.length - 1 && msg.role === 'concierge'
 
 Do not change anything else.
 
 VERIFY AFTER ACT:
-1. grep -n "setTimeout.*router\|router.push" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
-2. Confirm router.push is wrapped in setTimeout
+1. grep -n "autopilotOn.*suggestions\|suggestions.*autopilotOn\|!autopilotOn" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+2. Confirm the condition uses !autopilotOn
 3. cd /home/corby/jamm-os/frontend
 4. npm run build — zero TypeScript errors
 5. Report exact line changed
