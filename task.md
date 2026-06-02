@@ -67,25 +67,52 @@ find /home/corby/jamm-os/frontend/src/components/concierge/ -name "*.tsx" | sort
 
 # Section 3: Task to perform
 
-Task: Show action suggestion chips only when autopilot is OFF in ConciergePanel.tsx
+Task: Add current page context pill to input bar in ConciergePanel.tsx
 
 VERIFY BEFORE ACT:
 Run this and paste the full output:
-grep -n "autopilotOn.*suggestions\|suggestions.*autopilotOn\|suggestions.length" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+grep -n "usePathname\|pathname\|input.*bar\|Ask anything" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx | head -20
 
 Paste before touching anything.
 
-Find the chips render block — the div that maps over suggestions and renders buttons.
-It currently renders when: autopilotOn && suggestions.length > 0 && i === messages.length - 1 && msg.role === 'concierge'
+Add a context pill above the input bar that shows the current page the user is on.
 
-Change the condition to render when autopilot is OFF instead of ON:
-!autopilotOn && suggestions.length > 0 && i === messages.length - 1 && msg.role === 'concierge'
+Changes needed:
+
+1. Import usePathname at the top of the file:
+import { usePathname } from 'next/navigation'
+
+2. Add pathname inside the component:
+const pathname = usePathname()
+
+3. Add a label map:
+const PAGE_LABELS: Record<string, string> = {
+  '/dashboard': 'Dashboard',
+  '/clients': 'Clients',
+  '/engagements': 'Engagements',
+  '/tasks': 'Tasks',
+  '/documents': 'Documents',
+  '/billing': 'Billing',
+  '/settings': 'Settings',
+  '/firm-chat': 'Firm Chat',
+}
+const currentPage = Object.entries(PAGE_LABELS).find(([k]) => pathname.startsWith(k))?.[1] ?? 'JAMM PX'
+
+4. Add the pill just above the input bar div:
+{currentPage && (
+  <div className="px-3 pt-2 pb-0">
+    <span className="inline-flex items-center gap-1 text-[10px] font-medium text-[#6B7280] dark:text-[#9CA3AF]">
+      <span className="w-1.5 h-1.5 rounded-full bg-[#4A7FA5]" />
+      You are on: {currentPage}
+    </span>
+  </div>
+)}
 
 Do not change anything else.
 
 VERIFY AFTER ACT:
-1. grep -n "autopilotOn.*suggestions\|suggestions.*autopilotOn\|!autopilotOn" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
-2. Confirm the condition uses !autopilotOn
+1. grep -n "usePathname\|currentPage\|You are on" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+2. Confirm all three are present
 3. cd /home/corby/jamm-os/frontend
 4. npm run build — zero TypeScript errors
-5. Report exact line changed
+5. Report exact changes made
