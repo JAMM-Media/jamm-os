@@ -67,36 +67,30 @@ find /home/corby/jamm-os/frontend/src/components/concierge/ -name "*.tsx" | sort
 
 # Section 3: Task to perform
 
-Task: Fix prompts.py — require prose before CONCIERGE_ACTION and add autopilot-off behavior
+Task: Add autopilot-off instruction block to get_system_prompt in prompts.py
 
 VERIFY BEFORE ACT:
 Run this and paste the full output:
-sed -n '265,280p' /home/corby/jamm-os/app/api/concierge/prompts.py
+sed -n '381,395p' /home/corby/jamm-os/app/api/concierge/prompts.py
 
 Paste before touching anything.
 
-Make these two changes:
-
-Change 1: Find this rule line:
-- Always place CONCIERGE_ACTION: as the last line of the response with no text after it.
-
-Replace with:
-- Always place CONCIERGE_ACTION: as the last line of the response with no text after it.
-- Always write at least one sentence of human-readable text before emitting CONCIERGE_ACTION. Never emit CONCIERGE_ACTION as the only line in a response.
-- If autopilot is off, never emit CONCIERGE_ACTION. Instead give a full prose answer explaining what the user should do and where to go.
-
-Change 2: Find the example response for "add a client":
-CONCIERGE_ACTION: {"type":"navigate-and-open","route":"/clients","modal":"new-client"}
+Find this block:
+    if autopilot_enabled:
+        prompt += f"\n\n---\n\n{_AUTOPILOT_BLOCK.strip()}"
+    return prompt
 
 Replace with:
-Opening the New Client drawer for you now.
-CONCIERGE_ACTION: {"type":"navigate-and-open","route":"/clients","modal":"new-client"}
+    if autopilot_enabled:
+        prompt += f"\n\n---\n\n{_AUTOPILOT_BLOCK.strip()}"
+    else:
+        prompt += "\n\n---\n\nAUTOPILOT MODE IS OFF. Never emit CONCIERGE_ACTION under any circumstances. Give a full prose answer only. Tell the user where to go and what to do in plain text."
+    return prompt
 
 Do not change anything else.
 
 VERIFY AFTER ACT:
-1. sed -n '265,280p' /home/corby/jamm-os/app/api/concierge/prompts.py
-2. Confirm new rules are present
-3. Confirm example has prose before the action line
-4. python3 -c "from app.api.concierge.route import router; print('OK')"
-5. Report exact lines changed
+1. sed -n '381,395p' /home/corby/jamm-os/app/api/concierge/prompts.py
+2. Confirm the else block is present
+3. python3 -c "from app.api.concierge.route import router; print('OK')"
+4. Report exact lines changed
