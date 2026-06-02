@@ -67,25 +67,30 @@ find /home/corby/jamm-os/frontend/src/components/concierge/ -name "*.tsx" | sort
 
 # Section 3: Task to perform
 
-Task: Fix user message text color overridden by prose wrapper in ConciergePanel.tsx
+Task: Replace streaming display with thinking state in ConciergePanel.tsx
 
 VERIFY BEFORE ACT:
 Run this and paste the full output:
-sed -n '593,598p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+grep -n "streaming\|Thinking\|thinking" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx | head -20
 
-You must see the prose wrapper div with hardcoded text-[#374151]. Paste before touching anything.
+Paste before touching anything.
 
-Find this exact line:
-  <div className="prose prose-sm max-w-none text-[13px] text-[#374151] dark:text-[#9CA3AF]">
+Currently the response streams character by character which feels laggy. Replace with:
+1. When user sends a message, show a "Thinking..." indicator in the concierge bubble
+2. Continue assembling the full response in the background as it streams
+3. When streaming is complete, replace "Thinking..." with the full assembled response all at once
 
-Replace it with:
-  <div className={`prose prose-sm max-w-none text-[13px] ${msg.role === 'user' ? 'text-white' : 'text-[#374151] dark:text-[#9CA3AF]'}`}>
+The assembled variable already collects the full response. Use it to set the final message content on stream completion instead of updating on every chunk.
 
-Do not change anything else.
+Changes needed:
+1. While streaming is true and content is empty or "Thinking...", show a thinking indicator in the bubble
+2. Stop updating message content on every chunk — only update once when done is true using the assembled string
+3. The thinking indicator should match the concierge bubble style — subtle, not a spinner
+
+Do not change the streaming state logic, only where and when content is displayed.
 
 VERIFY AFTER ACT:
-1. sed -n '593,598p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
-2. Confirm the prose div now uses conditional text color
-3. cd /home/corby/jamm-os/frontend
-4. npm run build — zero TypeScript errors
-5. Report exact line changed
+1. grep -n "Thinking\|assembled\|done" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx | head -20
+2. cd /home/corby/jamm-os/frontend
+3. npm run build — zero TypeScript errors
+4. Report exact changes made
