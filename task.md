@@ -1,6 +1,6 @@
 # STANDING RULES
-- All file operations use the absolute path /mnt/c/Users/corby/jamm-os/. Never use /home/corby/jamm-os/. Never use Windows-style paths like C:\Users.
-- Never use relative paths. Always use full absolute paths starting with /mnt/c/Users/corby/jamm-os/.
+- All file operations use the absolute path /home/corby/jamm-os/. Never use /mnt/c/Users paths. Never use Windows-style paths.
+- Never use relative paths. Always use full absolute paths starting with /home/corby/jamm-os/.
 - Never use the built-in file read tool to inspect file contents. Always use bash: cat, grep, sed. The file read tool caches stale content. Trust bash output only.
 - Path comment at top of every file
 - Never use && to chain commands
@@ -17,11 +17,11 @@
 
 # VERIFY BEFORE ACT — MANDATORY FOR EVERY TASK
 Before making any change to any file:
-1. Run: pwd — confirm output is /mnt/c/Users/corby/jamm-os. If it is not, run: cd /mnt/c/Users/corby/jamm-os
+1. Run: pwd — confirm output is /home/corby/jamm-os. If it is not, run: cd /home/corby/jamm-os
 2. Run grep using the full absolute path and paste the full bash output:
-   grep -n "pattern" /mnt/c/Users/corby/jamm-os/path/to/file
+   grep -n "pattern" /home/corby/jamm-os/path/to/file
 3. If the pattern is not found, run:
-   cat /mnt/c/Users/corby/jamm-os/path/to/file | grep -c "pattern"
+   cat /home/corby/jamm-os/path/to/file | grep -c "pattern"
    Paste that result too.
 4. If both return zero, STOP and report exactly what bash returned. Do not proceed. Do not guess. Do not find the closest match. Do not trust the file read tool.
 5. Only proceed when bash grep with the absolute path confirms the pattern exists on disk.
@@ -48,7 +48,7 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 ---
 
 # PRE-TASK
-cd /mnt/c/Users/corby/jamm-os
+cd /home/corby/jamm-os
 source .venv/bin/activate
 python3 -c "from app.api.concierge.route import router; print('OK')"
 If the import fails, stop and report. Do not proceed.
@@ -58,29 +58,34 @@ git commit -m "checkpoint before [task name]"
 ---
 
 # POST-TASK — run after task completes
-find /mnt/c/Users/corby/jamm-os/app/api/concierge/ -name "*.py" | sort
-ls /mnt/c/Users/corby/jamm-os/migrations/versions/ | tail -5
+find /home/corby/jamm-os/app/api/concierge/ -name "*.py" | sort
+ls /home/corby/jamm-os/migrations/versions/ | tail -5
 python3 -c "from app.api.concierge.route import router; print('OK')"
-find /mnt/c/Users/corby/jamm-os/frontend/src/components/concierge/ -name "*.tsx" | sort
+find /home/corby/jamm-os/frontend/src/components/concierge/ -name "*.tsx" | sort
 
 ---
 
 # Section 3: Task to perform
 
-Task: Fix auth token source in ConciergePanel.tsx
+Task: Fix markdown rendering in ConciergePanel.tsx — nested bullets and spacing
 
 VERIFY BEFORE ACT:
-Run this exact command using the full absolute path and paste the full output:
-grep -n "document.cookie" /mnt/c/Users/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+Run this and paste the full output:
+grep -n "markdown\|prose\|ReactMarkdown\|remark\|rehype" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-You must see 0 results — the Windows copy already has this fix in place.
-If you see 0 results, skip to VERIFY AFTER ACT and confirm the correct patterns are present:
-grep -n "localStorage\|Bearer" /mnt/c/Users/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+Paste the output before touching anything.
 
-Confirm both auth lines show localStorage and Bearer prefix. Report what you find. No changes needed.
+The AI response card is rendering nested bullet points as inline dashes instead of proper list items. Find the markdown renderer component used to display concierge responses.
 
-POST-TASK — run after task completes:
-find /mnt/c/Users/corby/jamm-os/app/api/concierge/ -name "*.py" | sort
-ls /mnt/c/Users/corby/jamm-os/migrations/versions/ | tail -5
-python3 -c "from app.api.concierge.route import router; print('OK')"
-find /mnt/c/Users/corby/jamm-os/frontend/src/components/concierge/ -name "*.tsx" | sort
+Make these fixes:
+1. Ensure ReactMarkdown or equivalent is rendering ul, ol, and li elements with proper list styling
+2. Add Tailwind prose classes or explicit list styling so nested bullets render as indented list items not inline text
+3. Tighten paragraph spacing inside the response card
+
+Do not change anything outside the response rendering block.
+
+VERIFY AFTER ACT:
+1. grep -n "markdown\|prose\|ul\|ol\|li" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+2. cd /home/corby/jamm-os/frontend
+3. npm run build — zero TypeScript errors
+4. Report exact changes made

@@ -520,10 +520,6 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
                 <Zap className={`h-3 w-3 transition-all ${autopilotOn ? 'fill-white stroke-white' : 'fill-none'}`} />
                 Autopilot
               </button>
-              <div className="absolute right-8 top-8 z-50 opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto transition-opacity duration-150 w-60 rounded-[8px] bg-[#1F3148] text-white text-[11px] leading-[1.6] px-4 py-3 shadow-xl">
-                <div className="absolute -bottom-1.5 right-4 w-3 h-3 bg-[#1F3148] rotate-45 rounded-sm" />
-                Autopilot mode. When on, JAMM Concierge will navigate the app and open the right screen for you. You always complete and save the action yourself.
-              </div>
             </div>
 
             <button
@@ -588,7 +584,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
           {messages.map((msg, i) => (
             <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
               <div
-                className="text-[13px] leading-[1.6] px-3 py-2 rounded-[12px] max-w-[75%] whitespace-pre-wrap"
+                className="text-[13px] leading-[1.6] px-3 py-2 rounded-[12px] max-w-[75%]"
                 style={
                   msg.role === 'user'
                     ? { background: '#1F3148', color: '#FFFFFF' }
@@ -598,10 +594,10 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
                 {msg.content ? (
                   <ReactMarkdown
                     components={{
-                      p: ({ children }: { children?: React.ReactNode }) => <p className="mb-2 last:mb-0">{children}</p>,
-                      ol: ({ children }: { children?: React.ReactNode }) => <ol className="list-decimal pl-4 space-y-1">{children}</ol>,
-                      ul: ({ children }: { children?: React.ReactNode }) => <ul className="list-disc pl-4 space-y-1">{children}</ul>,
-                      li: ({ children }: { children?: React.ReactNode }) => <li>{children}</li>,
+                      p: ({ children }: { children?: React.ReactNode }) => <p className="mb-1 last:mb-0">{children}</p>,
+                      ol: ({ children }: { children?: React.ReactNode }) => <ol className="list-decimal pl-4 my-1 space-y-0.5">{children}</ol>,
+                      ul: ({ children }: { children?: React.ReactNode }) => <ul className="list-disc pl-4 my-1 space-y-0.5">{children}</ul>,
+                      li: ({ children }: { children?: React.ReactNode }) => <li className="leading-snug">{children}</li>,
                       strong: ({ children }: { children?: React.ReactNode }) => <strong className="font-medium">{children}</strong>,
                     }}
                   >
