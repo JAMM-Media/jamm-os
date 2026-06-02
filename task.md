@@ -67,30 +67,24 @@ find /home/corby/jamm-os/frontend/src/components/concierge/ -name "*.tsx" | sort
 
 # Section 3: Task to perform
 
-Task: Replace streaming display with thinking state in ConciergePanel.tsx
+Task: Fix newline loss in assembled string in ConciergePanel.tsx
 
 VERIFY BEFORE ACT:
 Run this and paste the full output:
-grep -n "streaming\|Thinking\|thinking" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx | head -20
+grep -n "assembled +=" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-Paste before touching anything.
+Paste before touching anything. You should see 2 instances of assembled += chunk.
 
-Currently the response streams character by character which feels laggy. Replace with:
-1. When user sends a message, show a "Thinking..." indicator in the concierge bubble
-2. Continue assembling the full response in the background as it streams
-3. When streaming is complete, replace "Thinking..." with the full assembled response all at once
+Change both instances of:
+  assembled += chunk
+to:
+  assembled += chunk + '\n'
 
-The assembled variable already collects the full response. Use it to set the final message content on stream completion instead of updating on every chunk.
-
-Changes needed:
-1. While streaming is true and content is empty or "Thinking...", show a thinking indicator in the bubble
-2. Stop updating message content on every chunk — only update once when done is true using the assembled string
-3. The thinking indicator should match the concierge bubble style — subtle, not a spinner
-
-Do not change the streaming state logic, only where and when content is displayed.
+Do not change anything else.
 
 VERIFY AFTER ACT:
-1. grep -n "Thinking\|assembled\|done" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx | head -20
-2. cd /home/corby/jamm-os/frontend
-3. npm run build — zero TypeScript errors
-4. Report exact changes made
+1. grep -n "assembled +=" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+2. Confirm both instances show chunk + '\n'
+3. cd /home/corby/jamm-os/frontend
+4. npm run build — zero TypeScript errors
+5. Report exact line numbers changed
