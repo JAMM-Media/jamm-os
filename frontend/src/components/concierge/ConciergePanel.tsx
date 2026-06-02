@@ -278,7 +278,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
                 const updated = [...prev]
                 updated[updated.length - 1] = {
                   role: 'concierge',
-                  content: updated[updated.length - 1].content + chunk,
+                  content: updated[updated.length - 1].content + chunk + '\n',
                 }
                 return updated
               })
