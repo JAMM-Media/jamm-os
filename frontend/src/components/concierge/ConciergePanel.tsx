@@ -592,7 +592,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
                 }
               >
                 {msg.content ? (
-                  <div className="prose prose-sm max-w-none text-[13px] text-[#374151] dark:text-[#9CA3AF]">
+                  <div className={`prose prose-sm max-w-none text-[13px] ${msg.role === 'user' ? 'text-white' : 'text-[#374151] dark:text-[#9CA3AF]'}`}>
                     <ReactMarkdown
                       components={{
                         ul: ({node, ...props}) => <ul className="list-disc list-outside ml-4 my-1 space-y-0.5" {...props} />,
