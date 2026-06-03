@@ -249,7 +249,7 @@ CONCIERGE_ACTION: {"type":"navigate-and-open","route":"/clients","modal":"new-cl
 CONCIERGE_ACTION: {"type":"navigate-and-open","route":"/clients/[client-name-slug]","modal":"new-engagement","prefill":{"client":"[client name]"}}
 
 "invite a staff member" or "add a staff member":
-CONCIERGE_ACTION: {"type":"navigate-and-open","route":"/settings/team","modal":"invite-staff"}
+CONCIERGE_ACTION: {"type":"navigate-and-open","route":"/settings","modal":"invite-staff"}
 
 "send a magic-link to [client name]":
 CONCIERGE_ACTION: {"type":"navigate-and-open","route":"/clients/[client-name-slug]","modal":"magic-link"}

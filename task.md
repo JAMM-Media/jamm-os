@@ -67,54 +67,40 @@ find /home/corby/jamm-os/frontend/src/components/concierge/ -name "*.tsx" | sort
 
 # Section 3: Task to perform
 
-Task: Fix invite-staff route in prompts.py and add sessionStorage mount handler in settings/page.tsx
+Task: Normalize /settings/team route to /settings in executeAction in ConciergePanel.tsx
 
 VERIFY BEFORE ACT:
 Run this and paste the full output:
-grep -n "settings/team\|invite-staff" /home/corby/jamm-os/app/api/concierge/prompts.py
+sed -n '418,425p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-Run this and paste the full output:
-grep -n "onConciergeAction\|inviteFormRef\|jamm_concierge_pending" /home/corby/jamm-os/frontend/src/app/settings/page.tsx
+Paste before touching anything.
 
-Paste both before touching anything.
+Find the normalizedType line at the top of executeAction. Directly after it, add:
+  const normalizedRoute = action.route === '/settings/team' ? '/settings' : action.route
 
-Make these changes:
+Then replace every reference to action.route in executeAction with normalizedRoute.
+To do this safely, find this line:
+  if (action.route) {
+    const clientMatch = action.route.match(/^\/clients\/([^/]+)$/)
 
-1. In prompts.py, find every occurrence of /settings/team in the AUTOPILOT MODE section.
-   Replace each one with /settings
-
-2. In frontend/src/app/settings/page.tsx, find the existing useEffect that calls onConciergeAction
-   for invite-staff. Add a new separate useEffect directly above it:
-   useEffect(() => {
-     const raw = sessionStorage.getItem('jamm_concierge_pending')
-     if (!raw) return
-     try {
-       const action = JSON.parse(raw)
-       if (Date.now() - (action._ts ?? 0) > 10000) {
-         sessionStorage.removeItem('jamm_concierge_pending')
-         return
-       }
-       if (action.modal === 'invite-staff') {
-         sessionStorage.removeItem('jamm_concierge_pending')
-         setActiveTab('team')
-         setTimeout(() => inviteFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 150)
-       }
-     } catch {
-       sessionStorage.removeItem('jamm_concierge_pending')
-     }
-   }, [])
-
-   Note: setActiveTab('team') ensures the team tab is active before scrolling so the form is visible.
+Replace action.route with normalizedRoute throughout the entire executeAction function body.
+Specifically these occurrences:
+  - action.route.match(...)  → normalizedRoute.match(...)
+  - /api/backend/concierge/clients/resolve?name=... (no change needed here)
+  - const resolvedRoute = `/clients/${data.id}` (no change needed)
+  - sessionStorage.setItem('jamm_concierge_status', navLabel) (no change)
+  - router.push(action.route) → router.push(normalizedRoute)
+  - routeToLabel[action.route] → routeToLabel[normalizedRoute]
+  - pathname.startsWith(action.route) → pathname.startsWith(normalizedRoute)
+  - sessionStorage.setItem('jamm_concierge_pending', JSON.stringify({ ...action, _ts: Date.now() })) — here also spread normalizedRoute: JSON.stringify({ ...action, route: normalizedRoute, _ts: Date.now() })
 
 Do not change anything else.
 
 VERIFY AFTER ACT:
-1. grep -n "settings/team" /home/corby/jamm-os/app/api/concierge/prompts.py
+1. grep -n "normalizedRoute" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+   Confirm at least 5 results.
+2. grep -n "settings/team" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
    Confirm zero results.
-2. grep -n "jamm_concierge_pending" /home/corby/jamm-os/frontend/src/app/settings/page.tsx
-   Confirm one result.
-3. grep -n "setActiveTab\('team'\)" /home/corby/jamm-os/frontend/src/app/settings/page.tsx
-   Confirm one result.
-4. cd /home/corby/jamm-os/frontend
-5. npm run build — zero TypeScript errors.
-6. Report exact changes made and line numbers.
+3. cd /home/corby/jamm-os/frontend
+4. npm run build — zero TypeScript errors.
+5. Report exact changes made and line numbers.
