@@ -308,7 +308,6 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
           }
           return updated
         })
-        console.log('[JC] pendingActionRef after setMessages:', pendingActionRef.current)
         if (pendingActionRef.current) {
           const action = pendingActionRef.current
           pendingActionRef.current = null
@@ -402,9 +401,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
 
   function handleConciergeAction(raw: string): string {
     const ACTION_MARKER = 'CONCIERGE_ACTION:'
-    console.log('[JC] raw assembled:', raw)
     const actionIndex = raw.indexOf(ACTION_MARKER)
-    console.log('[JC] actionIndex:', actionIndex)
     if (actionIndex === -1) return raw
 
     const beforeAction = raw.slice(0, actionIndex).trim()
@@ -413,16 +410,13 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
     const braceEnd = afterMarker.lastIndexOf('}')
     if (braceStart === -1 || braceEnd === -1) return beforeAction
     const actionLine = afterMarker.slice(braceStart, braceEnd + 1).replace(/\s+/g, ' ').trim()
-    console.log('[JC] actionLine:', actionLine)
 
     if (!autopilotRef.current) {
-      console.log('[JC] autopilotRef.current:', autopilotRef.current)
       return beforeAction || 'To navigate, turn on Autopilot using the toggle above.'
     }
 
     try {
       const action: ConciergeAction = JSON.parse(actionLine)
-      console.log('[JC] parsed action:', action)
       pendingActionRef.current = action
     } catch {}
 
