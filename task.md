@@ -67,27 +67,19 @@ find /home/corby/jamm-os/frontend/src/components/concierge/ -name "*.tsx" | sort
 
 # Section 3: Task to perform
 
-Task: Increase scroll delay for invite-staff in settings/page.tsx
+Task: Remove diagnostic console.logs from ConciergePanel.tsx
 
 VERIFY BEFORE ACT:
 Run this and paste the full output:
-grep -n "invite-staff\|scrollIntoView\|setTimeout" /home/corby/jamm-os/frontend/src/app/settings/page.tsx
+grep -n "\[JC\]" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
 Paste before touching anything.
 
-Find this line:
-setTimeout(() => inviteFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 150)
-
-Replace with:
-setTimeout(() => inviteFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 400)
-
-block: 'nearest' scrolls the minimum amount needed to bring the element into view rather than snapping it to the top, which avoids cutting off the page header. The 400ms gives the tab content time to fully render before the scroll fires.
-
-Do not change anything else.
+Delete every line containing [JC]. Do not change anything else.
 
 VERIFY AFTER ACT:
-1. grep -n "scrollIntoView" /home/corby/jamm-os/frontend/src/app/settings/page.tsx
-   Confirm block: 'nearest' and 400ms delay.
+1. grep -n "\[JC\]" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+   Confirm zero results.
 2. cd /home/corby/jamm-os/frontend
 3. npm run build — zero TypeScript errors.
-4. Report exact changes made.
+4. Report exact line numbers removed.

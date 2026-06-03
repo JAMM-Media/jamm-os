@@ -98,7 +98,7 @@ export default function SettingsPage() {
       if (action.modal === 'invite-staff') {
         sessionStorage.removeItem('jamm_concierge_pending')
         setActiveTab('team')
-        setTimeout(() => inviteFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 150)
+        setTimeout(() => inviteFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 400)
       }
     } catch {
       sessionStorage.removeItem('jamm_concierge_pending')
