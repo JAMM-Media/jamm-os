@@ -65,44 +65,28 @@ find /home/corby/jamm-os/frontend/src/components/concierge/ -name "*.tsx" | sort
 
 ---
 
-# Phase 4B Fix: NewEngagementModal useEffect timing
+# Debug: Log raw prefill value arriving at NewEngagementModal
 
-Task: Fix the dependency array in the initialEngagementType useEffect so it fires when the value arrives, not when the modal opens.
+Task: Add a single temporary console.log to see what initialEngagementType value the modal receives.
 
 VERIFY BEFORE ACT:
-Run this and paste the full output:
-grep -n "useEffect\|knownCategories\|initialEngagementType" /home/corby/jamm-os/frontend/src/components/engagements/NewEngagementModal.tsx
+grep -n "if (!initialEngagementType)" /home/corby/jamm-os/frontend/src/components/engagements/NewEngagementModal.tsx
 
 Paste before touching anything.
 
 OLD:
   useEffect(() => {
-    if (!open || !initialEngagementType) return
-    const matched = knownCategories.find((cat) => initialEngagementType.startsWith(cat + '_'))
-    if (matched) {
-      setForm((prev) => ({ ...prev, engagementCategory: matched, engagementType: initialEngagementType }))
-    } else {
-      setForm((prev) => ({ ...prev, engagementCategory: initialEngagementType, engagementType: '' }))
-    }
-  }, [open, initialEngagementType])
+    if (!initialEngagementType) return
 
 NEW:
   useEffect(() => {
+    console.log('[4B] initialEngagementType received:', initialEngagementType)
     if (!initialEngagementType) return
-    const knownCategories = ['tax_return', 'bookkeeping', 'payroll']
-    const matched = knownCategories.find((cat) => initialEngagementType.startsWith(cat + '_'))
-    if (matched) {
-      setForm((prev) => ({ ...prev, engagementCategory: matched, engagementType: initialEngagementType }))
-    } else {
-      setForm((prev) => ({ ...prev, engagementCategory: initialEngagementType, engagementType: '' }))
-    }
-  }, [initialEngagementType])
 
 Do not change anything else.
 
 VERIFY AFTER ACT:
-1. grep -n "useEffect\|initialEngagementType" /home/corby/jamm-os/frontend/src/components/engagements/NewEngagementModal.tsx
-   Confirm dependency array shows [initialEngagementType] with no open.
-2. cd /home/corby/jamm-os/frontend
-3. npm run build — zero TypeScript errors.
-4. Browser test: autopilot on, say "create a tax return engagement for Patricia Nguyen". Confirm Type field shows Tax Return.
+1. grep -n "4B" /home/corby/jamm-os/frontend/src/components/engagements/NewEngagementModal.tsx
+   Confirm log line exists.
+2. Start the dev server, open browser devtools console, run the autopilot test again.
+3. Paste everything logged to console containing [4B].

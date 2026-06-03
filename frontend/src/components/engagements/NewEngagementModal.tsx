@@ -45,7 +45,7 @@ export function NewEngagementModal({
   const [submitting, setSubmitting] = useState(false)
 
   useEffect(() => {
-    if (!open || !initialEngagementType) return
+    if (!initialEngagementType) return
     const knownCategories = ['tax_return', 'bookkeeping', 'payroll']
     const matched = knownCategories.find((cat) => initialEngagementType.startsWith(cat + '_'))
     if (matched) {
@@ -53,7 +53,7 @@ export function NewEngagementModal({
     } else {
       setForm((prev) => ({ ...prev, engagementCategory: initialEngagementType, engagementType: '' }))
     }
-  }, [open, initialEngagementType])
+  }, [initialEngagementType])
 
   const { data: clientsData } = useFetch(() => clientsApi.list(0, 100), [])
   const clientOptions = (clientsData?.items ?? []).map((c) => ({ value: c.id, label: c.name }))
