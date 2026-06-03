@@ -65,28 +65,41 @@ find /home/corby/jamm-os/frontend/src/components/concierge/ -name "*.tsx" | sort
 
 ---
 
-# Debug: Log raw prefill value arriving at NewEngagementModal
+# Fix: Prompt example missing engagementType — system fix
 
-Task: Add a single temporary console.log to see what initialEngagementType value the modal receives.
+Task: The example response for new-engagement on line 281 is missing engagementType in the prefill.
+The model pattern-matches against examples over schema definitions, so the example is what drives
+behavior. Fix the example and add an explicit rule so any engagement request with a type mentioned
+always includes engagementType in the prefill.
 
 VERIFY BEFORE ACT:
-grep -n "if (!initialEngagementType)" /home/corby/jamm-os/frontend/src/components/engagements/NewEngagementModal.tsx
+sed -n '275,285p' /home/corby/jamm-os/app/api/concierge/prompts.py
 
 Paste before touching anything.
 
+Make exactly two changes:
+
+Change 1 — update the example to include engagementType:
 OLD:
-  useEffect(() => {
-    if (!initialEngagementType) return
+CONCIERGE_ACTION: {"type":"navigate-and-open","route":"/clients/patricia-nguyen","modal":"new-engagement","prefill":{"client":"Patricia Nguyen"}}
 
 NEW:
-  useEffect(() => {
-    console.log('[4B] initialEngagementType received:', initialEngagementType)
-    if (!initialEngagementType) return
+CONCIERGE_ACTION: {"type":"navigate-and-open","route":"/clients/patricia-nguyen","modal":"new-engagement","prefill":{"client":"Patricia Nguyen","engagementType":"tax_return"}}
+
+Change 2 — add a rule under the existing CONCIERGE_ACTION rules that makes engagementType explicit.
+Find the line:
+- The client name slug is the client name lowercased with spaces replaced by hyphens. Example: "Patricia Nguyen" becomes "patricia-nguyen".
+
+Add this line immediately after it:
+- When opening a new-engagement modal, always include engagementType in prefill if the user mentioned a type. Use the top-level category value (tax_return, bookkeeping, payroll, advisory, audit, other) unless the user specified a subtype (e.g. 1040, 1120-S) — in that case use the full value (tax_return_1040, tax_return_1120s). If no type was mentioned, omit engagementType from prefill entirely.
 
 Do not change anything else.
 
 VERIFY AFTER ACT:
-1. grep -n "4B" /home/corby/jamm-os/frontend/src/components/engagements/NewEngagementModal.tsx
-   Confirm log line exists.
-2. Start the dev server, open browser devtools console, run the autopilot test again.
-3. Paste everything logged to console containing [4B].
+1. sed -n '265,290p' /home/corby/jamm-os/app/api/concierge/prompts.py
+   Confirm: example now includes engagementType. Confirm: new rule is present.
+2. Restart the backend server.
+3. Browser test — three variations, all with autopilot on:
+   a. "create a tax return engagement for Patricia Nguyen" — Type field should show Tax Return
+   b. "create a 1040 engagement for Patricia Nguyen" — Type field should show 1040 Individual
+   c. "create an engagement for Patricia Nguyen" — Type field should be blank, no crash
