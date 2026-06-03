@@ -67,30 +67,35 @@ find /home/corby/jamm-os/frontend/src/components/concierge/ -name "*.tsx" | sort
 
 # Section 3: Task to perform
 
-Task: Add autopilot-off instruction block to get_system_prompt in prompts.py
+# Section 3: Task to perform
+
+Task: Run trigger check on panel open in ConciergePanel.tsx
 
 VERIFY BEFORE ACT:
 Run this and paste the full output:
-sed -n '381,395p' /home/corby/jamm-os/app/api/concierge/prompts.py
+sed -n '330,340p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
 Paste before touching anything.
 
 Find this block:
-    if autopilot_enabled:
-        prompt += f"\n\n---\n\n{_AUTOPILOT_BLOCK.strip()}"
-    return prompt
+    if (isOpen) {
+      setTimeout(() => textareaRef.current?.focus(), 250)
+      fetchNotifications()
+    }
 
 Replace with:
-    if autopilot_enabled:
-        prompt += f"\n\n---\n\n{_AUTOPILOT_BLOCK.strip()}"
-    else:
-        prompt += "\n\n---\n\nAUTOPILOT MODE IS OFF. Never emit CONCIERGE_ACTION under any circumstances. Give a full prose answer only. Tell the user where to go and what to do in plain text."
-    return prompt
+    if (isOpen) {
+      setTimeout(() => textareaRef.current?.focus(), 250)
+      api.post('/concierge/trigger-check').then(() => fetchNotifications()).catch(() => fetchNotifications())
+    }
+
+This fires the trigger check first, then fetches notifications once it completes. If the trigger check fails it still fetches notifications. No new state needed.
 
 Do not change anything else.
 
 VERIFY AFTER ACT:
-1. sed -n '381,395p' /home/corby/jamm-os/app/api/concierge/prompts.py
-2. Confirm the else block is present
-3. python3 -c "from app.api.concierge.route import router; print('OK')"
-4. Report exact lines changed
+1. sed -n '330,340p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+2. Confirm trigger-check call is present before fetchNotifications
+3. cd /home/corby/jamm-os/frontend
+4. npm run build — zero TypeScript errors
+5. Report exact lines changed
