@@ -65,124 +65,19 @@ find /home/corby/jamm-os/frontend/src/components/concierge/ -name "*.tsx" | sort
 
 ---
 
-# Phase 4B: Engagement Type Prefill
+# Phase 4B Fix: NewEngagementModal useEffect timing
 
-Three files. Do them in order. Do not move to the next file until the verify step passes.
-
----
-
-## File 1: prompts.py
-
-Task: Fix the new-engagement prefill example to include engagementType, and remove the stale `fields` reference.
-
-VERIFY BEFORE ACT:
-Run these and paste the full output:
-
-```
-grep -n "new-engagement\|fields" /home/corby/jamm-os/app/api/concierge/prompts.py
-```
-
-Paste before touching anything.
-
-Make exactly two changes:
-
-Change 1 — line 249, update the new-engagement example to include engagementType in prefill:
-OLD:
-```
-CONCIERGE_ACTION: {"type":"navigate-and-open","route":"/clients/[client-name-slug]","modal":"new-engagement","prefill":{"client":"[client name]"}}
-```
-NEW:
-```
-CONCIERGE_ACTION: {"type":"navigate-and-open","route":"/clients/[client-name-slug]","modal":"new-engagement","prefill":{"client":"[client name]","engagementType":"[full type value e.g. tax_return_1040]"}}
-```
-
-Change 2 — line 357, replace the stale `fields` reference:
-OLD:
-```
-CONCIERGE_ACTION:{"type":"...","route":"...","modal":"...","fields":{...}}
-```
-NEW:
-```
-CONCIERGE_ACTION:{"type":"...","route":"...","modal":"...","prefill":{...}}
-```
-
-Do not change anything else.
-
-VERIFY AFTER ACT:
-```
-grep -n "new-engagement\|fields" /home/corby/jamm-os/app/api/concierge/prompts.py
-```
-Confirm: new-engagement example now shows engagementType in prefill. Confirm: no remaining `"fields":{` reference.
-
----
-
-## File 2: NewEngagementModal.tsx
-
-Task: Add initialEngagementType prop and apply it to the form on open.
+Task: Fix the dependency array in the initialEngagementType useEffect so it fires when the value arrives, not when the modal opens.
 
 VERIFY BEFORE ACT:
 Run this and paste the full output:
-```
-grep -n "initialEngagementType\|preselectedClientId\|useEffect\|engagementCategory\|engagementType" /home/corby/jamm-os/frontend/src/components/engagements/NewEngagementModal.tsx
-```
+grep -n "useEffect\|knownCategories\|initialEngagementType" /home/corby/jamm-os/frontend/src/components/engagements/NewEngagementModal.tsx
 
 Paste before touching anything.
 
-Make exactly three changes:
-
-Change 1 — add initialEngagementType to the props interface:
 OLD:
-```
-interface NewEngagementModalProps {
-  open: boolean
-  onClose: () => void
-  onAdd: (engagement: Engagement) => void
-  preselectedClientId?: string
-}
-```
-NEW:
-```
-interface NewEngagementModalProps {
-  open: boolean
-  onClose: () => void
-  onAdd: (engagement: Engagement) => void
-  preselectedClientId?: string
-  initialEngagementType?: string
-}
-```
-
-Change 2 — destructure the new prop:
-OLD:
-```
-export function NewEngagementModal({
-  open,
-  onClose,
-  onAdd,
-  preselectedClientId,
-}: NewEngagementModalProps) {
-```
-NEW:
-```
-export function NewEngagementModal({
-  open,
-  onClose,
-  onAdd,
-  preselectedClientId,
-  initialEngagementType,
-}: NewEngagementModalProps) {
-```
-
-Change 3 — add a useEffect that applies initialEngagementType when the modal opens. The value may be a full subtype like `tax_return_1040` or a top-level category like `advisory`. Split on the second underscore only for known two-part categories (tax_return, bookkeeping, payroll). Add this useEffect immediately after the existing useState declarations, before the useFetch call:
-
-OLD:
-```
-  const { data: clientsData } = useFetch(() => clientsApi.list(0, 100), [])
-```
-NEW:
-```
   useEffect(() => {
     if (!open || !initialEngagementType) return
-    const knownCategories = ['tax_return', 'bookkeeping', 'payroll']
     const matched = knownCategories.find((cat) => initialEngagementType.startsWith(cat + '_'))
     if (matched) {
       setForm((prev) => ({ ...prev, engagementCategory: matched, engagementType: initialEngagementType }))
@@ -191,136 +86,23 @@ NEW:
     }
   }, [open, initialEngagementType])
 
-  const { data: clientsData } = useFetch(() => clientsApi.list(0, 100), [])
-```
-
-Also add `useEffect` to the import at the top of the file if it is not already imported:
-OLD:
-```
-import { useState } from 'react'
-```
 NEW:
-```
-import { useState, useEffect } from 'react'
-```
+  useEffect(() => {
+    if (!initialEngagementType) return
+    const knownCategories = ['tax_return', 'bookkeeping', 'payroll']
+    const matched = knownCategories.find((cat) => initialEngagementType.startsWith(cat + '_'))
+    if (matched) {
+      setForm((prev) => ({ ...prev, engagementCategory: matched, engagementType: initialEngagementType }))
+    } else {
+      setForm((prev) => ({ ...prev, engagementCategory: initialEngagementType, engagementType: '' }))
+    }
+  }, [initialEngagementType])
 
 Do not change anything else.
 
 VERIFY AFTER ACT:
-1.
-```
-grep -n "initialEngagementType\|useEffect" /home/corby/jamm-os/frontend/src/components/engagements/NewEngagementModal.tsx
-```
-Confirm prop exists, useEffect exists.
-2.
-```
-cd /home/corby/jamm-os/frontend
-npm run build
-```
-Zero TypeScript errors.
-
----
-
-## File 3: clients/[id]/page.tsx
-
-Task: Read action.prefill.engagementType from both the sessionStorage useEffect and the onConciergeAction listener, and pass it to NewEngagementModal.
-
-VERIFY BEFORE ACT:
-Run this and paste the full output:
-```
-grep -n "initialEngagementType\|newEngagementOpen\|prefill\|onConciergeAction\|NewEngagementModal" /home/corby/jamm-os/frontend/src/app/clients/\[id\]/page.tsx
-```
-
-Paste before touching anything.
-
-Make exactly three changes:
-
-Change 1 — add initialEngagementType state next to newEngagementOpen:
-OLD:
-```
-  const [newEngagementOpen, setNewEngagementOpen] = useState(false)
-```
-NEW:
-```
-  const [newEngagementOpen, setNewEngagementOpen] = useState(false)
-  const [initialEngagementType, setInitialEngagementType] = useState<string | undefined>()
-```
-
-Change 2 — update the sessionStorage useEffect to read prefill:
-OLD:
-```
-      if (action.modal === 'new-engagement') {
-        sessionStorage.removeItem('jamm_concierge_pending')
-        setNewEngagementOpen(true)
-      }
-```
-NEW:
-```
-      if (action.modal === 'new-engagement') {
-        sessionStorage.removeItem('jamm_concierge_pending')
-        if (action.prefill?.engagementType) setInitialEngagementType(action.prefill.engagementType)
-        setNewEngagementOpen(true)
-      }
-```
-
-Change 3 — update the onConciergeAction listener to read prefill:
-OLD:
-```
-      if (action.modal === 'new-engagement') {
-        setActiveTab('engagements')
-        setNewEngagementOpen(true)
-      }
-```
-NEW:
-```
-      if (action.modal === 'new-engagement') {
-        setActiveTab('engagements')
-        if (action.prefill?.engagementType) setInitialEngagementType(action.prefill.engagementType)
-        setNewEngagementOpen(true)
-      }
-```
-
-Change 4 — pass initialEngagementType to NewEngagementModal and clear it on close:
-OLD:
-```
-      <NewEngagementModal
-        open={newEngagementOpen}
-        onClose={() => setNewEngagementOpen(false)}
-        onAdd={(eng: Engagement) => {
-          setNewEngagementOpen(false)
-          // Refresh engagement list after creation
-          void eng
-        }}
-        preselectedClientId={clientId}
-      />
-```
-NEW:
-```
-      <NewEngagementModal
-        open={newEngagementOpen}
-        onClose={() => { setNewEngagementOpen(false); setInitialEngagementType(undefined) }}
-        onAdd={(eng: Engagement) => {
-          setNewEngagementOpen(false)
-          setInitialEngagementType(undefined)
-          void eng
-        }}
-        preselectedClientId={clientId}
-        initialEngagementType={initialEngagementType}
-      />
-```
-
-Do not change anything else.
-
-VERIFY AFTER ACT:
-1.
-```
-grep -n "initialEngagementType\|prefill" /home/corby/jamm-os/frontend/src/app/clients/\[id\]/page.tsx
-```
-Confirm four hits: state declaration, both reads of action.prefill.engagementType, and the prop on NewEngagementModal.
-2.
-```
-cd /home/corby/jamm-os/frontend
-npm run build
-```
-Zero TypeScript errors.
-3. Test in browser: with autopilot on, say "create a tax return engagement for Patricia Nguyen". Confirm the drawer opens with Patricia pre-selected and Tax Return pre-selected in the Type field.
+1. grep -n "useEffect\|initialEngagementType" /home/corby/jamm-os/frontend/src/components/engagements/NewEngagementModal.tsx
+   Confirm dependency array shows [initialEngagementType] with no open.
+2. cd /home/corby/jamm-os/frontend
+3. npm run build — zero TypeScript errors.
+4. Browser test: autopilot on, say "create a tax return engagement for Patricia Nguyen". Confirm Type field shows Tax Return.

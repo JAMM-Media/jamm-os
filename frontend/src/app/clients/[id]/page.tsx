@@ -62,6 +62,7 @@ function ClientDetailContent() {
 
   const [isEditOpen, setIsEditOpen] = useState(false)
   const [newEngagementOpen, setNewEngagementOpen] = useState(false)
+  const [initialEngagementType, setInitialEngagementType] = useState<string | undefined>()
   const [portalLinkHighlight, setPortalLinkHighlight] = useState(false)
   const portalLinkRef = useRef<HTMLButtonElement>(null)
 
@@ -76,6 +77,7 @@ function ClientDetailContent() {
       }
       if (action.modal === 'new-engagement') {
         sessionStorage.removeItem('jamm_concierge_pending')
+        if (action.prefill?.engagementType) setInitialEngagementType(action.prefill.engagementType)
         setNewEngagementOpen(true)
       }
     } catch {
@@ -87,6 +89,7 @@ function ClientDetailContent() {
     return onConciergeAction((action) => {
       if (action.modal === 'new-engagement') {
         setActiveTab('engagements')
+        if (action.prefill?.engagementType) setInitialEngagementType(action.prefill.engagementType)
         setNewEngagementOpen(true)
       }
       if (action.modal === 'portal-magic-link') {
@@ -711,13 +714,14 @@ function ClientDetailContent() {
 
       <NewEngagementModal
         open={newEngagementOpen}
-        onClose={() => setNewEngagementOpen(false)}
+        onClose={() => { setNewEngagementOpen(false); setInitialEngagementType(undefined) }}
         onAdd={(eng: Engagement) => {
           setNewEngagementOpen(false)
-          // Refresh engagement list after creation
+          setInitialEngagementType(undefined)
           void eng
         }}
         preselectedClientId={clientId}
+        initialEngagementType={initialEngagementType}
       />
     </AppShell>
   )

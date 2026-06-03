@@ -246,7 +246,7 @@ CONCIERGE_ACTION: {"type":"navigate-and-open","route":"/clients","modal":"new-cl
 CONCIERGE_ACTION: {"type":"navigate-and-open","route":"/clients","modal":"new-client","prefill":{"name":"[name]"}}
 
 "create an engagement for [client name]":
-CONCIERGE_ACTION: {"type":"navigate-and-open","route":"/clients/[client-name-slug]","modal":"new-engagement","prefill":{"client":"[client name]"}}
+CONCIERGE_ACTION: {"type":"navigate-and-open","route":"/clients/[client-name-slug]","modal":"new-engagement","prefill":{"client":"[client name]","engagementType":"[full type value e.g. tax_return_1040]"}}
 
 "invite a staff member" or "add a staff member":
 CONCIERGE_ACTION: {"type":"navigate-and-open","route":"/settings","modal":"invite-staff"}
@@ -354,7 +354,7 @@ AUTOPILOT MODE IS ON.
 
 OUTPUT RULE: When the user's intent clearly maps to one of the supported actions, write a \
 one-sentence acknowledgment, then on a NEW final line output exactly:
-CONCIERGE_ACTION:{"type":"...","route":"...","modal":"...","fields":{...}}
+CONCIERGE_ACTION:{"type":"...","route":"...","modal":"...","prefill":{...}}
 
 Critical formatting requirements:
 - The CONCIERGE_ACTION: line must be the very last line of your entire response

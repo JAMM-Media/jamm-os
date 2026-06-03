@@ -1,7 +1,7 @@
 // frontend/src/components/engagements/NewEngagementModal.tsx
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Modal } from '@/components/ui/Modal'
 import { FormField } from '@/components/ui/FormField'
 import { TextInput } from '@/components/ui/TextInput'
@@ -16,6 +16,7 @@ interface NewEngagementModalProps {
   onClose: () => void
   onAdd: (engagement: Engagement) => void
   preselectedClientId?: string
+  initialEngagementType?: string
 }
 
 interface FormErrors {
@@ -31,6 +32,7 @@ export function NewEngagementModal({
   onClose,
   onAdd,
   preselectedClientId,
+  initialEngagementType,
 }: NewEngagementModalProps) {
   const [form, setForm] = useState({
     name: '',
@@ -41,6 +43,17 @@ export function NewEngagementModal({
   })
   const [errors, setErrors] = useState<FormErrors>({})
   const [submitting, setSubmitting] = useState(false)
+
+  useEffect(() => {
+    if (!open || !initialEngagementType) return
+    const knownCategories = ['tax_return', 'bookkeeping', 'payroll']
+    const matched = knownCategories.find((cat) => initialEngagementType.startsWith(cat + '_'))
+    if (matched) {
+      setForm((prev) => ({ ...prev, engagementCategory: matched, engagementType: initialEngagementType }))
+    } else {
+      setForm((prev) => ({ ...prev, engagementCategory: initialEngagementType, engagementType: '' }))
+    }
+  }, [open, initialEngagementType])
 
   const { data: clientsData } = useFetch(() => clientsApi.list(0, 100), [])
   const clientOptions = (clientsData?.items ?? []).map((c) => ({ value: c.id, label: c.name }))
