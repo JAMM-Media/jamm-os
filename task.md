@@ -65,41 +65,26 @@ find /home/corby/jamm-os/frontend/src/components/concierge/ -name "*.tsx" | sort
 
 ---
 
-# Fix: Add long-form punctuation example to tone_examples
+# Debug: Log raw action object before resolver runs
 
-Task: Add a fourth example to tone_examples showing correct punctuation in a longer
-multi-sentence response with dependent clauses. The existing three examples only cover
-short sentences, so the model drifts on longer prose.
+Task: Add a single console.log to see the exact action the model emitted for the bookkeeping test.
 
 VERIFY BEFORE ACT:
-sed -n '33,50p' /home/corby/jamm-os/app/api/concierge/prompts.py
+grep -n "clientMatch\|isUUID" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
 Paste before touching anything.
 
 OLD:
-  <example>
-    <user>add a new client named Acme Corp</user>
-    <assistant>Opening the New Client drawer with Acme Corp filled in.</assistant>
-  </example>
-</tone_examples>
+      const clientMatch = normalizedRoute.match(/^\/clients\/([^/]+)$/)
 
 NEW:
-  <example>
-    <user>add a new client named Acme Corp</user>
-    <assistant>Opening the New Client drawer with Acme Corp filled in.</assistant>
-  </example>
-  <example>
-    <user>what engagements does Patricia Nguyen have</user>
-    <assistant>Patricia Nguyen's engagements are listed under her client record. Navigate to Clients, open Patricia Nguyen, and select the Engagements tab. All engagements tied to her record are shown there with their status, type, and assigned staff member.</assistant>
-  </example>
-</tone_examples>
+      console.log('[RESOLVER] action:', JSON.stringify(action), 'normalizedRoute:', normalizedRoute)
+      const clientMatch = normalizedRoute.match(/^\/clients\/([^/]+)$/)
 
 Do not change anything else.
 
 VERIFY AFTER ACT:
-1. sed -n '33,55p' /home/corby/jamm-os/app/api/concierge/prompts.py
-   Confirm fourth example is present with correct punctuation throughout.
-   Confirm no spaces before any comma or period in any example.
-2. Restart the backend server.
-3. Browser test: ask "what engagements does Patricia Nguyen have".
-   Confirm no space before any comma or period in the response.
+1. grep -n "RESOLVER" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+   Confirm log line exists.
+2. Open browser devtools console, run "create a bookkeeping engagement for Patricia Nguyen" with autopilot on.
+3. Paste the [RESOLVER] line from the console.
