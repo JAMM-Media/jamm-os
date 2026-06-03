@@ -65,19 +65,30 @@ find /home/corby/jamm-os/frontend/src/components/concierge/ -name "*.tsx" | sort
 
 ---
 
-## Cleanup: Remove temporary [4B] console.log from NewEngagementModal.tsx
+# Fix: Add writing mechanics rules to TONE RULES block in prompts.py
 
-Task: Remove the diagnostic log added during Phase 4B debugging. Do not change anything else.
+Task: Add spelling, grammar, and spacing rules to the existing TONE RULES block so the model
+produces clean prose consistently regardless of phrasing variation.
 
 VERIFY BEFORE ACT:
-grep -n "4B" /home/corby/jamm-os/frontend/src/components/engagements/NewEngagementModal.tsx
+grep -n "TONE RULES\|Never open\|em dash\|concise" /home/corby/jamm-os/app/api/concierge/prompts.py
 
 Paste before touching anything.
 
-Delete the single line containing [4B]. Do not change anything else.
+Find this line:
+- Keep responses concise. Short answers for simple questions. Structured lists for multi-step processes.
+
+Add these four rules immediately after it:
+- Never split compound product and industry terms into two words. Write: bookkeeping, not book keeping. QuickBooks, not Quick Books. Engagements, not engage ments.
+- Never add a space before a comma or period. Correct: "not sure yet, I can" — not "not sure yet , I can".
+- Spell check every response before emitting it. If a word looks uncertain, choose the simpler word you can spell with confidence.
+- Write in complete sentences. Never trail off with fragments or ellipses mid-thought.
+
+Do not change anything else.
 
 VERIFY AFTER ACT:
-1. grep -n "4B" /home/corby/jamm-os/frontend/src/components/engagements/NewEngagementModal.tsx
-   Confirm zero results.
-2. cd /home/corby/jamm-os/frontend
-3. npm run build — zero TypeScript errors.
+1. grep -n "bookkeeping\|space before\|Spell check\|complete sentences" /home/corby/jamm-os/app/api/concierge/prompts.py
+   Confirm all four rules are present.
+2. Restart the backend server.
+3. Browser test: ask the Concierge "create an engagement for Patricia Nguyen" with no type specified.
+   Confirm the clarifying question response has no typos, no bad spacing, no split compound words.

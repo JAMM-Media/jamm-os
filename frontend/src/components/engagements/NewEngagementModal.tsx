@@ -45,7 +45,6 @@ export function NewEngagementModal({
   const [submitting, setSubmitting] = useState(false)
 
   useEffect(() => {
-    console.log('[4B] initialEngagementType received:', initialEngagementType)
     if (!initialEngagementType) return
     const knownCategories = ['tax_return', 'bookkeeping', 'payroll']
     const matched = knownCategories.find((cat) => initialEngagementType.startsWith(cat + '_'))
