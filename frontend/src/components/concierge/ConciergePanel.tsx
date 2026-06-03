@@ -287,13 +287,14 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
           }
         }
 
+        const cleanContent = handleConciergeAction(assembled)
         setMessages((prev) => {
           const updated = [...prev]
           const last = updated[updated.length - 1]
           if (last.role === 'concierge') {
             updated[updated.length - 1] = {
               role: 'concierge',
-              content: handleConciergeAction(assembled),
+              content: cleanContent,
             }
           }
           return updated
@@ -416,6 +417,8 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
   }
 
   async function executeAction(action: ConciergeAction) {
+    const normalizedType = (action.type as string) === 'open_modal' ? 'open-modal' :
+      (action.type as string) === 'navigate_and_open' ? 'navigate-and-open' : action.type
     const routeToLabel: Record<string, string> = {
       '/clients': 'Navigated to Clients',
       '/settings/team': 'Navigated to Team Settings',

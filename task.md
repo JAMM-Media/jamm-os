@@ -67,67 +67,40 @@ find /home/corby/jamm-os/frontend/src/components/concierge/ -name "*.tsx" | sort
 
 # Section 3: Task to perform
 
-Task: Fix executeAction type mismatch and remove side effect from setMessages updater
+Task: Add sessionStorage mount handler for invite-staff in settings/team/page.tsx
 
 VERIFY BEFORE ACT:
 Run this and paste the full output:
-sed -n '290,310p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+sed -n '1,25p' /home/corby/jamm-os/frontend/src/app/settings/team/page.tsx
 
-Run this and paste the full output:
-sed -n '411,425p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+Paste before touching anything.
 
-Paste both before touching anything.
-
-Make these changes:
-
-1. Find the setMessages block that calls handleConciergeAction (around line 290):
-   setMessages((prev) => {
-     const updated = [...prev]
-     const last = updated[updated.length - 1]
-     if (last.role === 'concierge') {
-       updated[updated.length - 1] = {
-         role: 'concierge',
-         content: handleConciergeAction(assembled),
+Find the existing useEffect that calls onConciergeAction. Add a new separate useEffect directly above it:
+   useEffect(() => {
+     const raw = sessionStorage.getItem('jamm_concierge_pending')
+     if (!raw) return
+     try {
+       const action = JSON.parse(raw)
+       if (Date.now() - (action._ts ?? 0) > 10000) {
+         sessionStorage.removeItem('jamm_concierge_pending')
+         return
        }
-     }
-     return updated
-   })
-
-   Replace it with:
-   const cleanContent = handleConciergeAction(assembled)
-   setMessages((prev) => {
-     const updated = [...prev]
-     const last = updated[updated.length - 1]
-     if (last.role === 'concierge') {
-       updated[updated.length - 1] = {
-         role: 'concierge',
-         content: cleanContent,
+       if (action.modal === 'invite-staff') {
+         sessionStorage.removeItem('jamm_concierge_pending')
+         setTimeout(() => inviteRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100)
        }
+     } catch {
+       sessionStorage.removeItem('jamm_concierge_pending')
      }
-     return updated
-   })
+   }, [])
 
-   This calls handleConciergeAction once outside the updater so StrictMode cannot call it twice.
-
-2. In executeAction, find the if block that checks action.route at the top. Before that block, add:
-   const normalizedType = action.type === 'open_modal' ? 'open-modal' :
-     action.type === 'navigate_and_open' ? 'navigate-and-open' : action.type
-
-   Then replace every reference to action.type in executeAction with normalizedType.
-   There are no explicit action.type checks in executeAction currently — the routing is based on
-   action.route and action.modal presence — so this normalization is just defensive. Skip this
-   change if action.type is never checked in executeAction. Instead just add the normalization
-   at the top of executeAction for future safety.
+The setTimeout of 100ms is needed because the ref may not be attached to the DOM at the exact moment the useEffect runs on mount.
 
 Do not change anything else.
 
 VERIFY AFTER ACT:
-1. grep -n "handleConciergeAction(assembled)" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
-   Confirm zero results — it must now be called outside setMessages.
-2. grep -n "cleanContent" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
-   Confirm two results — declaration and use inside setMessages.
-3. grep -n "open_modal\|normalizedType" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
-   Confirm normalizedType is present.
-4. cd /home/corby/jamm-os/frontend
-5. npm run build — zero TypeScript errors.
-6. Report exact changes made and line numbers.
+1. grep -n "jamm_concierge_pending" /home/corby/jamm-os/frontend/src/app/settings/team/page.tsx
+   Confirm one result.
+2. cd /home/corby/jamm-os/frontend
+3. npm run build — zero TypeScript errors.
+4. Report exact changes made and line numbers.
