@@ -67,65 +67,48 @@ find /home/corby/jamm-os/frontend/src/components/concierge/ -name "*.tsx" | sort
 
 # Section 3: Task to perform
 
-Task: Fix hydration error and autopilot ref race condition in ConciergePanel.tsx
+Task: Fix autopilot modal open when already on target route in ConciergePanel.tsx
 
 VERIFY BEFORE ACT:
 Run this and paste the full output:
-sed -n '159,168p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+sed -n '476,486p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-Run this and paste the full output:
-grep -n "autopilotRef.current\|setAutopilotOn\|autopilotOn" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+Paste before touching anything.
 
-Paste both before touching anything.
+Find this block:
+    if (action.modal && action.route) {
+      sessionStorage.setItem('jamm_concierge_pending', JSON.stringify({ ...action, _ts: Date.now() }))
+      setStatusMessage(modalLabel[action.modal ?? ''] ?? 'Opened modal')
+    } else if (action.modal) {
+      emitConciergeAction(action)
+      setStatusMessage(modalLabel[action.modal ?? ''] ?? 'Opened modal')
+    } else if (action.route) {
+      emitConciergeAction(action)
+    }
 
-Make these changes:
-
-1. Find the statusMessage useState block:
-   const [statusMessage, setStatusMessage] = useState(() => {
-     if (typeof window !== 'undefined') {
-       const pending = sessionStorage.getItem('jamm_concierge_status')
-       if (pending) {
-         sessionStorage.removeItem('jamm_concierge_status')
-         return pending
-       }
-     }
-     return ''
-   })
-
-   Replace it with:
-   const [statusMessage, setStatusMessage] = useState('')
-
-   Then find the useEffect that syncs autopilotRef:
-   useEffect(() => { autopilotRef.current = autopilotOn }, [autopilotOn])
-
-   Add a new useEffect directly after it:
-   useEffect(() => {
-     const pending = sessionStorage.getItem('jamm_concierge_status')
-     if (pending) {
-       sessionStorage.removeItem('jamm_concierge_status')
-       setStatusMessage(pending)
-     }
-   }, [])
-
-2. Find the autopilot toggle button onClick:
-   onClick={() => setAutopilotOn((v) => !v)}
-
-   Replace it with:
-   onClick={() => {
-     const next = !autopilotOn
-     setAutopilotOn(next)
-     autopilotRef.current = next
-   }}
+Replace it with:
+    if (action.modal && action.route) {
+      const alreadyOnRoute = pathname.startsWith(action.route)
+      if (alreadyOnRoute) {
+        emitConciergeAction(action)
+      } else {
+        sessionStorage.setItem('jamm_concierge_pending', JSON.stringify({ ...action, _ts: Date.now() }))
+      }
+      setStatusMessage(modalLabel[action.modal ?? ''] ?? 'Opened modal')
+    } else if (action.modal) {
+      emitConciergeAction(action)
+      setStatusMessage(modalLabel[action.modal ?? ''] ?? 'Opened modal')
+    } else if (action.route) {
+      emitConciergeAction(action)
+    }
 
 Do not change anything else.
 
 VERIFY AFTER ACT:
-1. grep -n "typeof window" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
-   Confirm zero results.
-2. grep -n "jamm_concierge_status" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
-   Confirm two results — one in the new useEffect, one in executeAction where it writes the key.
-3. grep -n "autopilotRef.current = next" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+1. sed -n '476,492p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+   Confirm the alreadyOnRoute check is present.
+2. grep -n "alreadyOnRoute\|pathname.startsWith" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
    Confirm one result.
-4. cd /home/corby/jamm-os/frontend
-5. npm run build — zero TypeScript errors.
-6. Report exact changes made and line numbers.
+3. cd /home/corby/jamm-os/frontend
+4. npm run build — zero TypeScript errors.
+5. Report exact changes made and line numbers.

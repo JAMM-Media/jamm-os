@@ -156,20 +156,18 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
   const [autopilotOn,setAutopilotOn] = useState(false)
   const [suggestions, setSuggestions] = useState<string[]>([])
   const [formDirty, setFormDirtyState] = useState(false)
-  const [statusMessage, setStatusMessage] = useState(() => {
-    if (typeof window !== 'undefined') {
-      const pending = sessionStorage.getItem('jamm_concierge_status')
-      if (pending) {
-        sessionStorage.removeItem('jamm_concierge_status')
-        return pending
-      }
-    }
-    return ''
-  })
+  const [statusMessage, setStatusMessage] = useState('')
 
   // Keep a ref so the async sendMessages callback always reads current value.
   const autopilotRef = useRef(false)
   useEffect(() => { autopilotRef.current = autopilotOn }, [autopilotOn])
+  useEffect(() => {
+    const pending = sessionStorage.getItem('jamm_concierge_status')
+    if (pending) {
+      sessionStorage.removeItem('jamm_concierge_status')
+      setStatusMessage(pending)
+    }
+  }, [])
   const pendingActionRef = useRef<ConciergeAction | null>(null)
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -551,7 +549,11 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
             {/* Autopilot toggle */}
             <div className="relative group">
               <button
-                onClick={() => setAutopilotOn((v) => !v)}
+                onClick={() => {
+                  const next = !autopilotOn
+                  setAutopilotOn(next)
+                  autopilotRef.current = next
+                }}
                 className={`flex items-center gap-1 text-[11px] font-medium px-2 py-1 rounded-[4px] border border-[0.5px] transition-all duration-150 ${
                   autopilotOn
                     ? 'border-[#1F3148] bg-[#1F3148] text-white dark:border-[#4A7FA5] dark:bg-[#4A7FA5]'
