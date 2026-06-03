@@ -332,7 +332,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
     }
     if (isOpen) {
       setTimeout(() => textareaRef.current?.focus(), 250)
-      fetchNotifications()
+      api.post('/concierge/trigger-check').then(() => fetchNotifications()).catch(() => fetchNotifications())
     }
   }, [isOpen, sendMessages, fetchNotifications])
 
