@@ -65,30 +65,43 @@ find /home/corby/jamm-os/frontend/src/components/concierge/ -name "*.tsx" | sort
 
 ---
 
-# Fix: Tighten PROACTIVE INTERRUPT response length rule
+# Fix: Move two-sentence constraint to top of PROACTIVE INTERRUPT block
 
-Task: The Concierge is giving a long educational response before the offer when a notification
-is clicked. The rule needs to explicitly cap the response.
+Task: The length constraint is being ignored because it appears after the trigger mappings.
+Move it to the first line of the block so it is the first instruction the model reads.
 
 VERIFY BEFORE ACT:
-grep -n "Never repeat\|Go straight\|PROACTIVE INTERRUPT" /home/corby/jamm-os/app/api/concierge/prompts.py
+sed -n '137,150p' /home/corby/jamm-os/app/api/concierge/prompts.py
 
 Paste before touching anything.
 
 OLD:
-Never repeat the notification message back to the firm. They already read it. Go straight
-to the offer.
+PROACTIVE INTERRUPT
+When the firm sends a message that matches one of the trigger notifications below, do not
+give a generic answer. Respond with a one-sentence acknowledgment of the condition and a
+direct offer to walk them through fixing it with a plan. If they say yes or any affirmative,
+activate plan mode immediately using the mapped plan. If they say no or not now, acknowledge
+and return to normal Q&A.
 
-NEW:
 Never repeat the notification message back to the firm. They already read it. Go straight
 to the offer. Your entire response is two sentences maximum: one sentence naming the fix,
 one sentence asking if they want the plan. No background, no explanation, no feature context.
 
+NEW:
+PROACTIVE INTERRUPT
+RESPONSE LENGTH: Two sentences only. One sentence naming the fix. One sentence asking if they want the plan. No background, no explanation, no feature context. Stop after the second sentence.
+
+When the firm sends a message that matches one of the trigger notifications below, do not
+give a generic answer. Respond with a one-sentence acknowledgment of the condition and a
+direct offer to walk them through fixing it with a plan. If they say yes or any affirmative,
+activate plan mode immediately using the mapped plan. If they say no or not now, acknowledge
+and return to normal Q&A.
+
 Do not change anything else.
 
 VERIFY AFTER ACT:
-1. grep -n "two sentences maximum" /home/corby/jamm-os/app/api/concierge/prompts.py
-   Confirm present.
+1. sed -n '137,152p' /home/corby/jamm-os/app/api/concierge/prompts.py
+   Confirm RESPONSE LENGTH line is the first line after PROACTIVE INTERRUPT header.
 2. Restart the backend.
-3. Browser test: insert another test notification using the same python3 command, hard refresh,
-   click the notification. Confirm response is two sentences only.
+3. Insert test notification and click it. Confirm response is two sentences only with no lists,
+   no background, no feature explanation.
