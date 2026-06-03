@@ -1,7 +1,7 @@
 # app/api/concierge/cron.py
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from uuid import UUID
 
 from sqlalchemy import select
@@ -29,6 +29,16 @@ def run_trigger_check(firm_id: UUID, db: Session) -> int:
         ).scalar_one_or_none()
 
         if existing is not None:
+            continue
+        recently_dismissed = db.execute(
+            select(ConciergeNotification).where(
+                ConciergeNotification.firm_id == firm_id,
+                ConciergeNotification.trigger_type == trigger_type,
+                ConciergeNotification.is_read == True,
+                ConciergeNotification.dismissed_at >= datetime.now(timezone.utc) - timedelta(hours=48),
+            )
+        ).scalar_one_or_none()
+        if recently_dismissed is not None:
             continue
 
         notification = ConciergeNotification(

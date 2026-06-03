@@ -1,6 +1,7 @@
 # app/api/concierge/route.py
 
 import logging
+from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
 
@@ -154,5 +155,6 @@ def mark_notification_read(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Notification not found")
 
     notification.is_read = True
+    notification.dismissed_at = datetime.now(timezone.utc)
     db.commit()
     return {"ok": True}

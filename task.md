@@ -65,153 +65,83 @@ find /home/corby/jamm-os/frontend/src/components/concierge/ -name "*.tsx" | sort
 
 ---
 
-# Fix: Add 48-hour dismiss cooldown to trigger dedup logic
+# Phase 4C: Add PLAN ENGINE block to system prompt
 
-Task: Triggers re-fire immediately after dismiss because the dedup check only looks for
-unread notifications. Add a dismissed_at timestamp to ConciergeNotification and update
-the dedup logic to suppress re-firing within 48 hours of dismissal.
-
-Four files. Do them in order. Do not move to the next until the verify step passes.
-
----
-
-## File 1 of 4: concierge_notification.py
-
-Task: Add dismissed_at column to the model.
+Task: Insert the PLAN ENGINE block between the EXECUTE MODE section and the EMPTY STATE section.
+Prompt-only change. No backend or frontend changes required.
 
 VERIFY BEFORE ACT:
-grep -n "is_read\|dismissed\|created_at" /home/corby/jamm-os/app/models/concierge_notification.py
+sed -n '78,83p' /home/corby/jamm-os/app/api/concierge/prompts.py
 
 Paste before touching anything.
 
 OLD:
-    is_read: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
-    created_at: Mapped[datetime] = mapped_column(
+Example trigger: "How do I send a magic-link to a client?" or "Walk me through creating an engagement template."
+---
+EMPTY STATE — FIRST OPEN
 
 NEW:
-    is_read: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
-    dismissed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
+Example trigger: "How do I send a magic-link to a client?" or "Walk me through creating an engagement template."
+---
+PLAN MODE
+Activate plan mode when the firm asks you to help them complete a multi-step setup or onboarding task. Trigger phrases include: "help me set up", "walk me through", "get me started with", "take me through the steps to", "how do I onboard". Do not activate plan mode for single questions, explanations, or single-action requests.
+
+When plan mode activates:
+1. Confirm the goal in one sentence.
+2. Output a numbered plan of 3 to 7 steps. Never more than 7. Each step is one atomic action completable in under 2 minutes. Use exact UI labels the user sees on screen.
+3. Begin step 1 immediately. End with: "Let me know when you are done and I will take you to step 2."
+
+Advancing to the next step:
+Advance when the user confirms completion explicitly ("done", "ok", "saved it", "sent it") or describes having completed the action ("I added them", "just created it"). Advance when the user asks a question that only makes sense after completion. Do not advance when the message is ambiguous — ask one clarifying question first.
+
+Interruption handling:
+If the user asks an unrelated question mid-plan, answer it fully, then add one line at the end: "When you are ready, we were on step [N] of your [plan name] plan." Add this line once per interruption only. Do not repeat it on every message.
+
+Plan completion:
+When the final step is confirmed, deliver one sentence acknowledging completion. Offer one logical next action. Deactivate plan mode and return to normal Q&A for subsequent messages.
+
+Hard limits:
+Never advance a step the user has not completed or confirmed. Never generate more than 7 steps. Never restart the plan from step 1 after an interruption. Never fire an autopilot action for a future step — only the current step.
+
+When autopilot is on, fire the CONCIERGE_ACTION for the current step automatically alongside the step instruction. Do not wait for the user to ask.
+
+Supported plans and their steps:
+
+PLAN: Onboard first client
+Step 1: Navigate to Clients and select New Client. Enter the client name, email address, and entity type. Save the record.
+Step 2: Open the client record and select the Engagements tab. Create a new engagement with type and due date.
+Step 3: From the client Overview tab, select Send Portal Link. The client receives an email invitation.
+Step 4: Open the engagement and add a document request checklist. Set the items the client needs to upload.
+Step 5: Navigate to Settings and select Automation. Activate the preset for the engagement type you just created.
+
+PLAN: Set up a staff member
+Step 1: Navigate to Settings and select the Team tab. Select Invite Staff Member. Enter their name, email, and role.
+Step 2: Ask the staff member to accept the invitation and log in. Confirm their account is active.
+Step 3: Open the client records you want to assign them to. Set them as the assigned staff member on each engagement.
+
+PLAN: Connect QuickBooks
+Step 1: Navigate to Settings and select Integrations. Select Connect QuickBooks Online.
+Step 2: Sign in to QuickBooks in the window that opens. Authorize the connection.
+Step 3: Return to JAMM PX and confirm the connection status shows as connected.
+Step 4: Open any client record and check the QuickBooks AR card on the Overview tab to confirm data is syncing.
+
+PLAN: Set up billing for a client
+Step 1: Open the client record and select the Billing tab. Select New Invoice. Set the amount and due date.
+Step 2: Send the invoice to the client. They receive an email with a payment link.
+Step 3: Navigate to Settings and select Billing. Connect your Stripe account if not already connected.
+
+PLAN: Create an engagement template
+Step 1: Navigate to Engagements and select Templates. Select New Template.
+Step 2: Name the template and set the engagement type. Add the task list items that apply to every engagement of this type.
+Step 3: Save the template. Open an existing engagement and select Apply Template to confirm it works.
+---
+EMPTY STATE — FIRST OPEN
 
 Do not change anything else.
 
 VERIFY AFTER ACT:
-grep -n "dismissed_at" /home/corby/jamm-os/app/models/concierge_notification.py
-Confirm one result.
-
----
-
-## File 2 of 4: Alembic migration
-
-Task: Create a migration to add the dismissed_at column.
-
-VERIFY BEFORE ACT:
-ls /home/corby/jamm-os/alembic/versions/ | tail -5
-
-Paste before touching anything.
-
-Run:
-cd /home/corby/jamm-os
-source .venv/bin/activate
-alembic revision --autogenerate -m "add_dismissed_at_to_concierge_notifications"
-
-VERIFY AFTER ACT:
-1. ls /home/corby/jamm-os/alembic/versions/ | tail -3
-   Confirm new migration file exists.
-2. cat the new migration file and confirm it adds dismissed_at as a nullable DateTime column.
-3. alembic upgrade head
-   Confirm migration applies with no errors.
-
----
-
-## File 3 of 4: route.py
-
-Task: Set dismissed_at when a notification is marked read.
-
-VERIFY BEFORE ACT:
-grep -n "is_read\|dismissed_at" /home/corby/jamm-os/app/api/concierge/route.py
-
-Paste before touching anything.
-
-OLD:
-    notification.is_read = True
-    db.commit()
-    return {"ok": True}
-
-NEW:
-    notification.is_read = True
-    notification.dismissed_at = datetime.now(timezone.utc)
-    db.commit()
-    return {"ok": True}
-
-Also add datetime and timezone to the imports at the top of route.py if not already imported.
-Run:
-grep -n "from datetime" /home/corby/jamm-os/app/api/concierge/route.py
-
-If missing, add:
-from datetime import datetime, timezone
-
-Do not change anything else.
-
-VERIFY AFTER ACT:
-grep -n "dismissed_at\|datetime" /home/corby/jamm-os/app/api/concierge/route.py
-Confirm dismissed_at is set in the mark_notification_read function.
-
----
-
-## File 4 of 4: cron.py
-
-Task: Update dedup logic to suppress re-firing within 48 hours of dismissal.
-
-VERIFY BEFORE ACT:
-cat /home/corby/jamm-os/app/api/concierge/cron.py
-
-Paste before touching anything.
-
-OLD:
-from datetime import datetime, timezone
-
-NEW:
-from datetime import datetime, timezone, timedelta
-
-OLD:
-        existing = db.execute(
-            select(ConciergeNotification).where(
-                ConciergeNotification.firm_id == firm_id,
-                ConciergeNotification.trigger_type == trigger_type,
-                ConciergeNotification.is_read == False,
-            )
-        ).scalar_one_or_none()
-        if existing is not None:
-            continue
-
-NEW:
-        existing = db.execute(
-            select(ConciergeNotification).where(
-                ConciergeNotification.firm_id == firm_id,
-                ConciergeNotification.trigger_type == trigger_type,
-                ConciergeNotification.is_read == False,
-            )
-        ).scalar_one_or_none()
-        if existing is not None:
-            continue
-        recently_dismissed = db.execute(
-            select(ConciergeNotification).where(
-                ConciergeNotification.firm_id == firm_id,
-                ConciergeNotification.trigger_type == trigger_type,
-                ConciergeNotification.is_read == True,
-                ConciergeNotification.dismissed_at >= datetime.now(timezone.utc) - timedelta(hours=48),
-            )
-        ).scalar_one_or_none()
-        if recently_dismissed is not None:
-            continue
-
-Do not change anything else.
-
-VERIFY AFTER ACT:
-1. grep -n "timedelta\|dismissed_at\|recently_dismissed" /home/corby/jamm-os/app/api/concierge/cron.py
+1. grep -n "PLAN MODE\|Supported plans\|Onboard first client" /home/corby/jamm-os/app/api/concierge/prompts.py
    Confirm all three present.
-2. cd /home/corby/jamm-os/frontend
-3. npm run build — zero TypeScript errors.
-4. Restart backend.
-5. In the test firm, dismiss both notifications. Refresh the page. Confirm neither re-fires immediately.
+2. Restart the backend server.
+3. Browser test: say "help me onboard my first client" with autopilot on.
+   Confirm: numbered plan appears, step 1 instruction is specific, CONCIERGE_ACTION fires to open New Client drawer.
