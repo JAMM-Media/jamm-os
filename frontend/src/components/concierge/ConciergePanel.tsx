@@ -436,10 +436,9 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
     }
 
     if (action.route) {
-      console.log('[RESOLVER] action:', JSON.stringify(action), 'normalizedRoute:', normalizedRoute)
       const clientMatch = normalizedRoute.match(/^\/clients\/([^/]+)$/)
       if (clientMatch) {
-        const name = decodeURIComponent(clientMatch[1]).replace(/-/g, ' ')
+        const name = decodeURIComponent(clientMatch[1]).replace(/-/g, ' ').replace(/\s+/g, ' ').trim()
         const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(name)
         if (!isUUID) {
           const token = localStorage.getItem('access_token')

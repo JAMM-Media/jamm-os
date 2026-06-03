@@ -65,31 +65,153 @@ find /home/corby/jamm-os/frontend/src/components/concierge/ -name "*.tsx" | sort
 
 ---
 
-# Fix: Normalize extracted client name before resolver call
+# Fix: Add 48-hour dismiss cooldown to trigger dedup logic
 
-Task: The model sometimes emits malformed slugs with spaces around hyphens (e.g. "patricia- nguyen").
-The name extraction decodes this to "patricia  nguyen" with a double space, which fails the DB lookup.
-Normalize the extracted name by collapsing all whitespace to single spaces and trimming before the
-resolver call. This is a system fix — it handles any spacing variation the model produces.
+Task: Triggers re-fire immediately after dismiss because the dedup check only looks for
+unread notifications. Add a dismissed_at timestamp to ConciergeNotification and update
+the dedup logic to suppress re-firing within 48 hours of dismissal.
+
+Four files. Do them in order. Do not move to the next until the verify step passes.
+
+---
+
+## File 1 of 4: concierge_notification.py
+
+Task: Add dismissed_at column to the model.
 
 VERIFY BEFORE ACT:
-sed -n '439,445p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+grep -n "is_read\|dismissed\|created_at" /home/corby/jamm-os/app/models/concierge_notification.py
 
 Paste before touching anything.
 
 OLD:
-        const name = decodeURIComponent(clientMatch[1]).replace(/-/g, ' ')
+    is_read: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    created_at: Mapped[datetime] = mapped_column(
 
 NEW:
-        const name = decodeURIComponent(clientMatch[1]).replace(/-/g, ' ').replace(/\s+/g, ' ').trim()
+    is_read: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    dismissed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
 
 Do not change anything else.
 
 VERIFY AFTER ACT:
-1. grep -n "replace.*-.*replace.*s+" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
-   Confirm the normalized line exists.
+grep -n "dismissed_at" /home/corby/jamm-os/app/models/concierge_notification.py
+Confirm one result.
+
+---
+
+## File 2 of 4: Alembic migration
+
+Task: Create a migration to add the dismissed_at column.
+
+VERIFY BEFORE ACT:
+ls /home/corby/jamm-os/alembic/versions/ | tail -5
+
+Paste before touching anything.
+
+Run:
+cd /home/corby/jamm-os
+source .venv/bin/activate
+alembic revision --autogenerate -m "add_dismissed_at_to_concierge_notifications"
+
+VERIFY AFTER ACT:
+1. ls /home/corby/jamm-os/alembic/versions/ | tail -3
+   Confirm new migration file exists.
+2. cat the new migration file and confirm it adds dismissed_at as a nullable DateTime column.
+3. alembic upgrade head
+   Confirm migration applies with no errors.
+
+---
+
+## File 3 of 4: route.py
+
+Task: Set dismissed_at when a notification is marked read.
+
+VERIFY BEFORE ACT:
+grep -n "is_read\|dismissed_at" /home/corby/jamm-os/app/api/concierge/route.py
+
+Paste before touching anything.
+
+OLD:
+    notification.is_read = True
+    db.commit()
+    return {"ok": True}
+
+NEW:
+    notification.is_read = True
+    notification.dismissed_at = datetime.now(timezone.utc)
+    db.commit()
+    return {"ok": True}
+
+Also add datetime and timezone to the imports at the top of route.py if not already imported.
+Run:
+grep -n "from datetime" /home/corby/jamm-os/app/api/concierge/route.py
+
+If missing, add:
+from datetime import datetime, timezone
+
+Do not change anything else.
+
+VERIFY AFTER ACT:
+grep -n "dismissed_at\|datetime" /home/corby/jamm-os/app/api/concierge/route.py
+Confirm dismissed_at is set in the mark_notification_read function.
+
+---
+
+## File 4 of 4: cron.py
+
+Task: Update dedup logic to suppress re-firing within 48 hours of dismissal.
+
+VERIFY BEFORE ACT:
+cat /home/corby/jamm-os/app/api/concierge/cron.py
+
+Paste before touching anything.
+
+OLD:
+from datetime import datetime, timezone
+
+NEW:
+from datetime import datetime, timezone, timedelta
+
+OLD:
+        existing = db.execute(
+            select(ConciergeNotification).where(
+                ConciergeNotification.firm_id == firm_id,
+                ConciergeNotification.trigger_type == trigger_type,
+                ConciergeNotification.is_read == False,
+            )
+        ).scalar_one_or_none()
+        if existing is not None:
+            continue
+
+NEW:
+        existing = db.execute(
+            select(ConciergeNotification).where(
+                ConciergeNotification.firm_id == firm_id,
+                ConciergeNotification.trigger_type == trigger_type,
+                ConciergeNotification.is_read == False,
+            )
+        ).scalar_one_or_none()
+        if existing is not None:
+            continue
+        recently_dismissed = db.execute(
+            select(ConciergeNotification).where(
+                ConciergeNotification.firm_id == firm_id,
+                ConciergeNotification.trigger_type == trigger_type,
+                ConciergeNotification.is_read == True,
+                ConciergeNotification.dismissed_at >= datetime.now(timezone.utc) - timedelta(hours=48),
+            )
+        ).scalar_one_or_none()
+        if recently_dismissed is not None:
+            continue
+
+Do not change anything else.
+
+VERIFY AFTER ACT:
+1. grep -n "timedelta\|dismissed_at\|recently_dismissed" /home/corby/jamm-os/app/api/concierge/cron.py
+   Confirm all three present.
 2. cd /home/corby/jamm-os/frontend
 3. npm run build — zero TypeScript errors.
-4. Browser test: autopilot on, say "create a bookkeeping engagement for Patricia Nguyen".
-   Confirm drawer opens on Patricia's page with bookkeeping pre-selected. No "Could not find client" error.
-5. Remove the [RESOLVER] console.log added in the previous debug task in the same edit session.
+4. Restart backend.
+5. In the test firm, dismiss both notifications. Refresh the page. Confirm neither re-fires immediately.
