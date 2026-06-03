@@ -67,33 +67,61 @@ find /home/corby/jamm-os/frontend/src/components/concierge/ -name "*.tsx" | sort
 
 # Section 3: Task to perform
 
-Task: Fix CONCIERGE_ACTION JSON extraction to handle line breaks in ConciergePanel.tsx
+Task: Persist autopilot state across navigation in ConciergePanel.tsx and fix scroll position in settings/page.tsx
 
 VERIFY BEFORE ACT:
 Run this and paste the full output:
-sed -n '393,412p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+grep -n "autopilotOn\|setAutopilotOn\|jamm_concierge" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx | head -20
 
-Paste before touching anything.
+Run this and paste the full output:
+grep -n "scrollIntoView" /home/corby/jamm-os/frontend/src/app/settings/page.tsx
 
-Find this line inside handleConciergeAction:
-    const actionLine = raw.slice(actionIndex + ACTION_MARKER.length).split('\n')[0].trim()
+Paste both before touching anything.
 
-Replace it with:
-    const afterMarker = raw.slice(actionIndex + ACTION_MARKER.length)
-    const braceStart = afterMarker.indexOf('{')
-    const braceEnd = afterMarker.lastIndexOf('}')
-    if (braceStart === -1 || braceEnd === -1) return beforeAction
-    const actionLine = afterMarker.slice(braceStart, braceEnd + 1).replace(/\s+/g, ' ').trim()
+Make these changes:
 
-This finds the first { and last } in everything after the marker and extracts the full JSON regardless of line breaks or whitespace.
+1. In ConciergePanel.tsx, find:
+   const [autopilotOn,setAutopilotOn] = useState(false)
+
+   Replace with:
+   const [autopilotOn, setAutopilotOn] = useState(() => {
+     if (typeof window !== 'undefined') {
+       return sessionStorage.getItem('jamm_concierge_autopilot') === 'true'
+     }
+     return false
+   })
+
+2. In ConciergePanel.tsx, find the autopilot toggle button onClick:
+   const next = !autopilotOn
+   setAutopilotOn(next)
+   autopilotRef.current = next
+
+   Add one line after setAutopilotOn(next):
+   sessionStorage.setItem('jamm_concierge_autopilot', String(next))
+
+3. In ConciergePanel.tsx, find the useEffect that resets autopilot on close:
+   if (!isOpen) setAutopilotOn(false)
+
+   Replace with:
+   if (!isOpen) {
+     setAutopilotOn(false)
+     autopilotRef.current = false
+     sessionStorage.removeItem('jamm_concierge_autopilot')
+   }
+
+4. In frontend/src/app/settings/page.tsx, find both occurrences of:
+   scrollIntoView({ behavior: 'smooth', block: 'center' })
+
+   Replace both with:
+   scrollIntoView({ behavior: 'smooth', block: 'start' })
 
 Do not change anything else.
 
 VERIFY AFTER ACT:
-1. grep -n "braceStart\|braceEnd\|lastIndexOf" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
-   Confirm three results.
-2. grep -n "split.*\\\\n.*\[0\]" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
-   Confirm zero results — the old split is gone.
+1. grep -n "jamm_concierge_autopilot" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+   Confirm three results — read in useState, write on toggle, remove on close.
+2. grep -n "scrollIntoView" /home/corby/jamm-os/frontend/src/app/settings/page.tsx
+   Confirm both show block: 'start'.
 3. cd /home/corby/jamm-os/frontend
 4. npm run build — zero TypeScript errors.
 5. Report exact changes made and line numbers.

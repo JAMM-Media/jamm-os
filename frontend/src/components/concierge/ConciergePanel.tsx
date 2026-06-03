@@ -399,7 +399,11 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
     if (actionIndex === -1) return raw
 
     const beforeAction = raw.slice(0, actionIndex).trim()
-    const actionLine = raw.slice(actionIndex + ACTION_MARKER.length).split('\n')[0].trim()
+    const afterMarker = raw.slice(actionIndex + ACTION_MARKER.length)
+    const braceStart = afterMarker.indexOf('{')
+    const braceEnd = afterMarker.lastIndexOf('}')
+    if (braceStart === -1 || braceEnd === -1) return beforeAction
+    const actionLine = afterMarker.slice(braceStart, braceEnd + 1).replace(/\s+/g, ' ').trim()
     console.log('[JC] actionLine:', actionLine)
 
     if (!autopilotRef.current) {
