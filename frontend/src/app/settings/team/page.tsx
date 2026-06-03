@@ -11,6 +11,24 @@ export default function SettingsTeamPage() {
   const inviteRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
+    const raw = sessionStorage.getItem('jamm_concierge_pending')
+    if (!raw) return
+    try {
+      const action = JSON.parse(raw)
+      if (Date.now() - (action._ts ?? 0) > 10000) {
+        sessionStorage.removeItem('jamm_concierge_pending')
+        return
+      }
+      if (action.modal === 'invite-staff') {
+        sessionStorage.removeItem('jamm_concierge_pending')
+        setTimeout(() => inviteRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100)
+      }
+    } catch {
+      sessionStorage.removeItem('jamm_concierge_pending')
+    }
+  }, [])
+
+  useEffect(() => {
     return onConciergeAction((action) => {
       if (action.modal === 'invite-staff') {
         inviteRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })

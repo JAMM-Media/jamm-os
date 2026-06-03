@@ -67,15 +67,24 @@ find /home/corby/jamm-os/frontend/src/components/concierge/ -name "*.tsx" | sort
 
 # Section 3: Task to perform
 
-Task: Add sessionStorage mount handler for invite-staff in settings/team/page.tsx
+Task: Fix invite-staff route in prompts.py and add sessionStorage mount handler in settings/page.tsx
 
 VERIFY BEFORE ACT:
 Run this and paste the full output:
-sed -n '1,25p' /home/corby/jamm-os/frontend/src/app/settings/team/page.tsx
+grep -n "settings/team\|invite-staff" /home/corby/jamm-os/app/api/concierge/prompts.py
 
-Paste before touching anything.
+Run this and paste the full output:
+grep -n "onConciergeAction\|inviteFormRef\|jamm_concierge_pending" /home/corby/jamm-os/frontend/src/app/settings/page.tsx
 
-Find the existing useEffect that calls onConciergeAction. Add a new separate useEffect directly above it:
+Paste both before touching anything.
+
+Make these changes:
+
+1. In prompts.py, find every occurrence of /settings/team in the AUTOPILOT MODE section.
+   Replace each one with /settings
+
+2. In frontend/src/app/settings/page.tsx, find the existing useEffect that calls onConciergeAction
+   for invite-staff. Add a new separate useEffect directly above it:
    useEffect(() => {
      const raw = sessionStorage.getItem('jamm_concierge_pending')
      if (!raw) return
@@ -87,20 +96,25 @@ Find the existing useEffect that calls onConciergeAction. Add a new separate use
        }
        if (action.modal === 'invite-staff') {
          sessionStorage.removeItem('jamm_concierge_pending')
-         setTimeout(() => inviteRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100)
+         setActiveTab('team')
+         setTimeout(() => inviteFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 150)
        }
      } catch {
        sessionStorage.removeItem('jamm_concierge_pending')
      }
    }, [])
 
-The setTimeout of 100ms is needed because the ref may not be attached to the DOM at the exact moment the useEffect runs on mount.
+   Note: setActiveTab('team') ensures the team tab is active before scrolling so the form is visible.
 
 Do not change anything else.
 
 VERIFY AFTER ACT:
-1. grep -n "jamm_concierge_pending" /home/corby/jamm-os/frontend/src/app/settings/team/page.tsx
+1. grep -n "settings/team" /home/corby/jamm-os/app/api/concierge/prompts.py
+   Confirm zero results.
+2. grep -n "jamm_concierge_pending" /home/corby/jamm-os/frontend/src/app/settings/page.tsx
    Confirm one result.
-2. cd /home/corby/jamm-os/frontend
-3. npm run build — zero TypeScript errors.
-4. Report exact changes made and line numbers.
+3. grep -n "setActiveTab\('team'\)" /home/corby/jamm-os/frontend/src/app/settings/page.tsx
+   Confirm one result.
+4. cd /home/corby/jamm-os/frontend
+5. npm run build — zero TypeScript errors.
+6. Report exact changes made and line numbers.
