@@ -419,6 +419,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
   async function executeAction(action: ConciergeAction) {
     const normalizedType = (action.type as string) === 'open_modal' ? 'open-modal' :
       (action.type as string) === 'navigate_and_open' ? 'navigate-and-open' : action.type
+    const normalizedRoute = (action.route === '/settings/team' ? '/settings' : action.route) as string
     const routeToLabel: Record<string, string> = {
       '/clients': 'Navigated to Clients',
       '/settings/team': 'Navigated to Team Settings',
@@ -428,7 +429,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
     }
 
     if (action.route) {
-      const clientMatch = action.route.match(/^\/clients\/([^/]+)$/)
+      const clientMatch = normalizedRoute.match(/^\/clients\/([^/]+)$/)
       if (clientMatch) {
         const name = decodeURIComponent(clientMatch[1]).replace(/-/g, ' ')
         const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(name)
@@ -467,13 +468,13 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
         }
       }
 
-      const navLabel = routeToLabel[action.route] ?? `Navigated to ${action.route}`
+      const navLabel = routeToLabel[normalizedRoute] ?? `Navigated to ${normalizedRoute}`
       if (formDirty) {
         const ok = window.confirm('You have unsaved changes. Navigate away?')
         if (!ok) return
       }
       sessionStorage.setItem('jamm_concierge_status', navLabel)
-      router.push(action.route)
+      router.push(normalizedRoute)
       setStatusMessage(navLabel)
     }
 
@@ -484,11 +485,11 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
       'new-template': 'Opened New Template drawer',
     }
     if (action.modal && action.route) {
-      const alreadyOnRoute = pathname.startsWith(action.route)
+      const alreadyOnRoute = pathname.startsWith(normalizedRoute)
       if (alreadyOnRoute) {
         emitConciergeAction(action)
       } else {
-        sessionStorage.setItem('jamm_concierge_pending', JSON.stringify({ ...action, _ts: Date.now() }))
+        sessionStorage.setItem('jamm_concierge_pending', JSON.stringify({ ...action, route: normalizedRoute, _ts: Date.now() }))
       }
       setStatusMessage(modalLabel[action.modal ?? ''] ?? 'Opened modal')
     } else if (action.modal) {

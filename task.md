@@ -67,40 +67,33 @@ find /home/corby/jamm-os/frontend/src/components/concierge/ -name "*.tsx" | sort
 
 # Section 3: Task to perform
 
-Task: Normalize /settings/team route to /settings in executeAction in ConciergePanel.tsx
+Task: Fix CONCIERGE_ACTION JSON extraction to handle line breaks in ConciergePanel.tsx
 
 VERIFY BEFORE ACT:
 Run this and paste the full output:
-sed -n '418,425p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+sed -n '393,412p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
 Paste before touching anything.
 
-Find the normalizedType line at the top of executeAction. Directly after it, add:
-  const normalizedRoute = action.route === '/settings/team' ? '/settings' : action.route
+Find this line inside handleConciergeAction:
+    const actionLine = raw.slice(actionIndex + ACTION_MARKER.length).split('\n')[0].trim()
 
-Then replace every reference to action.route in executeAction with normalizedRoute.
-To do this safely, find this line:
-  if (action.route) {
-    const clientMatch = action.route.match(/^\/clients\/([^/]+)$/)
+Replace it with:
+    const afterMarker = raw.slice(actionIndex + ACTION_MARKER.length)
+    const braceStart = afterMarker.indexOf('{')
+    const braceEnd = afterMarker.lastIndexOf('}')
+    if (braceStart === -1 || braceEnd === -1) return beforeAction
+    const actionLine = afterMarker.slice(braceStart, braceEnd + 1).replace(/\s+/g, ' ').trim()
 
-Replace action.route with normalizedRoute throughout the entire executeAction function body.
-Specifically these occurrences:
-  - action.route.match(...)  → normalizedRoute.match(...)
-  - /api/backend/concierge/clients/resolve?name=... (no change needed here)
-  - const resolvedRoute = `/clients/${data.id}` (no change needed)
-  - sessionStorage.setItem('jamm_concierge_status', navLabel) (no change)
-  - router.push(action.route) → router.push(normalizedRoute)
-  - routeToLabel[action.route] → routeToLabel[normalizedRoute]
-  - pathname.startsWith(action.route) → pathname.startsWith(normalizedRoute)
-  - sessionStorage.setItem('jamm_concierge_pending', JSON.stringify({ ...action, _ts: Date.now() })) — here also spread normalizedRoute: JSON.stringify({ ...action, route: normalizedRoute, _ts: Date.now() })
+This finds the first { and last } in everything after the marker and extracts the full JSON regardless of line breaks or whitespace.
 
 Do not change anything else.
 
 VERIFY AFTER ACT:
-1. grep -n "normalizedRoute" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
-   Confirm at least 5 results.
-2. grep -n "settings/team" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
-   Confirm zero results.
+1. grep -n "braceStart\|braceEnd\|lastIndexOf" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+   Confirm three results.
+2. grep -n "split.*\\\\n.*\[0\]" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+   Confirm zero results — the old split is gone.
 3. cd /home/corby/jamm-os/frontend
 4. npm run build — zero TypeScript errors.
 5. Report exact changes made and line numbers.
