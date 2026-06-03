@@ -67,48 +67,49 @@ find /home/corby/jamm-os/frontend/src/components/concierge/ -name "*.tsx" | sort
 
 # Section 3: Task to perform
 
-Task: Fix autopilot modal open when already on target route in ConciergePanel.tsx
+Task: Add temporary diagnostic console.logs to trace autopilot execution
 
 VERIFY BEFORE ACT:
 Run this and paste the full output:
-sed -n '476,486p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+sed -n '390,410p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
 Paste before touching anything.
 
-Find this block:
-    if (action.modal && action.route) {
-      sessionStorage.setItem('jamm_concierge_pending', JSON.stringify({ ...action, _ts: Date.now() }))
-      setStatusMessage(modalLabel[action.modal ?? ''] ?? 'Opened modal')
-    } else if (action.modal) {
-      emitConciergeAction(action)
-      setStatusMessage(modalLabel[action.modal ?? ''] ?? 'Opened modal')
-    } else if (action.route) {
-      emitConciergeAction(action)
-    }
+Make these changes:
 
-Replace it with:
-    if (action.modal && action.route) {
-      const alreadyOnRoute = pathname.startsWith(action.route)
-      if (alreadyOnRoute) {
-        emitConciergeAction(action)
-      } else {
-        sessionStorage.setItem('jamm_concierge_pending', JSON.stringify({ ...action, _ts: Date.now() }))
-      }
-      setStatusMessage(modalLabel[action.modal ?? ''] ?? 'Opened modal')
-    } else if (action.modal) {
-      emitConciergeAction(action)
-      setStatusMessage(modalLabel[action.modal ?? ''] ?? 'Opened modal')
-    } else if (action.route) {
-      emitConciergeAction(action)
-    }
+1. Find handleConciergeAction. At the very top of the function, after the ACTION_MARKER declaration, add:
+   console.log('[JC] raw assembled:', raw)
+
+2. After this line:
+   const actionIndex = raw.indexOf(ACTION_MARKER)
+   Add:
+   console.log('[JC] actionIndex:', actionIndex)
+
+3. After this line:
+   const actionLine = raw.slice(actionIndex + ACTION_MARKER.length).split('\n')[0].trim()
+   Add:
+   console.log('[JC] actionLine:', actionLine)
+
+4. After this line:
+   const action: ConciergeAction = JSON.parse(actionLine)
+   Add:
+   console.log('[JC] parsed action:', action)
+
+5. After this line:
+   if (!autopilotRef.current) {
+   Add on the next line before the return:
+   console.log('[JC] autopilotRef.current:', autopilotRef.current)
+
+6. Find the pendingActionRef flush block after setMessages:
+   if (pendingActionRef.current) {
+   Add directly before it:
+   console.log('[JC] pendingActionRef after setMessages:', pendingActionRef.current)
 
 Do not change anything else.
 
 VERIFY AFTER ACT:
-1. sed -n '476,492p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
-   Confirm the alreadyOnRoute check is present.
-2. grep -n "alreadyOnRoute\|pathname.startsWith" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
-   Confirm one result.
-3. cd /home/corby/jamm-os/frontend
-4. npm run build — zero TypeScript errors.
-5. Report exact changes made and line numbers.
+1. grep -n "\[JC\]" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+   Confirm six results.
+2. cd /home/corby/jamm-os/frontend
+3. npm run build — zero TypeScript errors.
+4. Report exact line numbers added.

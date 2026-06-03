@@ -475,7 +475,12 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
       'new-template': 'Opened New Template drawer',
     }
     if (action.modal && action.route) {
-      sessionStorage.setItem('jamm_concierge_pending', JSON.stringify({ ...action, _ts: Date.now() }))
+      const alreadyOnRoute = pathname.startsWith(action.route)
+      if (alreadyOnRoute) {
+        emitConciergeAction(action)
+      } else {
+        sessionStorage.setItem('jamm_concierge_pending', JSON.stringify({ ...action, _ts: Date.now() }))
+      }
       setStatusMessage(modalLabel[action.modal ?? ''] ?? 'Opened modal')
     } else if (action.modal) {
       emitConciergeAction(action)
