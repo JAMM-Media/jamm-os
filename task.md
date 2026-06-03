@@ -67,102 +67,86 @@ find /home/corby/jamm-os/frontend/src/components/concierge/ -name "*.tsx" | sort
 
 # Section 3: Task to perform
 
-Task: Fix autopilot navigate-and-open using sessionStorage pending action
+Task: Decouple executeAction from setMessages updater + fix duplicate notifications
 
 VERIFY BEFORE ACT:
 Run this and paste the full output:
-grep -n "sessionStorage\|emitConciergeAction\|setTimeout" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+sed -n '145,160p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
 Run this and paste the full output:
-grep -n "useEffect\|onConciergeAction\|setModalOpen\|setPrefillName" /home/corby/jamm-os/frontend/src/app/clients/page.tsx
+sed -n '383,402p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
 Run this and paste the full output:
-grep -n "useEffect\|onConciergeAction\|setNewEngagementOpen" /home/corby/jamm-os/frontend/src/app/clients/\[id\]/page.tsx
+grep -n "fetchNotifications\|setNotifications\|items" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
 Paste all three before touching anything.
 
 Make these changes:
 
-1. In ConciergePanel.tsx, in the executeAction function, find the client name resolver block. It ends with these lines:
-   sessionStorage.setItem('jamm_concierge_status', ...)
-   router.push(resolvedRoute)
-   setStatusMessage(...)
-   setTimeout(() => emitConciergeAction({ ...action, route: resolvedRoute }), 500)
+1. In ConciergePanel.tsx, directly after the autopilotRef declaration, add a new ref:
+   const pendingActionRef = useRef<ConciergeAction | null>(null)
 
-   Delete the setTimeout line entirely. Before router.push, add:
-   sessionStorage.setItem('jamm_concierge_pending', JSON.stringify({ ...action, route: resolvedRoute, _ts: Date.now() }))
+2. Replace the handleConciergeAction function entirely with this:
+   function handleConciergeAction(raw: string): string {
+     const ACTION_MARKER = 'CONCIERGE_ACTION:'
+     const actionIndex = raw.indexOf(ACTION_MARKER)
+     if (actionIndex === -1) return raw
 
-2. In ConciergePanel.tsx, in the executeAction function, find the modal block at the bottom:
-   if (action.modal) {
-     setTimeout(() => {
-       emitConciergeAction(action)
-       setStatusMessage(modalLabel[action.modal ?? ''] ?? 'Opened modal')
-     }, 500)
-   } else if (action.route) {
-     setTimeout(() => emitConciergeAction(action), 500)
+     const beforeAction = raw.slice(0, actionIndex).trim()
+     const actionLine = raw.slice(actionIndex + ACTION_MARKER.length).split('\n')[0].trim()
+
+     if (!autopilotRef.current) {
+       return beforeAction || 'To navigate, turn on Autopilot using the toggle above.'
+     }
+
+     try {
+       const action: ConciergeAction = JSON.parse(actionLine)
+       pendingActionRef.current = action
+     } catch {}
+
+     return beforeAction || ''
    }
 
-   Replace the entire if/else block with:
-   if (action.modal && action.route) {
-     sessionStorage.setItem('jamm_concierge_pending', JSON.stringify({ ...action, _ts: Date.now() }))
-     setStatusMessage(modalLabel[action.modal ?? ''] ?? 'Opened modal')
-   } else if (action.modal) {
-     emitConciergeAction(action)
-     setStatusMessage(modalLabel[action.modal ?? ''] ?? 'Opened modal')
-   } else if (action.route) {
-     emitConciergeAction(action)
+3. Find the setMessages call that calls handleConciergeAction (around line 286). It looks like:
+   setMessages((prev) => {
+     const updated = [...prev]
+     const last = updated[updated.length - 1]
+     if (last.role === 'concierge') {
+       updated[updated.length - 1] = {
+         role: 'concierge',
+         content: handleConciergeAction(assembled),
+       }
+     }
+     return updated
+   })
+
+   After this entire setMessages block (not inside it), add:
+   if (pendingActionRef.current) {
+     const action = pendingActionRef.current
+     pendingActionRef.current = null
+     void executeAction(action)
    }
 
-3. In frontend/src/app/clients/page.tsx, find the existing useEffect that calls onConciergeAction. Add a new separate useEffect directly above it:
-   useEffect(() => {
-     const raw = sessionStorage.getItem('jamm_concierge_pending')
-     if (!raw) return
-     try {
-       const action = JSON.parse(raw)
-       if (Date.now() - (action._ts ?? 0) > 10000) {
-         sessionStorage.removeItem('jamm_concierge_pending')
-         return
-       }
-       if (action.modal === 'new-client') {
-         sessionStorage.removeItem('jamm_concierge_pending')
-         if (action.prefill?.name) setPrefillName(action.prefill.name)
-         setModalOpen(true)
-       }
-     } catch {
-       sessionStorage.removeItem('jamm_concierge_pending')
-     }
-   }, [])
+4. Find the fetchNotifications function. It contains:
+   setNotifications(res.data.items ?? [])
 
-4. In frontend/src/app/clients/[id]/page.tsx, find the existing useEffect that calls onConciergeAction. Add a new separate useEffect directly above it:
-   useEffect(() => {
-     const raw = sessionStorage.getItem('jamm_concierge_pending')
-     if (!raw) return
-     try {
-       const action = JSON.parse(raw)
-       if (Date.now() - (action._ts ?? 0) > 10000) {
-         sessionStorage.removeItem('jamm_concierge_pending')
-         return
-       }
-       if (action.modal === 'new-engagement') {
-         sessionStorage.removeItem('jamm_concierge_pending')
-         setNewEngagementOpen(true)
-       }
-     } catch {
-       sessionStorage.removeItem('jamm_concierge_pending')
-     }
-   }, [])
+   Replace that line with:
+   setNotifications((prev) => {
+     const existing = new Set(prev.map((n) => n.id))
+     const incoming = (res.data.items ?? []) as Notification[]
+     const fresh = incoming.filter((n) => !existing.has(n.id))
+     return fresh.length > 0 ? [...prev, ...fresh] : prev
+   })
 
-Do not change anything else in any file.
+Do not change anything else.
 
 VERIFY AFTER ACT:
-1. grep -n "jamm_concierge_pending" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
-   Confirm two results — one in client resolver block, one in modal block.
-2. grep -n "jamm_concierge_pending" /home/corby/jamm-os/frontend/src/app/clients/page.tsx
-   Confirm one result.
-3. grep -n "jamm_concierge_pending" /home/corby/jamm-os/frontend/src/app/clients/\[id\]/page.tsx
-   Confirm one result.
-4. grep -n "setTimeout.*emitConciergeAction\|emitConciergeAction.*setTimeout" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
-   Confirm zero results.
-5. cd /home/corby/jamm-os/frontend
-6. npm run build — zero TypeScript errors.
-7. Report exact changes made and line numbers.
+1. grep -n "pendingActionRef" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+   Confirm three results — declaration, assignment in handleConciergeAction, read after setMessages.
+2. grep -n "void executeAction" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+   Confirm exactly one result — after the setMessages block, not inside it.
+3. grep -n "setNotifications" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+   Confirm the updater function form is present.
+4. cd /home/corby/jamm-os/frontend
+5. npm run build — zero TypeScript errors.
+6. Report exact changes made and line numbers.

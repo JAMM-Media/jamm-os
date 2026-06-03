@@ -66,6 +66,24 @@ function ClientDetailContent() {
   const portalLinkRef = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
+    const raw = sessionStorage.getItem('jamm_concierge_pending')
+    if (!raw) return
+    try {
+      const action = JSON.parse(raw)
+      if (Date.now() - (action._ts ?? 0) > 10000) {
+        sessionStorage.removeItem('jamm_concierge_pending')
+        return
+      }
+      if (action.modal === 'new-engagement') {
+        sessionStorage.removeItem('jamm_concierge_pending')
+        setNewEngagementOpen(true)
+      }
+    } catch {
+      sessionStorage.removeItem('jamm_concierge_pending')
+    }
+  }, [])
+
+  useEffect(() => {
     return onConciergeAction((action) => {
       if (action.modal === 'new-engagement') {
         setActiveTab('engagements')

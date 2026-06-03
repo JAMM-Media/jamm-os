@@ -439,9 +439,9 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
               if (!ok) return
             }
             sessionStorage.setItem('jamm_concierge_status', `Navigated to ${capitalized}`)
+            sessionStorage.setItem('jamm_concierge_pending', JSON.stringify({ ...action, route: resolvedRoute, _ts: Date.now() }))
             router.push(resolvedRoute)
             setStatusMessage(`Navigated to ${capitalized}`)
-            setTimeout(() => emitConciergeAction({ ...action, route: resolvedRoute }), 500)
           } catch {
             setStatusMessage('Could not find client')
           }
@@ -459,19 +459,20 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
       setStatusMessage(navLabel)
     }
 
-    if (action.modal) {
-      const modalLabel: Record<string, string> = {
-        'new-client': 'Opened New Client drawer',
-        'new-engagement': 'Opened New Engagement drawer',
-        'invite-staff': 'Opened Invite Staff modal',
-        'new-template': 'Opened New Template drawer',
-      }
-      setTimeout(() => {
-        emitConciergeAction(action)
-        setStatusMessage(modalLabel[action.modal ?? ''] ?? 'Opened modal')
-      }, 500)
+    const modalLabel: Record<string, string> = {
+      'new-client': 'Opened New Client drawer',
+      'new-engagement': 'Opened New Engagement drawer',
+      'invite-staff': 'Opened Invite Staff modal',
+      'new-template': 'Opened New Template drawer',
+    }
+    if (action.modal && action.route) {
+      sessionStorage.setItem('jamm_concierge_pending', JSON.stringify({ ...action, _ts: Date.now() }))
+      setStatusMessage(modalLabel[action.modal ?? ''] ?? 'Opened modal')
+    } else if (action.modal) {
+      emitConciergeAction(action)
+      setStatusMessage(modalLabel[action.modal ?? ''] ?? 'Opened modal')
     } else if (action.route) {
-      setTimeout(() => emitConciergeAction(action), 500)
+      emitConciergeAction(action)
     }
   }
 

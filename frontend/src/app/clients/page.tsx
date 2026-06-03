@@ -25,6 +25,25 @@ export default function ClientsPage() {
   const [prefillName, setPrefillName] = useState<string | undefined>()
 
   useEffect(() => {
+    const raw = sessionStorage.getItem('jamm_concierge_pending')
+    if (!raw) return
+    try {
+      const action = JSON.parse(raw)
+      if (Date.now() - (action._ts ?? 0) > 10000) {
+        sessionStorage.removeItem('jamm_concierge_pending')
+        return
+      }
+      if (action.modal === 'new-client') {
+        sessionStorage.removeItem('jamm_concierge_pending')
+        if (action.prefill?.name) setPrefillName(action.prefill.name)
+        setModalOpen(true)
+      }
+    } catch {
+      sessionStorage.removeItem('jamm_concierge_pending')
+    }
+  }, [])
+
+  useEffect(() => {
     return onConciergeAction((action) => {
       if (action.modal === 'new-client') {
         setPrefillName(action.prefill?.name)
