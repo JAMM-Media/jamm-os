@@ -65,73 +65,30 @@ find /home/corby/jamm-os/frontend/src/components/concierge/ -name "*.tsx" | sort
 
 ---
 
-# Phase 4D: Proactive Interrupt to Plan
+# Fix: Tighten PROACTIVE INTERRUPT response length rule
 
-Task: Add a PROACTIVE INTERRUPT block to the system prompt. When the Concierge receives
-a message that matches a known trigger notification, it responds with a focused plan offer
-and activates plan mode if the user accepts. No backend or frontend changes required.
+Task: The Concierge is giving a long educational response before the offer when a notification
+is clicked. The rule needs to explicitly cap the response.
 
 VERIFY BEFORE ACT:
-grep -n "PLAN MODE\|PROACTIVE INTERRUPT\|EMPTY STATE" /home/corby/jamm-os/app/api/concierge/prompts.py
+grep -n "Never repeat\|Go straight\|PROACTIVE INTERRUPT" /home/corby/jamm-os/app/api/concierge/prompts.py
 
 Paste before touching anything.
 
-Find this exact line:
----
-EMPTY STATE — FIRST OPEN
-
-Insert this block immediately before it:
-
----
-PROACTIVE INTERRUPT
-When the firm sends a message that matches one of the trigger notifications below, do not
-give a generic answer. Respond with a one-sentence acknowledgment of the condition and a
-direct offer to walk them through fixing it with a plan. If they say yes or any affirmative,
-activate plan mode immediately using the mapped plan. If they say no or not now, acknowledge
-and return to normal Q&A.
-
+OLD:
 Never repeat the notification message back to the firm. They already read it. Go straight
 to the offer.
 
-Trigger message contains "no engagements set up yet":
-Offer: "Want me to walk you through creating your first engagement now?"
-Plan: Create an engagement for their first client. Steps: navigate to Clients, open the first
-client record, open the Engagements tab, create a new engagement with type and due date, save.
-
-Trigger message contains "not been invited to the portal yet":
-Offer: "Want me to walk you through sending portal invitations to your clients now?"
-Plan: Send portal invitations. Steps: navigate to Clients, open the first client, go to Overview
-tab, select Send Portal Link, confirm the invitation was sent, repeat for next client.
-
-Trigger message contains "haven't accepted their invite yet":
-Offer: "Want me to help you follow up with them now?"
-Plan: Follow up on pending staff invites. Steps: navigate to Settings, open the Team tab,
-identify the pending invite, copy the invite link, send a follow-up message to the staff member
-directly.
-
-Trigger message contains "missing email addresses":
-Offer: "Want me to walk you through adding the missing emails now?"
-Plan: Fix missing client emails. Steps: navigate to Clients, filter to show clients with no email,
-open the first client record, select Edit Client, add the email address, save, repeat for each
-remaining client.
-
-Trigger message contains "automation rules are all off":
-Offer: "Want me to walk you through enabling the recommended automation presets now?"
-Plan: Enable automation presets. Steps: navigate to Settings, select Automation, enable the
-document request reminder preset, enable the invoice overdue reminder preset, enable the
-portal invite follow-up preset, save.
-
-Trigger message contains "IRS authorization records":
-Offer: "Want me to walk you through adding an IRS authorization record for your first client now?"
-Plan: Add IRS authorization. Steps: navigate to Clients, open the first client record, select
-the IRS Authorizations tab, select New Authorization, fill in the form type and expiry date, save.
+NEW:
+Never repeat the notification message back to the firm. They already read it. Go straight
+to the offer. Your entire response is two sentences maximum: one sentence naming the fix,
+one sentence asking if they want the plan. No background, no explanation, no feature context.
 
 Do not change anything else.
 
 VERIFY AFTER ACT:
-1. grep -n "PROACTIVE INTERRUPT\|Trigger message contains" /home/corby/jamm-os/app/api/concierge/prompts.py
-   Confirm PROACTIVE INTERRUPT header present and at least 3 trigger message lines present.
-2. Restart the backend server.
-3. Browser test: click the "None of your clients have IRS authorization records" notification.
-   Confirm: Concierge responds with a focused offer, not a generic answer.
-   Say yes. Confirm: plan mode activates with the IRS authorization plan.
+1. grep -n "two sentences maximum" /home/corby/jamm-os/app/api/concierge/prompts.py
+   Confirm present.
+2. Restart the backend.
+3. Browser test: insert another test notification using the same python3 command, hard refresh,
+   click the notification. Confirm response is two sentences only.
