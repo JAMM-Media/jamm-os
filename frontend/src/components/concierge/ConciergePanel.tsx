@@ -170,6 +170,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
   // Keep a ref so the async sendMessages callback always reads current value.
   const autopilotRef = useRef(false)
   useEffect(() => { autopilotRef.current = autopilotOn }, [autopilotOn])
+  const pendingActionRef = useRef<ConciergeAction | null>(null)
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -202,7 +203,12 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
   const fetchNotifications = useCallback(async () => {
     try {
       const res = await api.get('/concierge/notifications')
-      setNotifications(res.data.items ?? [])
+      setNotifications((prev) => {
+        const existing = new Set(prev.map((n) => n.id))
+        const incoming = (res.data.items ?? []) as Notification[]
+        const fresh = incoming.filter((n) => !existing.has(n.id))
+        return fresh.length > 0 ? [...prev, ...fresh] : prev
+      })
     } catch {
       // non-fatal
     }
@@ -294,6 +300,11 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
           }
           return updated
         })
+        if (pendingActionRef.current) {
+          const action = pendingActionRef.current
+          pendingActionRef.current = null
+          void executeAction(action)
+        }
         const lower = assembled.toLowerCase()
         const chips: string[] = []
         if (lower.includes('client') || lower.includes('import')) {
@@ -394,7 +405,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
 
     try {
       const action: ConciergeAction = JSON.parse(actionLine)
-      void executeAction(action)
+      pendingActionRef.current = action
     } catch {}
 
     return beforeAction || ''

@@ -67,86 +67,65 @@ find /home/corby/jamm-os/frontend/src/components/concierge/ -name "*.tsx" | sort
 
 # Section 3: Task to perform
 
-Task: Decouple executeAction from setMessages updater + fix duplicate notifications
+Task: Fix hydration error and autopilot ref race condition in ConciergePanel.tsx
 
 VERIFY BEFORE ACT:
 Run this and paste the full output:
-sed -n '145,160p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+sed -n '159,168p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
 Run this and paste the full output:
-sed -n '383,402p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+grep -n "autopilotRef.current\|setAutopilotOn\|autopilotOn" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-Run this and paste the full output:
-grep -n "fetchNotifications\|setNotifications\|items" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
-
-Paste all three before touching anything.
+Paste both before touching anything.
 
 Make these changes:
 
-1. In ConciergePanel.tsx, directly after the autopilotRef declaration, add a new ref:
-   const pendingActionRef = useRef<ConciergeAction | null>(null)
-
-2. Replace the handleConciergeAction function entirely with this:
-   function handleConciergeAction(raw: string): string {
-     const ACTION_MARKER = 'CONCIERGE_ACTION:'
-     const actionIndex = raw.indexOf(ACTION_MARKER)
-     if (actionIndex === -1) return raw
-
-     const beforeAction = raw.slice(0, actionIndex).trim()
-     const actionLine = raw.slice(actionIndex + ACTION_MARKER.length).split('\n')[0].trim()
-
-     if (!autopilotRef.current) {
-       return beforeAction || 'To navigate, turn on Autopilot using the toggle above.'
-     }
-
-     try {
-       const action: ConciergeAction = JSON.parse(actionLine)
-       pendingActionRef.current = action
-     } catch {}
-
-     return beforeAction || ''
-   }
-
-3. Find the setMessages call that calls handleConciergeAction (around line 286). It looks like:
-   setMessages((prev) => {
-     const updated = [...prev]
-     const last = updated[updated.length - 1]
-     if (last.role === 'concierge') {
-       updated[updated.length - 1] = {
-         role: 'concierge',
-         content: handleConciergeAction(assembled),
+1. Find the statusMessage useState block:
+   const [statusMessage, setStatusMessage] = useState(() => {
+     if (typeof window !== 'undefined') {
+       const pending = sessionStorage.getItem('jamm_concierge_status')
+       if (pending) {
+         sessionStorage.removeItem('jamm_concierge_status')
+         return pending
        }
      }
-     return updated
+     return ''
    })
 
-   After this entire setMessages block (not inside it), add:
-   if (pendingActionRef.current) {
-     const action = pendingActionRef.current
-     pendingActionRef.current = null
-     void executeAction(action)
-   }
+   Replace it with:
+   const [statusMessage, setStatusMessage] = useState('')
 
-4. Find the fetchNotifications function. It contains:
-   setNotifications(res.data.items ?? [])
+   Then find the useEffect that syncs autopilotRef:
+   useEffect(() => { autopilotRef.current = autopilotOn }, [autopilotOn])
 
-   Replace that line with:
-   setNotifications((prev) => {
-     const existing = new Set(prev.map((n) => n.id))
-     const incoming = (res.data.items ?? []) as Notification[]
-     const fresh = incoming.filter((n) => !existing.has(n.id))
-     return fresh.length > 0 ? [...prev, ...fresh] : prev
-   })
+   Add a new useEffect directly after it:
+   useEffect(() => {
+     const pending = sessionStorage.getItem('jamm_concierge_status')
+     if (pending) {
+       sessionStorage.removeItem('jamm_concierge_status')
+       setStatusMessage(pending)
+     }
+   }, [])
+
+2. Find the autopilot toggle button onClick:
+   onClick={() => setAutopilotOn((v) => !v)}
+
+   Replace it with:
+   onClick={() => {
+     const next = !autopilotOn
+     setAutopilotOn(next)
+     autopilotRef.current = next
+   }}
 
 Do not change anything else.
 
 VERIFY AFTER ACT:
-1. grep -n "pendingActionRef" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
-   Confirm three results — declaration, assignment in handleConciergeAction, read after setMessages.
-2. grep -n "void executeAction" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
-   Confirm exactly one result — after the setMessages block, not inside it.
-3. grep -n "setNotifications" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
-   Confirm the updater function form is present.
+1. grep -n "typeof window" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+   Confirm zero results.
+2. grep -n "jamm_concierge_status" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+   Confirm two results — one in the new useEffect, one in executeAction where it writes the key.
+3. grep -n "autopilotRef.current = next" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+   Confirm one result.
 4. cd /home/corby/jamm-os/frontend
 5. npm run build — zero TypeScript errors.
 6. Report exact changes made and line numbers.
