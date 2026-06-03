@@ -67,49 +67,67 @@ find /home/corby/jamm-os/frontend/src/components/concierge/ -name "*.tsx" | sort
 
 # Section 3: Task to perform
 
-Task: Add temporary diagnostic console.logs to trace autopilot execution
+Task: Fix executeAction type mismatch and remove side effect from setMessages updater
 
 VERIFY BEFORE ACT:
 Run this and paste the full output:
-sed -n '390,410p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+sed -n '290,310p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-Paste before touching anything.
+Run this and paste the full output:
+sed -n '411,425p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+
+Paste both before touching anything.
 
 Make these changes:
 
-1. Find handleConciergeAction. At the very top of the function, after the ACTION_MARKER declaration, add:
-   console.log('[JC] raw assembled:', raw)
+1. Find the setMessages block that calls handleConciergeAction (around line 290):
+   setMessages((prev) => {
+     const updated = [...prev]
+     const last = updated[updated.length - 1]
+     if (last.role === 'concierge') {
+       updated[updated.length - 1] = {
+         role: 'concierge',
+         content: handleConciergeAction(assembled),
+       }
+     }
+     return updated
+   })
 
-2. After this line:
-   const actionIndex = raw.indexOf(ACTION_MARKER)
-   Add:
-   console.log('[JC] actionIndex:', actionIndex)
+   Replace it with:
+   const cleanContent = handleConciergeAction(assembled)
+   setMessages((prev) => {
+     const updated = [...prev]
+     const last = updated[updated.length - 1]
+     if (last.role === 'concierge') {
+       updated[updated.length - 1] = {
+         role: 'concierge',
+         content: cleanContent,
+       }
+     }
+     return updated
+   })
 
-3. After this line:
-   const actionLine = raw.slice(actionIndex + ACTION_MARKER.length).split('\n')[0].trim()
-   Add:
-   console.log('[JC] actionLine:', actionLine)
+   This calls handleConciergeAction once outside the updater so StrictMode cannot call it twice.
 
-4. After this line:
-   const action: ConciergeAction = JSON.parse(actionLine)
-   Add:
-   console.log('[JC] parsed action:', action)
+2. In executeAction, find the if block that checks action.route at the top. Before that block, add:
+   const normalizedType = action.type === 'open_modal' ? 'open-modal' :
+     action.type === 'navigate_and_open' ? 'navigate-and-open' : action.type
 
-5. After this line:
-   if (!autopilotRef.current) {
-   Add on the next line before the return:
-   console.log('[JC] autopilotRef.current:', autopilotRef.current)
-
-6. Find the pendingActionRef flush block after setMessages:
-   if (pendingActionRef.current) {
-   Add directly before it:
-   console.log('[JC] pendingActionRef after setMessages:', pendingActionRef.current)
+   Then replace every reference to action.type in executeAction with normalizedType.
+   There are no explicit action.type checks in executeAction currently — the routing is based on
+   action.route and action.modal presence — so this normalization is just defensive. Skip this
+   change if action.type is never checked in executeAction. Instead just add the normalization
+   at the top of executeAction for future safety.
 
 Do not change anything else.
 
 VERIFY AFTER ACT:
-1. grep -n "\[JC\]" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
-   Confirm six results.
-2. cd /home/corby/jamm-os/frontend
-3. npm run build — zero TypeScript errors.
-4. Report exact line numbers added.
+1. grep -n "handleConciergeAction(assembled)" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+   Confirm zero results — it must now be called outside setMessages.
+2. grep -n "cleanContent" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+   Confirm two results — declaration and use inside setMessages.
+3. grep -n "open_modal\|normalizedType" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+   Confirm normalizedType is present.
+4. cd /home/corby/jamm-os/frontend
+5. npm run build — zero TypeScript errors.
+6. Report exact changes made and line numbers.
