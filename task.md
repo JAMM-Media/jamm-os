@@ -65,26 +65,31 @@ find /home/corby/jamm-os/frontend/src/components/concierge/ -name "*.tsx" | sort
 
 ---
 
-# Debug: Log raw action object before resolver runs
+# Fix: Normalize extracted client name before resolver call
 
-Task: Add a single console.log to see the exact action the model emitted for the bookkeeping test.
+Task: The model sometimes emits malformed slugs with spaces around hyphens (e.g. "patricia- nguyen").
+The name extraction decodes this to "patricia  nguyen" with a double space, which fails the DB lookup.
+Normalize the extracted name by collapsing all whitespace to single spaces and trimming before the
+resolver call. This is a system fix — it handles any spacing variation the model produces.
 
 VERIFY BEFORE ACT:
-grep -n "clientMatch\|isUUID" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+sed -n '439,445p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
 Paste before touching anything.
 
 OLD:
-      const clientMatch = normalizedRoute.match(/^\/clients\/([^/]+)$/)
+        const name = decodeURIComponent(clientMatch[1]).replace(/-/g, ' ')
 
 NEW:
-      console.log('[RESOLVER] action:', JSON.stringify(action), 'normalizedRoute:', normalizedRoute)
-      const clientMatch = normalizedRoute.match(/^\/clients\/([^/]+)$/)
+        const name = decodeURIComponent(clientMatch[1]).replace(/-/g, ' ').replace(/\s+/g, ' ').trim()
 
 Do not change anything else.
 
 VERIFY AFTER ACT:
-1. grep -n "RESOLVER" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
-   Confirm log line exists.
-2. Open browser devtools console, run "create a bookkeeping engagement for Patricia Nguyen" with autopilot on.
-3. Paste the [RESOLVER] line from the console.
+1. grep -n "replace.*-.*replace.*s+" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+   Confirm the normalized line exists.
+2. cd /home/corby/jamm-os/frontend
+3. npm run build — zero TypeScript errors.
+4. Browser test: autopilot on, say "create a bookkeeping engagement for Patricia Nguyen".
+   Confirm drawer opens on Patricia's page with bookkeeping pre-selected. No "Could not find client" error.
+5. Remove the [RESOLVER] console.log added in the previous debug task in the same edit session.

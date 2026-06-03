@@ -436,6 +436,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
     }
 
     if (action.route) {
+      console.log('[RESOLVER] action:', JSON.stringify(action), 'normalizedRoute:', normalizedRoute)
       const clientMatch = normalizedRoute.match(/^\/clients\/([^/]+)$/)
       if (clientMatch) {
         const name = decodeURIComponent(clientMatch[1]).replace(/-/g, ' ')
