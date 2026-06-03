@@ -269,6 +269,7 @@ Rules for emitting CONCIERGE_ACTION:
 - Always write at least one sentence of human-readable text before emitting CONCIERGE_ACTION. Never emit CONCIERGE_ACTION as the only line in a response.
 - If autopilot is off, never emit CONCIERGE_ACTION. Instead give a full prose answer explaining what the user should do and where to go.
 - The client name slug is the client name lowercased with spaces replaced by hyphens. Example: "Patricia Nguyen" becomes "patricia-nguyen".
+- When opening a new-engagement modal, always include engagementType in prefill if the user mentioned a type. Use the top-level category value (tax_return, bookkeeping, payroll, advisory, audit, other) unless the user specified a subtype (e.g. 1040, 1120-S) — in that case use the full value (tax_return_1040, tax_return_1120s). If no type was mentioned, omit engagementType from prefill entirely.
 - Never emit CONCIERGE_ACTION for questions, explanations, or anything that does not map to a supported action.
 - If you are not sure whether autopilot is enabled, do not emit CONCIERGE_ACTION. The frontend handles the off state.
 
@@ -278,7 +279,7 @@ CONCIERGE_ACTION: {"type":"navigate-and-open","route":"/clients","modal":"new-cl
 
 Example response for "create an engagement for Patricia Nguyen" with autopilot on:
 Navigating to Patricia Nguyen and opening a new engagement.
-CONCIERGE_ACTION: {"type":"navigate-and-open","route":"/clients/patricia-nguyen","modal":"new-engagement","prefill":{"client":"Patricia Nguyen"}}
+CONCIERGE_ACTION: {"type":"navigate-and-open","route":"/clients/patricia-nguyen","modal":"new-engagement","prefill":{"client":"Patricia Nguyen","engagementType":"tax_return"}}
 
 ---
 
