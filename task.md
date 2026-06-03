@@ -67,29 +67,18 @@ find /home/corby/jamm-os/frontend/src/components/concierge/ -name "*.tsx" | sort
 
 # Section 3: Task to perform
 
-Task: Make notification cards clickable in ConciergePanel.tsx
+Task: Read modal open mechanism in Clients and Engagements pages — no changes
 
 VERIFY BEFORE ACT:
 Run this and paste the full output:
-sed -n '571,590p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+find /home/corby/jamm-os/frontend/src -name "*.tsx" | xargs grep -l "new-client\|newClient\|showNewClient\|NewClientDrawer" 2>/dev/null
 
-Paste before touching anything.
+Run this and paste the full output:
+find /home/corby/jamm-os/frontend/src -name "*.tsx" | xargs grep -l "new-engagement\|newEngagement\|showNewEngagement\|NewEngagementDrawer" 2>/dev/null
 
-Find the notification card div — the one that maps over notifications and renders each card.
-Make these changes:
+Paste both before doing anything else.
 
-1. Add cursor-pointer and hover:bg-[#E4E6EA] dark:hover:bg-[#333333] transition-colors to the notification card div
-2. Add onClick to the notification card div that:
-   - Calls dismissNotification(n.id) to dismiss it
-   - Calls handleSend(n.message) to send the notification text as a user message
+Then for each file returned, run:
+grep -n "useState\|isOpen\|setOpen\|showNew\|openModal\|searchParams\|useSearchParams" /home/corby/jamm-os/frontend/src/[path to file]
 
-Do not change the dismiss X button behavior — it should still only dismiss without sending.
-Do not change anything else.
-
-VERIFY AFTER ACT:
-1. sed -n '571,595p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
-2. Confirm onClick is on the card div
-3. Confirm dismiss button has its own onClick that stops propagation
-4. cd /home/corby/jamm-os/frontend
-5. npm run build — zero TypeScript errors
-6. Report exact changes made
+Paste all grep output. Do not open files. Do not make any changes. Report only.
