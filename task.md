@@ -67,18 +67,102 @@ find /home/corby/jamm-os/frontend/src/components/concierge/ -name "*.tsx" | sort
 
 # Section 3: Task to perform
 
-Task: Read modal open mechanism in Clients and Engagements pages — no changes
+Task: Fix autopilot navigate-and-open using sessionStorage pending action
 
 VERIFY BEFORE ACT:
 Run this and paste the full output:
-find /home/corby/jamm-os/frontend/src -name "*.tsx" | xargs grep -l "new-client\|newClient\|showNewClient\|NewClientDrawer" 2>/dev/null
+grep -n "sessionStorage\|emitConciergeAction\|setTimeout" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
 Run this and paste the full output:
-find /home/corby/jamm-os/frontend/src -name "*.tsx" | xargs grep -l "new-engagement\|newEngagement\|showNewEngagement\|NewEngagementDrawer" 2>/dev/null
+grep -n "useEffect\|onConciergeAction\|setModalOpen\|setPrefillName" /home/corby/jamm-os/frontend/src/app/clients/page.tsx
 
-Paste both before doing anything else.
+Run this and paste the full output:
+grep -n "useEffect\|onConciergeAction\|setNewEngagementOpen" /home/corby/jamm-os/frontend/src/app/clients/\[id\]/page.tsx
 
-Then for each file returned, run:
-grep -n "useState\|isOpen\|setOpen\|showNew\|openModal\|searchParams\|useSearchParams" /home/corby/jamm-os/frontend/src/[path to file]
+Paste all three before touching anything.
 
-Paste all grep output. Do not open files. Do not make any changes. Report only.
+Make these changes:
+
+1. In ConciergePanel.tsx, in the executeAction function, find the client name resolver block. It ends with these lines:
+   sessionStorage.setItem('jamm_concierge_status', ...)
+   router.push(resolvedRoute)
+   setStatusMessage(...)
+   setTimeout(() => emitConciergeAction({ ...action, route: resolvedRoute }), 500)
+
+   Delete the setTimeout line entirely. Before router.push, add:
+   sessionStorage.setItem('jamm_concierge_pending', JSON.stringify({ ...action, route: resolvedRoute, _ts: Date.now() }))
+
+2. In ConciergePanel.tsx, in the executeAction function, find the modal block at the bottom:
+   if (action.modal) {
+     setTimeout(() => {
+       emitConciergeAction(action)
+       setStatusMessage(modalLabel[action.modal ?? ''] ?? 'Opened modal')
+     }, 500)
+   } else if (action.route) {
+     setTimeout(() => emitConciergeAction(action), 500)
+   }
+
+   Replace the entire if/else block with:
+   if (action.modal && action.route) {
+     sessionStorage.setItem('jamm_concierge_pending', JSON.stringify({ ...action, _ts: Date.now() }))
+     setStatusMessage(modalLabel[action.modal ?? ''] ?? 'Opened modal')
+   } else if (action.modal) {
+     emitConciergeAction(action)
+     setStatusMessage(modalLabel[action.modal ?? ''] ?? 'Opened modal')
+   } else if (action.route) {
+     emitConciergeAction(action)
+   }
+
+3. In frontend/src/app/clients/page.tsx, find the existing useEffect that calls onConciergeAction. Add a new separate useEffect directly above it:
+   useEffect(() => {
+     const raw = sessionStorage.getItem('jamm_concierge_pending')
+     if (!raw) return
+     try {
+       const action = JSON.parse(raw)
+       if (Date.now() - (action._ts ?? 0) > 10000) {
+         sessionStorage.removeItem('jamm_concierge_pending')
+         return
+       }
+       if (action.modal === 'new-client') {
+         sessionStorage.removeItem('jamm_concierge_pending')
+         if (action.prefill?.name) setPrefillName(action.prefill.name)
+         setModalOpen(true)
+       }
+     } catch {
+       sessionStorage.removeItem('jamm_concierge_pending')
+     }
+   }, [])
+
+4. In frontend/src/app/clients/[id]/page.tsx, find the existing useEffect that calls onConciergeAction. Add a new separate useEffect directly above it:
+   useEffect(() => {
+     const raw = sessionStorage.getItem('jamm_concierge_pending')
+     if (!raw) return
+     try {
+       const action = JSON.parse(raw)
+       if (Date.now() - (action._ts ?? 0) > 10000) {
+         sessionStorage.removeItem('jamm_concierge_pending')
+         return
+       }
+       if (action.modal === 'new-engagement') {
+         sessionStorage.removeItem('jamm_concierge_pending')
+         setNewEngagementOpen(true)
+       }
+     } catch {
+       sessionStorage.removeItem('jamm_concierge_pending')
+     }
+   }, [])
+
+Do not change anything else in any file.
+
+VERIFY AFTER ACT:
+1. grep -n "jamm_concierge_pending" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+   Confirm two results — one in client resolver block, one in modal block.
+2. grep -n "jamm_concierge_pending" /home/corby/jamm-os/frontend/src/app/clients/page.tsx
+   Confirm one result.
+3. grep -n "jamm_concierge_pending" /home/corby/jamm-os/frontend/src/app/clients/\[id\]/page.tsx
+   Confirm one result.
+4. grep -n "setTimeout.*emitConciergeAction\|emitConciergeAction.*setTimeout" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+   Confirm zero results.
+5. cd /home/corby/jamm-os/frontend
+6. npm run build — zero TypeScript errors.
+7. Report exact changes made and line numbers.
