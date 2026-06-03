@@ -573,13 +573,14 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
             {notifications.map((n) => (
               <div
                 key={n.id}
-                className="flex items-start gap-2 bg-white dark:bg-[#2D2D2D] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] rounded-[8px] px-3 py-2.5"
+                className="flex items-start gap-2 bg-white dark:bg-[#2D2D2D] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] rounded-[8px] px-3 py-2.5 cursor-pointer hover:bg-[#E4E6EA] dark:hover:bg-[#333333] transition-colors"
+                onClick={() => { dismissNotification(n.id); handleSend(n.message) }}
               >
                 <p className="flex-1 text-[12px] leading-[1.5] text-[#1F3148] dark:text-[#EDEEF0]">
                   {n.message}
                 </p>
                 <button
-                  onClick={() => dismissNotification(n.id)}
+                  onClick={(e) => { e.stopPropagation(); dismissNotification(n.id) }}
                   aria-label="Dismiss notification"
                   className="flex-shrink-0 text-[#6B7280] hover:text-[#1F3148] dark:hover:text-[#EDEEF0] transition-colors mt-0.5"
                 >
