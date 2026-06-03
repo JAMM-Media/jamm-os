@@ -67,35 +67,29 @@ find /home/corby/jamm-os/frontend/src/components/concierge/ -name "*.tsx" | sort
 
 # Section 3: Task to perform
 
-# Section 3: Task to perform
-
-Task: Run trigger check on panel open in ConciergePanel.tsx
+Task: Make notification cards clickable in ConciergePanel.tsx
 
 VERIFY BEFORE ACT:
 Run this and paste the full output:
-sed -n '330,340p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+sed -n '571,590p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
 Paste before touching anything.
 
-Find this block:
-    if (isOpen) {
-      setTimeout(() => textareaRef.current?.focus(), 250)
-      fetchNotifications()
-    }
+Find the notification card div — the one that maps over notifications and renders each card.
+Make these changes:
 
-Replace with:
-    if (isOpen) {
-      setTimeout(() => textareaRef.current?.focus(), 250)
-      api.post('/concierge/trigger-check').then(() => fetchNotifications()).catch(() => fetchNotifications())
-    }
+1. Add cursor-pointer and hover:bg-[#E4E6EA] dark:hover:bg-[#333333] transition-colors to the notification card div
+2. Add onClick to the notification card div that:
+   - Calls dismissNotification(n.id) to dismiss it
+   - Calls handleSend(n.message) to send the notification text as a user message
 
-This fires the trigger check first, then fetches notifications once it completes. If the trigger check fails it still fetches notifications. No new state needed.
-
+Do not change the dismiss X button behavior — it should still only dismiss without sending.
 Do not change anything else.
 
 VERIFY AFTER ACT:
-1. sed -n '330,340p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
-2. Confirm trigger-check call is present before fetchNotifications
-3. cd /home/corby/jamm-os/frontend
-4. npm run build — zero TypeScript errors
-5. Report exact lines changed
+1. sed -n '571,595p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+2. Confirm onClick is on the card div
+3. Confirm dismiss button has its own onClick that stops propagation
+4. cd /home/corby/jamm-os/frontend
+5. npm run build — zero TypeScript errors
+6. Report exact changes made
