@@ -153,7 +153,12 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
   const [input, setInput] = useState('')
   const [streaming, setStreaming] = useState(false)
   const [showStarters, setShowStarters] = useState(true)
-  const [autopilotOn,setAutopilotOn] = useState(false)
+  const [autopilotOn, setAutopilotOn] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return sessionStorage.getItem('jamm_concierge_autopilot') === 'true'
+    }
+    return false
+  })
   const [suggestions, setSuggestions] = useState<string[]>([])
   const [formDirty, setFormDirtyState] = useState(false)
   const [statusMessage, setStatusMessage] = useState('')
@@ -180,7 +185,11 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
 
   // Reset autopilot when panel closes (session-only per spec).
   useEffect(() => {
-    if (!isOpen) setAutopilotOn(false)
+    if (!isOpen) {
+      setAutopilotOn(false)
+      autopilotRef.current = false
+      sessionStorage.removeItem('jamm_concierge_autopilot')
+    }
   }, [isOpen])
 
   useEffect(() => {
@@ -571,6 +580,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
                 onClick={() => {
                   const next = !autopilotOn
                   setAutopilotOn(next)
+                  sessionStorage.setItem('jamm_concierge_autopilot', String(next))
                   autopilotRef.current = next
                 }}
                 className={`flex items-center gap-1 text-[11px] font-medium px-2 py-1 rounded-[4px] border border-[0.5px] transition-all duration-150 ${

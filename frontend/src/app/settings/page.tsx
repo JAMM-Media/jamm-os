@@ -98,7 +98,7 @@ export default function SettingsPage() {
       if (action.modal === 'invite-staff') {
         sessionStorage.removeItem('jamm_concierge_pending')
         setActiveTab('team')
-        setTimeout(() => inviteFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 150)
+        setTimeout(() => inviteFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 150)
       }
     } catch {
       sessionStorage.removeItem('jamm_concierge_pending')
@@ -110,7 +110,7 @@ export default function SettingsPage() {
       if (action.modal === 'invite-staff') {
         setActiveTab('team')
         setTimeout(() => {
-          inviteFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+          inviteFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
         }, 150)
       }
     })

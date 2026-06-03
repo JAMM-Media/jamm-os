@@ -67,61 +67,27 @@ find /home/corby/jamm-os/frontend/src/components/concierge/ -name "*.tsx" | sort
 
 # Section 3: Task to perform
 
-Task: Persist autopilot state across navigation in ConciergePanel.tsx and fix scroll position in settings/page.tsx
+Task: Increase scroll delay for invite-staff in settings/page.tsx
 
 VERIFY BEFORE ACT:
 Run this and paste the full output:
-grep -n "autopilotOn\|setAutopilotOn\|jamm_concierge" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx | head -20
+grep -n "invite-staff\|scrollIntoView\|setTimeout" /home/corby/jamm-os/frontend/src/app/settings/page.tsx
 
-Run this and paste the full output:
-grep -n "scrollIntoView" /home/corby/jamm-os/frontend/src/app/settings/page.tsx
+Paste before touching anything.
 
-Paste both before touching anything.
+Find this line:
+setTimeout(() => inviteFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 150)
 
-Make these changes:
+Replace with:
+setTimeout(() => inviteFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 400)
 
-1. In ConciergePanel.tsx, find:
-   const [autopilotOn,setAutopilotOn] = useState(false)
-
-   Replace with:
-   const [autopilotOn, setAutopilotOn] = useState(() => {
-     if (typeof window !== 'undefined') {
-       return sessionStorage.getItem('jamm_concierge_autopilot') === 'true'
-     }
-     return false
-   })
-
-2. In ConciergePanel.tsx, find the autopilot toggle button onClick:
-   const next = !autopilotOn
-   setAutopilotOn(next)
-   autopilotRef.current = next
-
-   Add one line after setAutopilotOn(next):
-   sessionStorage.setItem('jamm_concierge_autopilot', String(next))
-
-3. In ConciergePanel.tsx, find the useEffect that resets autopilot on close:
-   if (!isOpen) setAutopilotOn(false)
-
-   Replace with:
-   if (!isOpen) {
-     setAutopilotOn(false)
-     autopilotRef.current = false
-     sessionStorage.removeItem('jamm_concierge_autopilot')
-   }
-
-4. In frontend/src/app/settings/page.tsx, find both occurrences of:
-   scrollIntoView({ behavior: 'smooth', block: 'center' })
-
-   Replace both with:
-   scrollIntoView({ behavior: 'smooth', block: 'start' })
+block: 'nearest' scrolls the minimum amount needed to bring the element into view rather than snapping it to the top, which avoids cutting off the page header. The 400ms gives the tab content time to fully render before the scroll fires.
 
 Do not change anything else.
 
 VERIFY AFTER ACT:
-1. grep -n "jamm_concierge_autopilot" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
-   Confirm three results — read in useState, write on toggle, remove on close.
-2. grep -n "scrollIntoView" /home/corby/jamm-os/frontend/src/app/settings/page.tsx
-   Confirm both show block: 'start'.
-3. cd /home/corby/jamm-os/frontend
-4. npm run build — zero TypeScript errors.
-5. Report exact changes made and line numbers.
+1. grep -n "scrollIntoView" /home/corby/jamm-os/frontend/src/app/settings/page.tsx
+   Confirm block: 'nearest' and 400ms delay.
+2. cd /home/corby/jamm-os/frontend
+3. npm run build — zero TypeScript errors.
+4. Report exact changes made.
