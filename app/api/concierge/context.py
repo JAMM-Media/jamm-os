@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.models.client import Client
 from app.models.engagement import Engagement
+from app.models.firm import Firm
 from app.models.irs_authorization import IrsAuthorization
 from app.models.user import User
 from app.models.behavioral_event import BehavioralEvent
@@ -54,6 +55,8 @@ def _run_queries(firm_id: uuid.UUID, db: Session) -> dict:
     irs_coverage = _query_irs_coverage(firm_id, db)
     question_history = _query_question_history(firm_id, db)
 
+    firm = db.execute(select(Firm).where(Firm.id == firm_id)).scalar_one_or_none()
+    firm_type = firm.firm_type if firm else None
     return {
         "client_count": client_stats["total"],
         "clients_missing_email": client_stats["missing_email"],
@@ -65,6 +68,7 @@ def _run_queries(firm_id: uuid.UUID, db: Session) -> dict:
         "portal_adoption": portal_adoption,
         "irs_coverage": irs_coverage,
         "question_history_topics": question_history,
+        "firm_type": firm_type,
     }
 
 

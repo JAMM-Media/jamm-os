@@ -65,128 +65,142 @@ find /home/corby/jamm-os/frontend/src/components/concierge/ -name "*.tsx" | sort
 
 ---
 
-# Feature: Add firm type intake to empty state
+# Feature: Automatic opening message on panel first open
 
-Task: Add firm_type to the context snapshot so the Concierge knows whether the firm has
-set their type yet. Update the empty state prompt to ask the firm type question when
-firm_type is null, and show type-specific starter prompts when it is set.
+Task: Replace hardcoded starter chips and canned responses with a model-generated opening
+message that fires automatically when the panel opens for the first time. The model reads
+firm_type from context and generates the appropriate greeting.
 
-Two files. Do them in order.
-
----
-
-## File 1 of 2: context.py
-
-Task: Add firm_type to the context snapshot.
-
-VERIFY BEFORE ACT:
-grep -n "firm_type\|from app.models.firm\|Firm" /home/corby/jamm-os/app/api/concierge/context.py | head -15
-
-Paste before touching anything.
-
-Find the Firm model import at the top of context.py and confirm Firm is already imported.
-Then make exactly one change:
-
-OLD:
-    return {
-        "client_count": client_stats["total"],
-        "clients_missing_email": client_stats["missing_email"],
-        "clients_inactive": client_stats["inactive"],
-        "import_log": import_log,
-        "onboarding_steps": onboarding_steps,
-        "engagement_summary": engagement_summary,
-        "staff_summary": staff_summary,
-        "portal_adoption": portal_adoption,
-        "irs_coverage": irs_coverage,
-        "question_history_topics": question_history,
-    }
-
-NEW:
-    firm = db.execute(select(Firm).where(Firm.id == firm_id)).scalar_one_or_none()
-    firm_type = firm.firm_type if firm else None
-    return {
-        "client_count": client_stats["total"],
-        "clients_missing_email": client_stats["missing_email"],
-        "clients_inactive": client_stats["inactive"],
-        "import_log": import_log,
-        "onboarding_steps": onboarding_steps,
-        "engagement_summary": engagement_summary,
-        "staff_summary": staff_summary,
-        "portal_adoption": portal_adoption,
-        "irs_coverage": irs_coverage,
-        "question_history_topics": question_history,
-        "firm_type": firm_type,
-    }
-
-Confirm Firm and select are already imported. If not, add them.
-
-Do not change anything else.
-
-VERIFY AFTER ACT:
-1. grep -n "firm_type" /home/corby/jamm-os/app/api/concierge/context.py
-   Confirm present in the return block.
-2. cd /home/corby/jamm-os
-3. source .venv/bin/activate
-4. python3 -c "from app.api.concierge.context import get_firm_context; print('ok')"
-   Confirm no import errors.
+Three changes. Do them in order.
 
 ---
 
-## File 2 of 2: prompts.py
+## Change 1: prompts.py -- add __OPEN__ sentinel handling
 
-Task: Update the empty state prompt to ask the firm type intake question when firm_type
-is not set, and show type-specific starter prompts when it is.
+Task: Add an instruction telling the model how to handle the silent opening trigger.
 
 VERIFY BEFORE ACT:
-sed -n '191,200p' /home/corby/jamm-os/app/api/concierge/prompts.py
+grep -n "EMPTY STATE" /home/corby/jamm-os/app/api/concierge/prompts.py
 
 Paste before touching anything.
 
-OLD:
-EMPTY STATE — FIRST OPEN
-When the messages array is empty and this is the firm's first interaction, output exactly this and nothing else:
-"Welcome to JAMM Concierge. Here are three things I can help you with right now:
-1. Walk me through importing my clients from TaxDome (or another platform)
-2. Explain the difference between engagements and tasks in JAMM PX
-3. What should I set up first after signing up?"
-Do not add any other text. Do not greet. Do not explain what you are. The three prompts are the entire first message.
+Find the EMPTY STATE block and add this line at the very top of the block, before the
+firm_type branching logic:
 
-NEW:
+OLD:
 EMPTY STATE — FIRST OPEN
 When the messages array is empty and this is the firm's first interaction, check firm_type in the live firm context.
 
-If firm_type is null or not set, output exactly this and nothing else:
-"Welcome to JAMM Concierge. Before we start -- what does your firm do most? This lets me point you to the right setup path.
-1. Tax prep and returns
-2. Bookkeeping and monthly close
-3. Advisory and planning"
-Do not add any other text. When the firm selects one, confirm their firm type and immediately recommend the three automation presets and one engagement template that match their practice type. Then proceed to the normal starter prompts for their type.
+NEW:
+EMPTY STATE — FIRST OPEN
+If the user's message is exactly "__OPEN__", this is the automatic panel-open trigger. Do not treat it as a real question. Generate the appropriate opening message based on firm_type in the live firm context and do not echo or reference the trigger word. Strip __OPEN__ from all displayed output.
 
-If firm_type is tax_prep, output exactly this and nothing else:
-"Welcome back. Here are three things to work on next:
-1. Walk me through setting up my first 1040 engagement
-2. How do I send an IRS authorization to a client?
-3. What automation presets should I turn on for a tax firm?"
-
-If firm_type is bookkeeping, output exactly this and nothing else:
-"Welcome back. Here are three things to work on next:
-1. How do I set up a recurring monthly bookkeeping engagement?
-2. Walk me through connecting QuickBooks
-3. What automation presets should I turn on for a bookkeeping firm?"
-
-If firm_type is advisory, output exactly this and nothing else:
-"Welcome back. Here are three things to work on next:
-1. How do I create an advisory engagement template?
-2. Walk me through setting up billing for a retainer client
-3. What should I set up first for an advisory practice?"
-
-Do not add any other text. Do not greet beyond what is shown above. The prompts are the entire first message.
+When the messages array is empty and this is the firm's first interaction, check firm_type in the live firm context.
 
 Do not change anything else.
 
 VERIFY AFTER ACT:
-1. grep -n "EMPTY STATE\|firm_type\|tax_prep\|bookkeeping\|advisory" /home/corby/jamm-os/app/api/concierge/prompts.py | head -15
-   Confirm firm_type logic and all three practice types present.
-2. Restart the backend.
-3. Browser test: open a fresh Concierge panel with no prior messages.
-   Confirm: the three-option firm type question appears, not the old generic prompts.
+grep -n "__OPEN__" /home/corby/jamm-os/app/api/concierge/prompts.py
+Confirm one result.
+
+---
+
+## Change 2: ConciergePanel.tsx -- fire opening message on first open
+
+Task: Fire the __OPEN__ sentinel when the panel opens for the first time with no messages.
+Remove STARTER_PROMPTS, HARDCODED_RESPONSES, STARTER_PROMPT_INSTRUCTIONS, and the
+showStarters UI block.
+
+VERIFY BEFORE ACT:
+sed -n '32,50p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+grep -n "showStarters\|STARTER_PROMPTS\|HARDCODED_RESPONSES" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx | head -20
+
+Paste before touching anything.
+
+Make exactly four changes:
+
+Change 2a -- remove the three constant blocks at the top of the file:
+OLD:
+const STARTER_PROMPTS = [
+  'What should I set up first after signing up?',
+  'How do I import my existing clients?',
+  'How does the client portal work?',
+]
+const STARTER_PROMPT_INSTRUCTIONS: Record<string, string> = {
+  'How do I import my existing clients?': 'Answer using a numbered markdown list. Each step on its own numbered line.',
+  'How does the client portal work?': 'Answer using a numbered markdown list. Each step on its own numbered line.',
+}
+const HARDCODED_RESPONSES: Record<string, string> = {
+
+Find the closing } of HARDCODED_RESPONSES and remove the entire block including all its content.
+This block ends before the export function ConciergePanel line. Remove everything from
+const STARTER_PROMPTS to the closing } of HARDCODED_RESPONSES.
+
+Change 2b -- fire __OPEN__ on first panel open when no messages exist:
+OLD:
+  useEffect(() => {
+    if (isOpen && !hasInitialized.current) {
+      hasInitialized.current = true
+    }
+    if (isOpen) {
+      setTimeout(() => textareaRef.current?.focus(), 250)
+      api.post('/concierge/trigger-check').then(() => fetchNotifications()).catch(() => fetchNotifications())
+    }
+  }, [isOpen, sendMessages, fetchNotifications])
+
+NEW:
+  useEffect(() => {
+    if (isOpen && !hasInitialized.current) {
+      hasInitialized.current = true
+      if (messages.length === 0) {
+        sendMessages([{ role: 'user', content: '__OPEN__' }])
+      }
+    }
+    if (isOpen) {
+      setTimeout(() => textareaRef.current?.focus(), 250)
+      api.post('/concierge/trigger-check').then(() => fetchNotifications()).catch(() => fetchNotifications())
+    }
+  }, [isOpen, sendMessages, fetchNotifications])
+
+Change 2c -- remove the showStarters UI block:
+OLD:
+          {showStarters && messages.length === 0 && (
+            <div className="flex flex-col gap-3">
+              <p className="text-[12px] text-[#6B7280] leading-[1.5]">
+                Ask me anything about JAMM PX. Here are a few places to start:
+              </p>
+              {STARTER_PROMPTS.map((prompt, i) => (
+                <button
+                  key={i}
+                  onClick={() => handleSend(prompt)}
+                  className="text-left text-[13px] text-[#1F3148] dark:text-[#EDEEF0] bg-white dark:bg-[#2D2D2D] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] rounded-[8px] px-3 py-2.5 hover:border-[#4A7FA5] hover:bg-[#F0F4F8] dark:hover:bg-[#333333] transition-colors leading-[1.5]"
+                >
+                  {prompt}
+                </button>
+              ))}
+            </div>
+          )}
+
+NEW:
+          {/* Opening message fires automatically via __OPEN__ sentinel on first open */}
+
+Change 2d -- remove the hardcoded response check in handleSend:
+Find this block inside handleSend:
+OLD:
+    const hardcoded = text ? HARDCODED_RESPONSES[text] : undefined
+
+Find the full hardcoded response logic and remove it. The handleSend function should send
+every message to the API without any hardcoded bypass.
+
+Do not change anything else.
+
+VERIFY AFTER ACT:
+1. grep -n "STARTER_PROMPTS\|HARDCODED_RESPONSES\|showStarters\|hardcoded" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+   Confirm zero results.
+2. grep -n "__OPEN__" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+   Confirm one result in the useEffect.
+3. cd /home/corby/jamm-os/frontend
+4. npm run build -- zero TypeScript errors.
+5. Restart the backend.
+6. Browser test: open the Concierge panel. Confirm the model generates an opening message
+   automatically. Confirm the firm type intake question appears since firm_type is null.
