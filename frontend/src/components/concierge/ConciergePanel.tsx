@@ -30,76 +30,6 @@ interface ConciergePanelProps {
   onClose: () => void
 }
 
-const STARTER_PROMPTS = [
-  'What should I set up first after signing up?',
-  'How do I import my existing clients?',
-  'How does the client portal work?',
-]
-
-const STARTER_PROMPT_INSTRUCTIONS: Record<string, string> = {
-  'How do I import my existing clients?': 'Answer using a numbered markdown list. Each step on its own numbered line.',
-  'How does the client portal work?': 'Answer using a numbered markdown list. Each step on its own numbered line.',
-}
-
-const HARDCODED_RESPONSES: Record<string, string> = {
-  'What should I set up first after signing up?': `Here's the recommended setup order:
-
-1. **Firm profile.** Go to Settings > Firm Profile. Add your firm name, logo, and contact details. This appears on engagement letters and all client-facing documents.
-
-2. **Invite staff.** Go to Settings > Team. Add each staff member by email and assign their role. They receive a magic-link to set their password.
-
-3. **Connect QuickBooks (if applicable).** Go to Settings > Integrations > QuickBooks and complete the OAuth flow. Use the Import Preview before committing.
-
-4. **Import clients.** QuickBooks: use the Import Preview. CSV: go to Clients > Import. Required column: name. Recommended: email, entity_type.
-
-5. **Create engagement templates.** Go to Engagements > Templates > New Template. Build templates for your most common work types with pre-set task lists.
-
-6. **Create engagements.** Go to Clients > [Client Name] > Engagements > New Engagement. Use a template if available.
-
-7. **Enable automation presets.** Go to Settings > Automations. Start with deadline alerts and document upload confirmations.
-
-8. **Send portal magic-links.** New clients: send immediately. Existing clients: convert in batches of 10 to 15 per week.
-
-9. **Send first document request.** Go to the engagement > Document Requests > New Request.
-
-10. **Connect Stripe.** Go to Settings > Billing > Connect Stripe. Required before sending invoices for payment.`,
-  'How do I import my existing clients?': `Two ways to import clients into JAMM PX:
-
-**Option A: QuickBooks import**
-
-1. Go to Settings > Integrations > QuickBooks and complete the OAuth connection.
-2. Open the Import Preview to see which clients will come over before committing.
-3. Select the clients you want and confirm the import.
-4. Common skip reasons: no email on the QuickBooks record, duplicate email, inactive customer, sub-customer record.
-
-**Option B: CSV import**
-
-1. Export a CSV from your current platform.
-2. Make sure the file has a name column. Recommended columns: email, entity_type, phone, company_name.
-3. Entity type values: individual, business, trust, estate.
-4. Go to Clients > Import and upload the file.
-5. Review the result summary. Skipped rows are listed with the reason. Fix and re-import only the skipped rows.
-
-Note: invoices, payment history, and documents do not transfer. Only client records come over.`,
-  'How does the client portal work?': `The client portal is a secure space where clients upload documents, pay invoices, and communicate with your firm.
-
-**Sending access**
-
-1. Go to Clients > [Client Name] > Portal tab > Send Magic-Link.
-2. New clients: send immediately when creating their first engagement.
-3. Existing clients: convert in batches of 10 to 15 per week. Never send to all clients at once.
-4. Magic-links expire after 72 hours. Clients can set a password if they prefer.
-
-**What clients see**
-
-5. Engagements with any notes you mark as client-visible.
-6. Document requests with a checklist they can upload files against.
-7. Invoices they can pay online once Stripe is connected.
-8. A messages tab for secure back-and-forth with your firm.
-
-Note: internal engagement notes are never visible to clients. Only notes_client_visible fields appear in the portal.`,
-}
-
 const PAGE_LABELS: Record<string, string> = {
   '/clients': 'Clients',
   '/settings/team': 'Settings',
@@ -162,7 +92,6 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [input, setInput] = useState('')
   const [streaming, setStreaming] = useState(false)
-  const [showStarters, setShowStarters] = useState(true)
   const [autopilotOn, setAutopilotOn] = useState(() => {
     if (typeof window !== 'undefined') {
       return sessionStorage.getItem('jamm_concierge_autopilot') === 'true'
@@ -210,7 +139,6 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
       sessionStorage.removeItem('jamm_concierge_autopilot')
       sessionStorage.removeItem('jamm_concierge_messages')
       setMessages([])
-      setShowStarters(true)
     }
   }, [isOpen])
 
@@ -255,7 +183,6 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
   const sendMessages = useCallback(
     async (thread: Message[]) => {
       setStreaming(true)
-      setShowStarters(false)
       setMessages((prev) => [...prev, { role: 'concierge', content: '' }])
 
       const token = localStorage.getItem('access_token')
@@ -370,6 +297,9 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
   useEffect(() => {
     if (isOpen && !hasInitialized.current) {
       hasInitialized.current = true
+      if (messages.length === 0) {
+        sendMessages([{ role: 'user', content: '__OPEN__' }])
+      }
     }
     if (isOpen) {
       setTimeout(() => textareaRef.current?.focus(), 250)
@@ -382,28 +312,10 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
     if (!msg || streaming) return
     setInput('')
     setSuggestions([])
-    const hardcoded = text ? HARDCODED_RESPONSES[text] : undefined
-    if (hardcoded) {
-      const userMsg: Message = { role: 'user', content: msg }
-      setMessages((prev) => [...prev, userMsg, { role: 'concierge', content: '' }])
-      setStreaming(true)
-      await new Promise((resolve) => setTimeout(resolve, 1400))
-      setStreaming(false)
-      setMessages((prev) => {
-        const updated = [...prev]
-        updated[updated.length - 1] = { role: 'concierge', content: hardcoded }
-        return updated
-      })
-      return
-    }
-    const instruction = text ? STARTER_PROMPT_INSTRUCTIONS[text] : undefined
-    const apiContent = instruction ? `${msg}\n\n[Format instruction: ${instruction}]` : msg
     const userMsg: Message = { role: 'user', content: msg }
-    const apiMsg: Message = { role: 'user', content: apiContent }
     const newThread = [...messages, userMsg]
-    const apiThread = [...messages, apiMsg]
     setMessages(newThread)
-    await sendMessages(apiThread)
+    await sendMessages(newThread)
   }
 
   function handleSuggestion(label: string) {
@@ -654,22 +566,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
         {/* Message feed */}
         <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
 
-          {showStarters && messages.length === 0 && (
-            <div className="flex flex-col gap-3">
-              <p className="text-[12px] text-[#6B7280] leading-[1.5]">
-                Ask me anything about JAMM PX. Here are a few places to start:
-              </p>
-              {STARTER_PROMPTS.map((prompt, i) => (
-                <button
-                  key={i}
-                  onClick={() => handleSend(prompt)}
-                  className="text-left text-[13px] text-[#1F3148] dark:text-[#EDEEF0] bg-white dark:bg-[#2D2D2D] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] rounded-[8px] px-3 py-2.5 hover:border-[#4A7FA5] hover:bg-[#F0F4F8] dark:hover:bg-[#333333] transition-colors leading-[1.5]"
-                >
-                  {prompt}
-                </button>
-              ))}
-            </div>
-          )}
+          {/* Opening message fires automatically via __OPEN__ sentinel on first open */}
 
           {messages.map((msg, i) => (
             <div key={i}>
