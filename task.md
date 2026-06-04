@@ -65,50 +65,42 @@ find /home/corby/jamm-os/frontend/src/components/concierge/ -name "*.tsx" | sort
 
 ---
 
-# Fix: Expand autopilot to full app navigation
+# Fix: Handle query parameters in client route resolver
 
-Task: The current supported actions list is hardcoded to 7 actions. The frontend already
-handles any route via router.push. Expand the prompt to allow the model to navigate to
-any valid route in the app, not just the hardcoded list.
+Task: The resolver regex fails when the route includes a query string like ?tab=irs-auth.
+Strip the query string before slug extraction, resolve the UUID, then reattach the query
+string to the final navigation route.
 
 VERIFY BEFORE ACT:
-sed -n '368,402p' /home/corby/jamm-os/app/api/concierge/prompts.py
+sed -n '437,475p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
 Paste before touching anything.
 
-Make exactly two changes:
-
-Change 1 -- replace the restrictive rule with one that allows full navigation:
 OLD:
-- Only emit when the firm's request clearly maps to one of the supported actions above.
+      const clientMatch = normalizedRoute.match(/^\/clients\/([^/]+)$/)
+      if (clientMatch) {
+        const name = decodeURIComponent(clientMatch[1]).replace(/-/g, ' ').replace(/\s+/g, ' ').trim()
+        const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(name)
 
 NEW:
-- Emit for any navigation or modal action the firm requests. The supported actions above are examples. You may also emit a plain navigate action to any valid route in the app. Valid routes are: /dashboard, /clients, /clients/[client-name-slug], /clients/[client-name-slug]?tab=engagements, /clients/[client-name-slug]?tab=irs-auth, /clients/[client-name-slug]?tab=billing, /clients/[client-name-slug]?tab=documents, /clients/[client-name-slug]?tab=portal, /clients/[client-name-slug]?tab=messages, /engagements, /engagements/[engagement-id], /engagements/templates, /billing, /documents, /tasks, /timesheets, /calendar, /settings, /settings/team, /settings/integrations, /settings/billing, /notifications. Use {"type":"navigate","route":"[route]"} for plain navigation with no modal.
+      const clientMatch = normalizedRoute.match(/^\/clients\/([^/?]+)(\?.*)?$/)
+      if (clientMatch) {
+        const queryString = clientMatch[2] ?? ''
+        const name = decodeURIComponent(clientMatch[1]).replace(/-/g, ' ').replace(/\s+/g, ' ').trim()
+        const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(name)
 
-Change 2 -- add two examples showing generic navigation:
-Find this line:
-Example response for "connect QuickBooks":
-Does not exist -- find the last example block before the --- separator and add after it:
+Then find this line inside the same if block:
+            const resolvedRoute = `/clients/${data.id}`
 
-Find:
-CONCIERGE_ACTION: {"type":"navigate-and-open","route":"/clients/patricia-nguyen","modal":"new-engagement","prefill":{"client":"Patricia Nguyen","engagementType":"tax_return"}}
-
-Add immediately after it:
-Example response for "go to Patricia Nguyen's IRS authorizations" with autopilot on:
-Navigating to Patricia Nguyen's IRS Authorizations tab now.
-CONCIERGE_ACTION: {"type":"navigate","route":"/clients/patricia-nguyen?tab=irs-auth"}
-
-Example response for "take me to billing" with autopilot on:
-Navigating to Billing now.
-CONCIERGE_ACTION: {"type":"navigate","route":"/billing"}
+Change it to:
+            const resolvedRoute = `/clients/${data.id}${queryString}`
 
 Do not change anything else.
 
 VERIFY AFTER ACT:
-1. grep -n "any valid route\|irs-auth\|tab=engagements" /home/corby/jamm-os/app/api/concierge/prompts.py
-   Confirm all three present.
-2. Restart the backend.
-3. Browser test with autopilot on -- say "take me to Patricia Nguyen's IRS authorizations".
-   Confirm: Concierge navigates directly to her IRS Authorizations tab.
-4. Browser test -- say "go to billing".
-   Confirm: Concierge navigates to /billing.
+1. grep -n "queryString\|clientMatch\|resolvedRoute" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx | head -10
+   Confirm queryString present in all three locations.
+2. cd /home/corby/jamm-os/frontend
+3. npm run build -- zero TypeScript errors.
+4. Browser test: autopilot on, say "take me to Patricia Nguyen's IRS authorizations".
+   Confirm: navigates to her client page with the IRS Authorizations tab active.
