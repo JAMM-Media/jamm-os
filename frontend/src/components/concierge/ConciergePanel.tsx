@@ -245,6 +245,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
           }
         }
 
+        console.log('[CONCIERGE RAW]', assembled)
         const cleanContent = handleConciergeAction(assembled)
         setMessages((prev) => {
           const updated = [...prev]
