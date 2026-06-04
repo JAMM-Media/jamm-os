@@ -57,73 +57,42 @@ git commit -m "checkpoint before [task name]"
 
 ---
 
-# Section 3 - Your Task 
-
-TASK: Fix intake selection response with few-shot examples
+TASK: Exempt set_firm_type from autopilot gate in prompts.py
 
 Pre-task:
 cd /home/corby/jamm-os
-git add -A && git commit -m "checkpoint before intake few-shot examples"
+git add -A && git commit -m "checkpoint before set_firm_type autopilot exemption"
 
 VERIFY BEFORE ACT:
-sed -n '195,210p' /home/corby/jamm-os/app/api/concierge/prompts.py
+sed -n '525,535p' /home/corby/jamm-os/app/api/concierge/prompts.py
 Paste output before touching anything.
 
-Change 1: prompts.py -- replace vague intake rule with locked few-shot examples
+Change 1: prompts.py -- add exemption for set_firm_type before the autopilot gate rule
 
 Find exactly:
-When the firm selects one (they will type "1", "2", "3", or the name of the practice type), append a CONCIERGE_ACTION line at the very end of your response, after all text:
-CONCIERGE_ACTION:{"type":"set_firm_type","firm_type":"tax_prep"}
-Use tax_prep for option 1, bookkeeping for option 2, advisory for option 3.
-Then output the matching starter prompts for their type exactly as specified below.
+- If autopilot is off, never emit CONCIERGE_ACTION. Instead give a full prose answer explaining what the user should do and where to go.
 
 Replace with:
-When the firm selects one, output the matching response exactly as shown in these examples. No other output. No variation.
+- Exception: always emit CONCIERGE_ACTION for set_firm_type actions, even when autopilot is off. This is a data write, not a navigation action.
+- If autopilot is off, never emit CONCIERGE_ACTION for navigation or modal actions. Instead give a full prose answer explaining what the user should do and where to go.
 
-<intake_example>
-  <user>1</user>
-  <assistant>Got it. Here are three things to work on first:
-1. Walk me through setting up my first 1040 engagement
-2. How do I send an IRS authorization to a client?
-3. What automation presets should I turn on for a tax firm?
-CONCIERGE_ACTION:{"type":"set_firm_type","firm_type":"tax_prep"}</assistant>
-</intake_example>
-
-<intake_example>
-  <user>2</user>
-  <assistant>Got it. Here are three things to work on first:
-1. How do I set up a recurring monthly bookkeeping engagement?
-2. Walk me through connecting QuickBooks
-3. What automation presets should I turn on for a bookkeeping firm?
-CONCIERGE_ACTION:{"type":"set_firm_type","firm_type":"bookkeeping"}</assistant>
-</intake_example>
-
-<intake_example>
-  <user>3</user>
-  <assistant>Got it. Here are three things to work on first:
-1. How do I create an advisory engagement template?
-2. Walk me through setting up billing for a retainer client
-3. What should I set up first for an advisory practice?
-CONCIERGE_ACTION:{"type":"set_firm_type","firm_type":"advisory"}</assistant>
-</intake_example>
-
-The same mapping applies when the firm types the name instead of the number:
-"Tax prep and returns" = tax_prep
-"Bookkeeping and monthly close" = bookkeeping
-"Advisory and planning" = advisory
+Do not change anything else.
 
 VERIFY AFTER ACT:
-grep -n "intake_example\|set_firm_type" /home/corby/jamm-os/app/api/concierge/prompts.py
-Confirm three intake_example blocks and one set_firm_type per block (three total).
-grep -n "append a CONCIERGE_ACTION" /home/corby/jamm-os/app/api/concierge/prompts.py
-Confirm zero results.
+grep -n "Exception.*set_firm_type\|autopilot is off" /home/corby/jamm-os/app/api/concierge/prompts.py
+Confirm both lines appear, exception line first.
 
-No build needed -- prompts.py is backend only.
-Restart the backend after this change.
+No build needed. Restart the backend.
 
 Database reset for browser test:
 psql postgresql://postgres:postgres@localhost:5432/jammpx_dev -c "UPDATE firms SET firm_type = NULL WHERE id = '185314c9-e702-4eab-8600-249848022206';"
 
 Browser test:
 1. Hard refresh
-2. Open panel -- intake appea
+2. Open panel -- intake appears instantly
+3. Open DevTools console
+4. Type "1" and send
+5. Paste [CONCIERGE RAW] from console
+6. Run immediately:
+   psql postgresql://postgres:postgres@localhost:5432/jammpx_dev -c "SELECT firm_type FROM firms WHERE id = '185314c9-e702-4eab-8600-249848022206';"
+   Confirm firm_type = tax_prep
