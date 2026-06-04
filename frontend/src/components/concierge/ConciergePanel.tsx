@@ -436,8 +436,9 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
     }
 
     if (action.route) {
-      const clientMatch = normalizedRoute.match(/^\/clients\/([^/]+)$/)
+      const clientMatch = normalizedRoute.match(/^\/clients\/([^/?]+)(\?.*)?$/)
       if (clientMatch) {
+        const queryString = clientMatch[2] ?? ''
         const name = decodeURIComponent(clientMatch[1]).replace(/-/g, ' ').replace(/\s+/g, ' ').trim()
         const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(name)
         if (!isUUID) {
@@ -459,7 +460,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
               return
             }
             const capitalized = (data.name ?? name).replace(/\b\w/g, c => c.toUpperCase())
-            const resolvedRoute = `/clients/${data.id}`
+            const resolvedRoute = `/clients/${data.id}${queryString}`
             if (formDirty) {
               const ok = window.confirm('You have unsaved changes. Navigate away?')
               if (!ok) return
