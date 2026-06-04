@@ -65,69 +65,128 @@ find /home/corby/jamm-os/frontend/src/components/concierge/ -name "*.tsx" | sort
 
 ---
 
-# Prompt audit: Add Automation Presets workflow section
+# Feature: Add firm type intake to empty state
 
-Task: Replace the thin AUTOMATION RULE data model entry with a full section covering
-all 15 presets, which are enabled by default, and how to manage them.
+Task: Add firm_type to the context snapshot so the Concierge knows whether the firm has
+set their type yet. Update the empty state prompt to ask the firm type question when
+firm_type is null, and show type-specific starter prompts when it is set.
+
+Two files. Do them in order.
+
+---
+
+## File 1 of 2: context.py
+
+Task: Add firm_type to the context snapshot.
 
 VERIFY BEFORE ACT:
-grep -n "AUTOMATION RULE\|15 presets\|automation_enabled" /home/corby/jamm-os/app/api/concierge/prompts.py
+grep -n "firm_type\|from app.models.firm\|Firm" /home/corby/jamm-os/app/api/concierge/context.py | head -15
 
 Paste before touching anything.
 
+Find the Firm model import at the top of context.py and confirm Firm is already imported.
+Then make exactly one change:
+
 OLD:
-AUTOMATION RULE
-A configurable automation preset. Each firm gets 15 seeded presets on signup. Presets are disabled by default and must be individually enabled.
-Fields: id, firm_id, name, description, is_enabled, trigger_event, trigger_conditions (JSON), actions (JSON), default_actions (JSON), execution_count, last_executed_at.
-The 15 presets cover: engagement status changes, task completions, document uploads, deadline proximity alerts, portal activity, and invoice events.
+    return {
+        "client_count": client_stats["total"],
+        "clients_missing_email": client_stats["missing_email"],
+        "clients_inactive": client_stats["inactive"],
+        "import_log": import_log,
+        "onboarding_steps": onboarding_steps,
+        "engagement_summary": engagement_summary,
+        "staff_summary": staff_summary,
+        "portal_adoption": portal_adoption,
+        "irs_coverage": irs_coverage,
+        "question_history_topics": question_history,
+    }
 
 NEW:
-AUTOMATION RULE
-Each firm gets 15 automation presets seeded on signup. Each preset is either enabled or disabled. Enabled presets fire automatically when their trigger condition is met. Disabled presets do nothing until turned on.
+    firm = db.execute(select(Firm).where(Firm.id == firm_id)).scalar_one_or_none()
+    firm_type = firm.firm_type if firm else None
+    return {
+        "client_count": client_stats["total"],
+        "clients_missing_email": client_stats["missing_email"],
+        "clients_inactive": client_stats["inactive"],
+        "import_log": import_log,
+        "onboarding_steps": onboarding_steps,
+        "engagement_summary": engagement_summary,
+        "staff_summary": staff_summary,
+        "portal_adoption": portal_adoption,
+        "irs_coverage": irs_coverage,
+        "question_history_topics": question_history,
+        "firm_type": firm_type,
+    }
 
-How to manage automation presets:
-Navigate to Settings and select Automation. Each preset is listed with its name, trigger, and an on/off toggle. Enable or disable presets individually. To reset a preset to its default actions, select Reset to Default.
-
-Presets enabled by default (fire automatically from day one):
-1. Document Request Reminder (3-day) -- sends a reminder email to the client 3 days after a document request is created if it is still pending
-2. E-Signature Reminder (2-day) -- sends a reminder to the client 2 days after a signature envelope is sent if not yet signed
-3. Overdue Task Alert to Staff -- notifies the assigned staff member when a task becomes overdue
-4. New Client Welcome Email -- sends a welcome email to the client when they are first added
-5. Invoice Overdue Reminder -- sends a payment reminder to the client when an invoice becomes overdue
-6. Extension Filed Auto-Notify -- notifies the client of the extension and creates a deadline task
-7. IRS Authorization Expiry Warning -- alerts staff and creates a renewal task when an IRS authorization is within 30 days of expiry
-8. Invoice Overdue Escalating Sequence -- sends reminders on day 1 and day 7 after an invoice goes overdue, then notifies the firm owner on day 14
-9. Engagement Deadline Approaching (14-day Alert) -- notifies assigned staff 14 days before an engagement deadline
-
-Presets disabled by default (must be turned on manually):
-10. Auto-Create Invoice on Engagement Completion -- creates a draft invoice when an engagement is marked complete
-11. Notify Staff When Documents Are Complete -- notifies assigned staff when a client finishes uploading all requested documents
-12. Recurring Engagement Kickoff Notification -- notifies staff when a new recurring engagement is automatically created
-13. 1040 Season Kickoff -- sends a welcome email and creates intake tasks when a 1040 engagement is opened
-14. Return Completed: Client Delivery Loop -- creates a delivery task, generates an invoice from time entries, emails the client, and creates a follow-up confirmation task when a return is marked complete
-15. New Client Full Onboarding Sequence -- sends a welcome email, creates onboarding tasks, and sends an intake document request when a new client is added
-
-Recommended presets to enable first:
-For most firms, the highest-value presets to enable in the first week are: Notify Staff When Documents Are Complete (6), Auto-Create Invoice on Engagement Completion (10), and Return Completed: Client Delivery Loop (14). These three cover the most common manual follow-up tasks firms do after finishing work.
-
-Common questions:
-Q: Can I customize what a preset does?
-A: Not yet. Presets run their default actions. Custom action editing is on the roadmap.
-
-Q: Will presets fire for existing clients and engagements?
-A: Presets only fire on new trigger events from the moment they are enabled. They do not retroactively process existing records.
-
-Q: How do I know if a preset fired?
-A: The execution count next to each preset in Settings shows how many times it has run. The last executed date shows when it last fired.
-
-Q: Can I turn off a preset temporarily?
-A: Yes. Toggle it off in Settings. It will not fire again until re-enabled.
+Confirm Firm and select are already imported. If not, add them.
 
 Do not change anything else.
 
 VERIFY AFTER ACT:
-1. grep -n "AUTOMATION RULE\|Presets enabled by default\|Presets disabled by default" /home/corby/jamm-os/app/api/concierge/prompts.py
-   Confirm all three present.
+1. grep -n "firm_type" /home/corby/jamm-os/app/api/concierge/context.py
+   Confirm present in the return block.
+2. cd /home/corby/jamm-os
+3. source .venv/bin/activate
+4. python3 -c "from app.api.concierge.context import get_firm_context; print('ok')"
+   Confirm no import errors.
+
+---
+
+## File 2 of 2: prompts.py
+
+Task: Update the empty state prompt to ask the firm type intake question when firm_type
+is not set, and show type-specific starter prompts when it is.
+
+VERIFY BEFORE ACT:
+sed -n '191,200p' /home/corby/jamm-os/app/api/concierge/prompts.py
+
+Paste before touching anything.
+
+OLD:
+EMPTY STATE — FIRST OPEN
+When the messages array is empty and this is the firm's first interaction, output exactly this and nothing else:
+"Welcome to JAMM Concierge. Here are three things I can help you with right now:
+1. Walk me through importing my clients from TaxDome (or another platform)
+2. Explain the difference between engagements and tasks in JAMM PX
+3. What should I set up first after signing up?"
+Do not add any other text. Do not greet. Do not explain what you are. The three prompts are the entire first message.
+
+NEW:
+EMPTY STATE — FIRST OPEN
+When the messages array is empty and this is the firm's first interaction, check firm_type in the live firm context.
+
+If firm_type is null or not set, output exactly this and nothing else:
+"Welcome to JAMM Concierge. Before we start -- what does your firm do most? This lets me point you to the right setup path.
+1. Tax prep and returns
+2. Bookkeeping and monthly close
+3. Advisory and planning"
+Do not add any other text. When the firm selects one, confirm their firm type and immediately recommend the three automation presets and one engagement template that match their practice type. Then proceed to the normal starter prompts for their type.
+
+If firm_type is tax_prep, output exactly this and nothing else:
+"Welcome back. Here are three things to work on next:
+1. Walk me through setting up my first 1040 engagement
+2. How do I send an IRS authorization to a client?
+3. What automation presets should I turn on for a tax firm?"
+
+If firm_type is bookkeeping, output exactly this and nothing else:
+"Welcome back. Here are three things to work on next:
+1. How do I set up a recurring monthly bookkeeping engagement?
+2. Walk me through connecting QuickBooks
+3. What automation presets should I turn on for a bookkeeping firm?"
+
+If firm_type is advisory, output exactly this and nothing else:
+"Welcome back. Here are three things to work on next:
+1. How do I create an advisory engagement template?
+2. Walk me through setting up billing for a retainer client
+3. What should I set up first for an advisory practice?"
+
+Do not add any other text. Do not greet beyond what is shown above. The prompts are the entire first message.
+
+Do not change anything else.
+
+VERIFY AFTER ACT:
+1. grep -n "EMPTY STATE\|firm_type\|tax_prep\|bookkeeping\|advisory" /home/corby/jamm-os/app/api/concierge/prompts.py | head -15
+   Confirm firm_type logic and all three practice types present.
 2. Restart the backend.
-3. Browser test: ask "which automation presets should I turn on first".
-   Confirm: response names specific presets with accurate descriptions, not generic advice.
+3. Browser test: open a fresh Concierge panel with no prior messages.
+   Confirm: the three-option firm type question appears, not the old generic prompts.
