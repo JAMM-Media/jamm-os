@@ -352,6 +352,14 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
     if (braceStart === -1 || braceEnd === -1) return beforeAction
     const actionLine = afterMarker.slice(braceStart, braceEnd + 1).replace(/\s+/g, ' ').trim()
 
+    try {
+      const action: ConciergeAction = JSON.parse(actionLine)
+      if (action.type === 'set_firm_type') {
+        pendingActionRef.current = action
+        return beforeAction || ''
+      }
+    } catch {}
+
     if (!autopilotRef.current) {
       return beforeAction || 'To navigate, turn on Autopilot using the toggle above.'
     }

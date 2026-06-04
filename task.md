@@ -59,83 +59,21 @@ git commit -m "checkpoint before [task name]"
 
 # Section 3 - Your Task 
 
-TASK: Fix set_firm_type action firing when autopilot is off
-
-Pre-task:
-cd /home/corby/jamm-os
-git add -A && git commit -m "checkpoint before set_firm_type autopilot gate fix"
+TASK: Add temporary console.log to debug set_firm_type action
 
 VERIFY BEFORE ACT:
-sed -n '343,366p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
-Paste output before touching anything.
-
-Change 1: ConciergePanel.tsx -- exempt set_firm_type from autopilot gate
+sed -n '246,250p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+Paste output.
 
 Find exactly:
-  function handleConciergeAction(raw: string): string {
-    const ACTION_MARKER = 'CONCIERGE_ACTION:'
-    const actionIndex = raw.indexOf(ACTION_MARKER)
-    if (actionIndex === -1) return raw
-    const beforeAction = raw.slice(0, actionIndex).trim()
-    const afterMarker = raw.slice(actionIndex + ACTION_MARKER.length)
-    const braceStart = afterMarker.indexOf('{')
-    const braceEnd = afterMarker.lastIndexOf('}')
-    if (braceStart === -1 || braceEnd === -1) return beforeAction
-    const actionLine = afterMarker.slice(braceStart, braceEnd + 1).replace(/\s+/g, ' ').trim()
-    if (!autopilotRef.current) {
-      return beforeAction || 'To navigate, turn on Autopilot using the toggle above.'
-    }
-    try {
-      const action: ConciergeAction = JSON.parse(actionLine)
-      pendingActionRef.current = action
-    } catch {}
-    return beforeAction || ''
-  }
+        const cleanContent = handleConciergeAction(assembled)
 
 Replace with:
-  function handleConciergeAction(raw: string): string {
-    const ACTION_MARKER = 'CONCIERGE_ACTION:'
-    const actionIndex = raw.indexOf(ACTION_MARKER)
-    if (actionIndex === -1) return raw
-    const beforeAction = raw.slice(0, actionIndex).trim()
-    const afterMarker = raw.slice(actionIndex + ACTION_MARKER.length)
-    const braceStart = afterMarker.indexOf('{')
-    const braceEnd = afterMarker.lastIndexOf('}')
-    if (braceStart === -1 || braceEnd === -1) return beforeAction
-    const actionLine = afterMarker.slice(braceStart, braceEnd + 1).replace(/\s+/g, ' ').trim()
-    try {
-      const action: ConciergeAction = JSON.parse(actionLine)
-      if (action.type === 'set_firm_type') {
-        pendingActionRef.current = action
-        return beforeAction || ''
-      }
-    } catch {}
-    if (!autopilotRef.current) {
-      return beforeAction || 'To navigate, turn on Autopilot using the toggle above.'
-    }
-    try {
-      const action: ConciergeAction = JSON.parse(actionLine)
-      pendingActionRef.current = action
-    } catch {}
-    return beforeAction || ''
-  }
+        console.log('[CONCIERGE RAW]', assembled)
+        const cleanContent = handleConciergeAction(assembled)
 
 VERIFY AFTER ACT:
-sed -n '343,375p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
-Confirm set_firm_type block appears before the autopilot gate.
+sed -n '246,252p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+Confirm console.log line appears immediately before handleConciergeAction.
 
-Post-task verification:
-1. cd /home/corby/jamm-os/frontend
-2. npm run build
-   Zero TypeScript errors required before stopping.
-
-Database reset for browser test:
-psql postgresql://postgres:postgres@localhost:5432/jammpx_dev -c "UPDATE firms SET firm_type = NULL WHERE id = '185314c9-e702-4eab-8600-249848022206';"
-
-Browser test:
-1. Hard refresh the app
-2. Open the panel -- intake question appears instantly
-3. Type "1" and send
-4. Run immediately after:
-   psql postgresql://postgres:postgres@localhost:5432/jammpx_dev -c "SELECT firm_type FROM firms WHERE id = '185314c9-e702-4eab-8600-249848022206';"
-   Confirm firm_type = tax_prep
+No build needed -- dev server picks up the change automatically.s
