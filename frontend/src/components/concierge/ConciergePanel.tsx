@@ -298,14 +298,21 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
     if (isOpen && !hasInitialized.current) {
       hasInitialized.current = true
       if (messages.length === 0) {
-        sendMessages([{ role: 'user', content: '__OPEN__' }])
+        if (!user?.firm_type) {
+          setMessages([{
+            role: 'concierge',
+            content: 'Welcome to JAMM Concierge. Before we start -- what does your firm do most? This lets me point you to the right setup path.\n\n1. Tax prep and returns\n2. Bookkeeping and monthly close\n3. Advisory and planning',
+          }])
+        } else {
+          sendMessages([{ role: 'user', content: '__OPEN__' }])
+        }
       }
     }
     if (isOpen) {
       setTimeout(() => textareaRef.current?.focus(), 250)
       api.post('/concierge/trigger-check').then(() => fetchNotifications()).catch(() => fetchNotifications())
     }
-  }, [isOpen, sendMessages, fetchNotifications])
+  }, [isOpen, sendMessages, fetchNotifications, user])
 
   async function handleSend(text?: string) {
     const msg = (text ?? input).trim()

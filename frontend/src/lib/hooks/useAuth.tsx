@@ -11,6 +11,8 @@ export interface AuthUser {
   role: 'firm_owner' | 'manager' | 'staff' | 'client_portal_user' | 'system_admin'
   firm_id: string
   totp_enabled?: boolean
+  firm_type?: string | null
+  concierge_active?: boolean
 }
 
 interface AuthContextType {
