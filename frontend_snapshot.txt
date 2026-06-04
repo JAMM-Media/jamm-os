@@ -10,7 +10,6 @@ const PUBLIC_PATHS = [
   '/api/auth/logout',
   '/api/auth/me',
   '/portal',
-  '/review',
   '/_next',
   '/favicon.ico',
   '/favicon.svg',
@@ -4659,7 +4658,7 @@ const TABS: { key: TabKey; label: string }[] = [
   { key: 'biweekly', label: 'Biweekly' },
   { key: 'monthly', label: 'Monthly' },
   { key: 'quarterly', label: 'Quarterly' },
-  { key: 'yearly', label: 'Annually' },
+  { key: 'yearly', label: 'Yearly' },
 ]
 
 interface StaffUser {
@@ -6739,19 +6738,6 @@ function ClientDetailContent() {
                       ? `Last payment: ${new Date(qboAr.last_payment_date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`
                       : 'No payments recorded'}
                   </p>
-                  {client.quickbooksCustomerId && (
-                    <a
-                      href={`https://app.qbo.intuit.com/app/customerdetail?nameId=${client.quickbooksCustomerId}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-[11px] text-brand-light dark:text-brand-light hover:underline inline-flex items-center gap-1 mt-1"
-                    >
-                      Open in QuickBooks
-                      <svg width="10" height="10" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M2 10L10 2M10 2H5M10 2V7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                      </svg>
-                    </a>
-                  )}
                 </div>
               )}
             </div>
@@ -8946,8 +8932,6 @@ import { cn, formatEngagementType } from '@/lib/utils'
 import api from '@/lib/api'
 import { FileText } from 'lucide-react'
 import { QcChecklistTab } from '@/components/engagements/QcChecklistTab'
-import { useAuth } from '@/lib/hooks/useAuth'
-import { settingsApi, type FirmDetails } from '@/lib/api/settingsApi'
 
 type BadgeVariant = Parameters<typeof StatusBadge>[0]['variant']
 
@@ -8972,22 +8956,14 @@ export default function EngagementDetailPage() {
   const router = useRouter()
   const id = params.id as string
   const queryClient = useQueryClient()
-  const { user } = useAuth()
   const [activeTab, setActiveTab] = useState('overview')
   const [notesOpen, setNotesOpen] = useState(false)
   const [showModal, setShowModal] = useState(false)
   const [isEditOpen, setIsEditOpen] = useState(false)
   const [sendLetterOpen, setSendLetterOpen] = useState(false)
   const [uncheckedQcCount, setUncheckedQcCount] = useState(0)
-  const [showReviewModal, setShowReviewModal] = useState(false)
-  const [sendingReview, setSendingReview] = useState(false)
 
   const { unreadCount } = useNotes({ entityType: 'engagement', entityId: id })
-
-  const { data: firmData } = useFetch<FirmDetails>(
-    () => settingsApi.getMyFirm().then((r) => r.data as FirmDetails),
-    []
-  )
 
   const { data: engagement, isLoading, refetch } = useFetch(
     () => engagementsApi.get(id),
@@ -9341,16 +9317,7 @@ export default function EngagementDetailPage() {
             endDate: engagement.endDate ?? undefined,
             description: engagement.description ?? undefined,
           }}
-          onSuccess={(opts) => {
-            refetch()
-            setIsEditOpen(false)
-            const canSendReview =
-              user?.role === 'firm_owner' || user?.role === 'manager'
-            const flagEnabled = firmData?.feature_flags?.review_requests_enabled === true
-            if (opts?.statusBecameCompleted && canSendReview && flagEnabled) {
-              setShowReviewModal(true)
-            }
-          }}
+          onSuccess={() => { refetch(); setIsEditOpen(false) }}
           uncheckedQcCount={uncheckedQcCount}
         />
       )}
@@ -9368,54 +9335,6 @@ export default function EngagementDetailPage() {
         filingDeadline={engagement.filingDeadline ?? null}
         endDate={engagement.endDate ?? null}
       />
-
-      {/* Review request modal */}
-      {showReviewModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="bg-[#EDEEF0] dark:bg-dark-card rounded-[10px] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] p-6 w-full max-w-sm shadow-lg">
-            <p className="text-[13px] font-medium text-brand dark:text-[#EDEEF0] mb-2">
-              Engagement Complete
-            </p>
-            <p className="text-[13px] text-[#374151] dark:text-[#9CA3AF] leading-relaxed mb-5">
-              Would you like to send {clientName || 'this client'} a review request? Happy clients
-              will be directed to your Google review page.
-            </p>
-            <div className="flex items-center justify-end gap-2">
-              <button
-                onClick={() => setShowReviewModal(false)}
-                className="h-9 px-3 rounded-[6px] border border-[0.5px] border-[#1F3148] dark:border-[#4A7FA5] text-[#1F3148] dark:text-[#EDEEF0] bg-transparent text-[13px] font-medium hover:bg-surface-page dark:hover:bg-dark-page transition-colors"
-              >
-                Skip
-              </button>
-              <button
-                disabled={sendingReview}
-                onClick={async () => {
-                  if (!engagement.clientId) return
-                  setSendingReview(true)
-                  try {
-                    await api.post('/review-requests/send', {
-                      client_id: engagement.clientId,
-                      engagement_id: engagement.id,
-                    })
-                    toast.success(`Review request sent to ${clientName || 'client'}`)
-                  } catch (err: unknown) {
-                    const detail =
-                      (err as { response?: { data?: { detail?: string } } })?.response?.data
-                        ?.detail
-                    toast.error(detail ?? 'Failed to send review request')
-                  } finally {
-                    setSendingReview(false)
-                    setShowReviewModal(false)
-                  }
-                }}
-                className="h-9 px-3 rounded-[6px] bg-[#1F3148] dark:bg-brand-btn text-white text-[13px] font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
-              >
-                {sendingReview ? 'Sending...' : 'Send Request'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </AppShell>
   )
 }
@@ -10535,261 +10454,6 @@ export default function PortalSettingsPage() {
 
 
 ================================================================================
-FILE: frontend\src\app\review\page.tsx
-================================================================================
-// frontend/src/app/review/page.tsx
-'use client'
-
-import { useState, useEffect, useRef, Suspense } from 'react'
-import { useSearchParams } from 'next/navigation'
-
-type ViewState =
-  | { phase: 'loading' }
-  | { phase: 'google_review'; google_review_url: string }
-  | { phase: 'feedback_form' }
-  | { phase: 'feedback_submitted' }
-  | { phase: 'error' }
-
-const API_BASE = '/api/backend'
-
-const cardStyle: React.CSSProperties = {
-  background: '#EDEEF0',
-  borderRadius: 10,
-  border: '0.5px solid #C8CDD6',
-  padding: 32,
-  maxWidth: 480,
-  width: '100%',
-}
-
-const btnStyle: React.CSSProperties = {
-  width: '100%',
-  background: '#1F3148',
-  color: '#FFFFFF',
-  border: 'none',
-  borderRadius: 8,
-  height: 44,
-  fontSize: 15,
-  fontWeight: 500,
-  fontFamily: 'Inter, sans-serif',
-  cursor: 'pointer',
-  marginTop: 20,
-}
-
-const headingStyle: React.CSSProperties = {
-  fontSize: 16,
-  color: '#1F3148',
-  fontWeight: 500,
-  margin: '0 0 12px',
-  fontFamily: 'Inter, sans-serif',
-}
-
-const bodyStyle: React.CSSProperties = {
-  fontSize: 14,
-  color: '#374151',
-  lineHeight: 1.6,
-  margin: '0 0 0',
-  fontFamily: 'Inter, sans-serif',
-}
-
-const mutedStyle: React.CSSProperties = {
-  fontSize: 11,
-  color: '#9CA3AF',
-  marginTop: 12,
-  fontFamily: 'Inter, sans-serif',
-}
-
-function ReviewPageInner() {
-  const searchParams = useSearchParams()
-  const score = searchParams.get('score')
-  const firm = searchParams.get('firm')
-  const engagement = searchParams.get('engagement')
-
-  const [view, setView] = useState<ViewState>({ phase: 'loading' })
-  const [feedbackText, setFeedbackText] = useState('')
-  const [submitting, setSubmitting] = useState(false)
-  const called = useRef(false)
-
-  useEffect(() => {
-    if (called.current) return
-    called.current = true
-
-    if (!score || !firm || !engagement) {
-      setView({ phase: 'error' })
-      return
-    }
-
-    fetch(`${API_BASE}/review-requests/record-score`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        score: Number(score),
-        firm_id: firm,
-        engagement_id: engagement,
-      }),
-    })
-      .then((res) => {
-        if (!res.ok) throw new Error('bad response')
-        return res.json()
-      })
-      .then((data) => {
-        if (data.action === 'google_review') {
-          setView({ phase: 'google_review', google_review_url: data.google_review_url })
-        } else {
-          setView({ phase: 'feedback_form' })
-        }
-      })
-      .catch(() => setView({ phase: 'error' }))
-  }, [score, firm, engagement])
-
-  async function handleSubmitFeedback() {
-    if (!score || !firm || !engagement) return
-    setSubmitting(true)
-    try {
-      const res = await fetch(`${API_BASE}/review-requests/submit-feedback`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          score: Number(score),
-          firm_id: firm,
-          engagement_id: engagement,
-          feedback_text: feedbackText,
-        }),
-      })
-      if (!res.ok) throw new Error('bad response')
-      setView({ phase: 'feedback_submitted' })
-    } catch {
-      // keep form visible, let user retry
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
-  return (
-    <div
-      style={{
-        minHeight: '100vh',
-        background: '#E4E6EA',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '32px 16px',
-        fontFamily: 'Inter, sans-serif',
-      }}
-    >
-      {view.phase === 'loading' && (
-        <div style={{ textAlign: 'center' }}>
-          <div
-            style={{
-              width: 28,
-              height: 28,
-              border: '3px solid #C8CDD6',
-              borderTopColor: '#1F3148',
-              borderRadius: '50%',
-              animation: 'spin 0.8s linear infinite',
-              margin: '0 auto 12px',
-            }}
-          />
-          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-          <p style={{ fontSize: 13, color: '#9CA3AF' }}>One moment...</p>
-        </div>
-      )}
-
-      {view.phase === 'google_review' && (
-        <div style={cardStyle}>
-          <p style={headingStyle}>Thank you!</p>
-          <p style={bodyStyle}>
-            We really appreciate you taking the time. Would you mind sharing your experience on
-            Google? It helps other businesses find us and only takes a moment.
-          </p>
-          <button
-            style={btnStyle}
-            onClick={() => window.open(view.google_review_url, '_blank')}
-          >
-            Leave a Google Review →
-          </button>
-          <p style={mutedStyle}>Thank you again for choosing us.</p>
-        </div>
-      )}
-
-      {view.phase === 'feedback_form' && (
-        <div style={cardStyle}>
-          <p style={headingStyle}>Thank you for the honest feedback.</p>
-          <p style={bodyStyle}>
-            We&apos;re still building and your input shapes what we improve next. What&apos;s one
-            thing that could have been better?
-          </p>
-          <textarea
-            value={feedbackText}
-            onChange={(e) => setFeedbackText(e.target.value)}
-            placeholder="Tell us what would make the experience better for you..."
-            style={{
-              width: '100%',
-              minHeight: 100,
-              background: '#F7F7F8',
-              border: '0.5px solid #C8CDD6',
-              borderRadius: 6,
-              fontSize: 14,
-              fontFamily: 'Inter, sans-serif',
-              padding: '10px 12px',
-              resize: 'vertical',
-              color: '#1F3148',
-              boxSizing: 'border-box',
-              marginTop: 16,
-              outline: 'none',
-            }}
-          />
-          <button
-            style={{ ...btnStyle, opacity: submitting ? 0.6 : 1 }}
-            onClick={handleSubmitFeedback}
-            disabled={submitting}
-          >
-            {submitting ? 'Submitting...' : 'Submit Feedback'}
-          </button>
-        </div>
-      )}
-
-      {view.phase === 'feedback_submitted' && (
-        <div style={{ ...cardStyle, textAlign: 'center' }}>
-          <p style={{ fontSize: 14, color: '#374151', margin: '0 0 6px' }}>
-            Got it — thank you.
-          </p>
-          <p style={{ fontSize: 12, color: '#6B7280', margin: 0 }}>
-            Your feedback goes directly to the team.
-          </p>
-        </div>
-      )}
-
-      {view.phase === 'error' && (
-        <div style={cardStyle}>
-          <p style={{ fontSize: 14, color: '#374151', margin: 0 }}>
-            Something went wrong. Please try again.
-          </p>
-        </div>
-      )}
-    </div>
-  )
-}
-
-export default function ReviewPage() {
-  return (
-    <Suspense fallback={
-      <div style={{
-        minHeight: '100vh',
-        background: '#E4E6EA',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}>
-        <p style={{ fontSize: '13px', color: '#6B7280' }}>Loading...</p>
-      </div>
-    }>
-      <ReviewPageInner />
-    </Suspense>
-  )
-}
-
-
-================================================================================
 FILE: frontend\src\app\settings\page.tsx
 ================================================================================
 // frontend/src/app/settings/page.tsx
@@ -10852,13 +10516,6 @@ export default function SettingsPage() {
   const [approvalRequired, setApprovalRequired] = useState<boolean | null>(null)
   const [savingApproval, setSavingApproval] = useState(false)
 
-  const [emailReplyTo, setEmailReplyTo] = useState('')
-  const [emailDisplayName, setEmailDisplayName] = useState('')
-  const [savingEmail, setSavingEmail] = useState(false)
-
-  const [googleReviewUrl, setGoogleReviewUrl] = useState('')
-  const [savingReview, setSavingReview] = useState(false)
-
   const { data: firmData, isLoading: firmLoading } = useFetch<FirmDetails>(
     () => settingsApi.getMyFirm().then((r) => r.data as FirmDetails),
     []
@@ -10907,43 +10564,6 @@ export default function SettingsPage() {
       setApprovalRequired((firmData as FirmDetails & { timesheet_approval_required?: boolean }).timesheet_approval_required ?? false)
     }
   }, [firmData, approvalRequired])
-
-  useEffect(() => {
-    if (firmData?.settings) {
-      setEmailReplyTo((firmData.settings.email_reply_to as string) ?? '')
-      setEmailDisplayName((firmData.settings.email_display_name as string) ?? '')
-      setGoogleReviewUrl((firmData.settings.google_review_url as string) ?? '')
-    }
-  }, [firmData])
-
-  async function handleSaveEmailSettings() {
-    setSavingEmail(true)
-    try {
-      await api.patch('/settings/email', {
-        reply_to: emailReplyTo || null,
-        display_name: emailDisplayName || null,
-      })
-      toast.success('Email settings saved')
-    } catch {
-      toast.error('Failed to save email settings')
-    } finally {
-      setSavingEmail(false)
-    }
-  }
-
-  async function handleSaveReviewSettings() {
-    setSavingReview(true)
-    try {
-      await api.patch('/settings/review', {
-        google_review_url: googleReviewUrl || null,
-      })
-      toast.success('Review settings saved')
-    } catch {
-      toast.error('Failed to save review settings')
-    } finally {
-      setSavingReview(false)
-    }
-  }
 
   async function handleToggleApproval() {
     if (!isFirmOwner) return
@@ -11144,77 +10764,6 @@ export default function SettingsPage() {
                       )}
                       style={{ marginTop: '2px' }}
                     />
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* Email Settings section */}
-            {isFirmOwner && (
-              <div className="bg-surface-card dark:bg-dark-card rounded-[10px] p-4 flex flex-col gap-3 max-w-lg" style={{ marginTop: '12px' }}>
-                <p className="text-[13px] font-medium text-brand dark:text-[#EDEEF0]">Email Settings</p>
-                <div className={fieldClass}>
-                  <label className={labelClass}>Reply-To Email Address</label>
-                  <input
-                    type="email"
-                    value={emailReplyTo}
-                    onChange={(e) => setEmailReplyTo(e.target.value)}
-                    placeholder="owner@yourfirm.com"
-                    className={inputClass}
-                  />
-                  <span className="text-[11px] text-[#6B7280]">
-                    When clients reply to emails from JAMM PX, their reply goes to this address.
-                  </span>
-                </div>
-                <div className={fieldClass}>
-                  <label className={labelClass}>Email Display Name</label>
-                  <input
-                    type="text"
-                    value={emailDisplayName}
-                    onChange={(e) => setEmailDisplayName(e.target.value)}
-                    placeholder={firmData?.name ?? 'Your firm name'}
-                    className={inputClass}
-                  />
-                  <span className="text-[11px] text-[#6B7280]">
-                    The name clients see in their inbox. Defaults to your firm name.
-                  </span>
-                </div>
-                <div className="flex justify-end">
-                  <button
-                    onClick={handleSaveEmailSettings}
-                    disabled={savingEmail}
-                    className="h-8 px-3 text-[13px] font-medium rounded-[6px] bg-brand text-white hover:bg-brand/90 transition-colors disabled:opacity-60"
-                  >
-                    {savingEmail ? 'Saving...' : 'Save'}
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* Review Requests section */}
-            {isFirmOwner && (
-              <div className="bg-surface-card dark:bg-dark-card rounded-[10px] p-4 flex flex-col gap-3 max-w-lg" style={{ marginTop: '12px' }}>
-                <p className="text-[13px] font-medium text-brand dark:text-[#EDEEF0]">Review Requests</p>
-                <div className={fieldClass}>
-                  <label className={labelClass}>Google Review Link</label>
-                  <input
-                    type="text"
-                    value={googleReviewUrl}
-                    onChange={(e) => setGoogleReviewUrl(e.target.value)}
-                    placeholder="https://g.page/r/your-business/review"
-                    className={inputClass}
-                  />
-                  <span className="text-[11px] text-[#6B7280]">
-                    Clients who rate their experience 9 or 10 will be directed here to leave a public review.
-                  </span>
-                </div>
-                <div className="flex justify-end">
-                  <button
-                    onClick={handleSaveReviewSettings}
-                    disabled={savingReview}
-                    className="h-8 px-3 text-[13px] font-medium rounded-[6px] bg-brand text-white hover:bg-brand/90 transition-colors disabled:opacity-60"
-                  >
-                    {savingReview ? 'Saving...' : 'Save'}
                   </button>
                 </div>
               </div>
@@ -13068,18 +12617,6 @@ FILE: frontend\src\components\clients\HealthDot.tsx
 import { useQuery } from '@tanstack/react-query'
 import { clientsApi } from '@/lib/api/clients'
 import type { ClientHealth } from '@/lib/api/clients'
-import {
-  Tooltip,
-  TooltipTrigger,
-  TooltipContent,
-  TooltipProvider,
-} from '@/components/ui/tooltip'
-
-const SEVERITY_COLOR: Record<string, string> = {
-  at_risk: '#E24B4A',
-  needs_attention: '#F59E0B',
-  healthy: '#10B981',
-}
 
 const STATUS_CONFIG = {
   healthy: { color: '#10B981', label: 'Healthy' },
@@ -13102,12 +12639,14 @@ export function HealthDot({ clientId, showLabel = false }: HealthDotProps) {
 
   if (isError) return null
 
-  const config = data
-    ? STATUS_CONFIG[data.status as keyof typeof STATUS_CONFIG] ?? null
-    : null
+  const config = data ? STATUS_CONFIG[data.status as keyof typeof STATUS_CONFIG] ?? null : null
   const color = isLoading || !config ? '#C8CDD6' : config.color
-
-  const hasReasons = data && data.reasons.length > 0
+  const tooltip =
+    isLoading || !data
+      ? undefined
+      : data.reasons.length === 0
+      ? 'Good'
+      : data.reasons.join('\n')
 
   const dot = (
     <span
@@ -13122,43 +12661,28 @@ export function HealthDot({ clientId, showLabel = false }: HealthDotProps) {
     />
   )
 
-  // No reasons — healthy or still loading — just render the dot/label with no tooltip
-  if (!hasReasons) {
-    if (showLabel) {
-      return <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: isLoading || !config ? '#C8CDD6' : config.color }}>{dot}{!isLoading && config && config.label}</span>
-    }
-    return <span style={{ display: 'inline-flex', alignItems: 'center' }}>{dot}</span>
+  if (!showLabel) {
+    return (
+      <span title={tooltip} style={{ display: 'inline-flex', alignItems: 'center' }}>
+        {dot}
+      </span>
+    )
   }
 
-  // Has reasons — wrap in tooltip showing each reason on its own line
   return (
-    <TooltipProvider>
-      <Tooltip>
-        <TooltipTrigger>{showLabel ? (<span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: isLoading || !config ? '#C8CDD6' : config.color, cursor: 'default' }}>{dot}{!isLoading && config && config.label}</span>) : (<span style={{ display: 'inline-flex', alignItems: 'center' }}>{dot}</span>)}</TooltipTrigger>
-        <TooltipContent
-          side="right"
-          className="max-w-[240px]"
-        >
-          <div className="flex flex-col gap-1">
-            {data.reasons.map((reason, i) => (
-              <div key={i} className="flex items-start gap-1.5">
-                <span
-                  style={{
-                    width: 6,
-                    height: 6,
-                    borderRadius: '50%',
-                    backgroundColor: SEVERITY_COLOR[reason.severity] ?? color,
-                    flexShrink: 0,
-                    marginTop: 4,
-                  }}
-                />
-                <span className="text-[11px] leading-tight">{reason.text}</span>
-              </div>
-            ))}
-          </div>
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
+    <span
+      title={tooltip}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 6,
+        fontSize: 12,
+        color: isLoading || !config ? '#C8CDD6' : config.color,
+      }}
+    >
+      {dot}
+      {!isLoading && config && config.label}
+    </span>
   )
 }
 
@@ -14231,373 +13755,6 @@ export function PortalPreview({ clientId, clientName }: PortalPreviewProps) {
 
 
 ================================================================================
-FILE: frontend\src\components\concierge\ConciergePanel.tsx
-================================================================================
-// frontend/src/components/concierge/ConciergePanel.tsx
-'use client'
-
-import { useState, useRef, useEffect, useCallback } from 'react'
-import { X, Send } from 'lucide-react'
-import ReactMarkdown from 'react-markdown'
-import { useAuth } from '@/lib/hooks/useAuth'
-import api from '@/lib/api'
-
-interface Message {
-  role: 'user' | 'concierge'
-  content: string
-}
-
-interface ConciergePanelProps {
-  isOpen: boolean
-  onClose: () => void
-}
-
-const STARTER_PROMPTS = [
-  'What should I set up first after signing up?',
-  'How do I import my existing clients?',
-  'How does the client portal work?',
-]
-
-const STARTER_PROMPT_INSTRUCTIONS: Record<string, string> = {
-  'How do I import my existing clients?': 'Answer using a numbered markdown list. Each step on its own numbered line.',
-  'How does the client portal work?': 'Answer using a numbered markdown list. Each step on its own numbered line.',
-}
-
-const HARDCODED_RESPONSES: Record<string, string> = {
-  'What should I set up first after signing up?': `Here's the recommended setup order:
-
-1. **Firm profile.** Go to Settings > Firm Profile. Add your firm name, logo, and contact details. This appears on engagement letters and all client-facing documents.
-
-2. **Invite staff.** Go to Settings > Team. Add each staff member by email and assign their role. They receive a magic-link to set their password.
-
-3. **Connect QuickBooks (if applicable).** Go to Settings > Integrations > QuickBooks and complete the OAuth flow. Use the Import Preview before committing.
-
-4. **Import clients.** QuickBooks: use the Import Preview. CSV: go to Clients > Import. Required column: name. Recommended: email, entity_type.
-
-5. **Create engagement templates.** Go to Engagements > Templates > New Template. Build templates for your most common work types with pre-set task lists.
-
-6. **Create engagements.** Go to Clients > [Client Name] > Engagements > New Engagement. Use a template if available.
-
-7. **Enable automation presets.** Go to Settings > Automations. Start with deadline alerts and document upload confirmations.
-
-8. **Send portal magic-links.** New clients: send immediately. Existing clients: convert in batches of 10 to 15 per week.
-
-9. **Send first document request.** Go to the engagement > Document Requests > New Request.
-
-10. **Connect Stripe.** Go to Settings > Billing > Connect Stripe. Required before sending invoices for payment.`,
-  'How do I import my existing clients?': `Two ways to import clients into JAMM PX:
-
-**Option A: QuickBooks import**
-
-1. Go to Settings > Integrations > QuickBooks and complete the OAuth connection.
-2. Open the Import Preview to see which clients will come over before committing.
-3. Select the clients you want and confirm the import.
-4. Common skip reasons: no email on the QuickBooks record, duplicate email, inactive customer, sub-customer record.
-
-**Option B: CSV import**
-
-1. Export a CSV from your current platform.
-2. Make sure the file has a name column. Recommended columns: email, entity_type, phone, company_name.
-3. Entity type values: individual, business, trust, estate.
-4. Go to Clients > Import and upload the file.
-5. Review the result summary. Skipped rows are listed with the reason. Fix and re-import only the skipped rows.
-
-Note: invoices, payment history, and documents do not transfer. Only client records come over.`,
-  'How does the client portal work?': `The client portal is a secure space where clients upload documents, pay invoices, and communicate with your firm.
-
-**Sending access**
-
-1. Go to Clients > [Client Name] > Portal tab > Send Magic-Link.
-2. New clients: send immediately when creating their first engagement.
-3. Existing clients: convert in batches of 10 to 15 per week. Never send to all clients at once.
-4. Magic-links expire after 72 hours. Clients can set a password if they prefer.
-
-**What clients see**
-
-5. Engagements with any notes you mark as client-visible.
-6. Document requests with a checklist they can upload files against.
-7. Invoices they can pay online once Stripe is connected.
-8. A messages tab for secure back-and-forth with your firm.
-
-Note: internal engagement notes are never visible to clients. Only notes_client_visible fields appear in the portal.`,
-}
-
-export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
-  const { user } = useAuth()
-  const logoUrl = user ? `/api/backend/firms/logo/${user.firm_id}` : null
-  const initials = user?.full_name?.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase() ?? '?'
-  const [messages, setMessages] = useState<Message[]>([])
-  const [input, setInput] = useState('')
-  const [streaming, setStreaming] = useState(false)
-  const [showStarters, setShowStarters] = useState(true)
-  const messagesEndRef = useRef<HTMLDivElement>(null)
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const hasInitialized = useRef(false)
-
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
-
-  const sendMessages = useCallback(async (thread: Message[]) => {
-    setStreaming(true)
-    setShowStarters(false)
-    setMessages((prev) => [...prev, { role: 'concierge', content: '' }])
-
-    const authHeader = api.defaults.headers.common['Authorization']
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-    if (authHeader) headers['Authorization'] = String(authHeader)
-
-    const apiMessages = thread.map((m) => ({
-      role: m.role === 'concierge' ? 'assistant' : 'user',
-      content: m.content,
-    }))
-
-    try {
-      const res = await fetch('/api/backend/concierge/chat', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ messages: apiMessages }),
-      })
-
-      if (!res.ok || !res.body) {
-        setMessages((prev) => {
-          const updated = [...prev]
-          updated[updated.length - 1] = { role: 'concierge', content: 'Something went wrong. Please try again.' }
-          return updated
-        })
-        return
-      }
-
-      const reader = res.body.getReader()
-      const decoder = new TextDecoder()
-      let buffer = ''
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split('\n')
-        buffer = lines.pop() ?? ''
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            const chunk = line.slice(6)
-            setMessages((prev) => {
-              const updated = [...prev]
-              updated[updated.length - 1] = {
-                role: 'concierge',
-                content: updated[updated.length - 1].content + chunk,
-              }
-              return updated
-            })
-          }
-        }
-      }
-    } catch {
-      setMessages((prev) => {
-        const updated = [...prev]
-        updated[updated.length - 1] = { role: 'concierge', content: 'Something went wrong. Please try again.' }
-        return updated
-      })
-    } finally {
-      setStreaming(false)
-    }
-  }, [])
-
-  useEffect(() => {
-    if (isOpen && !hasInitialized.current) {
-      hasInitialized.current = true
-    }
-    if (isOpen) {
-      setTimeout(() => textareaRef.current?.focus(), 250)
-    }
-  }, [isOpen, sendMessages])
-
-  async function handleSend(text?: string) {
-    const msg = (text ?? input).trim()
-    if (!msg || streaming) return
-    setInput('')
-    const hardcoded = text ? HARDCODED_RESPONSES[text] : undefined
-    if (hardcoded) {
-      const userMsg: Message = { role: 'user', content: msg }
-      setMessages((prev) => [...prev, userMsg, { role: 'concierge', content: '' }])
-      setStreaming(true)
-      await new Promise((resolve) => setTimeout(resolve, 1400))
-      setStreaming(false)
-      setMessages((prev) => {
-        const updated = [...prev]
-        updated[updated.length - 1] = { role: 'concierge', content: hardcoded }
-        return updated
-      })
-      return
-    }
-    const instruction = text ? STARTER_PROMPT_INSTRUCTIONS[text] : undefined
-    const apiContent = instruction ? `${msg}\n\n[Format instruction: ${instruction}]` : msg
-    const userMsg: Message = { role: 'user', content: msg }
-    const apiMsg: Message = { role: 'user', content: apiContent }
-    const newThread = [...messages, userMsg]
-    const apiThread = [...messages, apiMsg]
-    setMessages(newThread)
-    await sendMessages(apiThread)
-  }
-
-  function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      handleSend()
-    }
-  }
-
-  function handleInput(e: React.FormEvent<HTMLTextAreaElement>) {
-    const el = e.currentTarget
-    el.style.height = 'auto'
-    el.style.height = Math.min(el.scrollHeight, 96) + 'px'
-  }
-
-  return (
-    <>
-      {isOpen && (
-        <div
-          onClick={onClose}
-          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.25)', zIndex: 39 }}
-        />
-      )}
-
-      <div
-        style={{
-          position: 'fixed',
-          right: 0,
-          top: 0,
-          width: 400,
-          height: '100vh',
-          zIndex: 40,
-          transform: isOpen ? 'translateX(0)' : 'translateX(100%)',
-          transition: 'transform 200ms ease-out',
-          display: 'flex',
-          flexDirection: 'column',
-        }}
-        className="bg-[#EDEEF0] dark:bg-[#383838] border-l border-[0.5px] border-[#C8CDD6] dark:border-[#484848]"
-      >
-        {/* Header */}
-        <div
-          className="flex items-center justify-between px-4 border-b border-[0.5px] border-[#C8CDD6] dark:border-[#484848] flex-shrink-0"
-          style={{ height: 48 }}
-        >
-          <div className="flex items-center gap-2">
-            {logoUrl ? (
-              <img
-                src={logoUrl}
-                alt="Firm logo"
-                className="h-6 w-auto object-contain rounded-sm"
-                onError={(e) => { e.currentTarget.style.display = 'none' }}
-              />
-            ) : (
-              <div className="h-6 w-6 rounded-sm bg-[#3A6A94] flex items-center justify-center flex-shrink-0">
-                <span className="text-[10px] font-medium text-white">{initials}</span>
-              </div>
-            )}
-            <span className="text-[14px] font-medium text-[#1F3148] dark:text-[#EDEEF0]">
-              JAMM Concierge
-            </span>
-          </div>
-          <button
-            onClick={onClose}
-            aria-label="Close concierge panel"
-            className="text-[#6B7280] hover:text-[#1F3148] dark:hover:text-[#EDEEF0] transition-colors"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-
-        {/* Message feed */}
-        <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
-
-          {/* Empty state with starter prompts */}
-          {showStarters && messages.length === 0 && (
-            <div className="flex flex-col gap-3">
-              <p className="text-[12px] text-[#6B7280] leading-[1.5]">
-                Ask me anything about JAMM PX. Here are a few places to start:
-              </p>
-              {STARTER_PROMPTS.map((prompt, i) => (
-                <button
-                  key={i}
-                  onClick={() => handleSend(prompt)}
-                  className="text-left text-[13px] text-[#1F3148] dark:text-[#EDEEF0] bg-white dark:bg-[#2D2D2D] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] rounded-[8px] px-3 py-2.5 hover:border-[#4A7FA5] hover:bg-[#F0F4F8] dark:hover:bg-[#333333] transition-colors leading-[1.5]"
-                >
-                  {prompt}
-                </button>
-              ))}
-            </div>
-          )}
-
-          {messages.map((msg, i) => (
-            <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-              <div
-                className="text-[13px] leading-[1.6] px-3 py-2 rounded-[12px] max-w-[75%] whitespace-pre-wrap"
-                style={
-                  msg.role === 'user'
-                    ? { background: '#1F3148', color: '#FFFFFF' }
-                    : { background: '#E4E6EA', color: '#1F3148' }
-                }
-              >
-                {msg.content && (!streaming || i < messages.length - 1) ? (
-                  <ReactMarkdown
-                    components={{
-                      p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
-                      ol: ({ children }) => <ol className="list-decimal pl-4 space-y-1">{children}</ol>,
-                      ul: ({ children }) => <ul className="list-disc pl-4 space-y-1">{children}</ul>,
-                      li: ({ children }) => <li>{children}</li>,
-                      strong: ({ children }) => <strong className="font-medium">{children}</strong>,
-                    }}
-                  >
-                    {msg.content}
-                  </ReactMarkdown>
-                ) : msg.content && streaming && i === messages.length - 1 ? (
-                  <span className="text-[13px] text-[#6B7280]">Thinking...</span>
-                ) : (
-                  streaming && i === messages.length - 1 ? (
-                    <span className="text-[13px] text-[#6B7280] animate-pulse">Thinking...</span>
-                  ) : (
-                    ''
-                  )
-                )}
-              </div>
-            </div>
-          ))}
-          <div ref={messagesEndRef} />
-        </div>
-
-        {/* Input area */}
-        <div className="p-4 border-t border-[0.5px] border-[#C8CDD6] dark:border-[#484848] flex-shrink-0">
-          <div className="flex items-end gap-2">
-            <textarea
-              ref={textareaRef}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              onInput={handleInput}
-              placeholder="Ask anything about JAMM PX..."
-              rows={1}
-              disabled={streaming}
-              className="flex-1 rounded-[6px] border border-[0.5px] border-[#C8CDD6] focus:border-[#4A7FA5] focus:outline-none bg-[#F7F7F8] dark:bg-[#2D2D2D] text-[13px] text-[#374151] dark:text-[#9CA3AF] placeholder:text-[#9CA3AF] p-2.5 resize-none transition-colors disabled:opacity-60"
-              style={{ minHeight: 36, maxHeight: 96, overflowY: 'auto' }}
-            />
-            <button
-              onClick={() => handleSend()}
-              disabled={!input.trim() || streaming}
-              aria-label="Send message"
-              className="h-9 w-9 rounded-[6px] bg-[#1F3148] flex items-center justify-center transition-opacity disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0"
-            >
-              <Send className="h-4 w-4 text-white" />
-            </button>
-          </div>
-        </div>
-      </div>
-    </>
-  )
-}
-
-
-================================================================================
 FILE: frontend\src\components\dashboard\DashboardSection.tsx
 ================================================================================
 // frontend/src/components/dashboard/DashboardSection.tsx
@@ -15575,7 +14732,7 @@ interface EditEngagementModalProps {
   isOpen: boolean
   onClose: () => void
   engagement: { id: string; name: string; status: string; engagementType?: string; endDate?: string; description?: string }
-  onSuccess: (opts?: { statusBecameCompleted?: boolean }) => void
+  onSuccess: () => void
   uncheckedQcCount?: number
 }
 
@@ -15644,9 +14801,7 @@ export function EditEngagementModal({ isOpen, onClose, engagement, onSuccess, un
     try {
       await engagementsApi.update(engagement.id, patch)
       toast.success('Engagement updated successfully')
-      const statusBecameCompleted =
-        patch.status === 'completed' && original.status !== 'completed'
-      onSuccess({ statusBecameCompleted })
+      onSuccess()
     } catch {
       toast.error('Failed to update engagement — please try again')
     } finally {
@@ -17763,22 +16918,23 @@ FILE: frontend\src\components\layout\AppShell.tsx
 ================================================================================
 // frontend/src/components/layout/AppShell.tsx
 'use client'
+
 import { useState } from 'react'
 import { Sidebar } from './Sidebar'
-import { ConciergePanel } from '../concierge/ConciergePanel'
+
 interface AppShellProps {
   children: React.ReactNode
 }
+
 export function AppShell({ children }: AppShellProps) {
   const [collapsed, setCollapsed] = useState(false)
-  const [conciergeOpen, setConciergeOpen] = useState(false)
+
   return (
     <div className="flex h-screen overflow-hidden bg-surface-page dark:bg-dark-page">
-      <Sidebar collapsed={collapsed} onToggle={() => setCollapsed((c) => !c)} onConciergeOpen={() => setConciergeOpen(true)} />
+      <Sidebar collapsed={collapsed} onToggle={() => setCollapsed((c) => !c)} />
       <main className="flex-1 overflow-y-auto">
         {children}
       </main>
-      <ConciergePanel isOpen={conciergeOpen} onClose={() => setConciergeOpen(false)} />
     </div>
   )
 }
@@ -17855,7 +17011,6 @@ import {
   Bell,
   Clock,
   LayoutTemplate,
-  BotMessageSquare,
 } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { cn } from '@/lib/utils'
@@ -17882,10 +17037,9 @@ const settingsItem = { href: '/settings', label: 'Settings', icon: Settings }
 interface SidebarProps {
   collapsed: boolean
   onToggle: () => void
-  onConciergeOpen: () => void
 }
 
-export function Sidebar({ collapsed, onToggle, onConciergeOpen }: SidebarProps) {
+export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const pathname = usePathname()
   const { theme, setTheme } = useTheme()
   const [mounted, setMounted] = useState(false)
@@ -18010,18 +17164,6 @@ export function Sidebar({ collapsed, onToggle, onConciergeOpen }: SidebarProps) 
           )}
         </button>
 
-        {/* Concierge */}
-        <button
-          onClick={onConciergeOpen}
-          className={cn(
-            'w-full flex items-center gap-3 px-2 py-2 rounded text-[13px] text-white/60 hover:text-white hover:bg-white/10 transition-colors',
-            collapsed && 'justify-center px-2'
-          )}
-          title={collapsed ? 'JAMM Concierge' : undefined}
-        >
-          <BotMessageSquare className="h-4 w-4 flex-shrink-0" />
-          {!collapsed && <span className="truncate">JAMM Concierge</span>}
-        </button>
         {/* Settings */}
         <Link
           href={settingsItem.href}
@@ -20821,7 +19963,7 @@ FILE: frontend\src\components\settings\AutomationsTab.tsx
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Loader2, FlaskConical, CheckCircle2, XCircle, AlertTriangle } from 'lucide-react'
+import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import api from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -20838,228 +19980,11 @@ interface AutomationRule {
   id: string
   name: string
   description: string
-  trigger_event: string
-  trigger_conditions: unknown[]
   is_enabled: boolean
   execution_count: number
   last_executed_at: string | null
   actions: Action[]
   default_actions: Action[]
-}
-
-const PAYLOAD_FIELDS: Record<string, Array<{ key: string; label: string; placeholder: string }>> = {
-  'engagement.created':                    [{ key: 'engagement_type',    label: 'Engagement Type',    placeholder: 'e.g. tax_return_1040' }],
-  'engagement.status_changed':             [{ key: 'new_status',         label: 'New Status',         placeholder: 'e.g. completed' }],
-  'engagement.completed':                  [{ key: 'engagement_type',    label: 'Engagement Type',    placeholder: 'e.g. tax_return_1040' }],
-  'engagement.deadline_approaching':       [{ key: 'days_until_deadline', label: 'Days Until Deadline', placeholder: 'e.g. 7' }],
-  'document_request.completed':            [],
-  'document_request.created':              [],
-  'invoice.created':                       [{ key: 'total_amount',       label: 'Invoice Amount',     placeholder: 'e.g. 850' }],
-  'invoice.overdue':                       [{ key: 'days_overdue',       label: 'Days Overdue',       placeholder: 'e.g. 7' }],
-  'invoice.paid':                          [{ key: 'total_amount',       label: 'Invoice Amount',     placeholder: 'e.g. 850' }],
-  'client.created':                        [],
-  'extension.filed':                       [],
-  'irs_authorization.expiry_approaching':  [{ key: 'days_until_expiry',  label: 'Days Until Expiry',  placeholder: 'e.g. 30' }],
-  'task.overdue':                          [{ key: 'days_overdue',       label: 'Days Overdue',       placeholder: 'e.g. 3' }],
-}
-
-interface SimulateResult {
-  would_trigger: boolean
-  conditions_evaluated: number
-  conditions_passed: boolean
-  trigger_event: string
-  actions_that_would_execute: Array<{ type: string; order: number }>
-  rule_is_enabled: boolean
-}
-
-function SimulateModal({ rule, onClose }: { rule: AutomationRule; onClose: () => void }) {
-  const [values, setValues] = useState<Record<string, string>>({})
-  const [result, setResult] = useState<SimulateResult | null>(null)
-  const [running, setRunning] = useState(false)
-
-  useEffect(() => {
-    function handleKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape') onClose()
-    }
-    document.addEventListener('keydown', handleKeyDown)
-    return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [onClose])
-
-  const fields = PAYLOAD_FIELDS[rule.trigger_event] ?? [{ key: 'event_data', label: 'Event Data (JSON)', placeholder: '{}' }]
-  const truncatedName = rule.name.length > 35 ? rule.name.slice(0, 35) + '…' : rule.name
-
-  async function handleRun() {
-    setRunning(true)
-    setResult(null)
-    try {
-      const payload: Record<string, unknown> = {}
-      fields.forEach(f => {
-        if (values[f.key]) payload[f.key] = values[f.key]
-      })
-      const { data } = await api.post(`/automation-rules/${rule.id}/simulate`, payload)
-      setResult(data)
-    } catch {
-      toast.error('Simulation failed — check your payload and try again.')
-    } finally {
-      setRunning(false)
-    }
-  }
-
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/35"
-      onClick={onClose}
-    >
-      <div
-        className="bg-[#EDEEF0] dark:bg-[#383838] rounded-[10px] border border-[#C8CDD6] dark:border-[#484848] w-full max-w-md mx-4 shadow-lg"
-        onClick={e => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div
-          className="flex items-center justify-between px-4 border-b border-[#C8CDD6] dark:border-[#484848]"
-          style={{ height: 48 }}
-        >
-          <div className="flex items-center gap-2">
-            <FlaskConical className="w-3.5 h-3.5 text-[#6B7280]" />
-            <span className="text-[13px] font-medium text-brand dark:text-[#EDEEF0]">
-              {truncatedName}
-            </span>
-          </div>
-          <button onClick={onClose} className="text-[#6B7280] hover:text-brand focus:outline-none">
-            <XCircle className="w-4 h-4" />
-          </button>
-        </div>
-
-        {/* Body */}
-        <div className="p-4 flex flex-col gap-4">
-          {/* Rule info strip */}
-          <div className="flex items-center gap-3">
-            <span className="text-[11px] bg-[#E5E7EB] dark:bg-[#484848] text-[#374151] dark:text-[#9CA3AF] px-2 py-0.5 rounded-full">
-              {rule.trigger_event}
-            </span>
-            <div className="flex items-center gap-1.5">
-              <span
-                className={cn(
-                  'w-1.5 h-1.5 rounded-full',
-                  rule.is_enabled ? 'bg-green-500' : 'bg-gray-300',
-                )}
-              />
-              <span className="text-[11px] text-[#6B7280] dark:text-[#9CA3AF]">
-                {rule.is_enabled ? 'Enabled' : 'Disabled'}
-              </span>
-            </div>
-          </div>
-
-          {/* Payload fields */}
-          <div>
-            <p className="text-[11px] uppercase tracking-wide text-[#6B7280] dark:text-[#9CA3AF] mb-2 font-medium">
-              Test payload
-            </p>
-            {fields.length === 0 ? (
-              <p className="text-[12px] italic text-[#6B7280]">
-                No payload required — this rule triggers on the event alone.
-              </p>
-            ) : (
-              <div className="flex flex-col gap-3">
-                {fields.map(f => (
-                  <div key={f.key}>
-                    <label className="block text-[11px] font-medium text-brand dark:text-[#4A7FA5] mb-1">
-                      {f.label}
-                    </label>
-                    <input
-                      type="text"
-                      placeholder={f.placeholder}
-                      value={values[f.key] ?? ''}
-                      onChange={e => setValues(prev => ({ ...prev, [f.key]: e.target.value }))}
-                      className="h-9 px-3 rounded-md border border-[#C8CDD6] dark:border-[#484848] bg-[#F7F7F8] dark:bg-[#2D2D2D] text-[13px] text-brand dark:text-[#EDEEF0] focus:border-[#4A7FA5] focus:outline-none w-full"
-                    />
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Result area */}
-          {result && (
-            <div
-              className={cn(
-                'rounded-[8px] border p-4',
-                result.would_trigger
-                  ? 'border-[#D1FAE5] bg-[#D1FAE5]/30 dark:bg-[#065F46]/10'
-                  : 'border-[#FEE2E2] bg-[#FEE2E2]/30 dark:bg-[#991B1B]/10',
-              )}
-            >
-              <div className="flex items-center gap-2 mb-2">
-                {result.would_trigger ? (
-                  <CheckCircle2 className="w-4 h-4 text-[#065F46]" />
-                ) : (
-                  <XCircle className="w-4 h-4 text-[#991B1B]" />
-                )}
-                <span
-                  className={cn(
-                    'text-[13px] font-medium',
-                    result.would_trigger ? 'text-[#065F46]' : 'text-[#991B1B]',
-                  )}
-                >
-                  {result.would_trigger ? 'Would trigger' : 'Would not trigger'}
-                </span>
-              </div>
-
-              {result.would_trigger ? (
-                <ul className="flex flex-col gap-1 mb-2">
-                  {result.actions_that_would_execute.map((action, i) => (
-                    <li key={i} className="flex items-center gap-2 text-[12px] text-[#374151] dark:text-[#9CA3AF]">
-                      <span className="w-1 h-1 rounded-full bg-gray-400 shrink-0" />
-                      {action.type.replace(/_/g, ' ').replace(/^./, c => c.toUpperCase())}
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-[12px] text-[#6B7280] dark:text-[#9CA3AF] mb-2">
-                  Conditions not met for this payload.
-                </p>
-              )}
-
-              {!result.rule_is_enabled && (
-                <div className="flex items-start gap-2 mt-2">
-                  <AlertTriangle className="w-3.5 h-3.5 text-[#92400E] shrink-0 mt-0.5" />
-                  <p className="text-[12px] text-[#92400E]">
-                    This rule is currently disabled. It would not fire even if conditions are met.
-                  </p>
-                </div>
-              )}
-
-              <p className="text-[11px] text-[#6B7280] dark:text-[#9CA3AF] mt-2">
-                {result.conditions_evaluated} condition{result.conditions_evaluated !== 1 ? 's' : ''} evaluated
-              </p>
-            </div>
-          )}
-        </div>
-
-        {/* Footer */}
-        <div className="flex items-center justify-between px-4 py-3 border-t border-[#C8CDD6] dark:border-[#484848]">
-          <p className="text-[12px] text-[#6B7280] dark:text-[#9CA3AF]">
-            Results are a preview only. No emails or tasks are created.
-          </p>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={onClose}
-              className="border border-brand text-brand text-[12px] h-8 px-3 rounded-[6px] hover:bg-brand/5 focus:outline-none transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleRun}
-              disabled={running}
-              className="bg-brand dark:bg-brand-btn text-white text-[12px] font-medium h-8 px-3 rounded-[6px] hover:bg-brand/90 focus:outline-none transition-colors disabled:opacity-50"
-            >
-              {running ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Run Test'}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  )
 }
 
 const DEFAULT_ON_PRESETS = new Set([
@@ -21129,7 +20054,6 @@ function RuleCard({
   canEdit,
   onToggle,
   onEdit,
-  onTest,
 }: {
   rule: AutomationRule
   section: 'active' | 'available'
@@ -21137,7 +20061,6 @@ function RuleCard({
   canEdit: boolean
   onToggle: (rule: AutomationRule) => void
   onEdit: (rule: AutomationRule) => void
-  onTest: (rule: AutomationRule) => void
 }) {
   const [expanded, setExpanded] = useState(false)
   const showBadge =
@@ -21195,14 +20118,6 @@ function RuleCard({
             Edit
           </button>
         )}
-        {canEdit && (
-          <button
-            onClick={() => onTest(rule)}
-            className="text-[12px] text-[#6B7280] hover:text-brand dark:hover:text-[#4A7FA5] hover:underline focus:outline-none transition-colors"
-          >
-            Test
-          </button>
-        )}
         <ToggleSwitch
           checked={rule.is_enabled}
           disabled={isPending}
@@ -21227,7 +20142,6 @@ export default function AutomationsTab() {
   const [fetchError, setFetchError] = useState(false)
   const [pendingIds, setPendingIds] = useState<Set<string>>(new Set())
   const [editingRule, setEditingRule] = useState<AutomationRule | null>(null)
-  const [testingRule, setTestingRule] = useState<AutomationRule | null>(null)
 
   const fetchRules = useCallback(() => {
     setLoading(true)
@@ -21323,7 +20237,6 @@ export default function AutomationsTab() {
             canEdit={canEdit}
             onToggle={handleToggle}
             onEdit={setEditingRule}
-            onTest={setTestingRule}
           />
         ))
       )}
@@ -21341,7 +20254,6 @@ export default function AutomationsTab() {
             canEdit={canEdit}
             onToggle={handleToggle}
             onEdit={setEditingRule}
-            onTest={setTestingRule}
           />
         ))
       )}
@@ -21355,10 +20267,6 @@ export default function AutomationsTab() {
             fetchRules()
           }}
         />
-      )}
-
-      {testingRule && (
-        <SimulateModal rule={testingRule} onClose={() => setTestingRule(null)} />
       )}
     </div>
   )
@@ -26953,7 +25861,6 @@ export interface Client {
   notes: string | null
   createdAt: string
   updatedAt: string
-  quickbooksCustomerId: string | null
 }
 
 export interface ClientDetail extends Client {}
@@ -26971,14 +25878,9 @@ export interface QBOARBalance {
   last_payment_date: string | null
 }
 
-export interface HealthReason {
-  severity: 'at_risk' | 'needs_attention' | 'healthy'
-  text: string
-}
-
 export interface ClientHealth {
   status: string
-  reasons: HealthReason[]
+  reasons: string[]
 }
 
 function mapClient(raw: Record<string, unknown>): Client {
@@ -27000,7 +25902,6 @@ function mapClient(raw: Record<string, unknown>): Client {
     notes: raw.notes ? String(raw.notes) : null,
     createdAt: String(raw.created_at ?? ''),
     updatedAt: String(raw.updated_at ?? ''),
-    quickbooksCustomerId: raw.quickbooks_customer_id ? String(raw.quickbooks_customer_id) : null,
   }
 }
 
@@ -27982,7 +26883,6 @@ export interface FirmDetails {
   is_active: boolean
   staff_auth_policy: string
   settings: Record<string, unknown> | null
-  feature_flags: Record<string, boolean> | null
   created_at: string
   updated_at: string
 }

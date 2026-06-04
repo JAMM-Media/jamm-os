@@ -31,21 +31,12 @@ def compute_client_health(client_id: UUID, firm_id: UUID, db: Session) -> dict:
     if client is None:
         return {"status": "healthy", "reasons": []}
 
-    active_engagements = db.execute(
-        select(Engagement).where(
-            Engagement.client_id == client_id,
-            Engagement.firm_id == firm_id,
-            Engagement.status.notin_(["completed", "archived"]),
-            (Engagement.extended_deadline.isnot(None) | Engagement.filing_deadline.isnot(None)),
-        )
-    ).scalars().all()
-
     invoices = db.execute(
         select(Invoice).where(
             Invoice.client_id == client_id,
             Invoice.firm_id == firm_id,
             Invoice.status.in_([InvoiceStatus.sent, InvoiceStatus.overdue]),
-            Invoice.is_deleted == False,
+            Invoice.is_deleted == False,  # noqa: E712
         )
     ).scalars().all()
 
@@ -64,120 +55,61 @@ def compute_client_health(client_id: UUID, firm_id: UUID, db: Session) -> dict:
         )
     ).scalars().all()
 
-    def effective_deadline(eng):
-        return eng.extended_deadline or eng.filing_deadline
+    recent_engagement = db.execute(
+        select(Engagement)
+        .where(
+            Engagement.client_id == client_id,
+            Engagement.firm_id == firm_id,
+        )
+        .order_by(Engagement.updated_at.desc())
+        .limit(1)
+    ).scalar_one_or_none()
 
     # --- AT RISK ---
     at_risk_reasons = []
 
-    overdue_engs = [
-        eng for eng in active_engagements
-        if effective_deadline(eng) is not None and effective_deadline(eng) < today
-    ]
-    for eng in overdue_engs:
-        deadline = effective_deadline(eng)
-        days_past = (today - deadline).days
-        at_risk_reasons.append({
-            "severity": "at_risk",
-            "text": f"{eng.name}: {days_past} day{'s' if days_past != 1 else ''} past deadline"
-        })
+    has_overdue = any(inv.status == InvoiceStatus.overdue for inv in invoices)
+    if has_overdue:
+        portal_login = client.portal_last_login_at
+        login_stale = portal_login is None or (now - _ensure_tz(portal_login)).days > 30
+        if login_stale:
+            at_risk_reasons.append("Overdue invoice")
 
-    urgent_engs = [
-        eng for eng in active_engagements
-        if effective_deadline(eng) is not None
-        and today <= effective_deadline(eng) <= today + timedelta(days=3)
-    ]
-    for eng in urgent_engs:
-        deadline = effective_deadline(eng)
-        days_left = (deadline - today).days
-        at_risk_reasons.append({
-            "severity": "at_risk",
-            "text": f"{eng.name}: due in {days_left} day{'s' if days_left != 1 else ''}"
-        })
+    if any(auth.status == "expired" for auth in irs_auths):
+        at_risk_reasons.append("Expired IRS authorization")
 
-    overdue_invoices = [inv for inv in invoices if inv.status == InvoiceStatus.overdue]
-    for inv in overdue_invoices:
-        amount_str = f"${inv.total_amount:,.0f}" if inv.total_amount else "Invoice"
-        at_risk_reasons.append({
-            "severity": "at_risk",
-            "text": f"{amount_str} invoice overdue"
-        })
+    if at_risk_reasons:
+        return {"status": "at_risk", "reasons": at_risk_reasons}
 
     # --- NEEDS ATTENTION ---
     needs_attention_reasons = []
-
-    approaching_engs = [
-        eng for eng in active_engagements
-        if effective_deadline(eng) is not None
-        and today + timedelta(days=3) < effective_deadline(eng) <= today + timedelta(days=14)
-    ]
-    for eng in approaching_engs:
-        deadline = effective_deadline(eng)
-        days_left = (deadline - today).days
-        needs_attention_reasons.append({
-            "severity": "needs_attention",
-            "text": f"{eng.name}: due in {days_left} day{'s' if days_left != 1 else ''}"
-        })
 
     for inv in invoices:
         if inv.status == InvoiceStatus.sent:
             ref_date = inv.sent_at or inv.created_at
             if ref_date is not None and (now - _ensure_tz(ref_date)).days >= 14:
-                needs_attention_reasons.append({
-                    "severity": "needs_attention",
-                    "text": "Unpaid invoice older than 14 days"
-                })
+                needs_attention_reasons.append("Unpaid invoice older than 14 days")
                 break
 
-    stale_doc_requests = [
-        req for req in doc_requests
-        if (now - _ensure_tz(req.created_at)).days >= 7
-    ]
-    for req in stale_doc_requests:
-        days_open = (now - _ensure_tz(req.created_at)).days
-        needs_attention_reasons.append({
-            "severity": "needs_attention",
-            "text": f"Document request open {days_open} days"
-        })
+    for req in doc_requests:
+        if (now - _ensure_tz(req.created_at)).days >= 7:
+            needs_attention_reasons.append("Open document request older than 7 days")
+            break
 
     cutoff = today + timedelta(days=60)
-    for auth in irs_auths:
-        if auth.status == "expiring_soon" or (
-            auth.valid_until is not None and auth.valid_until < cutoff
-        ):
-            form = f"Form {auth.form_type}" if auth.form_type else "IRS authorization"
-            if auth.valid_until is not None:
-                days_left = (auth.valid_until - today).days
-                needs_attention_reasons.append({
-                    "severity": "needs_attention",
-                    "text": f"{form} expiring in {days_left} day{'s' if days_left != 1 else ''}"
-                })
-            else:
-                needs_attention_reasons.append({
-                    "severity": "needs_attention",
-                    "text": f"{form} expiring soon"
-                })
+    irs_expiring = any(
+        auth.status == "expiring_soon"
+        or (auth.valid_until is not None and auth.valid_until < cutoff)
+        for auth in irs_auths
+    )
+    if irs_expiring:
+        needs_attention_reasons.append("IRS authorization expiring within 60 days")
 
-    if not active_engagements:
-        any_engagement = db.execute(
-            select(Engagement)
-            .where(
-                Engagement.client_id == client_id,
-                Engagement.firm_id == firm_id,
-            )
-            .order_by(Engagement.updated_at.desc())
-            .limit(1)
-        ).scalar_one_or_none()
-        if any_engagement is not None:
-            if (now - _ensure_tz(any_engagement.updated_at)).days >= 30:
-                needs_attention_reasons.append({
-                    "severity": "needs_attention",
-                    "text": "No engagement activity in 30+ days"
-                })
+    if recent_engagement is not None:
+        if (now - _ensure_tz(recent_engagement.updated_at)).days >= 30:
+            needs_attention_reasons.append("No engagement activity in 30+ days")
 
-    if at_risk_reasons:
-        return {"status": "at_risk", "reasons": at_risk_reasons + needs_attention_reasons}
-    elif needs_attention_reasons:
+    if needs_attention_reasons:
         return {"status": "needs_attention", "reasons": needs_attention_reasons}
-    else:
-        return {"status": "healthy", "reasons": [{"severity": "healthy", "text": "Everything is on track"}]}
+
+    return {"status": "healthy", "reasons": []}

@@ -1,0 +1,164 @@
+- generic [ref=e1]:
+  - generic [ref=e14]:
+    - complementary [ref=e15]:
+      - generic [ref=e16]:
+        - generic [ref=e17]: JAMM PX
+        - button "Collapse sidebar" [ref=e18]:
+          - img [ref=e19]
+      - navigation [ref=e21]:
+        - list [ref=e22]:
+          - listitem [ref=e23]:
+            - link "Dashboard" [ref=e24] [cursor=pointer]:
+              - /url: /dashboard
+              - img [ref=e26]
+              - generic [ref=e31]: Dashboard
+          - listitem [ref=e32]:
+            - link "Clients" [ref=e33] [cursor=pointer]:
+              - /url: /clients
+              - img [ref=e35]
+              - generic [ref=e40]: Clients
+          - listitem [ref=e41]:
+            - link "Engagements" [ref=e42] [cursor=pointer]:
+              - /url: /engagements
+              - img [ref=e44]
+              - generic [ref=e47]: Engagements
+          - listitem [ref=e48]:
+            - link "Templates" [ref=e49] [cursor=pointer]:
+              - /url: /templates
+              - img [ref=e51]
+              - generic [ref=e55]: Templates
+          - listitem [ref=e56]:
+            - link "Tasks" [ref=e57] [cursor=pointer]:
+              - /url: /tasks
+              - img [ref=e59]
+              - generic [ref=e62]: Tasks
+          - listitem [ref=e63]:
+            - link "Timesheets" [ref=e64] [cursor=pointer]:
+              - /url: /timesheets
+              - img [ref=e66]
+              - generic [ref=e69]: Timesheets
+          - listitem [ref=e70]:
+            - link "Calendar" [ref=e71] [cursor=pointer]:
+              - /url: /calendar
+              - img [ref=e73]
+              - generic [ref=e75]: Calendar
+          - listitem [ref=e76]:
+            - link "Documents" [ref=e77] [cursor=pointer]:
+              - /url: /documents
+              - img [ref=e79]
+              - generic [ref=e82]: Documents
+          - listitem [ref=e83]:
+            - link "Billing" [ref=e84] [cursor=pointer]:
+              - /url: /billing
+              - img [ref=e86]
+              - generic [ref=e88]: Billing
+          - listitem [ref=e89]:
+            - link "Firm Chat" [ref=e90] [cursor=pointer]:
+              - /url: /firm-chat
+              - img [ref=e92]
+              - generic [ref=e94]: Firm Chat
+          - listitem [ref=e95]:
+            - link "Notifications" [ref=e96] [cursor=pointer]:
+              - /url: /notifications
+              - img [ref=e98]
+              - generic [ref=e101]: Notifications
+      - generic [ref=e102]:
+        - button "Dark mode" [ref=e103]:
+          - img [ref=e104]
+          - generic [ref=e106]: Dark mode
+        - button "JAMM Concierge" [ref=e107]:
+          - img [ref=e108]
+          - generic [ref=e111]: JAMM Concierge
+        - link "Settings" [ref=e112] [cursor=pointer]:
+          - /url: /settings
+          - img [ref=e113]
+          - generic [ref=e116]: Settings
+        - button "Sign out" [ref=e117]:
+          - img [ref=e118]
+          - generic [ref=e121]: Sign out
+    - main [ref=e122]:
+      - generic [ref=e123]:
+        - generic [ref=e124]:
+          - heading "Dashboard" [level=1] [ref=e125]
+          - paragraph [ref=e126]: Priority work across all clients
+        - generic [ref=e127]:
+          - generic [ref=e128]:
+            - generic [ref=e129]: Revenue This Month
+            - generic [ref=e130]: $0
+            - generic [ref=e131]: 0 invoices paid
+          - link "Outstanding AR $0 0 unpaid" [ref=e132] [cursor=pointer]:
+            - /url: /billing
+            - generic [ref=e133]:
+              - generic [ref=e134]: Outstanding AR
+              - generic [ref=e135]: $0
+              - generic [ref=e136]: 0 unpaid
+          - generic [ref=e137]:
+            - generic [ref=e138]: Unbilled WIP
+            - generic [ref=e139]: $0
+            - generic [ref=e140]: 0.0 hours
+          - generic [ref=e141]:
+            - generic [ref=e142]: Overdue Engagements
+            - generic [ref=e143]: "0"
+        - generic [ref=e144]:
+          - generic [ref=e145]:
+            - generic [ref=e146]: Work in Progress
+            - generic [ref=e147]:
+              - paragraph [ref=e148]: $0
+              - paragraph [ref=e149]: 0 hrs unbilled
+          - paragraph [ref=e151]: No unbilled work in progress.
+        - generic [ref=e152]:
+          - generic [ref=e154]:
+            - generic [ref=e155]: Upcoming Deadlines
+            - generic [ref=e156]:
+              - paragraph [ref=e157]: No deadlines in the next 14 days.
+              - paragraph [ref=e158]: Your runway is clear — keep it that way.
+          - generic [ref=e160]:
+            - generic [ref=e161]: Staff Utilization
+            - generic [ref=e162]:
+              - generic [ref=e164]:
+                - generic [ref=e165]: Staff Member
+                - generic [ref=e166]: 0%
+              - generic [ref=e169]:
+                - generic [ref=e170]: Firm Owner
+                - generic [ref=e171]: 0%
+        - generic [ref=e173]:
+          - generic [ref=e175]: Overdue Engagements
+          - generic [ref=e176]:
+            - img [ref=e177]
+            - paragraph [ref=e180]: Nothing overdue. Good work.
+        - generic [ref=e181]:
+          - generic [ref=e183]: Awaiting Signature
+          - paragraph [ref=e185]: No documents awaiting signature.
+    - generic [ref=e186]:
+      - generic [ref=e187]:
+        - generic [ref=e189]: JAMM Concierge
+        - generic [ref=e190]:
+          - generic [ref=e191]:
+            - button "Toggle autopilot mode" [ref=e192]:
+              - img [ref=e193]
+              - generic [ref=e195]: Autopilot
+            - generic: Autopilot mode. When on, JAMM Concierge will navigate the app and open the right screen for you. You always complete and save the action yourself.
+          - button "Close concierge panel" [ref=e196]:
+            - img [ref=e197]
+      - generic [ref=e214]:
+        - generic [ref=e215]:
+          - paragraph [ref=e216]: 1 client(s) are missing email addresses. They won't receive portal invitations or document requests until this is fixed. Want a list of who they are?
+          - button "Dismiss notification" [ref=e217]:
+            - img [ref=e218]
+        - generic [ref=e221]:
+          - paragraph [ref=e222]: None of your clients have IRS authorization records. If you handle any federal tax work, this is the gap most likely to create a problem. Want to add one now?
+          - button "Dismiss notification" [ref=e223]:
+            - img [ref=e224]
+      - generic [ref=e201]:
+        - paragraph [ref=e202]: "Ask me anything about JAMM PX. Here are a few places to start:"
+        - button "What should I set up first after signing up?" [ref=e203]
+        - button "How do I import my existing clients?" [ref=e204]
+        - button "How does the client portal work?" [ref=e205]
+      - generic [ref=e207]:
+        - textbox "Ask anything about JAMM PX..." [active] [ref=e208]
+        - button "Send message" [disabled] [ref=e209]:
+          - img [ref=e210]
+  - region "Notifications alt+T"
+  - button "Open Next.js Dev Tools" [ref=e9] [cursor=pointer]:
+    - img [ref=e10]
+  - alert [ref=e13]

@@ -37,3 +37,5 @@ from app.models.document_expiry import DocumentExpiry
 from app.models.qc_checklist import (
     QcChecklistTemplate, QcChecklistItem
 )
+from app.models.concierge_notification import ConciergeNotification
+from app.models.concierge_question_log import ConciergeQuestionLog

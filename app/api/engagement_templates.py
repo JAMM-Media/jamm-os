@@ -43,12 +43,11 @@ class UseTemplatePayload(BaseModel):
 
 @router.get("/", response_model=list[EngagementTemplateOut])
 def list_templates(
-    active_only: bool = True,
     db: Session = Depends(get_db),
     current_firm: Firm = Depends(get_current_firm),
     _: object = Depends(require_staff_or_above),
 ):
-    return crud_et.list_templates(db, current_firm.id, active_only=active_only)
+    return crud_et.list_templates(db, current_firm.id)
 
 
 @router.post("/", response_model=EngagementTemplateOut, status_code=status.HTTP_201_CREATED)

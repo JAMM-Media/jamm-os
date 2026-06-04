@@ -147,7 +147,7 @@ app.include_router(checklist_templates_router)
 app.include_router(esign_router)
 app.include_router(portal_router)
 app.include_router(invoices_router, prefix="/invoices", tags=["invoices"])
-app.include_router(time_entries_router, prefix="/api/v1/time-entries", tags=["time-entries"])
+app.include_router(time_entries_router, prefix="/time-entries", tags=["time-entries"])
 app.include_router(stripe_connect_router, prefix="/stripe", tags=["stripe"])
 # Payments router must be registered — webhook endpoint
 # reads raw request body for Stripe HMAC validation
@@ -183,3 +183,4 @@ def root():
 
 @app.get("/api/health")
 def health_check():
+    return {"status": "ok"}

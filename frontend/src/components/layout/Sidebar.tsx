@@ -190,6 +190,7 @@ export function Sidebar({ collapsed, onToggle, onConciergeOpen }: SidebarProps) 
           <BotMessageSquare className="h-4 w-4 flex-shrink-0" />
           {!collapsed && <span className="truncate">JAMM Concierge</span>}
         </button>
+
         {/* Settings */}
         <Link
           href={settingsItem.href}

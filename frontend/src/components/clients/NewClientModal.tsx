@@ -1,13 +1,14 @@
 // frontend/src/components/clients/NewClientModal.tsx
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Modal } from '@/components/ui/Modal'
 import { FormField } from '@/components/ui/FormField'
 import { TextInput } from '@/components/ui/TextInput'
 import { SelectInput } from '@/components/ui/SelectInput'
 import { clientsApi, type Client } from '@/lib/api'
 import { toast } from 'sonner'
+import { setFormDirty } from '@/lib/events/conciergeEvents'
 
 const ENTITY_TYPE_OPTIONS = [
   { value: 'individual', label: 'Individual' },
@@ -20,6 +21,7 @@ interface NewClientModalProps {
   open: boolean
   onClose: () => void
   onAdd: (client: Client) => void
+  initialName?: string
 }
 
 interface FormState {
@@ -44,17 +46,22 @@ function validate(form: FormState): FormErrors {
   return errors
 }
 
-export function NewClientModal({ open, onClose, onAdd }: NewClientModalProps) {
+export function NewClientModal({ open, onClose, onAdd, initialName }: NewClientModalProps) {
   const [form, setForm] = useState<FormState>({
-    name: '',
+    name: initialName ?? '',
     email: '',
     phone: '',
     entity_type: '',
   })
+
+  useEffect(() => {
+    if (open && initialName) setForm((prev) => ({ ...prev, name: initialName }))
+  }, [open, initialName])
   const [errors, setErrors] = useState<FormErrors>({})
   const [submitting, setSubmitting] = useState(false)
 
   function handleChange(field: keyof FormState, value: string) {
+    setFormDirty(true)
     setForm((prev) => ({ ...prev, [field]: value }))
     if (errors[field as keyof FormErrors]) {
       setErrors((prev) => ({ ...prev, [field]: undefined }))
@@ -62,6 +69,7 @@ export function NewClientModal({ open, onClose, onAdd }: NewClientModalProps) {
   }
 
   function handleClose() {
+    setFormDirty(false)
     setForm({ name: '', email: '', phone: '', entity_type: '' })
     setErrors({})
     onClose()

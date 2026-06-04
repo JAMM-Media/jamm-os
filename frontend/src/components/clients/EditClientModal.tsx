@@ -9,6 +9,7 @@ import { FormField } from '@/components/ui/FormField'
 import { TextInput } from '@/components/ui/TextInput'
 import { SelectInput } from '@/components/ui/SelectInput'
 import { clientsApi, type Client } from '@/lib/api'
+import { setFormDirty } from '@/lib/events/conciergeEvents'
 
 const ENTITY_TYPE_OPTIONS = [
   { value: 'individual', label: 'Individual' },
@@ -57,6 +58,7 @@ export function EditClientModal({ isOpen, onClose, client, onSuccess }: EditClie
   }, [isOpen, client])
 
   function handleChange(field: keyof FormState, value: string) {
+    setFormDirty(true)
     setForm((prev) => ({ ...prev, [field]: value }))
     if (field === 'name') setNameError('')
   }
@@ -84,6 +86,7 @@ export function EditClientModal({ isOpen, onClose, client, onSuccess }: EditClie
     setSaving(true)
     try {
       await clientsApi.update(client.id, patch)
+      setFormDirty(false)
       toast.success('Client updated successfully')
       onSuccess()
     } catch {

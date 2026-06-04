@@ -9,6 +9,7 @@ import { FormField } from '@/components/ui/FormField'
 import { TextInput } from '@/components/ui/TextInput'
 import { SelectInput } from '@/components/ui/SelectInput'
 import { engagementsApi } from '@/lib/api'
+import { setFormDirty } from '@/lib/events/conciergeEvents'
 
 const STATUS_OPTIONS = [
   { value: 'draft', label: 'Draft' },
@@ -66,6 +67,7 @@ export function EditEngagementModal({ isOpen, onClose, engagement, onSuccess, un
   }, [isOpen, engagement])
 
   function handleChange(field: keyof FormState, value: string) {
+    setFormDirty(true)
     setForm((prev) => ({ ...prev, [field]: value }))
     if (field === 'name') setNameError('')
   }
@@ -99,6 +101,7 @@ export function EditEngagementModal({ isOpen, onClose, engagement, onSuccess, un
     setSaving(true)
     try {
       await engagementsApi.update(engagement.id, patch)
+      setFormDirty(false)
       toast.success('Engagement updated successfully')
       const statusBecameCompleted =
         patch.status === 'completed' && original.status !== 'completed'

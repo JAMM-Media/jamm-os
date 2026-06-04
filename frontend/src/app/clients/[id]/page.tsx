@@ -1,7 +1,7 @@
 // path: frontend/src/app/clients/[id]/page.tsx
 'use client'
 
-import { Suspense, useState, useEffect } from 'react'
+import { Suspense, useState, useEffect, useRef } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import { AppShell } from '@/components/layout/AppShell'
@@ -26,6 +26,9 @@ import { PortalPreview } from '@/components/clients/PortalPreview'
 import { HealthDot } from '@/components/clients/HealthDot'
 import { EditClientModal } from '@/components/clients/EditClientModal'
 import TaxOrganizerTab from '@/components/tax-organizer/TaxOrganizerTab'
+import { NewEngagementModal } from '@/components/engagements/NewEngagementModal'
+import { onConciergeAction } from '@/lib/events/conciergeEvents'
+import type { Engagement } from '@/lib/api'
 
 function EngagementStatusBadge({ status }: { status: string }) {
   return <StatusBadge variant={status as Parameters<typeof StatusBadge>[0]['variant']} />
@@ -58,6 +61,47 @@ function ClientDetailContent() {
   const clientId = params.id as string
 
   const [isEditOpen, setIsEditOpen] = useState(false)
+  const [newEngagementOpen, setNewEngagementOpen] = useState(false)
+  const [initialEngagementType, setInitialEngagementType] = useState<string | undefined>()
+  const [portalLinkHighlight, setPortalLinkHighlight] = useState(false)
+  const portalLinkRef = useRef<HTMLButtonElement>(null)
+
+  useEffect(() => {
+    const raw = sessionStorage.getItem('jamm_concierge_pending')
+    if (!raw) return
+    try {
+      const action = JSON.parse(raw)
+      if (Date.now() - (action._ts ?? 0) > 10000) {
+        sessionStorage.removeItem('jamm_concierge_pending')
+        return
+      }
+      if (action.modal === 'new-engagement') {
+        sessionStorage.removeItem('jamm_concierge_pending')
+        if (action.prefill?.engagementType) setInitialEngagementType(action.prefill.engagementType)
+        setNewEngagementOpen(true)
+      }
+    } catch {
+      sessionStorage.removeItem('jamm_concierge_pending')
+    }
+  }, [])
+
+  useEffect(() => {
+    return onConciergeAction((action) => {
+      if (action.modal === 'new-engagement') {
+        setActiveTab('engagements')
+        if (action.prefill?.engagementType) setInitialEngagementType(action.prefill.engagementType)
+        setNewEngagementOpen(true)
+      }
+      if (action.modal === 'portal-magic-link') {
+        setActiveTab('overview')
+        setPortalLinkHighlight(true)
+        setTimeout(() => {
+          portalLinkRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        }, 100)
+        setTimeout(() => setPortalLinkHighlight(false), 3000)
+      }
+    })
+  }, [])
 
   const [clientMessages, setClientMessages] = useState<Array<{
     id: string
@@ -272,9 +316,10 @@ function ClientDetailContent() {
           <div className="flex items-center justify-end gap-2 mb-4">
             {(user?.role === 'firm_owner' || user?.role === 'manager') && (
               <button
+                ref={portalLinkRef}
                 onClick={handleSendPortalLink}
                 disabled={sendingPortalLink}
-                className="flex items-center gap-1.5 h-8 px-3 text-[12px] font-medium text-[#1F3148] dark:text-[#EDEEF0] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] rounded-md bg-transparent hover:bg-surface-card dark:hover:bg-dark-card transition-colors disabled:opacity-60"
+                className={`flex items-center gap-1.5 h-8 px-3 text-[12px] font-medium text-[#1F3148] dark:text-[#EDEEF0] border border-[0.5px] rounded-md bg-transparent hover:bg-surface-card dark:hover:bg-dark-card transition-colors disabled:opacity-60 ${portalLinkHighlight ? 'border-[#3A6A94] ring-2 ring-[#3A6A94]/40 animate-pulse' : 'border-[#C8CDD6] dark:border-[#484848]'}`}
               >
                 {sendingPortalLink ? (
                   <Loader2 className="h-[14px] w-[14px] animate-spin" />
@@ -359,19 +404,6 @@ function ClientDetailContent() {
                       ? `Last payment: ${new Date(qboAr.last_payment_date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`
                       : 'No payments recorded'}
                   </p>
-                  {client.quickbooksCustomerId && (
-                    <a
-                      href={`https://app.qbo.intuit.com/app/customerdetail?nameId=${client.quickbooksCustomerId}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-[11px] text-brand-light dark:text-brand-light hover:underline inline-flex items-center gap-1 mt-1"
-                    >
-                      Open in QuickBooks
-                      <svg width="10" height="10" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M2 10L10 2M10 2H5M10 2V7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                      </svg>
-                    </a>
-                  )}
                 </div>
               )}
             </div>
@@ -679,6 +711,18 @@ function ClientDetailContent() {
           onSuccess={() => { refetchClient(); setIsEditOpen(false) }}
         />
       )}
+
+      <NewEngagementModal
+        open={newEngagementOpen}
+        onClose={() => { setNewEngagementOpen(false); setInitialEngagementType(undefined) }}
+        onAdd={(eng: Engagement) => {
+          setNewEngagementOpen(false)
+          setInitialEngagementType(undefined)
+          void eng
+        }}
+        preselectedClientId={clientId}
+        initialEngagementType={initialEngagementType}
+      />
     </AppShell>
   )
 }

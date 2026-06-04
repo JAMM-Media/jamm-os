@@ -1,13 +1,14 @@
 // frontend/src/components/engagements/NewEngagementModal.tsx
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Modal } from '@/components/ui/Modal'
 import { FormField } from '@/components/ui/FormField'
 import { TextInput } from '@/components/ui/TextInput'
 import { SelectInput } from '@/components/ui/SelectInput'
 import { type Engagement, clientsApi, engagementsApi } from '@/lib/api'
 import { toast } from 'sonner'
+import { setFormDirty } from '@/lib/events/conciergeEvents'
 import { useFetch } from '@/lib/hooks/useFetch'
 
 interface NewEngagementModalProps {
@@ -15,6 +16,7 @@ interface NewEngagementModalProps {
   onClose: () => void
   onAdd: (engagement: Engagement) => void
   preselectedClientId?: string
+  initialEngagementType?: string
 }
 
 interface FormErrors {
@@ -30,6 +32,7 @@ export function NewEngagementModal({
   onClose,
   onAdd,
   preselectedClientId,
+  initialEngagementType,
 }: NewEngagementModalProps) {
   const [form, setForm] = useState({
     name: '',
@@ -40,6 +43,17 @@ export function NewEngagementModal({
   })
   const [errors, setErrors] = useState<FormErrors>({})
   const [submitting, setSubmitting] = useState(false)
+
+  useEffect(() => {
+    if (!initialEngagementType) return
+    const knownCategories = ['tax_return', 'bookkeeping', 'payroll']
+    const matched = knownCategories.find((cat) => initialEngagementType.startsWith(cat + '_'))
+    if (matched) {
+      setForm((prev) => ({ ...prev, engagementCategory: matched, engagementType: initialEngagementType }))
+    } else {
+      setForm((prev) => ({ ...prev, engagementCategory: initialEngagementType, engagementType: '' }))
+    }
+  }, [initialEngagementType])
 
   const { data: clientsData } = useFetch(() => clientsApi.list(0, 100), [])
   const clientOptions = (clientsData?.items ?? []).map((c) => ({ value: c.id, label: c.name }))
@@ -55,6 +69,7 @@ export function NewEngagementModal({
   }
 
   function handleChange(field: string, value: string) {
+    setFormDirty(true)
     setForm((prev) => {
       const next = { ...prev, [field]: value }
       if (field === 'engagementCategory') next.engagementType = ''
@@ -64,6 +79,7 @@ export function NewEngagementModal({
   }
 
   function handleClose() {
+    setFormDirty(false)
     setForm({
       name: '',
       clientId: preselectedClientId ?? '',

@@ -1,0 +1,122 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e1055]:
+    - complementary [ref=e1056]:
+      - generic [ref=e1057]:
+        - generic [ref=e1058]: JAMM PX
+        - button "Collapse sidebar" [ref=e1059]:
+          - img [ref=e1060]
+      - navigation [ref=e1062]:
+        - list [ref=e1063]:
+          - listitem [ref=e1064]:
+            - link "Dashboard" [ref=e1065] [cursor=pointer]:
+              - /url: /dashboard
+              - img [ref=e1067]
+              - generic [ref=e1072]: Dashboard
+          - listitem [ref=e1073]:
+            - link "Clients" [ref=e1074] [cursor=pointer]:
+              - /url: /clients
+              - img [ref=e1076]
+              - generic [ref=e1081]: Clients
+          - listitem [ref=e1082]:
+            - link "Engagements" [ref=e1083] [cursor=pointer]:
+              - /url: /engagements
+              - img [ref=e1085]
+              - generic [ref=e1088]: Engagements
+          - listitem [ref=e1089]:
+            - link "Templates" [ref=e1090] [cursor=pointer]:
+              - /url: /templates
+              - img [ref=e1092]
+              - generic [ref=e1096]: Templates
+          - listitem [ref=e1097]:
+            - link "Tasks" [ref=e1098] [cursor=pointer]:
+              - /url: /tasks
+              - img [ref=e1100]
+              - generic [ref=e1103]: Tasks
+          - listitem [ref=e1104]:
+            - link "Timesheets" [ref=e1105] [cursor=pointer]:
+              - /url: /timesheets
+              - img [ref=e1107]
+              - generic [ref=e1110]: Timesheets
+          - listitem [ref=e1111]:
+            - link "Calendar" [ref=e1112] [cursor=pointer]:
+              - /url: /calendar
+              - img [ref=e1114]
+              - generic [ref=e1116]: Calendar
+          - listitem [ref=e1117]:
+            - link "Documents" [ref=e1118] [cursor=pointer]:
+              - /url: /documents
+              - img [ref=e1120]
+              - generic [ref=e1123]: Documents
+          - listitem [ref=e1124]:
+            - link "Billing" [ref=e1125] [cursor=pointer]:
+              - /url: /billing
+              - img [ref=e1127]
+              - generic [ref=e1129]: Billing
+          - listitem [ref=e1130]:
+            - link "Firm Chat" [ref=e1131] [cursor=pointer]:
+              - /url: /firm-chat
+              - img [ref=e1133]
+              - generic [ref=e1135]: Firm Chat
+          - listitem [ref=e1136]:
+            - link "Notifications" [ref=e1137] [cursor=pointer]:
+              - /url: /notifications
+              - img [ref=e1139]
+              - generic [ref=e1142]: Notifications
+      - generic [ref=e1143]:
+        - button "Dark mode" [ref=e1144]:
+          - img [ref=e1145]
+          - generic [ref=e1147]: Dark mode
+        - button "JAMM Concierge" [ref=e1148]:
+          - img [ref=e1149]
+          - generic [ref=e1152]: JAMM Concierge
+        - link "Settings" [ref=e1153] [cursor=pointer]:
+          - /url: /settings
+          - img [ref=e1154]
+          - generic [ref=e1157]: Settings
+        - button "Sign out" [ref=e1158]:
+          - img [ref=e1159]
+          - generic [ref=e1162]: Sign out
+    - main [ref=e1163]:
+      - generic [ref=e1164]:
+        - generic [ref=e1165]:
+          - heading "Billing" [level=1] [ref=e1166]
+          - paragraph [ref=e1167]: Connect Stripe to accept online payments from clients.
+        - generic [ref=e1168]:
+          - generic [ref=e1169]:
+            - generic [ref=e1171]: S
+            - generic [ref=e1172]:
+              - paragraph [ref=e1173]: Stripe Connect
+              - paragraph [ref=e1174]: Accept online payments from clients
+          - paragraph [ref=e1175]: Connect your Stripe account to send invoices for online payment. Clients pay directly through the portal. Required before any invoice can be sent for online collection.
+          - button "Connect Stripe" [ref=e1176]
+    - generic [ref=e1177]:
+      - generic [ref=e1178]:
+        - generic [ref=e1179]:
+          - img "Firm logo" [ref=e1180]
+          - generic [ref=e1181]: JAMM Concierge
+        - generic [ref=e1182]:
+          - generic [ref=e1183]:
+            - button "Toggle autopilot mode" [ref=e1184]:
+              - img [ref=e1185]
+              - generic [ref=e1187]: Autopilot
+            - generic: Autopilot mode. When on, JAMM Concierge will navigate the app and open the right screen for you. You always complete and save the action yourself.
+          - button "Close concierge panel" [ref=e1188]:
+            - img [ref=e1189]
+      - generic [ref=e1193]:
+        - paragraph [ref=e1194]: "Ask me anything about JAMM PX. Here are a few places to start:"
+        - button "What should I set up first after signing up?" [ref=e1195]
+        - button "How do I import my existing clients?" [ref=e1196]
+        - button "How does the client portal work?" [ref=e1197]
+      - generic [ref=e1199]:
+        - textbox "Ask anything about JAMM PX..." [ref=e1200]
+        - button "Send message" [disabled] [ref=e1201]:
+          - img [ref=e1202]
+  - region "Notifications alt+T"
+  - button "Open Next.js Dev Tools" [ref=e1205] [cursor=pointer]:
+    - generic [ref=e1208]:
+      - text: Compiling
+      - generic [ref=e1209]:
+        - generic [ref=e1210]: .
+        - generic [ref=e1211]: .
+        - generic [ref=e1212]: .
+  - alert [ref=e43]

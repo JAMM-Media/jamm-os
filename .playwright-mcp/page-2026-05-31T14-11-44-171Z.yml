@@ -1,0 +1,130 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e721]:
+    - complementary [ref=e722]:
+      - generic [ref=e723]:
+        - generic [ref=e724]: JAMM PX
+        - button "Collapse sidebar" [ref=e725]:
+          - img [ref=e726]
+      - navigation [ref=e728]:
+        - list [ref=e729]:
+          - listitem [ref=e730]:
+            - link "Dashboard" [ref=e731] [cursor=pointer]:
+              - /url: /dashboard
+              - img [ref=e733]
+              - generic [ref=e738]: Dashboard
+          - listitem [ref=e739]:
+            - link "Clients" [ref=e740] [cursor=pointer]:
+              - /url: /clients
+              - img [ref=e742]
+              - generic [ref=e747]: Clients
+          - listitem [ref=e748]:
+            - link "Engagements" [ref=e749] [cursor=pointer]:
+              - /url: /engagements
+              - img [ref=e751]
+              - generic [ref=e754]: Engagements
+          - listitem [ref=e755]:
+            - link "Templates" [ref=e756] [cursor=pointer]:
+              - /url: /templates
+              - img [ref=e758]
+              - generic [ref=e762]: Templates
+          - listitem [ref=e763]:
+            - link "Tasks" [ref=e764] [cursor=pointer]:
+              - /url: /tasks
+              - img [ref=e766]
+              - generic [ref=e769]: Tasks
+          - listitem [ref=e770]:
+            - link "Timesheets" [ref=e771] [cursor=pointer]:
+              - /url: /timesheets
+              - img [ref=e773]
+              - generic [ref=e776]: Timesheets
+          - listitem [ref=e777]:
+            - link "Calendar" [ref=e778] [cursor=pointer]:
+              - /url: /calendar
+              - img [ref=e780]
+              - generic [ref=e782]: Calendar
+          - listitem [ref=e783]:
+            - link "Documents" [ref=e784] [cursor=pointer]:
+              - /url: /documents
+              - img [ref=e786]
+              - generic [ref=e789]: Documents
+          - listitem [ref=e790]:
+            - link "Billing" [ref=e791] [cursor=pointer]:
+              - /url: /billing
+              - img [ref=e793]
+              - generic [ref=e795]: Billing
+          - listitem [ref=e796]:
+            - link "Firm Chat" [ref=e797] [cursor=pointer]:
+              - /url: /firm-chat
+              - img [ref=e799]
+              - generic [ref=e801]: Firm Chat
+          - listitem [ref=e802]:
+            - link "Notifications" [ref=e803] [cursor=pointer]:
+              - /url: /notifications
+              - img [ref=e805]
+              - generic [ref=e808]: Notifications
+      - generic [ref=e809]:
+        - button "Dark mode" [ref=e810]:
+          - img [ref=e811]
+          - generic [ref=e813]: Dark mode
+        - button "JAMM Concierge" [ref=e814]:
+          - img [ref=e815]
+          - generic [ref=e818]: JAMM Concierge
+        - link "Settings" [ref=e819] [cursor=pointer]:
+          - /url: /settings
+          - img [ref=e820]
+          - generic [ref=e823]: Settings
+        - button "Sign out" [ref=e824]:
+          - img [ref=e825]
+          - generic [ref=e828]: Sign out
+    - main [ref=e829]:
+      - generic [ref=e830]:
+        - generic [ref=e831]:
+          - generic [ref=e832]:
+            - img [ref=e833]
+            - generic [ref=e837]:
+              - heading "Templates" [level=1] [ref=e838]
+              - paragraph [ref=e839]: Engagement Templates
+          - button "New Template" [ref=e840]:
+            - img [ref=e841]
+            - text: New Template
+        - generic [ref=e842]:
+          - button "Engagement Templates" [ref=e843]: Engagement Templates
+          - button "Engagement Letters" [ref=e845]
+          - button "Tax Organizers" [ref=e846]
+          - button "QC Checklists" [ref=e847]
+          - button "Deleted" [ref=e848]
+        - generic [ref=e849]:
+          - img [ref=e851]
+          - paragraph [ref=e855]: No templates yet
+          - paragraph [ref=e856]: Create your first template to speed up engagement creation.
+          - button "Create Template" [ref=e857]
+    - generic [ref=e858]:
+      - generic [ref=e859]:
+        - generic [ref=e861]: JAMM Concierge
+        - generic [ref=e862]:
+          - generic [ref=e863]:
+            - button "Toggle autopilot mode" [ref=e864]:
+              - img [ref=e865]
+              - generic [ref=e867]: Autopilot
+            - generic: Autopilot mode. When on, JAMM Concierge will navigate the app and open the right screen for you. You always complete and save the action yourself.
+          - button "Close concierge panel" [ref=e868]:
+            - img [ref=e869]
+      - paragraph [ref=e886]: Autopilot on. I'll navigate for you.
+      - generic [ref=e872]:
+        - paragraph [ref=e889]: connect QuickBooks
+        - generic [ref=e891]:
+          - paragraph [ref=e892]: Navigating you to the QuickBooks integration now.
+          - paragraph [ref=e893]: Navigating to Settings and opening the QuickBooks connection.
+      - generic [ref=e879]:
+        - textbox "Ask anything about JAMM PX..." [ref=e880]
+        - button "Send message" [disabled] [ref=e881]:
+          - img [ref=e882]
+  - region "Notifications alt+T"
+  - button "Open Next.js Dev Tools" [ref=e894] [cursor=pointer]:
+    - generic [ref=e897]:
+      - text: Rendering
+      - generic [ref=e898]:
+        - generic [ref=e899]: .
+        - generic [ref=e900]: .
+        - generic [ref=e901]: .
+  - alert [ref=e43]

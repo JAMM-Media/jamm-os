@@ -98,5 +98,7 @@ class TimeEntry(Base):
     )
     invoice: Mapped[Optional["Invoice"]] = relationship("Invoice", back_populates="time_entries")
     approved_by: Mapped[Optional["User"]] = relationship(
-        "User", foreign_keys=[approved_by_id]
+        "User",
+        foreign_keys=[approved_by_id],
+        primaryjoin="TimeEntry.approved_by_id == User.id",
     )

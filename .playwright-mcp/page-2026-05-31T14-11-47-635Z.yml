@@ -1,0 +1,115 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e902]:
+    - complementary [ref=e903]:
+      - generic [ref=e904]:
+        - generic [ref=e905]: JAMM PX
+        - button "Collapse sidebar" [ref=e906]:
+          - img [ref=e907]
+      - navigation [ref=e909]:
+        - list [ref=e910]:
+          - listitem [ref=e911]:
+            - link "Dashboard" [ref=e912] [cursor=pointer]:
+              - /url: /dashboard
+              - img [ref=e914]
+              - generic [ref=e919]: Dashboard
+          - listitem [ref=e920]:
+            - link "Clients" [ref=e921] [cursor=pointer]:
+              - /url: /clients
+              - img [ref=e923]
+              - generic [ref=e928]: Clients
+          - listitem [ref=e929]:
+            - link "Engagements" [ref=e930] [cursor=pointer]:
+              - /url: /engagements
+              - img [ref=e932]
+              - generic [ref=e935]: Engagements
+          - listitem [ref=e936]:
+            - link "Templates" [ref=e937] [cursor=pointer]:
+              - /url: /templates
+              - img [ref=e939]
+              - generic [ref=e943]: Templates
+          - listitem [ref=e944]:
+            - link "Tasks" [ref=e945] [cursor=pointer]:
+              - /url: /tasks
+              - img [ref=e947]
+              - generic [ref=e950]: Tasks
+          - listitem [ref=e951]:
+            - link "Timesheets" [ref=e952] [cursor=pointer]:
+              - /url: /timesheets
+              - img [ref=e954]
+              - generic [ref=e957]: Timesheets
+          - listitem [ref=e958]:
+            - link "Calendar" [ref=e959] [cursor=pointer]:
+              - /url: /calendar
+              - img [ref=e961]
+              - generic [ref=e963]: Calendar
+          - listitem [ref=e964]:
+            - link "Documents" [ref=e965] [cursor=pointer]:
+              - /url: /documents
+              - img [ref=e967]
+              - generic [ref=e970]: Documents
+          - listitem [ref=e971]:
+            - link "Billing" [ref=e972] [cursor=pointer]:
+              - /url: /billing
+              - img [ref=e974]
+              - generic [ref=e976]: Billing
+          - listitem [ref=e977]:
+            - link "Firm Chat" [ref=e978] [cursor=pointer]:
+              - /url: /firm-chat
+              - img [ref=e980]
+              - generic [ref=e982]: Firm Chat
+          - listitem [ref=e983]:
+            - link "Notifications" [ref=e984] [cursor=pointer]:
+              - /url: /notifications
+              - img [ref=e986]
+              - generic [ref=e989]: Notifications
+      - generic [ref=e990]:
+        - button "Dark mode" [ref=e991]:
+          - img [ref=e992]
+          - generic [ref=e994]: Dark mode
+        - button "JAMM Concierge" [ref=e995]:
+          - img [ref=e996]
+          - generic [ref=e999]: JAMM Concierge
+        - link "Settings" [ref=e1000] [cursor=pointer]:
+          - /url: /settings
+          - img [ref=e1001]
+          - generic [ref=e1004]: Settings
+        - button "Sign out" [ref=e1005]:
+          - img [ref=e1006]
+          - generic [ref=e1009]: Sign out
+    - main [ref=e1010]:
+      - generic [ref=e1011]:
+        - generic [ref=e1012]:
+          - heading "Integrations" [level=1] [ref=e1013]
+          - paragraph [ref=e1014]: Connect third-party services to JAMM PX.
+        - generic [ref=e1015]:
+          - generic [ref=e1016]:
+            - img [ref=e1018]
+            - generic [ref=e1021]:
+              - paragraph [ref=e1022]: QuickBooks Online
+              - paragraph [ref=e1023]: Import clients and sync AR balances
+          - paragraph [ref=e1024]: Connect your QuickBooks Online account to import clients, view outstanding balances, and keep records in sync. Use the Import Preview to select which clients come over before committing.
+          - button "Connect QuickBooks" [ref=e1025]
+    - generic [ref=e1026]:
+      - generic [ref=e1027]:
+        - generic [ref=e1029]: JAMM Concierge
+        - generic [ref=e1030]:
+          - generic [ref=e1031]:
+            - button "Toggle autopilot mode" [ref=e1032]:
+              - img [ref=e1033]
+              - generic [ref=e1035]: Autopilot
+            - generic: Autopilot mode. When on, JAMM Concierge will navigate the app and open the right screen for you. You always complete and save the action yourself.
+          - button "Close concierge panel" [ref=e1036]:
+            - img [ref=e1037]
+      - generic [ref=e1041]:
+        - paragraph [ref=e1042]: "Ask me anything about JAMM PX. Here are a few places to start:"
+        - button "What should I set up first after signing up?" [ref=e1043]
+        - button "How do I import my existing clients?" [ref=e1044]
+        - button "How does the client portal work?" [ref=e1045]
+      - generic [ref=e1047]:
+        - textbox "Ask anything about JAMM PX..." [ref=e1048]
+        - button "Send message" [disabled] [ref=e1049]:
+          - img [ref=e1050]
+  - region "Notifications alt+T"
+  - button "Open Next.js Dev Tools" [ref=e39] [cursor=pointer]:
+    - img [ref=e40]
+  - alert [ref=e43]

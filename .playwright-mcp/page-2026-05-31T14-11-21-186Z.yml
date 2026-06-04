@@ -1,0 +1,10 @@
+- generic [active]:
+  - region "Notifications alt+T"
+  - button "Open Next.js Dev Tools" [ref=e713] [cursor=pointer]:
+    - generic [ref=e716]:
+      - text: Compiling
+      - generic [ref=e717]:
+        - generic [ref=e718]: .
+        - generic [ref=e719]: .
+        - generic [ref=e720]: .
+  - alert [ref=e43]

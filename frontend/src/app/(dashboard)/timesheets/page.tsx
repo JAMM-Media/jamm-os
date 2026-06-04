@@ -21,7 +21,7 @@ const TABS: { key: TabKey; label: string }[] = [
   { key: 'biweekly', label: 'Biweekly' },
   { key: 'monthly', label: 'Monthly' },
   { key: 'quarterly', label: 'Quarterly' },
-  { key: 'yearly', label: 'Annually' },
+  { key: 'yearly', label: 'Yearly' },
 ]
 
 interface StaffUser {
