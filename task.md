@@ -65,39 +65,50 @@ find /home/corby/jamm-os/frontend/src/components/concierge/ -name "*.tsx" | sort
 
 ---
 
-# Fix: Add few-shot example to PROACTIVE INTERRUPT block
+# Fix: Expand autopilot to full app navigation
 
-Task: The two-sentence rule is being ignored because the model's training pulls it toward
-educational responses on familiar topics. Add a concrete few-shot example showing the exact
-response format for a notification click. Examples outperform rules for output pattern control.
+Task: The current supported actions list is hardcoded to 7 actions. The frontend already
+handles any route via router.push. Expand the prompt to allow the model to navigate to
+any valid route in the app, not just the hardcoded list.
 
 VERIFY BEFORE ACT:
-sed -n '137,148p' /home/corby/jamm-os/app/api/concierge/prompts.py
+sed -n '368,402p' /home/corby/jamm-os/app/api/concierge/prompts.py
 
 Paste before touching anything.
 
-Find this line inside the PROACTIVE INTERRUPT block:
-Trigger message contains "IRS authorization records":
-Offer: "Want me to walk you through adding an IRS authorization record for your first client now?"
-Plan: Add IRS authorization. Steps: navigate to Clients, open the first client record, select
-the IRS Authorizations tab, select New Authorization, fill in the form type and expiry date, save.
+Make exactly two changes:
 
-Add this example block immediately after it, before the closing --- of the PROACTIVE INTERRUPT section:
+Change 1 -- replace the restrictive rule with one that allows full navigation:
+OLD:
+- Only emit when the firm's request clearly maps to one of the supported actions above.
 
-<proactive_interrupt_example>
-  <user>None of your clients have IRS authorization records. If you handle any federal tax work, this is the gap most likely to create a problem. Want to add one now?</user>
-  <assistant>No clients have IRS authorization records on file. Want me to walk you through adding one for your first tax client now?</assistant>
-</proactive_interrupt_example>
+NEW:
+- Emit for any navigation or modal action the firm requests. The supported actions above are examples. You may also emit a plain navigate action to any valid route in the app. Valid routes are: /dashboard, /clients, /clients/[client-name-slug], /clients/[client-name-slug]?tab=engagements, /clients/[client-name-slug]?tab=irs-auth, /clients/[client-name-slug]?tab=billing, /clients/[client-name-slug]?tab=documents, /clients/[client-name-slug]?tab=portal, /clients/[client-name-slug]?tab=messages, /engagements, /engagements/[engagement-id], /engagements/templates, /billing, /documents, /tasks, /timesheets, /calendar, /settings, /settings/team, /settings/integrations, /settings/billing, /notifications. Use {"type":"navigate","route":"[route]"} for plain navigation with no modal.
 
-<proactive_interrupt_example>
-  <user>4 client(s) are missing email addresses. They won't receive portal invitations or document requests until this is fixed. Want a list of who they are?</user>
-  <assistant>4 clients are missing email addresses and cannot receive portal invitations or document requests. Want me to walk you through adding them now?</assistant>
-</proactive_interrupt_example>
+Change 2 -- add two examples showing generic navigation:
+Find this line:
+Example response for "connect QuickBooks":
+Does not exist -- find the last example block before the --- separator and add after it:
+
+Find:
+CONCIERGE_ACTION: {"type":"navigate-and-open","route":"/clients/patricia-nguyen","modal":"new-engagement","prefill":{"client":"Patricia Nguyen","engagementType":"tax_return"}}
+
+Add immediately after it:
+Example response for "go to Patricia Nguyen's IRS authorizations" with autopilot on:
+Navigating to Patricia Nguyen's IRS Authorizations tab now.
+CONCIERGE_ACTION: {"type":"navigate","route":"/clients/patricia-nguyen?tab=irs-auth"}
+
+Example response for "take me to billing" with autopilot on:
+Navigating to Billing now.
+CONCIERGE_ACTION: {"type":"navigate","route":"/billing"}
 
 Do not change anything else.
 
 VERIFY AFTER ACT:
-1. grep -n "proactive_interrupt_example" /home/corby/jamm-os/app/api/concierge/prompts.py
-   Confirm two example blocks present.
+1. grep -n "any valid route\|irs-auth\|tab=engagements" /home/corby/jamm-os/app/api/concierge/prompts.py
+   Confirm all three present.
 2. Restart the backend.
-3. Insert test notification and click it. Confirm response is two sentences only.
+3. Browser test with autopilot on -- say "take me to Patricia Nguyen's IRS authorizations".
+   Confirm: Concierge navigates directly to her IRS Authorizations tab.
+4. Browser test -- say "go to billing".
+   Confirm: Concierge navigates to /billing.
