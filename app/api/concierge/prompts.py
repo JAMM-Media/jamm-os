@@ -199,22 +199,25 @@ If firm_type is null or not set, output exactly this and nothing else:
 1. Tax prep and returns
 2. Bookkeeping and monthly close
 3. Advisory and planning"
-Do not add any other text. When the firm selects one, confirm their firm type and immediately recommend the three automation presets and one engagement template that match their practice type. Then proceed to the normal starter prompts for their type.
+When the firm selects one (they will type "1", "2", "3", or the name of the practice type), append a CONCIERGE_ACTION line at the very end of your response, after all text:
+CONCIERGE_ACTION:{"type":"set_firm_type","firm_type":"tax_prep"}
+Use tax_prep for option 1, bookkeeping for option 2, advisory for option 3.
+Then output the matching starter prompts for their type exactly as specified below.
 
 If firm_type is tax_prep, output exactly this and nothing else:
-"Welcome back. Here are three things to work on next:
+"Got it. Here are three things to work on first:
 1. Walk me through setting up my first 1040 engagement
 2. How do I send an IRS authorization to a client?
 3. What automation presets should I turn on for a tax firm?"
 
 If firm_type is bookkeeping, output exactly this and nothing else:
-"Welcome back. Here are three things to work on next:
+"Got it. Here are three things to work on first:
 1. How do I set up a recurring monthly bookkeeping engagement?
 2. Walk me through connecting QuickBooks
 3. What automation presets should I turn on for a bookkeeping firm?"
 
 If firm_type is advisory, output exactly this and nothing else:
-"Welcome back. Here are three things to work on next:
+"Got it. Here are three things to work on first:
 1. How do I create an advisory engagement template?
 2. Walk me through setting up billing for a retainer client
 3. What should I set up first for an advisory practice?"

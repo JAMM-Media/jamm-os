@@ -57,128 +57,85 @@ git commit -m "checkpoint before [task name]"
 
 ---
 
-TASK: Persist firm_type selection from intake and fix post-intake copy
+# Section 3 - Your Task 
+
+TASK: Fix set_firm_type action firing when autopilot is off
 
 Pre-task:
 cd /home/corby/jamm-os
-git add -A && git commit -m "checkpoint before firm_type persistence task"
-python3 -c "from app.api.concierge.route import router; print('OK')"
+git add -A && git commit -m "checkpoint before set_firm_type autopilot gate fix"
 
 VERIFY BEFORE ACT:
-grep -n "ConciergeAction\|type.*navigate" /home/corby/jamm-os/frontend/src/lib/events/conciergeEvents.ts
-grep -n "Welcome back" /home/corby/jamm-os/app/api/concierge/prompts.py
-Paste both before touching anything.
+sed -n '343,366p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+Paste output before touching anything.
 
----
+Change 1: ConciergePanel.tsx -- exempt set_firm_type from autopilot gate
 
-Change 1: conciergeEvents.ts -- add set_firm_type action type
-
-VERIFY BEFORE ACT:
-cat /home/corby/jamm-os/frontend/src/lib/events/conciergeEvents.ts
-Paste output.
-
-Find:
-  type: 'navigate' | 'open-modal' | 'navigate-and-open'
-
-Replace with:
-  type: 'navigate' | 'open-modal' | 'navigate-and-open' | 'set_firm_type'
-
-Add one new optional field to the interface after the existing fields:
-  firm_type?: string
-
-VERIFY AFTER ACT:
-cat /home/corby/jamm-os/frontend/src/lib/events/conciergeEvents.ts
-Confirm set_firm_type appears in the type union and firm_type field is present.
-
----
-
-Change 2: ConciergePanel.tsx -- handle set_firm_type action
-
-VERIFY BEFORE ACT:
-grep -n "executeAction\|set_firm_type\|PATCH\|firm_type" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
-Paste output.
-
-Inside the executeAction function, add a handler for set_firm_type at the top of the
-function before any existing logic:
-
-Find the opening line of executeAction:
-  async function executeAction(action: ConciergeAction) {
-
-Add this block immediately after the opening line:
-
-    if (action.type === 'set_firm_type' && action.firm_type) {
-      try {
-        await api.patch('/firms/me/concierge', { firm_type: action.firm_type })
-        setStatusMessage('Practice type saved')
-      } catch {
-        // non-fatal — firm_type will be set on next reload
-      }
-      return
+Find exactly:
+  function handleConciergeAction(raw: string): string {
+    const ACTION_MARKER = 'CONCIERGE_ACTION:'
+    const actionIndex = raw.indexOf(ACTION_MARKER)
+    if (actionIndex === -1) return raw
+    const beforeAction = raw.slice(0, actionIndex).trim()
+    const afterMarker = raw.slice(actionIndex + ACTION_MARKER.length)
+    const braceStart = afterMarker.indexOf('{')
+    const braceEnd = afterMarker.lastIndexOf('}')
+    if (braceStart === -1 || braceEnd === -1) return beforeAction
+    const actionLine = afterMarker.slice(braceStart, braceEnd + 1).replace(/\s+/g, ' ').trim()
+    if (!autopilotRef.current) {
+      return beforeAction || 'To navigate, turn on Autopilot using the toggle above.'
     }
-
-Do not change anything else in this function.
-
-VERIFY AFTER ACT:
-grep -n "set_firm_type" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
-Confirm one result.
-
----
-
-Change 3: prompts.py -- emit CONCIERGE_ACTION on firm type selection and fix copy
-
-VERIFY BEFORE ACT:
-sed -n '191,225p' /home/corby/jamm-os/app/api/concierge/prompts.py
-Paste output.
-
-Make exactly two changes to the EMPTY STATE block:
-
-Change 3a -- add CONCIERGE_ACTION instruction after the firm type branching logic.
-Find:
-Do not add any other text. When the firm selects one, confirm their firm type and immediately recommend the three automation presets and one engagement template that match their practice type. Then proceed to the normal starter prompts for their type.
+    try {
+      const action: ConciergeAction = JSON.parse(actionLine)
+      pendingActionRef.current = action
+    } catch {}
+    return beforeAction || ''
+  }
 
 Replace with:
-When the firm selects one (they will type "1", "2", "3", or the name of the practice type), append a CONCIERGE_ACTION line at the very end of your response, after all text:
-CONCIERGE_ACTION:{"type":"set_firm_type","firm_type":"tax_prep"}
-Use tax_prep for option 1, bookkeeping for option 2, advisory for option 3.
-Then output the matching starter prompts for their type exactly as specified below.
-
-Change 3b -- fix "Welcome back" in all three firm type blocks.
-Find all three instances of:
-"Welcome back. Here are three things to work on next:
-
-Replace each with:
-"Got it. Here are three things to work on first:
-
-There are exactly three instances -- one for tax_prep, one for bookkeeping, one for advisory.
-Replace all three. Do not change anything else.
+  function handleConciergeAction(raw: string): string {
+    const ACTION_MARKER = 'CONCIERGE_ACTION:'
+    const actionIndex = raw.indexOf(ACTION_MARKER)
+    if (actionIndex === -1) return raw
+    const beforeAction = raw.slice(0, actionIndex).trim()
+    const afterMarker = raw.slice(actionIndex + ACTION_MARKER.length)
+    const braceStart = afterMarker.indexOf('{')
+    const braceEnd = afterMarker.lastIndexOf('}')
+    if (braceStart === -1 || braceEnd === -1) return beforeAction
+    const actionLine = afterMarker.slice(braceStart, braceEnd + 1).replace(/\s+/g, ' ').trim()
+    try {
+      const action: ConciergeAction = JSON.parse(actionLine)
+      if (action.type === 'set_firm_type') {
+        pendingActionRef.current = action
+        return beforeAction || ''
+      }
+    } catch {}
+    if (!autopilotRef.current) {
+      return beforeAction || 'To navigate, turn on Autopilot using the toggle above.'
+    }
+    try {
+      const action: ConciergeAction = JSON.parse(actionLine)
+      pendingActionRef.current = action
+    } catch {}
+    return beforeAction || ''
+  }
 
 VERIFY AFTER ACT:
-grep -n "Welcome back" /home/corby/jamm-os/app/api/concierge/prompts.py
-Confirm zero results.
-grep -n "Got it" /home/corby/jamm-os/app/api/concierge/prompts.py
-Confirm three results.
-grep -n "set_firm_type" /home/corby/jamm-os/app/api/concierge/prompts.py
-Confirm one result.
-
----
+sed -n '343,375p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+Confirm set_firm_type block appears before the autopilot gate.
 
 Post-task verification:
 1. cd /home/corby/jamm-os/frontend
 2. npm run build
    Zero TypeScript errors required before stopping.
-3. find /home/corby/jamm-os/frontend/src/lib/events/ -name "*.ts" | sort
-4. find /home/corby/jamm-os/frontend/src/components/concierge/ -name "*.tsx" | sort
-5. python3 -c "from app.api.concierge.route import router; print('OK')"
 
 Database reset for browser test:
 psql postgresql://postgres:postgres@localhost:5432/jammpx_dev -c "UPDATE firms SET firm_type = NULL WHERE id = '185314c9-e702-4eab-8600-249848022206';"
 
 Browser test:
 1. Hard refresh the app
-2. Open the Concierge panel -- intake question must appear instantly
+2. Open the panel -- intake question appears instantly
 3. Type "1" and send
-4. Confirm response says "Got it. Here are three things to work on first:"
-5. Run this immediately after:
+4. Run immediately after:
    psql postgresql://postgres:postgres@localhost:5432/jammpx_dev -c "SELECT firm_type FROM firms WHERE id = '185314c9-e702-4eab-8600-249848022206';"
    Confirm firm_type = tax_prep
-6. Close and reopen the panel -- confirm tax_prep starters appear via API call

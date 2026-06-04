@@ -365,6 +365,15 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
   }
 
   async function executeAction(action: ConciergeAction) {
+    if (action.type === 'set_firm_type' && action.firm_type) {
+      try {
+        await api.patch('/firms/me/concierge', { firm_type: action.firm_type })
+        setStatusMessage('Practice type saved')
+      } catch {
+        // non-fatal -- firm_type will be set on next reload
+      }
+      return
+    }
     const normalizedType = (action.type as string) === 'open_modal' ? 'open-modal' :
       (action.type as string) === 'navigate_and_open' ? 'navigate-and-open' : action.type
     const normalizedRoute = (action.route === '/settings/team' ? '/settings' : action.route) as string
