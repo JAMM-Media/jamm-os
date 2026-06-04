@@ -65,71 +65,83 @@ find /home/corby/jamm-os/frontend/src/components/concierge/ -name "*.tsx" | sort
 
 ---
 
-# Prompt audit: Add IRS Authorization workflow section
+# Fix: Persist conversation history across navigation
 
-Task: Replace the thin IRS AUTHORIZATION data model entry with a full workflow section
-that covers how to create, send, and manage IRS authorizations in JAMM PX.
+Task: messages state resets to [] when autopilot navigates to a new page because the
+component remounts. Persist messages to sessionStorage on every update and restore on
+mount. Clear on panel close. Same pattern as autopilotOn.
 
 VERIFY BEFORE ACT:
-grep -n "IRS AUTHORIZATION\|8821 allows\|A client with no active" /home/corby/jamm-os/app/api/concierge/prompts.py
+sed -n '151,156p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
 Paste before touching anything.
 
+Make exactly three changes:
+
+Change 1 -- initialize messages from sessionStorage on mount:
 OLD:
-IRS AUTHORIZATION
-Tracks Form 8821 (Tax Information Authorization) and Form 2848 (Power of Attorney) for a client.
-Fields: id, firm_id, client_id, form_type (8821 | 2848), status (pending_signature | active | expired | revoked), tax_years (JSON array), valid_from, valid_until, signature_envelope_id, signed_document_id.
-8821 allows the firm to receive IRS transcripts. 2848 allows full representation before the IRS.
-A client with no active IRS authorization cannot have a transcript requested on their behalf.
+  const [messages, setMessages] = useState<Message[]>([])
 
 NEW:
-IRS AUTHORIZATION
-Tracks Form 8821 (Tax Information Authorization) and Form 2848 (Power of Attorney) for each client. A client can have one active 8821 and one active 2848 simultaneously. Both are independent records.
+  const [messages, setMessages] = useState<Message[]>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = sessionStorage.getItem('jamm_concierge_messages')
+        if (stored) return JSON.parse(stored) as Message[]
+      } catch {
+        // ignore parse errors
+      }
+    }
+    return []
+  })
 
-Form 8821 allows the firm to receive IRS transcripts and account information on behalf of the client. Use this for tax prep and transcript requests.
-Form 2848 gives the firm full Power of Attorney to represent the client before the IRS. Use this for audits, appeals, and collection matters.
+Change 2 -- write messages to sessionStorage on every update. Add this useEffect
+immediately after the existing useEffect that scrolls to messagesEndRef:
+OLD:
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages])
 
-A client with no active IRS authorization cannot have a transcript requested on their behalf inside JAMM PX.
+NEW:
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages])
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        sessionStorage.setItem('jamm_concierge_messages', JSON.stringify(messages))
+      } catch {
+        // ignore storage errors
+      }
+    }
+  }, [messages])
 
-How to send an IRS authorization:
-1. Navigate to Clients and open the client record.
-2. Select the IRS Authorizations tab.
-3. Select Send Authorization.
-4. Choose the form type: 8821 or 2848.
-5. Enter the tax years the authorization should cover.
-6. Set the valid from and valid until dates.
-7. Select Send. JAMM PX generates a stub PDF and sends it to the client for signature via Dropbox Sign.
+Change 3 -- clear messages from sessionStorage when panel closes. Find the existing
+panel close useEffect and add the messages clear:
+OLD:
+    if (!isOpen) {
+      setAutopilotOn(false)
+      autopilotRef.current = false
+      sessionStorage.removeItem('jamm_concierge_autopilot')
+    }
 
-What happens after Send:
-JAMM PX generates a pre-filled stub PDF containing the client and firm details, uploads it to secure storage, and creates a signature envelope. If Dropbox Sign is connected, the client receives an email with a link to sign electronically. If Dropbox Sign is not connected, the envelope stays in draft status and the firm must collect a manual signature and attach it to the record.
-
-Authorization statuses:
-- pending_signature: the form has been sent and is waiting for the client to sign
-- active: the client has signed and the authorization is in effect
-- expired: the valid_until date has passed
-- revoked: the authorization was manually revoked
-
-Expiry alerts:
-JAMM PX automatically checks for authorizations expiring within 30 days and fires a proactive alert. The firm does not need to track expiry dates manually.
-
-Common questions:
-Q: Can I add both an 8821 and a 2848 for the same client?
-A: Yes. They are separate records and can both be active at the same time.
-
-Q: What if the client's email is not on file?
-A: The signature envelope will be created but the email cannot be sent. Add the client's email address to their record first, then send the authorization.
-
-Q: How do I know when the client has signed?
-A: The authorization status changes from pending_signature to active automatically once the client signs via Dropbox Sign. The IRS Auth badge on the client record updates immediately.
-
-Q: What if Dropbox Sign is not connected?
-A: The authorization record is created but the envelope stays in draft. Connect Dropbox Sign under Settings, then resend the authorization.
+NEW:
+    if (!isOpen) {
+      setAutopilotOn(false)
+      autopilotRef.current = false
+      sessionStorage.removeItem('jamm_concierge_autopilot')
+      sessionStorage.removeItem('jamm_concierge_messages')
+      setMessages([])
+      setShowStarters(true)
+    }
 
 Do not change anything else.
 
 VERIFY AFTER ACT:
-1. grep -n "IRS AUTHORIZATION\|pending_signature\|Dropbox Sign\|Power of Attorney" /home/corby/jamm-os/app/api/concierge/prompts.py
-   Confirm all four present in the new section.
-2. Restart the backend.
-3. Browser test: ask "how do I send an IRS authorization to Patricia Nguyen".
-   Confirm: response gives exact steps with correct UI labels, mentions Dropbox Sign, no hallucinated fields.
+1. grep -n "jamm_concierge_messages" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+   Confirm three results: read on mount, write on update, clear on close.
+2. cd /home/corby/jamm-os/frontend
+3. npm run build -- zero TypeScript errors.
+4. Browser test: autopilot on, ask "how do I send an IRS authorization to Patricia Nguyen".
+   Confirm: Concierge navigates to her IRS Authorizations tab AND the full response remains
+   visible in the panel after navigation.
