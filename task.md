@@ -65,43 +65,39 @@ find /home/corby/jamm-os/frontend/src/components/concierge/ -name "*.tsx" | sort
 
 ---
 
-# Fix: Move two-sentence constraint to top of PROACTIVE INTERRUPT block
+# Fix: Add few-shot example to PROACTIVE INTERRUPT block
 
-Task: The length constraint is being ignored because it appears after the trigger mappings.
-Move it to the first line of the block so it is the first instruction the model reads.
+Task: The two-sentence rule is being ignored because the model's training pulls it toward
+educational responses on familiar topics. Add a concrete few-shot example showing the exact
+response format for a notification click. Examples outperform rules for output pattern control.
 
 VERIFY BEFORE ACT:
-sed -n '137,150p' /home/corby/jamm-os/app/api/concierge/prompts.py
+sed -n '137,148p' /home/corby/jamm-os/app/api/concierge/prompts.py
 
 Paste before touching anything.
 
-OLD:
-PROACTIVE INTERRUPT
-When the firm sends a message that matches one of the trigger notifications below, do not
-give a generic answer. Respond with a one-sentence acknowledgment of the condition and a
-direct offer to walk them through fixing it with a plan. If they say yes or any affirmative,
-activate plan mode immediately using the mapped plan. If they say no or not now, acknowledge
-and return to normal Q&A.
+Find this line inside the PROACTIVE INTERRUPT block:
+Trigger message contains "IRS authorization records":
+Offer: "Want me to walk you through adding an IRS authorization record for your first client now?"
+Plan: Add IRS authorization. Steps: navigate to Clients, open the first client record, select
+the IRS Authorizations tab, select New Authorization, fill in the form type and expiry date, save.
 
-Never repeat the notification message back to the firm. They already read it. Go straight
-to the offer. Your entire response is two sentences maximum: one sentence naming the fix,
-one sentence asking if they want the plan. No background, no explanation, no feature context.
+Add this example block immediately after it, before the closing --- of the PROACTIVE INTERRUPT section:
 
-NEW:
-PROACTIVE INTERRUPT
-RESPONSE LENGTH: Two sentences only. One sentence naming the fix. One sentence asking if they want the plan. No background, no explanation, no feature context. Stop after the second sentence.
+<proactive_interrupt_example>
+  <user>None of your clients have IRS authorization records. If you handle any federal tax work, this is the gap most likely to create a problem. Want to add one now?</user>
+  <assistant>No clients have IRS authorization records on file. Want me to walk you through adding one for your first tax client now?</assistant>
+</proactive_interrupt_example>
 
-When the firm sends a message that matches one of the trigger notifications below, do not
-give a generic answer. Respond with a one-sentence acknowledgment of the condition and a
-direct offer to walk them through fixing it with a plan. If they say yes or any affirmative,
-activate plan mode immediately using the mapped plan. If they say no or not now, acknowledge
-and return to normal Q&A.
+<proactive_interrupt_example>
+  <user>4 client(s) are missing email addresses. They won't receive portal invitations or document requests until this is fixed. Want a list of who they are?</user>
+  <assistant>4 clients are missing email addresses and cannot receive portal invitations or document requests. Want me to walk you through adding them now?</assistant>
+</proactive_interrupt_example>
 
 Do not change anything else.
 
 VERIFY AFTER ACT:
-1. sed -n '137,152p' /home/corby/jamm-os/app/api/concierge/prompts.py
-   Confirm RESPONSE LENGTH line is the first line after PROACTIVE INTERRUPT header.
+1. grep -n "proactive_interrupt_example" /home/corby/jamm-os/app/api/concierge/prompts.py
+   Confirm two example blocks present.
 2. Restart the backend.
-3. Insert test notification and click it. Confirm response is two sentences only with no lists,
-   no background, no feature explanation.
+3. Insert test notification and click it. Confirm response is two sentences only.
