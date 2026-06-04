@@ -148,7 +148,17 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
   const initials =
     user?.full_name?.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase() ?? '?'
 
-  const [messages, setMessages] = useState<Message[]>([])
+  const [messages, setMessages] = useState<Message[]>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = sessionStorage.getItem('jamm_concierge_messages')
+        if (stored) return JSON.parse(stored) as Message[]
+      } catch {
+        // ignore parse errors
+      }
+    }
+    return []
+  })
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [input, setInput] = useState('')
   const [streaming, setStreaming] = useState(false)
@@ -182,6 +192,15 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        sessionStorage.setItem('jamm_concierge_messages', JSON.stringify(messages))
+      } catch {
+        // ignore storage errors
+      }
+    }
+  }, [messages])
 
   // Reset autopilot when panel closes (session-only per spec).
   useEffect(() => {
@@ -189,6 +208,9 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
       setAutopilotOn(false)
       autopilotRef.current = false
       sessionStorage.removeItem('jamm_concierge_autopilot')
+      sessionStorage.removeItem('jamm_concierge_messages')
+      setMessages([])
+      setShowStarters(true)
     }
   }, [isOpen])
 

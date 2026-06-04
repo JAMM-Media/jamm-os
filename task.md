@@ -65,83 +65,69 @@ find /home/corby/jamm-os/frontend/src/components/concierge/ -name "*.tsx" | sort
 
 ---
 
-# Fix: Persist conversation history across navigation
+# Prompt audit: Add Automation Presets workflow section
 
-Task: messages state resets to [] when autopilot navigates to a new page because the
-component remounts. Persist messages to sessionStorage on every update and restore on
-mount. Clear on panel close. Same pattern as autopilotOn.
+Task: Replace the thin AUTOMATION RULE data model entry with a full section covering
+all 15 presets, which are enabled by default, and how to manage them.
 
 VERIFY BEFORE ACT:
-sed -n '151,156p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+grep -n "AUTOMATION RULE\|15 presets\|automation_enabled" /home/corby/jamm-os/app/api/concierge/prompts.py
 
 Paste before touching anything.
 
-Make exactly three changes:
-
-Change 1 -- initialize messages from sessionStorage on mount:
 OLD:
-  const [messages, setMessages] = useState<Message[]>([])
+AUTOMATION RULE
+A configurable automation preset. Each firm gets 15 seeded presets on signup. Presets are disabled by default and must be individually enabled.
+Fields: id, firm_id, name, description, is_enabled, trigger_event, trigger_conditions (JSON), actions (JSON), default_actions (JSON), execution_count, last_executed_at.
+The 15 presets cover: engagement status changes, task completions, document uploads, deadline proximity alerts, portal activity, and invoice events.
 
 NEW:
-  const [messages, setMessages] = useState<Message[]>(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const stored = sessionStorage.getItem('jamm_concierge_messages')
-        if (stored) return JSON.parse(stored) as Message[]
-      } catch {
-        // ignore parse errors
-      }
-    }
-    return []
-  })
+AUTOMATION RULE
+Each firm gets 15 automation presets seeded on signup. Each preset is either enabled or disabled. Enabled presets fire automatically when their trigger condition is met. Disabled presets do nothing until turned on.
 
-Change 2 -- write messages to sessionStorage on every update. Add this useEffect
-immediately after the existing useEffect that scrolls to messagesEndRef:
-OLD:
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
+How to manage automation presets:
+Navigate to Settings and select Automation. Each preset is listed with its name, trigger, and an on/off toggle. Enable or disable presets individually. To reset a preset to its default actions, select Reset to Default.
 
-NEW:
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        sessionStorage.setItem('jamm_concierge_messages', JSON.stringify(messages))
-      } catch {
-        // ignore storage errors
-      }
-    }
-  }, [messages])
+Presets enabled by default (fire automatically from day one):
+1. Document Request Reminder (3-day) -- sends a reminder email to the client 3 days after a document request is created if it is still pending
+2. E-Signature Reminder (2-day) -- sends a reminder to the client 2 days after a signature envelope is sent if not yet signed
+3. Overdue Task Alert to Staff -- notifies the assigned staff member when a task becomes overdue
+4. New Client Welcome Email -- sends a welcome email to the client when they are first added
+5. Invoice Overdue Reminder -- sends a payment reminder to the client when an invoice becomes overdue
+6. Extension Filed Auto-Notify -- notifies the client of the extension and creates a deadline task
+7. IRS Authorization Expiry Warning -- alerts staff and creates a renewal task when an IRS authorization is within 30 days of expiry
+8. Invoice Overdue Escalating Sequence -- sends reminders on day 1 and day 7 after an invoice goes overdue, then notifies the firm owner on day 14
+9. Engagement Deadline Approaching (14-day Alert) -- notifies assigned staff 14 days before an engagement deadline
 
-Change 3 -- clear messages from sessionStorage when panel closes. Find the existing
-panel close useEffect and add the messages clear:
-OLD:
-    if (!isOpen) {
-      setAutopilotOn(false)
-      autopilotRef.current = false
-      sessionStorage.removeItem('jamm_concierge_autopilot')
-    }
+Presets disabled by default (must be turned on manually):
+10. Auto-Create Invoice on Engagement Completion -- creates a draft invoice when an engagement is marked complete
+11. Notify Staff When Documents Are Complete -- notifies assigned staff when a client finishes uploading all requested documents
+12. Recurring Engagement Kickoff Notification -- notifies staff when a new recurring engagement is automatically created
+13. 1040 Season Kickoff -- sends a welcome email and creates intake tasks when a 1040 engagement is opened
+14. Return Completed: Client Delivery Loop -- creates a delivery task, generates an invoice from time entries, emails the client, and creates a follow-up confirmation task when a return is marked complete
+15. New Client Full Onboarding Sequence -- sends a welcome email, creates onboarding tasks, and sends an intake document request when a new client is added
 
-NEW:
-    if (!isOpen) {
-      setAutopilotOn(false)
-      autopilotRef.current = false
-      sessionStorage.removeItem('jamm_concierge_autopilot')
-      sessionStorage.removeItem('jamm_concierge_messages')
-      setMessages([])
-      setShowStarters(true)
-    }
+Recommended presets to enable first:
+For most firms, the highest-value presets to enable in the first week are: Notify Staff When Documents Are Complete (6), Auto-Create Invoice on Engagement Completion (10), and Return Completed: Client Delivery Loop (14). These three cover the most common manual follow-up tasks firms do after finishing work.
+
+Common questions:
+Q: Can I customize what a preset does?
+A: Not yet. Presets run their default actions. Custom action editing is on the roadmap.
+
+Q: Will presets fire for existing clients and engagements?
+A: Presets only fire on new trigger events from the moment they are enabled. They do not retroactively process existing records.
+
+Q: How do I know if a preset fired?
+A: The execution count next to each preset in Settings shows how many times it has run. The last executed date shows when it last fired.
+
+Q: Can I turn off a preset temporarily?
+A: Yes. Toggle it off in Settings. It will not fire again until re-enabled.
 
 Do not change anything else.
 
 VERIFY AFTER ACT:
-1. grep -n "jamm_concierge_messages" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
-   Confirm three results: read on mount, write on update, clear on close.
-2. cd /home/corby/jamm-os/frontend
-3. npm run build -- zero TypeScript errors.
-4. Browser test: autopilot on, ask "how do I send an IRS authorization to Patricia Nguyen".
-   Confirm: Concierge navigates to her IRS Authorizations tab AND the full response remains
-   visible in the panel after navigation.
+1. grep -n "AUTOMATION RULE\|Presets enabled by default\|Presets disabled by default" /home/corby/jamm-os/app/api/concierge/prompts.py
+   Confirm all three present.
+2. Restart the backend.
+3. Browser test: ask "which automation presets should I turn on first".
+   Confirm: response names specific presets with accurate descriptions, not generic advice.
