@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from apscheduler.schedulers.background import BackgroundScheduler
 from app.services.anniversary_service import check_client_anniversaries, check_document_expiries
 from app.services.recurring_engagement_service import spawn_recurring_engagements
+from app.services.qbo_budget_service import run_budget_variance_checks
 from app.core.scheduler_lock import try_acquire_scheduler_lock, release_scheduler_lock
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
@@ -89,6 +90,14 @@ async def lifespan(app: FastAPI):
             hour=8,
             minute=30,
             id="recurring_engagement_spawn",
+            replace_existing=True,
+        )
+        scheduler.add_job(
+            run_budget_variance_checks,
+            trigger="cron",
+            hour=9,
+            minute=0,
+            id="qbo_budget_variance_check",
             replace_existing=True,
         )
         scheduler.start()

@@ -123,6 +123,7 @@ class TriggerEvent(str, Enum):
     irs_authorization_expiry_approaching = "irs_authorization.expiry_approaching"
     extension_filed = "extension.filed"
     extension_deadline_approaching = "extension.deadline_approaching"
+    qbo_budget_variance = "qbo.budget_variance"
 
 
 class AutomationActionType(str, Enum):

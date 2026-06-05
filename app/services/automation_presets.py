@@ -682,6 +682,45 @@ def _get_preset_rules(firm_id: UUID) -> List[Dict[str, Any]]:
             "created_at": now,
             "updated_at": now,
         },
+        # PRESET 16 — Budget Variance Alert
+        {
+            "id": uuid4(),
+            "firm_id": firm_id,
+            "name": "Budget Variance Alert",
+            "description": (
+                "Creates a task when a client's actual spend deviates from their QBO budget "
+                "by more than 15% in any category."
+            ),
+            "is_enabled": False,
+            "trigger_event": TriggerEvent.qbo_budget_variance,
+            "trigger_conditions": [],
+            "actions": [
+                {
+                    "type": AutomationActionType.create_task,
+                    "config": {
+                        "title": "Review budget variance for {client_name}",
+                        "description": "{variance_count} account(s) exceeded budget by more than 15% this month.",
+                        "due_days": 3,
+                    },
+                    "order": 0,
+                }
+            ],
+            "default_actions": [
+                {
+                    "type": AutomationActionType.create_task,
+                    "config": {
+                        "title": "Review budget variance for {client_name}",
+                        "description": "{variance_count} account(s) exceeded budget by more than 15% this month.",
+                        "due_days": 3,
+                    },
+                    "order": 0,
+                }
+            ],  # exact copy of actions above
+            "execution_count": 0,
+            "last_executed_at": None,
+            "created_at": now,
+            "updated_at": now,
+        },
     ]
 
 
