@@ -1,20 +1,24 @@
 # app/api/integrations.py
 
+import threading
 import uuid as _uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
+from app.models.client import Client
 from app.models.firm import Firm
 from app.schemas.integration import IntegrationOut, QuickBooksConnectResponse
 from app.crud import integration as crud_integration
 from app.dependencies.tenant import get_current_firm
-from app.dependencies.roles import require_firm_owner
+from app.dependencies.roles import require_firm_owner, require_manager_or_above
 from app.services.quickbooks_service import QuickBooksService
 from app.services.gmail_service import GmailService
 from app.services.audit_service import write_audit_log
+from app.services.behavioral_log import log_event
 
 router = APIRouter(prefix="/integrations", tags=["integrations"])
 
@@ -173,6 +177,57 @@ def quickbooks_import_selected_clients(
         )
 
     return result
+
+
+# -------------------------------------------------------------------
+# GET /integrations/quickbooks/deep-link/client/{client_id}
+# Returns the QBO customer detail URL for the given client.
+# Must be defined BEFORE /{provider} to avoid route shadowing.
+# -------------------------------------------------------------------
+@router.get("/quickbooks/deep-link/client/{client_id}")
+def quickbooks_client_deep_link(
+    client_id: _uuid.UUID,
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    _: object = Depends(require_manager_or_above),
+):
+    client = db.execute(
+        select(Client).where(
+            Client.id == client_id,
+            Client.firm_id == current_firm.id,
+        )
+    ).scalar_one_or_none()
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found.")
+
+    if client.quickbooks_customer_id is None:
+        raise HTTPException(
+            status_code=404,
+            detail="This client is not linked to a QuickBooks customer.",
+        )
+
+    integration = crud_integration.get_integration(
+        db, firm_id=current_firm.id, provider="quickbooks"
+    )
+    if not integration or integration.status != "connected":
+        raise HTTPException(status_code=400, detail="QuickBooks is not connected.")
+
+    qb_customer_id = client.quickbooks_customer_id
+    deep_link_url = f"https://app.qbo.intuit.com/app/customerdetail?nameId={qb_customer_id}"
+
+    threading.Thread(
+        target=log_event,
+        kwargs={
+            "event_type": "integration.qbo_deep_link_opened",
+            "firm_id": current_firm.id,
+            "entity_type": "client",
+            "entity_id": client_id,
+            "metadata": {"quickbooks_customer_id": qb_customer_id},
+        },
+        daemon=True,
+    ).start()
+
+    return {"url": deep_link_url, "quickbooks_customer_id": qb_customer_id}
 
 
 # -------------------------------------------------------------------
