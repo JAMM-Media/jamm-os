@@ -128,8 +128,15 @@ def concierge_chat(
                     detail="Message contains disallowed content.",
                 )
 
+        # Find the last user message -- only this turn needs injection scanning.
+        # Prior messages were already sanitized when first sent.
+        last_user_index = next(
+            (i for i in reversed(range(len(messages))) if messages[i].role == "user"),
+            None,
+        )
+
         cleaned = []
-        for msg in messages:
+        for i, msg in enumerate(messages):
             if msg.role not in ("user", "assistant"):
                 logger.warning(
                     f"Invalid message role for firm {current_firm.id}: {msg.role!r}"
@@ -141,29 +148,33 @@ def concierge_chat(
             content = msg.content
             if len(content) > MAX_MESSAGE_LENGTH:
                 content = content[:MAX_MESSAGE_LENGTH]
-            lower = " ".join(content.lower().split())
-            for pattern in INJECTION_PATTERNS:
-                if pattern in lower:
-                    logger.error(
-                        f"SECURITY: Prompt injection attempt detected -- "
-                        f"firm={current_firm.id} pattern={pattern!r} "
-                        f"content_preview={content[:100]!r}"
-                    )
-                    try:
-                        event = SecurityEvent(
-                            firm_id=current_firm.id,
-                            event_type="prompt_injection_attempt",
-                            pattern_matched=pattern,
-                            content_preview=content[:200],
+
+            # Only scan the last user message for injection patterns
+            if i == last_user_index:
+                lower = " ".join(content.lower().split())
+                for pattern in INJECTION_PATTERNS:
+                    if pattern in lower:
+                        logger.error(
+                            f"SECURITY: Prompt injection attempt detected -- "
+                            f"firm={current_firm.id} pattern={pattern!r} "
+                            f"content_preview={content[:100]!r}"
                         )
-                        db.add(event)
-                        db.commit()
-                    except Exception:
-                        pass  # security logging is non-fatal
-                    raise HTTPException(
-                        status_code=status.HTTP_400_BAD_REQUEST,
-                        detail="Message contains disallowed content.",
-                    )
+                        try:
+                            event = SecurityEvent(
+                                firm_id=current_firm.id,
+                                event_type="prompt_injection_attempt",
+                                pattern_matched=pattern,
+                                content_preview=content[:200],
+                            )
+                            db.add(event)
+                            db.commit()
+                        except Exception:
+                            pass  # security logging is non-fatal
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="Message contains disallowed content.",
+                        )
+
             cleaned.append({"role": msg.role, "content": content})
         return cleaned
 
