@@ -246,7 +246,8 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
         }
 
         console.log('[CONCIERGE RAW]', assembled)
-        const cleanContent = handleConciergeAction(assembled)
+        const filteredAssembled = filterOutput(assembled)
+        const cleanContent = handleConciergeAction(filteredAssembled)
         setMessages((prev) => {
           const updated = [...prev]
           const last = updated[updated.length - 1]
@@ -339,6 +340,39 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
     }
     const route = routes[label]
     if (route) setTimeout(() => router.push(route), 0)
+  }
+
+  function filterOutput(text: string): string {
+    const SSN_PATTERN = /\b\d{3}-\d{2}-\d{4}\b/g
+    const EIN_PATTERN = /\b\d{2}-\d{7}\b/g
+    const LEAK_PHRASES = [
+      'my instructions are',
+      'my system prompt',
+      'i was instructed to',
+      'i am instructed to',
+      'the system prompt says',
+      'my prompt says',
+      'i have been told to',
+      'i have been configured',
+      'as per my instructions',
+      'according to my instructions',
+    ]
+
+    if (SSN_PATTERN.test(text) || EIN_PATTERN.test(text)) {
+      console.error('[SECURITY] PII pattern detected in model output -- redacting')
+      text = text.replace(SSN_PATTERN, '[REDACTED]')
+      text = text.replace(EIN_PATTERN, '[REDACTED]')
+    }
+
+    const lower = text.toLowerCase()
+    for (const phrase of LEAK_PHRASES) {
+      if (lower.includes(phrase)) {
+        console.error(`[SECURITY] System prompt leak phrase detected in output: ${phrase}`)
+        return 'I am JAMM Concierge. I am here to help you use JAMM PX.'
+      }
+    }
+
+    return text
   }
 
   function handleConciergeAction(raw: string): string {

@@ -1,7 +1,7 @@
 # app/api/concierge/route.py
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -22,6 +22,7 @@ from app.models.firm import Firm
 from app.models.client import Client
 from app.models.user import User
 from app.models.concierge_notification import ConciergeNotification
+from app.models.security_event import SecurityEvent
 from app.api.concierge.prompts import get_system_prompt
 from app.api.concierge.context import router as context_router
 from app.api.concierge.cron import run_trigger_check
@@ -52,6 +53,7 @@ def concierge_chat(
     body: ChatRequest,
     current_firm: Firm = Depends(get_current_firm),
     current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     if current_user.role == UserRole.client_portal_user:
         raise HTTPException(
@@ -147,12 +149,43 @@ def concierge_chat(
                         f"firm={current_firm.id} pattern={pattern!r} "
                         f"content_preview={content[:100]!r}"
                     )
+                    try:
+                        event = SecurityEvent(
+                            firm_id=current_firm.id,
+                            event_type="prompt_injection_attempt",
+                            pattern_matched=pattern,
+                            content_preview=content[:200],
+                        )
+                        db.add(event)
+                        db.commit()
+                    except Exception:
+                        pass  # security logging is non-fatal
                     raise HTTPException(
                         status_code=status.HTTP_400_BAD_REQUEST,
                         detail="Message contains disallowed content.",
                     )
             cleaned.append({"role": msg.role, "content": content})
         return cleaned
+
+    # Firm-level lockout: block firms with 5+ violations in the last 10 minutes
+    ten_minutes_ago = datetime.now(timezone.utc) - timedelta(minutes=10)
+    recent_violations = db.execute(
+        select(func.count()).select_from(SecurityEvent).where(
+            SecurityEvent.firm_id == current_firm.id,
+            SecurityEvent.event_type == "prompt_injection_attempt",
+            SecurityEvent.created_at >= ten_minutes_ago,
+        )
+    ).scalar() or 0
+
+    if recent_violations >= 5:
+        logger.error(
+            f"SECURITY: Firm {current_firm.id} locked out -- "
+            f"{recent_violations} violations in last 10 minutes"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many requests. Please try again later.",
+        )
 
     sanitized_messages = sanitize_messages(body.messages)
 
