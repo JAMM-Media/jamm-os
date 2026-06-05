@@ -80,7 +80,7 @@ export default function SettingsPage() {
   const [inviteFullName, setInviteFullName] = useState('')
   const [inviteEmail, setInviteEmail] = useState('')
   const [invitePassword, setInvitePassword] = useState('')
-  const [inviteRole, setInviteRole] = useState<'staff' | 'manager'>('staff')
+  const [inviteRole, setInviteRole] = useState<'staff' | 'manager' | 'firm_owner'>('staff')
   const [inviteSubmitting, setInviteSubmitting] = useState(false)
   const [showInvitePassword, setShowInvitePassword] = useState(false)
   const [invitePasswordLocked, setInvitePasswordLocked] = useState(false)
@@ -617,9 +617,10 @@ export default function SettingsPage() {
                     <label className={labelClass}>Role</label>
                     <select
                       value={inviteRole}
-                      onChange={(e) => setInviteRole(e.target.value as 'staff' | 'manager')}
+                      onChange={(e) => setInviteRole(e.target.value as 'staff' | 'manager' | 'firm_owner')}
                       className={inputClass}
                     >
+                      <option value="firm_owner">Firm Owner</option>
                       <option value="staff">Staff</option>
                       <option value="manager">Manager</option>
                     </select>
