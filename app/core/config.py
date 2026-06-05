@@ -59,6 +59,11 @@ class Settings(BaseSettings):
     QUICKBOOKS_ENVIRONMENT: str = "sandbox"
     QUICKBOOKS_REALM_ID: str = ""
 
+    # Google OAuth (Gmail integration)
+    GOOGLE_CLIENT_ID: str = ""
+    GOOGLE_CLIENT_SECRET: str = ""
+    GOOGLE_REDIRECT_URI: str = "https://api.jammpx.com/integrations/gmail/callback"
+
     # Anthropic (Concierge)
     ANTHROPIC_API_KEY: str = ""
     ANTHROPIC_CONCIERGE_KEY: str = ""

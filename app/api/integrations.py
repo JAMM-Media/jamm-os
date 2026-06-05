@@ -13,11 +13,13 @@ from app.crud import integration as crud_integration
 from app.dependencies.tenant import get_current_firm
 from app.dependencies.roles import require_firm_owner
 from app.services.quickbooks_service import QuickBooksService
+from app.services.gmail_service import GmailService
 from app.services.audit_service import write_audit_log
 
 router = APIRouter(prefix="/integrations", tags=["integrations"])
 
 _qb_service = QuickBooksService()
+_gmail_service = GmailService()
 
 
 # -------------------------------------------------------------------
@@ -171,6 +173,43 @@ def quickbooks_import_selected_clients(
         )
 
     return result
+
+
+# -------------------------------------------------------------------
+# GET /integrations/gmail/connect — Start Gmail OAuth2 flow
+# Must be defined BEFORE /{provider} to avoid route shadowing.
+# -------------------------------------------------------------------
+@router.get("/gmail/connect")
+def gmail_connect(
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    _: object = Depends(require_firm_owner),
+):
+    integration = crud_integration.get_integration(
+        db, firm_id=current_firm.id, provider="gmail"
+    )
+    if not integration:
+        crud_integration.create_integration(db, firm_id=current_firm.id, provider="gmail")
+
+    authorization_url = _gmail_service.get_authorization_url(current_firm.id)
+    return {"authorization_url": authorization_url}
+
+
+# -------------------------------------------------------------------
+# GET /integrations/gmail/callback — Google redirects here after auth
+# No JWT required — Google calls this endpoint directly.
+# -------------------------------------------------------------------
+@router.get("/gmail/callback")
+def gmail_callback(
+    code: str = Query(...),
+    state: str = Query(...),
+    db: Session = Depends(get_db),
+):
+    try:
+        _gmail_service.handle_callback(code=code, state=state, db=db)
+        return {"status": "connected", "message": "Gmail connected successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 # -------------------------------------------------------------------
