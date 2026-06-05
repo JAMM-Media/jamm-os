@@ -1,7 +1,7 @@
 # app/schemas/engagement.py
 
 from datetime import date, datetime
-from typing import Optional, List
+from typing import Optional, List, Any
 from uuid import UUID
 from pydantic import BaseModel, ConfigDict, field_validator
 
@@ -21,6 +21,7 @@ class EngagementBase(BaseModel):
     engagement_type: Optional[str] = None
     filing_deadline: Optional[date] = None
     extended_deadline: Optional[date] = None
+    complexity_flags: Optional[dict] = None
 
 
 class EngagementCreate(EngagementBase):
@@ -154,3 +155,7 @@ class BulkSendLetterResult(BaseModel):
     sent: int
     failed: int
     errors: list[str]
+
+
+class ComplexityFlagsUpdate(BaseModel):
+    flags: dict

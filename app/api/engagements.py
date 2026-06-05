@@ -24,6 +24,7 @@ from app.schemas.engagement import (
     BulkEngagementCreateResult,
     BulkSendLetterRequest,
     BulkSendLetterResult,
+    ComplexityFlagsUpdate,
 )
 from app.models.task import Task
 from app.models.client import Client as ClientModel
@@ -353,6 +354,30 @@ def delete_engagement(
     )
     if result is None:
         raise HTTPException(status_code=404, detail="Engagement not found")
+
+
+# ---------------------------------------------------------
+# UPDATE COMPLEXITY FLAGS
+# ---------------------------------------------------------
+@router.patch("/{engagement_id}/complexity_flags", response_model=EngagementOut)
+def update_complexity_flags(
+    engagement_id: UUID,
+    payload: ComplexityFlagsUpdate,
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    current_user: User = Depends(get_current_user),
+    _: object = Depends(require_manager_or_above),
+):
+    result = engagement_service.update_complexity_flags(
+        db=db,
+        engagement_id=engagement_id,
+        firm_id=current_firm.id,
+        flags=payload.flags,
+        current_user_id=current_user.id,
+    )
+    if not result:
+        raise HTTPException(status_code=404, detail="Engagement not found")
+    return result
 
 
 # ---------------------------------------------------------

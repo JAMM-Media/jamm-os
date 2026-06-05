@@ -258,3 +258,37 @@ def delete_engagement(
     )
 
     return True
+
+
+def update_complexity_flags(
+    *,
+    db: Session,
+    engagement_id: UUID,
+    firm_id: UUID,
+    flags: dict,
+    current_user_id: UUID,
+):
+    engagement = crud_engagement.get_engagement_for_firm(db, engagement_id, firm_id)
+    if not engagement:
+        return None
+
+    engagement.complexity_flags = flags
+    db.commit()
+    db.refresh(engagement)
+
+    log_event(
+        firm_id=firm_id,
+        event_type="engagement.complexity_flags_updated",
+        entity_type="engagement",
+        entity_id=engagement.id,
+        actor_type="staff",
+        actor_id=current_user_id,
+        metadata={
+            "engagement_id": str(engagement.id),
+            "engagement_type": engagement.engagement_type,
+            "flags": flags,
+            "actor_id": str(current_user_id),
+        },
+    )
+
+    return engagement

@@ -1,7 +1,7 @@
 // frontend/src/components/engagements/SendEngagementLetterModal.tsx
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Modal } from '@/components/ui/Modal'
 import { FormField } from '@/components/ui/FormField'
 import { TextInput } from '@/components/ui/TextInput'
@@ -15,6 +15,24 @@ interface Template {
   engagement_type: string | null
   variable_fields: string[]
 }
+
+type Tier = { label: string; amount: string }
+type ComplexityAdders = Record<string, string | Tier[]>
+
+const COMPLEXITY_FLAG_LABELS: Record<string, string> = {
+  rental_property: 'Rental Property',
+  foreign_accounts_fbar: 'Foreign Accounts / FBAR',
+  depreciation_schedules: 'Depreciation Schedules',
+  home_office: 'Home Office Deduction',
+  multiple_states: 'Multiple States',
+  trust_estate_involvement: 'Trust or Estate Involvement',
+  business_sale: 'Business Sale or Disposition',
+  equity_compensation: 'Equity Compensation / ISO / RSU',
+  k1_involvement: 'K-1 Involvement',
+  crypto: 'Cryptocurrency Transactions',
+}
+
+const TIERED_FLAGS = new Set(['k1_involvement', 'crypto'])
 
 interface SendEngagementLetterModalProps {
   open: boolean
@@ -45,20 +63,46 @@ export function SendEngagementLetterModal({
   const [loading, setLoading] = useState(false)
   const [fetching, setFetching] = useState(false)
   const [errors, setErrors] = useState<{ template?: string; fee?: string }>({})
-  const [feeSchedule, setFeeSchedule] = useState<Record<string, string>>({})
+  const [feeSchedule, setFeeSchedule] = useState<Record<string, unknown>>({})
+  const [complexityAdders, setComplexityAdders] = useState<ComplexityAdders>({})
+  const [selectedFlags, setSelectedFlags] = useState<Record<string, string | true>>({})
+  const [manualFeeOverride, setManualFeeOverride] = useState(false)
   const [mode, setMode] = useState<'template' | 'upload'>('template')
   const [uploadFile, setUploadFile] = useState<File | null>(null)
   const [uploadSubject, setUploadSubject] = useState('')
   const [dragOver, setDragOver] = useState(false)
 
+  const calcFee = useCallback((schedule: Record<string, unknown>, adders: ComplexityAdders, flags: Record<string, string | true>): string => {
+    const baseStr = engagementType ? String(schedule[engagementType] ?? '') : ''
+    const base = parseFloat(baseStr.replace(/[$,]/g, '')) || 0
+
+    let adderTotal = 0
+    for (const [key, value] of Object.entries(flags)) {
+      if (TIERED_FLAGS.has(key)) {
+        const tierLabel = value as string
+        const tiers = adders[key] as Tier[] | undefined
+        const tier = tiers?.find((t) => t.label === tierLabel)
+        if (tier) adderTotal += parseFloat(tier.amount.replace(/[$,]/g, '')) || 0
+      } else {
+        const amt = adders[key] as string | undefined
+        if (amt) adderTotal += parseFloat(amt.replace(/[$,]/g, '')) || 0
+      }
+    }
+
+    const total = base + adderTotal
+    if (total === 0 && base === 0) return ''
+    return `$${total.toLocaleString('en-US', { maximumFractionDigits: 0 })}`
+  }, [engagementType])
+
   useEffect(() => {
     if (!open) return
     api.get('/users/firm').then((res) => {
-      const schedule: Record<string, string> = res.data?.settings?.fee_schedule ?? {}
-      setFeeSchedule(schedule)
-      // Auto-populate fee immediately when schedule loads
-      if (engagementType && schedule[engagementType]) {
-        setFeeAmount((prev) => prev || `$${schedule[engagementType]}`)
+      const schedule: Record<string, unknown> = res.data?.settings?.fee_schedule ?? {}
+      const { complexity_adders, ...baseRates } = schedule as { complexity_adders?: ComplexityAdders } & Record<string, unknown>
+      setFeeSchedule(baseRates)
+      setComplexityAdders(complexity_adders ?? {})
+      if (engagementType && baseRates[engagementType]) {
+        setFeeAmount((prev) => prev || `$${baseRates[engagementType]}`)
       }
     }).catch(() => {})
   }, [open, engagementType])
@@ -69,14 +113,12 @@ export function SendEngagementLetterModal({
     api.get('/esign/templates?limit=50')
       .then((res) => {
         const items: Template[] = res.data?.items ?? []
-        // Sort: matching engagement type first, then generic (null type) templates
         const sorted = [
           ...items.filter((t) => t.engagement_type === engagementType),
           ...items.filter((t) => t.engagement_type !== engagementType && !t.engagement_type),
           ...items.filter((t) => t.engagement_type !== engagementType && t.engagement_type),
         ]
         setTemplates(sorted)
-        // Pre-select the best match
         if (sorted.length > 0) setSelectedTemplateId(sorted[0].id)
       })
       .catch(() => toast.error('Failed to load templates'))
@@ -91,7 +133,50 @@ export function SendEngagementLetterModal({
     setUploadFile(null)
     setUploadSubject('')
     setDragOver(false)
+    setSelectedFlags({})
+    setManualFeeOverride(false)
     onClose()
+  }
+
+  function handleFlagToggle(key: string, checked: boolean) {
+    setSelectedFlags((prev) => {
+      const next = { ...prev }
+      if (!checked) {
+        delete next[key]
+      } else if (TIERED_FLAGS.has(key)) {
+        // Leave value empty until tier is selected
+        next[key] = ''
+      } else {
+        next[key] = true
+      }
+      return next
+    })
+    if (!manualFeeOverride) {
+      const nextFlags = { ...selectedFlags }
+      if (!checked) {
+        delete nextFlags[key]
+      } else if (!TIERED_FLAGS.has(key)) {
+        nextFlags[key] = true
+      }
+      setFeeAmount(calcFee(feeSchedule, complexityAdders, nextFlags))
+    }
+  }
+
+  function handleTierSelect(flagKey: string, tierLabel: string) {
+    setSelectedFlags((prev) => ({ ...prev, [flagKey]: tierLabel }))
+    if (!manualFeeOverride) {
+      setFeeAmount(calcFee(feeSchedule, complexityAdders, { ...selectedFlags, [flagKey]: tierLabel }))
+    }
+  }
+
+  function handleFeeChange(value: string) {
+    setFeeAmount(value)
+    setManualFeeOverride(true)
+  }
+
+  function handleResetFee() {
+    setManualFeeOverride(false)
+    setFeeAmount(calcFee(feeSchedule, complexityAdders, selectedFlags))
   }
 
   async function handleSend() {
@@ -112,6 +197,12 @@ export function SendEngagementLetterModal({
         if (!envelopeId) throw new Error('No envelope ID returned')
         await api.post(`/esign/envelopes/${envelopeId}/send`)
         toast.success('Engagement letter sent for signature')
+
+        // Fire-and-forget — do not await, do not block onSent()
+        if (Object.keys(selectedFlags).length > 0) {
+          api.patch(`/engagements/${engagementId}/complexity_flags`, { flags: selectedFlags }).catch(() => {})
+        }
+
         onSent()
         handleClose()
       } catch (err: unknown) {
@@ -121,7 +212,6 @@ export function SendEngagementLetterModal({
         setLoading(false)
       }
     } else {
-      // Upload path
       const errs: typeof errors = {}
       if (!uploadFile) errs.template = 'Please select a PDF file.'
       if (Object.keys(errs).length > 0) { setErrors(errs); return }
@@ -162,6 +252,13 @@ export function SendEngagementLetterModal({
       ? `${t.name} ★`
       : t.name,
   }))
+
+  const hasComplexityAdders = Object.keys(complexityAdders).some((k) => {
+    const v = complexityAdders[k]
+    return Array.isArray(v) ? v.length > 0 : !!v
+  })
+
+  const allFlagKeys = Object.keys(COMPLEXITY_FLAG_LABELS)
 
   return (
     <Modal
@@ -257,17 +354,101 @@ export function SendEngagementLetterModal({
             </FormField>
 
             {/* Fee amount */}
-            <FormField label="Fee Amount" required error={errors.fee}>
+            <div className="flex flex-col gap-1">
+              <div className="flex items-center gap-2">
+                <label className="flex items-center gap-1 text-[11px] font-medium text-brand dark:text-[#EDEEF0]">
+                  Fee Amount
+                  <span className="w-[5px] h-[5px] rounded-full bg-[#E24B4A] flex-shrink-0" />
+                </label>
+                {manualFeeOverride && (
+                  <button
+                    onClick={handleResetFee}
+                    className="text-[10px] text-[#4A7FA5] hover:underline"
+                  >
+                    Reset to calculated
+                  </button>
+                )}
+              </div>
               <TextInput
                 value={feeAmount}
                 onChange={(e) => {
-                  setFeeAmount(e.target.value)
+                  handleFeeChange(e.target.value)
                   if (errors.fee) setErrors((prev) => ({ ...prev, fee: undefined }))
                 }}
                 placeholder="e.g. $750 or $1,200"
                 error={!!errors.fee}
               />
-            </FormField>
+              {errors.fee && (
+                <span className="text-[11px] text-status-red-text">{errors.fee}</span>
+              )}
+            </div>
+
+            {/* Complexity flags */}
+            {hasComplexityAdders && (
+              <div className="flex flex-col gap-2">
+                <p className="text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em]">Complexity</p>
+                <div className="bg-surface-page dark:bg-[#252525] rounded-[6px] overflow-hidden">
+                  {allFlagKeys.map((key, idx) => {
+                    const adderValue = complexityAdders[key]
+                    const isChecked = key in selectedFlags
+                    const isTiered = TIERED_FLAGS.has(key)
+                    const tiers = isTiered ? (adderValue as Tier[] | undefined) : null
+                    const selectedTier = isTiered ? (selectedFlags[key] as string) : null
+
+                    return (
+                      <div
+                        key={key}
+                        className={`flex flex-col gap-1.5 px-3 py-2.5 ${
+                          idx < allFlagKeys.length - 1
+                            ? 'border-b border-surface-border dark:border-dark-border'
+                            : ''
+                        }`}
+                      >
+                        <label className="flex items-center gap-2.5 cursor-pointer select-none">
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={(e) => handleFlagToggle(key, e.target.checked)}
+                            className="w-3.5 h-3.5 rounded accent-brand flex-shrink-0"
+                          />
+                          <span className="text-[12px] text-brand dark:text-[#EDEEF0]">
+                            {COMPLEXITY_FLAG_LABELS[key]}
+                          </span>
+                          {!isTiered && adderValue && (
+                            <span className="text-[11px] text-[#6B7280] ml-auto">
+                              +${adderValue as string}
+                            </span>
+                          )}
+                        </label>
+
+                        {isTiered && isChecked && (
+                          <div className="pl-6">
+                            {tiers && tiers.length > 0 ? (
+                              <select
+                                value={selectedTier ?? ''}
+                                onChange={(e) => handleTierSelect(key, e.target.value)}
+                                className="w-full px-2.5 py-1.5 rounded-[6px] border border-surface-border dark:border-dark-border bg-surface-card dark:bg-dark-card text-[12px] text-brand dark:text-[#EDEEF0] focus:outline-none focus:border-[#4A7FA5]"
+                              >
+                                <option value="">Select tier...</option>
+                                {tiers.map((tier) => (
+                                  <option key={tier.label} value={tier.label}>
+                                    {tier.label}{tier.amount ? ` — $${tier.amount}` : ''}
+                                  </option>
+                                ))}
+                              </select>
+                            ) : (
+                              <p className="text-[11px] text-[#6B7280]">
+                                No tiers configured — set them in Settings → Fee Schedule.
+                              </p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
 
             <p className="text-[11px] text-[#6B7280]">
               The client will receive an email from Dropbox Sign with a link to review and sign the letter. You will be notified when they sign.

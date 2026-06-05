@@ -3,6 +3,7 @@
 import uuid
 from datetime import datetime, date, timezone
 from sqlalchemy import String, Boolean, Date, DateTime, ForeignKey, Text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base_class import Base
@@ -56,6 +57,13 @@ class Engagement(Base):
     notes: Mapped[str | None] = mapped_column(Text)           # internal staff notes — never shown to client
     notes_client_visible: Mapped[str | None] = mapped_column(Text)  # shown in client portal
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+    complexity_flags: Mapped[dict | None] = mapped_column(
+        JSONB,
+        nullable=True,
+        default=None,
+        comment="Complexity flags selected at engagement letter send. Keys are flag names, values are selected tier label or True for fixed flags.",
+    )
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
