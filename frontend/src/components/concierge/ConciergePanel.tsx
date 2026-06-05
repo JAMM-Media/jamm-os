@@ -207,11 +207,19 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
         })
 
         if (!res.ok || !res.body) {
+          let errorContent = 'Something went wrong. Please try again.'
+          if (res.status === 400) {
+            errorContent = 'I am not able to help with that request.'
+          } else if (res.status === 429) {
+            errorContent = 'Too many requests. Please wait a moment before trying again.'
+          } else if (res.status === 403) {
+            errorContent = 'Access denied.'
+          }
           setMessages((prev) => {
             const updated = [...prev]
             updated[updated.length - 1] = {
               role: 'concierge',
-              content: 'Something went wrong. Please try again.',
+              content: errorContent,
             }
             return updated
           })
