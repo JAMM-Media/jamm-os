@@ -10,6 +10,7 @@ import { EngagementCard } from '@/components/engagements/EngagementCard'
 import { EngagementEmptyState } from '@/components/engagements/EngagementEmptyState'
 import { NewEngagementModal } from '@/components/engagements/NewEngagementModal'
 import { SaveAsTemplateModal } from '@/components/engagements/SaveAsTemplateModal'
+import { AckFileUploader } from '@/components/engagements/AckFileUploader'
 import { engagementsApi, clientsApi, type Engagement, type Client } from '@/lib/api'
 import { useFetch } from '@/lib/hooks/useFetch'
 import { Search, X, ChevronDown, Loader2 } from 'lucide-react'
@@ -36,6 +37,7 @@ export default function EngagementsPage() {
   const [statusDropOpen, setStatusDropOpen] = useState(false)
   const [statusOverrides, setStatusOverrides] = useState<Record<string, string>>({})
   const [saveAsTemplateEngagement, setSaveAsTemplateEngagement] = useState<Engagement | null>(null)
+  const [ackUploaderOpen, setAckUploaderOpen] = useState(false)
 
   const { data, isLoading, error } = useFetch(() => engagementsApi.list(0, 100), [])
   const { data: clientsData, isLoading: clientsLoading } = useFetch(() => clientsApi.list(0, 100), [])
@@ -338,6 +340,24 @@ export default function EngagementsPage() {
             ))}
           </div>
         )}
+
+        {/* IRS Acknowledgment File upload — collapsible, secondary to main list */}
+        <div className="rounded-[8px] border border-surface-border dark:border-dark-border overflow-hidden">
+          <button
+            onClick={() => setAckUploaderOpen((o) => !o)}
+            className="w-full flex items-center justify-between px-4 py-3 bg-surface-card dark:bg-dark-card hover:bg-[#F9FAFB] dark:hover:bg-[#252D3A] transition-colors"
+          >
+            <span className="text-[13px] font-medium text-brand dark:text-[#EDEEF0]">IRS Acknowledgment File</span>
+            <ChevronDown
+              className={`h-4 w-4 text-[#6B7280] transition-transform ${ackUploaderOpen ? 'rotate-180' : ''}`}
+            />
+          </button>
+          {ackUploaderOpen && (
+            <div className="px-4 py-4 border-t border-surface-border dark:border-dark-border bg-white dark:bg-[#1E2A3B]">
+              <AckFileUploader />
+            </div>
+          )}
+        </div>
 
         <NewEngagementModal
           open={modalOpen}
