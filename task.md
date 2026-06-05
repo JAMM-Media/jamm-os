@@ -49,122 +49,143 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Stream post-processor for text artifacts -- ConciergePanel.tsx
+TASK: Polish endpoint for grammar and artifact correction
 
 Pre-task:
 cd /home/corby/jamm-os
-git add -A && git commit -m "checkpoint before stream post-processor"
+git add -A && git commit -m "checkpoint before polish endpoint"
 
 VERIFY BEFORE ACT:
-grep -n "filterOutput\|function filter" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
-Paste output before touching anything.
+grep -n "def concierge_chat\|guard_api_key\|filter_output" /home/corby/jamm-os/app/api/concierge/route.py | head -10
+grep -n "filterOutput\|normalizeText\|filteredAssembled" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx | head -10
+Paste both before touching anything.
 
 ---
 
-Change 1: Add text normalization to filterOutput function
+Change 1: Add POST /concierge/polish endpoint to route.py
 
 Find exactly:
-  function filterOutput(text: string): string {
-    const SSN_PATTERN = /\b\d{3}-\d{2}-\d{4}\b/g
-    const EIN_PATTERN = /\b\d{2}-\d{7}\b/g
-    const LEAK_PHRASES = [
-
-Add a normalizeText call at the very start of filterOutput, and add the
-normalizeText function immediately before filterOutput.
-
-Find exactly:
-  function filterOutput(text: string): string {
+@router.get("/clients/resolve")
 
 Add this block immediately before it:
 
-  function normalizeText(text: string): string {
-    // Collapse spaces before punctuation (streaming token boundary artifact)
-    // "word ." -> "word."   "word ," -> "word,"   "word :" -> "word:"
-    text = text.replace(/ ([.,;:!?])/g, '$1')
+class PolishRequest(BaseModel):
+    text: str
 
-    // Collapse spaces inside IRS form numbers and common numeric strings
-    // "8 821" -> "8821"   "2 848" -> "2848"   "1 040" -> "1040"
-    text = text.replace(/\b(\d{1,4})\s(\d{3,4})\b/g, '$1$2')
+@router.post("/polish")
+def polish_text(
+    body: PolishRequest,
+    current_firm: Firm = Depends(get_current_firm),
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.role == UserRole.client_portal_user:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied.",
+        )
 
-    // Collapse spaces around hyphens in known compound terms
-    // "magic -link" -> "magic-link"   "book- keeping" -> "bookkeeping"
-    text = text.replace(/(\w+)\s+-\s*(\w+)/g, '$1-$2')
-    text = text.replace(/(\w+)-\s+(\w+)/g, '$1-$2')
+    if not body.text or not body.text.strip():
+        return {"text": body.text}
 
-    // Normalize known compound terms that must never be split
-    const COMPOUND_TERMS: [RegExp, string][] = [
-      [/magic\s*-?\s*link/gi, 'magic-link'],
-      [/quick\s*books/gi, 'QuickBooks'],
-      [/book\s*keeping/gi, 'bookkeeping'],
-      [/on\s*board\s*ing/gi, 'onboarding'],
-      [/auto\s*pilot/gi, 'Autopilot'],
-    ]
-    for (const [pattern, replacement] of COMPOUND_TERMS) {
-      text = text.replace(pattern, replacement)
-    }
+    settings = get_settings()
+    polish_api_key = settings.ANTHROPIC_API_KEY
+    if not polish_api_key:
+        return {"text": body.text}
 
-    // Normalize IRS form numbers -- never split these
-    const FORM_NUMBERS: [RegExp, string][] = [
-      [/\b8\s*8\s*2\s*1\b/g, '8821'],
-      [/\b2\s*8\s*4\s*8\b/g, '2848'],
-      [/\b1\s*0\s*4\s*0\b/g, '1040'],
-      [/\b1\s*1\s*2\s*0\b/g, '1120'],
-      [/\b1\s*0\s*6\s*5\b/g, '1065'],
-      [/\b1\s*1\s*2\s*0\s*[Ss]\b/g, '1120-S'],
-      [/\b9\s*4\s*1\b/g, '941'],
-      [/\b9\s*4\s*0\b/g, '940'],
-      [/\b1\s*0\s*9\s*9\b/g, '1099'],
-      [/\b1\s*0\s*9\s*8\s*[Tt]\b/g, '1098-T'],
-      [/\b W\s*-\s*2\b/gi, 'W-2'],
-      [/\b W\s*-\s*9\b/gi, 'W-9'],
-    ]
-    for (const [pattern, replacement] of FORM_NUMBERS) {
-      text = text.replace(pattern, replacement)
-    }
+    try:
+        polish_client = anthropic.Anthropic(api_key=polish_api_key)
+        response = polish_client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=2000,
+            system="""You are a text cleanup utility for a software assistant.
+Your only job is to fix mechanical text artifacts in the input.
 
-    // Collapse double spaces
-    text = text.replace(/ {2,}/g, ' ')
+Fix these specific issues:
+- Spaces before punctuation: "word ." becomes "word."
+- Split compound words: "magic -link" becomes "magic-link", "book keeping" becomes "bookkeeping", "Quick Books" becomes "QuickBooks", "on boarding" becomes "onboarding", "Auto pilot" becomes "Autopilot"
+- Split IRS form numbers: "8 821" becomes "8821", "2 848" becomes "2848", "1 040" becomes "1040", "1 120" becomes "1120", "1 065" becomes "1065", "W -2" becomes "W-2", "W -9" becomes "W-9"
+- Double spaces anywhere in the text
+- Rogue markdown artifacts like "** " or " **" with spaces inside
 
-    return text
-  }
+Do not change any words, meaning, structure, or formatting.
+Do not add or remove sentences.
+Do not change capitalization except to fix clearly broken cases.
+Return only the corrected text. No explanation. No preamble. No commentary.""",
+            messages=[{"role": "user", "content": body.text}],
+        )
+        cleaned = response.content[0].text.strip()
+        return {"text": cleaned}
+    except Exception as e:
+        logger.warning(f"Polish endpoint failed for firm {current_firm.id}: {e}")
+        return {"text": body.text}
 
-Then find the opening line of filterOutput and add the normalizeText call:
+---
+
+Change 2: Call polish endpoint from ConciergePanel.tsx after streaming completes
+
+The polish call replaces the normalizeText function entirely.
+normalizeText was a regex workaround -- the polish endpoint is the system fix.
 
 Find exactly:
-  function filterOutput(text: string): string {
-    const SSN_PATTERN = /\b\d{3}-\d{2}-\d{4}\b/g
+        const filteredAssembled = filterOutput(assembled)
 
 Replace with:
+        let polishedAssembled = assembled
+        try {
+          const polishRes = await api.post('/concierge/polish', { text: assembled })
+          if (polishRes.data?.text) {
+            polishedAssembled = polishRes.data.text
+          }
+        } catch {
+          // non-fatal -- fall back to raw assembled text
+        }
+        const filteredAssembled = filterOutput(polishedAssembled)
+
+Then remove the normalizeText function and its call inside filterOutput entirely.
+
+Find exactly:
   function filterOutput(text: string): string {
     // Normalize streaming artifacts before any other checks
     text = normalizeText(text)
 
     const SSN_PATTERN = /\b\d{3}-\d{2}-\d{4}\b/g
 
+Replace with:
+  function filterOutput(text: string): string {
+    const SSN_PATTERN = /\b\d{3}-\d{2}-\d{4}\b/g
+
+Then find and delete the entire normalizeText function -- from the line:
+  function normalizeText(text: string): string {
+to its closing brace.
+
 Do not change anything else.
 
 VERIFY AFTER ACT:
-grep -n "normalizeText\|COMPOUND_TERMS\|FORM_NUMBERS\|magic-link\|QuickBooks\|8821" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
-Confirm all six terms appear.
-
-Post-task:
-cd /home/corby/jamm-os/frontend
-npm run build
-Zero TypeScript errors required before stopping.
+1. grep -n "polish\|normalizeText\|polishedAssembled" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+   Confirm polish and polishedAssembled appear.
+   Confirm normalizeText does NOT appear -- zero results.
+2. grep -n "def polish_text\|PolishRequest\|polish_api_key" /home/corby/jamm-os/app/api/concierge/route.py
+   Confirm all three appear.
+3. python3 -c "from app.api.concierge.route import router; print('OK')"
+   Must pass.
+4. cd /home/corby/jamm-os/frontend
+5. npm run build
+   Zero TypeScript errors required before stopping.
+6. Restart the backend.
 
 Browser tests:
 Test 1 -- Form numbers:
   Type: "what is the difference between an 8821 and a 2848"
-  Confirm response contains 8821 and 2848 with no spaces inserted
+  Confirm 8821 and 2848 with no spaces.
 
 Test 2 -- Compound terms:
   Type: "how do I send a magic-link to a client"
-  Confirm response contains "magic-link" not "magic -link" or "magic- link"
+  Confirm "magic-link" and "Magic-Link" appear correctly.
 
-Test 3 -- Punctuation spacing:
-  Send any multi-sentence response and read carefully
-  Confirm no spaces before periods or commas
+Test 3 -- Punctuation:
+  Type: "how do I create an engagement"
+  Confirm no spaces before periods or commas anywhere in the response.
 
 Test 4 -- Normal flow:
   Type: "how do I add a client"
-  Confirm response is clean and unaffected
+  Confirm clean response, no artifacts.
