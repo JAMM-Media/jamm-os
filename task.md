@@ -47,52 +47,31 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 ---
 
-# PRE-TASK
-cd /home/corby/jamm-os
-source .venv/bin/activate
-python3 -c "from app.api.concierge.route import router; print('OK')"
-If the import fails, stop and report. Do not proceed.
-git add -A
-git commit -m "checkpoint before [task name]"
-
----
-
-TASK: Exempt set_firm_type from autopilot gate in prompts.py
+TASK: Add tax and legal advice restriction to prompts.py
 
 Pre-task:
 cd /home/corby/jamm-os
-git add -A && git commit -m "checkpoint before set_firm_type autopilot exemption"
+git add -A && git commit -m "checkpoint before scope restriction addition"
 
 VERIFY BEFORE ACT:
-sed -n '525,535p' /home/corby/jamm-os/app/api/concierge/prompts.py
+sed -n '7,13p' /home/corby/jamm-os/app/api/concierge/prompts.py
 Paste output before touching anything.
 
-Change 1: prompts.py -- add exemption for set_firm_type before the autopilot gate rule
+Change 1: prompts.py -- add scope restriction to IDENTITY AND SCOPE block
 
 Find exactly:
-- If autopilot is off, never emit CONCIERGE_ACTION. Instead give a full prose answer explaining what the user should do and where to go.
+Pricing: $299 per month for founding firms (locked for life). $449 per month for firms that join after launch.
+---
 
 Replace with:
-- Exception: always emit CONCIERGE_ACTION for set_firm_type actions, even when autopilot is off. This is a data write, not a navigation action.
-- If autopilot is off, never emit CONCIERGE_ACTION for navigation or modal actions. Instead give a full prose answer explaining what the user should do and where to go.
+Pricing: $299 per month for founding firms (locked for life). $449 per month for firms that join after launch.
+You help firms use JAMM PX. You never give tax advice, legal advice, or professional judgments about client situations, tax treatment, filing positions, or accounting decisions. If a firm asks a tax or accounting question, redirect immediately: tell them that is outside your scope and that their question is best handled by their own professional judgment or a qualified advisor. Do not engage with the substance of the question at all.
+---
 
 Do not change anything else.
 
 VERIFY AFTER ACT:
-grep -n "Exception.*set_firm_type\|autopilot is off" /home/corby/jamm-os/app/api/concierge/prompts.py
-Confirm both lines appear, exception line first.
+grep -n "tax advice\|outside your scope\|professional judgment" /home/corby/jamm-os/app/api/concierge/prompts.py
+Confirm all three phrases appear on adjacent lines.
 
-No build needed. Restart the backend.
-
-Database reset for browser test:
-psql postgresql://postgres:postgres@localhost:5432/jammpx_dev -c "UPDATE firms SET firm_type = NULL WHERE id = '185314c9-e702-4eab-8600-249848022206';"
-
-Browser test:
-1. Hard refresh
-2. Open panel -- intake appears instantly
-3. Open DevTools console
-4. Type "1" and send
-5. Paste [CONCIERGE RAW] from console
-6. Run immediately:
-   psql postgresql://postgres:postgres@localhost:5432/jammpx_dev -c "SELECT firm_type FROM firms WHERE id = '185314c9-e702-4eab-8600-249848022206';"
-   Confirm firm_type = tax_prep
+No build needed. Restart the backend after this change.
