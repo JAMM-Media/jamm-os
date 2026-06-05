@@ -158,6 +158,17 @@ async def import_clients_csv(
         if row[0]
     )
 
+    # Load existing names for this firm for name deduplication
+    existing_names = set(
+        row[0].lower().strip()
+        for row in db.execute(
+            select(Client.name).where(
+                Client.firm_id == current_firm.id,
+            )
+        ).all()
+        if row[0]
+    )
+
     created = 0
     skipped = 0
     errors = []
@@ -168,10 +179,24 @@ async def import_clients_csv(
             errors.append({"row": i, "reason": "Missing required field: name"})
             continue
 
+        # Deduplicate on name
+        if name.lower().strip() in existing_names:
+            skipped += 1
+            errors.append({"row": i, "reason": "Client with this name already exists"})
+            continue
+
         email = row.get("email", "").strip() or None
         entity_type = row.get("entity_type", "").strip().lower() or None
         phone = row.get("phone", "").strip() or None
         company_name = row.get("company_name", "").strip() or None
+        address_line1 = row.get("address_line1", "").strip() or None
+        address_line2 = row.get("address_line2", "").strip() or None
+        city = row.get("city", "").strip() or None
+        state = row.get("state", "").strip() or None
+        postal_code = row.get("postal_code", "").strip() or None
+        country = row.get("country", "").strip() or None
+        tags = row.get("tags", "").strip() or None
+        notes = row.get("notes", "").strip() or None
 
         # Validate entity_type if provided
         if entity_type and entity_type not in VALID_ENTITY_TYPES:
@@ -195,6 +220,14 @@ async def import_clients_csv(
                 entity_type=entity_type,
                 phone=phone,
                 company_name=company_name,
+                address_line1=address_line1,
+                address_line2=address_line2,
+                city=city,
+                state=state,
+                postal_code=postal_code,
+                country=country,
+                tags=tags,
+                notes=notes,
                 is_active=True,
             )
             db.add(new_client)
@@ -202,6 +235,7 @@ async def import_clients_csv(
 
             if email:
                 existing_emails.add(email.lower())
+            existing_names.add(name.lower().strip())
 
             created += 1
 
@@ -211,6 +245,21 @@ async def import_clients_csv(
             continue
 
     db.commit()
+
+    from app.services.behavioral_log import log_event
+    log_event(
+        firm_id=current_firm.id,
+        event_type="client.csv_import_completed",
+        entity_type="firm",
+        entity_id=current_firm.id,
+        actor_type="staff",
+        metadata={
+            "created": created,
+            "skipped": skipped,
+            "errors": len(errors),
+            "total_rows": len(rows),
+        },
+    )
 
     return ClientImportResult(created=created, skipped=skipped, errors=errors)
 
