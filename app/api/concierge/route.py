@@ -1,7 +1,7 @@
 # app/api/concierge/route.py
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -22,6 +22,7 @@ from app.models.firm import Firm
 from app.models.client import Client
 from app.models.user import User
 from app.models.concierge_notification import ConciergeNotification
+from app.models.security_event import SecurityEvent
 from app.api.concierge.prompts import get_system_prompt
 from app.api.concierge.context import router as context_router
 from app.api.concierge.cron import run_trigger_check
@@ -36,16 +37,23 @@ class MessageItem(BaseModel):
     role: str
     content: str
 
+    def validate_role(self) -> None:
+        if self.role not in ("user", "assistant"):
+            raise ValueError(f"Invalid message role: {self.role!r}")
+
 class ChatRequest(BaseModel):
     messages: list[MessageItem]
     autopilot_enabled: bool = False
 
 
 @router.post("/chat")
+@limiter.limit("60/minute")
 def concierge_chat(
+    request: Request,
     body: ChatRequest,
     current_firm: Firm = Depends(get_current_firm),
     current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     if current_user.role == UserRole.client_portal_user:
         raise HTTPException(
@@ -120,26 +128,121 @@ def concierge_chat(
                     detail="Message contains disallowed content.",
                 )
 
+        # Find the last user message -- only this turn needs injection scanning.
+        # Prior messages were already sanitized when first sent.
+        last_user_index = next(
+            (i for i in reversed(range(len(messages))) if messages[i].role == "user"),
+            None,
+        )
+
         cleaned = []
-        for msg in messages:
+        for i, msg in enumerate(messages):
+            if msg.role not in ("user", "assistant"):
+                logger.warning(
+                    f"Invalid message role for firm {current_firm.id}: {msg.role!r}"
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Message contains disallowed content.",
+                )
             content = msg.content
             if len(content) > MAX_MESSAGE_LENGTH:
                 content = content[:MAX_MESSAGE_LENGTH]
-            lower = content.lower()
-            for pattern in INJECTION_PATTERNS:
-                if pattern in lower:
-                    logger.warning(
-                        f"Potential prompt injection detected for firm "
-                        f"{current_firm.id}: pattern={pattern!r}"
-                    )
-                    raise HTTPException(
-                        status_code=status.HTTP_400_BAD_REQUEST,
-                        detail="Message contains disallowed content.",
-                    )
+
+            # Only scan the last user message for injection patterns
+            if i == last_user_index:
+                lower = " ".join(content.lower().split())
+                for pattern in INJECTION_PATTERNS:
+                    if pattern in lower:
+                        logger.error(
+                            f"SECURITY: Prompt injection attempt detected -- "
+                            f"firm={current_firm.id} pattern={pattern!r} "
+                            f"content_preview={content[:100]!r}"
+                        )
+                        try:
+                            event = SecurityEvent(
+                                firm_id=current_firm.id,
+                                event_type="prompt_injection_attempt",
+                                pattern_matched=pattern,
+                                content_preview=content[:200],
+                            )
+                            db.add(event)
+                            db.commit()
+                        except Exception:
+                            pass  # security logging is non-fatal
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="Message contains disallowed content.",
+                        )
+
             cleaned.append({"role": msg.role, "content": content})
         return cleaned
 
+    # Firm-level lockout: block firms with 5+ violations in the last 10 minutes
+    ten_minutes_ago = datetime.now(timezone.utc) - timedelta(minutes=10)
+    recent_violations = db.execute(
+        select(func.count()).select_from(SecurityEvent).where(
+            SecurityEvent.firm_id == current_firm.id,
+            SecurityEvent.event_type == "prompt_injection_attempt",
+            SecurityEvent.created_at >= ten_minutes_ago,
+        )
+    ).scalar() or 0
+
+    if recent_violations >= 5:
+        logger.error(
+            f"SECURITY: Firm {current_firm.id} locked out -- "
+            f"{recent_violations} violations in last 10 minutes"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many requests. Please try again later.",
+        )
+
     sanitized_messages = sanitize_messages(body.messages)
+
+    import re
+
+    SSN_PATTERN = re.compile(r'\b\d{3}-\d{2}-\d{4}\b')
+    EIN_PATTERN = re.compile(r'\b\d{2}-\d{7}\b')
+    SYSTEM_PROMPT_LEAK_PHRASES = [
+        "my instructions are",
+        "my system prompt",
+        "i was instructed to",
+        "i am instructed to",
+        "the system prompt says",
+        "my prompt says",
+        "i have been told to",
+        "i have been configured",
+        "as per my instructions",
+        "according to my instructions",
+    ]
+
+    def filter_output(text: str) -> str:
+        # Redact SSN patterns
+        if SSN_PATTERN.search(text):
+            logger.error(
+                f"SECURITY: SSN pattern detected in output for firm {current_firm.id}"
+            )
+            text = SSN_PATTERN.sub("[REDACTED]", text)
+
+        # Redact EIN patterns
+        if EIN_PATTERN.search(text):
+            logger.error(
+                f"SECURITY: EIN pattern detected in output for firm {current_firm.id}"
+            )
+            text = EIN_PATTERN.sub("[REDACTED]", text)
+
+        # Detect system prompt leakage attempts in output
+        lower = text.lower()
+        for phrase in SYSTEM_PROMPT_LEAK_PHRASES:
+            if phrase in lower:
+                logger.error(
+                    f"SECURITY: Possible system prompt leakage in output "
+                    f"for firm {current_firm.id}: phrase={phrase!r}"
+                )
+                return "I am JAMM Concierge. I am here to help you use JAMM PX."
+
+        return text
 
     def generate():
         with client.messages.stream(
@@ -148,13 +251,18 @@ def concierge_chat(
             system=get_system_prompt(autopilot_enabled=body.autopilot_enabled),
             messages=sanitized_messages,
         ) as stream:
+            assembled = ""
             for text in stream.text_stream:
-                # SSE requires each data value line to start with "data:".
-                # Newlines inside a text chunk must be sent as separate
-                # "data:" lines; otherwise lines without the prefix are
-                # silently dropped by the frontend reader.
+                assembled += text
                 data_lines = "\n".join(f"data: {line}" for line in text.split("\n"))
                 yield f"{data_lines}\n\n"
+            # Run output filter on fully assembled response
+            filtered = filter_output(assembled)
+            if filtered != assembled:
+                # If filter changed the response, send a replacement sentinel
+                yield f"data: \n\n"
+                yield f"data: [FILTERED]\n\n"
+                yield f"data: {filtered}\n\n"
 
     return StreamingResponse(generate(), media_type="text/event-stream")
 
