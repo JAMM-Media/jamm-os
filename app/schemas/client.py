@@ -132,3 +132,28 @@ class QBOHealthOut(BaseModel):
     status: str
     signals: QBOHealthSignals
     checked_at: Optional[datetime] = None
+
+
+class QBOTrendMonth(BaseModel):
+    label: str
+    total_income: Optional[float] = None
+    total_expenses: Optional[float] = None
+    net_income: Optional[float] = None
+    total_assets: Optional[float] = None
+    total_liabilities: Optional[float] = None
+    total_equity: Optional[float] = None
+
+
+class QBOTrends(BaseModel):
+    income: Optional[str] = None
+    expenses: Optional[str] = None
+    net_income: Optional[str] = None
+    assets: Optional[str] = None
+    equity: Optional[str] = None
+
+
+class QBOTrendOut(BaseModel):
+    connected: bool
+    months: list[QBOTrendMonth]
+    trends: QBOTrends
+    checked_at: Optional[datetime] = None

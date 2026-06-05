@@ -17,7 +17,7 @@ from app.schemas.engagement import EngagementOut
 from app.schemas.task import TaskOut
 from app.db.session import get_db
 from app.models.client import Client
-from app.schemas.client import ClientCreate, ClientUpdate, ClientOut, ClientImportResult, QBOARBalanceOut, ClientHealthOut, QBOHealthOut
+from app.schemas.client import ClientCreate, ClientUpdate, ClientOut, ClientImportResult, QBOARBalanceOut, ClientHealthOut, QBOHealthOut, QBOTrendOut
 from app.schemas.pagination import PaginatedResponse
 from app.crud import client as crud_client
 from app.dependencies.tenant import get_current_firm
@@ -303,6 +303,31 @@ def get_client_qbo_health(
 
     result = get_bookkeeping_health(client, current_firm.id, db)
     return QBOHealthOut(**result)
+
+
+# ---------------------------------------------------------
+# QBO TRENDS
+# ---------------------------------------------------------
+@router.get("/{client_id}/qbo-trends", response_model=QBOTrendOut)
+def get_client_qbo_trends(
+    client_id: UUID,
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    _: object = Depends(require_staff_or_above),
+):
+    from app.services.qbo_trend_service import get_pl_and_bs_trends
+
+    client = crud_client.get_client_for_firm(db, client_id, current_firm.id)
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found")
+
+    result = get_pl_and_bs_trends(client, current_firm.id, db)
+    return QBOTrendOut(
+        connected=result["connected"],
+        months=result["months"],
+        trends=result["trends"] if result["trends"] else {},
+        checked_at=result["checked_at"],
+    )
 
 
 # ---------------------------------------------------------
