@@ -66,6 +66,8 @@ class EngagementOut(EngagementBase):
     client_id: UUID
     created_at: datetime
     updated_at: datetime
+    efiled_at: Optional[datetime] = None
+    irs_confirmation_number: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 

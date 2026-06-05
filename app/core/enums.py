@@ -38,6 +38,7 @@ class EngagementStatus(str, Enum):
     active = "active"
     in_review = "in_review"
     completed = "completed"
+    acknowledged = "acknowledged"
     archived = "archived"
 
 
@@ -201,3 +202,18 @@ class NotificationEventType(str, Enum):
     extension_deadline = "extension_deadline"
     client_anniversary = "client_anniversary"
     document_expiry_alert = "document_expiry_alert"
+
+
+EFILEABLE_ENGAGEMENT_TYPES = {
+    "tax_return_1040",
+    "tax_return_1120",
+    "tax_return_1120s",
+    "tax_return_1065",
+    "tax_return_990",
+    "tax_return_941",
+    "tax_return_940",
+    "tax_return_720",
+    "tax_return_2290",
+    "tax_return_706",
+    "tax_return_709",
+}

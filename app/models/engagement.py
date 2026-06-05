@@ -2,6 +2,7 @@
 
 import uuid
 from datetime import datetime, date, timezone
+from typing import Optional
 from sqlalchemy import String, Boolean, Date, DateTime, ForeignKey, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -53,6 +54,18 @@ class Engagement(Base):
         comment="Extended IRS deadline after extension filing. "
                 "This field overrides filing_deadline in all scheduler checks.",
     )
+
+    efiled_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    irs_confirmation_number: Mapped[Optional[str]] = mapped_column(
+        String(100), nullable=True
+    )
+
+    @property
+    def is_efileable(self) -> bool:
+        from app.core.enums import EFILEABLE_ENGAGEMENT_TYPES
+        return self.engagement_type in EFILEABLE_ENGAGEMENT_TYPES
 
     notes: Mapped[str | None] = mapped_column(Text)           # internal staff notes — never shown to client
     notes_client_visible: Mapped[str | None] = mapped_column(Text)  # shown in client portal
