@@ -15,7 +15,6 @@ from app.models.firm import Firm
 from app.models.irs_authorization import IrsAuthorization
 from app.models.user import User
 from app.models.behavioral_event import BehavioralEvent
-from app.models.concierge_question_log import ConciergeQuestionLog
 from app.dependencies.tenant import get_current_firm
 
 router = APIRouter()
@@ -53,8 +52,6 @@ def _run_queries(firm_id: uuid.UUID, db: Session) -> dict:
     staff_summary = _query_staff_summary(firm_id, db)
     portal_adoption = _query_portal_adoption(firm_id, db)
     irs_coverage = _query_irs_coverage(firm_id, db)
-    question_history = _query_question_history(firm_id, db)
-
     firm = db.execute(select(Firm).where(Firm.id == firm_id)).scalar_one_or_none()
     firm_type = firm.firm_type if firm else None
     return {
@@ -67,7 +64,6 @@ def _run_queries(firm_id: uuid.UUID, db: Session) -> dict:
         "staff_summary": staff_summary,
         "portal_adoption": portal_adoption,
         "irs_coverage": irs_coverage,
-        "question_history_topics": question_history,
         "firm_type": firm_type,
     }
 
@@ -270,22 +266,6 @@ def _query_irs_coverage(firm_id: uuid.UUID, db: Session) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Query 8 -- question history topics
-# ---------------------------------------------------------------------------
-def _query_question_history(firm_id: uuid.UUID, db: Session) -> list:
-    rows = db.execute(
-        select(ConciergeQuestionLog.question_text, ConciergeQuestionLog.asked_at)
-        .where(ConciergeQuestionLog.firm_id == firm_id)
-        .order_by(ConciergeQuestionLog.asked_at.desc())
-        .limit(10)
-    ).fetchall()
-
-    return [
-        {"question": r.question_text, "asked_at": r.asked_at.isoformat()}
-        for r in rows
-    ]
-
-
 # ---------------------------------------------------------------------------
 # GET /concierge/context
 # ---------------------------------------------------------------------------
