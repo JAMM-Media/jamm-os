@@ -1,160 +1,181 @@
-STANDING RULES — ALWAYS FOLLOW THESE
-
-Product name is JAMM PX. Never refer to it as JAMM OS.
-
-Domain language: Firm = accounting business. Client = firm's customer. Engagement = unit of billable work. Staff = firm employees.
-
-Tech stack — never deviate without explicit instruction:
-Backend: FastAPI, PostgreSQL, SQLAlchemy ORM 2.0 (Mapped[] syntax only), Pydantic v2, Alembic, Uvicorn + Gunicorn.
-Frontend: Next.js 14+ App Router, TypeScript always, Tailwind CSS, shadcn/ui, Axios with JWT interceptor.
-
-Architecture rules:
-- Routers are thin — no business logic ever.
-- Tenant isolation is absolute — every query scoped to firm_id.
-- Every generated file starts with a path comment.
-- Background tasks that touch the database must create their own SessionLocal() session in a try/finally block.
-
-Windows / PowerShell:
-- No && chaining — separate commands
-- Quoted paths for directories with parentheses
+# STANDING RULES
+- All file operations use the absolute path /home/corby/jamm-os/. Never use /mnt/c/Users paths. Never use Windows-style paths.
+- Never use relative paths. Always use full absolute paths starting with /home/corby/jamm-os/.
+- Never use the built-in file read tool to inspect file contents. Always use bash: cat, grep, sed. The file read tool caches stale content. Trust bash output only.
+- Path comment at top of every file
+- Never use && to chain commands
+- Always use SQLAlchemy 2.0 Mapped[] syntax. Never use Column() style.
+- Always scope every database query to firm_id. No exceptions.
+- Never put business logic in routers. Logic goes in services/ or crud/.
+- Always use get_current_firm from app.dependencies.tenant for auth. Never read firm_id from the request body.
+- Background tasks need their own SessionLocal() in a try/finally block. Never pass the request db session into a background task.
+- List endpoints return { items: [], total: N }. Never a plain array.
+- Never use em dashes anywhere in any string, copy, or comment.
+- Always use "engagements" not "projects". Always use "magic-link" not "portal link". Always use "automation presets" not "automation rules".
 
 ---
 
-PHASE-SPECIFIC INSTRUCTIONS — Billing Detail (sendable timesheet report)
+# VERIFY BEFORE ACT — MANDATORY FOR EVERY TASK
+Before making any change to any file:
+1. Run: pwd — confirm output is /home/corby/jamm-os. If it is not, run: cd /home/corby/jamm-os
+2. Run grep using the full absolute path and paste the full bash output:
+   grep -n "pattern" /home/corby/jamm-os/path/to/file
+3. If the pattern is not found, run:
+   cat /home/corby/jamm-os/path/to/file | grep -c "pattern"
+   Paste that result too.
+4. If both return zero, STOP and report exactly what bash returned. Do not proceed. Do not guess. Do not find the closest match. Do not trust the file read tool.
+5. Only proceed when bash grep with the absolute path confirms the pattern exists on disk.
 
-Four parts. No migration needed.
-
----
-
-PART 1 — BACKEND: billing detail endpoint + PDF generation
-
-File: app/api/reports.py (add to existing reports router)
-
-Add a new GET endpoint: GET /reports/billing-detail
-
-Query params:
-- client_id: UUID (required)
-- date_from: date (optional)
-- date_to: date (optional)
-- engagement_id: UUID (optional)
-- format: str = "json" (accepts "json" or "pdf")
-
-Auth: requires manager_or_above. Tenant isolation: all queries scoped to firm_id from current_firm.
-
-Logic:
-- Query time_entries table where firm_id = current_firm.id AND engagement_id in (engagements where client_id = client_id AND firm_id = firm_id)
-- If engagement_id param is provided, additionally filter by that engagement_id
-- If date_from is provided, filter time_entries.date >= date_from
-- If date_to is provided, filter time_entries.date <= date_to
-- Join to users table to get staff full_name for each entry
-- Join to engagements table to get engagement name for each entry
-- Order by date ASC, then created_at ASC
-
-JSON response shape:
-{
-  "client_name": str,
-  "firm_name": str,
-  "date_from": str | null,
-  "date_to": str | null,
-  "entries": [
-    {
-      "date": str (YYYY-MM-DD),
-      "staff_name": str,
-      "engagement_name": str,
-      "activity_type": str | null,
-      "description": str,
-      "hours": float,
-      "hourly_rate": float,
-      "amount": float,
-      "is_billable": bool
-    }
-  ],
-  "total_hours": float,
-  "total_amount": float
-}
-
-PDF response: when format=pdf, generate a PDF using WeasyPrint (same pattern as render_invoice_to_pdf in app/services/invoice_renderer.py). Build an HTML string with:
-- Header: firm name (large), "Billing Detail" subtitle, client name, date range if provided
-- Table: Date | Staff | Engagement | Activity | Description | Hours | Rate | Amount
-- Footer row: totals for Hours and Amount columns
-- Clean professional styling matching the invoice renderer aesthetic — white background, brand blue (#1F3148) header row, clean sans-serif font
-Return as StreamingResponse with content_type="application/pdf" and Content-Disposition header: attachment; filename="billing-detail-{client_name}.pdf"
-
-Add a POST endpoint: POST /reports/billing-detail/send-to-portal
-Body: { client_id: UUID, date_from: date | null, date_to: date | null, engagement_id: UUID | null }
-Auth: requires manager_or_above.
-Logic: Generate the billing detail data (same query as above), store it as a new record in a new simple table billing_detail_reports (id UUID PK, firm_id UUID FK, client_id UUID FK, created_by UUID FK, date_from date nullable, date_to date nullable, engagement_id UUID nullable, entries JSONB, total_hours numeric, total_amount numeric, created_at timestamptz). Return { id: str, created_at: str }.
-
-Wait — no migration needed was stated but the billing_detail_reports table is new. Write a clean manual migration for it:
-- Migration file: migrations/versions/0040_add_billing_detail_reports.py
-- Revises: 0039_add_complexity_flags_to_engagements
-- Creates table billing_detail_reports with the fields above
-- Follow the exact migration file pattern used in 0039
-
-Also add the model: app/models/billing_detail_report.py
-And add a portal endpoint: GET /portal/billing-detail — returns all billing_detail_reports for the current portal client, ordered by created_at DESC. Returns array of { id, date_from, date_to, engagement_id, total_hours, total_amount, created_at, entries }.
+This rule cannot be skipped. If the task says "find this pattern" and bash grep cannot find it, the task description is wrong — not the file. Stop and wait for updated instructions.
 
 ---
 
-PART 2 — FIRM SIDE: Generate Billing Detail UI on client detail page
-
-File: frontend/src/app/clients/[id]/page.tsx
-
-Add a "Billing Detail" button to the Billing tab toolbar area (near the existing "New Invoice" button). Style it as a secondary button — border border-surface-border, bg transparent, text-brand, same height as other toolbar buttons.
-
-Clicking it opens a modal: BillingDetailModal. Create this as a new file: frontend/src/components/billing/BillingDetailModal.tsx
-
-BillingDetailModal props: { open: boolean, onClose: () => void, clientId: string, clientName: string }
-
-Modal content:
-- Title: "Billing Detail"
-- Form fields:
-  - Date From: date input (optional)
-  - Date To: date input (optional)
-  - Engagement: select dropdown populated from /engagements/?client_id={clientId}&limit=100. First option "All engagements".
-- Two action buttons at the bottom: "Download PDF" and "Send to Portal"
-- A preview table section that loads when any filter changes: calls GET /reports/billing-detail?client_id={clientId}&format=json with the current filters. Shows a table matching the JSON response shape: Date, Staff, Engagement, Activity, Hours, Amount columns. Shows total row at the bottom. Loading skeleton while fetching.
-
-Download PDF: calls GET /reports/billing-detail?client_id={clientId}&format=pdf&... with current filters. Use fetch with the portal auth headers pattern — actually use the staff api client (axios instance from @/lib/api.ts) with responseType: 'blob'. Then create an object URL and trigger a download link click.
-
-Send to Portal: calls POST /reports/billing-detail/send-to-portal with current filters. On success shows toast.success("Billing detail sent to client portal") and closes the modal.
+# VERIFY AFTER ACT — MANDATORY FOR EVERY CHANGE
+After every file change:
+- Run grep -n for the exact new string using the full absolute path and paste the full output
+- Never report a fix as working without showing the bash grep output
+- Never report a file as created without running ls -la and showing the output
+- If grep does not confirm the change, fix it before moving to the next step
+- Trust bash output only — never the file read tool
 
 ---
 
-PART 3 — PORTAL SIDE: Billing Detail tab
-
-Step 1 — Add "Billing Detail" tab to PortalShell.tsx:
-In the tabs array add: { key: 'billing-detail', label: 'Billing Detail' }
-Place it after 'invoices' and before 'messages'.
-
-Step 2 — Create new component: frontend/src/components/portal/PortalBillingDetail.tsx
-Props: { cardColor, accentColor, portalMode, textPrimary, textMuted } — same pattern as other portal components.
-
-Fetch billing detail reports from GET /portal/billing-detail using the portal auth pattern (same as getPortalDocuments in portal-api.ts — use localStorage portal_access_token, fetch directly).
-
-Add getPortalBillingDetail to frontend/src/lib/portal-api.ts:
-export async function getPortalBillingDetail(): Promise<BillingDetailReport[]>
-where BillingDetailReport = { id: string, date_from: string | null, date_to: string | null, total_hours: number, total_amount: number, created_at: string, entries: BillingDetailEntry[] }
-and BillingDetailEntry = { date: string, staff_name: string, engagement_name: string, activity_type: string | null, description: string, hours: number, hourly_rate: number, amount: number, is_billable: boolean }
-
-Component renders a list of billing detail report cards. Each card shows:
-- Date range or "All dates" if no range
-- Total: X hours · $X,XXX
-- Created date in muted text
-- An expand/collapse chevron — expanded shows the full entries table inline
-
-If no reports: empty state "No billing details shared yet. Your firm will share billing summaries here."
-
-Step 3 — Wire up in portal/page.tsx:
-Import PortalBillingDetail and add:
-{activeTab === 'billing-detail' && <PortalBillingDetail cardColor={me.portal_card_color} accentColor={me.portal_accent_color} portalMode={me.portal_mode} textPrimary={me.portal_text_primary} textMuted={me.portal_text_muted} />}
+# MIGRATION PROCEDURE
+Before every migration: run alembic current first.
+After autogenerate: read the generated file before running upgrade head. If it touches tables you did not intend, delete it and write a manual migration.
+If alembic current shows a revision but no tables exist: run alembic stamp base, then alembic upgrade head.
 
 ---
 
-VERIFICATION
+# Section 3 - The task
 
-1. alembic upgrade head runs cleanly on the new 0040 migration
-2. npx tsc --noEmit in frontend/ passes with no errors
-3. GET /reports/billing-detail returns correct JSON for a client with time entries
-4. PDF download triggers correctly from the modal
-5. Send to Portal creates a record and it appears in the portal Billing Detail tab
+TASK 1 OF 2: Backend security hardening -- route.py
+
+Pre-task:
+cd /home/corby/jamm-os
+git add -A && git commit -m "checkpoint before backend security hardening"
+
+VERIFY BEFORE ACT:
+sed -n '35,42p' /home/corby/jamm-os/app/api/concierge/route.py
+sed -n '79,105p' /home/corby/jamm-os/app/api/concierge/route.py
+Paste both before touching anything.
+
+---
+
+Change 1: Lock message role to user or assistant only
+
+Find exactly:
+class MessageItem(BaseModel):
+    role: str
+    content: str
+
+Replace with:
+class MessageItem(BaseModel):
+    role: str
+    content: str
+
+    def validate_role(self) -> None:
+        if self.role not in ("user", "assistant"):
+            raise ValueError(f"Invalid message role: {self.role!r}")
+
+Then inside sanitize_messages, add role validation at the start of the
+for loop, immediately before the content length check:
+
+Find exactly:
+        cleaned = []
+        for msg in messages:
+            content = msg.content
+            if len(content) > MAX_MESSAGE_LENGTH:
+
+Replace with:
+        cleaned = []
+        for msg in messages:
+            if msg.role not in ("user", "assistant"):
+                logger.warning(
+                    f"Invalid message role for firm {current_firm.id}: {msg.role!r}"
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Message contains disallowed content.",
+                )
+            content = msg.content
+            if len(content) > MAX_MESSAGE_LENGTH:
+
+---
+
+Change 2: Normalize whitespace before injection pattern matching
+
+Find exactly:
+            lower = content.lower()
+            for pattern in INJECTION_PATTERNS:
+                if pattern in lower:
+
+Replace with:
+            lower = " ".join(content.lower().split())
+            for pattern in INJECTION_PATTERNS:
+                if pattern in lower:
+
+This collapses all whitespace variants -- double spaces, tabs, newlines --
+into single spaces before matching. Bypasses using extra whitespace are blocked.
+
+---
+
+Change 3: Add per-firm rate limit on /chat endpoint
+
+VERIFY BEFORE ACT:
+grep -n "limiter\|rate_limit\|slowapi\|from app.core" /home/corby/jamm-os/app/api/concierge/route.py
+Paste output.
+
+If limiter is not already imported, check how it is imported in other route files:
+grep -rn "limiter" /home/corby/jamm-os/app/api/ | grep "import" | head -5
+Paste output then add the correct import.
+
+Then find:
+@router.post("/chat")
+def concierge_chat(
+
+Replace with:
+@router.post("/chat")
+@limiter.limit("60/minute")
+def concierge_chat(
+    request: Request,
+
+Add Request to the existing FastAPI imports at the top of the file if not present:
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+
+---
+
+Change 4: Escalate repeated injection attempts
+
+Inside sanitize_messages, find exactly:
+                    logger.warning(
+                        f"Potential prompt injection detected for firm "
+                        f"{current_firm.id}: pattern={pattern!r}"
+                    )
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Message contains disallowed content.",
+                    )
+
+Replace with:
+                    logger.error(
+                        f"SECURITY: Prompt injection attempt detected -- "
+                        f"firm={current_firm.id} pattern={pattern!r} "
+                        f"content_preview={content[:100]!r}"
+                    )
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Message contains disallowed content.",
+                    )
+
+Changing logger.warning to logger.error ensures injection attempts surface
+at a higher severity level in any log monitoring setup.
+
+---
+
+VERIFY AFTER ACT:
+1. grep -n "user.*assistant\|role not in\|split()\|logger.error\|SECURITY:" /home/corby/jamm-os/app/api/concierge/route.py
+   Confirm all four changes appear.
+2. python3 -c "from app.api.concierge.route import router; print('OK')"
+   Must pass before stopping.
+3. Restart the backend.
