@@ -80,7 +80,7 @@ def _count_data_rows(rows: list) -> int:
 # Five signals
 # ----------------------------------------------------------------
 
-def _signal_reconciliation(base_url: str, realm_id: str, token: str) -> str:
+def _signal_reconciliation(base_url: str, realm_id: str, token: str) -> dict:
     try:
         now = datetime.now(timezone.utc)
         url = f"{base_url}/v3/company/{realm_id}/cdc"
@@ -92,20 +92,22 @@ def _signal_reconciliation(base_url: str, realm_id: str, token: str) -> str:
         }, timeout=8)
         resp.raise_for_status()
         if _cdc_has_changes(resp.json()):
-            return "green"
+            return {"status": "green", "finding": "Transaction activity detected in the last 30 days. Books appear current."}
 
         resp60 = requests.get(url, headers=hdrs, params={
             "entities": "Bill,Payment,Deposit",
             "changedSince": (now - timedelta(days=60)).strftime("%Y-%m-%dT%H:%M:%SZ"),
         }, timeout=8)
         resp60.raise_for_status()
-        return "amber" if _cdc_has_changes(resp60.json()) else "red"
+        if _cdc_has_changes(resp60.json()):
+            return {"status": "amber", "finding": "No activity in the last 30 days, but activity found within 60 days. Books may be falling behind."}
+        return {"status": "red", "finding": "No transaction activity detected in the last 60 days. Books are likely stale."}
     except Exception:
         logger.warning("QBO health: reconciliation signal failed realm=%s", realm_id)
-        return "amber"
+        return {"status": "amber", "finding": "Could not retrieve reconciliation data from QuickBooks."}
 
 
-def _signal_balance_sheet(base_url: str, realm_id: str, token: str) -> str:
+def _signal_balance_sheet(base_url: str, realm_id: str, token: str) -> dict:
     try:
         url = f"{base_url}/v3/company/{realm_id}/reports/BalanceSheet"
         resp = requests.get(url, headers=_auth_headers(token), params={
@@ -120,16 +122,16 @@ def _signal_balance_sheet(base_url: str, realm_id: str, token: str) -> str:
 
         zeros = sum(1 for v in (assets, liabilities, equity) if not v)
         if zeros == 0:
-            return "green"
+            return {"status": "green", "finding": "Assets, liabilities, and equity all present. Balance sheet appears complete."}
         if zeros == 1:
-            return "amber"
-        return "red"
+            return {"status": "amber", "finding": "One balance sheet component is missing or zero. May indicate incomplete data."}
+        return {"status": "red", "finding": "Multiple balance sheet components are missing. Books may be incomplete or misconfigured."}
     except Exception:
         logger.warning("QBO health: balance sheet signal failed realm=%s", realm_id)
-        return "amber"
+        return {"status": "amber", "finding": "Could not retrieve balance sheet data from QuickBooks."}
 
 
-def _signal_pl_activity(base_url: str, realm_id: str, token: str) -> str:
+def _signal_pl_activity(base_url: str, realm_id: str, token: str) -> dict:
     try:
         url = f"{base_url}/v3/company/{realm_id}/reports/ProfitAndLoss"
         hdrs = _auth_headers(token)
@@ -146,19 +148,19 @@ def _signal_pl_activity(base_url: str, realm_id: str, token: str) -> str:
 
         this_income, this_expenses = _get_pl("This Month")
         if this_income or this_expenses:
-            return "green"
+            return {"status": "green", "finding": "Income or expenses recorded this month. P&L activity looks normal."}
 
         last_income, last_expenses = _get_pl("Last Month")
         if last_income or last_expenses:
-            return "amber"
+            return {"status": "amber", "finding": "No activity this month, but last month had entries. Worth monitoring."}
 
-        return "red"
+        return {"status": "red", "finding": "No income or expenses recorded this month or last month. P&L appears inactive."}
     except Exception:
         logger.warning("QBO health: P&L signal failed realm=%s", realm_id)
-        return "amber"
+        return {"status": "amber", "finding": "Could not retrieve P&L data from QuickBooks."}
 
 
-def _signal_transaction_recency(base_url: str, realm_id: str, token: str) -> str:
+def _signal_transaction_recency(base_url: str, realm_id: str, token: str) -> dict:
     try:
         url = f"{base_url}/v3/company/{realm_id}/reports/TransactionList"
         resp = requests.get(url, headers=_auth_headers(token), params={
@@ -168,16 +170,16 @@ def _signal_transaction_recency(base_url: str, realm_id: str, token: str) -> str
         rows = resp.json().get("Rows", {}).get("Row", [])
         count = _count_data_rows(rows)
         if count >= 5:
-            return "green"
+            return {"status": "green", "finding": f"{count} transactions recorded in the last 30 days. Activity level looks healthy."}
         if count >= 1:
-            return "amber"
-        return "red"
+            return {"status": "amber", "finding": f"Only {count} transaction(s) recorded in the last 30 days. Activity is lower than expected."}
+        return {"status": "red", "finding": "No transactions recorded in the last 30 days. Books may not be up to date."}
     except Exception:
         logger.warning("QBO health: transaction recency signal failed realm=%s", realm_id)
-        return "amber"
+        return {"status": "amber", "finding": "Could not retrieve transaction data from QuickBooks."}
 
 
-def _signal_gl_recency(base_url: str, realm_id: str, token: str) -> str:
+def _signal_gl_recency(base_url: str, realm_id: str, token: str) -> dict:
     try:
         url = f"{base_url}/v3/company/{realm_id}/reports/GeneralLedger"
         resp = requests.get(url, headers=_auth_headers(token), params={
@@ -187,10 +189,12 @@ def _signal_gl_recency(base_url: str, realm_id: str, token: str) -> str:
         }, timeout=8)
         resp.raise_for_status()
         rows = resp.json().get("Rows", {}).get("Row", [])
-        return "green" if _count_data_rows(rows) > 0 else "red"
+        if _count_data_rows(rows) > 0:
+            return {"status": "green", "finding": "General ledger entries found in the last 30 days. Ledger appears current."}
+        return {"status": "red", "finding": "No general ledger entries in the last 30 days. Ledger may be stale."}
     except Exception:
         logger.warning("QBO health: GL recency signal failed realm=%s", realm_id)
-        return "amber"
+        return {"status": "amber", "finding": "Could not retrieve general ledger data from QuickBooks."}
 
 
 # ----------------------------------------------------------------
@@ -198,13 +202,11 @@ def _signal_gl_recency(base_url: str, realm_id: str, token: str) -> str:
 # ----------------------------------------------------------------
 
 def _composite_status(signals: dict) -> str:
-    green_count = sum(1 for v in signals.values() if v == "green")
-    red_count = sum(1 for v in signals.values() if v == "red")
-    if green_count >= 4:
-        return "green"
-    if red_count >= 2 or green_count <= 1:
+    if any(v["status"] == "red" for v in signals.values()):
         return "red"
-    return "amber"
+    if any(v["status"] == "amber" for v in signals.values()):
+        return "amber"
+    return "green"
 
 
 # ----------------------------------------------------------------

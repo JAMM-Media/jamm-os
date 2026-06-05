@@ -114,12 +114,17 @@ class ClientHealthOut(BaseModel):
     reasons: list[dict]
 
 
+class QBOHealthSignal(BaseModel):
+    status: str  # "green", "amber", "red"
+    finding: str  # plain English explanation
+
+
 class QBOHealthSignals(BaseModel):
-    reconciliation: Optional[str] = None
-    balance_sheet: Optional[str] = None
-    pl_activity: Optional[str] = None
-    transaction_recency: Optional[str] = None
-    gl_recency: Optional[str] = None
+    reconciliation: Optional[QBOHealthSignal] = None
+    balance_sheet: Optional[QBOHealthSignal] = None
+    pl_activity: Optional[QBOHealthSignal] = None
+    transaction_recency: Optional[QBOHealthSignal] = None
+    gl_recency: Optional[QBOHealthSignal] = None
 
 
 class QBOHealthOut(BaseModel):
