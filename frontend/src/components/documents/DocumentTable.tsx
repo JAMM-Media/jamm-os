@@ -4,14 +4,15 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { MockDocument, formatFileSize } from '@/lib/mock/documents'
+import { Document } from '@/lib/api/documents'
+import { formatFileSize } from '@/lib/utils'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { FileText } from 'lucide-react'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { documentsApi } from '@/lib/api/documents'
 
 interface DocumentTableProps {
-  documents: MockDocument[]
+  documents: Document[]
 }
 
 export function DocumentTable({ documents }: DocumentTableProps) {
@@ -22,12 +23,12 @@ export function DocumentTable({ documents }: DocumentTableProps) {
   // Local optimistic overrides: doc.id -> is_superseded
   const [supersededOverrides, setSupersededOverrides] = useState<Record<string, boolean>>({})
 
-  function getIsSuperseded(doc: MockDocument): boolean {
+  function getIsSuperseded(doc: Document): boolean {
     if (doc.id in supersededOverrides) return supersededOverrides[doc.id]
     return doc.is_superseded ?? false
   }
 
-  async function handleToggleSuperseded(e: React.MouseEvent, doc: MockDocument) {
+  async function handleToggleSuperseded(e: React.MouseEvent, doc: Document) {
     e.stopPropagation()
     const next = !getIsSuperseded(doc)
     setSupersededOverrides((prev) => ({ ...prev, [doc.id]: next }))

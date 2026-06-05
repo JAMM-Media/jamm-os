@@ -1,7 +1,7 @@
 // frontend/src/components/billing/BillingSummary.tsx
 
 import { type Invoice } from '@/lib/api'
-import { formatCurrency } from '@/lib/mock/invoices'
+import { formatCurrency } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 
 interface BillingSummaryProps {

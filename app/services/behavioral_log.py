@@ -25,13 +25,6 @@ def log_event(
     try:
         db = SessionLocal()
 
-        # Honour the firm's index consent choice.
-        # Firms that opted out produce zero behavioral event rows.
-        from app.models.firm import Firm
-        firm = db.get(Firm, firm_id)
-        if firm is None or not firm.index_consent:
-            return
-
         event = BehavioralEvent(
             firm_id=firm_id,
             event_type=event_type,

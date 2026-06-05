@@ -7,7 +7,7 @@ import { Breadcrumb } from '@/components/layout/Breadcrumb'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { invoicesApi } from '@/lib/api'
 import { useFetch } from '@/lib/hooks/useFetch'
-import { formatCurrency } from '@/lib/mock/invoices'
+import { formatCurrency } from '@/lib/utils'
 
 type BadgeVariant = Parameters<typeof StatusBadge>[0]['variant']
 

@@ -1,6 +1,6 @@
 // frontend/src/components/dashboard/DashboardSection.tsx
 
-import { DashboardItem } from '@/lib/mock/dashboard'
+import { DashboardItem } from '@/lib/api/dashboard'
 import { PriorityItem } from './PriorityItem'
 
 interface DashboardSectionProps {

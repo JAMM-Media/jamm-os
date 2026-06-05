@@ -2,7 +2,7 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { DashboardItem } from '@/lib/mock/dashboard'
+import { DashboardItem } from '@/lib/api/dashboard'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { CheckSquare, Briefcase } from 'lucide-react'
 import { cn } from '@/lib/utils'

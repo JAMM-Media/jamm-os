@@ -3,7 +3,7 @@
 
 import { useRouter } from 'next/navigation'
 import { type Invoice } from '@/lib/api'
-import { formatCurrency } from '@/lib/mock/invoices'
+import { formatCurrency } from '@/lib/utils'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 
 type BadgeVariant = Parameters<typeof StatusBadge>[0]['variant']

@@ -10,6 +10,7 @@ const PUBLIC_PATHS = [
   '/api/auth/logout',
   '/api/auth/me',
   '/portal',
+  '/review',
   '/_next',
   '/favicon.ico',
   '/favicon.svg',
@@ -1922,8 +1923,9 @@ FILE: frontend\src\app\(dashboard)\templates\page.tsx
 // path: frontend/src/app/(dashboard)/templates/page.tsx
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
+import { onConciergeAction, setFormDirty } from '@/lib/events/conciergeEvents'
 import { toast } from 'sonner'
 import { AppShell } from '@/components/layout/AppShell'
 import { useAuth } from '@/lib/hooks/useAuth'
@@ -2079,6 +2081,7 @@ function TemplateModal({ editTemplate, onClose, onSaved }: TemplateModalProps) {
   const [saving, setSaving] = useState(false)
 
   function setField<K extends keyof TemplateFormData>(key: K, value: TemplateFormData[K]) {
+    setFormDirty(true)
     setForm((prev) => ({ ...prev, [key]: value }))
   }
 
@@ -2140,6 +2143,7 @@ function TemplateModal({ editTemplate, onClose, onSaved }: TemplateModalProps) {
         await api.post('/api/v1/engagement-templates/', body)
         toast.success('Template created')
       }
+      setFormDirty(false)
       onSaved()
       onClose()
     } catch {
@@ -2156,7 +2160,7 @@ function TemplateModal({ editTemplate, onClose, onSaved }: TemplateModalProps) {
           <h2 className="text-[15px] font-medium text-brand dark:text-[#EDEEF0]">
             {editTemplate ? 'Edit Template' : 'New Template'}
           </h2>
-          <button onClick={onClose} className="text-[#6B7280] hover:text-brand dark:hover:text-[#EDEEF0] transition-colors">
+          <button onClick={() => { setFormDirty(false); onClose() }} className="text-[#6B7280] hover:text-brand dark:hover:text-[#EDEEF0] transition-colors">
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -2755,6 +2759,12 @@ export default function TemplatesPage() {
   const [useTemplate, setUseTemplate] = useState<Template | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Template | null>(null)
   const [deleting, setDeleting] = useState(false)
+
+  useEffect(() => {
+    return onConciergeAction((action) => {
+      if (action.modal === 'new-template') setCreateOpen(true)
+    })
+  }, [])
 
   const fetchTemplates = useCallback(async () => {
     setLoading(true)
@@ -4870,7 +4880,7 @@ export async function POST(request: NextRequest) {
 
     if (res.ok) {
       const data = await res.json()
-      const response = NextResponse.json({ success: true })
+      const response = NextResponse.json({ success: true, access_token: data.access_token })
       response.cookies.set('jamm_token', data.access_token, {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
@@ -5144,11 +5154,38 @@ async function proxyRequest(
       )
     }
 
+    // Pass streaming responses (SSE) through without buffering.
+    const contentType = res.headers.get('Content-Type') ?? ''
+    if (contentType.includes('text/event-stream') && res.body) {
+      const reader = res.body.getReader()
+      const stream = new ReadableStream({
+        start(controller) {
+          function pump() {
+            reader.read().then(({ done, value }) => {
+              if (done) { controller.close(); return }
+              controller.enqueue(value)
+              pump()
+            }).catch(() => { controller.close() })
+          }
+          pump()
+        },
+        cancel() { reader.cancel().catch(() => {}) },
+      })
+      return new NextResponse(stream, {
+        status: res.status,
+        headers: {
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          'X-Accel-Buffering': 'no',
+        },
+      })
+    }
+
     const data = await res.text()
     return new NextResponse(data, {
       status: res.status,
       headers: {
-        'Content-Type': res.headers.get('Content-Type') ?? 'application/json',
+        'Content-Type': contentType || 'application/json',
       },
     })
   } catch {
@@ -6207,7 +6244,7 @@ FILE: frontend\src\app\clients\page.tsx
 // path: frontend/src/app/clients/page.tsx
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { AppShell } from '@/components/layout/AppShell'
 import { ViewToggle } from '@/components/ui/ViewToggle'
 import { ClientTable } from '@/components/clients/ClientTable'
@@ -6217,6 +6254,7 @@ import { NewClientModal } from '@/components/clients/NewClientModal'
 import { clientsApi, type Client } from '@/lib/api'
 import { useFetch } from '@/lib/hooks/useFetch'
 import { Search } from 'lucide-react'
+import { onConciergeAction } from '@/lib/events/conciergeEvents'
 
 type ViewMode = 'table' | 'card'
 
@@ -6227,6 +6265,35 @@ export default function ClientsPage() {
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [localClients, setLocalClients] = useState<Client[]>([])
   const [modalOpen, setModalOpen] = useState(false)
+  const [prefillName, setPrefillName] = useState<string | undefined>()
+
+  useEffect(() => {
+    const raw = sessionStorage.getItem('jamm_concierge_pending')
+    if (!raw) return
+    try {
+      const action = JSON.parse(raw)
+      if (Date.now() - (action._ts ?? 0) > 10000) {
+        sessionStorage.removeItem('jamm_concierge_pending')
+        return
+      }
+      if (action.modal === 'new-client') {
+        sessionStorage.removeItem('jamm_concierge_pending')
+        if (action.prefill?.name) setPrefillName(action.prefill.name)
+        setModalOpen(true)
+      }
+    } catch {
+      sessionStorage.removeItem('jamm_concierge_pending')
+    }
+  }, [])
+
+  useEffect(() => {
+    return onConciergeAction((action) => {
+      if (action.modal === 'new-client') {
+        setPrefillName(action.prefill?.name)
+        setModalOpen(true)
+      }
+    })
+  }, [])
 
   const { data, isLoading, error, refetch } = useFetch(() => clientsApi.list(), [])
   const clients = [...localClients, ...(data?.items ?? [])]
@@ -6364,8 +6431,9 @@ export default function ClientsPage() {
         {/* Modal */}
         <NewClientModal
           open={modalOpen}
-          onClose={() => setModalOpen(false)}
+          onClose={() => { setModalOpen(false); setPrefillName(undefined) }}
           onAdd={handleAddClient}
+          initialName={prefillName}
         />
 
       </div>
@@ -6380,7 +6448,7 @@ FILE: frontend\src\app\clients\[id]\page.tsx
 // path: frontend/src/app/clients/[id]/page.tsx
 'use client'
 
-import { Suspense, useState, useEffect } from 'react'
+import { Suspense, useState, useEffect, useRef } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import { AppShell } from '@/components/layout/AppShell'
@@ -6405,6 +6473,9 @@ import { PortalPreview } from '@/components/clients/PortalPreview'
 import { HealthDot } from '@/components/clients/HealthDot'
 import { EditClientModal } from '@/components/clients/EditClientModal'
 import TaxOrganizerTab from '@/components/tax-organizer/TaxOrganizerTab'
+import { NewEngagementModal } from '@/components/engagements/NewEngagementModal'
+import { onConciergeAction } from '@/lib/events/conciergeEvents'
+import type { Engagement } from '@/lib/api'
 
 function EngagementStatusBadge({ status }: { status: string }) {
   return <StatusBadge variant={status as Parameters<typeof StatusBadge>[0]['variant']} />
@@ -6437,6 +6508,47 @@ function ClientDetailContent() {
   const clientId = params.id as string
 
   const [isEditOpen, setIsEditOpen] = useState(false)
+  const [newEngagementOpen, setNewEngagementOpen] = useState(false)
+  const [initialEngagementType, setInitialEngagementType] = useState<string | undefined>()
+  const [portalLinkHighlight, setPortalLinkHighlight] = useState(false)
+  const portalLinkRef = useRef<HTMLButtonElement>(null)
+
+  useEffect(() => {
+    const raw = sessionStorage.getItem('jamm_concierge_pending')
+    if (!raw) return
+    try {
+      const action = JSON.parse(raw)
+      if (Date.now() - (action._ts ?? 0) > 10000) {
+        sessionStorage.removeItem('jamm_concierge_pending')
+        return
+      }
+      if (action.modal === 'new-engagement') {
+        sessionStorage.removeItem('jamm_concierge_pending')
+        if (action.prefill?.engagementType) setInitialEngagementType(action.prefill.engagementType)
+        setNewEngagementOpen(true)
+      }
+    } catch {
+      sessionStorage.removeItem('jamm_concierge_pending')
+    }
+  }, [])
+
+  useEffect(() => {
+    return onConciergeAction((action) => {
+      if (action.modal === 'new-engagement') {
+        setActiveTab('engagements')
+        if (action.prefill?.engagementType) setInitialEngagementType(action.prefill.engagementType)
+        setNewEngagementOpen(true)
+      }
+      if (action.modal === 'portal-magic-link') {
+        setActiveTab('overview')
+        setPortalLinkHighlight(true)
+        setTimeout(() => {
+          portalLinkRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        }, 100)
+        setTimeout(() => setPortalLinkHighlight(false), 3000)
+      }
+    })
+  }, [])
 
   const [clientMessages, setClientMessages] = useState<Array<{
     id: string
@@ -6651,9 +6763,10 @@ function ClientDetailContent() {
           <div className="flex items-center justify-end gap-2 mb-4">
             {(user?.role === 'firm_owner' || user?.role === 'manager') && (
               <button
+                ref={portalLinkRef}
                 onClick={handleSendPortalLink}
                 disabled={sendingPortalLink}
-                className="flex items-center gap-1.5 h-8 px-3 text-[12px] font-medium text-[#1F3148] dark:text-[#EDEEF0] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] rounded-md bg-transparent hover:bg-surface-card dark:hover:bg-dark-card transition-colors disabled:opacity-60"
+                className={`flex items-center gap-1.5 h-8 px-3 text-[12px] font-medium text-[#1F3148] dark:text-[#EDEEF0] border border-[0.5px] rounded-md bg-transparent hover:bg-surface-card dark:hover:bg-dark-card transition-colors disabled:opacity-60 ${portalLinkHighlight ? 'border-[#3A6A94] ring-2 ring-[#3A6A94]/40 animate-pulse' : 'border-[#C8CDD6] dark:border-[#484848]'}`}
               >
                 {sendingPortalLink ? (
                   <Loader2 className="h-[14px] w-[14px] animate-spin" />
@@ -7045,6 +7158,18 @@ function ClientDetailContent() {
           onSuccess={() => { refetchClient(); setIsEditOpen(false) }}
         />
       )}
+
+      <NewEngagementModal
+        open={newEngagementOpen}
+        onClose={() => { setNewEngagementOpen(false); setInitialEngagementType(undefined) }}
+        onAdd={(eng: Engagement) => {
+          setNewEngagementOpen(false)
+          setInitialEngagementType(undefined)
+          void eng
+        }}
+        preselectedClientId={clientId}
+        initialEngagementType={initialEngagementType}
+      />
     </AppShell>
   )
 }
@@ -8907,6 +9032,24 @@ function BulkSendLetterModal({ open, onClose, selectedIds, engagements, clientMa
 
 
 ================================================================================
+FILE: frontend\src\app\engagements\templates\page.tsx
+================================================================================
+// frontend/src/app/engagements/templates/page.tsx
+'use client'
+
+import { useEffect } from 'react'
+import { useRouter } from 'next/navigation'
+
+export default function EngagementsTemplatesRedirect() {
+  const router = useRouter()
+  useEffect(() => {
+    router.replace('/templates')
+  }, [router])
+  return null
+}
+
+
+================================================================================
 FILE: frontend\src\app\engagements\[id]\page.tsx
 ================================================================================
 // path: frontend/src/app/engagements/[id]/page.tsx
@@ -8932,6 +9075,8 @@ import { cn, formatEngagementType } from '@/lib/utils'
 import api from '@/lib/api'
 import { FileText } from 'lucide-react'
 import { QcChecklistTab } from '@/components/engagements/QcChecklistTab'
+import { useAuth } from '@/lib/hooks/useAuth'
+import { settingsApi, type FirmDetails } from '@/lib/api/settingsApi'
 
 type BadgeVariant = Parameters<typeof StatusBadge>[0]['variant']
 
@@ -8956,14 +9101,22 @@ export default function EngagementDetailPage() {
   const router = useRouter()
   const id = params.id as string
   const queryClient = useQueryClient()
+  const { user } = useAuth()
   const [activeTab, setActiveTab] = useState('overview')
   const [notesOpen, setNotesOpen] = useState(false)
   const [showModal, setShowModal] = useState(false)
   const [isEditOpen, setIsEditOpen] = useState(false)
   const [sendLetterOpen, setSendLetterOpen] = useState(false)
   const [uncheckedQcCount, setUncheckedQcCount] = useState(0)
+  const [showReviewModal, setShowReviewModal] = useState(false)
+  const [sendingReview, setSendingReview] = useState(false)
 
   const { unreadCount } = useNotes({ entityType: 'engagement', entityId: id })
+
+  const { data: firmData } = useFetch<FirmDetails>(
+    () => settingsApi.getMyFirm().then((r) => r.data as FirmDetails),
+    []
+  )
 
   const { data: engagement, isLoading, refetch } = useFetch(
     () => engagementsApi.get(id),
@@ -9317,7 +9470,16 @@ export default function EngagementDetailPage() {
             endDate: engagement.endDate ?? undefined,
             description: engagement.description ?? undefined,
           }}
-          onSuccess={() => { refetch(); setIsEditOpen(false) }}
+          onSuccess={(opts) => {
+            refetch()
+            setIsEditOpen(false)
+            const canSendReview =
+              user?.role === 'firm_owner' || user?.role === 'manager'
+            const flagEnabled = firmData?.feature_flags?.review_requests_enabled === true
+            if (opts?.statusBecameCompleted && canSendReview && flagEnabled) {
+              setShowReviewModal(true)
+            }
+          }}
           uncheckedQcCount={uncheckedQcCount}
         />
       )}
@@ -9335,6 +9497,54 @@ export default function EngagementDetailPage() {
         filingDeadline={engagement.filingDeadline ?? null}
         endDate={engagement.endDate ?? null}
       />
+
+      {/* Review request modal */}
+      {showReviewModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-[#EDEEF0] dark:bg-dark-card rounded-[10px] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] p-6 w-full max-w-sm shadow-lg">
+            <p className="text-[13px] font-medium text-brand dark:text-[#EDEEF0] mb-2">
+              Engagement Complete
+            </p>
+            <p className="text-[13px] text-[#374151] dark:text-[#9CA3AF] leading-relaxed mb-5">
+              Would you like to send {clientName || 'this client'} a review request? Happy clients
+              will be directed to your Google review page.
+            </p>
+            <div className="flex items-center justify-end gap-2">
+              <button
+                onClick={() => setShowReviewModal(false)}
+                className="h-9 px-3 rounded-[6px] border border-[0.5px] border-[#1F3148] dark:border-[#4A7FA5] text-[#1F3148] dark:text-[#EDEEF0] bg-transparent text-[13px] font-medium hover:bg-surface-page dark:hover:bg-dark-page transition-colors"
+              >
+                Skip
+              </button>
+              <button
+                disabled={sendingReview}
+                onClick={async () => {
+                  if (!engagement.clientId) return
+                  setSendingReview(true)
+                  try {
+                    await api.post('/review-requests/send', {
+                      client_id: engagement.clientId,
+                      engagement_id: engagement.id,
+                    })
+                    toast.success(`Review request sent to ${clientName || 'client'}`)
+                  } catch (err: unknown) {
+                    const detail =
+                      (err as { response?: { data?: { detail?: string } } })?.response?.data
+                        ?.detail
+                    toast.error(detail ?? 'Failed to send review request')
+                  } finally {
+                    setSendingReview(false)
+                    setShowReviewModal(false)
+                  }
+                }}
+                className="h-9 px-3 rounded-[6px] bg-[#1F3148] dark:bg-brand-btn text-white text-[13px] font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
+              >
+                {sendingReview ? 'Sending...' : 'Send Request'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </AppShell>
   )
 }
@@ -10454,12 +10664,267 @@ export default function PortalSettingsPage() {
 
 
 ================================================================================
+FILE: frontend\src\app\review\page.tsx
+================================================================================
+// frontend/src/app/review/page.tsx
+'use client'
+
+import { useState, useEffect, useRef, Suspense } from 'react'
+import { useSearchParams } from 'next/navigation'
+
+type ViewState =
+  | { phase: 'loading' }
+  | { phase: 'google_review'; google_review_url: string }
+  | { phase: 'feedback_form' }
+  | { phase: 'feedback_submitted' }
+  | { phase: 'error' }
+
+const API_BASE = '/api/backend'
+
+const cardStyle: React.CSSProperties = {
+  background: '#EDEEF0',
+  borderRadius: 10,
+  border: '0.5px solid #C8CDD6',
+  padding: 32,
+  maxWidth: 480,
+  width: '100%',
+}
+
+const btnStyle: React.CSSProperties = {
+  width: '100%',
+  background: '#1F3148',
+  color: '#FFFFFF',
+  border: 'none',
+  borderRadius: 8,
+  height: 44,
+  fontSize: 15,
+  fontWeight: 500,
+  fontFamily: 'Inter, sans-serif',
+  cursor: 'pointer',
+  marginTop: 20,
+}
+
+const headingStyle: React.CSSProperties = {
+  fontSize: 16,
+  color: '#1F3148',
+  fontWeight: 500,
+  margin: '0 0 12px',
+  fontFamily: 'Inter, sans-serif',
+}
+
+const bodyStyle: React.CSSProperties = {
+  fontSize: 14,
+  color: '#374151',
+  lineHeight: 1.6,
+  margin: '0 0 0',
+  fontFamily: 'Inter, sans-serif',
+}
+
+const mutedStyle: React.CSSProperties = {
+  fontSize: 11,
+  color: '#9CA3AF',
+  marginTop: 12,
+  fontFamily: 'Inter, sans-serif',
+}
+
+function ReviewPageInner() {
+  const searchParams = useSearchParams()
+  const score = searchParams.get('score')
+  const firm = searchParams.get('firm')
+  const engagement = searchParams.get('engagement')
+
+  const [view, setView] = useState<ViewState>({ phase: 'loading' })
+  const [feedbackText, setFeedbackText] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const called = useRef(false)
+
+  useEffect(() => {
+    if (called.current) return
+    called.current = true
+
+    if (!score || !firm || !engagement) {
+      setView({ phase: 'error' })
+      return
+    }
+
+    fetch(`${API_BASE}/review-requests/record-score`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        score: Number(score),
+        firm_id: firm,
+        engagement_id: engagement,
+      }),
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error('bad response')
+        return res.json()
+      })
+      .then((data) => {
+        if (data.action === 'google_review') {
+          setView({ phase: 'google_review', google_review_url: data.google_review_url })
+        } else {
+          setView({ phase: 'feedback_form' })
+        }
+      })
+      .catch(() => setView({ phase: 'error' }))
+  }, [score, firm, engagement])
+
+  async function handleSubmitFeedback() {
+    if (!score || !firm || !engagement) return
+    setSubmitting(true)
+    try {
+      const res = await fetch(`${API_BASE}/review-requests/submit-feedback`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          score: Number(score),
+          firm_id: firm,
+          engagement_id: engagement,
+          feedback_text: feedbackText,
+        }),
+      })
+      if (!res.ok) throw new Error('bad response')
+      setView({ phase: 'feedback_submitted' })
+    } catch {
+      // keep form visible, let user retry
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div
+      style={{
+        minHeight: '100vh',
+        background: '#E4E6EA',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '32px 16px',
+        fontFamily: 'Inter, sans-serif',
+      }}
+    >
+      {view.phase === 'loading' && (
+        <div style={{ textAlign: 'center' }}>
+          <div
+            style={{
+              width: 28,
+              height: 28,
+              border: '3px solid #C8CDD6',
+              borderTopColor: '#1F3148',
+              borderRadius: '50%',
+              animation: 'spin 0.8s linear infinite',
+              margin: '0 auto 12px',
+            }}
+          />
+          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+          <p style={{ fontSize: 13, color: '#9CA3AF' }}>One moment...</p>
+        </div>
+      )}
+
+      {view.phase === 'google_review' && (
+        <div style={cardStyle}>
+          <p style={headingStyle}>Thank you!</p>
+          <p style={bodyStyle}>
+            We really appreciate you taking the time. Would you mind sharing your experience on
+            Google? It helps other businesses find us and only takes a moment.
+          </p>
+          <button
+            style={btnStyle}
+            onClick={() => window.open(view.google_review_url, '_blank')}
+          >
+            Leave a Google Review →
+          </button>
+          <p style={mutedStyle}>Thank you again for choosing us.</p>
+        </div>
+      )}
+
+      {view.phase === 'feedback_form' && (
+        <div style={cardStyle}>
+          <p style={headingStyle}>Thank you for the honest feedback.</p>
+          <p style={bodyStyle}>
+            We&apos;re still building and your input shapes what we improve next. What&apos;s one
+            thing that could have been better?
+          </p>
+          <textarea
+            value={feedbackText}
+            onChange={(e) => setFeedbackText(e.target.value)}
+            placeholder="Tell us what would make the experience better for you..."
+            style={{
+              width: '100%',
+              minHeight: 100,
+              background: '#F7F7F8',
+              border: '0.5px solid #C8CDD6',
+              borderRadius: 6,
+              fontSize: 14,
+              fontFamily: 'Inter, sans-serif',
+              padding: '10px 12px',
+              resize: 'vertical',
+              color: '#1F3148',
+              boxSizing: 'border-box',
+              marginTop: 16,
+              outline: 'none',
+            }}
+          />
+          <button
+            style={{ ...btnStyle, opacity: submitting ? 0.6 : 1 }}
+            onClick={handleSubmitFeedback}
+            disabled={submitting}
+          >
+            {submitting ? 'Submitting...' : 'Submit Feedback'}
+          </button>
+        </div>
+      )}
+
+      {view.phase === 'feedback_submitted' && (
+        <div style={{ ...cardStyle, textAlign: 'center' }}>
+          <p style={{ fontSize: 14, color: '#374151', margin: '0 0 6px' }}>
+            Got it — thank you.
+          </p>
+          <p style={{ fontSize: 12, color: '#6B7280', margin: 0 }}>
+            Your feedback goes directly to the team.
+          </p>
+        </div>
+      )}
+
+      {view.phase === 'error' && (
+        <div style={cardStyle}>
+          <p style={{ fontSize: 14, color: '#374151', margin: 0 }}>
+            Something went wrong. Please try again.
+          </p>
+        </div>
+      )}
+    </div>
+  )
+}
+
+export default function ReviewPage() {
+  return (
+    <Suspense fallback={
+      <div style={{
+        minHeight: '100vh',
+        background: '#E4E6EA',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}>
+        <p style={{ fontSize: '13px', color: '#6B7280' }}>Loading...</p>
+      </div>
+    }>
+      <ReviewPageInner />
+    </Suspense>
+  )
+}
+
+
+================================================================================
 FILE: frontend\src\app\settings\page.tsx
 ================================================================================
 // frontend/src/app/settings/page.tsx
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { AppShell } from '@/components/layout/AppShell'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { useFetch } from '@/lib/hooks/useFetch'
@@ -10472,6 +10937,7 @@ import AutomationsTab from '@/components/settings/AutomationsTab'
 import SecurityTab from '@/components/settings/SecurityTab'
 import FeeScheduleTab from '@/components/settings/FeeScheduleTab'
 import PortalBrandingTab from '@/components/settings/PortalBrandingTab'
+import { onConciergeAction, setFormDirty } from '@/lib/events/conciergeEvents'
 
 const TABS = [
   { key: 'profile', label: 'Profile' },
@@ -10516,6 +10982,13 @@ export default function SettingsPage() {
   const [approvalRequired, setApprovalRequired] = useState<boolean | null>(null)
   const [savingApproval, setSavingApproval] = useState(false)
 
+  const [emailReplyTo, setEmailReplyTo] = useState('')
+  const [emailDisplayName, setEmailDisplayName] = useState('')
+  const [savingEmail, setSavingEmail] = useState(false)
+
+  const [googleReviewUrl, setGoogleReviewUrl] = useState('')
+  const [savingReview, setSavingReview] = useState(false)
+
   const { data: firmData, isLoading: firmLoading } = useFetch<FirmDetails>(
     () => settingsApi.getMyFirm().then((r) => r.data as FirmDetails),
     []
@@ -10534,6 +11007,37 @@ export default function SettingsPage() {
   const [inviteSubmitting, setInviteSubmitting] = useState(false)
   const [showInvitePassword, setShowInvitePassword] = useState(false)
   const [invitePasswordLocked, setInvitePasswordLocked] = useState(false)
+  const inviteFormRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const raw = sessionStorage.getItem('jamm_concierge_pending')
+    if (!raw) return
+    try {
+      const action = JSON.parse(raw)
+      if (Date.now() - (action._ts ?? 0) > 10000) {
+        sessionStorage.removeItem('jamm_concierge_pending')
+        return
+      }
+      if (action.modal === 'invite-staff') {
+        sessionStorage.removeItem('jamm_concierge_pending')
+        setActiveTab('team')
+        setTimeout(() => inviteFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 400)
+      }
+    } catch {
+      sessionStorage.removeItem('jamm_concierge_pending')
+    }
+  }, [])
+
+  useEffect(() => {
+    return onConciergeAction((action) => {
+      if (action.modal === 'invite-staff') {
+        setActiveTab('team')
+        setTimeout(() => {
+          inviteFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        }, 150)
+      }
+    })
+  }, [])
 
   async function handleInvite(e: React.FormEvent) {
     e.preventDefault()
@@ -10545,6 +11049,7 @@ export default function SettingsPage() {
         password: invitePassword,
         role: inviteRole,
       })
+      setFormDirty(false)
       toast.success('Team member added.')
       setInviteFullName('')
       setInviteEmail('')
@@ -10564,6 +11069,43 @@ export default function SettingsPage() {
       setApprovalRequired((firmData as FirmDetails & { timesheet_approval_required?: boolean }).timesheet_approval_required ?? false)
     }
   }, [firmData, approvalRequired])
+
+  useEffect(() => {
+    if (firmData?.settings) {
+      setEmailReplyTo((firmData.settings.email_reply_to as string) ?? '')
+      setEmailDisplayName((firmData.settings.email_display_name as string) ?? '')
+      setGoogleReviewUrl((firmData.settings.google_review_url as string) ?? '')
+    }
+  }, [firmData])
+
+  async function handleSaveEmailSettings() {
+    setSavingEmail(true)
+    try {
+      await api.patch('/settings/email', {
+        reply_to: emailReplyTo || null,
+        display_name: emailDisplayName || null,
+      })
+      toast.success('Email settings saved')
+    } catch {
+      toast.error('Failed to save email settings')
+    } finally {
+      setSavingEmail(false)
+    }
+  }
+
+  async function handleSaveReviewSettings() {
+    setSavingReview(true)
+    try {
+      await api.patch('/settings/review', {
+        google_review_url: googleReviewUrl || null,
+      })
+      toast.success('Review settings saved')
+    } catch {
+      toast.error('Failed to save review settings')
+    } finally {
+      setSavingReview(false)
+    }
+  }
 
   async function handleToggleApproval() {
     if (!isFirmOwner) return
@@ -10768,6 +11310,77 @@ export default function SettingsPage() {
                 </div>
               </div>
             )}
+
+            {/* Email Settings section */}
+            {isFirmOwner && (
+              <div className="bg-surface-card dark:bg-dark-card rounded-[10px] p-4 flex flex-col gap-3 max-w-lg" style={{ marginTop: '12px' }}>
+                <p className="text-[13px] font-medium text-brand dark:text-[#EDEEF0]">Email Settings</p>
+                <div className={fieldClass}>
+                  <label className={labelClass}>Reply-To Email Address</label>
+                  <input
+                    type="email"
+                    value={emailReplyTo}
+                    onChange={(e) => setEmailReplyTo(e.target.value)}
+                    placeholder="owner@yourfirm.com"
+                    className={inputClass}
+                  />
+                  <span className="text-[11px] text-[#6B7280]">
+                    When clients reply to emails from JAMM PX, their reply goes to this address.
+                  </span>
+                </div>
+                <div className={fieldClass}>
+                  <label className={labelClass}>Email Display Name</label>
+                  <input
+                    type="text"
+                    value={emailDisplayName}
+                    onChange={(e) => setEmailDisplayName(e.target.value)}
+                    placeholder={firmData?.name ?? 'Your firm name'}
+                    className={inputClass}
+                  />
+                  <span className="text-[11px] text-[#6B7280]">
+                    The name clients see in their inbox. Defaults to your firm name.
+                  </span>
+                </div>
+                <div className="flex justify-end">
+                  <button
+                    onClick={handleSaveEmailSettings}
+                    disabled={savingEmail}
+                    className="h-8 px-3 text-[13px] font-medium rounded-[6px] bg-brand text-white hover:bg-brand/90 transition-colors disabled:opacity-60"
+                  >
+                    {savingEmail ? 'Saving...' : 'Save'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Review Requests section */}
+            {isFirmOwner && (
+              <div className="bg-surface-card dark:bg-dark-card rounded-[10px] p-4 flex flex-col gap-3 max-w-lg" style={{ marginTop: '12px' }}>
+                <p className="text-[13px] font-medium text-brand dark:text-[#EDEEF0]">Review Requests</p>
+                <div className={fieldClass}>
+                  <label className={labelClass}>Google Review Link</label>
+                  <input
+                    type="text"
+                    value={googleReviewUrl}
+                    onChange={(e) => setGoogleReviewUrl(e.target.value)}
+                    placeholder="https://g.page/r/your-business/review"
+                    className={inputClass}
+                  />
+                  <span className="text-[11px] text-[#6B7280]">
+                    Clients who rate their experience 9 or 10 will be directed here to leave a public review.
+                  </span>
+                </div>
+                <div className="flex justify-end">
+                  <button
+                    onClick={handleSaveReviewSettings}
+                    disabled={savingReview}
+                    className="h-8 px-3 text-[13px] font-medium rounded-[6px] bg-brand text-white hover:bg-brand/90 transition-colors disabled:opacity-60"
+                  >
+                    {savingReview ? 'Saving...' : 'Save'}
+                  </button>
+                </div>
+              </div>
+            )}
           </>
         )}
 
@@ -10860,6 +11473,7 @@ export default function SettingsPage() {
 
             {isFirmOwner && (
               <div
+                ref={inviteFormRef}
                 className="bg-surface-card dark:bg-dark-card rounded-[10px] border border-surface-border dark:border-dark-border p-4 max-w-lg"
                 style={{ borderWidth: '0.5px', marginTop: '16px' }}
               >
@@ -10878,7 +11492,7 @@ export default function SettingsPage() {
                       required
                       autoComplete="off"
                       value={inviteFullName}
-                      onChange={(e) => setInviteFullName(e.target.value)}
+                      onChange={(e) => { setFormDirty(true); setInviteFullName(e.target.value) }}
                       className={inputClass}
                     />
                   </div>
@@ -10889,7 +11503,7 @@ export default function SettingsPage() {
                       required
                       autoComplete="off"
                       value={inviteEmail}
-                      onChange={(e) => setInviteEmail(e.target.value)}
+                      onChange={(e) => { setFormDirty(true); setInviteEmail(e.target.value) }}
                       className={inputClass}
                     />
                   </div>
@@ -10901,7 +11515,7 @@ export default function SettingsPage() {
                         required
                         autoComplete="new-password"
                         value={invitePassword}
-                        onChange={(e) => setInvitePassword(e.target.value)}
+                        onChange={(e) => { setFormDirty(true); setInvitePassword(e.target.value) }}
                         className={inputClass}
                       />
                       <button
@@ -10966,6 +11580,224 @@ export default function SettingsPage() {
         {activeTab === 'portal_branding' && isFirmOwner && <PortalBrandingTab />}
 
 
+      </div>
+    </AppShell>
+  )
+}
+
+
+================================================================================
+FILE: frontend\src\app\settings\billing\page.tsx
+================================================================================
+// frontend/src/app/settings/billing/page.tsx
+'use client'
+
+import { useEffect, useRef } from 'react'
+import { AppShell } from '@/components/layout/AppShell'
+import { onConciergeAction } from '@/lib/events/conciergeEvents'
+
+export default function SettingsBillingPage() {
+  const stripeRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    return onConciergeAction((action) => {
+      if (action.modal === 'stripe-scroll') {
+        stripeRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      }
+    })
+  }, [])
+
+  return (
+    <AppShell>
+      <div className="p-6 flex flex-col gap-6 max-w-2xl">
+        <div>
+          <h1 className="text-2xl font-medium text-brand dark:text-[#EDEEF0]">Billing</h1>
+          <p className="text-[12px] text-[#6B7280] mt-0.5">
+            Connect Stripe to accept online payments from clients.
+          </p>
+        </div>
+
+        {/* Stripe */}
+        <div
+          ref={stripeRef}
+          className="bg-surface-card dark:bg-dark-card rounded-[10px] border border-surface-border dark:border-dark-border p-5"
+          style={{ borderWidth: '0.5px' }}
+        >
+          <div className="flex items-center gap-3 mb-3">
+            <div className="flex items-center justify-center w-8 h-8 rounded-md bg-[#635BFF]">
+              <span className="text-white font-bold text-[13px]">S</span>
+            </div>
+            <div>
+              <p className="text-[13px] font-medium text-brand dark:text-[#EDEEF0]">Stripe Connect</p>
+              <p className="text-[11px] text-[#6B7280]">Accept online payments from clients</p>
+            </div>
+          </div>
+          <p className="text-[12px] text-[#374151] dark:text-[#9CA3AF] mb-4">
+            Connect your Stripe account to send invoices for online payment. Clients pay
+            directly through the portal. Required before any invoice can be sent for online
+            collection.
+          </p>
+          <button
+            className="h-8 px-4 rounded-[6px] bg-[#635BFF] text-white text-[12px] font-medium hover:opacity-90 transition-opacity"
+            onClick={() => {
+              window.location.href = '/api/backend/stripe/connect'
+            }}
+          >
+            Connect Stripe
+          </button>
+        </div>
+      </div>
+    </AppShell>
+  )
+}
+
+
+================================================================================
+FILE: frontend\src\app\settings\integrations\page.tsx
+================================================================================
+// frontend/src/app/settings/integrations/page.tsx
+'use client'
+
+import { useEffect, useRef } from 'react'
+import { AppShell } from '@/components/layout/AppShell'
+import { onConciergeAction } from '@/lib/events/conciergeEvents'
+
+export default function SettingsIntegrationsPage() {
+  const qboRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    return onConciergeAction((action) => {
+      if (action.modal === 'quickbooks-scroll') {
+        qboRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      }
+    })
+  }, [])
+
+  return (
+    <AppShell>
+      <div className="p-6 flex flex-col gap-6 max-w-2xl">
+        <div>
+          <h1 className="text-2xl font-medium text-brand dark:text-[#EDEEF0]">Integrations</h1>
+          <p className="text-[12px] text-[#6B7280] mt-0.5">
+            Connect third-party services to JAMM PX.
+          </p>
+        </div>
+
+        {/* QuickBooks */}
+        <div
+          ref={qboRef}
+          className="bg-surface-card dark:bg-dark-card rounded-[10px] border border-surface-border dark:border-dark-border p-5"
+          style={{ borderWidth: '0.5px' }}
+        >
+          <div className="flex items-center gap-3 mb-3">
+            <div className="flex items-center justify-center w-8 h-8 rounded-md bg-[#2CA01C]">
+              <svg width="18" height="18" viewBox="0 0 32 32" fill="none">
+                <circle cx="16" cy="16" r="16" fill="#2CA01C" />
+                <path d="M13 16.5l2.5 2.5 4.5-5" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </div>
+            <div>
+              <p className="text-[13px] font-medium text-brand dark:text-[#EDEEF0]">QuickBooks Online</p>
+              <p className="text-[11px] text-[#6B7280]">Import clients and sync AR balances</p>
+            </div>
+          </div>
+          <p className="text-[12px] text-[#374151] dark:text-[#9CA3AF] mb-4">
+            Connect your QuickBooks Online account to import clients, view outstanding
+            balances, and keep records in sync. Use the Import Preview to select which
+            clients come over before committing.
+          </p>
+          <button
+            className="h-8 px-4 rounded-[6px] bg-brand dark:bg-brand-btn text-white text-[12px] font-medium hover:opacity-90 transition-opacity"
+            onClick={() => {
+              // Navigate to the QuickBooks OAuth flow
+              window.location.href = '/api/backend/integrations/quickbooks/connect'
+            }}
+          >
+            Connect QuickBooks
+          </button>
+        </div>
+      </div>
+    </AppShell>
+  )
+}
+
+
+================================================================================
+FILE: frontend\src\app\settings\team\page.tsx
+================================================================================
+// frontend/src/app/settings/team/page.tsx
+'use client'
+
+import { useEffect, useRef } from 'react'
+import { useRouter } from 'next/navigation'
+import { AppShell } from '@/components/layout/AppShell'
+import { onConciergeAction } from '@/lib/events/conciergeEvents'
+
+export default function SettingsTeamPage() {
+  const router = useRouter()
+  const inviteRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const raw = sessionStorage.getItem('jamm_concierge_pending')
+    if (!raw) return
+    try {
+      const action = JSON.parse(raw)
+      if (Date.now() - (action._ts ?? 0) > 10000) {
+        sessionStorage.removeItem('jamm_concierge_pending')
+        return
+      }
+      if (action.modal === 'invite-staff') {
+        sessionStorage.removeItem('jamm_concierge_pending')
+        setTimeout(() => inviteRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100)
+      }
+    } catch {
+      sessionStorage.removeItem('jamm_concierge_pending')
+    }
+  }, [])
+
+  useEffect(() => {
+    return onConciergeAction((action) => {
+      if (action.modal === 'invite-staff') {
+        inviteRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      }
+    })
+  }, [])
+
+  return (
+    <AppShell>
+      <div className="p-6 flex flex-col gap-4 max-w-2xl">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => router.push('/settings')}
+            className="text-[12px] text-[#6B7280] hover:text-brand dark:hover:text-[#EDEEF0] transition-colors"
+          >
+            Settings
+          </button>
+          <span className="text-[#9CA3AF]">/</span>
+          <span className="text-[12px] text-brand dark:text-[#EDEEF0]">Team</span>
+        </div>
+
+        <h1 className="text-2xl font-medium text-brand dark:text-[#EDEEF0]">Team</h1>
+
+        <div
+          ref={inviteRef}
+          className="bg-surface-card dark:bg-dark-card rounded-[10px] border border-surface-border dark:border-dark-border p-5"
+          style={{ borderWidth: '0.5px' }}
+        >
+          <p className="text-[13px] font-medium text-brand dark:text-[#EDEEF0] mb-1">
+            Invite Team Member
+          </p>
+          <p className="text-[12px] text-[#6B7280] mb-1">
+            Add a staff member to your firm. Use the full Settings page to manage roles
+            and view existing team members.
+          </p>
+          <button
+            onClick={() => router.push('/settings?tab=team')}
+            className="text-[12px] text-brand dark:text-[#4A7FA5] underline"
+          >
+            Open full team settings
+          </button>
+        </div>
       </div>
     </AppShell>
   )
@@ -12438,6 +13270,7 @@ import { FormField } from '@/components/ui/FormField'
 import { TextInput } from '@/components/ui/TextInput'
 import { SelectInput } from '@/components/ui/SelectInput'
 import { clientsApi, type Client } from '@/lib/api'
+import { setFormDirty } from '@/lib/events/conciergeEvents'
 
 const ENTITY_TYPE_OPTIONS = [
   { value: 'individual', label: 'Individual' },
@@ -12486,6 +13319,7 @@ export function EditClientModal({ isOpen, onClose, client, onSuccess }: EditClie
   }, [isOpen, client])
 
   function handleChange(field: keyof FormState, value: string) {
+    setFormDirty(true)
     setForm((prev) => ({ ...prev, [field]: value }))
     if (field === 'name') setNameError('')
   }
@@ -12513,6 +13347,7 @@ export function EditClientModal({ isOpen, onClose, client, onSuccess }: EditClie
     setSaving(true)
     try {
       await clientsApi.update(client.id, patch)
+      setFormDirty(false)
       toast.success('Client updated successfully')
       onSuccess()
     } catch {
@@ -13226,13 +14061,14 @@ FILE: frontend\src\components\clients\NewClientModal.tsx
 // frontend/src/components/clients/NewClientModal.tsx
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Modal } from '@/components/ui/Modal'
 import { FormField } from '@/components/ui/FormField'
 import { TextInput } from '@/components/ui/TextInput'
 import { SelectInput } from '@/components/ui/SelectInput'
 import { clientsApi, type Client } from '@/lib/api'
 import { toast } from 'sonner'
+import { setFormDirty } from '@/lib/events/conciergeEvents'
 
 const ENTITY_TYPE_OPTIONS = [
   { value: 'individual', label: 'Individual' },
@@ -13245,6 +14081,7 @@ interface NewClientModalProps {
   open: boolean
   onClose: () => void
   onAdd: (client: Client) => void
+  initialName?: string
 }
 
 interface FormState {
@@ -13269,17 +14106,22 @@ function validate(form: FormState): FormErrors {
   return errors
 }
 
-export function NewClientModal({ open, onClose, onAdd }: NewClientModalProps) {
+export function NewClientModal({ open, onClose, onAdd, initialName }: NewClientModalProps) {
   const [form, setForm] = useState<FormState>({
-    name: '',
+    name: initialName ?? '',
     email: '',
     phone: '',
     entity_type: '',
   })
+
+  useEffect(() => {
+    if (open && initialName) setForm((prev) => ({ ...prev, name: initialName }))
+  }, [open, initialName])
   const [errors, setErrors] = useState<FormErrors>({})
   const [submitting, setSubmitting] = useState(false)
 
   function handleChange(field: keyof FormState, value: string) {
+    setFormDirty(true)
     setForm((prev) => ({ ...prev, [field]: value }))
     if (errors[field as keyof FormErrors]) {
       setErrors((prev) => ({ ...prev, [field]: undefined }))
@@ -13287,6 +14129,7 @@ export function NewClientModal({ open, onClose, onAdd }: NewClientModalProps) {
   }
 
   function handleClose() {
+    setFormDirty(false)
     setForm({ name: '', email: '', phone: '', entity_type: '' })
     setErrors({})
     onClose()
@@ -13750,6 +14593,680 @@ export function PortalPreview({ clientId, clientName }: PortalPreviewProps) {
         </div>
       )}
     </div>
+  )
+}
+
+
+================================================================================
+FILE: frontend\src\components\concierge\ConciergePanel.tsx
+================================================================================
+// frontend/src/components/concierge/ConciergePanel.tsx
+'use client'
+
+import { useState, useRef, useEffect, useCallback } from 'react'
+import { useRouter, usePathname } from 'next/navigation'
+import { X, Send, Zap } from 'lucide-react'
+import ReactMarkdown from 'react-markdown'
+import { useAuth } from '@/lib/hooks/useAuth'
+import api from '@/lib/api'
+import {
+  emitConciergeAction,
+  type ConciergeAction,
+} from '@/lib/events/conciergeEvents'
+
+interface Message {
+  role: 'user' | 'concierge'
+  content: string
+  actionConfirm?: string
+}
+
+interface Notification {
+  id: string
+  trigger_type: string
+  message: string
+  created_at: string
+}
+
+interface ConciergePanelProps {
+  isOpen: boolean
+  onClose: () => void
+}
+
+const PAGE_LABELS: Record<string, string> = {
+  '/clients': 'Clients',
+  '/settings/team': 'Settings',
+  '/settings/integrations': 'Settings',
+  '/settings/billing': 'Settings',
+  '/engagements/templates': 'Templates',
+}
+
+const MODAL_LABELS: Record<string, string> = {
+  'new-client': 'New Client form',
+  'new-engagement': 'New Engagement form',
+  'invite-staff': 'Invite Team Member form',
+  'portal-magic-link': 'Send Magic-Link',
+  'new-template': 'New Template form',
+  'quickbooks-scroll': 'QuickBooks connection',
+  'stripe-scroll': 'Stripe connection',
+}
+
+function buildActionConfirm(action: ConciergeAction): string {
+  const page =
+    action.route
+      ? PAGE_LABELS[action.route] ??
+        (action.route.startsWith('/clients/') ? 'Client' : action.route)
+      : ''
+  const form = action.modal ? MODAL_LABELS[action.modal] ?? action.modal : ''
+  if (page && form) return `Navigating to ${page} and opening the ${form}.`
+  return ''
+}
+
+export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
+  const router = useRouter()
+  const pathname = usePathname()
+  const PAGE_LABELS: Record<string, string> = {
+    '/dashboard': 'Dashboard',
+    '/clients': 'Clients',
+    '/engagements': 'Engagements',
+    '/tasks': 'Tasks',
+    '/documents': 'Documents',
+    '/billing': 'Billing',
+    '/settings': 'Settings',
+    '/firm-chat': 'Firm Chat',
+  }
+  const currentPage = Object.entries(PAGE_LABELS).find(([k]) => pathname.startsWith(k))?.[1] ?? 'JAMM PX'
+  const { user } = useAuth()
+  const logoUrl = user ? `/api/backend/firms/logo/${user.firm_id}` : null
+  const initials =
+    user?.full_name?.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase() ?? '?'
+
+  const [messages, setMessages] = useState<Message[]>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = sessionStorage.getItem('jamm_concierge_messages')
+        if (stored) return JSON.parse(stored) as Message[]
+      } catch {
+        // ignore parse errors
+      }
+    }
+    return []
+  })
+  const [notifications, setNotifications] = useState<Notification[]>([])
+  const [input, setInput] = useState('')
+  const [streaming, setStreaming] = useState(false)
+  const [autopilotOn, setAutopilotOn] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return sessionStorage.getItem('jamm_concierge_autopilot') === 'true'
+    }
+    return false
+  })
+  const [suggestions, setSuggestions] = useState<string[]>([])
+  const [formDirty, setFormDirtyState] = useState(false)
+  const [statusMessage, setStatusMessage] = useState('')
+
+  // Keep a ref so the async sendMessages callback always reads current value.
+  const autopilotRef = useRef(false)
+  useEffect(() => { autopilotRef.current = autopilotOn }, [autopilotOn])
+  useEffect(() => {
+    const pending = sessionStorage.getItem('jamm_concierge_status')
+    if (pending) {
+      sessionStorage.removeItem('jamm_concierge_status')
+      setStatusMessage(pending)
+    }
+  }, [])
+  const pendingActionRef = useRef<ConciergeAction | null>(null)
+
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const hasInitialized = useRef(false)
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages])
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        sessionStorage.setItem('jamm_concierge_messages', JSON.stringify(messages))
+      } catch {
+        // ignore storage errors
+      }
+    }
+  }, [messages])
+
+  // Reset autopilot when panel closes (session-only per spec).
+  useEffect(() => {
+    if (!isOpen) {
+      setAutopilotOn(false)
+      autopilotRef.current = false
+      sessionStorage.removeItem('jamm_concierge_autopilot')
+      sessionStorage.removeItem('jamm_concierge_messages')
+      setMessages([])
+    }
+  }, [isOpen])
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      setFormDirtyState((e as CustomEvent<{ dirty: boolean }>).detail.dirty)
+    }
+    window.addEventListener('jamm:form-dirty', handler)
+    return () => window.removeEventListener('jamm:form-dirty', handler)
+  }, [])
+
+  // Auto-clear status message after 2 seconds.
+  useEffect(() => {
+    if (!statusMessage) return
+    const timer = setTimeout(() => setStatusMessage(''), 2000)
+    return () => clearTimeout(timer)
+  }, [statusMessage])
+
+  const fetchNotifications = useCallback(async () => {
+    try {
+      const res = await api.get('/concierge/notifications')
+      setNotifications((prev) => {
+        const existing = new Set(prev.map((n) => n.id))
+        const incoming = (res.data.items ?? []) as Notification[]
+        const fresh = incoming.filter((n) => !existing.has(n.id))
+        return fresh.length > 0 ? [...prev, ...fresh] : prev
+      })
+    } catch {
+      // non-fatal
+    }
+  }, [])
+
+  const dismissNotification = useCallback(async (id: string) => {
+    setNotifications((prev) => prev.filter((n) => n.id !== id))
+    try {
+      await api.patch(`/concierge/notifications/${id}/read`)
+    } catch {
+      // already removed from UI
+    }
+  }, [])
+
+  const sendMessages = useCallback(
+    async (thread: Message[]) => {
+      setStreaming(true)
+      setMessages((prev) => [...prev, { role: 'concierge', content: '' }])
+
+      const token = localStorage.getItem('access_token')
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      if (token) headers['Authorization'] = `Bearer ${token}`
+
+      const apiMessages = thread.map((m) => ({
+        role: m.role === 'concierge' ? 'assistant' : 'user',
+        content: m.content,
+      }))
+
+      let assembled = ''
+
+      try {
+        const res = await fetch('/api/backend/concierge/chat', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            messages: apiMessages,
+            autopilot_enabled: autopilotRef.current,
+          }),
+        })
+
+        if (!res.ok || !res.body) {
+          setMessages((prev) => {
+            const updated = [...prev]
+            updated[updated.length - 1] = {
+              role: 'concierge',
+              content: 'Something went wrong. Please try again.',
+            }
+            return updated
+          })
+          return
+        }
+
+        const reader = res.body.getReader()
+        const decoder = new TextDecoder()
+        let buffer = ''
+
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) {
+            buffer += decoder.decode()
+            if (buffer.startsWith('data: ')) {
+              const chunk = buffer.slice(6)
+              if (chunk) {
+                assembled += chunk + '\n'
+              }
+            }
+            break
+          }
+          buffer += decoder.decode(value, { stream: true })
+          const lines = buffer.split('\n')
+          buffer = lines.pop() ?? ''
+          for (const line of lines) {
+            if (line.startsWith('data:')) {
+              const chunk = line.replace(/^data:\s*/, '')
+              assembled += chunk + '\n'
+            }
+          }
+        }
+
+        const cleanContent = handleConciergeAction(assembled)
+        setMessages((prev) => {
+          const updated = [...prev]
+          const last = updated[updated.length - 1]
+          if (last.role === 'concierge') {
+            updated[updated.length - 1] = {
+              role: 'concierge',
+              content: cleanContent,
+            }
+          }
+          return updated
+        })
+        if (pendingActionRef.current) {
+          const action = pendingActionRef.current
+          pendingActionRef.current = null
+          void executeAction(action)
+        }
+        const lower = assembled.toLowerCase()
+        const chips: string[] = []
+        if (lower.includes('client') || lower.includes('import')) {
+          chips.push('Go to Clients', 'Import clients')
+        } else if (lower.includes('engagement')) {
+          chips.push('Go to Engagements', 'New engagement')
+        } else if (lower.includes('settings') || lower.includes('team') || lower.includes('staff')) {
+          chips.push('Go to Settings')
+        } else if (lower.includes('billing') || lower.includes('invoice') || lower.includes('stripe')) {
+          chips.push('Go to Billing')
+        } else if (lower.includes('document')) {
+          chips.push('Go to Documents')
+        } else {
+          chips.push('Go to Dashboard')
+        }
+        setSuggestions(chips.slice(0, 3))
+      } catch {
+        setMessages((prev) => {
+          const updated = [...prev]
+          updated[updated.length - 1] = {
+            role: 'concierge',
+            content: 'Something went wrong. Please try again.',
+          }
+          return updated
+        })
+      } finally {
+        setStreaming(false)
+      }
+    },
+    [router],
+  )
+
+  useEffect(() => {
+    if (isOpen && !hasInitialized.current) {
+      hasInitialized.current = true
+      if (messages.length === 0) {
+        sendMessages([{ role: 'user', content: '__OPEN__' }])
+      }
+    }
+    if (isOpen) {
+      setTimeout(() => textareaRef.current?.focus(), 250)
+      api.post('/concierge/trigger-check').then(() => fetchNotifications()).catch(() => fetchNotifications())
+    }
+  }, [isOpen, sendMessages, fetchNotifications])
+
+  async function handleSend(text?: string) {
+    const msg = (text ?? input).trim()
+    if (!msg || streaming) return
+    setInput('')
+    setSuggestions([])
+    const userMsg: Message = { role: 'user', content: msg }
+    const newThread = [...messages, userMsg]
+    setMessages(newThread)
+    await sendMessages(newThread)
+  }
+
+  function handleSuggestion(label: string) {
+    const routes: Record<string, string> = {
+      'Go to Clients': '/clients',
+      'Go to Engagements': '/engagements',
+      'Go to Settings': '/settings',
+      'Go to Billing': '/billing',
+      'Go to Documents': '/documents',
+      'Go to Dashboard': '/dashboard',
+      'Import clients': '/clients',
+      'New engagement': '/engagements',
+    }
+    const route = routes[label]
+    if (route) setTimeout(() => router.push(route), 0)
+  }
+
+  function handleConciergeAction(raw: string): string {
+    const ACTION_MARKER = 'CONCIERGE_ACTION:'
+    const actionIndex = raw.indexOf(ACTION_MARKER)
+    if (actionIndex === -1) return raw
+
+    const beforeAction = raw.slice(0, actionIndex).trim()
+    const afterMarker = raw.slice(actionIndex + ACTION_MARKER.length)
+    const braceStart = afterMarker.indexOf('{')
+    const braceEnd = afterMarker.lastIndexOf('}')
+    if (braceStart === -1 || braceEnd === -1) return beforeAction
+    const actionLine = afterMarker.slice(braceStart, braceEnd + 1).replace(/\s+/g, ' ').trim()
+
+    if (!autopilotRef.current) {
+      return beforeAction || 'To navigate, turn on Autopilot using the toggle above.'
+    }
+
+    try {
+      const action: ConciergeAction = JSON.parse(actionLine)
+      pendingActionRef.current = action
+    } catch {}
+
+    return beforeAction || ''
+  }
+
+  async function executeAction(action: ConciergeAction) {
+    const normalizedType = (action.type as string) === 'open_modal' ? 'open-modal' :
+      (action.type as string) === 'navigate_and_open' ? 'navigate-and-open' : action.type
+    const normalizedRoute = (action.route === '/settings/team' ? '/settings' : action.route) as string
+    const routeToLabel: Record<string, string> = {
+      '/clients': 'Navigated to Clients',
+      '/settings/team': 'Navigated to Team Settings',
+      '/engagements/templates': 'Navigated to Engagement Templates',
+      '/settings/integrations': 'Navigated to Integrations',
+      '/settings/billing': 'Navigated to Billing',
+    }
+
+    if (action.route) {
+      const clientMatch = normalizedRoute.match(/^\/clients\/([^/?]+)(\?.*)?$/)
+      if (clientMatch) {
+        const queryString = clientMatch[2] ?? ''
+        const name = decodeURIComponent(clientMatch[1]).replace(/-/g, ' ').replace(/\s+/g, ' ').trim()
+        const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(name)
+        if (!isUUID) {
+          const token = localStorage.getItem('access_token')
+          const fetchHeaders: Record<string, string> = {}
+          if (token) fetchHeaders['Authorization'] = `Bearer ${token}`
+          try {
+            const res = await fetch(
+              `/api/backend/concierge/clients/resolve?name=${encodeURIComponent(name)}`,
+              { headers: fetchHeaders }
+            )
+            if (!res.ok) {
+              setStatusMessage('Could not find client')
+              return
+            }
+            const data = await res.json() as { id?: string; name?: string }
+            if (!data.id) {
+              setStatusMessage('Could not find client')
+              return
+            }
+            const capitalized = (data.name ?? name).replace(/\b\w/g, c => c.toUpperCase())
+            const resolvedRoute = `/clients/${data.id}${queryString}`
+            if (formDirty) {
+              const ok = window.confirm('You have unsaved changes. Navigate away?')
+              if (!ok) return
+            }
+            sessionStorage.setItem('jamm_concierge_status', `Navigated to ${capitalized}`)
+            sessionStorage.setItem('jamm_concierge_pending', JSON.stringify({ ...action, route: resolvedRoute, _ts: Date.now() }))
+            router.push(resolvedRoute)
+            setStatusMessage(`Navigated to ${capitalized}`)
+          } catch {
+            setStatusMessage('Could not find client')
+          }
+          return
+        }
+      }
+
+      const navLabel = routeToLabel[normalizedRoute] ?? `Navigated to ${normalizedRoute}`
+      if (formDirty) {
+        const ok = window.confirm('You have unsaved changes. Navigate away?')
+        if (!ok) return
+      }
+      sessionStorage.setItem('jamm_concierge_status', navLabel)
+      router.push(normalizedRoute)
+      setStatusMessage(navLabel)
+    }
+
+    const modalLabel: Record<string, string> = {
+      'new-client': 'Opened New Client drawer',
+      'new-engagement': 'Opened New Engagement drawer',
+      'invite-staff': 'Opened Invite Staff modal',
+      'new-template': 'Opened New Template drawer',
+    }
+    if (action.modal && action.route) {
+      const alreadyOnRoute = pathname.startsWith(normalizedRoute)
+      if (alreadyOnRoute) {
+        emitConciergeAction(action)
+      } else {
+        sessionStorage.setItem('jamm_concierge_pending', JSON.stringify({ ...action, route: normalizedRoute, _ts: Date.now() }))
+      }
+      setStatusMessage(modalLabel[action.modal ?? ''] ?? 'Opened modal')
+    } else if (action.modal) {
+      emitConciergeAction(action)
+      setStatusMessage(modalLabel[action.modal ?? ''] ?? 'Opened modal')
+    } else if (action.route) {
+      emitConciergeAction(action)
+    }
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      handleSend()
+    }
+  }
+
+  function handleInput(e: React.FormEvent<HTMLTextAreaElement>) {
+    const el = e.currentTarget
+    el.style.height = 'auto'
+    el.style.height = Math.min(el.scrollHeight, 96) + 'px'
+  }
+
+  return (
+    <>
+      {isOpen && (
+        <div
+          onClick={onClose}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.25)', zIndex: 39 }}
+        />
+      )}
+
+      <div
+        style={{
+          position: 'fixed',
+          right: 0,
+          top: 0,
+          width: 400,
+          height: '100vh',
+          zIndex: 40,
+          transform: isOpen ? 'translateX(0)' : 'translateX(100%)',
+          transition: 'transform 200ms ease-out',
+          display: 'flex',
+          flexDirection: 'column',
+        }}
+        className="bg-[#EDEEF0] dark:bg-[#383838] border-l border-[0.5px] border-[#C8CDD6] dark:border-[#484848]"
+      >
+        {/* Header */}
+        <div
+          className="flex items-center justify-between px-4 border-b border-[0.5px] border-[#C8CDD6] dark:border-[#484848] flex-shrink-0"
+          style={{ height: 48 }}
+        >
+          <div className="flex items-center gap-2">
+            {logoUrl ? (
+              <img
+                src={logoUrl}
+                alt="Firm logo"
+                className="h-6 w-auto object-contain rounded-sm"
+                onError={(e) => { e.currentTarget.style.display = 'none' }}
+              />
+            ) : (
+              <div className="h-6 w-6 rounded-sm bg-[#3A6A94] flex items-center justify-center flex-shrink-0">
+                <span className="text-[10px] font-medium text-white">{initials}</span>
+              </div>
+            )}
+            <span className="text-[14px] font-medium text-[#1F3148] dark:text-[#EDEEF0]">
+              JAMM Concierge
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {/* Autopilot toggle */}
+            <div className="relative group">
+              <button
+                onClick={() => {
+                  const next = !autopilotOn
+                  setAutopilotOn(next)
+                  sessionStorage.setItem('jamm_concierge_autopilot', String(next))
+                  autopilotRef.current = next
+                }}
+                className={`flex items-center gap-1 text-[11px] font-medium px-2 py-1 rounded-[4px] border border-[0.5px] transition-all duration-150 ${
+                  autopilotOn
+                    ? 'border-[#1F3148] bg-[#1F3148] text-white dark:border-[#4A7FA5] dark:bg-[#4A7FA5]'
+                    : 'border-[#C8CDD6] dark:border-[#484848] bg-transparent text-[#6B7280] dark:text-[#9CA3AF] hover:border-[#1F3148] hover:text-[#1F3148] dark:hover:border-[#4A7FA5] dark:hover:text-[#4A7FA5]'
+                }`}
+              >
+                <Zap className={`h-3 w-3 transition-all ${autopilotOn ? 'fill-white stroke-white' : 'fill-none'}`} />
+                Autopilot
+              </button>
+            </div>
+
+            <button
+              onClick={onClose}
+              aria-label="Close concierge panel"
+              className="text-[#6B7280] hover:text-[#1F3148] dark:hover:text-[#EDEEF0] transition-colors"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+
+        {autopilotOn && (
+          <div className="px-4 py-1 bg-[#EBF4FB] dark:bg-[#1a3a52] border-b border-[0.5px] border-[#C8CDD6] dark:border-[#484848]">
+            <p className="text-[11px] text-[#4A7FA5] dark:text-[#7ab8d8]">Autopilot on. I'll navigate for you.</p>
+          </div>
+        )}
+
+        {/* Notification cards */}
+        {notifications.length > 0 && (
+          <div className="flex flex-col gap-2 px-4 pt-3 flex-shrink-0">
+            {notifications.map((n) => (
+              <div
+                key={n.id}
+                className="flex items-start gap-2 bg-white dark:bg-[#2D2D2D] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] rounded-[8px] px-3 py-2.5 cursor-pointer hover:bg-[#E4E6EA] dark:hover:bg-[#333333] transition-colors"
+                onClick={() => { dismissNotification(n.id); handleSend(n.message) }}
+              >
+                <p className="flex-1 text-[12px] leading-[1.5] text-[#1F3148] dark:text-[#EDEEF0]">
+                  {n.message}
+                </p>
+                <button
+                  onClick={(e) => { e.stopPropagation(); dismissNotification(n.id) }}
+                  aria-label="Dismiss notification"
+                  className="flex-shrink-0 text-[#6B7280] hover:text-[#1F3148] dark:hover:text-[#EDEEF0] transition-colors mt-0.5"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Message feed */}
+        <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
+
+          {/* Opening message fires automatically via __OPEN__ sentinel on first open */}
+
+          {messages.map((msg, i) => (
+            <div key={i}>
+            <div className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} items-start gap-2`}>
+              {msg.role === 'concierge' && (
+                <div className="flex-shrink-0 w-6 h-6 rounded-full bg-[#1F3148] flex items-center justify-center mt-1">
+                  <span className="text-[9px] font-medium text-white">JC</span>
+                </div>
+              )}
+              <div
+                className={`text-[13px] leading-[1.6] px-3 py-2 rounded-[12px] max-w-[75%] ${msg.role === 'user' ? 'text-white' : ''}`}
+                style={
+                  msg.role === 'user'
+                    ? { background: '#1F3148', color: '#FFFFFF' }
+                    : { background: '#E4E6EA', color: '#1F3148' }
+                }
+              >
+                {msg.content ? (
+                  <div className={`prose prose-sm max-w-none text-[13px] ${msg.role === 'user' ? 'text-white' : 'text-[#374151] dark:text-[#9CA3AF]'}`}>
+                    <ReactMarkdown
+                      components={{
+                        ul: ({node, ...props}) => <ul className="list-disc list-outside ml-4 my-1 space-y-0.5" {...props} />,
+                        ol: ({node, ...props}) => <ol className="list-decimal list-outside ml-4 my-1 space-y-0.5" {...props} />,
+                        li: ({node, ...props}) => <li className="leading-snug" {...props} />,
+                        p: ({node, ...props}) => <p className="mb-1 last:mb-0" {...props} />,
+                        strong: ({node, ...props}) => <strong className="font-medium text-[#1F3148] dark:text-[#EDEEF0]" {...props} />,
+                      }}
+                    >
+                      {msg.content}
+                    </ReactMarkdown>
+                  </div>
+                ) : streaming && i === messages.length - 1 ? (
+                  <span className="text-[13px] text-[#6B7280] animate-pulse">Thinking...</span>
+                ) : null}
+                {msg.actionConfirm && (
+                  <p className="text-[11px] text-[#6B7280] mt-1 italic">{msg.actionConfirm}</p>
+                )}
+              </div>
+            </div>
+            {!autopilotOn && suggestions.length > 0 && i === messages.length - 1 && msg.role === 'concierge' && (
+              <div className="flex flex-wrap gap-2 mt-2 ml-8">
+                {suggestions.map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => handleSuggestion(s)}
+                    className="text-[11px] font-medium px-3 py-1.5 rounded-full border border-[#C8CDD6] dark:border-[#484848] text-[#1F3148] dark:text-[#EDEEF0] bg-white dark:bg-[#2D2D2D] hover:border-[#4A7FA5] hover:text-[#4A7FA5] transition-colors"
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+            )}
+            </div>
+          ))}
+          <p
+            className={`text-[11px] text-[#6B7280] text-center transition-opacity duration-500 ${statusMessage ? 'opacity-100' : 'opacity-0'}`}
+            style={{ minHeight: 16 }}
+          >
+            {statusMessage}
+          </p>
+          <div ref={messagesEndRef} />
+        </div>
+
+        {currentPage && (
+          <div className="px-3 pt-2 pb-0">
+            <span className="inline-flex items-center gap-1 text-[10px] font-medium text-[#6B7280] dark:text-[#9CA3AF]">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#4A7FA5]" />
+              You are on: {currentPage}
+            </span>
+          </div>
+        )}
+        {/* Input area */}
+        <div className="p-4 border-t border-[0.5px] border-[#C8CDD6] dark:border-[#484848] flex-shrink-0">
+          <div className="flex items-end gap-2">
+            <textarea
+              ref={textareaRef}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              onInput={handleInput}
+              placeholder="Ask anything about JAMM PX..."
+              rows={1}
+              disabled={streaming}
+              className="flex-1 rounded-[6px] border border-[0.5px] border-[#C8CDD6] focus:border-[#4A7FA5] focus:outline-none bg-[#F7F7F8] dark:bg-[#2D2D2D] text-[13px] text-[#374151] dark:text-[#9CA3AF] placeholder:text-[#9CA3AF] p-2.5 resize-none transition-colors disabled:opacity-60"
+              style={{ minHeight: 36, maxHeight: 96, overflowY: 'auto' }}
+            />
+            <button
+              onClick={() => handleSend()}
+              disabled={!input.trim() || streaming}
+              aria-label="Send message"
+              className="h-9 w-9 rounded-[6px] bg-[#1F3148] flex items-center justify-center transition-opacity disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0"
+            >
+              <Send className="h-4 w-4 text-white" />
+            </button>
+          </div>
+        </div>
+      </div>
+    </>
   )
 }
 
@@ -14710,6 +16227,7 @@ import { FormField } from '@/components/ui/FormField'
 import { TextInput } from '@/components/ui/TextInput'
 import { SelectInput } from '@/components/ui/SelectInput'
 import { engagementsApi } from '@/lib/api'
+import { setFormDirty } from '@/lib/events/conciergeEvents'
 
 const STATUS_OPTIONS = [
   { value: 'draft', label: 'Draft' },
@@ -14732,7 +16250,7 @@ interface EditEngagementModalProps {
   isOpen: boolean
   onClose: () => void
   engagement: { id: string; name: string; status: string; engagementType?: string; endDate?: string; description?: string }
-  onSuccess: () => void
+  onSuccess: (opts?: { statusBecameCompleted?: boolean }) => void
   uncheckedQcCount?: number
 }
 
@@ -14767,6 +16285,7 @@ export function EditEngagementModal({ isOpen, onClose, engagement, onSuccess, un
   }, [isOpen, engagement])
 
   function handleChange(field: keyof FormState, value: string) {
+    setFormDirty(true)
     setForm((prev) => ({ ...prev, [field]: value }))
     if (field === 'name') setNameError('')
   }
@@ -14800,8 +16319,11 @@ export function EditEngagementModal({ isOpen, onClose, engagement, onSuccess, un
     setSaving(true)
     try {
       await engagementsApi.update(engagement.id, patch)
+      setFormDirty(false)
       toast.success('Engagement updated successfully')
-      onSuccess()
+      const statusBecameCompleted =
+        patch.status === 'completed' && original.status !== 'completed'
+      onSuccess({ statusBecameCompleted })
     } catch {
       toast.error('Failed to update engagement — please try again')
     } finally {
@@ -15614,13 +17136,14 @@ FILE: frontend\src\components\engagements\NewEngagementModal.tsx
 // frontend/src/components/engagements/NewEngagementModal.tsx
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Modal } from '@/components/ui/Modal'
 import { FormField } from '@/components/ui/FormField'
 import { TextInput } from '@/components/ui/TextInput'
 import { SelectInput } from '@/components/ui/SelectInput'
 import { type Engagement, clientsApi, engagementsApi } from '@/lib/api'
 import { toast } from 'sonner'
+import { setFormDirty } from '@/lib/events/conciergeEvents'
 import { useFetch } from '@/lib/hooks/useFetch'
 
 interface NewEngagementModalProps {
@@ -15628,6 +17151,7 @@ interface NewEngagementModalProps {
   onClose: () => void
   onAdd: (engagement: Engagement) => void
   preselectedClientId?: string
+  initialEngagementType?: string
 }
 
 interface FormErrors {
@@ -15643,6 +17167,7 @@ export function NewEngagementModal({
   onClose,
   onAdd,
   preselectedClientId,
+  initialEngagementType,
 }: NewEngagementModalProps) {
   const [form, setForm] = useState({
     name: '',
@@ -15653,6 +17178,17 @@ export function NewEngagementModal({
   })
   const [errors, setErrors] = useState<FormErrors>({})
   const [submitting, setSubmitting] = useState(false)
+
+  useEffect(() => {
+    if (!initialEngagementType) return
+    const knownCategories = ['tax_return', 'bookkeeping', 'payroll']
+    const matched = knownCategories.find((cat) => initialEngagementType.startsWith(cat + '_'))
+    if (matched) {
+      setForm((prev) => ({ ...prev, engagementCategory: matched, engagementType: initialEngagementType }))
+    } else {
+      setForm((prev) => ({ ...prev, engagementCategory: initialEngagementType, engagementType: '' }))
+    }
+  }, [initialEngagementType])
 
   const { data: clientsData } = useFetch(() => clientsApi.list(0, 100), [])
   const clientOptions = (clientsData?.items ?? []).map((c) => ({ value: c.id, label: c.name }))
@@ -15668,6 +17204,7 @@ export function NewEngagementModal({
   }
 
   function handleChange(field: string, value: string) {
+    setFormDirty(true)
     setForm((prev) => {
       const next = { ...prev, [field]: value }
       if (field === 'engagementCategory') next.engagementType = ''
@@ -15677,6 +17214,7 @@ export function NewEngagementModal({
   }
 
   function handleClose() {
+    setFormDirty(false)
     setForm({
       name: '',
       clientId: preselectedClientId ?? '',
@@ -16921,6 +18459,7 @@ FILE: frontend\src\components\layout\AppShell.tsx
 
 import { useState } from 'react'
 import { Sidebar } from './Sidebar'
+import { ConciergePanel } from '@/components/concierge/ConciergePanel'
 
 interface AppShellProps {
   children: React.ReactNode
@@ -16928,13 +18467,34 @@ interface AppShellProps {
 
 export function AppShell({ children }: AppShellProps) {
   const [collapsed, setCollapsed] = useState(false)
+  const [conciergeOpen, setConciergeOpen] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return sessionStorage.getItem('jamm_concierge_open') === 'true'
+    }
+    return false
+  })
+
+  function handleConciergeOpen() {
+    sessionStorage.setItem('jamm_concierge_open', 'true')
+    setConciergeOpen(true)
+  }
+
+  function handleConciergeClose() {
+    sessionStorage.removeItem('jamm_concierge_open')
+    setConciergeOpen(false)
+  }
 
   return (
     <div className="flex h-screen overflow-hidden bg-surface-page dark:bg-dark-page">
-      <Sidebar collapsed={collapsed} onToggle={() => setCollapsed((c) => !c)} />
+      <Sidebar
+        collapsed={collapsed}
+        onToggle={() => setCollapsed((c) => !c)}
+        onConciergeOpen={handleConciergeOpen}
+      />
       <main className="flex-1 overflow-y-auto">
         {children}
       </main>
+      <ConciergePanel isOpen={conciergeOpen} onClose={handleConciergeClose} />
     </div>
   )
 }
@@ -17011,6 +18571,7 @@ import {
   Bell,
   Clock,
   LayoutTemplate,
+  BotMessageSquare,
 } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { cn } from '@/lib/utils'
@@ -17037,9 +18598,10 @@ const settingsItem = { href: '/settings', label: 'Settings', icon: Settings }
 interface SidebarProps {
   collapsed: boolean
   onToggle: () => void
+  onConciergeOpen: () => void
 }
 
-export function Sidebar({ collapsed, onToggle }: SidebarProps) {
+export function Sidebar({ collapsed, onToggle, onConciergeOpen }: SidebarProps) {
   const pathname = usePathname()
   const { theme, setTheme } = useTheme()
   const [mounted, setMounted] = useState(false)
@@ -17162,6 +18724,19 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
           {!collapsed && mounted && (
             <span>{theme === 'dark' ? 'Light mode' : 'Dark mode'}</span>
           )}
+        </button>
+
+        {/* Concierge */}
+        <button
+          onClick={onConciergeOpen}
+          className={cn(
+            'w-full flex items-center gap-3 px-2 py-2 rounded text-[13px] text-white/60 hover:text-white hover:bg-white/10 transition-colors',
+            collapsed && 'justify-center px-2'
+          )}
+          title={collapsed ? 'JAMM Concierge' : undefined}
+        >
+          <BotMessageSquare className="h-4 w-4 flex-shrink-0" />
+          {!collapsed && <span className="truncate">JAMM Concierge</span>}
         </button>
 
         {/* Settings */}
@@ -26883,6 +28458,7 @@ export interface FirmDetails {
   is_active: boolean
   staff_auth_policy: string
   settings: Record<string, unknown> | null
+  feature_flags: Record<string, boolean> | null
   created_at: string
   updated_at: string
 }
@@ -27007,6 +28583,35 @@ export const tasksApi = {
 
 
 ================================================================================
+FILE: frontend\src\lib\events\conciergeEvents.ts
+================================================================================
+// frontend/src/lib/events/conciergeEvents.ts
+
+const CONCIERGE_ACTION_EVENT = 'jamm:concierge-action'
+
+export interface ConciergeAction {
+  type: 'navigate' | 'open-modal' | 'navigate-and-open'
+  route?: string
+  modal?: string
+  prefill?: Record<string, string>
+}
+
+export function emitConciergeAction(action: ConciergeAction) {
+  window.dispatchEvent(new CustomEvent(CONCIERGE_ACTION_EVENT, { detail: action }))
+}
+
+export function onConciergeAction(handler: (action: ConciergeAction) => void): () => void {
+  const listener = (e: Event) => handler((e as CustomEvent<ConciergeAction>).detail)
+  window.addEventListener(CONCIERGE_ACTION_EVENT, listener)
+  return () => window.removeEventListener(CONCIERGE_ACTION_EVENT, listener)
+}
+
+export function setFormDirty(dirty: boolean) {
+  window.dispatchEvent(new CustomEvent('jamm:form-dirty', { detail: { dirty } }))
+}
+
+
+================================================================================
 FILE: frontend\src\lib\hooks\useAuth.tsx
 ================================================================================
 // path: frontend/src/lib/hooks/useAuth.tsx
@@ -27068,6 +28673,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       })
       const data = await res.json()
       if (data.success) {
+        if (data.access_token) localStorage.setItem('access_token', data.access_token)
         const meRes = await fetch('/api/auth/me')
         const meData = await meRes.json()
         setUser(meData.user ?? null)

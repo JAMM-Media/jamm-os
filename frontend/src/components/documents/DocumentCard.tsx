@@ -2,12 +2,13 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { MockDocument, formatFileSize } from '@/lib/mock/documents'
+import { Document } from '@/lib/api/documents'
+import { formatFileSize } from '@/lib/utils'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { FileText } from 'lucide-react'
 
 interface DocumentCardProps {
-  document: MockDocument
+  document: Document
 }
 
 export function DocumentCard({ document }: DocumentCardProps) {
