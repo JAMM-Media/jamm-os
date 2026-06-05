@@ -326,6 +326,57 @@ Respond with exactly one word: SAFE or UNSAFE. Nothing else.""",
     return StreamingResponse(generate(), media_type="text/event-stream")
 
 
+class PolishRequest(BaseModel):
+    text: str
+
+@router.post("/polish")
+def polish_text(
+    body: PolishRequest,
+    current_firm: Firm = Depends(get_current_firm),
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.role == UserRole.client_portal_user:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied.",
+        )
+
+    if not body.text or not body.text.strip():
+        return {"text": body.text}
+
+    settings = get_settings()
+    polish_api_key = settings.ANTHROPIC_API_KEY
+    if not polish_api_key:
+        return {"text": body.text}
+
+    try:
+        polish_client = anthropic.Anthropic(api_key=polish_api_key)
+        response = polish_client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=2000,
+            system="""You are a text cleanup utility for a software assistant.
+Your only job is to fix mechanical text artifacts in the input.
+
+Fix these specific issues:
+- Spaces before punctuation: "word ." becomes "word."
+- Split compound words: "magic -link" becomes "magic-link", "book keeping" becomes "bookkeeping", "Quick Books" becomes "QuickBooks", "on boarding" becomes "onboarding", "Auto pilot" becomes "Autopilot"
+- Split IRS form numbers: "8 821" becomes "8821", "2 848" becomes "2848", "1 040" becomes "1040", "1 120" becomes "1120", "1 065" becomes "1065", "W -2" becomes "W-2", "W -9" becomes "W-9"
+- Double spaces anywhere in the text
+- Rogue markdown artifacts like "** " or " **" with spaces inside
+
+Do not change any words, meaning, structure, or formatting.
+Do not add or remove sentences.
+Do not change capitalization except to fix clearly broken cases.
+Return only the corrected text. No explanation. No preamble. No commentary.""",
+            messages=[{"role": "user", "content": body.text}],
+        )
+        cleaned = response.content[0].text.strip()
+        return {"text": cleaned}
+    except Exception as e:
+        logger.warning(f"Polish endpoint failed for firm {current_firm.id}: {e}")
+        return {"text": body.text}
+
+
 @router.get("/clients/resolve")
 @limiter.limit("30/minute")
 def resolve_client_by_name(
