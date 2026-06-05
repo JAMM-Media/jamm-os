@@ -55,23 +55,67 @@ def concierge_chat(
 
     client = anthropic.Anthropic(api_key=api_key)
 
-    EMPTY_STATE_RESPONSE = """Welcome to JAMM Concierge. Here are three things I can help you with right now:
-
-1. Walk me through importing my clients from TaxDome (or another platform)
-2. Explain the difference between engagements and tasks in JAMM PX
-3. What should I set up first after signing up?"""
-
     if not body.messages:
-        def generate_empty():
-            yield f"data: {EMPTY_STATE_RESPONSE}\n\n"
-        return StreamingResponse(generate_empty(), media_type="text/event-stream")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Messages cannot be empty",
+        )
+
+    # Input sanitization -- runs before every model call
+    MAX_MESSAGE_LENGTH = 4000
+    MAX_MESSAGES = 50
+    INJECTION_PATTERNS = [
+        "ignore previous instructions",
+        "ignore all instructions",
+        "ignore your instructions",
+        "disregard previous",
+        "disregard your instructions",
+        "forget your instructions",
+        "you are now",
+        "act as if",
+        "pretend you are",
+        "pretend to be",
+        "jailbreak",
+        "dan mode",
+        "developer mode",
+        "ignore the above",
+        "override instructions",
+        "new persona",
+        "system prompt",
+        "reveal your prompt",
+        "show your instructions",
+        "what are your instructions",
+    ]
+
+    def sanitize_messages(messages: list[dict]) -> list[dict]:
+        if len(messages) > MAX_MESSAGES:
+            messages = messages[-MAX_MESSAGES:]
+        cleaned = []
+        for msg in messages:
+            content = str(msg.get("content", ""))
+            if len(content) > MAX_MESSAGE_LENGTH:
+                content = content[:MAX_MESSAGE_LENGTH]
+            lower = content.lower()
+            for pattern in INJECTION_PATTERNS:
+                if pattern in lower:
+                    logger.warning(
+                        f"Potential prompt injection detected for firm {current_firm.id}: {pattern!r}"
+                    )
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Message contains disallowed content.",
+                    )
+            cleaned.append({**msg, "content": content})
+        return cleaned
+
+    sanitized_messages = sanitize_messages(body.messages)
 
     def generate():
         with client.messages.stream(
             model="claude-sonnet-4-6",
             max_tokens=2000,
             system=get_system_prompt(autopilot_enabled=body.autopilot_enabled),
-            messages=body.messages,
+            messages=sanitized_messages,
         ) as stream:
             for text in stream.text_stream:
                 # SSE requires each data value line to start with "data:".
