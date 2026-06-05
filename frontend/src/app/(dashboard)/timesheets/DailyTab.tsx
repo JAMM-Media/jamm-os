@@ -215,7 +215,7 @@ export default function DailyTab({
       setEngagements(items)
     }).catch(() => {})
 
-    api.get('/api/v1/clients/?limit=100').then((r) => {
+    api.get('/clients/', { params: { limit: 100 } }).then((r) => {
       const map: Record<string, string> = {}
       for (const c of r.data?.items ?? []) map[c.id] = c.name
       setClients(map)
