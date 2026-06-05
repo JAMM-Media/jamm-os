@@ -49,133 +49,124 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK 1 OF 2: Backend security hardening -- route.py
+TASK 1 OF 3: Output filtering layer -- route.py
 
 Pre-task:
 cd /home/corby/jamm-os
-git add -A && git commit -m "checkpoint before backend security hardening"
+git add -A && git commit -m "checkpoint before output filtering layer"
 
 VERIFY BEFORE ACT:
-sed -n '35,42p' /home/corby/jamm-os/app/api/concierge/route.py
-sed -n '79,105p' /home/corby/jamm-os/app/api/concierge/route.py
-Paste both before touching anything.
+grep -n "def generate\|assembled\|cleanContent\|stream" /home/corby/jamm-os/app/api/concierge/route.py
+Paste output before touching anything.
 
 ---
 
-Change 1: Lock message role to user or assistant only
+Change 1: Add output filter function and apply it to streamed response
+
+The output filter runs on the fully assembled response before it is
+returned to the client. It checks for PII patterns and system prompt
+leakage phrases and replaces them before the client ever sees them.
 
 Find exactly:
-class MessageItem(BaseModel):
-    role: str
-    content: str
+    sanitized_messages = sanitize_messages(body.messages)
+
+    def generate():
+        with client.messages.stream(
 
 Replace with:
-class MessageItem(BaseModel):
-    role: str
-    content: str
+    sanitized_messages = sanitize_messages(body.messages)
 
-    def validate_role(self) -> None:
-        if self.role not in ("user", "assistant"):
-            raise ValueError(f"Invalid message role: {self.role!r}")
+    import re
 
-Then inside sanitize_messages, add role validation at the start of the
-for loop, immediately before the content length check:
+    SSN_PATTERN = re.compile(r'\b\d{3}-\d{2}-\d{4}\b')
+    EIN_PATTERN = re.compile(r'\b\d{2}-\d{7}\b')
+    SYSTEM_PROMPT_LEAK_PHRASES = [
+        "my instructions are",
+        "my system prompt",
+        "i was instructed to",
+        "i am instructed to",
+        "the system prompt says",
+        "my prompt says",
+        "i have been told to",
+        "i have been configured",
+        "as per my instructions",
+        "according to my instructions",
+    ]
 
-Find exactly:
-        cleaned = []
-        for msg in messages:
-            content = msg.content
-            if len(content) > MAX_MESSAGE_LENGTH:
+    def filter_output(text: str) -> str:
+        # Redact SSN patterns
+        if SSN_PATTERN.search(text):
+            logger.error(
+                f"SECURITY: SSN pattern detected in output for firm {current_firm.id}"
+            )
+            text = SSN_PATTERN.sub("[REDACTED]", text)
 
-Replace with:
-        cleaned = []
-        for msg in messages:
-            if msg.role not in ("user", "assistant"):
-                logger.warning(
-                    f"Invalid message role for firm {current_firm.id}: {msg.role!r}"
+        # Redact EIN patterns
+        if EIN_PATTERN.search(text):
+            logger.error(
+                f"SECURITY: EIN pattern detected in output for firm {current_firm.id}"
+            )
+            text = EIN_PATTERN.sub("[REDACTED]", text)
+
+        # Detect system prompt leakage attempts in output
+        lower = text.lower()
+        for phrase in SYSTEM_PROMPT_LEAK_PHRASES:
+            if phrase in lower:
+                logger.error(
+                    f"SECURITY: Possible system prompt leakage in output "
+                    f"for firm {current_firm.id}: phrase={phrase!r}"
                 )
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Message contains disallowed content.",
-                )
-            content = msg.content
-            if len(content) > MAX_MESSAGE_LENGTH:
+                return "I am JAMM Concierge. I am here to help you use JAMM PX."
 
----
+        return text
 
-Change 2: Normalize whitespace before injection pattern matching
+    def generate():
+        with client.messages.stream(
+
+Now find the line inside generate() that yields the streamed chunks.
+The full assembled response is not available during streaming -- the
+filter must run on the complete assembled text before the final
+setMessages call on the frontend.
+
+Since this is a streaming endpoint, the output filter applies to each
+complete chunk line, not the full response. Add the filter to each
+data line before yielding:
 
 Find exactly:
-            lower = content.lower()
-            for pattern in INJECTION_PATTERNS:
-                if pattern in lower:
+        with client.messages.stream(
+            model="claude-sonnet-4-6",
+            max_tokens=2000,
+            system=get_system_prompt(autopilot_enabled=body.autopilot_enabled),
+            messages=sanitized_messages,
+        ) as stream:
+            for text in stream.text_stream:
+                data_lines = "\n".join(f"data: {line}" for line in text.split("\n"))
+                yield f"{data_lines}\n\n"
 
 Replace with:
-            lower = " ".join(content.lower().split())
-            for pattern in INJECTION_PATTERNS:
-                if pattern in lower:
+        with client.messages.stream(
+            model="claude-sonnet-4-6",
+            max_tokens=2000,
+            system=get_system_prompt(autopilot_enabled=body.autopilot_enabled),
+            messages=sanitized_messages,
+        ) as stream:
+            assembled = ""
+            for text in stream.text_stream:
+                assembled += text
+                data_lines = "\n".join(f"data: {line}" for line in text.split("\n"))
+                yield f"{data_lines}\n\n"
+            # Run output filter on fully assembled response
+            filtered = filter_output(assembled)
+            if filtered != assembled:
+                # If filter changed the response, send a replacement sentinel
+                yield f"data: \n\n"
+                yield f"data: [FILTERED]\n\n"
+                yield f"data: {filtered}\n\n"
 
-This collapses all whitespace variants -- double spaces, tabs, newlines --
-into single spaces before matching. Bypasses using extra whitespace are blocked.
-
----
-
-Change 3: Add per-firm rate limit on /chat endpoint
-
-VERIFY BEFORE ACT:
-grep -n "limiter\|rate_limit\|slowapi\|from app.core" /home/corby/jamm-os/app/api/concierge/route.py
-Paste output.
-
-If limiter is not already imported, check how it is imported in other route files:
-grep -rn "limiter" /home/corby/jamm-os/app/api/ | grep "import" | head -5
-Paste output then add the correct import.
-
-Then find:
-@router.post("/chat")
-def concierge_chat(
-
-Replace with:
-@router.post("/chat")
-@limiter.limit("60/minute")
-def concierge_chat(
-    request: Request,
-
-Add Request to the existing FastAPI imports at the top of the file if not present:
-from fastapi import APIRouter, Depends, HTTPException, Request, status
-
----
-
-Change 4: Escalate repeated injection attempts
-
-Inside sanitize_messages, find exactly:
-                    logger.warning(
-                        f"Potential prompt injection detected for firm "
-                        f"{current_firm.id}: pattern={pattern!r}"
-                    )
-                    raise HTTPException(
-                        status_code=status.HTTP_400_BAD_REQUEST,
-                        detail="Message contains disallowed content.",
-                    )
-
-Replace with:
-                    logger.error(
-                        f"SECURITY: Prompt injection attempt detected -- "
-                        f"firm={current_firm.id} pattern={pattern!r} "
-                        f"content_preview={content[:100]!r}"
-                    )
-                    raise HTTPException(
-                        status_code=status.HTTP_400_BAD_REQUEST,
-                        detail="Message contains disallowed content.",
-                    )
-
-Changing logger.warning to logger.error ensures injection attempts surface
-at a higher severity level in any log monitoring setup.
-
----
+Do not change anything else.
 
 VERIFY AFTER ACT:
-1. grep -n "user.*assistant\|role not in\|split()\|logger.error\|SECURITY:" /home/corby/jamm-os/app/api/concierge/route.py
-   Confirm all four changes appear.
-2. python3 -c "from app.api.concierge.route import router; print('OK')"
-   Must pass before stopping.
-3. Restart the backend.
+grep -n "filter_output\|SSN_PATTERN\|EIN_PATTERN\|SYSTEM_PROMPT_LEAK\|REDACTED\|assembled" /home/corby/jamm-os/app/api/concierge/route.py
+Confirm all terms appear.
+python3 -c "from app.api.concierge.route import router; print('OK')"
+Must pass before stopping.

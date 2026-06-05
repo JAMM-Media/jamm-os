@@ -36,13 +36,19 @@ class MessageItem(BaseModel):
     role: str
     content: str
 
+    def validate_role(self) -> None:
+        if self.role not in ("user", "assistant"):
+            raise ValueError(f"Invalid message role: {self.role!r}")
+
 class ChatRequest(BaseModel):
     messages: list[MessageItem]
     autopilot_enabled: bool = False
 
 
 @router.post("/chat")
+@limiter.limit("60/minute")
 def concierge_chat(
+    request: Request,
     body: ChatRequest,
     current_firm: Firm = Depends(get_current_firm),
     current_user: User = Depends(get_current_user),
@@ -122,15 +128,24 @@ def concierge_chat(
 
         cleaned = []
         for msg in messages:
+            if msg.role not in ("user", "assistant"):
+                logger.warning(
+                    f"Invalid message role for firm {current_firm.id}: {msg.role!r}"
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Message contains disallowed content.",
+                )
             content = msg.content
             if len(content) > MAX_MESSAGE_LENGTH:
                 content = content[:MAX_MESSAGE_LENGTH]
-            lower = content.lower()
+            lower = " ".join(content.lower().split())
             for pattern in INJECTION_PATTERNS:
                 if pattern in lower:
-                    logger.warning(
-                        f"Potential prompt injection detected for firm "
-                        f"{current_firm.id}: pattern={pattern!r}"
+                    logger.error(
+                        f"SECURITY: Prompt injection attempt detected -- "
+                        f"firm={current_firm.id} pattern={pattern!r} "
+                        f"content_preview={content[:100]!r}"
                     )
                     raise HTTPException(
                         status_code=status.HTTP_400_BAD_REQUEST,
