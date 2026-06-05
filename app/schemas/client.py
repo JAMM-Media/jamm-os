@@ -101,6 +101,11 @@ class ClientImportResult(BaseModel):
 class QBOARBalanceOut(BaseModel):
     connected: bool
     outstanding_balance: Optional[float] = None
+    current_balance: Optional[float] = None      # not yet due
+    days_1_30: Optional[float] = None            # 1-30 days overdue
+    days_31_60: Optional[float] = None           # 31-60 days overdue
+    days_61_90: Optional[float] = None           # 61-90 days overdue
+    days_over_90: Optional[float] = None         # 91+ days overdue
     last_payment_date: Optional[date] = None
 
 
