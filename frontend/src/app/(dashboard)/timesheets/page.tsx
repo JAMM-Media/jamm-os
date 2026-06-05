@@ -36,8 +36,9 @@ export default function TimesheetsPage() {
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null)
   const [billableFilter, setBillableFilter] = useState<string>('all')
   const [engagementFilter, setEngagementFilter] = useState<string>('all')
+  const [clientFilter, setClientFilter] = useState<string>('all')
   const [staffList, setStaffList] = useState<StaffUser[]>([])
-  const [engagementList, setEngagementList] = useState<{ id: string; name: string; clientName: string }[]>([])
+  const [engagementList, setEngagementList] = useState<{ id: string; name: string; clientId: string; clientName: string }[]>([])
   const [clientMap, setClientMap] = useState<Record<string, string>>({})
 
   const isManagerOrAbove =
@@ -55,6 +56,7 @@ export default function TimesheetsPage() {
         setEngagementList(items.map((e: { id: string; name: string; client_id?: string }) => ({
           id: e.id,
           name: e.name,
+          clientId: e.client_id ?? '',
           clientName: map[e.client_id ?? ''] ?? '',
         })))
       })
@@ -99,12 +101,28 @@ export default function TimesheetsPage() {
               <option value="non_billable">Non-Billable Only</option>
             </select>
             <select
+              value={clientFilter}
+              onChange={(e) => {
+                setClientFilter(e.target.value)
+                setEngagementFilter('all')
+              }}
+              className="h-8 px-2 rounded-[6px] border border-[0.5px] border-surface-border dark:border-dark-border bg-surface-page dark:bg-dark-page text-[13px] text-brand dark:text-[#EDEEF0] focus:outline-none"
+            >
+              <option value="all">All Clients</option>
+              {Object.entries(clientMap)
+                .sort((a, b) => a[1].localeCompare(b[1]))
+                .map(([id, name]) => (
+                  <option key={id} value={id}>{name}</option>
+                ))}
+            </select>
+            <select
               value={engagementFilter}
               onChange={(e) => setEngagementFilter(e.target.value)}
               className="h-8 px-2 rounded-[6px] border border-[0.5px] border-surface-border dark:border-dark-border bg-surface-page dark:bg-dark-page text-[13px] text-brand dark:text-[#EDEEF0] focus:outline-none"
             >
               <option value="all">All Engagements</option>
               {engagementList
+                .filter((e) => clientFilter === 'all' || e.clientId === clientFilter)
                 .slice()
                 .sort((a, b) => a.name.localeCompare(b.name))
                 .map((e) => (
@@ -161,6 +179,7 @@ export default function TimesheetsPage() {
             userRole={user.role}
             billableFilter={billableFilter}
             engagementFilter={engagementFilter}
+            clientFilter={clientFilter}
           />
         )}
         {activeTab === 'weekly' && (
@@ -170,6 +189,7 @@ export default function TimesheetsPage() {
             userRole={user.role}
             billableFilter={billableFilter}
             engagementFilter={engagementFilter}
+            clientFilter={clientFilter}
           />
         )}
         {activeTab === 'biweekly' && (
@@ -179,6 +199,7 @@ export default function TimesheetsPage() {
             userRole={user.role}
             billableFilter={billableFilter}
             engagementFilter={engagementFilter}
+            clientFilter={clientFilter}
           />
         )}
         {activeTab === 'monthly' && (
@@ -188,6 +209,7 @@ export default function TimesheetsPage() {
             userRole={user.role}
             billableFilter={billableFilter}
             engagementFilter={engagementFilter}
+            clientFilter={clientFilter}
           />
         )}
         {activeTab === 'quarterly' && (
@@ -197,6 +219,7 @@ export default function TimesheetsPage() {
             userRole={user.role}
             billableFilter={billableFilter}
             engagementFilter={engagementFilter}
+            clientFilter={clientFilter}
           />
         )}
         {activeTab === 'yearly' && (
@@ -206,6 +229,7 @@ export default function TimesheetsPage() {
             userRole={user.role}
             billableFilter={billableFilter}
             engagementFilter={engagementFilter}
+            clientFilter={clientFilter}
           />
         )}
       </div>

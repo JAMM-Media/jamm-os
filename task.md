@@ -23,23 +23,6 @@ Architecture rules — enforce always:
 - Background tasks that touch the database must create their own SessionLocal() session in a try/finally block — never pass the request's db session into a background task.
 - Never use native_enum=True for enums whose values contain dots or special characters. Always use sa.Enum(MyEnum, native_enum=False).
 
-Migration procedure — follow every time:
-1. alembic current — verify starting state
-2. alembic revision --autogenerate -m "description"
-3. Read the generated file in full — if it contains tables beyond what you just added, delete it and write a clean manual migration
-4. alembic upgrade head
-5. alembic current — confirm at head
-All models must be imported in migrations/env.py or autogenerate silently misses them.
-
-Behavioral event log rules:
-- Fire-and-forget writes only. A failed event log write never surfaces as an error to the user.
-- Never block the main operation.
-- Service layer only — never in routers, never in CRUD.
-- Own session — the logging utility creates its own database session in a try/finally block, never inherits the request session.
-
-Security checklist — every module:
-Verify before marking complete: tenant isolation, RBAC, audit log, input validation, no sensitive data in logs, signed URLs, tests covering happy path and edge cases, tenant isolation test proving Firm A cannot access Firm B data.
-
 Windows / PowerShell:
 - No && chaining — separate commands
 - Quoted paths for directories with parentheses
@@ -47,131 +30,93 @@ Windows / PowerShell:
 
 ---
 
-PHASE-SPECIFIC INSTRUCTIONS — Fee schedule complexity adders
+PHASE-SPECIFIC INSTRUCTIONS — Timesheet timer + client-first engagement selection
 
-Three parts: backend migration, settings UI extension, send letter modal update + engagement detail display.
-
----
-
-PART 1 — BACKEND MIGRATION
-
-Add one nullable JSONB column to the engagements table.
-
-Step 1 — Add the field to app/models/engagement.py:
-
-    from sqlalchemy.dialects.postgresql import JSONB
-
-    complexity_flags: Mapped[dict | None] = mapped_column(
-        JSONB,
-        nullable=True,
-        default=None,
-        comment="Complexity flags selected at engagement letter send. Keys are flag names, values are selected tier label or True for fixed flags.",
-    )
-
-Step 2 — Add complexity_flags to EngagementBase in app/schemas/engagement.py:
-
-    from typing import Optional, List, Any
-    complexity_flags: Optional[dict] = None
-
-Step 3 — Add a PATCH endpoint to app/api/engagements.py that allows updating complexity_flags on an existing engagement. Requires manager_or_above. Fires a behavioral event with event_type "engagement.complexity_flags_updated", metadata includes engagement_id, engagement_type, flags, and actor_id.
-
-Step 4 — Run the migration:
-    alembic revision --autogenerate -m "add_complexity_flags_to_engagements"
-    Read the generated file in full. If it contains anything beyond adding the complexity_flags column, delete it and write a clean manual migration.
-    alembic upgrade head
-    alembic current
+Pure frontend build. No backend changes, no migration.
 
 ---
 
-PART 2 — SETTINGS: EXTEND FeeScheduleTab
+PART 1 — START/STOP TIMER on DailyTab
 
-File: frontend/src/components/settings/FeeScheduleTab.tsx
+File: frontend/src/app/(dashboard)/timesheets/DailyTab.tsx
 
-The current component renders base fees per engagement type. Extend it to add a second section below the existing base rate section titled "Complexity Adders".
+Add a live running timer to the Daily tab entry form. The timer persists across navigation using localStorage so staff can start a timer, leave JAMM PX to do their work, return later and stop it.
 
-The complexity adder configuration is stored in firm.settings.fee_schedule under a key called "complexity_adders". It is a nested object. On load, read it from firmSettings?.fee_schedule?.complexity_adders. On save, merge it back into the fee_schedule object alongside the existing engagement type keys.
+localStorage key: "jamm_active_timer"
+localStorage value shape: { startedAt: ISO string, engagementId: string, activityType: string, customActivity: string, isBillable: boolean }
 
-The ten fixed flags — each gets a simple dollar input, same style as the base rate inputs:
-- rental_property: "Rental Property"
-- foreign_accounts_fbar: "Foreign Accounts / FBAR"
-- depreciation_schedules: "Depreciation Schedules"
-- home_office: "Home Office Deduction"
-- multiple_states: "Multiple States"
-- trust_estate_involvement: "Trust or Estate Involvement"
-- business_sale: "Business Sale or Disposition"
-- equity_compensation: "Equity Compensation / ISO / RSU"
+Timer state in component:
+- Add a timerState: { startedAt: string, engagementId: string, activityType: string, customActivity: string, isBillable: boolean } | null state, initialized by reading localStorage on mount.
+- Add elapsed: number state (seconds), updated every second via setInterval when timerState is not null.
 
-The two tiered flags — K-1s and crypto get a tier builder instead of a single dollar input:
-- k1_involvement: "K-1 Involvement"
-- crypto: "Cryptocurrency Transactions"
+On mount (useEffect with empty deps):
+- Read localStorage key "jamm_active_timer". If present and valid JSON, set timerState and start the interval.
 
-Tier builder UI for each tiered flag:
-- Shows a list of tiers the firm has defined. Each tier row has: a text input for the tier label (e.g. "1-3 K-1s", "Simple exchange") and a dollar input for the amount.
-- An "+ Add Tier" button below the list adds a new empty tier row.
-- A small X button on each row removes that tier.
-- Minimum 0 tiers (firm may leave it empty). No maximum.
-- Tiers are stored as an array of objects: [{ label: string, amount: string }]
+Start Timer button:
+- Validate that engagementId and activityType are selected before starting. If not, show toast.error with appropriate message and do not start.
+- Only one timer at a time. If timerState is not null when Start is pressed, show a toast.error: "Stop the current timer before starting a new one." Do not start.
+- On start: write to localStorage, set timerState, pre-fill form.engagementId, form.activityType, form.isBillable from current form values.
+- Show a pulsing red dot next to the elapsed time display to signal the timer is active.
 
-Store the full complexity_adders structure as:
-{
-  rental_property: "150",
-  foreign_accounts_fbar: "200",
-  ...other fixed flags...,
-  k1_involvement: [{ label: "1-3 K-1s", amount: "100" }, { label: "4+ K-1s", amount: "250" }],
-  crypto: [{ label: "Simple exchange", amount: "75" }, { label: "Multiple wallets", amount: "200" }]
-}
+Stop Timer button (shown when timer is running):
+- Calculate start time string from timerState.startedAt (format HH:MM).
+- Calculate end time string from now (format HH:MM).
+- Call setForm with: engagementId from timerState, activityType from timerState, startTime from calculated start, endTime from calculated end, hours auto-calculated from the diff (use existing timeDiffHours function), hoursAutoFilled: true, isBillable from timerState.
+- Also call setEngSearch with getEngLabel of the restored engagement so the search input shows the right label.
+- Clear localStorage key "jamm_active_timer".
+- Set timerState to null, clear interval.
+- The form is now populated and ready for the staff member to review, add notes, and submit normally via the existing Add Entry flow. Do not auto-submit.
 
-The Save Fee Schedule button at the bottom saves everything — base rates and complexity adders together — in a single PATCH to /users/firm/settings with the full fee_schedule object.
+Elapsed display format: show HH:MM:SS while running. Sits between the engagement/activity fields and the start/end time fields in the form layout. Only visible when a timer is active.
+
+Timer UI placement: add a "Start Timer" button to the right of the form's primary action area. When the timer is running, replace it with a "Stop Timer" button styled with a red background. The elapsed time display appears directly above the stop button.
 
 ---
 
-PART 3 — SEND ENGAGEMENT LETTER MODAL
+PART 2 — CLIENT-FIRST ENGAGEMENT SELECTION on DailyTab
 
-File: frontend/src/components/engagements/SendEngagementLetterModal.tsx
+File: frontend/src/app/(dashboard)/timesheets/DailyTab.tsx
 
-The modal already fetches firm settings and auto-populates feeAmount from fee_schedule[engagementType]. Extend it to add a complexity flags section in the template mode flow, between the fee amount field and the bottom helper text paragraph.
+Add a client selector above the existing engagement dropdown in the entry form. The client selector narrows the engagement list to only that client's engagements.
 
-Add a complexityAdders state that reads from the fetched firm settings: the complexity_adders object from fee_schedule. Add a selectedFlags state: Record<string, string | true> — keys are flag names, values are either true (fixed flag checked) or the tier label string (tiered flag with tier selected).
+Add clientFilter: string state (default '').
 
-Complexity flags section layout:
-- Section label: "Complexity" — 11px uppercase muted, same style as the auto-populated preview label
-- A checklist of all ten flags. Each row: a checkbox on the left, the flag label on the right.
-- When a fixed flag is checked, add its dollar amount to the running fee total.
-- When k1_involvement or crypto is checked, a second inline dropdown appears immediately below that row showing the firm's configured tiers for that flag. Selecting a tier adds that tier's dollar amount to the total. If no tiers are configured for that flag, checking it shows a small muted note: "No tiers configured — set them in Settings → Fee Schedule."
-- Only show the complexity section if complexity_adders has at least one key with a value.
+The clients state already exists as Record<string, string> (id → name). Derive a sorted client list from it for the dropdown:
+const clientOptions = Object.entries(clients).sort((a, b) => a[1].localeCompare(b[1]))
 
-Fee recalculation: the feeAmount field is editable by the firm, but it should recalculate automatically as flags are checked and unchecked. The calculation is: base rate from fee_schedule[engagementType] (strip $ if present, parse as number) plus all checked fixed flag adders plus selected tier amounts. Format the result as "$X,XXX" with no decimals. If the firm manually edits the fee field after auto-calculation, preserve their override — do not recalculate on top of a manual edit. Add a small "Reset to calculated" link next to the fee field that re-runs the calculation if they want to undo a manual edit.
+Client selector UI: a standard select element above the engagement search input. Placeholder option "All clients". When a client is selected, set clientFilter to that client's id and clear the current engagementId and engSearch if the selected engagement doesn't belong to that client.
 
-On send (handleSend, template mode): after the letter is sent successfully, fire a PATCH to /engagements/{engagementId}/complexity_flags with the selectedFlags object. Fire this as a background call — do not await it before calling onSent(). A failed flags write should not block the success toast or the modal close.
+Update filteredEngagements() to filter by clientFilter when it is set:
+- If clientFilter is not empty, only return engagements where eng.client_id === clientFilter.
+- Then apply the existing engSearch text filter on top.
+
+The assignedEngs() and otherEngs() grouping should continue to work correctly after this filter.
+
+When clientFilter changes and the currently selected engagement no longer matches, clear form.engagementId and setEngSearch('').
 
 ---
 
-PART 4 — ENGAGEMENT DETAIL PAGE: COMPLEXITY FLAGS DISPLAY
+PART 3 — CLIENT FILTER on timesheet page filter bar
 
-File: frontend/src/app/engagements/[id]/page.tsx
+File: frontend/src/app/(dashboard)/timesheets/page.tsx
 
-In the Overview tab, inside the existing info card grid, add a new full-width row at the bottom of the grid that shows complexity flags. Only render this row if engagement.complexity_flags exists and has at least one key.
+Add a clientFilter: string state (default 'all') to the timesheets page.
 
-Display: label "Complexity Flags" in the standard labelClass style. Value: a horizontal flex-wrap row of pill badges — one per flag. Each pill shows the flag's human-readable label plus the tier label if applicable (e.g. "K-1 Involvement — 4+ K-1s"). Pill style: bg-surface-page dark:bg-dark-page, border border-surface-border dark:border-dark-border, text-[12px] text-brand dark:text-[#EDEEF0], rounded-full px-2.5 py-0.5.
+Derive a sorted client list from the existing clientMap state:
+const clientOptions = Object.entries(clientMap).sort((a, b) => a[1].localeCompare(b[1]))
 
-The human-readable label map to use:
-rental_property → "Rental Property"
-k1_involvement → "K-1 Involvement"
-foreign_accounts_fbar → "Foreign Accounts / FBAR"
-depreciation_schedules → "Depreciation Schedules"
-home_office → "Home Office Deduction"
-multiple_states → "Multiple States"
-trust_estate_involvement → "Trust or Estate Involvement"
-business_sale → "Business Sale or Disposition"
-equity_compensation → "Equity Compensation / ISO / RSU"
-crypto → "Cryptocurrency"
+Add a client filter select to the filter bar, before the engagement filter dropdown. Placeholder "All Clients". When a client is selected, also reset engagementFilter to 'all' since the previously selected engagement may not belong to the new client.
+
+When clientFilter is not 'all', filter the engagement options shown in the engagement filter dropdown to only show engagements belonging to that client.
+
+Pass clientFilter down to all tab components that accept engagementFilter — add it as an optional prop alongside engagementFilter. Each tab should additionally filter entries by client: since entries have engagement_id, derive the client from the engagements list and filter accordingly when clientFilter is set.
 
 ---
 
 VERIFICATION
 
-1. alembic current confirms at head
-2. npx tsc --noEmit in frontend/ passes with no errors
-3. Confirm complexity_adders saves and reloads correctly in Settings → Fee Schedule
-4. Confirm fee auto-populates and recalculates as flags are checked in the send letter modal
-5. Confirm complexity flags appear on the engagement detail page after a letter is sent
+1. npx tsc --noEmit in frontend/ passes with no errors
+2. Timer persists in localStorage — start a timer, navigate away to another page, return to Daily tab and confirm the clock is still running with correct elapsed time
+3. Client selector in entry form correctly narrows engagement list
+4. Stopping the timer correctly populates start time, end time, and hours in the form
+5. Only one timer can run at a time — starting a second one shows the error toast

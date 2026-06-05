@@ -16,6 +16,7 @@ export interface AggregateTabProps {
   userRole: string
   billableFilter?: string
   engagementFilter?: string
+  clientFilter?: string
 }
 
 interface SummaryRow {
@@ -145,12 +146,14 @@ export default function AggregateTab({
   userRole,
   billableFilter = 'all',
   engagementFilter = 'all',
+  clientFilter = 'all',
 }: AggregateTabProps) {
   const isManagerOrAbove = userRole === 'firm_owner' || userRole === 'manager'
   const [offset, setOffset] = useState(0)
   const [summary, setSummary] = useState<SummaryRow[]>([])
   const [entries, setEntries] = useState<TimeEntry[]>([])
   const [engagements, setEngagements] = useState<Record<string, string>>({})
+  const [engagementClientMap, setEngagementClientMap] = useState<Record<string, string>>({})
   const [users, setUsers] = useState<Record<string, string>>({})
   const [loadingSummary, setLoadingSummary] = useState(true)
   const [loadingEntries, setLoadingEntries] = useState(true)
@@ -167,9 +170,14 @@ export default function AggregateTab({
 
   useEffect(() => {
     api.get('/engagements/?limit=100').then((r) => {
-      const map: Record<string, string> = {}
-      for (const e of r.data?.items ?? []) map[e.id] = e.name
-      setEngagements(map)
+      const nameMap: Record<string, string> = {}
+      const clientMap: Record<string, string> = {}
+      for (const e of r.data?.items ?? []) {
+        nameMap[e.id] = e.name
+        clientMap[e.id] = e.client_id ?? ''
+      }
+      setEngagements(nameMap)
+      setEngagementClientMap(clientMap)
     }).catch(() => {})
   }, [])
 
@@ -383,6 +391,7 @@ export default function AggregateTab({
             </thead>
             <tbody>
               {entries.filter((e) => {
+                if (clientFilter !== 'all' && engagementClientMap[e.engagement_id] !== clientFilter) return false
                 if (billableFilter === 'billable') return e.is_billable === true
                 if (billableFilter === 'non_billable') return e.is_billable === false
                 if (engagementFilter !== 'all' && e.engagement_id !== engagementFilter) return false

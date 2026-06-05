@@ -13,6 +13,7 @@ export interface DailyTabProps {
   userRole: string
   billableFilter?: string
   engagementFilter?: string
+  clientFilter?: string
 }
 
 const ACTIVITY_TYPES = [
@@ -25,6 +26,16 @@ const ACTIVITY_TYPES = [
   'Admin',
   'Other',
 ]
+
+const TIMER_KEY = 'jamm_active_timer'
+
+interface TimerState {
+  startedAt: string
+  engagementId: string
+  activityType: string
+  customActivity: string
+  isBillable: boolean
+}
 
 function roundToNearest15(date: Date): string {
   const minutes = Math.round(date.getMinutes() / 15) * 15
@@ -59,6 +70,13 @@ function timeDiffHours(start: string, end: string): number {
   const [eh, em] = end.split(':').map(Number)
   const totalMin = eh * 60 + em - (sh * 60 + sm)
   return Math.max(0, Math.round((totalMin / 60) * 4) / 4)
+}
+
+function formatElapsed(seconds: number): string {
+  const h = Math.floor(seconds / 3600)
+  const m = Math.floor((seconds % 3600) / 60)
+  const s = seconds % 60
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
 }
 
 interface Engagement {
@@ -117,7 +135,14 @@ const EMPTY_FORM: EntryForm = {
   hoursAutoFilled: false,
 }
 
-export default function DailyTab({ selectedUserId, currentUserId, userRole, billableFilter = 'all', engagementFilter = 'all' }: DailyTabProps) {
+export default function DailyTab({
+  selectedUserId,
+  currentUserId,
+  userRole,
+  billableFilter = 'all',
+  engagementFilter = 'all',
+  clientFilter: clientFilterProp = 'all',
+}: DailyTabProps) {
   const today = toDateString(new Date())
   const isManagerOrAbove = userRole === 'firm_owner' || userRole === 'manager'
   const effectiveUserId = selectedUserId ?? currentUserId
@@ -146,9 +171,41 @@ export default function DailyTab({ selectedUserId, currentUserId, userRole, bill
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
   const [duplicateWarning, setDuplicateWarning] = useState(false)
   const [pendingPayload, setPendingPayload] = useState<Record<string, unknown> | null>(null)
+
+  // Client filter for form engagement dropdown (Part 2)
+  const [clientFilter, setClientFilter] = useState('')
+
+  // Timer state (Part 1)
+  const [timerState, setTimerState] = useState<TimerState | null>(null)
+  const [elapsed, setElapsed] = useState(0)
+  const timerIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
   const engDropRef = useRef<HTMLDivElement>(null)
   const taskRef = useRef<HTMLDivElement>(null)
   const actRef = useRef<HTMLDivElement>(null)
+
+  // On mount: restore timer from localStorage
+  useEffect(() => {
+    const raw = localStorage.getItem(TIMER_KEY)
+    if (raw) {
+      try {
+        const parsed: TimerState = JSON.parse(raw)
+        setTimerState(parsed)
+        setElapsed(Math.floor((Date.now() - new Date(parsed.startedAt).getTime()) / 1000))
+      } catch {}
+    }
+  }, [])
+
+  // Manage interval when timerState changes
+  useEffect(() => {
+    if (!timerState) return
+    timerIntervalRef.current = setInterval(() => {
+      setElapsed(Math.floor((Date.now() - new Date(timerState.startedAt).getTime()) / 1000))
+    }, 1000)
+    return () => {
+      if (timerIntervalRef.current) clearInterval(timerIntervalRef.current)
+    }
+  }, [timerState])
 
   // Load engagements, clients, settings, entries
   useEffect(() => {
@@ -220,6 +277,17 @@ export default function DailyTab({ selectedUserId, currentUserId, userRole, bill
     }
   }, [form.startTime, form.endTime, form.hoursAutoFilled, form.hours])
 
+  // When clientFilter changes, clear engagement if it no longer belongs to selected client
+  useEffect(() => {
+    if (!clientFilter) return
+    const eng = engagements.find((e) => e.id === form.engagementId)
+    if (form.engagementId && (!eng || eng.client_id !== clientFilter)) {
+      setForm((f) => ({ ...f, engagementId: '' }))
+      setEngSearch('')
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clientFilter])
+
   // Close eng dropdown on outside click
   useEffect(() => {
     function handler(e: MouseEvent) {
@@ -265,7 +333,10 @@ export default function DailyTab({ selectedUserId, currentUserId, userRole, bill
 
   function filteredEngagements(): Engagement[] {
     const q = engSearch.toLowerCase()
-    return engagements.filter((e) => getEngLabel(e).toLowerCase().includes(q))
+    return engagements.filter((e) => {
+      if (clientFilter && e.client_id !== clientFilter) return false
+      return getEngLabel(e).toLowerCase().includes(q)
+    })
   }
 
   function assignedEngs() {
@@ -282,6 +353,59 @@ export default function DailyTab({ selectedUserId, currentUserId, userRole, bill
     setEngDropOpen(false)
     setTaskSearch('')
     setTaskOpen(false)
+  }
+
+  function startTimer() {
+    if (timerState) {
+      toast.error('Stop the current timer before starting a new one.')
+      return
+    }
+    if (!form.engagementId) {
+      toast.error('Select an engagement before starting the timer.')
+      return
+    }
+    if (!form.activityType) {
+      toast.error('Select an activity type before starting the timer.')
+      return
+    }
+    const state: TimerState = {
+      startedAt: new Date().toISOString(),
+      engagementId: form.engagementId,
+      activityType: form.activityType,
+      customActivity: form.customActivity,
+      isBillable: form.isBillable,
+    }
+    localStorage.setItem(TIMER_KEY, JSON.stringify(state))
+    setTimerState(state)
+    setElapsed(0)
+  }
+
+  function stopTimer() {
+    if (!timerState) return
+    const startDate = new Date(timerState.startedAt)
+    const now = new Date()
+    const startTime = startDate.toTimeString().slice(0, 5)
+    const endTime = now.toTimeString().slice(0, 5)
+    const hours = timeDiffHours(startTime, endTime)
+
+    setForm((f) => ({
+      ...f,
+      engagementId: timerState.engagementId,
+      activityType: timerState.activityType,
+      customActivity: timerState.customActivity,
+      startTime,
+      endTime,
+      hours: String(hours),
+      hoursAutoFilled: true,
+      isBillable: timerState.isBillable,
+    }))
+
+    const eng = engagements.find((e) => e.id === timerState.engagementId)
+    if (eng) setEngSearch(getEngLabel(eng))
+
+    localStorage.removeItem(TIMER_KEY)
+    setTimerState(null)
+    setElapsed(0)
   }
 
   function checkDuplicate(payload: Record<string, unknown>): boolean {
@@ -398,13 +522,23 @@ export default function DailyTab({ selectedUserId, currentUserId, userRole, bill
     }
   }
 
+  const clientOptions = Object.entries(clients).sort((a, b) => a[1].localeCompare(b[1]))
+
   const pending = entries.filter((e) => !e.is_submitted).filter((e) => {
+    if (clientFilterProp !== 'all') {
+      const eng = engagements.find((en) => en.id === e.engagement_id)
+      if (!eng || eng.client_id !== clientFilterProp) return false
+    }
     if (billableFilter === 'billable') return e.is_billable === true
     if (billableFilter === 'non_billable') return e.is_billable === false
     if (engagementFilter !== 'all' && e.engagement_id !== engagementFilter) return false
     return true
   })
   const submitted = entries.filter((e) => e.is_submitted).filter((e) => {
+    if (clientFilterProp !== 'all') {
+      const eng = engagements.find((en) => en.id === e.engagement_id)
+      if (!eng || eng.client_id !== clientFilterProp) return false
+    }
     if (billableFilter === 'billable') return e.is_billable === true
     if (billableFilter === 'non_billable') return e.is_billable === false
     if (engagementFilter !== 'all' && e.engagement_id !== engagementFilter) return false
@@ -430,6 +564,21 @@ export default function DailyTab({ selectedUserId, currentUserId, userRole, bill
 
         <form onSubmit={handleAddEntry} className="flex flex-col gap-3">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {/* Client filter (narrows engagement list) */}
+            <div className="flex flex-col gap-1.5 md:col-span-2">
+              <label className={labelClass}>Client</label>
+              <select
+                value={clientFilter}
+                onChange={(e) => setClientFilter(e.target.value)}
+                className={inputClass}
+              >
+                <option value="">All clients</option>
+                {clientOptions.map(([id, name]) => (
+                  <option key={id} value={id}>{name}</option>
+                ))}
+              </select>
+            </div>
+
             {/* Engagement */}
             <div className="flex flex-col gap-1.5 md:col-span-2" ref={engDropRef}>
               <label className={labelClass}>Engagement *</label>
@@ -604,6 +753,17 @@ export default function DailyTab({ selectedUserId, currentUserId, userRole, bill
               )}
             </div>
 
+            {/* Elapsed timer display (visible only when timer is running) */}
+            {timerState && (
+              <div className="md:col-span-2 flex items-center gap-2 py-1">
+                <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse flex-shrink-0" />
+                <span className="font-mono text-[15px] font-medium text-red-600 dark:text-red-400">
+                  {formatElapsed(elapsed)}
+                </span>
+                <span className="text-[11px] text-[#6B7280]">Timer running</span>
+              </div>
+            )}
+
             {/* Start time */}
             <div className="flex flex-col gap-1.5">
               <label className={labelClass}>Start Time</label>
@@ -726,13 +886,40 @@ export default function DailyTab({ selectedUserId, currentUserId, userRole, bill
             </div>
           )}
 
-          <button
-            type="submit"
-            disabled={submitting}
-            className="w-full h-9 rounded-[6px] bg-[#1F3148] text-white text-[13px] font-medium hover:opacity-90 disabled:opacity-60 transition-opacity"
-          >
-            {submitting ? 'Adding...' : 'Add Entry'}
-          </button>
+          {/* Action row: Add Entry + Start/Stop Timer */}
+          <div className="flex gap-2 items-end">
+            <button
+              type="submit"
+              disabled={submitting}
+              className="flex-1 h-9 rounded-[6px] bg-[#1F3148] text-white text-[13px] font-medium hover:opacity-90 disabled:opacity-60 transition-opacity"
+            >
+              {submitting ? 'Adding...' : 'Add Entry'}
+            </button>
+            <div className="flex flex-col items-center gap-0.5">
+              {timerState && (
+                <span className="font-mono text-[12px] font-medium text-red-600 dark:text-red-400">
+                  {formatElapsed(elapsed)}
+                </span>
+              )}
+              {timerState ? (
+                <button
+                  type="button"
+                  onClick={stopTimer}
+                  className="h-9 px-4 rounded-[6px] bg-red-600 text-white text-[13px] font-medium hover:bg-red-700 transition-colors whitespace-nowrap"
+                >
+                  Stop Timer
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={startTimer}
+                  className="h-9 px-4 rounded-[6px] bg-[#1F3148] text-white text-[13px] font-medium hover:opacity-90 transition-opacity whitespace-nowrap"
+                >
+                  Start Timer
+                </button>
+              )}
+            </div>
+          </div>
         </form>
       </div>
 
