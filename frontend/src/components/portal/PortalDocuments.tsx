@@ -2,7 +2,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { FileText, Upload } from 'lucide-react'
+import { FileText, Upload, ChevronDown, ChevronUp } from 'lucide-react'
 import { getPortalDocuments } from '@/lib/portal-api'
 import type { PortalDocument as PortalDocumentItem } from '@/lib/portal-api'
 
@@ -28,6 +28,7 @@ export function PortalDocuments({ firmName, accentColor = '#3A6A94', cardColor =
   const [loading, setLoading] = useState(true)
   const [fetchError, setFetchError] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
+  const [showArchived, setShowArchived] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -82,11 +83,14 @@ export function PortalDocuments({ firmName, accentColor = '#3A6A94', cardColor =
     )
   }
 
+  const activeDocs = documents.filter((d) => !d.is_superseded)
+  const archivedDocs = documents.filter((d) => d.is_superseded)
+
   return (
     <div className="p-6 flex flex-col gap-5 max-w-2xl mx-auto">
       <div className="flex items-center justify-between">
         <p className="text-[12px] font-medium uppercase tracking-[0.05em]" style={{ color: mutedText }}>
-          Documents ({documents.length})
+          Documents ({activeDocs.length})
         </p>
         <button
           onClick={() => fileInputRef.current?.click()}
@@ -110,7 +114,7 @@ export function PortalDocuments({ firmName, accentColor = '#3A6A94', cardColor =
         </div>
       )}
 
-      {documents.length === 0 ? (
+      {activeDocs.length === 0 && archivedDocs.length === 0 ? (
         <div className="flex flex-col items-center gap-1 py-12">
           <p className="text-[13px] font-medium" style={{ color: primaryText }}>No documents yet.</p>
           <p className="text-[12px]" style={{ color: mutedText }}>
@@ -118,27 +122,68 @@ export function PortalDocuments({ firmName, accentColor = '#3A6A94', cardColor =
           </p>
         </div>
       ) : (
-        <div className="flex flex-col gap-3">
-          {documents.map((doc) => (
-            <div
-              key={doc.id}
-              className="flex items-center gap-3 rounded-[8px] px-5 py-4"
-              style={{ backgroundColor: cardColor }}
-            >
-              <FileText className="h-5 w-5 flex-shrink-0" style={{ color: mutedText }} />
-              <div className="flex-1 min-w-0">
-                <p className="text-[14px] font-medium truncate" style={{ color: primaryText }}>{doc.name}</p>
-                <p className="text-[12px]" style={{ color: mutedText }}>
-                  {doc.file_type} · {formatFileSize(doc.file_size_kb)} ·{' '}
-                  {doc.uploaded_at.split('T')[0]}
-                </p>
+        <>
+          <div className="flex flex-col gap-3">
+            {activeDocs.map((doc) => (
+              <div
+                key={doc.id}
+                className="flex items-center gap-3 rounded-[8px] px-5 py-4"
+                style={{ backgroundColor: cardColor }}
+              >
+                <FileText className="h-5 w-5 flex-shrink-0" style={{ color: mutedText }} />
+                <div className="flex-1 min-w-0">
+                  <p className="text-[14px] font-medium truncate" style={{ color: primaryText }}>{doc.name}</p>
+                  <p className="text-[12px]" style={{ color: mutedText }}>
+                    {doc.file_type} · {formatFileSize(doc.file_size_kb)} ·{' '}
+                    {doc.uploaded_at.split('T')[0]}
+                  </p>
+                </div>
+                <span className="text-[12px] flex-shrink-0" style={{ color: mutedText }}>
+                  {doc.uploaded_by === 'firm' ? firmName : 'Uploaded by you'}
+                </span>
               </div>
-              <span className="text-[12px] flex-shrink-0" style={{ color: mutedText }}>
-                {doc.uploaded_by === 'firm' ? firmName : 'Uploaded by you'}
-              </span>
+            ))}
+          </div>
+
+          {archivedDocs.length > 0 && (
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-medium uppercase tracking-[0.05em]" style={{ color: mutedText }}>
+                  Archived ({archivedDocs.length})
+                </span>
+                <button
+                  onClick={() => setShowArchived((v) => !v)}
+                  className="p-0.5 rounded hover:opacity-80 transition-opacity"
+                  style={{ color: mutedText }}
+                >
+                  {showArchived ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                </button>
+              </div>
+              {showArchived && (
+                <div className="flex flex-col gap-3" style={{ opacity: 0.6 }}>
+                  {archivedDocs.map((doc) => (
+                    <div
+                      key={doc.id}
+                      className="flex items-center gap-3 rounded-[8px] px-5 py-4"
+                      style={{ backgroundColor: cardColor }}
+                    >
+                      <FileText className="h-5 w-5 flex-shrink-0" style={{ color: mutedText }} />
+                      <div className="flex-1 min-w-0 flex items-center gap-2">
+                        <p className="text-[14px] font-medium truncate" style={{ color: primaryText }}>{doc.name}</p>
+                        <span className="flex-shrink-0 rounded px-1.5 py-0.5 text-[10px]" style={{ backgroundColor: cardColor, color: mutedText, border: `1px solid ${mutedText}33` }}>
+                          Archived
+                        </span>
+                      </div>
+                      <span className="text-[12px] flex-shrink-0" style={{ color: mutedText }}>
+                        {doc.uploaded_by === 'firm' ? firmName : 'Uploaded by you'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
-          ))}
-        </div>
+          )}
+        </>
       )}
     </div>
   )

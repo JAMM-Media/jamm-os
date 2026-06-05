@@ -677,6 +677,7 @@ def portal_list_documents(
             "file_type": d.content_type.split("/")[-1].upper() if d.content_type else "FILE",
             "file_size_kb": max(1, d.size_bytes // 1024),
             "uploaded_by": "firm",
+            "is_superseded": d.is_superseded,
         }
         for d in docs
     ]

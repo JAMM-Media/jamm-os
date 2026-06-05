@@ -10,7 +10,7 @@ import { StatusBadge } from '@/components/ui/StatusBadge'
 import { clientsApi, engagementsApi, invoicesApi } from '@/lib/api'
 import type { QBOARBalance } from '@/lib/api/clients'
 import { useFetch } from '@/lib/hooks/useFetch'
-import { Mail, Phone, MapPin, ArrowLeft, ExternalLink, Loader2, Send, Pencil } from 'lucide-react'
+import { Mail, Phone, MapPin, ArrowLeft, ExternalLink, Loader2, Send, Pencil, ChevronDown, ChevronUp } from 'lucide-react'
 import { toast } from 'sonner'
 import { parseMessage } from '@/lib/entityLinkParser'
 import { NotesTab, NotesPanel } from '@/components/notes'
@@ -29,6 +29,8 @@ import TaxOrganizerTab from '@/components/tax-organizer/TaxOrganizerTab'
 import { NewEngagementModal } from '@/components/engagements/NewEngagementModal'
 import { onConciergeAction } from '@/lib/events/conciergeEvents'
 import type { Engagement } from '@/lib/api'
+import type { Document } from '@/lib/api/documents'
+import { DocumentTable } from '@/components/documents/DocumentTable'
 
 function EngagementStatusBadge({ status }: { status: string }) {
   return <StatusBadge variant={status as Parameters<typeof StatusBadge>[0]['variant']} />
@@ -105,6 +107,10 @@ function ClientDetailContent() {
     })
   }, [])
 
+  const [clientDocs, setClientDocs] = useState<Document[]>([])
+  const [docsLoading, setDocsLoading] = useState(false)
+  const [showArchived, setShowArchived] = useState(false)
+
   const [clientMessages, setClientMessages] = useState<Array<{
     id: string
     body: string
@@ -141,6 +147,15 @@ function ClientDetailContent() {
 
   const { unreadCount: unreadMessages, markAsRead: markMessagesRead } = useUnreadMessages(clientId)
   const { unreadCount: unreadNotes } = useNotes({ entityType: 'client', entityId: clientId })
+
+  useEffect(() => {
+    if (activeTab !== 'documents' || !clientId) return
+    setDocsLoading(true)
+    api.get(`/documents/?client_id=${clientId}&limit=100`)
+      .then((r) => setClientDocs(r.data?.items ?? []))
+      .catch(() => {})
+      .finally(() => setDocsLoading(false))
+  }, [activeTab, clientId])
 
   useEffect(() => {
     if (activeTab !== 'messages' || !clientId) return
@@ -594,19 +609,65 @@ function ClientDetailContent() {
           </div>
         )}
 
-        {activeTab === 'documents' && (
-          <div className="flex flex-col items-center justify-center py-24 gap-[10px]">
-            <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-surface-card dark:bg-dark-card border border-[0.5px] border-surface-border dark:border-dark-border">
-              <span className="text-[18px]">📄</span>
+        {activeTab === 'documents' && (() => {
+          const activeDocs = clientDocs.filter((d) => !d.is_superseded)
+          const archivedDocs = clientDocs.filter((d) => d.is_superseded)
+          return (
+            <div className="flex flex-col gap-4">
+              {docsLoading ? (
+                <div className="rounded-modal border border-[0.5px] border-surface-border dark:border-dark-border overflow-hidden">
+                  {Array.from({ length: 3 }).map((_, i) => (
+                    <div key={i} className="flex gap-4 px-4 py-3 border-b border-[0.5px] border-[#D5D8DE] dark:border-dark-card last:border-0">
+                      {Array.from({ length: 4 }).map((_, j) => (
+                        <div key={j} className="h-4 flex-1 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              ) : activeDocs.length === 0 && archivedDocs.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-24 gap-[10px]">
+                  <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-surface-card dark:bg-dark-card border border-[0.5px] border-surface-border dark:border-dark-border">
+                    <span className="text-[18px]">📄</span>
+                  </div>
+                  <p className="text-[13px] font-medium text-brand dark:text-[#EDEEF0]">
+                    No documents yet
+                  </p>
+                  <p className="text-[12px] text-[#6B7280]">
+                    Documents uploaded by this client will appear here.
+                  </p>
+                </div>
+              ) : (
+                <>
+                  {activeDocs.length === 0 ? (
+                    <p className="text-[12px] text-[#6B7280]">All documents are archived</p>
+                  ) : (
+                    <DocumentTable documents={activeDocs} />
+                  )}
+                  {archivedDocs.length > 0 && (
+                    <div className="flex flex-col gap-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em]">
+                          Archived ({archivedDocs.length})
+                        </span>
+                        <button
+                          onClick={() => setShowArchived((v) => !v)}
+                          className="p-0.5 rounded text-[#6B7280] hover:text-brand"
+                        >
+                          {showArchived ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                        </button>
+                      </div>
+                      {showArchived && (
+                        <div style={{ opacity: 0.6 }}>
+                          <DocumentTable documents={archivedDocs} />
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
             </div>
-            <p className="text-[13px] font-medium text-brand dark:text-[#EDEEF0]">
-              No documents yet
-            </p>
-            <p className="text-[12px] text-[#6B7280]">
-              Documents uploaded by this client will appear here.
-            </p>
-          </div>
-        )}
+          )
+        })()}
 
         {activeTab === 'billing' && (
           invoicesLoading ? (

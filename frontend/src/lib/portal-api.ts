@@ -43,6 +43,7 @@ export interface PortalDocument {
   file_type: string
   file_size_kb: number
   uploaded_by: 'client' | 'firm'
+  is_superseded: boolean
 }
 
 export interface PortalMessage {
