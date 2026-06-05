@@ -157,3 +157,20 @@ class QBOTrendOut(BaseModel):
     months: list[QBOTrendMonth]
     trends: QBOTrends
     checked_at: Optional[datetime] = None
+
+
+class QBOCustomerIncomeOut(BaseModel):
+    connected: bool
+    period: Optional[str] = None
+    total_income: Optional[float] = None
+    checked_at: Optional[datetime] = None
+
+
+class QBOCashFlowOut(BaseModel):
+    connected: bool
+    period: Optional[str] = None
+    operating: Optional[float] = None
+    investing: Optional[float] = None
+    financing: Optional[float] = None
+    net_change: Optional[float] = None
+    checked_at: Optional[datetime] = None

@@ -17,7 +17,7 @@ from app.schemas.engagement import EngagementOut
 from app.schemas.task import TaskOut
 from app.db.session import get_db
 from app.models.client import Client
-from app.schemas.client import ClientCreate, ClientUpdate, ClientOut, ClientImportResult, QBOARBalanceOut, ClientHealthOut, QBOHealthOut, QBOTrendOut
+from app.schemas.client import ClientCreate, ClientUpdate, ClientOut, ClientImportResult, QBOARBalanceOut, ClientHealthOut, QBOHealthOut, QBOTrendOut, QBOCustomerIncomeOut, QBOCashFlowOut
 from app.schemas.pagination import PaginatedResponse
 from app.crud import client as crud_client
 from app.dependencies.tenant import get_current_firm
@@ -328,6 +328,46 @@ def get_client_qbo_trends(
         trends=result["trends"] if result["trends"] else {},
         checked_at=result["checked_at"],
     )
+
+
+# ---------------------------------------------------------
+# QBO CUSTOMER INCOME
+# ---------------------------------------------------------
+@router.get("/{client_id}/qbo-income", response_model=QBOCustomerIncomeOut)
+def get_client_qbo_income(
+    client_id: UUID,
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    _: object = Depends(require_staff_or_above),
+):
+    from app.services.qbo_income_cashflow_service import get_customer_income
+
+    client = crud_client.get_client_for_firm(db, client_id, current_firm.id)
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found")
+
+    result = get_customer_income(client, current_firm.id, db)
+    return QBOCustomerIncomeOut(**result)
+
+
+# ---------------------------------------------------------
+# QBO CASH FLOW
+# ---------------------------------------------------------
+@router.get("/{client_id}/qbo-cashflow", response_model=QBOCashFlowOut)
+def get_client_qbo_cashflow(
+    client_id: UUID,
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    _: object = Depends(require_staff_or_above),
+):
+    from app.services.qbo_income_cashflow_service import get_cash_flow
+
+    client = crud_client.get_client_for_firm(db, client_id, current_firm.id)
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found")
+
+    result = get_cash_flow(client, current_firm.id, db)
+    return QBOCashFlowOut(**result)
 
 
 # ---------------------------------------------------------
