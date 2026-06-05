@@ -156,6 +156,50 @@ def concierge_chat(
 
     sanitized_messages = sanitize_messages(body.messages)
 
+    import re
+
+    SSN_PATTERN = re.compile(r'\b\d{3}-\d{2}-\d{4}\b')
+    EIN_PATTERN = re.compile(r'\b\d{2}-\d{7}\b')
+    SYSTEM_PROMPT_LEAK_PHRASES = [
+        "my instructions are",
+        "my system prompt",
+        "i was instructed to",
+        "i am instructed to",
+        "the system prompt says",
+        "my prompt says",
+        "i have been told to",
+        "i have been configured",
+        "as per my instructions",
+        "according to my instructions",
+    ]
+
+    def filter_output(text: str) -> str:
+        # Redact SSN patterns
+        if SSN_PATTERN.search(text):
+            logger.error(
+                f"SECURITY: SSN pattern detected in output for firm {current_firm.id}"
+            )
+            text = SSN_PATTERN.sub("[REDACTED]", text)
+
+        # Redact EIN patterns
+        if EIN_PATTERN.search(text):
+            logger.error(
+                f"SECURITY: EIN pattern detected in output for firm {current_firm.id}"
+            )
+            text = EIN_PATTERN.sub("[REDACTED]", text)
+
+        # Detect system prompt leakage attempts in output
+        lower = text.lower()
+        for phrase in SYSTEM_PROMPT_LEAK_PHRASES:
+            if phrase in lower:
+                logger.error(
+                    f"SECURITY: Possible system prompt leakage in output "
+                    f"for firm {current_firm.id}: phrase={phrase!r}"
+                )
+                return "I am JAMM Concierge. I am here to help you use JAMM PX."
+
+        return text
+
     def generate():
         with client.messages.stream(
             model="claude-sonnet-4-6",
@@ -163,13 +207,18 @@ def concierge_chat(
             system=get_system_prompt(autopilot_enabled=body.autopilot_enabled),
             messages=sanitized_messages,
         ) as stream:
+            assembled = ""
             for text in stream.text_stream:
-                # SSE requires each data value line to start with "data:".
-                # Newlines inside a text chunk must be sent as separate
-                # "data:" lines; otherwise lines without the prefix are
-                # silently dropped by the frontend reader.
+                assembled += text
                 data_lines = "\n".join(f"data: {line}" for line in text.split("\n"))
                 yield f"{data_lines}\n\n"
+            # Run output filter on fully assembled response
+            filtered = filter_output(assembled)
+            if filtered != assembled:
+                # If filter changed the response, send a replacement sentinel
+                yield f"data: \n\n"
+                yield f"data: [FILTERED]\n\n"
+                yield f"data: {filtered}\n\n"
 
     return StreamingResponse(generate(), media_type="text/event-stream")
 

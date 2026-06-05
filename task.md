@@ -49,124 +49,74 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK 1 OF 3: Output filtering layer -- route.py
+TASK 1 OF 3: Output filtering -- ConciergePanel.tsx
 
 Pre-task:
 cd /home/corby/jamm-os
-git add -A && git commit -m "checkpoint before output filtering layer"
+git add -A && git commit -m "checkpoint before output filtering"
 
 VERIFY BEFORE ACT:
-grep -n "def generate\|assembled\|cleanContent\|stream" /home/corby/jamm-os/app/api/concierge/route.py
+sed -n '245,265p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 Paste output before touching anything.
 
 ---
 
-Change 1: Add output filter function and apply it to streamed response
-
-The output filter runs on the fully assembled response before it is
-returned to the client. It checks for PII patterns and system prompt
-leakage phrases and replaces them before the client ever sees them.
+Change 1: Add output filter in ConciergePanel.tsx before setMessages
 
 Find exactly:
-    sanitized_messages = sanitize_messages(body.messages)
-
-    def generate():
-        with client.messages.stream(
+        const cleanContent = handleConciergeAction(assembled)
 
 Replace with:
-    sanitized_messages = sanitize_messages(body.messages)
+        const filteredAssembled = filterOutput(assembled)
+        const cleanContent = handleConciergeAction(filteredAssembled)
 
-    import re
+Then add the filterOutput function immediately before the handleConciergeAction
+function. Find exactly:
 
-    SSN_PATTERN = re.compile(r'\b\d{3}-\d{2}-\d{4}\b')
-    EIN_PATTERN = re.compile(r'\b\d{2}-\d{7}\b')
-    SYSTEM_PROMPT_LEAK_PHRASES = [
-        "my instructions are",
-        "my system prompt",
-        "i was instructed to",
-        "i am instructed to",
-        "the system prompt says",
-        "my prompt says",
-        "i have been told to",
-        "i have been configured",
-        "as per my instructions",
-        "according to my instructions",
+  function handleConciergeAction(raw: string): string {
+
+Add this block immediately before it:
+
+  function filterOutput(text: string): string {
+    const SSN_PATTERN = /\b\d{3}-\d{2}-\d{4}\b/g
+    const EIN_PATTERN = /\b\d{2}-\d{7}\b/g
+    const LEAK_PHRASES = [
+      'my instructions are',
+      'my system prompt',
+      'i was instructed to',
+      'i am instructed to',
+      'the system prompt says',
+      'my prompt says',
+      'i have been told to',
+      'i have been configured',
+      'as per my instructions',
+      'according to my instructions',
     ]
 
-    def filter_output(text: str) -> str:
-        # Redact SSN patterns
-        if SSN_PATTERN.search(text):
-            logger.error(
-                f"SECURITY: SSN pattern detected in output for firm {current_firm.id}"
-            )
-            text = SSN_PATTERN.sub("[REDACTED]", text)
+    if (SSN_PATTERN.test(text) || EIN_PATTERN.test(text)) {
+      console.error('[SECURITY] PII pattern detected in model output -- redacting')
+      text = text.replace(SSN_PATTERN, '[REDACTED]')
+      text = text.replace(EIN_PATTERN, '[REDACTED]')
+    }
 
-        # Redact EIN patterns
-        if EIN_PATTERN.search(text):
-            logger.error(
-                f"SECURITY: EIN pattern detected in output for firm {current_firm.id}"
-            )
-            text = EIN_PATTERN.sub("[REDACTED]", text)
+    const lower = text.toLowerCase()
+    for (const phrase of LEAK_PHRASES) {
+      if (lower.includes(phrase)) {
+        console.error(`[SECURITY] System prompt leak phrase detected in output: ${phrase}`)
+        return 'I am JAMM Concierge. I am here to help you use JAMM PX.'
+      }
+    }
 
-        # Detect system prompt leakage attempts in output
-        lower = text.lower()
-        for phrase in SYSTEM_PROMPT_LEAK_PHRASES:
-            if phrase in lower:
-                logger.error(
-                    f"SECURITY: Possible system prompt leakage in output "
-                    f"for firm {current_firm.id}: phrase={phrase!r}"
-                )
-                return "I am JAMM Concierge. I am here to help you use JAMM PX."
-
-        return text
-
-    def generate():
-        with client.messages.stream(
-
-Now find the line inside generate() that yields the streamed chunks.
-The full assembled response is not available during streaming -- the
-filter must run on the complete assembled text before the final
-setMessages call on the frontend.
-
-Since this is a streaming endpoint, the output filter applies to each
-complete chunk line, not the full response. Add the filter to each
-data line before yielding:
-
-Find exactly:
-        with client.messages.stream(
-            model="claude-sonnet-4-6",
-            max_tokens=2000,
-            system=get_system_prompt(autopilot_enabled=body.autopilot_enabled),
-            messages=sanitized_messages,
-        ) as stream:
-            for text in stream.text_stream:
-                data_lines = "\n".join(f"data: {line}" for line in text.split("\n"))
-                yield f"{data_lines}\n\n"
-
-Replace with:
-        with client.messages.stream(
-            model="claude-sonnet-4-6",
-            max_tokens=2000,
-            system=get_system_prompt(autopilot_enabled=body.autopilot_enabled),
-            messages=sanitized_messages,
-        ) as stream:
-            assembled = ""
-            for text in stream.text_stream:
-                assembled += text
-                data_lines = "\n".join(f"data: {line}" for line in text.split("\n"))
-                yield f"{data_lines}\n\n"
-            # Run output filter on fully assembled response
-            filtered = filter_output(assembled)
-            if filtered != assembled:
-                # If filter changed the response, send a replacement sentinel
-                yield f"data: \n\n"
-                yield f"data: [FILTERED]\n\n"
-                yield f"data: {filtered}\n\n"
+    return text
+  }
 
 Do not change anything else.
 
 VERIFY AFTER ACT:
-grep -n "filter_output\|SSN_PATTERN\|EIN_PATTERN\|SYSTEM_PROMPT_LEAK\|REDACTED\|assembled" /home/corby/jamm-os/app/api/concierge/route.py
+grep -n "filterOutput\|SSN_PATTERN\|EIN_PATTERN\|LEAK_PHRASES\|REDACTED\|filteredAssembled" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 Confirm all terms appear.
-python3 -c "from app.api.concierge.route import router; print('OK')"
-Must pass before stopping.
+
+Post-task:
+cd /home/corby/jamm-os/frontend
+npm run build
+Zero TypeScript errors required before stopping.
