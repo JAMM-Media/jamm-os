@@ -421,7 +421,7 @@ export default function DailyTab({
   async function submitEntry(payload: Record<string, unknown>) {
     setSubmitting(true)
     try {
-      await api.post('/api/v1/time-entries/', payload)
+      await api.post('/time-entries/', payload)
       const engId = form.engagementId
       const actType = form.activityType === 'Other' ? form.customActivity : form.activityType
       setForm({ ...EMPTY_FORM, engagementId: engId, activityType: actType, startTime: roundToNearest15(new Date()), hoursAutoFilled: false })
@@ -1165,13 +1165,8 @@ function EntryRow({
           )}
           <span className="text-[12px] text-[#9CA3AF]">
             {entry.start_time && entry.end_time
-              ? `${entry.start_time} – ${entry.end_time} (${calcDuration(entry.start_time, entry.end_time) ?? ''})`
-              : (() => {
-                  const totalMin = Math.round(Number(entry.hours) * 60)
-                  const h = Math.floor(totalMin / 60)
-                  const m = totalMin % 60
-                  return h > 0 ? `${h}h ${m}m` : `${m}m`
-                })()}
+              ? `${entry.start_time} – ${entry.end_time} (${Number(entry.hours).toFixed(2)}h / ${calcDuration(entry.start_time, entry.end_time) ?? ''})`
+              : `${Number(entry.hours).toFixed(2)}h`}
           </span>
         </div>
       </div>

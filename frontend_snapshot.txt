@@ -7076,6 +7076,19 @@ function ClientDetailContent() {
                       ? `Last payment: ${new Date(qboAr.last_payment_date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`
                       : 'No payments recorded'}
                   </p>
+                  {client.quickbooksCustomerId && (
+                    <a
+                      href={`https://app.qbo.intuit.com/app/customerdetail?nameId=${client.quickbooksCustomerId}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[11px] text-brand-light dark:text-brand-light hover:underline inline-flex items-center gap-1 mt-1"
+                    >
+                      Open in QuickBooks
+                      <svg width="10" height="10" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M2 10L10 2M10 2H5M10 2V7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                    </a>
+                  )}
                 </div>
               )}
             </div>
@@ -11263,7 +11276,7 @@ export default function SettingsPage() {
   const [inviteFullName, setInviteFullName] = useState('')
   const [inviteEmail, setInviteEmail] = useState('')
   const [invitePassword, setInvitePassword] = useState('')
-  const [inviteRole, setInviteRole] = useState<'staff' | 'manager'>('staff')
+  const [inviteRole, setInviteRole] = useState<'staff' | 'manager' | 'firm_owner'>('staff')
   const [inviteSubmitting, setInviteSubmitting] = useState(false)
   const [showInvitePassword, setShowInvitePassword] = useState(false)
   const [invitePasswordLocked, setInvitePasswordLocked] = useState(false)
@@ -11800,9 +11813,10 @@ export default function SettingsPage() {
                     <label className={labelClass}>Role</label>
                     <select
                       value={inviteRole}
-                      onChange={(e) => setInviteRole(e.target.value as 'staff' | 'manager')}
+                      onChange={(e) => setInviteRole(e.target.value as 'staff' | 'manager' | 'firm_owner')}
                       className={inputClass}
                     >
+                      <option value="firm_owner">Partner</option>
                       <option value="staff">Staff</option>
                       <option value="manager">Manager</option>
                     </select>
@@ -13712,6 +13726,18 @@ FILE: frontend\src\components\clients\HealthDot.tsx
 import { useQuery } from '@tanstack/react-query'
 import { clientsApi } from '@/lib/api/clients'
 import type { ClientHealth } from '@/lib/api/clients'
+import {
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+  TooltipProvider,
+} from '@/components/ui/tooltip'
+
+const SEVERITY_COLOR: Record<string, string> = {
+  at_risk: '#E24B4A',
+  needs_attention: '#F59E0B',
+  healthy: '#10B981',
+}
 
 const STATUS_CONFIG = {
   healthy: { color: '#10B981', label: 'Healthy' },
@@ -13734,14 +13760,12 @@ export function HealthDot({ clientId, showLabel = false }: HealthDotProps) {
 
   if (isError) return null
 
-  const config = data ? STATUS_CONFIG[data.status as keyof typeof STATUS_CONFIG] ?? null : null
+  const config = data
+    ? STATUS_CONFIG[data.status as keyof typeof STATUS_CONFIG] ?? null
+    : null
   const color = isLoading || !config ? '#C8CDD6' : config.color
-  const tooltip =
-    isLoading || !data
-      ? undefined
-      : data.reasons.length === 0
-      ? 'Good'
-      : data.reasons.join('\n')
+
+  const hasReasons = data && data.reasons.length > 0
 
   const dot = (
     <span
@@ -13756,28 +13780,58 @@ export function HealthDot({ clientId, showLabel = false }: HealthDotProps) {
     />
   )
 
-  if (!showLabel) {
+  if (!hasReasons) {
+    if (showLabel) {
+      return (
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: isLoading || !config ? '#C8CDD6' : config.color }}>
+          {dot}
+          {!isLoading && config && config.label}
+        </span>
+      )
+    }
     return (
-      <span title={tooltip} style={{ display: 'inline-flex', alignItems: 'center' }}>
+      <span style={{ display: 'inline-flex', alignItems: 'center' }}>
         {dot}
       </span>
     )
   }
 
   return (
-    <span
-      title={tooltip}
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 6,
-        fontSize: 12,
-        color: isLoading || !config ? '#C8CDD6' : config.color,
-      }}
-    >
-      {dot}
-      {!isLoading && config && config.label}
-    </span>
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger>
+          {showLabel ? (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: isLoading || !config ? '#C8CDD6' : config.color, cursor: 'default' }}>
+              {dot}
+              {!isLoading && config && config.label}
+            </span>
+          ) : (
+            <span style={{ display: 'inline-flex', alignItems: 'center' }}>
+              {dot}
+            </span>
+          )}
+        </TooltipTrigger>
+        <TooltipContent side="right" className="max-w-[240px]">
+          <div className="flex flex-col gap-1">
+            {data.reasons.map((reason, i) => (
+              <div key={i} className="flex items-start gap-1.5">
+                <span
+                  style={{
+                    width: 6,
+                    height: 6,
+                    borderRadius: '50%',
+                    backgroundColor: SEVERITY_COLOR[reason.severity] ?? color,
+                    flexShrink: 0,
+                    marginTop: 4,
+                  }}
+                />
+                <span className="text-[11px] leading-tight">{reason.text}</span>
+              </div>
+            ))}
+          </div>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   )
 }
 
@@ -28044,6 +28098,7 @@ export interface Client {
   notes: string | null
   createdAt: string
   updatedAt: string
+  quickbooksCustomerId: string | null
 }
 
 export interface ClientDetail extends Client {}
@@ -28061,9 +28116,14 @@ export interface QBOARBalance {
   last_payment_date: string | null
 }
 
+export interface HealthReason {
+  severity: 'at_risk' | 'needs_attention' | 'healthy'
+  text: string
+}
+
 export interface ClientHealth {
   status: string
-  reasons: string[]
+  reasons: HealthReason[]
 }
 
 function mapClient(raw: Record<string, unknown>): Client {
@@ -28085,6 +28145,7 @@ function mapClient(raw: Record<string, unknown>): Client {
     notes: raw.notes ? String(raw.notes) : null,
     createdAt: String(raw.created_at ?? ''),
     updatedAt: String(raw.updated_at ?? ''),
+    quickbooksCustomerId: raw.quickbooks_customer_id ? String(raw.quickbooks_customer_id) : null,
   }
 }
 
