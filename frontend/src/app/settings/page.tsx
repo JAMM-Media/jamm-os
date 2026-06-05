@@ -620,7 +620,7 @@ export default function SettingsPage() {
                       onChange={(e) => setInviteRole(e.target.value as 'staff' | 'manager' | 'firm_owner')}
                       className={inputClass}
                     >
-                      <option value="firm_owner">Firm Owner</option>
+                      <option value="firm_owner">Partner</option>
                       <option value="staff">Staff</option>
                       <option value="manager">Manager</option>
                     </select>

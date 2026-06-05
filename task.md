@@ -47,7 +47,7 @@ Make exactly three changes:
    <option value="manager">Manager</option>
 
    Add one option above Staff so it reads:
-   <option value="firm_owner">Firm Owner</option>
+   <option value="firm_owner">Partner</option>
    <option value="staff">Staff</option>
    <option value="manager">Manager</option>
 
