@@ -11,6 +11,7 @@ import { PortalDocuments } from '@/components/portal/PortalDocuments'
 import { PortalInvoices } from '@/components/portal/PortalInvoices'
 import { PortalMessages } from '@/components/portal/PortalMessages'
 import PortalOrganizer from '@/components/portal/PortalOrganizer'
+import { PortalBillingDetail } from '@/components/portal/PortalBillingDetail'
 
 const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!)
 
@@ -103,6 +104,7 @@ export default function PortalPage() {
       {activeTab === 'organizer' && (
         <PortalOrganizer clientId={me.client_id} cardColor={me.portal_card_color} portalMode={me.portal_mode} textPrimary={me.portal_text_primary} textMuted={me.portal_text_muted} />
       )}
+      {activeTab === 'billing-detail' && <PortalBillingDetail cardColor={me.portal_card_color} accentColor={me.portal_accent_color} portalMode={me.portal_mode} textPrimary={me.portal_text_primary} textMuted={me.portal_text_muted} />}
     </PortalShell>
   )
 }

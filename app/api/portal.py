@@ -1183,3 +1183,37 @@ def portal_save_organizer(
         "submitted_at": updated.submitted_at.isoformat() if updated.submitted_at else None,
         "message": "Submitted successfully" if payload.submit else "Progress saved",
     }
+
+
+# ===========================================================================
+# BILLING DETAIL PORTAL ENDPOINTS
+# ===========================================================================
+
+@router.get("/billing-detail")
+def portal_get_billing_detail(
+    current_client: Client = Depends(get_current_portal_client),
+    db: Session = Depends(get_db),
+):
+    from app.models.billing_detail_report import BillingDetailReport
+    reports = db.execute(
+        select(BillingDetailReport)
+        .where(
+            BillingDetailReport.firm_id == current_client.firm_id,
+            BillingDetailReport.client_id == current_client.id,
+        )
+        .order_by(BillingDetailReport.created_at.desc())
+    ).scalars().all()
+
+    return [
+        {
+            "id": str(r.id),
+            "date_from": str(r.date_from) if r.date_from else None,
+            "date_to": str(r.date_to) if r.date_to else None,
+            "engagement_id": str(r.engagement_id) if r.engagement_id else None,
+            "total_hours": float(r.total_hours),
+            "total_amount": float(r.total_amount),
+            "created_at": r.created_at.isoformat(),
+            "entries": r.entries,
+        }
+        for r in reports
+    ]

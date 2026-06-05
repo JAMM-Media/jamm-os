@@ -47,6 +47,7 @@ export function PortalShell({
     { key: 'todo', label: 'To-do' },
     { key: 'documents', label: 'Documents' },
     { key: 'invoices', label: 'Invoices' },
+    { key: 'billing-detail', label: 'Billing Detail' },
     { key: 'messages', label: 'Messages', badge: unreadCount > 0 ? unreadCount : null },
   ]
 

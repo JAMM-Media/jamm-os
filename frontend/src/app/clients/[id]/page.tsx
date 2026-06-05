@@ -31,6 +31,7 @@ import { onConciergeAction } from '@/lib/events/conciergeEvents'
 import type { Engagement } from '@/lib/api'
 import type { Document } from '@/lib/api/documents'
 import { DocumentTable } from '@/components/documents/DocumentTable'
+import { BillingDetailModal } from '@/components/billing/BillingDetailModal'
 
 function EngagementStatusBadge({ status }: { status: string }) {
   return <StatusBadge variant={status as Parameters<typeof StatusBadge>[0]['variant']} />
@@ -69,6 +70,7 @@ function ClientDetailContent() {
   const portalLinkRef = useRef<HTMLButtonElement>(null)
   const [qboEditMode, setQboEditMode] = useState(false)
   const [qboEditValue, setQboEditValue] = useState('')
+  const [billingDetailOpen, setBillingDetailOpen] = useState(false)
 
   useEffect(() => {
     const raw = sessionStorage.getItem('jamm_concierge_pending')
@@ -670,7 +672,16 @@ function ClientDetailContent() {
         })()}
 
         {activeTab === 'billing' && (
-          invoicesLoading ? (
+          <div className="flex flex-col gap-4">
+          <div className="flex items-center justify-end">
+            <button
+              onClick={() => setBillingDetailOpen(true)}
+              className="h-8 px-3 text-[12px] font-medium text-brand dark:text-[#EDEEF0] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] rounded-md bg-transparent hover:bg-surface-card dark:hover:bg-dark-card transition-colors"
+            >
+              Billing Detail
+            </button>
+          </div>
+          {invoicesLoading ? (
             <div className="rounded-modal border border-[0.5px] border-surface-border dark:border-dark-border overflow-auto">
               {Array.from({ length: 3 }).map((_, i) => (
                 <div key={i} className="flex gap-4 px-4 py-3 border-b border-[0.5px] border-[#D5D8DE] dark:border-dark-card last:border-0">
@@ -734,6 +745,8 @@ function ClientDetailContent() {
               </table>
             </div>
           )
+          }
+          </div>
         )}
 
         {activeTab === 'irs-auth' && (
@@ -844,6 +857,13 @@ function ClientDetailContent() {
           onSuccess={() => { refetchClient(); setIsEditOpen(false) }}
         />
       )}
+
+      <BillingDetailModal
+        open={billingDetailOpen}
+        onClose={() => setBillingDetailOpen(false)}
+        clientId={clientId}
+        clientName={client?.name ?? ''}
+      />
 
       <NewEngagementModal
         open={newEngagementOpen}
