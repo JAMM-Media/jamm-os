@@ -10,7 +10,7 @@ import { StatusBadge } from '@/components/ui/StatusBadge'
 import { clientsApi, engagementsApi, invoicesApi } from '@/lib/api'
 import type { QBOARBalance } from '@/lib/api/clients'
 import { useFetch } from '@/lib/hooks/useFetch'
-import { Mail, Phone, MapPin, ArrowLeft, ExternalLink, Loader2, Send } from 'lucide-react'
+import { Mail, Phone, MapPin, ArrowLeft, ExternalLink, Loader2, Send, Pencil } from 'lucide-react'
 import { toast } from 'sonner'
 import { parseMessage } from '@/lib/entityLinkParser'
 import { NotesTab, NotesPanel } from '@/components/notes'
@@ -65,6 +65,8 @@ function ClientDetailContent() {
   const [initialEngagementType, setInitialEngagementType] = useState<string | undefined>()
   const [portalLinkHighlight, setPortalLinkHighlight] = useState(false)
   const portalLinkRef = useRef<HTMLButtonElement>(null)
+  const [qboEditMode, setQboEditMode] = useState(false)
+  const [qboEditValue, setQboEditValue] = useState('')
 
   useEffect(() => {
     const raw = sessionStorage.getItem('jamm_concierge_pending')
@@ -190,6 +192,19 @@ function ClientDetailContent() {
     } catch {
       toast.error('Could not open client portal — please try again')
       setViewingPortal(false)
+    }
+  }
+
+  async function handleQboSave() {
+    try {
+      await api.patch(`/clients/${clientId}`, {
+        quickbooks_customer_id: qboEditValue.trim() || null,
+      })
+      toast.success('QuickBooks ID linked')
+      setQboEditMode(false)
+      refetchClient()
+    } catch {
+      toast.error('Failed to update QuickBooks ID')
     }
   }
 
@@ -420,6 +435,50 @@ function ClientDetailContent() {
                 </div>
               )}
             </div>
+
+            {/* QuickBooks Customer ID card */}
+            {(user?.role === 'firm_owner' || user?.role === 'manager') && (
+              <div className="bg-surface-card dark:bg-dark-card rounded-card p-4">
+                <p className="text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em] mb-2">QuickBooks Customer ID</p>
+                {qboEditMode ? (
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={qboEditValue}
+                      onChange={(e) => setQboEditValue(e.target.value)}
+                      className="flex-1 rounded-[6px] border border-surface-border dark:border-dark-border bg-surface-page dark:bg-dark-page text-[13px] text-brand dark:text-[#EDEEF0] px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-brand"
+                      placeholder="e.g. 123456"
+                      autoFocus
+                    />
+                    <button
+                      onClick={handleQboSave}
+                      className="px-3 py-1.5 text-[12px] font-medium bg-brand dark:bg-brand-btn text-white rounded-[6px] hover:opacity-90"
+                    >
+                      Save
+                    </button>
+                    <button
+                      onClick={() => setQboEditMode(false)}
+                      className="px-3 py-1.5 text-[12px] text-[#6B7280] hover:text-brand"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <span className={`text-[13px] ${client.quickbooksCustomerId ? 'text-brand dark:text-[#EDEEF0]' : 'text-[#9CA3AF]'}`}>
+                      {client.quickbooksCustomerId ?? 'Not linked'}
+                    </span>
+                    <button
+                      onClick={() => { setQboEditValue(client.quickbooksCustomerId ?? ''); setQboEditMode(true) }}
+                      className="p-1 rounded text-[#6B7280] hover:text-brand hover:bg-[#F3F4F6] dark:hover:bg-[#2A2A2A]"
+                      title="Edit QuickBooks Customer ID"
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Engagement summary card */}
             <div className="bg-surface-card dark:bg-dark-card rounded-card p-4 xl:col-span-2">
