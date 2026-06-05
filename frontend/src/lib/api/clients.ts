@@ -19,6 +19,7 @@ export interface Client {
   notes: string | null
   createdAt: string
   updatedAt: string
+  quickbooksCustomerId: string | null
 }
 
 export interface ClientDetail extends Client {}
@@ -36,9 +37,14 @@ export interface QBOARBalance {
   last_payment_date: string | null
 }
 
+export interface HealthReason {
+  severity: 'at_risk' | 'needs_attention' | 'healthy'
+  text: string
+}
+
 export interface ClientHealth {
   status: string
-  reasons: string[]
+  reasons: HealthReason[]
 }
 
 function mapClient(raw: Record<string, unknown>): Client {
@@ -60,6 +66,7 @@ function mapClient(raw: Record<string, unknown>): Client {
     notes: raw.notes ? String(raw.notes) : null,
     createdAt: String(raw.created_at ?? ''),
     updatedAt: String(raw.updated_at ?? ''),
+    quickbooksCustomerId: raw.quickbooks_customer_id ? String(raw.quickbooks_customer_id) : null,
   }
 }
 

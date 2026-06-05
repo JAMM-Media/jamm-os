@@ -2979,6 +2979,7 @@ export interface AggregateTabProps {
   userRole: string
   billableFilter?: string
   engagementFilter?: string
+  clientFilter?: string
 }
 
 interface SummaryRow {
@@ -3108,12 +3109,14 @@ export default function AggregateTab({
   userRole,
   billableFilter = 'all',
   engagementFilter = 'all',
+  clientFilter = 'all',
 }: AggregateTabProps) {
   const isManagerOrAbove = userRole === 'firm_owner' || userRole === 'manager'
   const [offset, setOffset] = useState(0)
   const [summary, setSummary] = useState<SummaryRow[]>([])
   const [entries, setEntries] = useState<TimeEntry[]>([])
   const [engagements, setEngagements] = useState<Record<string, string>>({})
+  const [engagementClientMap, setEngagementClientMap] = useState<Record<string, string>>({})
   const [users, setUsers] = useState<Record<string, string>>({})
   const [loadingSummary, setLoadingSummary] = useState(true)
   const [loadingEntries, setLoadingEntries] = useState(true)
@@ -3130,9 +3133,14 @@ export default function AggregateTab({
 
   useEffect(() => {
     api.get('/engagements/?limit=100').then((r) => {
-      const map: Record<string, string> = {}
-      for (const e of r.data?.items ?? []) map[e.id] = e.name
-      setEngagements(map)
+      const nameMap: Record<string, string> = {}
+      const clientMap: Record<string, string> = {}
+      for (const e of r.data?.items ?? []) {
+        nameMap[e.id] = e.name
+        clientMap[e.id] = e.client_id ?? ''
+      }
+      setEngagements(nameMap)
+      setEngagementClientMap(clientMap)
     }).catch(() => {})
   }, [])
 
@@ -3346,6 +3354,7 @@ export default function AggregateTab({
             </thead>
             <tbody>
               {entries.filter((e) => {
+                if (clientFilter !== 'all' && engagementClientMap[e.engagement_id] !== clientFilter) return false
                 if (billableFilter === 'billable') return e.is_billable === true
                 if (billableFilter === 'non_billable') return e.is_billable === false
                 if (engagementFilter !== 'all' && e.engagement_id !== engagementFilter) return false
@@ -3579,6 +3588,7 @@ export interface DailyTabProps {
   userRole: string
   billableFilter?: string
   engagementFilter?: string
+  clientFilter?: string
 }
 
 const ACTIVITY_TYPES = [
@@ -3591,6 +3601,16 @@ const ACTIVITY_TYPES = [
   'Admin',
   'Other',
 ]
+
+const TIMER_KEY = 'jamm_active_timer'
+
+interface TimerState {
+  startedAt: string
+  engagementId: string
+  activityType: string
+  customActivity: string
+  isBillable: boolean
+}
 
 function roundToNearest15(date: Date): string {
   const minutes = Math.round(date.getMinutes() / 15) * 15
@@ -3625,6 +3645,13 @@ function timeDiffHours(start: string, end: string): number {
   const [eh, em] = end.split(':').map(Number)
   const totalMin = eh * 60 + em - (sh * 60 + sm)
   return Math.max(0, Math.round((totalMin / 60) * 4) / 4)
+}
+
+function formatElapsed(seconds: number): string {
+  const h = Math.floor(seconds / 3600)
+  const m = Math.floor((seconds % 3600) / 60)
+  const s = seconds % 60
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
 }
 
 interface Engagement {
@@ -3683,7 +3710,14 @@ const EMPTY_FORM: EntryForm = {
   hoursAutoFilled: false,
 }
 
-export default function DailyTab({ selectedUserId, currentUserId, userRole, billableFilter = 'all', engagementFilter = 'all' }: DailyTabProps) {
+export default function DailyTab({
+  selectedUserId,
+  currentUserId,
+  userRole,
+  billableFilter = 'all',
+  engagementFilter = 'all',
+  clientFilter: clientFilterProp = 'all',
+}: DailyTabProps) {
   const today = toDateString(new Date())
   const isManagerOrAbove = userRole === 'firm_owner' || userRole === 'manager'
   const effectiveUserId = selectedUserId ?? currentUserId
@@ -3712,9 +3746,41 @@ export default function DailyTab({ selectedUserId, currentUserId, userRole, bill
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
   const [duplicateWarning, setDuplicateWarning] = useState(false)
   const [pendingPayload, setPendingPayload] = useState<Record<string, unknown> | null>(null)
+
+  // Client filter for form engagement dropdown (Part 2)
+  const [clientFilter, setClientFilter] = useState('')
+
+  // Timer state (Part 1)
+  const [timerState, setTimerState] = useState<TimerState | null>(null)
+  const [elapsed, setElapsed] = useState(0)
+  const timerIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
   const engDropRef = useRef<HTMLDivElement>(null)
   const taskRef = useRef<HTMLDivElement>(null)
   const actRef = useRef<HTMLDivElement>(null)
+
+  // On mount: restore timer from localStorage
+  useEffect(() => {
+    const raw = localStorage.getItem(TIMER_KEY)
+    if (raw) {
+      try {
+        const parsed: TimerState = JSON.parse(raw)
+        setTimerState(parsed)
+        setElapsed(Math.floor((Date.now() - new Date(parsed.startedAt).getTime()) / 1000))
+      } catch {}
+    }
+  }, [])
+
+  // Manage interval when timerState changes
+  useEffect(() => {
+    if (!timerState) return
+    timerIntervalRef.current = setInterval(() => {
+      setElapsed(Math.floor((Date.now() - new Date(timerState.startedAt).getTime()) / 1000))
+    }, 1000)
+    return () => {
+      if (timerIntervalRef.current) clearInterval(timerIntervalRef.current)
+    }
+  }, [timerState])
 
   // Load engagements, clients, settings, entries
   useEffect(() => {
@@ -3724,7 +3790,7 @@ export default function DailyTab({ selectedUserId, currentUserId, userRole, bill
       setEngagements(items)
     }).catch(() => {})
 
-    api.get('/api/v1/clients/?limit=100').then((r) => {
+    api.get('/clients/', { params: { limit: 100 } }).then((r) => {
       const map: Record<string, string> = {}
       for (const c of r.data?.items ?? []) map[c.id] = c.name
       setClients(map)
@@ -3786,6 +3852,17 @@ export default function DailyTab({ selectedUserId, currentUserId, userRole, bill
     }
   }, [form.startTime, form.endTime, form.hoursAutoFilled, form.hours])
 
+  // When clientFilter changes, clear engagement if it no longer belongs to selected client
+  useEffect(() => {
+    if (!clientFilter) return
+    const eng = engagements.find((e) => e.id === form.engagementId)
+    if (form.engagementId && (!eng || eng.client_id !== clientFilter)) {
+      setForm((f) => ({ ...f, engagementId: '' }))
+      setEngSearch('')
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clientFilter])
+
   // Close eng dropdown on outside click
   useEffect(() => {
     function handler(e: MouseEvent) {
@@ -3831,7 +3908,10 @@ export default function DailyTab({ selectedUserId, currentUserId, userRole, bill
 
   function filteredEngagements(): Engagement[] {
     const q = engSearch.toLowerCase()
-    return engagements.filter((e) => getEngLabel(e).toLowerCase().includes(q))
+    return engagements.filter((e) => {
+      if (clientFilter && e.client_id !== clientFilter) return false
+      return getEngLabel(e).toLowerCase().includes(q)
+    })
   }
 
   function assignedEngs() {
@@ -3848,6 +3928,59 @@ export default function DailyTab({ selectedUserId, currentUserId, userRole, bill
     setEngDropOpen(false)
     setTaskSearch('')
     setTaskOpen(false)
+  }
+
+  function startTimer() {
+    if (timerState) {
+      toast.error('Stop the current timer before starting a new one.')
+      return
+    }
+    if (!form.engagementId) {
+      toast.error('Select an engagement before starting the timer.')
+      return
+    }
+    if (!form.activityType) {
+      toast.error('Select an activity type before starting the timer.')
+      return
+    }
+    const state: TimerState = {
+      startedAt: new Date().toISOString(),
+      engagementId: form.engagementId,
+      activityType: form.activityType,
+      customActivity: form.customActivity,
+      isBillable: form.isBillable,
+    }
+    localStorage.setItem(TIMER_KEY, JSON.stringify(state))
+    setTimerState(state)
+    setElapsed(0)
+  }
+
+  function stopTimer() {
+    if (!timerState) return
+    const startDate = new Date(timerState.startedAt)
+    const now = new Date()
+    const startTime = startDate.toTimeString().slice(0, 5)
+    const endTime = now.toTimeString().slice(0, 5)
+    const hours = timeDiffHours(startTime, endTime)
+
+    setForm((f) => ({
+      ...f,
+      engagementId: timerState.engagementId,
+      activityType: timerState.activityType,
+      customActivity: timerState.customActivity,
+      startTime,
+      endTime,
+      hours: String(hours),
+      hoursAutoFilled: true,
+      isBillable: timerState.isBillable,
+    }))
+
+    const eng = engagements.find((e) => e.id === timerState.engagementId)
+    if (eng) setEngSearch(getEngLabel(eng))
+
+    localStorage.removeItem(TIMER_KEY)
+    setTimerState(null)
+    setElapsed(0)
   }
 
   function checkDuplicate(payload: Record<string, unknown>): boolean {
@@ -3964,13 +4097,23 @@ export default function DailyTab({ selectedUserId, currentUserId, userRole, bill
     }
   }
 
+  const clientOptions = Object.entries(clients).sort((a, b) => a[1].localeCompare(b[1]))
+
   const pending = entries.filter((e) => !e.is_submitted).filter((e) => {
+    if (clientFilterProp !== 'all') {
+      const eng = engagements.find((en) => en.id === e.engagement_id)
+      if (!eng || eng.client_id !== clientFilterProp) return false
+    }
     if (billableFilter === 'billable') return e.is_billable === true
     if (billableFilter === 'non_billable') return e.is_billable === false
     if (engagementFilter !== 'all' && e.engagement_id !== engagementFilter) return false
     return true
   })
   const submitted = entries.filter((e) => e.is_submitted).filter((e) => {
+    if (clientFilterProp !== 'all') {
+      const eng = engagements.find((en) => en.id === e.engagement_id)
+      if (!eng || eng.client_id !== clientFilterProp) return false
+    }
     if (billableFilter === 'billable') return e.is_billable === true
     if (billableFilter === 'non_billable') return e.is_billable === false
     if (engagementFilter !== 'all' && e.engagement_id !== engagementFilter) return false
@@ -3996,6 +4139,21 @@ export default function DailyTab({ selectedUserId, currentUserId, userRole, bill
 
         <form onSubmit={handleAddEntry} className="flex flex-col gap-3">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {/* Client filter (narrows engagement list) */}
+            <div className="flex flex-col gap-1.5 md:col-span-2">
+              <label className={labelClass}>Client</label>
+              <select
+                value={clientFilter}
+                onChange={(e) => setClientFilter(e.target.value)}
+                className={inputClass}
+              >
+                <option value="">All clients</option>
+                {clientOptions.map(([id, name]) => (
+                  <option key={id} value={id}>{name}</option>
+                ))}
+              </select>
+            </div>
+
             {/* Engagement */}
             <div className="flex flex-col gap-1.5 md:col-span-2" ref={engDropRef}>
               <label className={labelClass}>Engagement *</label>
@@ -4170,6 +4328,17 @@ export default function DailyTab({ selectedUserId, currentUserId, userRole, bill
               )}
             </div>
 
+            {/* Elapsed timer display (visible only when timer is running) */}
+            {timerState && (
+              <div className="md:col-span-2 flex items-center gap-2 py-1">
+                <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse flex-shrink-0" />
+                <span className="font-mono text-[15px] font-medium text-red-600 dark:text-red-400">
+                  {formatElapsed(elapsed)}
+                </span>
+                <span className="text-[11px] text-[#6B7280]">Timer running</span>
+              </div>
+            )}
+
             {/* Start time */}
             <div className="flex flex-col gap-1.5">
               <label className={labelClass}>Start Time</label>
@@ -4292,13 +4461,40 @@ export default function DailyTab({ selectedUserId, currentUserId, userRole, bill
             </div>
           )}
 
-          <button
-            type="submit"
-            disabled={submitting}
-            className="w-full h-9 rounded-[6px] bg-[#1F3148] text-white text-[13px] font-medium hover:opacity-90 disabled:opacity-60 transition-opacity"
-          >
-            {submitting ? 'Adding...' : 'Add Entry'}
-          </button>
+          {/* Action row: Add Entry + Start/Stop Timer */}
+          <div className="flex gap-2 items-end">
+            <button
+              type="submit"
+              disabled={submitting}
+              className="flex-1 h-9 rounded-[6px] bg-[#1F3148] text-white text-[13px] font-medium hover:opacity-90 disabled:opacity-60 transition-opacity"
+            >
+              {submitting ? 'Adding...' : 'Add Entry'}
+            </button>
+            <div className="flex flex-col items-center gap-0.5">
+              {timerState && (
+                <span className="font-mono text-[12px] font-medium text-red-600 dark:text-red-400">
+                  {formatElapsed(elapsed)}
+                </span>
+              )}
+              {timerState ? (
+                <button
+                  type="button"
+                  onClick={stopTimer}
+                  className="h-9 px-4 rounded-[6px] bg-red-600 text-white text-[13px] font-medium hover:bg-red-700 transition-colors whitespace-nowrap"
+                >
+                  Stop Timer
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={startTimer}
+                  className="h-9 px-4 rounded-[6px] bg-[#1F3148] text-white text-[13px] font-medium hover:opacity-90 transition-opacity whitespace-nowrap"
+                >
+                  Start Timer
+                </button>
+              )}
+            </div>
+          </div>
         </form>
       </div>
 
@@ -4544,8 +4740,13 @@ function EntryRow({
           )}
           <span className="text-[12px] text-[#9CA3AF]">
             {entry.start_time && entry.end_time
-              ? `${entry.start_time} – ${entry.end_time}`
-              : `${Number(entry.hours).toFixed(2)}h`}
+              ? `${entry.start_time} – ${entry.end_time} (${calcDuration(entry.start_time, entry.end_time) ?? ''})`
+              : (() => {
+                  const totalMin = Math.round(Number(entry.hours) * 60)
+                  const h = Math.floor(totalMin / 60)
+                  const m = totalMin % 60
+                  return h > 0 ? `${h}h ${m}m` : `${m}m`
+                })()}
           </span>
         </div>
       </div>
@@ -4683,8 +4884,9 @@ export default function TimesheetsPage() {
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null)
   const [billableFilter, setBillableFilter] = useState<string>('all')
   const [engagementFilter, setEngagementFilter] = useState<string>('all')
+  const [clientFilter, setClientFilter] = useState<string>('all')
   const [staffList, setStaffList] = useState<StaffUser[]>([])
-  const [engagementList, setEngagementList] = useState<{ id: string; name: string; clientName: string }[]>([])
+  const [engagementList, setEngagementList] = useState<{ id: string; name: string; clientId: string; clientName: string }[]>([])
   const [clientMap, setClientMap] = useState<Record<string, string>>({})
 
   const isManagerOrAbove =
@@ -4702,6 +4904,7 @@ export default function TimesheetsPage() {
         setEngagementList(items.map((e: { id: string; name: string; client_id?: string }) => ({
           id: e.id,
           name: e.name,
+          clientId: e.client_id ?? '',
           clientName: map[e.client_id ?? ''] ?? '',
         })))
       })
@@ -4746,12 +4949,28 @@ export default function TimesheetsPage() {
               <option value="non_billable">Non-Billable Only</option>
             </select>
             <select
+              value={clientFilter}
+              onChange={(e) => {
+                setClientFilter(e.target.value)
+                setEngagementFilter('all')
+              }}
+              className="h-8 px-2 rounded-[6px] border border-[0.5px] border-surface-border dark:border-dark-border bg-surface-page dark:bg-dark-page text-[13px] text-brand dark:text-[#EDEEF0] focus:outline-none"
+            >
+              <option value="all">All Clients</option>
+              {Object.entries(clientMap)
+                .sort((a, b) => a[1].localeCompare(b[1]))
+                .map(([id, name]) => (
+                  <option key={id} value={id}>{name}</option>
+                ))}
+            </select>
+            <select
               value={engagementFilter}
               onChange={(e) => setEngagementFilter(e.target.value)}
               className="h-8 px-2 rounded-[6px] border border-[0.5px] border-surface-border dark:border-dark-border bg-surface-page dark:bg-dark-page text-[13px] text-brand dark:text-[#EDEEF0] focus:outline-none"
             >
               <option value="all">All Engagements</option>
               {engagementList
+                .filter((e) => clientFilter === 'all' || e.clientId === clientFilter)
                 .slice()
                 .sort((a, b) => a.name.localeCompare(b.name))
                 .map((e) => (
@@ -4808,6 +5027,7 @@ export default function TimesheetsPage() {
             userRole={user.role}
             billableFilter={billableFilter}
             engagementFilter={engagementFilter}
+            clientFilter={clientFilter}
           />
         )}
         {activeTab === 'weekly' && (
@@ -4817,6 +5037,7 @@ export default function TimesheetsPage() {
             userRole={user.role}
             billableFilter={billableFilter}
             engagementFilter={engagementFilter}
+            clientFilter={clientFilter}
           />
         )}
         {activeTab === 'biweekly' && (
@@ -4826,6 +5047,7 @@ export default function TimesheetsPage() {
             userRole={user.role}
             billableFilter={billableFilter}
             engagementFilter={engagementFilter}
+            clientFilter={clientFilter}
           />
         )}
         {activeTab === 'monthly' && (
@@ -4835,6 +5057,7 @@ export default function TimesheetsPage() {
             userRole={user.role}
             billableFilter={billableFilter}
             engagementFilter={engagementFilter}
+            clientFilter={clientFilter}
           />
         )}
         {activeTab === 'quarterly' && (
@@ -4844,6 +5067,7 @@ export default function TimesheetsPage() {
             userRole={user.role}
             billableFilter={billableFilter}
             engagementFilter={engagementFilter}
+            clientFilter={clientFilter}
           />
         )}
         {activeTab === 'yearly' && (
@@ -4853,6 +5077,7 @@ export default function TimesheetsPage() {
             userRole={user.role}
             billableFilter={billableFilter}
             engagementFilter={engagementFilter}
+            clientFilter={clientFilter}
           />
         )}
       </div>
@@ -5800,7 +6025,7 @@ import { Breadcrumb } from '@/components/layout/Breadcrumb'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { invoicesApi } from '@/lib/api'
 import { useFetch } from '@/lib/hooks/useFetch'
-import { formatCurrency } from '@/lib/mock/invoices'
+import { formatCurrency } from '@/lib/utils'
 
 type BadgeVariant = Parameters<typeof StatusBadge>[0]['variant']
 
@@ -9090,6 +9315,19 @@ const TABS = [
 const labelClass = 'text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em]'
 const valueClass = 'text-[13px] text-brand dark:text-[#EDEEF0]'
 
+const COMPLEXITY_FLAG_LABELS: Record<string, string> = {
+  rental_property: 'Rental Property',
+  k1_involvement: 'K-1 Involvement',
+  foreign_accounts_fbar: 'Foreign Accounts / FBAR',
+  depreciation_schedules: 'Depreciation Schedules',
+  home_office: 'Home Office Deduction',
+  multiple_states: 'Multiple States',
+  trust_estate_involvement: 'Trust or Estate Involvement',
+  business_sale: 'Business Sale or Disposition',
+  equity_compensation: 'Equity Compensation / ISO / RSU',
+  crypto: 'Cryptocurrency',
+}
+
 function formatDate(dateStr: string | null | undefined): string {
   if (!dateStr) return '—'
   const d = new Date(dateStr)
@@ -9275,6 +9513,28 @@ export default function EngagementDetailPage() {
                   <span className={labelClass}>Created</span>
                   <span className={valueClass}>{formatDate(engagement.createdAt)}</span>
                 </div>
+
+                {engagement.complexityFlags && Object.keys(engagement.complexityFlags).length > 0 && (
+                  <div className="col-span-2 flex flex-col gap-1">
+                    <span className={labelClass}>Complexity Flags</span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {Object.entries(engagement.complexityFlags).map(([key, value]) => {
+                        const baseLabel = COMPLEXITY_FLAG_LABELS[key] ?? key
+                        const displayLabel = value !== true && value
+                          ? `${baseLabel} — ${value}`
+                          : baseLabel
+                        return (
+                          <span
+                            key={key}
+                            className="bg-surface-page dark:bg-dark-page border border-surface-border dark:border-dark-border text-[12px] text-brand dark:text-[#EDEEF0] rounded-full px-2.5 py-0.5"
+                          >
+                            {displayLabel}
+                          </span>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -12436,7 +12696,7 @@ FILE: frontend\src\components\billing\BillingSummary.tsx
 // frontend/src/components/billing/BillingSummary.tsx
 
 import { type Invoice } from '@/lib/api'
-import { formatCurrency } from '@/lib/mock/invoices'
+import { formatCurrency } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 
 interface BillingSummaryProps {
@@ -12508,7 +12768,7 @@ FILE: frontend\src\components\billing\InvoiceCard.tsx
 
 import { useRouter } from 'next/navigation'
 import { type Invoice } from '@/lib/api'
-import { formatCurrency } from '@/lib/mock/invoices'
+import { formatCurrency } from '@/lib/utils'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 
 type BadgeVariant = Parameters<typeof StatusBadge>[0]['variant']
@@ -12561,7 +12821,7 @@ FILE: frontend\src\components\billing\InvoiceTable.tsx
 
 import { useRouter } from 'next/navigation'
 import { type Invoice } from '@/lib/api'
-import { formatCurrency } from '@/lib/mock/invoices'
+import { formatCurrency } from '@/lib/utils'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 
 type BadgeVariant = Parameters<typeof StatusBadge>[0]['variant']
@@ -15276,7 +15536,7 @@ FILE: frontend\src\components\dashboard\DashboardSection.tsx
 ================================================================================
 // frontend/src/components/dashboard/DashboardSection.tsx
 
-import { DashboardItem } from '@/lib/mock/dashboard'
+import { DashboardItem } from '@/lib/api/dashboard'
 import { PriorityItem } from './PriorityItem'
 
 interface DashboardSectionProps {
@@ -15323,7 +15583,7 @@ FILE: frontend\src\components\dashboard\PriorityItem.tsx
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { DashboardItem } from '@/lib/mock/dashboard'
+import { DashboardItem } from '@/lib/api/dashboard'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { CheckSquare, Briefcase } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -15423,12 +15683,13 @@ FILE: frontend\src\components\documents\DocumentCard.tsx
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { MockDocument, formatFileSize } from '@/lib/mock/documents'
+import { Document } from '@/lib/api/documents'
+import { formatFileSize } from '@/lib/utils'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { FileText } from 'lucide-react'
 
 interface DocumentCardProps {
-  document: MockDocument
+  document: Document
 }
 
 export function DocumentCard({ document }: DocumentCardProps) {
@@ -15507,14 +15768,15 @@ FILE: frontend\src\components\documents\DocumentTable.tsx
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { MockDocument, formatFileSize } from '@/lib/mock/documents'
+import { Document } from '@/lib/api/documents'
+import { formatFileSize } from '@/lib/utils'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { FileText } from 'lucide-react'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { documentsApi } from '@/lib/api/documents'
 
 interface DocumentTableProps {
-  documents: MockDocument[]
+  documents: Document[]
 }
 
 export function DocumentTable({ documents }: DocumentTableProps) {
@@ -15525,12 +15787,12 @@ export function DocumentTable({ documents }: DocumentTableProps) {
   // Local optimistic overrides: doc.id -> is_superseded
   const [supersededOverrides, setSupersededOverrides] = useState<Record<string, boolean>>({})
 
-  function getIsSuperseded(doc: MockDocument): boolean {
+  function getIsSuperseded(doc: Document): boolean {
     if (doc.id in supersededOverrides) return supersededOverrides[doc.id]
     return doc.is_superseded ?? false
   }
 
-  async function handleToggleSuperseded(e: React.MouseEvent, doc: MockDocument) {
+  async function handleToggleSuperseded(e: React.MouseEvent, doc: Document) {
     e.stopPropagation()
     const next = !getIsSuperseded(doc)
     setSupersededOverrides((prev) => ({ ...prev, [doc.id]: next }))
@@ -17924,7 +18186,7 @@ FILE: frontend\src\components\engagements\SendEngagementLetterModal.tsx
 // frontend/src/components/engagements/SendEngagementLetterModal.tsx
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Modal } from '@/components/ui/Modal'
 import { FormField } from '@/components/ui/FormField'
 import { TextInput } from '@/components/ui/TextInput'
@@ -17938,6 +18200,24 @@ interface Template {
   engagement_type: string | null
   variable_fields: string[]
 }
+
+type Tier = { label: string; amount: string }
+type ComplexityAdders = Record<string, string | Tier[]>
+
+const COMPLEXITY_FLAG_LABELS: Record<string, string> = {
+  rental_property: 'Rental Property',
+  foreign_accounts_fbar: 'Foreign Accounts / FBAR',
+  depreciation_schedules: 'Depreciation Schedules',
+  home_office: 'Home Office Deduction',
+  multiple_states: 'Multiple States',
+  trust_estate_involvement: 'Trust or Estate Involvement',
+  business_sale: 'Business Sale or Disposition',
+  equity_compensation: 'Equity Compensation / ISO / RSU',
+  k1_involvement: 'K-1 Involvement',
+  crypto: 'Cryptocurrency Transactions',
+}
+
+const TIERED_FLAGS = new Set(['k1_involvement', 'crypto'])
 
 interface SendEngagementLetterModalProps {
   open: boolean
@@ -17968,20 +18248,46 @@ export function SendEngagementLetterModal({
   const [loading, setLoading] = useState(false)
   const [fetching, setFetching] = useState(false)
   const [errors, setErrors] = useState<{ template?: string; fee?: string }>({})
-  const [feeSchedule, setFeeSchedule] = useState<Record<string, string>>({})
+  const [feeSchedule, setFeeSchedule] = useState<Record<string, unknown>>({})
+  const [complexityAdders, setComplexityAdders] = useState<ComplexityAdders>({})
+  const [selectedFlags, setSelectedFlags] = useState<Record<string, string | true>>({})
+  const [manualFeeOverride, setManualFeeOverride] = useState(false)
   const [mode, setMode] = useState<'template' | 'upload'>('template')
   const [uploadFile, setUploadFile] = useState<File | null>(null)
   const [uploadSubject, setUploadSubject] = useState('')
   const [dragOver, setDragOver] = useState(false)
 
+  const calcFee = useCallback((schedule: Record<string, unknown>, adders: ComplexityAdders, flags: Record<string, string | true>): string => {
+    const baseStr = engagementType ? String(schedule[engagementType] ?? '') : ''
+    const base = parseFloat(baseStr.replace(/[$,]/g, '')) || 0
+
+    let adderTotal = 0
+    for (const [key, value] of Object.entries(flags)) {
+      if (TIERED_FLAGS.has(key)) {
+        const tierLabel = value as string
+        const tiers = adders[key] as Tier[] | undefined
+        const tier = tiers?.find((t) => t.label === tierLabel)
+        if (tier) adderTotal += parseFloat(tier.amount.replace(/[$,]/g, '')) || 0
+      } else {
+        const amt = adders[key] as string | undefined
+        if (amt) adderTotal += parseFloat(amt.replace(/[$,]/g, '')) || 0
+      }
+    }
+
+    const total = base + adderTotal
+    if (total === 0 && base === 0) return ''
+    return `$${total.toLocaleString('en-US', { maximumFractionDigits: 0 })}`
+  }, [engagementType])
+
   useEffect(() => {
     if (!open) return
     api.get('/users/firm').then((res) => {
-      const schedule: Record<string, string> = res.data?.settings?.fee_schedule ?? {}
-      setFeeSchedule(schedule)
-      // Auto-populate fee immediately when schedule loads
-      if (engagementType && schedule[engagementType]) {
-        setFeeAmount((prev) => prev || `$${schedule[engagementType]}`)
+      const schedule: Record<string, unknown> = res.data?.settings?.fee_schedule ?? {}
+      const { complexity_adders, ...baseRates } = schedule as { complexity_adders?: ComplexityAdders } & Record<string, unknown>
+      setFeeSchedule(baseRates)
+      setComplexityAdders(complexity_adders ?? {})
+      if (engagementType && baseRates[engagementType]) {
+        setFeeAmount((prev) => prev || `$${baseRates[engagementType]}`)
       }
     }).catch(() => {})
   }, [open, engagementType])
@@ -17992,14 +18298,12 @@ export function SendEngagementLetterModal({
     api.get('/esign/templates?limit=50')
       .then((res) => {
         const items: Template[] = res.data?.items ?? []
-        // Sort: matching engagement type first, then generic (null type) templates
         const sorted = [
           ...items.filter((t) => t.engagement_type === engagementType),
           ...items.filter((t) => t.engagement_type !== engagementType && !t.engagement_type),
           ...items.filter((t) => t.engagement_type !== engagementType && t.engagement_type),
         ]
         setTemplates(sorted)
-        // Pre-select the best match
         if (sorted.length > 0) setSelectedTemplateId(sorted[0].id)
       })
       .catch(() => toast.error('Failed to load templates'))
@@ -18014,7 +18318,50 @@ export function SendEngagementLetterModal({
     setUploadFile(null)
     setUploadSubject('')
     setDragOver(false)
+    setSelectedFlags({})
+    setManualFeeOverride(false)
     onClose()
+  }
+
+  function handleFlagToggle(key: string, checked: boolean) {
+    setSelectedFlags((prev) => {
+      const next = { ...prev }
+      if (!checked) {
+        delete next[key]
+      } else if (TIERED_FLAGS.has(key)) {
+        // Leave value empty until tier is selected
+        next[key] = ''
+      } else {
+        next[key] = true
+      }
+      return next
+    })
+    if (!manualFeeOverride) {
+      const nextFlags = { ...selectedFlags }
+      if (!checked) {
+        delete nextFlags[key]
+      } else if (!TIERED_FLAGS.has(key)) {
+        nextFlags[key] = true
+      }
+      setFeeAmount(calcFee(feeSchedule, complexityAdders, nextFlags))
+    }
+  }
+
+  function handleTierSelect(flagKey: string, tierLabel: string) {
+    setSelectedFlags((prev) => ({ ...prev, [flagKey]: tierLabel }))
+    if (!manualFeeOverride) {
+      setFeeAmount(calcFee(feeSchedule, complexityAdders, { ...selectedFlags, [flagKey]: tierLabel }))
+    }
+  }
+
+  function handleFeeChange(value: string) {
+    setFeeAmount(value)
+    setManualFeeOverride(true)
+  }
+
+  function handleResetFee() {
+    setManualFeeOverride(false)
+    setFeeAmount(calcFee(feeSchedule, complexityAdders, selectedFlags))
   }
 
   async function handleSend() {
@@ -18035,6 +18382,12 @@ export function SendEngagementLetterModal({
         if (!envelopeId) throw new Error('No envelope ID returned')
         await api.post(`/esign/envelopes/${envelopeId}/send`)
         toast.success('Engagement letter sent for signature')
+
+        // Fire-and-forget — do not await, do not block onSent()
+        if (Object.keys(selectedFlags).length > 0) {
+          api.patch(`/engagements/${engagementId}/complexity_flags`, { flags: selectedFlags }).catch(() => {})
+        }
+
         onSent()
         handleClose()
       } catch (err: unknown) {
@@ -18044,7 +18397,6 @@ export function SendEngagementLetterModal({
         setLoading(false)
       }
     } else {
-      // Upload path
       const errs: typeof errors = {}
       if (!uploadFile) errs.template = 'Please select a PDF file.'
       if (Object.keys(errs).length > 0) { setErrors(errs); return }
@@ -18085,6 +18437,13 @@ export function SendEngagementLetterModal({
       ? `${t.name} ★`
       : t.name,
   }))
+
+  const hasComplexityAdders = Object.keys(complexityAdders).some((k) => {
+    const v = complexityAdders[k]
+    return Array.isArray(v) ? v.length > 0 : !!v
+  })
+
+  const allFlagKeys = Object.keys(COMPLEXITY_FLAG_LABELS)
 
   return (
     <Modal
@@ -18180,17 +18539,101 @@ export function SendEngagementLetterModal({
             </FormField>
 
             {/* Fee amount */}
-            <FormField label="Fee Amount" required error={errors.fee}>
+            <div className="flex flex-col gap-1">
+              <div className="flex items-center gap-2">
+                <label className="flex items-center gap-1 text-[11px] font-medium text-brand dark:text-[#EDEEF0]">
+                  Fee Amount
+                  <span className="w-[5px] h-[5px] rounded-full bg-[#E24B4A] flex-shrink-0" />
+                </label>
+                {manualFeeOverride && (
+                  <button
+                    onClick={handleResetFee}
+                    className="text-[10px] text-[#4A7FA5] hover:underline"
+                  >
+                    Reset to calculated
+                  </button>
+                )}
+              </div>
               <TextInput
                 value={feeAmount}
                 onChange={(e) => {
-                  setFeeAmount(e.target.value)
+                  handleFeeChange(e.target.value)
                   if (errors.fee) setErrors((prev) => ({ ...prev, fee: undefined }))
                 }}
                 placeholder="e.g. $750 or $1,200"
                 error={!!errors.fee}
               />
-            </FormField>
+              {errors.fee && (
+                <span className="text-[11px] text-status-red-text">{errors.fee}</span>
+              )}
+            </div>
+
+            {/* Complexity flags */}
+            {hasComplexityAdders && (
+              <div className="flex flex-col gap-2">
+                <p className="text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em]">Complexity</p>
+                <div className="bg-surface-page dark:bg-[#252525] rounded-[6px] overflow-hidden">
+                  {allFlagKeys.map((key, idx) => {
+                    const adderValue = complexityAdders[key]
+                    const isChecked = key in selectedFlags
+                    const isTiered = TIERED_FLAGS.has(key)
+                    const tiers = isTiered ? (adderValue as Tier[] | undefined) : null
+                    const selectedTier = isTiered ? (selectedFlags[key] as string) : null
+
+                    return (
+                      <div
+                        key={key}
+                        className={`flex flex-col gap-1.5 px-3 py-2.5 ${
+                          idx < allFlagKeys.length - 1
+                            ? 'border-b border-surface-border dark:border-dark-border'
+                            : ''
+                        }`}
+                      >
+                        <label className="flex items-center gap-2.5 cursor-pointer select-none">
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={(e) => handleFlagToggle(key, e.target.checked)}
+                            className="w-3.5 h-3.5 rounded accent-brand flex-shrink-0"
+                          />
+                          <span className="text-[12px] text-brand dark:text-[#EDEEF0]">
+                            {COMPLEXITY_FLAG_LABELS[key]}
+                          </span>
+                          {!isTiered && adderValue && (
+                            <span className="text-[11px] text-[#6B7280] ml-auto">
+                              +${adderValue as string}
+                            </span>
+                          )}
+                        </label>
+
+                        {isTiered && isChecked && (
+                          <div className="pl-6">
+                            {tiers && tiers.length > 0 ? (
+                              <select
+                                value={selectedTier ?? ''}
+                                onChange={(e) => handleTierSelect(key, e.target.value)}
+                                className="w-full px-2.5 py-1.5 rounded-[6px] border border-surface-border dark:border-dark-border bg-surface-card dark:bg-dark-card text-[12px] text-brand dark:text-[#EDEEF0] focus:outline-none focus:border-[#4A7FA5]"
+                              >
+                                <option value="">Select tier...</option>
+                                {tiers.map((tier) => (
+                                  <option key={tier.label} value={tier.label}>
+                                    {tier.label}{tier.amount ? ` — $${tier.amount}` : ''}
+                                  </option>
+                                ))}
+                              </select>
+                            ) : (
+                              <p className="text-[11px] text-[#6B7280]">
+                                No tiers configured — set them in Settings → Fee Schedule.
+                              </p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
 
             <p className="text-[11px] text-[#6B7280]">
               The client will receive an email from Dropbox Sign with a link to review and sign the letter. You will be notified when they sign.
@@ -21888,6 +22331,25 @@ const FEE_SCHEDULE_ITEMS = [
   ]},
 ]
 
+const FIXED_ADDER_FLAGS = [
+  { key: 'rental_property', label: 'Rental Property' },
+  { key: 'foreign_accounts_fbar', label: 'Foreign Accounts / FBAR' },
+  { key: 'depreciation_schedules', label: 'Depreciation Schedules' },
+  { key: 'home_office', label: 'Home Office Deduction' },
+  { key: 'multiple_states', label: 'Multiple States' },
+  { key: 'trust_estate_involvement', label: 'Trust or Estate Involvement' },
+  { key: 'business_sale', label: 'Business Sale or Disposition' },
+  { key: 'equity_compensation', label: 'Equity Compensation / ISO / RSU' },
+]
+
+const TIERED_ADDER_FLAGS = [
+  { key: 'k1_involvement', label: 'K-1 Involvement' },
+  { key: 'crypto', label: 'Cryptocurrency Transactions' },
+]
+
+type Tier = { label: string; amount: string }
+type ComplexityAdders = Record<string, string | Tier[]>
+
 interface FeeScheduleTabProps {
   firmSettings: Record<string, unknown> | null
   onSaved: () => void
@@ -21895,12 +22357,15 @@ interface FeeScheduleTabProps {
 
 export default function FeeScheduleTab({ firmSettings, onSaved }: FeeScheduleTabProps) {
   const [fees, setFees] = useState<Record<string, string>>({})
+  const [complexityAdders, setComplexityAdders] = useState<ComplexityAdders>({})
   const [saving, setSaving] = useState(false)
   const [dirty, setDirty] = useState(false)
 
   useEffect(() => {
-    const existing = (firmSettings?.fee_schedule as Record<string, string>) ?? {}
-    setFees(existing)
+    const existing = (firmSettings?.fee_schedule as Record<string, unknown>) ?? {}
+    const { complexity_adders, ...baseRates } = existing as { complexity_adders?: ComplexityAdders } & Record<string, string>
+    setFees(baseRates as Record<string, string>)
+    setComplexityAdders(complexity_adders ?? {})
     setDirty(false)
   }, [firmSettings])
 
@@ -21909,10 +22374,41 @@ export default function FeeScheduleTab({ firmSettings, onSaved }: FeeScheduleTab
     setDirty(true)
   }
 
+  function handleFixedAdderChange(key: string, value: string) {
+    setComplexityAdders((prev) => ({ ...prev, [key]: value }))
+    setDirty(true)
+  }
+
+  function handleTierChange(flagKey: string, index: number, field: 'label' | 'amount', value: string) {
+    setComplexityAdders((prev) => {
+      const existing = (prev[flagKey] as Tier[] | undefined) ?? []
+      const updated = existing.map((t, i) => i === index ? { ...t, [field]: value } : t)
+      return { ...prev, [flagKey]: updated }
+    })
+    setDirty(true)
+  }
+
+  function handleAddTier(flagKey: string) {
+    setComplexityAdders((prev) => {
+      const existing = (prev[flagKey] as Tier[] | undefined) ?? []
+      return { ...prev, [flagKey]: [...existing, { label: '', amount: '' }] }
+    })
+    setDirty(true)
+  }
+
+  function handleRemoveTier(flagKey: string, index: number) {
+    setComplexityAdders((prev) => {
+      const existing = (prev[flagKey] as Tier[] | undefined) ?? []
+      return { ...prev, [flagKey]: existing.filter((_, i) => i !== index) }
+    })
+    setDirty(true)
+  }
+
   async function handleSave() {
     setSaving(true)
     try {
-      await api.patch('/users/firm/settings', { fee_schedule: fees })
+      const feeSchedule = { ...fees, complexity_adders: complexityAdders }
+      await api.patch('/users/firm/settings', { fee_schedule: feeSchedule })
       toast.success('Fee schedule saved')
       setDirty(false)
       onSaved()
@@ -21967,6 +22463,104 @@ export default function FeeScheduleTab({ firmSettings, onSaved }: FeeScheduleTab
           </div>
         </div>
       ))}
+
+      {/* Complexity Adders section */}
+      <div className="flex flex-col gap-3">
+        <div>
+          <p className="text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em]">
+            Complexity Adders
+          </p>
+          <p className="text-[11px] text-[#6B7280] mt-1">
+            Additional fees added to the base rate when complexity flags are selected on an engagement letter.
+          </p>
+        </div>
+
+        {/* Fixed flags */}
+        <div className="bg-surface-card dark:bg-dark-card rounded-[8px] overflow-hidden">
+          {FIXED_ADDER_FLAGS.map((flag, idx) => (
+            <div
+              key={flag.key}
+              className={`flex items-center justify-between px-4 py-3 gap-4 ${
+                idx < FIXED_ADDER_FLAGS.length - 1
+                  ? 'border-b border-surface-border dark:border-dark-border'
+                  : ''
+              }`}
+            >
+              <span className="text-[13px] text-brand dark:text-[#EDEEF0] flex-1">
+                {flag.label}
+              </span>
+              <div className="relative flex items-center">
+                <span className="absolute left-3 text-[13px] text-[#6B7280]">$</span>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={(complexityAdders[flag.key] as string) ?? ''}
+                  onChange={(e) => handleFixedAdderChange(flag.key, e.target.value)}
+                  placeholder="—"
+                  className="w-28 pl-6 pr-3 py-1.5 rounded-[6px] border border-surface-border dark:border-dark-border bg-surface-page dark:bg-dark-page text-[13px] text-brand dark:text-[#EDEEF0] placeholder:text-[#9CA3AF] focus:outline-none focus:border-[#4A7FA5] text-right"
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Tiered flags */}
+        {TIERED_ADDER_FLAGS.map((flag) => {
+          const tiers = (complexityAdders[flag.key] as Tier[] | undefined) ?? []
+          return (
+            <div key={flag.key} className="flex flex-col gap-2">
+              <p className="text-[12px] font-medium text-brand dark:text-[#EDEEF0]">{flag.label}</p>
+              <div className="bg-surface-card dark:bg-dark-card rounded-[8px] overflow-hidden">
+                {tiers.map((tier, idx) => (
+                  <div
+                    key={idx}
+                    className={`flex items-center gap-3 px-4 py-3 ${
+                      idx < tiers.length - 1
+                        ? 'border-b border-surface-border dark:border-dark-border'
+                        : ''
+                    }`}
+                  >
+                    <input
+                      type="text"
+                      value={tier.label}
+                      onChange={(e) => handleTierChange(flag.key, idx, 'label', e.target.value)}
+                      placeholder="e.g. 1-3 K-1s"
+                      className="flex-1 px-3 py-1.5 rounded-[6px] border border-surface-border dark:border-dark-border bg-surface-page dark:bg-dark-page text-[13px] text-brand dark:text-[#EDEEF0] placeholder:text-[#9CA3AF] focus:outline-none focus:border-[#4A7FA5]"
+                    />
+                    <div className="relative flex items-center">
+                      <span className="absolute left-3 text-[13px] text-[#6B7280]">$</span>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        value={tier.amount}
+                        onChange={(e) => handleTierChange(flag.key, idx, 'amount', e.target.value)}
+                        placeholder="—"
+                        className="w-28 pl-6 pr-3 py-1.5 rounded-[6px] border border-surface-border dark:border-dark-border bg-surface-page dark:bg-dark-page text-[13px] text-brand dark:text-[#EDEEF0] placeholder:text-[#9CA3AF] focus:outline-none focus:border-[#4A7FA5] text-right"
+                      />
+                    </div>
+                    <button
+                      onClick={() => handleRemoveTier(flag.key, idx)}
+                      className="flex items-center justify-center w-6 h-6 rounded-full text-[#6B7280] hover:text-red-500 hover:bg-surface-page dark:hover:bg-dark-page transition-colors flex-shrink-0"
+                    >
+                      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth={2}>
+                        <path d="M1 1l10 10M11 1L1 11" />
+                      </svg>
+                    </button>
+                  </div>
+                ))}
+                <div className={`px-4 py-2.5 ${tiers.length > 0 ? 'border-t border-surface-border dark:border-dark-border' : ''}`}>
+                  <button
+                    onClick={() => handleAddTier(flag.key)}
+                    className="text-[12px] text-[#4A7FA5] hover:text-brand transition-colors"
+                  >
+                    + Add Tier
+                  </button>
+                </div>
+              </div>
+            </div>
+          )
+        })}
+      </div>
 
       <div className="flex items-center justify-between pt-2">
         <p className="text-[11px] text-[#6B7280]">
@@ -27411,6 +28005,20 @@ export function formatEngagementType(value: string | null | undefined): string {
   return value.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
 }
 
+export function formatCurrency(amount: number): string {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(amount)
+}
+
+export function formatFileSize(kb: number): string {
+  if (kb < 1024) return `${kb} KB`
+  return `${(kb / 1024).toFixed(1)} MB`
+}
+
 
 ================================================================================
 FILE: frontend\src\lib\api\clients.ts
@@ -27882,6 +28490,7 @@ export interface Engagement {
   notes: string | null
   createdAt: string
   updatedAt: string
+  complexityFlags: Record<string, string | true> | null
 }
 
 function mapEngagement(raw: Record<string, unknown>): Engagement {
@@ -27900,6 +28509,7 @@ function mapEngagement(raw: Record<string, unknown>): Engagement {
     notes: raw.notes ? String(raw.notes) : null,
     createdAt: String(raw.created_at ?? ''),
     updatedAt: String(raw.updated_at ?? ''),
+    complexityFlags: (raw.complexity_flags as Record<string, string | true> | null) ?? null,
   }
 }
 
@@ -28755,879 +29365,6 @@ export function useFetch<T>(
 
   return { data, isLoading, error, refetch }
 }
-
-
-================================================================================
-FILE: frontend\src\lib\mock\clients.ts
-================================================================================
-// frontend/src/lib/mock/clients.ts
-
-export type ClientStatus = 'active' | 'inactive'
-
-export interface MockClient {
-  id: string
-  name: string
-  primaryContact: string
-  email: string
-  phone: string
-  industry: string
-  status: ClientStatus
-  activeEngagements: number
-  awaitingDocs: number
-  createdAt: string
-}
-
-export const mockClients: MockClient[] = [
-  {
-    id: '1',
-    name: 'Acme Corp',
-    primaryContact: 'James Holden',
-    email: 'james@acmecorp.com',
-    phone: '(212) 555-0101',
-    industry: 'Manufacturing',
-    status: 'active',
-    activeEngagements: 3,
-    awaitingDocs: 1,
-    createdAt: '2024-01-15',
-  },
-  {
-    id: '2',
-    name: 'Bright Future LLC',
-    primaryContact: 'Naomi Nagata',
-    email: 'naomi@brightfuture.com',
-    phone: '(212) 555-0102',
-    industry: 'Technology',
-    status: 'active',
-    activeEngagements: 1,
-    awaitingDocs: 0,
-    createdAt: '2024-02-03',
-  },
-  {
-    id: '3',
-    name: 'Goldstein & Partners',
-    primaryContact: 'Amos Burton',
-    email: 'amos@goldsteinpartners.com',
-    phone: '(212) 555-0103',
-    industry: 'Legal',
-    status: 'active',
-    activeEngagements: 2,
-    awaitingDocs: 2,
-    createdAt: '2024-03-10',
-  },
-  {
-    id: '4',
-    name: 'Harvest Moon Farms',
-    primaryContact: 'Bobbie Draper',
-    email: 'bobbie@harvestmoon.com',
-    phone: '(212) 555-0104',
-    industry: 'Agriculture',
-    status: 'inactive',
-    activeEngagements: 0,
-    awaitingDocs: 0,
-    createdAt: '2023-11-20',
-  },
-  {
-    id: '5',
-    name: 'Ironclad Logistics',
-    primaryContact: 'Alex Kamal',
-    email: 'alex@ironclad.com',
-    phone: '(212) 555-0105',
-    industry: 'Transportation',
-    status: 'active',
-    activeEngagements: 1,
-    awaitingDocs: 0,
-    createdAt: '2024-04-01',
-  },
-]
-
-export interface MockEngagementSummary {
-  id: string
-  title: string
-  status: 'in-progress' | 'awaiting-docs' | 'complete' | 'overdue' | 'not-started'
-  dueDate: string
-  assignedTo: string
-}
-
-export interface MockClientDetail extends MockClient {
-  address: string
-  city: string
-  state: string
-  zip: string
-  engagements: MockEngagementSummary[]
-}
-
-export const mockClientDetails: Record<string, MockClientDetail> = {
-  '1': {
-    id: '1',
-    name: 'Acme Corp',
-    primaryContact: 'James Holden',
-    email: 'james@acmecorp.com',
-    phone: '(212) 555-0101',
-    industry: 'Manufacturing',
-    status: 'active',
-    activeEngagements: 3,
-    awaitingDocs: 1,
-    createdAt: '2024-01-15',
-    address: '123 Main Street',
-    city: 'New York',
-    state: 'NY',
-    zip: '10001',
-    engagements: [
-      {
-        id: 'e1',
-        title: '2023 Tax Return — Corporate',
-        status: 'in-progress',
-        dueDate: '2024-09-15',
-        assignedTo: 'Sarah K.',
-      },
-      {
-        id: 'e2',
-        title: 'Q2 2024 Bookkeeping',
-        status: 'awaiting-docs',
-        dueDate: '2024-07-31',
-        assignedTo: 'Mark T.',
-      },
-      {
-        id: 'e3',
-        title: '2022 Tax Return — Corporate',
-        status: 'complete',
-        dueDate: '2023-09-15',
-        assignedTo: 'Sarah K.',
-      },
-    ],
-  },
-  '2': {
-    id: '2',
-    name: 'Bright Future LLC',
-    primaryContact: 'Naomi Nagata',
-    email: 'naomi@brightfuture.com',
-    phone: '(212) 555-0102',
-    industry: 'Technology',
-    status: 'active',
-    activeEngagements: 1,
-    awaitingDocs: 0,
-    createdAt: '2024-02-03',
-    address: '456 Oak Avenue',
-    city: 'Brooklyn',
-    state: 'NY',
-    zip: '11201',
-    engagements: [
-      {
-        id: 'e4',
-        title: '2023 Tax Return — Partnership',
-        status: 'in-progress',
-        dueDate: '2024-09-15',
-        assignedTo: 'Mark T.',
-      },
-    ],
-  },
-  '3': {
-    id: '3',
-    name: 'Goldstein & Partners',
-    primaryContact: 'Amos Burton',
-    email: 'amos@goldsteinpartners.com',
-    phone: '(212) 555-0103',
-    industry: 'Legal',
-    status: 'active',
-    activeEngagements: 2,
-    awaitingDocs: 2,
-    createdAt: '2024-03-10',
-    address: '789 Park Boulevard',
-    city: 'Manhattan',
-    state: 'NY',
-    zip: '10022',
-    engagements: [
-      {
-        id: 'e5',
-        title: '2023 Tax Return — S-Corp',
-        status: 'awaiting-docs',
-        dueDate: '2024-09-15',
-        assignedTo: 'Sarah K.',
-      },
-      {
-        id: 'e6',
-        title: 'Q1 2024 Bookkeeping',
-        status: 'awaiting-docs',
-        dueDate: '2024-04-30',
-        assignedTo: 'Mark T.',
-      },
-    ],
-  },
-  '4': {
-    id: '4',
-    name: 'Harvest Moon Farms',
-    primaryContact: 'Bobbie Draper',
-    email: 'bobbie@harvestmoon.com',
-    phone: '(212) 555-0104',
-    industry: 'Agriculture',
-    status: 'inactive',
-    activeEngagements: 0,
-    awaitingDocs: 0,
-    createdAt: '2023-11-20',
-    address: '12 Rural Route 4',
-    city: 'Albany',
-    state: 'NY',
-    zip: '12201',
-    engagements: [],
-  },
-  '5': {
-    id: '5',
-    name: 'Ironclad Logistics',
-    primaryContact: 'Alex Kamal',
-    email: 'alex@ironclad.com',
-    phone: '(212) 555-0105',
-    industry: 'Transportation',
-    status: 'active',
-    activeEngagements: 1,
-    awaitingDocs: 0,
-    createdAt: '2024-04-01',
-    address: '55 Harbor Drive',
-    city: 'Queens',
-    state: 'NY',
-    zip: '11101',
-    engagements: [
-      {
-        id: 'e7',
-        title: '2023 Tax Return — LLC',
-        status: 'in-progress',
-        dueDate: '2024-09-15',
-        assignedTo: 'Sarah K.',
-      },
-    ],
-  },
-}
-
-export function getClientDetail(id: string): MockClientDetail | null {
-  return mockClientDetails[id] ?? null
-}
-
-
-================================================================================
-FILE: frontend\src\lib\mock\dashboard.ts
-================================================================================
-// frontend/src/lib/mock/dashboard.ts
-
-import { mockTasks } from './tasks'
-import { mockEngagements } from './engagements'
-
-export interface DashboardItem {
-  id: string
-  type: 'task' | 'engagement'
-  title: string
-  clientName: string
-  clientId: string
-  status: string
-  dueDate: string
-  assignedTo: string
-  href: string
-}
-
-export function getOverdueItems(): DashboardItem[] {
-  const tasks = mockTasks
-    .filter((t) => t.status === 'overdue')
-    .map((t) => ({
-      id: t.id,
-      type: 'task' as const,
-      title: t.title,
-      clientName: t.clientName,
-      clientId: t.clientId,
-      status: t.status,
-      dueDate: t.dueDate,
-      assignedTo: t.assignedTo,
-      href: `/tasks/${t.id}`,
-    }))
-
-  const engagements = mockEngagements
-    .filter((e) => e.status === 'overdue')
-    .map((e) => ({
-      id: e.id,
-      type: 'engagement' as const,
-      title: e.title,
-      clientName: e.clientName,
-      clientId: e.clientId,
-      status: e.status,
-      dueDate: e.dueDate,
-      assignedTo: e.assignedTo,
-      href: `/engagements/${e.id}`,
-    }))
-
-  return [...tasks, ...engagements].sort(
-    (a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()
-  )
-}
-
-export function getAwaitingDocsItems(): DashboardItem[] {
-  return mockEngagements
-    .filter((e) => e.status === 'awaiting-docs')
-    .map((e) => ({
-      id: e.id,
-      type: 'engagement' as const,
-      title: e.title,
-      clientName: e.clientName,
-      clientId: e.clientId,
-      status: e.status,
-      dueDate: e.dueDate,
-      assignedTo: e.assignedTo,
-      href: `/engagements/${e.id}`,
-    }))
-}
-
-export function getUpcomingItems(): DashboardItem[] {
-  const today = new Date('2024-08-01')
-  const cutoff = new Date('2024-09-30')
-
-  const tasks = mockTasks
-    .filter((t) => {
-      const d = new Date(t.dueDate)
-      return (
-        (t.status === 'not-started' || t.status === 'in-progress') &&
-        d >= today &&
-        d <= cutoff
-      )
-    })
-    .map((t) => ({
-      id: t.id,
-      type: 'task' as const,
-      title: t.title,
-      clientName: t.clientName,
-      clientId: t.clientId,
-      status: t.status,
-      dueDate: t.dueDate,
-      assignedTo: t.assignedTo,
-      href: `/tasks/${t.id}`,
-    }))
-
-  const engagements = mockEngagements
-    .filter((e) => {
-      const d = new Date(e.dueDate)
-      return (
-        (e.status === 'not-started' || e.status === 'in-progress') &&
-        d >= today &&
-        d <= cutoff
-      )
-    })
-    .map((e) => ({
-      id: e.id,
-      type: 'engagement' as const,
-      title: e.title,
-      clientName: e.clientName,
-      clientId: e.clientId,
-      status: e.status,
-      dueDate: e.dueDate,
-      assignedTo: e.assignedTo,
-      href: `/engagements/${e.id}`,
-    }))
-
-  return [...tasks, ...engagements].sort(
-    (a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()
-  )
-}
-
-export function getSummaryStats() {
-  const { mockClients } = require('./clients')
-  return {
-    totalClients: mockClients.length,
-    activeEngagements: mockEngagements.filter(
-      (e) => e.status === 'in-progress' || e.status === 'awaiting-docs'
-    ).length,
-    overdue: getOverdueItems().length,
-    awaitingDocs: getAwaitingDocsItems().length,
-  }
-}
-
-
-================================================================================
-FILE: frontend\src\lib\mock\documents.ts
-================================================================================
-// frontend/src/lib/mock/documents.ts
-
-export type DocumentStatus =
-  | 'uploaded'
-  | 'pending'
-  | 'pending_signature'
-  | 'signed'
-  | 'rejected'
-
-export interface MockDocument {
-  id: string
-  name: string
-  clientId: string
-  clientName: string
-  engagementId: string
-  engagementTitle: string
-  status: DocumentStatus
-  uploadedBy: string
-  uploadedAt: string
-  fileType: string
-  fileSizeKb: number
-  is_superseded?: boolean
-}
-
-export const mockDocuments: MockDocument[] = [
-  {
-    id: 'd1',
-    name: '2023 W-2 — James Holden',
-    clientId: '1',
-    clientName: 'Acme Corp',
-    engagementId: 'e1',
-    engagementTitle: '2023 Tax Return — Corporate',
-    status: 'uploaded',
-    uploadedBy: 'Client',
-    uploadedAt: '2024-07-01',
-    fileType: 'PDF',
-    fileSizeKb: 142,
-  },
-  {
-    id: 'd2',
-    name: 'Acme Corp — Bank Statement Q2',
-    clientId: '1',
-    clientName: 'Acme Corp',
-    engagementId: 'e2',
-    engagementTitle: 'Q2 2024 Bookkeeping',
-    status: 'pending',
-    uploadedBy: 'Client',
-    uploadedAt: '2024-07-10',
-    fileType: 'PDF',
-    fileSizeKb: 398,
-  },
-  {
-    id: 'd3',
-    name: 'Engagement Letter — Acme Corp 2023',
-    clientId: '1',
-    clientName: 'Acme Corp',
-    engagementId: 'e1',
-    engagementTitle: '2023 Tax Return — Corporate',
-    status: 'signed',
-    uploadedBy: 'Staff',
-    uploadedAt: '2024-01-20',
-    fileType: 'PDF',
-    fileSizeKb: 89,
-  },
-  {
-    id: 'd4',
-    name: '2023 1099-NEC — Bright Future LLC',
-    clientId: '2',
-    clientName: 'Bright Future LLC',
-    engagementId: 'e4',
-    engagementTitle: '2023 Tax Return — Partnership',
-    status: 'uploaded',
-    uploadedBy: 'Client',
-    uploadedAt: '2024-07-14',
-    fileType: 'PDF',
-    fileSizeKb: 211,
-  },
-  {
-    id: 'd5',
-    name: 'Partnership Agreement — Bright Future',
-    clientId: '2',
-    clientName: 'Bright Future LLC',
-    engagementId: 'e4',
-    engagementTitle: '2023 Tax Return — Partnership',
-    status: 'uploaded',
-    uploadedBy: 'Client',
-    uploadedAt: '2024-07-15',
-    fileType: 'PDF',
-    fileSizeKb: 504,
-  },
-  {
-    id: 'd6',
-    name: 'Engagement Letter — Goldstein 2023',
-    clientId: '3',
-    clientName: 'Goldstein & Partners',
-    engagementId: 'e5',
-    engagementTitle: '2023 Tax Return — S-Corp',
-    status: 'signed',
-    uploadedBy: 'Staff',
-    uploadedAt: '2024-03-12',
-    fileType: 'PDF',
-    fileSizeKb: 91,
-  },
-  {
-    id: 'd7',
-    name: 'Goldstein — Prior Year Return 2022',
-    clientId: '3',
-    clientName: 'Goldstein & Partners',
-    engagementId: 'e5',
-    engagementTitle: '2023 Tax Return — S-Corp',
-    status: 'pending',
-    uploadedBy: 'Client',
-    uploadedAt: '2024-07-18',
-    fileType: 'PDF',
-    fileSizeKb: 776,
-  },
-  {
-    id: 'd8',
-    name: '2023 Tax Return — LLC Draft',
-    clientId: '5',
-    clientName: 'Ironclad Logistics',
-    engagementId: 'e7',
-    engagementTitle: '2023 Tax Return — LLC',
-    status: 'uploaded',
-    uploadedBy: 'Staff',
-    uploadedAt: '2024-07-22',
-    fileType: 'PDF',
-    fileSizeKb: 334,
-  },
-]
-
-export function formatFileSize(kb: number): string {
-  if (kb < 1024) return `${kb} KB`
-  return `${(kb / 1024).toFixed(1)} MB`
-}
-
-
-================================================================================
-FILE: frontend\src\lib\mock\engagements.ts
-================================================================================
-// frontend/src/lib/mock/engagements.ts
-
-export type EngagementStatus =
-  | 'in-progress'
-  | 'awaiting-docs'
-  | 'complete'
-  | 'overdue'
-  | 'not-started'
-
-export interface MockEngagement {
-  id: string
-  title: string
-  clientId: string
-  clientName: string
-  status: EngagementStatus
-  dueDate: string
-  assignedTo: string
-  type: string
-}
-
-export const mockEngagements: MockEngagement[] = [
-  {
-    id: 'e1',
-    title: '2023 Tax Return — Corporate',
-    clientId: '1',
-    clientName: 'Acme Corp',
-    status: 'in-progress',
-    dueDate: '2024-09-15',
-    assignedTo: 'Sarah K.',
-    type: 'Tax Return',
-  },
-  {
-    id: 'e2',
-    title: 'Q2 2024 Bookkeeping',
-    clientId: '1',
-    clientName: 'Acme Corp',
-    status: 'awaiting-docs',
-    dueDate: '2024-07-31',
-    assignedTo: 'Mark T.',
-    type: 'Bookkeeping',
-  },
-  {
-    id: 'e3',
-    title: '2022 Tax Return — Corporate',
-    clientId: '1',
-    clientName: 'Acme Corp',
-    status: 'complete',
-    dueDate: '2023-09-15',
-    assignedTo: 'Sarah K.',
-    type: 'Tax Return',
-  },
-  {
-    id: 'e4',
-    title: '2023 Tax Return — Partnership',
-    clientId: '2',
-    clientName: 'Bright Future LLC',
-    status: 'in-progress',
-    dueDate: '2024-09-15',
-    assignedTo: 'Mark T.',
-    type: 'Tax Return',
-  },
-  {
-    id: 'e5',
-    title: '2023 Tax Return — S-Corp',
-    clientId: '3',
-    clientName: 'Goldstein & Partners',
-    status: 'awaiting-docs',
-    dueDate: '2024-09-15',
-    assignedTo: 'Sarah K.',
-    type: 'Tax Return',
-  },
-  {
-    id: 'e6',
-    title: 'Q1 2024 Bookkeeping',
-    clientId: '3',
-    clientName: 'Goldstein & Partners',
-    status: 'awaiting-docs',
-    dueDate: '2024-04-30',
-    assignedTo: 'Mark T.',
-    type: 'Bookkeeping',
-  },
-  {
-    id: 'e7',
-    title: '2023 Tax Return — LLC',
-    clientId: '5',
-    clientName: 'Ironclad Logistics',
-    status: 'in-progress',
-    dueDate: '2024-09-15',
-    assignedTo: 'Sarah K.',
-    type: 'Tax Return',
-  },
-  {
-    id: 'e8',
-    title: 'Q3 2024 Bookkeeping',
-    clientId: '2',
-    clientName: 'Bright Future LLC',
-    status: 'not-started',
-    dueDate: '2024-10-31',
-    assignedTo: 'Mark T.',
-    type: 'Bookkeeping',
-  },
-]
-
-
-================================================================================
-FILE: frontend\src\lib\mock\invoices.ts
-================================================================================
-// frontend/src/lib/mock/invoices.ts
-
-export type InvoiceStatus =
-  | 'draft'
-  | 'sent'
-  | 'paid'
-  | 'overdue'
-
-export interface MockInvoice {
-  id: string
-  invoiceNumber: string
-  clientId: string
-  clientName: string
-  engagementId: string
-  engagementTitle: string
-  status: InvoiceStatus
-  amount: number
-  issuedDate: string
-  dueDate: string
-}
-
-export const mockInvoices: MockInvoice[] = [
-  {
-    id: 'inv1',
-    invoiceNumber: 'INV-2024-001',
-    clientId: '1',
-    clientName: 'Acme Corp',
-    engagementId: 'e1',
-    engagementTitle: '2023 Tax Return — Corporate',
-    status: 'sent',
-    amount: 3500,
-    issuedDate: '2024-07-01',
-    dueDate: '2024-07-31',
-  },
-  {
-    id: 'inv2',
-    invoiceNumber: 'INV-2024-002',
-    clientId: '1',
-    clientName: 'Acme Corp',
-    engagementId: 'e2',
-    engagementTitle: 'Q2 2024 Bookkeeping',
-    status: 'draft',
-    amount: 1200,
-    issuedDate: '2024-07-10',
-    dueDate: '2024-08-10',
-  },
-  {
-    id: 'inv3',
-    invoiceNumber: 'INV-2024-003',
-    clientId: '1',
-    clientName: 'Acme Corp',
-    engagementId: 'e3',
-    engagementTitle: '2022 Tax Return — Corporate',
-    status: 'paid',
-    amount: 3200,
-    issuedDate: '2023-09-01',
-    dueDate: '2023-09-30',
-  },
-  {
-    id: 'inv4',
-    invoiceNumber: 'INV-2024-004',
-    clientId: '2',
-    clientName: 'Bright Future LLC',
-    engagementId: 'e4',
-    engagementTitle: '2023 Tax Return — Partnership',
-    status: 'overdue',
-    amount: 2800,
-    issuedDate: '2024-06-01',
-    dueDate: '2024-07-01',
-  },
-  {
-    id: 'inv5',
-    invoiceNumber: 'INV-2024-005',
-    clientId: '3',
-    clientName: 'Goldstein & Partners',
-    engagementId: 'e5',
-    engagementTitle: '2023 Tax Return — S-Corp',
-    status: 'sent',
-    amount: 4100,
-    issuedDate: '2024-07-05',
-    dueDate: '2024-08-05',
-  },
-  {
-    id: 'inv6',
-    invoiceNumber: 'INV-2024-006',
-    clientId: '3',
-    clientName: 'Goldstein & Partners',
-    engagementId: 'e6',
-    engagementTitle: 'Q1 2024 Bookkeeping',
-    status: 'paid',
-    amount: 950,
-    issuedDate: '2024-05-01',
-    dueDate: '2024-05-31',
-  },
-  {
-    id: 'inv7',
-    invoiceNumber: 'INV-2024-007',
-    clientId: '5',
-    clientName: 'Ironclad Logistics',
-    engagementId: 'e7',
-    engagementTitle: '2023 Tax Return — LLC',
-    status: 'draft',
-    amount: 2200,
-    issuedDate: '2024-07-20',
-    dueDate: '2024-08-20',
-  },
-]
-
-export function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(amount)
-}
-
-
-================================================================================
-FILE: frontend\src\lib\mock\tasks.ts
-================================================================================
-// frontend/src/lib/mock/tasks.ts
-
-export type TaskStatus =
-  | 'not-started'
-  | 'in-progress'
-  | 'complete'
-  | 'overdue'
-
-export interface MockTask {
-  id: string
-  title: string
-  clientId: string
-  clientName: string
-  engagementId: string
-  engagementTitle: string
-  assignedTo: string
-  dueDate: string
-  status: TaskStatus
-}
-
-export const mockTasks: MockTask[] = [
-  {
-    id: 't1',
-    title: 'Prepare depreciation schedule',
-    clientId: '1',
-    clientName: 'Acme Corp',
-    engagementId: 'e1',
-    engagementTitle: '2023 Tax Return — Corporate',
-    assignedTo: 'Sarah K.',
-    dueDate: '2024-08-01',
-    status: 'in-progress',
-  },
-  {
-    id: 't2',
-    title: 'Request prior year returns from client',
-    clientId: '1',
-    clientName: 'Acme Corp',
-    engagementId: 'e1',
-    engagementTitle: '2023 Tax Return — Corporate',
-    assignedTo: 'Mark T.',
-    dueDate: '2024-07-15',
-    status: 'overdue',
-  },
-  {
-    id: 't3',
-    title: 'Reconcile bank statements — Q2',
-    clientId: '1',
-    clientName: 'Acme Corp',
-    engagementId: 'e2',
-    engagementTitle: 'Q2 2024 Bookkeeping',
-    assignedTo: 'Mark T.',
-    dueDate: '2024-07-31',
-    status: 'not-started',
-  },
-  {
-    id: 't4',
-    title: 'Review partnership agreement',
-    clientId: '2',
-    clientName: 'Bright Future LLC',
-    engagementId: 'e4',
-    engagementTitle: '2023 Tax Return — Partnership',
-    assignedTo: 'Mark T.',
-    dueDate: '2024-08-15',
-    status: 'not-started',
-  },
-  {
-    id: 't5',
-    title: 'Gather W-2s and 1099s',
-    clientId: '2',
-    clientName: 'Bright Future LLC',
-    engagementId: 'e4',
-    engagementTitle: '2023 Tax Return — Partnership',
-    assignedTo: 'Sarah K.',
-    dueDate: '2024-07-20',
-    status: 'overdue',
-  },
-  {
-    id: 't6',
-    title: 'Prepare S-Corp basis calculation',
-    clientId: '3',
-    clientName: 'Goldstein & Partners',
-    engagementId: 'e5',
-    engagementTitle: '2023 Tax Return — S-Corp',
-    assignedTo: 'Sarah K.',
-    dueDate: '2024-08-30',
-    status: 'in-progress',
-  },
-  {
-    id: 't7',
-    title: 'Send document request checklist',
-    clientId: '3',
-    clientName: 'Goldstein & Partners',
-    engagementId: 'e5',
-    engagementTitle: '2023 Tax Return — S-Corp',
-    assignedTo: 'Mark T.',
-    dueDate: '2024-07-10',
-    status: 'complete',
-  },
-  {
-    id: 't8',
-    title: 'Categorize expenses — Q1',
-    clientId: '3',
-    clientName: 'Goldstein & Partners',
-    engagementId: 'e6',
-    engagementTitle: 'Q1 2024 Bookkeeping',
-    assignedTo: 'Mark T.',
-    dueDate: '2024-04-30',
-    status: 'complete',
-  },
-  {
-    id: 't9',
-    title: 'Prepare LLC return draft',
-    clientId: '5',
-    clientName: 'Ironclad Logistics',
-    engagementId: 'e7',
-    engagementTitle: '2023 Tax Return — LLC',
-    assignedTo: 'Sarah K.',
-    dueDate: '2024-09-01',
-    status: 'not-started',
-  },
-]
 
 
 ================================================================================

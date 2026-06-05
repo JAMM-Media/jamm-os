@@ -404,6 +404,19 @@ function ClientDetailContent() {
                       ? `Last payment: ${new Date(qboAr.last_payment_date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`
                       : 'No payments recorded'}
                   </p>
+                  {client.quickbooksCustomerId && (
+                    <a
+                      href={`https://app.qbo.intuit.com/app/customerdetail?nameId=${client.quickbooksCustomerId}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[11px] text-brand-light dark:text-brand-light hover:underline inline-flex items-center gap-1 mt-1"
+                    >
+                      Open in QuickBooks
+                      <svg width="10" height="10" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M2 10L10 2M10 2H5M10 2V7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                    </a>
+                  )}
                 </div>
               )}
             </div>
