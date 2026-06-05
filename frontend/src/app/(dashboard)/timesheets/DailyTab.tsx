@@ -1165,8 +1165,13 @@ function EntryRow({
           )}
           <span className="text-[12px] text-[#9CA3AF]">
             {entry.start_time && entry.end_time
-              ? `${entry.start_time} – ${entry.end_time}`
-              : `${Number(entry.hours).toFixed(2)}h`}
+              ? `${entry.start_time} – ${entry.end_time} (${calcDuration(entry.start_time, entry.end_time) ?? ''})`
+              : (() => {
+                  const totalMin = Math.round(Number(entry.hours) * 60)
+                  const h = Math.floor(totalMin / 60)
+                  const m = totalMin % 60
+                  return h > 0 ? `${h}h ${m}m` : `${m}m`
+                })()}
           </span>
         </div>
       </div>
