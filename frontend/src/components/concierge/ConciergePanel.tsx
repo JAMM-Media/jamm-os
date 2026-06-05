@@ -254,7 +254,16 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
         }
 
         console.log('[CONCIERGE RAW]', assembled)
-        const filteredAssembled = filterOutput(assembled)
+        let polishedAssembled = assembled
+        try {
+          const polishRes = await api.post('/concierge/polish', { text: assembled })
+          if (polishRes.data?.text) {
+            polishedAssembled = polishRes.data.text
+          }
+        } catch {
+          // non-fatal -- fall back to raw assembled text
+        }
+        const filteredAssembled = filterOutput(polishedAssembled)
         const cleanContent = handleConciergeAction(filteredAssembled)
         setMessages((prev) => {
           const updated = [...prev]
@@ -350,61 +359,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
     if (route) setTimeout(() => router.push(route), 0)
   }
 
-  function normalizeText(text: string): string {
-    // Collapse spaces before punctuation (streaming token boundary artifact)
-    // "word ." -> "word."   "word ," -> "word,"   "word :" -> "word:"
-    text = text.replace(/ ([.,;:!?])/g, '$1')
-
-    // Collapse spaces inside IRS form numbers and common numeric strings
-    // "8 821" -> "8821"   "2 848" -> "2848"   "1 040" -> "1040"
-    text = text.replace(/\b(\d{1,4})\s(\d{3,4})\b/g, '$1$2')
-
-    // Collapse spaces around hyphens in known compound terms
-    // "magic -link" -> "magic-link"   "book- keeping" -> "bookkeeping"
-    text = text.replace(/(\w+)\s+-\s*(\w+)/g, '$1-$2')
-    text = text.replace(/(\w+)-\s+(\w+)/g, '$1-$2')
-
-    // Normalize known compound terms that must never be split
-    const COMPOUND_TERMS: [RegExp, string][] = [
-      [/magic\s*-?\s*link/gi, 'magic-link'],
-      [/quick\s*books/gi, 'QuickBooks'],
-      [/book\s*keeping/gi, 'bookkeeping'],
-      [/on\s*board\s*ing/gi, 'onboarding'],
-      [/auto\s*pilot/gi, 'Autopilot'],
-    ]
-    for (const [pattern, replacement] of COMPOUND_TERMS) {
-      text = text.replace(pattern, replacement)
-    }
-
-    // Normalize IRS form numbers -- never split these
-    const FORM_NUMBERS: [RegExp, string][] = [
-      [/\b8\s*8\s*2\s*1\b/g, '8821'],
-      [/\b2\s*8\s*4\s*8\b/g, '2848'],
-      [/\b1\s*0\s*4\s*0\b/g, '1040'],
-      [/\b1\s*1\s*2\s*0\b/g, '1120'],
-      [/\b1\s*0\s*6\s*5\b/g, '1065'],
-      [/\b1\s*1\s*2\s*0\s*[Ss]\b/g, '1120-S'],
-      [/\b9\s*4\s*1\b/g, '941'],
-      [/\b9\s*4\s*0\b/g, '940'],
-      [/\b1\s*0\s*9\s*9\b/g, '1099'],
-      [/\b1\s*0\s*9\s*8\s*[Tt]\b/g, '1098-T'],
-      [/\b W\s*-\s*2\b/gi, 'W-2'],
-      [/\b W\s*-\s*9\b/gi, 'W-9'],
-    ]
-    for (const [pattern, replacement] of FORM_NUMBERS) {
-      text = text.replace(pattern, replacement)
-    }
-
-    // Collapse double spaces
-    text = text.replace(/ {2,}/g, ' ')
-
-    return text
-  }
-
   function filterOutput(text: string): string {
-    // Normalize streaming artifacts before any other checks
-    text = normalizeText(text)
-
     const SSN_PATTERN = /\b\d{3}-\d{2}-\d{4}\b/g
     const EIN_PATTERN = /\b\d{2}-\d{7}\b/g
     const LEAK_PHRASES = [
