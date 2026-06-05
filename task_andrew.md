@@ -30,94 +30,157 @@ All models must be imported in migrations/env.py or autogenerate silently misses
 
 ---
 
-# PHASE INSTRUCTIONS — WEEK 3, RUN 1 OF 3: CSV IMPORT EXPANSION
+# PHASE INSTRUCTIONS — WEEK 3, RUN 2 OF 3: ENGAGEMENT STATUS MODEL + MIGRATION
 
 ## Context
-The CSV import endpoint already exists at POST /clients/import in app/api/clients.py.
-It currently handles 5 fields: name, email, entity_type, phone, company_name.
-The Client model has additional importable fields not yet wired in.
-This run adds those fields and adds fuzzy name deduplication.
-No migration required — all fields already exist on the Client model.
+We are adding two new fields to the Engagement model and a new status value.
+This enables the Option 2 e-file acknowledgment workflow decided in planning.
+The .ack parser endpoint that writes to these fields comes in Run 3.
+This run is the data model only — no new endpoints, no frontend changes.
+Current alembic head: 0040_add_billing_detail_reports
 
 ---
 
 ## Pre-task checkpoint
 git add -A
-git commit -m "checkpoint before week 3 csv expansion"
+git commit -m "checkpoint before week 3 engagement efiled model"
 
 ---
 
 ## VERIFY BEFORE STARTING
-grep -n "def import_clients_csv\|new_client = Client\|existing_emails" app/api/clients.py
-Paste the output before touching anything.
+grep -n "class Engagement\|filing_deadline\|extended_deadline\|class EngagementStatus" app/models/engagement.py
+grep -n "EngagementStatus\|acknowledged" app/core/enums.py
+Paste both outputs before touching anything.
 
 ---
 
-## Change 1: Expand the import loop in app/api/clients.py
+## Change 1: Add EFILEABLE_ENGAGEMENT_TYPES constant to app/core/enums.py
 
-Add these 8 fields to the import loop using the same pattern as existing fields
-(row.get("field_name", "").strip() or None):
-- address_line1
-- address_line2
-- city
-- state
-- postal_code
-- country
-- tags (comma-separated string, stored as-is)
-- notes
+Find the end of the existing enum and constant definitions in app/core/enums.py.
+Add this constant after the existing enums — do not modify any existing enum:
 
-Add all 8 to the Client() constructor call alongside the existing fields.
+EFILEABLE_ENGAGEMENT_TYPES = {
+    "tax_return_1040",
+    "tax_return_1120",
+    "tax_return_1120s",
+    "tax_return_1065",
+    "tax_return_990",
+    "tax_return_941",
+    "tax_return_940",
+    "tax_return_720",
+    "tax_return_2290",
+    "tax_return_706",
+    "tax_return_709",
+}
 
----
-
-## Change 2: Fuzzy name deduplication
-
-Currently the import deduplicates on email only.
-Add case-insensitive name deduplication within the same firm.
-
-Before the import loop:
-- Query existing client names for this firm
-- Store as a set of lowercase stripped strings: existing_names
-
-In the loop, before creating each client:
-- Check if name.lower().strip() is in existing_names
-- If yes: increment skipped, append to errors list as
-  {"row": i, "reason": "Client with this name already exists"}, continue
-- If no: after creating the client, add name.lower().strip() to existing_names
+This is the single authoritative list of engagement types that go through
+IRS e-file and therefore can receive an IRS acknowledgment.
+Every other part of the codebase imports from here — never duplicates this list.
 
 ---
 
-## Change 3: Check ClientImportResult schema in app/schemas/client.py
+## Change 2: Add acknowledged to EngagementStatus enum in app/core/enums.py
 
-If the errors field is typed as list[str], change it to list[dict].
-The created and skipped integer fields stay unchanged.
+Find the EngagementStatus enum. It currently has values including
+planning, in_progress, review, complete, archived.
+Add acknowledged as a new value:
+
+    acknowledged = "acknowledged"
+
+Place it after complete and before archived.
+Use native_enum=False if this enum uses sa.Enum — check before editing.
 
 ---
 
-## Change 4: Behavioral event log on import completion
+## Change 3: Add two new fields to the Engagement model in app/models/engagement.py
 
-After db.commit() at the end of the import, fire a single log_event call:
-- event_type: "client.csv_import_completed"
-- entity_type: "firm"
-- entity_id: current_firm.id
-- actor_type: "staff"
-- metadata: created count, skipped count, error count, total rows processed
+Find the Engagement model class.
+Add these two fields after the extended_deadline field:
 
-Fire-and-forget only. Never block on a failed log write.
+    efiled_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    irs_confirmation_number: Mapped[Optional[str]] = mapped_column(
+        String(100), nullable=True
+    )
+
+Both are nullable. No default. No index needed.
+Import Optional from typing if not already imported at the top of the file.
+
+---
+
+## Change 4: Add is_efileable property to Engagement model
+
+After the two new fields, add this property:
+
+    @property
+    def is_efileable(self) -> bool:
+        from app.core.enums import EFILEABLE_ENGAGEMENT_TYPES
+        return self.engagement_type in EFILEABLE_ENGAGEMENT_TYPES
+
+This is the single place the codebase checks whether an engagement
+can receive an IRS acknowledgment. The parser in Run 3 uses this.
+The morning briefing will use this. Nothing else duplicates this logic.
+
+---
+
+## Change 5: Update EngagementOut schema in app/schemas/engagement.py
+
+Find the EngagementOut schema.
+Add these two fields:
+
+    efiled_at: Optional[datetime] = None
+    irs_confirmation_number: Optional[str] = None
+
+Import Optional and datetime at the top if not already present.
+Do not change any other schema.
+
+---
+
+## Change 6: Run the migration
+
+First confirm starting head:
+alembic current
+
+Generate the migration:
+alembic revision --autogenerate -m "0041_engagement_efiled_fields"
+
+Read the generated file in full before running upgrade.
+The migration should contain exactly two operations:
+- Add column efiled_at to engagements table (nullable timestamp with timezone)
+- Add column irs_confirmation_number to engagements table (nullable varchar 100)
+
+If it contains anything else — any other table, any drop operation,
+anything unexpected — delete the file and write a clean manual migration instead.
+
+If the generated migration looks correct, run:
+alembic upgrade head
+alembic current
+Confirm head is now 0041_engagement_efiled_fields.
+
+Note: the acknowledged status value is added to an enum.
+If EngagementStatus uses native_enum=True in PostgreSQL, the migration
+will also need an ALTER TYPE statement to add the new value.
+If it uses native_enum=False (sa.Enum with values list), no enum migration
+is needed — the value is stored as a string.
+Check which approach is used before running upgrade and handle accordingly.
 
 ---
 
 ## Verify after all changes
-grep -n "address_line1\|existing_names\|csv_import_completed" app/api/clients.py
-Confirm all three appear.
-python -m py_compile app/api/clients.py
-Must pass with no errors.
+grep -n "efiled_at\|irs_confirmation_number\|is_efileable" app/models/engagement.py
+grep -n "acknowledged\|EFILEABLE_ENGAGEMENT_TYPES" app/core/enums.py
+grep -n "efiled_at\|irs_confirmation_number" app/schemas/engagement.py
+python -m py_compile app/models/engagement.py
+python -m py_compile app/core/enums.py
+python -m py_compile app/schemas/engagement.py
+All three compiles must pass before deploying.
 
 ---
 
 ## Deploy sequence
 git add -A
-git commit -m "week 3 csv import expansion — 8 new fields plus name dedup"
+git commit -m "week 3 engagement efiled fields and acknowledged status"
 git push origin main
 Then on the droplet:
 git pull origin main
