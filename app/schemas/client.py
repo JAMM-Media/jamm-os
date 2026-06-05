@@ -112,3 +112,18 @@ class QBOARBalanceOut(BaseModel):
 class ClientHealthOut(BaseModel):
     status: str  # "healthy", "needs_attention", "at_risk"
     reasons: list[dict]
+
+
+class QBOHealthSignals(BaseModel):
+    reconciliation: Optional[str] = None
+    balance_sheet: Optional[str] = None
+    pl_activity: Optional[str] = None
+    transaction_recency: Optional[str] = None
+    gl_recency: Optional[str] = None
+
+
+class QBOHealthOut(BaseModel):
+    connected: bool
+    status: str
+    signals: QBOHealthSignals
+    checked_at: Optional[datetime] = None

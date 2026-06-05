@@ -17,7 +17,7 @@ from app.schemas.engagement import EngagementOut
 from app.schemas.task import TaskOut
 from app.db.session import get_db
 from app.models.client import Client
-from app.schemas.client import ClientCreate, ClientUpdate, ClientOut, ClientImportResult, QBOARBalanceOut, ClientHealthOut
+from app.schemas.client import ClientCreate, ClientUpdate, ClientOut, ClientImportResult, QBOARBalanceOut, ClientHealthOut, QBOHealthOut
 from app.schemas.pagination import PaginatedResponse
 from app.crud import client as crud_client
 from app.dependencies.tenant import get_current_firm
@@ -283,6 +283,26 @@ def get_client_qbo_ar(
 
     result = get_qbo_ar_balance(current_firm.id, client.quickbooks_customer_id, db)
     return QBOARBalanceOut(**result)
+
+
+# ---------------------------------------------------------
+# QBO HEALTH
+# ---------------------------------------------------------
+@router.get("/{client_id}/qbo-health", response_model=QBOHealthOut)
+def get_client_qbo_health(
+    client_id: UUID,
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    _: object = Depends(require_staff_or_above),
+):
+    from app.services.qbo_health_service import get_bookkeeping_health
+
+    client = crud_client.get_client_for_firm(db, client_id, current_firm.id)
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found")
+
+    result = get_bookkeeping_health(client, current_firm.id, db)
+    return QBOHealthOut(**result)
 
 
 # ---------------------------------------------------------
