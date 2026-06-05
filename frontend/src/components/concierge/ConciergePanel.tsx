@@ -245,6 +245,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
           }
         }
 
+        console.log('[CONCIERGE RAW]', assembled)
         const cleanContent = handleConciergeAction(assembled)
         setMessages((prev) => {
           const updated = [...prev]
@@ -298,14 +299,21 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
     if (isOpen && !hasInitialized.current) {
       hasInitialized.current = true
       if (messages.length === 0) {
-        sendMessages([{ role: 'user', content: '__OPEN__' }])
+        if (!user?.firm_type) {
+          setMessages([{
+            role: 'concierge',
+            content: 'Welcome to JAMM Concierge. Before we start -- what does your firm do most? This lets me point you to the right setup path.\n\n1. Tax prep and returns\n2. Bookkeeping and monthly close\n3. Advisory and planning',
+          }])
+        } else {
+          sendMessages([{ role: 'user', content: '__OPEN__' }])
+        }
       }
     }
     if (isOpen) {
       setTimeout(() => textareaRef.current?.focus(), 250)
       api.post('/concierge/trigger-check').then(() => fetchNotifications()).catch(() => fetchNotifications())
     }
-  }, [isOpen, sendMessages, fetchNotifications])
+  }, [isOpen, sendMessages, fetchNotifications, user])
 
   async function handleSend(text?: string) {
     const msg = (text ?? input).trim()
@@ -345,6 +353,14 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
     if (braceStart === -1 || braceEnd === -1) return beforeAction
     const actionLine = afterMarker.slice(braceStart, braceEnd + 1).replace(/\s+/g, ' ').trim()
 
+    try {
+      const action: ConciergeAction = JSON.parse(actionLine)
+      if (action.type === 'set_firm_type') {
+        pendingActionRef.current = action
+        return beforeAction || ''
+      }
+    } catch {}
+
     if (!autopilotRef.current) {
       return beforeAction || 'To navigate, turn on Autopilot using the toggle above.'
     }
@@ -358,6 +374,15 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
   }
 
   async function executeAction(action: ConciergeAction) {
+    if (action.type === 'set_firm_type' && action.firm_type) {
+      try {
+        await api.patch('/firms/me/concierge', { firm_type: action.firm_type })
+        setStatusMessage('Practice type saved')
+      } catch {
+        // non-fatal -- firm_type will be set on next reload
+      }
+      return
+    }
     const normalizedType = (action.type as string) === 'open_modal' ? 'open-modal' :
       (action.type as string) === 'navigate_and_open' ? 'navigate-and-open' : action.type
     const normalizedRoute = (action.route === '/settings/team' ? '/settings' : action.route) as string

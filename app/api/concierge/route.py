@@ -6,17 +6,21 @@ from typing import Any
 from uuid import UUID
 
 import anthropic
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from starlette.responses import StreamingResponse
 
 from app.core.config import get_settings
+from app.core.enums import UserRole
+from app.core.rate_limit import limiter
 from app.db.session import get_db
+from app.dependencies.auth import get_current_user
 from app.dependencies.tenant import get_current_firm
 from app.models.firm import Firm
 from app.models.client import Client
+from app.models.user import User
 from app.models.concierge_notification import ConciergeNotification
 from app.api.concierge.prompts import get_system_prompt
 from app.api.concierge.context import router as context_router
@@ -28,9 +32,12 @@ router = APIRouter(prefix="/concierge", tags=["concierge"])
 router.include_router(context_router)
 
 
+class MessageItem(BaseModel):
+    role: str
+    content: str
+
 class ChatRequest(BaseModel):
-    messages: list[dict[str, Any]]
-    firm_id: str | None = None  # accepted but ignored; firm_id always comes from JWT
+    messages: list[MessageItem]
     autopilot_enabled: bool = False
 
 
@@ -38,7 +45,13 @@ class ChatRequest(BaseModel):
 def concierge_chat(
     body: ChatRequest,
     current_firm: Firm = Depends(get_current_firm),
+    current_user: User = Depends(get_current_user),
 ):
+    if current_user.role == UserRole.client_portal_user:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied.",
+        )
     if not current_firm.concierge_active:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -55,23 +68,85 @@ def concierge_chat(
 
     client = anthropic.Anthropic(api_key=api_key)
 
-    EMPTY_STATE_RESPONSE = """Welcome to JAMM Concierge. Here are three things I can help you with right now:
-
-1. Walk me through importing my clients from TaxDome (or another platform)
-2. Explain the difference between engagements and tasks in JAMM PX
-3. What should I set up first after signing up?"""
-
     if not body.messages:
-        def generate_empty():
-            yield f"data: {EMPTY_STATE_RESPONSE}\n\n"
-        return StreamingResponse(generate_empty(), media_type="text/event-stream")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Messages cannot be empty",
+        )
+
+    MAX_MESSAGE_LENGTH = 4000
+    MAX_MESSAGES = 50
+    INJECTION_PATTERNS = [
+        "ignore previous instructions",
+        "ignore all instructions",
+        "ignore your instructions",
+        "disregard previous",
+        "disregard your instructions",
+        "forget your instructions",
+        "forget previous instructions",
+        "you are now",
+        "act as if you",
+        "pretend you are",
+        "pretend to be",
+        "jailbreak",
+        "dan mode",
+        "developer mode",
+        "ignore the above",
+        "override instructions",
+        "override your instructions",
+        "new persona",
+        "reveal your prompt",
+        "show your instructions",
+        "what are your instructions",
+        "what does your system prompt",
+        "repeat your system prompt",
+        "print your system prompt",
+        "tell me your system prompt",
+    ]
+
+    def sanitize_messages(messages: list[MessageItem]) -> list[dict]:
+        if len(messages) > MAX_MESSAGES:
+            messages = messages[-MAX_MESSAGES:]
+
+        # Validate __OPEN__ sentinel -- only valid as sole message in first turn
+        open_indices = [i for i, m in enumerate(messages) if m.content == "__OPEN__"]
+        if open_indices:
+            if len(messages) != 1 or open_indices[0] != 0:
+                logger.warning(
+                    f"Invalid __OPEN__ sentinel position for firm {current_firm.id}"
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Message contains disallowed content.",
+                )
+
+        cleaned = []
+        for msg in messages:
+            content = msg.content
+            if len(content) > MAX_MESSAGE_LENGTH:
+                content = content[:MAX_MESSAGE_LENGTH]
+            lower = content.lower()
+            for pattern in INJECTION_PATTERNS:
+                if pattern in lower:
+                    logger.warning(
+                        f"Potential prompt injection detected for firm "
+                        f"{current_firm.id}: pattern={pattern!r}"
+                    )
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Message contains disallowed content.",
+                    )
+            cleaned.append({"role": msg.role, "content": content})
+        return cleaned
+
+    sanitized_messages = sanitize_messages(body.messages)
 
     def generate():
         with client.messages.stream(
             model="claude-sonnet-4-6",
             max_tokens=2000,
             system=get_system_prompt(autopilot_enabled=body.autopilot_enabled),
-            messages=body.messages,
+            messages=sanitized_messages,
         ) as stream:
             for text in stream.text_stream:
                 # SSE requires each data value line to start with "data:".
@@ -85,11 +160,19 @@ def concierge_chat(
 
 
 @router.get("/clients/resolve")
+@limiter.limit("30/minute")
 def resolve_client_by_name(
+    request: Request,
     name: str,
     current_firm: Firm = Depends(get_current_firm),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    if current_user.role == UserRole.client_portal_user:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied.",
+        )
     client = db.execute(
         select(Client).where(
             Client.firm_id == current_firm.id,
@@ -104,8 +187,14 @@ def resolve_client_by_name(
 @router.post("/trigger-check")
 def trigger_check(
     current_firm: Firm = Depends(get_current_firm),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    if current_user.role == UserRole.client_portal_user:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied.",
+        )
     fired = run_trigger_check(firm_id=current_firm.id, db=db)
     return {"triggers_fired": fired}
 
@@ -113,8 +202,14 @@ def trigger_check(
 @router.get("/notifications")
 def list_notifications(
     current_firm: Firm = Depends(get_current_firm),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    if current_user.role == UserRole.client_portal_user:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied.",
+        )
     rows = db.execute(
         select(ConciergeNotification)
         .where(
@@ -142,8 +237,14 @@ def list_notifications(
 def mark_notification_read(
     notification_id: UUID,
     current_firm: Firm = Depends(get_current_firm),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    if current_user.role == UserRole.client_portal_user:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied.",
+        )
     notification = db.execute(
         select(ConciergeNotification).where(
             ConciergeNotification.id == notification_id,
