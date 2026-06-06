@@ -966,6 +966,133 @@ function KarbonImportSection() {
 }
 
 // ---------------------------------------------------------------------------
+// Financial Cents import section
+// ---------------------------------------------------------------------------
+
+function FinancialCentsImportSection() {
+  const [state, setState] = useState<'upload' | 'success' | 'error'>('upload')
+  const [file, setFile] = useState<File | null>(null)
+  const [importing, setImporting] = useState(false)
+  const [result, setResult] = useState<CsvImportResult | null>(null)
+  const [errorMsg, setErrorMsg] = useState<string | null>(null)
+  const [showErrors, setShowErrors] = useState(false)
+
+  function reset() {
+    setState('upload')
+    setFile(null)
+    setResult(null)
+    setErrorMsg(null)
+    setShowErrors(false)
+  }
+
+  async function handleImport() {
+    if (!file) return
+    setImporting(true)
+    try {
+      const form = new FormData()
+      form.append('file', file)
+      const res = await api.post('/api/v1/clients/import', form, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+      setResult(res.data)
+      setState('success')
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Import failed. Please try again.'
+      setErrorMsg(detail)
+      setState('error')
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div>
+        <p className="text-[13px] font-[500] text-brand dark:text-[#EDEEF0]">Import from Financial Cents</p>
+        <p className="text-[12px] text-[#6B7280] mt-1">
+          Upload your Financial Cents client export. In Financial Cents, go to Clients, click Export, and download as CSV. JAMM PX will import the Name, Email, Phone, and Address fields automatically.
+        </p>
+      </div>
+
+      {state === 'upload' && (
+        <div className="flex flex-col gap-3">
+          <DropZone file={file} onFile={setFile} disabled={importing} />
+          <div className="flex justify-end">
+            <button
+              onClick={handleImport}
+              disabled={!file || importing}
+              className="h-8 px-4 text-[13px] font-medium rounded-[6px] bg-brand text-white hover:bg-brand/90 transition-colors disabled:opacity-60 flex items-center gap-2"
+            >
+              {importing && (
+                <svg className="animate-spin h-3.5 w-3.5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                </svg>
+              )}
+              {importing ? 'Importing...' : 'Import Clients'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {state === 'success' && result && (
+        <div className="flex flex-col gap-3">
+          <div className="flex items-start gap-2 rounded-[8px] p-3 bg-[#D1FAE5] border border-[#6EE7B7]">
+            <CheckCircle className="w-4 h-4 text-[#065F46] mt-0.5 flex-shrink-0" />
+            <div className="flex flex-col gap-1">
+              <p className="text-[13px] text-[#065F46] font-medium">
+                {result.created} client{result.created !== 1 ? 's' : ''} imported, {result.skipped} skipped.
+              </p>
+              {result.errors.length > 0 && (
+                <button
+                  onClick={() => setShowErrors((v) => !v)}
+                  className="text-[12px] text-[#065F46] underline text-left"
+                >
+                  {showErrors ? 'Hide errors' : `Show errors (${result.errors.length})`}
+                </button>
+              )}
+              {showErrors && result.errors.length > 0 && (
+                <ul className="mt-1 flex flex-col gap-0.5">
+                  {result.errors.map((e) => (
+                    <li key={e.row} className="text-[12px] text-[#065F46]">
+                      Row {e.row}: {e.reason}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+          <div className="flex justify-end">
+            <button
+              onClick={reset}
+              className="h-8 px-4 text-[13px] font-medium rounded-[6px] border border-[0.5px] border-[#C8CDD6] text-[#374151] dark:text-[#EDEEF0] hover:bg-[#F3F4F6] transition-colors"
+            >
+              Import Another File
+            </button>
+          </div>
+        </div>
+      )}
+
+      {state === 'error' && (
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center gap-2 rounded-[8px] p-3 bg-[#FEE2E2] border border-[#FCA5A5]">
+            <p className="text-[13px] text-[#991B1B]">{errorMsg}</p>
+          </div>
+          <div className="flex justify-end">
+            <button
+              onClick={reset}
+              className="h-8 px-4 text-[13px] font-medium rounded-[6px] bg-brand text-white hover:bg-brand/90 transition-colors"
+            >
+              Try Again
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Job section
 // ---------------------------------------------------------------------------
 
@@ -1212,6 +1339,12 @@ export default function MigrationTab() {
 
       <div className="bg-[#EDEEF0] dark:bg-[#383838] rounded-[10px] border border-[#C8CDD6] dark:border-[#484848] p-4">
         <KarbonImportSection />
+      </div>
+
+      <div className="border-t border-[0.5px] border-[#C8CDD6] dark:border-[#484848] my-6" />
+
+      <div className="bg-[#EDEEF0] dark:bg-[#383838] rounded-[10px] border border-[#C8CDD6] dark:border-[#484848] p-4">
+        <FinancialCentsImportSection />
       </div>
 
       <div className="border-t border-[0.5px] border-[#C8CDD6] dark:border-[#484848] my-6" />

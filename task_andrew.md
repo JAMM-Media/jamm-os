@@ -33,151 +33,61 @@ All models must be imported in migrations/env.py or autogenerate silently misses
 
 ---
 
-PHASE INSTRUCTIONS — CANOPY AND KARBON MIGRATION IMPORTERS
+PHASE INSTRUCTIONS — FINANCIAL CENTS MIGRATION SECTION
 
-No migrations required. Two backend additions to app/api/migration.py and one frontend addition to MigrationTab.tsx.
+No backend changes. No migrations. One file only: frontend/src/components/settings/MigrationTab.tsx
 
----
+Read the file first.
 
-STEP 1 — BACKEND: Add Canopy and Karbon endpoints to app/api/migration.py
+Add a new FinancialCentsImportSection component. It follows the exact same two-step upload/result pattern as CsvImportSection (the general CSV section at the top of the file) -- same states, same drag-drop zone, same result display. The only differences are the heading, description text, and it is a separate component so firm owners see their tool listed by name.
 
-Read app/api/migration.py first. It already has the TaxDome endpoints and shared helpers (_validate_csv_extension, _read_csv_rows, _parse_date, ENTITY_TYPE_MAP, ENGAGEMENT_STATUS_MAP). Add the following four endpoints to the same file.
+-- FinancialCentsImportSection component --
 
--- CANOPY ENDPOINTS --
+Copy the CsvImportSection component exactly and rename it FinancialCentsImportSection. Change only these things:
 
-Canopy exports a single CSV with both individuals and businesses. The key column is "Contact Type" which contains "Individual" or "Business".
+1. Heading text: "Import from Financial Cents"
 
-Canopy CSV columns (exact header names):
-  "Contact Type" -> entity_type: Individual -> individual, Business -> business. Any other value -> individual with a warning.
-  "First Name" + "Last Name" -> combined as "{First Name} {Last Name}".strip() for individuals
-  "Business Name" -> name for businesses. If Contact Type is Business and Business Name is blank, skip row with warning.
-  "Email" -> email
-  "Tags" -> tags
-  "Street 1" -> address_line1
-  "Street 2" -> address_line2
-  "City" -> city
-  "State" -> state
-  "Zip" -> postal_code
-  "Country" -> country
+2. Description text: "Upload your Financial Cents client export. In Financial Cents, go to Clients, click Export, and download as CSV. JAMM PX will import the Name, Email, Phone, and Address fields automatically."
 
-Name resolution logic:
-  If Contact Type is Business: name = Business Name
-  If Contact Type is Individual (or anything else): name = (First Name + " " + Last Name).strip()
-  If resolved name is blank after this: skip row with warning "Could not determine client name."
+3. Button label: "Import Clients" (same as CsvImportSection -- no change needed here)
 
-POST /canopy/preview-clients
+4. Success message: "Import complete -- X clients imported, X skipped." (same pattern as CsvImportSection)
 
-Deduplication: same as TaxDome -- ILIKE name match scoped to firm_id marks row as skip.
+The API endpoint is identical: POST /api/v1/clients/import with the file as FormData field named "file".
 
-Return shape: same as TaxDome ClientPreviewResult (total_rows, will_import, will_skip, warnings, rows). Each row includes: row_number, name, email, entity_type, tags, state, status, reason.
+-- Section placement in MigrationTab render --
 
-POST /canopy/import-clients
+Read the current render order in MigrationTab. It currently is:
+1. CsvImportSection card
+2. divider
+3. CanopyImportSection card
+4. divider
+5. KarbonImportSection card
+6. divider
+7. TaxDome heading + description
+8. ClientSection card
+9. divider
+10. JobSection card
 
-Same logic as preview but writes Client records. Fires behavioral event:
-  event_type: "migration.canopy_clients_imported"
-  metadata: { created, skipped, warnings, total_rows }
+Insert FinancialCentsImportSection between KarbonImportSection and the TaxDome heading. New order:
+1. CsvImportSection card
+2. divider
+3. CanopyImportSection card
+4. divider
+5. KarbonImportSection card
+6. divider
+7. FinancialCentsImportSection card (new)
+8. divider
+9. TaxDome heading + description
+10. ClientSection card
+11. divider
+12. JobSection card
 
-Return shape: same as TaxDome ClientImportResult (created, skipped, warnings, errors).
+Use the exact same card wrapper and divider pattern already in the file.
 
--- KARBON ENDPOINTS --
-
-Karbon exports a single "All contacts" CSV. The key column is "Type" which contains "Person" or "Organisation". We use this to set entity_type automatically.
-
-Karbon CSV columns (exact header names):
-  "Name" -> name (required -- skip if blank)
-  "Type" -> entity_type: Person -> individual, Organisation -> business. Any other value -> individual with a warning.
-  "Email" -> email (may contain multiple comma-separated emails -- take the first one only)
-  "Phone" -> phone (may contain multiple -- take the first one only)
-  "Street" -> address_line1
-  "City" -> city
-  "State/Region" -> state
-  "Postcode" -> postal_code
-  "Country" -> country
-
-POST /karbon/preview-clients
-
-Same deduplication and return shape as Canopy and TaxDome.
-
-POST /karbon/import-clients
-
-Same import logic. Fires behavioral event:
-  event_type: "migration.karbon_clients_imported"
-  metadata: { created, skipped, warnings, total_rows }
-
-All four endpoints: require firm_owner role, validate .csv extension, tenant-scoped, fire-and-forget behavioral events.
-
----
-
-STEP 2 — FRONTEND: Add Canopy and Karbon sections to MigrationTab.tsx
-
-Read frontend/src/components/settings/MigrationTab.tsx first.
-
-The file currently has three sections in this order:
-1. CsvImportSection (general CSV) at the top
-2. ClientSection (TaxDome clients)
-3. JobSection (TaxDome jobs)
-
-Add two new sections between the general CSV section and the TaxDome sections. New order:
-1. CsvImportSection (general CSV)
-2. CanopyImportSection (new)
-3. KarbonImportSection (new)
-4. TaxDome divider + heading
-5. ClientSection (TaxDome clients)
-6. JobSection (TaxDome jobs)
-
-Each new section (Canopy and Karbon) follows the exact same two-step pattern as the existing TaxDome sections in this file: upload state with drag-drop zone and preview button, then preview state with summary pills, colored table, Start Over and Confirm Import buttons, then success or error state.
-
--- CanopyImportSection component --
-
-Section heading: "Import from Canopy"
-
-Description: "Upload your Canopy contacts export. In Canopy, go to Clients, select all contacts, and export as CSV. JAMM PX reads the Contact Type column automatically -- individuals and businesses are assigned the correct entity type."
-
-Upload step: POST to /api/v1/migration/canopy/preview-clients with file as FormData.
-Confirm step: POST to /api/v1/migration/canopy/import-clients with same file.
-
-Preview table columns: Row, Name, Email, Entity Type (formatted using formatEntityType from @/lib/utils), Status badge, Reason.
-
-Success message: "Import complete -- X clients imported, X skipped."
-
--- KarbonImportSection component --
-
-Section heading: "Import from Karbon"
-
-Description: "Upload your Karbon contacts export. In Karbon, go to Contacts, click the cloud icon, and select All contacts. The Type column (Person or Organisation) maps automatically to Individual or Business in JAMM PX."
-
-Upload step: POST to /api/v1/migration/karbon/preview-clients with file as FormData.
-Confirm step: POST to /api/v1/migration/karbon/import-clients with same file.
-
-Preview table columns: Row, Name, Email, Entity Type (formatted using formatEntityType), Status badge, Reason.
-
-Success message: "Import complete -- X clients imported, X skipped."
-
--- Section layout in MigrationTab --
-
-Between the CsvImportSection card and the TaxDome sections, add:
-
-<divider />
-<CanopyImportSection in its own card />
-<divider />
-<KarbonImportSection in its own card />
-<divider />
-<p className heading style>TaxDome Import</p>
-<p className description style>If migrating from TaxDome, import clients first, then jobs. Job matching uses client names.</p>
-<existing ClientSection card />
-<divider />
-<existing JobSection card />
-
-The heading and description for TaxDome should match the style of the section headings inside the existing cards (13px weight 500 brand color for heading, 12px muted for description), but placed outside the card as a section label, same as how the general CSV section is laid out.
-
-Use the exact same card wrapper, divider, drag-drop zone, summary pills, status badge, and button styles already in the file. Do not invent new patterns -- read the file and replicate what is already there.
-
----
-
-DO NOT run migrations. No schema changes.
+DO NOT run migrations. No backend changes. One file only.
 
 After completing confirm:
-- Four new endpoints in app/api/migration.py (canopy preview, canopy import, karbon preview, karbon import)
-- CanopyImportSection and KarbonImportSection components in MigrationTab.tsx
-- Correct section order in MigrationTab render
-- TaxDome heading added above existing sections
+- FinancialCentsImportSection component exists in MigrationTab.tsx
+- It hits POST /api/v1/clients/import (same as CsvImportSection)
+- It appears between KarbonImportSection and the TaxDome heading in the render
