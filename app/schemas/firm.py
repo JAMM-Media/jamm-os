@@ -35,6 +35,8 @@ class FirmBase(BaseModel):
     sending_domain_dkim_value: Optional[str] = None
     sending_domain_return_path_host: Optional[str] = None
     sending_domain_return_path_value: Optional[str] = None
+    portal_domain: Optional[str] = None
+    portal_domain_verified: bool = False
 
     @field_validator("slug", mode="before")
     @classmethod

@@ -33,245 +33,209 @@ All models must be imported in migrations/env.py or autogenerate silently misses
 
 ---
 
-PHASE INSTRUCTIONS — CUSTOM SENDING DOMAIN WIZARD
+PHASE INSTRUCTIONS — CUSTOM PORTAL DOMAIN WIZARD
 
-This feature lets firm owners send client emails from their own domain (e.g. noreply@smithcpa.com) instead of noreply@jammpx.com. It uses the Postmark Domains API with the account-level token.
+This feature lets firm owners point a custom subdomain (e.g. portal.smithcpa.com) to the JAMM PX client portal instead of app.jammpx.com/portal. No third-party API needed -- verification is done by DNS lookup using Python's socket module.
 
----
+The CNAME target is: cname.vercel-dns.com
+This is Vercel's CNAME target for custom domains. The firm adds a CNAME record pointing their subdomain to cname.vercel-dns.com.
 
-STEP 1 — CONFIG: app/core/config.py
-
-Add POSTMARK_ACCOUNT_TOKEN field after POSTMARK_API_KEY:
-  POSTMARK_ACCOUNT_TOKEN: str = ""
+Note: actual Vercel domain routing requires adding the domain in the Vercel dashboard separately. This wizard handles the firm-side setup and verification tracking. Document this in a comment in the backend file.
 
 ---
 
-STEP 2 — MIGRATION
+STEP 1 — MIGRATION
 
-Current head: 0044_add_entity_subtype_to_clients
+Current head: 0045_add_sending_domain_to_firms
 
-Write a clean manual migration -- do NOT use autogenerate for this one since we are adding multiple columns to firms:
+Write a clean manual migration:
 
-revision = '0045_add_sending_domain_to_firms'
-down_revision = '0044_add_entity_subtype_to_clients'
+revision = '0046_add_portal_domain_to_firms'
+down_revision = '0045_add_sending_domain_to_firms'
 
 Add these columns to the firms table:
-  sending_domain: VARCHAR(255), nullable=True
-  sending_domain_postmark_id: INTEGER, nullable=True
-  sending_domain_verified: BOOLEAN, nullable=False, server_default='false'
-  sending_domain_dkim_host: VARCHAR(500), nullable=True
-  sending_domain_dkim_value: VARCHAR(1000), nullable=True
-  sending_domain_return_path_host: VARCHAR(500), nullable=True
-  sending_domain_return_path_value: VARCHAR(500), nullable=True
+  portal_domain: VARCHAR(255), nullable=True
+  portal_domain_verified: BOOLEAN, nullable=False, server_default='false'
+  portal_domain_verification_token: VARCHAR(100), nullable=True
 
-Run alembic upgrade head. Confirm at new head.
+Run alembic upgrade head on the droplet. Confirm at new head.
 
 ---
 
-STEP 3 — MODEL: app/models/firm.py
+STEP 2 — MODEL: app/models/firm.py
 
-Add these fields after the feature_flags column:
+After the sending_domain_return_path_value field, add:
 
-    sending_domain: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    sending_domain_postmark_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    sending_domain_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
-    sending_domain_dkim_host: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
-    sending_domain_dkim_value: Mapped[Optional[str]] = mapped_column(String(1000), nullable=True)
-    sending_domain_return_path_host: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
-    sending_domain_return_path_value: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    portal_domain: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    portal_domain_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    portal_domain_verification_token: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
 
 ---
 
-STEP 4 — SCHEMAS: app/schemas/firm.py
+STEP 3 — SCHEMAS: app/schemas/firm.py
 
-Add these fields to FirmOut (and FirmBase if it exists):
-  sending_domain: Optional[str] = None
-  sending_domain_verified: bool = False
-  sending_domain_dkim_host: Optional[str] = None
-  sending_domain_dkim_value: Optional[str] = None
-  sending_domain_return_path_host: Optional[str] = None
-  sending_domain_return_path_value: Optional[str] = None
+Add to FirmBase (and thus inherited by FirmOut):
+  portal_domain: Optional[str] = None
+  portal_domain_verified: bool = False
 
-Do NOT expose sending_domain_postmark_id in the schema -- internal only.
+Do NOT expose portal_domain_verification_token in the schema -- internal only.
 
 ---
 
-STEP 5 — BACKEND: app/api/sending_domain.py (new file)
+STEP 4 — BACKEND: app/api/portal_domain.py (new file)
 
-Create app/api/sending_domain.py with three endpoints. Router prefix: /sending-domain. Tag: sending_domain. All endpoints require firm_owner role.
+Create app/api/portal_domain.py with three endpoints. Router prefix: /portal-domain. Tag: portal_domain. All endpoints require firm_owner role.
 
-The Postmark Account API base URL is: https://api.postmarkapp.com
-Account-level requests use header: X-Postmark-Account-Token: {POSTMARK_ACCOUNT_TOKEN}
+Add a comment at the top of the file explaining:
+  # NOTE: This wizard handles the firm-side CNAME setup and verification tracking.
+  # After a firm verifies their domain here, the domain must also be added to the
+  # Vercel project dashboard (vercel.com) to enable actual routing. This is a
+  # manual step performed by the JAMM PX team.
 
--- ENDPOINT 1: POST /sending-domain/register --
+-- ENDPOINT 1: POST /portal-domain/register --
 
-Input body: { "domain": str } -- the domain the firm wants to send from (e.g. "smithcpa.com")
+Input body: { "domain": str } -- the subdomain the firm wants to use (e.g. "portal.smithcpa.com")
 
-Validate: domain must be a non-empty string, no spaces, no http:// prefix. Strip whitespace and lowercase. If it starts with "http://" or "https://", strip the protocol. If it contains a path (slash after the domain), reject with 400.
+Validate: domain must be non-empty, no spaces, no http:// prefix. Strip whitespace and lowercase. If it starts with http:// or https://, strip the protocol. If it contains a path (slash after the domain name), reject with 400. Domain must contain at least one dot.
 
 Logic:
-1. Call Postmark Domains API to create the domain:
-   POST https://api.postmarkapp.com/domains
-   Headers: X-Postmark-Account-Token, Content-Type: application/json, Accept: application/json
-   Body: { "Name": domain }
-2. Parse response. Postmark returns:
-   { "ID": int, "Name": str, "DKIMVerified": bool, "ReturnPathDomain": str, "ReturnPathDomainCNAMEValue": str, "DKIMPendingHost": str, "DKIMPendingTextValue": str, ... }
-   Use DKIMPendingHost and DKIMPendingTextValue for the DKIM records (these are the ones to add before verification).
-   Use ReturnPathDomain as the return path host and ReturnPathDomainCNAMEValue as the return path value.
-3. Save to firm:
-   firm.sending_domain = domain
-   firm.sending_domain_postmark_id = response["ID"]
-   firm.sending_domain_verified = False
-   firm.sending_domain_dkim_host = response["DKIMPendingHost"]
-   firm.sending_domain_dkim_value = response["DKIMPendingTextValue"]
-   firm.sending_domain_return_path_host = response["ReturnPathDomain"]
-   firm.sending_domain_return_path_value = response["ReturnPathDomainCNAMEValue"]
-4. db.commit()
-5. Fire behavioral event: "sending_domain.registered"
-6. Return the DNS records the firm needs to add.
-
-If Postmark returns an error (domain already registered, invalid domain, etc.), return 400 with Postmark's error message.
+1. Generate a verification token: secrets.token_hex(16)
+2. Save to firm:
+   firm.portal_domain = domain
+   firm.portal_domain_verified = False
+   firm.portal_domain_verification_token = token
+3. db.commit()
+4. Fire behavioral event: "portal_domain.registered"
+5. Return the CNAME record the firm needs to add plus the TXT verification record:
 
 Return shape:
 {
   "domain": str,
-  "dkim_host": str,
-  "dkim_value": str,
-  "return_path_host": str,
-  "return_path_value": str,
-  "verified": bool
+  "cname_host": str,  -- the subdomain they entered, e.g. "portal.smithcpa.com"
+  "cname_value": "cname.vercel-dns.com",
+  "txt_host": str,  -- "_jammpx-verify." + domain, e.g. "_jammpx-verify.portal.smithcpa.com"
+  "txt_value": str,  -- the verification token
+  "verified": false
 }
 
--- ENDPOINT 2: POST /sending-domain/verify --
+-- ENDPOINT 2: POST /portal-domain/verify --
 
-No input body. Uses the current firm's sending_domain_postmark_id.
+No input body. Uses the current firm's portal_domain and portal_domain_verification_token.
 
-If firm has no sending_domain or no sending_domain_postmark_id, return 400: "No domain registered. Register a domain first."
+If firm has no portal_domain, return 400: "No domain registered. Register a domain first."
 
-Logic:
-1. Call Postmark to trigger verification:
-   POST https://api.postmarkapp.com/domains/{sending_domain_postmark_id}/verifyDkim
-   Headers: X-Postmark-Account-Token, Accept: application/json
-2. Also call:
-   POST https://api.postmarkapp.com/domains/{sending_domain_postmark_id}/verifyReturnPath
-3. Then fetch domain status:
-   GET https://api.postmarkapp.com/domains/{sending_domain_postmark_id}
-4. Check response: if DKIMVerified is True and ReturnPathDomainVerified is True, mark firm.sending_domain_verified = True
-5. db.commit()
-6. Fire behavioral event: "sending_domain.verified" if newly verified
-7. Return:
+Verification logic:
+1. Check CNAME: use socket.getaddrinfo(firm.portal_domain, None) to resolve the domain. If it resolves without error, the CNAME is likely set. Wrap in try/except -- if socket.gaierror, CNAME not yet propagated.
+2. Check TXT record: use the dnspython library if available, otherwise skip TXT check and rely on CNAME only. Import dns.resolver inside a try/except ImportError -- if not available, set txt_verified = True (optimistic, rely on CNAME).
+   TXT host to check: "_jammpx-verify." + firm.portal_domain
+   Look for a TXT record whose value matches firm.portal_domain_verification_token.
+3. If both CNAME resolves AND txt_verified: set firm.portal_domain_verified = True, db.commit(). Fire behavioral event: "portal_domain.verified".
+4. Return:
 {
   "domain": str,
   "verified": bool,
-  "dkim_verified": bool,
-  "return_path_verified": bool,
-  "message": "Domain verified successfully." or "DNS records not yet detected. Make sure the records are added and try again in a few minutes."
+  "cname_resolved": bool,
+  "txt_verified": bool,
+  "message": "Domain verified successfully." or "DNS records not yet detected. Make sure both records are added and try again in a few minutes."
 }
 
--- ENDPOINT 3: DELETE /sending-domain --
+-- ENDPOINT 3: DELETE /portal-domain --
 
-No input. Removes the sending domain from the firm.
-
-If firm has a sending_domain_postmark_id, call Postmark to delete the domain:
-  DELETE https://api.postmarkapp.com/domains/{sending_domain_postmark_id}
-  Headers: X-Postmark-Account-Token
-
-Then clear all sending domain fields on the firm. db.commit().
-Fire behavioral event: "sending_domain.removed"
-Return: { "message": "Sending domain removed." }
+No input. Clears all portal domain fields on the firm. db.commit().
+Fire behavioral event: "portal_domain.removed"
+Return: { "message": "Portal domain removed." }
 
 ---
 
-STEP 6 — REGISTER ROUTER: app/main.py
+STEP 5 — REGISTER ROUTER: app/main.py
 
 Import and register:
-  from app.api.sending_domain import router as sending_domain_router
-  app.include_router(sending_domain_router, prefix="/api/v1")
+  from app.api.portal_domain import router as portal_domain_router
+  app.include_router(portal_domain_router, prefix="/api/v1")
 
 ---
 
-STEP 7 — EMAIL SERVICE UPDATE: app/services/email_service.py
+STEP 6 — FRONTEND: PortalDomainTab component
 
-Update EmailService._send() to use the firm's custom sending domain when it is verified.
+Create frontend/src/components/settings/PortalDomainTab.tsx
 
-The _send method currently hardcodes "noreply@jammpx.com". Add an optional parameter:
-  sending_domain: str | None = None
+This tab has three states identical in structure to SendingDomainTab.tsx -- read that file for the exact patterns to replicate.
 
-When sending_domain is provided and non-empty, use:
-  "From": f"{effective_name} <noreply@{sending_domain}>"
-When sending_domain is None or empty, keep:
-  "From": f"{effective_name} <noreply@jammpx.com>"
-
-Also update get_firm_email_settings to return the sending domain:
-  return {
-    "reply_to": settings.get("email_reply_to") or None,
-    "display_name": settings.get("email_display_name") or None,
-    "sending_domain": firm.sending_domain if firm.sending_domain_verified else None,
-  }
-
-Update all callers of _send that pass email_settings to also pass sending_domain=email_settings.get("sending_domain"). Search for all calls to EmailService._send() and EmailService._send_raw() and add the sending_domain parameter where email_settings is already being read.
-
----
-
-STEP 8 — FRONTEND: SendingDomainTab component
-
-Create frontend/src/components/settings/SendingDomainTab.tsx
-
-This tab has three states:
-
-STATE A -- NO DOMAIN (default when sending_domain is null):
-- Heading: "Custom Sending Domain"
-- Description: "Send client emails from your own domain instead of noreply@jammpx.com. Requires adding two DNS records to your domain."
-- Input field: domain name, placeholder "smithcpa.com", no http:// prefix
-- "Register Domain" button: brand color. On click: POST /api/v1/sending-domain/register with { domain: inputValue }. Show loading state.
-- On success: transition to STATE B with the DNS records from the response.
+STATE A -- NO DOMAIN:
+- Heading: "Custom Portal Domain"
+- Description: "Give your clients a branded portal URL like portal.smithcpa.com instead of app.jammpx.com/portal. Requires adding two DNS records to your domain."
+- Input field: subdomain, placeholder "portal.smithcpa.com"
+- "Set Up Domain" button: brand color. POST /api/v1/portal-domain/register with { domain: inputValue }.
+- On success: transition to STATE B.
 - On error: show inline red error message.
 
 STATE B -- DOMAIN REGISTERED, NOT VERIFIED:
 - Heading: "Add these DNS records"
-- Subtext: "Add both records to your domain registrar (GoDaddy, Namecheap, Cloudflare, etc.), then click Verify. DNS changes can take up to 48 hours to propagate."
-- Two DNS record cards, each showing:
-  - Record type badge: "TXT" for DKIM, "CNAME" for Return-Path
-  - Host field with copy button
-  - Value field with copy button (truncated with ellipsis if long, full value in clipboard)
-- "Verify DNS Records" button: brand color. On click: POST /api/v1/sending-domain/verify. Show loading state.
-- On success verified=true: transition to STATE C.
-- On success verified=false: show amber inline message "DNS records not yet detected. Try again in a few minutes."
-- "Remove Domain" link: small muted text below the verify button. On click: DELETE /api/v1/sending-domain with confirmation. Returns to STATE A.
+- Subtext: "Add both records to your domain registrar, then click Verify. DNS changes can take up to 48 hours to propagate."
+- Two DNS record cards:
+  1. CNAME record:
+     - Type badge: "CNAME"
+     - Host: the domain they entered (e.g. "portal.smithcpa.com")
+     - Value: "cname.vercel-dns.com"
+  2. TXT verification record:
+     - Type badge: "TXT"
+     - Host: "_jammpx-verify." + domain
+     - Value: the verification token from the response
+  Each card has copy buttons for Host and Value.
+- "Verify DNS Records" button: brand color. POST /api/v1/portal-domain/verify.
+- On verified=true: transition to STATE C.
+- On verified=false: amber inline message "DNS records not yet detected. Try again in a few minutes."
+- "Remove Domain" link below verify button. Calls DELETE /api/v1/portal-domain with confirmation. Returns to STATE A.
 
 STATE C -- VERIFIED:
-- Green checkmark + "smithcpa.com is verified" heading
-- Subtext: "Client emails will now be sent from noreply@smithcpa.com"
-- "Remove Domain" button: ghost/destructive style. Confirmation required before DELETE call.
+- Green checkmark + "{domain} is verified" heading
+- Subtext: "Your client portal is accessible at https://{domain}/portal"
+- Small note in muted text: "Contact JAMM PX support to complete routing setup."
+- "Remove Domain" button: ghost/destructive. Confirmation required.
 
-On mount: read firm data from the existing useFetch for firm details. If sending_domain is set and sending_domain_verified is true, start in STATE C. If sending_domain is set but not verified, start in STATE B (pre-populate DNS records from firm data). If no sending_domain, start in STATE A.
+On mount: read firm data. If portal_domain is set and portal_domain_verified is true, start in STATE C. If portal_domain is set but not verified, fetch the DNS record details by calling GET /api/v1/portal-domain/records (see below) or reconstruct from stored firm data. Actually -- reconstruct from firm data on the FirmDetails type: portal_domain is available. The TXT host can be reconstructed as "_jammpx-verify." + portal_domain. For the TXT value (verification token), we need a way to retrieve it.
 
-Copy button behavior: use navigator.clipboard.writeText(). Show a brief "Copied!" tooltip or text change for 2 seconds.
+Add a fourth endpoint to app/api/portal_domain.py:
 
-Style: match existing settings tab cards exactly -- same card wrapper, same heading sizes, same input styles as other settings tabs.
+-- ENDPOINT 4: GET /portal-domain/records --
+
+Returns the current domain setup details for the firm. No input.
+If no portal_domain set, return 404.
+Return:
+{
+  "domain": str,
+  "cname_host": str,
+  "cname_value": "cname.vercel-dns.com",
+  "txt_host": str,
+  "txt_value": str,  -- the verification token
+  "verified": bool
+}
+
+Frontend uses this on mount when portal_domain is set but not verified, to restore STATE B with the correct DNS record values.
+
+Copy button behavior: navigator.clipboard.writeText(). Show "Copied!" for 2 seconds.
+
+Style: match SendingDomainTab.tsx exactly -- same card wrapper, same DNS record cards, same button styles.
 
 ---
 
-STEP 9 — WIRE INTO SETTINGS PAGE: frontend/src/app/settings/page.tsx
+STEP 7 — WIRE INTO SETTINGS PAGE: frontend/src/app/settings/page.tsx
 
-1. Import SendingDomainTab
-2. Add to TABS after 'portal_branding': { key: 'sending_domain', label: 'Email Domain' }
-3. Add canSeeSendingDomain = isFirmOwner
+1. Import PortalDomainTab
+2. Add to TABS after 'sending_domain': { key: 'portal_domain', label: 'Portal Domain' }
+3. Add canSeePortalDomain = isFirmOwner
 4. Filter tab for non-owners
-5. Render: {activeTab === 'sending_domain' && canSeeSendingDomain && <SendingDomainTab />}
+5. Render: {activeTab === 'portal_domain' && canSeePortalDomain && <PortalDomainTab />}
 
 ---
 
 DO NOT skip the migration. This build requires alembic upgrade head on the droplet.
 
 After completing confirm:
-- POSTMARK_ACCOUNT_TOKEN in config.py
-- Migration 0045 exists and applied
-- Seven new columns on firms table
-- FirmOut schema includes sending domain fields
-- app/api/sending_domain.py with three endpoints
+- Migration 0046 exists and applied
+- Three new columns on firms table
+- FirmOut includes portal_domain and portal_domain_verified
+- app/api/portal_domain.py with four endpoints
 - Router registered in main.py
-- EmailService._send updated to accept sending_domain parameter
-- get_firm_email_settings returns sending_domain when verified
-- SendingDomainTab.tsx created with three states
-- Settings page wired with Email Domain tab
+- PortalDomainTab.tsx created with three states and copy buttons
+- Settings page wired with Portal Domain tab

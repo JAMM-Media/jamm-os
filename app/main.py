@@ -58,6 +58,7 @@ from app.api.ack_parser import router as ack_parser_router
 from app.api.firm_export import router as firm_export_router
 from app.api.migration import router as migration_router
 from app.api.sending_domain import router as sending_domain_router
+from app.api.portal_domain import router as portal_domain_router
 
 from app.db.base_class import Base
 from app.core.config import get_settings
@@ -209,6 +210,7 @@ app.include_router(ack_parser_router, prefix="/api/v1/ack-parser", tags=["ACK Pa
 app.include_router(firm_export_router, prefix="/api/v1", tags=["Firm Export"])
 app.include_router(migration_router, prefix="/api/v1")
 app.include_router(sending_domain_router, prefix="/api/v1")
+app.include_router(portal_domain_router, prefix="/api/v1")
 
 
 @app.get("/")

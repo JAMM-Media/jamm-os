@@ -119,6 +119,10 @@ class Firm(Base):
     sending_domain_return_path_host: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     sending_domain_return_path_value: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
 
+    portal_domain: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    portal_domain_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    portal_domain_verification_token: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),

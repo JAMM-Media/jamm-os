@@ -16,6 +16,7 @@ import FeeScheduleTab from '@/components/settings/FeeScheduleTab'
 import PortalBrandingTab from '@/components/settings/PortalBrandingTab'
 import MigrationTab from '@/components/settings/MigrationTab'
 import SendingDomainTab from '@/components/settings/SendingDomainTab'
+import PortalDomainTab from '@/components/settings/PortalDomainTab'
 import { onConciergeAction, setFormDirty } from '@/lib/events/conciergeEvents'
 
 const TABS = [
@@ -27,6 +28,7 @@ const TABS = [
   { key: 'fee_schedule', label: 'Fee Schedule' },
   { key: 'portal_branding', label: 'Portal' },
   { key: 'sending_domain', label: 'Email Domain' },
+  { key: 'portal_domain', label: 'Portal Domain' },
   { key: 'migration', label: 'Migration' },
 ]
 
@@ -290,6 +292,7 @@ export default function SettingsPage() {
   const canSeeAutomations = user?.role === 'firm_owner' || user?.role === 'manager'
   const canSeeSecurity = isFirmOwner
   const canSeeSendingDomain = isFirmOwner
+  const canSeePortalDomain = isFirmOwner
   const canSeeMigration = isFirmOwner
 
   const fieldClass = 'flex flex-col gap-1.5'
@@ -317,6 +320,7 @@ export default function SettingsPage() {
             if (tab.key === 'fee_schedule') return isFirmOwner
             if (tab.key === 'portal_branding') return isFirmOwner
             if (tab.key === 'sending_domain') return canSeeSendingDomain
+            if (tab.key === 'portal_domain') return canSeePortalDomain
             if (tab.key === 'migration') return canSeeMigration
             return true
           }).map((tab) => (
@@ -779,6 +783,9 @@ export default function SettingsPage() {
 
         {/* Email Domain tab */}
         {activeTab === 'sending_domain' && canSeeSendingDomain && <SendingDomainTab />}
+
+        {/* Portal Domain tab */}
+        {activeTab === 'portal_domain' && canSeePortalDomain && <PortalDomainTab />}
 
         {/* Migration tab */}
         {activeTab === 'migration' && canSeeMigration && <MigrationTab />}
