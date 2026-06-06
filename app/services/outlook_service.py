@@ -20,6 +20,8 @@ logger = logging.getLogger(__name__)
 
 OUTLOOK_SCOPES = [
     "https://graph.microsoft.com/Mail.Read",
+    "https://graph.microsoft.com/Mail.Send",
+    "https://graph.microsoft.com/Calendars.Read",
     "https://graph.microsoft.com/User.Read",
     "offline_access",
 ]
@@ -28,30 +30,33 @@ OUTLOOK_PROVIDER = "outlook"
 
 class OutlookService:
 
-    def get_authorization_url(self, firm_id: UUID) -> str:
+    def get_authorization_url(self, firm_id: UUID, user_id: UUID) -> str:
         settings = get_settings()
         app = msal.ConfidentialClientApplication(
             client_id=settings.MICROSOFT_CLIENT_ID,
             client_credential=settings.MICROSOFT_CLIENT_SECRET,
             authority=f"https://login.microsoftonline.com/{settings.MICROSOFT_TENANT_ID}",
         )
+        state = f"{firm_id}:{user_id}"
         result = app.get_authorization_request_url(
             scopes=OUTLOOK_SCOPES,
-            state=str(firm_id),
+            state=state,
             redirect_uri=settings.MICROSOFT_REDIRECT_URI,
         )
         return result
 
     def handle_callback(self, code: str, state: str, db: Session) -> Integration:
         try:
-            firm_id = UUID(state)
+            firm_id_str, user_id_str = state.split(":")
+            firm_id = UUID(firm_id_str)
+            user_id = UUID(user_id_str)
         except (ValueError, AttributeError) as e:
             logger.error("Invalid state parameter: %s", type(e).__name__)
             raise ValueError("Invalid state parameter") from e
 
-        integration = crud_integration.get_integration(db, firm_id=firm_id, provider=OUTLOOK_PROVIDER)
+        integration = crud_integration.get_user_integration(db, firm_id=firm_id, user_id=user_id, provider=OUTLOOK_PROVIDER)
         if not integration:
-            integration = crud_integration.create_integration(db, firm_id=firm_id, provider=OUTLOOK_PROVIDER)
+            integration = crud_integration.create_user_integration(db, firm_id=firm_id, user_id=user_id, provider=OUTLOOK_PROVIDER)
 
         try:
             settings = get_settings()
@@ -102,7 +107,7 @@ class OutlookService:
                     "firm_id": firm_id,
                     "entity_type": "integration",
                     "entity_id": integration_id,
-                    "metadata": {"provider": OUTLOOK_PROVIDER, "scopes": scopes_string},
+                    "metadata": {"provider": OUTLOOK_PROVIDER, "scopes": scopes_string, "user_id": str(user_id)},
                 },
                 daemon=True,
             ).start()
@@ -111,10 +116,10 @@ class OutlookService:
                 db=db,
                 firm_id=firm_id,
                 action="integration.connected",
-                actor_type="system",
+                actor_type="staff",
                 entity_type="integration",
                 entity_id=integration.id,
-                metadata={"provider": OUTLOOK_PROVIDER},
+                metadata={"provider": OUTLOOK_PROVIDER, "user_id": str(user_id)},
             )
 
             return integration

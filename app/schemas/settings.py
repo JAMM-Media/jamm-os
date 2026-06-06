@@ -22,3 +22,10 @@ class ReviewSettingsUpdate(BaseModel):
     google_review_url: str | None = None
     review_requests_enabled: bool | None = None
     model_config = ConfigDict(str_strip_whitespace=True)
+
+
+class EmailCalendarSyncUpdate(BaseModel):
+    email_sync_enabled: bool | None = None
+    calendar_sync_enabled: bool | None = None
+    staff_can_disable_email_sync: bool | None = None
+    staff_can_disable_calendar_sync: bool | None = None

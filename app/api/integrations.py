@@ -4,15 +4,19 @@ import threading
 import uuid as _uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.db.session import get_db
 from app.models.client import Client
 from app.models.firm import Firm
+from app.models.user import User
 from app.schemas.integration import IntegrationOut, QuickBooksConnectResponse
 from app.crud import integration as crud_integration
+from app.dependencies.auth import get_current_user
 from app.dependencies.tenant import get_current_firm
 from app.dependencies.roles import require_firm_owner, require_manager_or_above
 from app.services.quickbooks_service import QuickBooksService
@@ -240,15 +244,15 @@ def quickbooks_client_deep_link(
 def gmail_connect(
     db: Session = Depends(get_db),
     current_firm: Firm = Depends(get_current_firm),
-    _: object = Depends(require_firm_owner),
+    current_user: User = Depends(require_firm_owner),
 ):
-    integration = crud_integration.get_integration(
-        db, firm_id=current_firm.id, provider="gmail"
+    integration = crud_integration.get_user_integration(
+        db, firm_id=current_firm.id, user_id=current_user.id, provider="gmail"
     )
     if not integration:
-        crud_integration.create_integration(db, firm_id=current_firm.id, provider="gmail")
+        crud_integration.create_user_integration(db, firm_id=current_firm.id, user_id=current_user.id, provider="gmail")
 
-    authorization_url = _gmail_service.get_authorization_url(current_firm.id)
+    authorization_url = _gmail_service.get_authorization_url(current_firm.id, current_user.id)
     return {"authorization_url": authorization_url}
 
 
@@ -277,15 +281,15 @@ def gmail_callback(
 def outlook_connect(
     db: Session = Depends(get_db),
     current_firm: Firm = Depends(get_current_firm),
-    _: object = Depends(require_firm_owner),
+    current_user: User = Depends(require_firm_owner),
 ):
-    integration = crud_integration.get_integration(
-        db, firm_id=current_firm.id, provider="outlook"
+    integration = crud_integration.get_user_integration(
+        db, firm_id=current_firm.id, user_id=current_user.id, provider="outlook"
     )
     if not integration:
-        crud_integration.create_integration(db, firm_id=current_firm.id, provider="outlook")
+        crud_integration.create_user_integration(db, firm_id=current_firm.id, user_id=current_user.id, provider="outlook")
 
-    authorization_url = _outlook_service.get_authorization_url(current_firm.id)
+    authorization_url = _outlook_service.get_authorization_url(current_firm.id, current_user.id)
     return {"authorization_url": authorization_url}
 
 
@@ -304,6 +308,130 @@ def outlook_callback(
         return {"status": "connected", "message": "Outlook connected successfully"}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+# -------------------------------------------------------------------
+# GET /integrations/staff/gmail/connect — Staff: start Gmail OAuth2 flow
+# -------------------------------------------------------------------
+@router.get("/staff/gmail/connect")
+def staff_gmail_connect(
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    current_user: User = Depends(get_current_user),
+):
+    integration = crud_integration.get_user_integration(
+        db, firm_id=current_firm.id, user_id=current_user.id, provider="gmail"
+    )
+    if not integration:
+        crud_integration.create_user_integration(
+            db, firm_id=current_firm.id, user_id=current_user.id, provider="gmail"
+        )
+    authorization_url = _gmail_service.get_authorization_url(current_firm.id, current_user.id)
+    return {"authorization_url": authorization_url}
+
+
+# -------------------------------------------------------------------
+# GET /integrations/staff/gmail/callback — Google redirects here after staff auth
+# No JWT required — Google calls this endpoint directly.
+# -------------------------------------------------------------------
+@router.get("/staff/gmail/callback")
+def staff_gmail_callback(
+    code: str = Query(...),
+    state: str = Query(...),
+    db: Session = Depends(get_db),
+):
+    settings = get_settings()
+    try:
+        _gmail_service.handle_callback(code=code, state=state, db=db)
+        return RedirectResponse(url=f"{settings.FRONTEND_URL}/settings/my-integrations?connected=gmail")
+    except Exception:
+        return RedirectResponse(url=f"{settings.FRONTEND_URL}/settings/my-integrations?error=gmail_failed")
+
+
+# -------------------------------------------------------------------
+# GET /integrations/staff/outlook/connect — Staff: start Outlook OAuth2 flow
+# -------------------------------------------------------------------
+@router.get("/staff/outlook/connect")
+def staff_outlook_connect(
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    current_user: User = Depends(get_current_user),
+):
+    integration = crud_integration.get_user_integration(
+        db, firm_id=current_firm.id, user_id=current_user.id, provider="outlook"
+    )
+    if not integration:
+        crud_integration.create_user_integration(
+            db, firm_id=current_firm.id, user_id=current_user.id, provider="outlook"
+        )
+    authorization_url = _outlook_service.get_authorization_url(current_firm.id, current_user.id)
+    return {"authorization_url": authorization_url}
+
+
+# -------------------------------------------------------------------
+# GET /integrations/staff/outlook/callback — Microsoft redirects here after staff auth
+# No JWT required — Microsoft calls this endpoint directly.
+# -------------------------------------------------------------------
+@router.get("/staff/outlook/callback")
+def staff_outlook_callback(
+    code: str = Query(...),
+    state: str = Query(...),
+    db: Session = Depends(get_db),
+):
+    settings = get_settings()
+    try:
+        _outlook_service.handle_callback(code=code, state=state, db=db)
+        return RedirectResponse(url=f"{settings.FRONTEND_URL}/settings/my-integrations?connected=outlook")
+    except Exception:
+        return RedirectResponse(url=f"{settings.FRONTEND_URL}/settings/my-integrations?error=outlook_failed")
+
+
+# -------------------------------------------------------------------
+# GET /integrations/staff/me — Return current user's integrations
+# -------------------------------------------------------------------
+@router.get("/staff/me", response_model=list[IntegrationOut])
+def staff_list_my_integrations(
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    current_user: User = Depends(get_current_user),
+):
+    return crud_integration.get_integrations_for_user(
+        db, firm_id=current_firm.id, user_id=current_user.id
+    )
+
+
+# -------------------------------------------------------------------
+# DELETE /integrations/staff/{provider} — Disconnect current user's integration
+# -------------------------------------------------------------------
+@router.delete("/staff/{provider}", status_code=status.HTTP_204_NO_CONTENT)
+def staff_disconnect_integration(
+    provider: str,
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    current_user: User = Depends(get_current_user),
+):
+    integration = crud_integration.get_user_integration(
+        db, firm_id=current_firm.id, user_id=current_user.id, provider=provider
+    )
+    if not integration:
+        raise HTTPException(status_code=404, detail="Integration not found")
+
+    integration.encrypted_access_token = None
+    integration.encrypted_refresh_token = None
+    integration.token_expires_at = None
+    integration.connected_at = None
+    integration.scopes = None
+    integration.external_account_id = None
+    crud_integration.update_integration_status(db, integration, status="disconnected")
+    write_audit_log(
+        db=db,
+        firm_id=current_firm.id,
+        action="integration.disconnected",
+        actor_type="staff",
+        entity_type="integration",
+        entity_id=integration.id,
+        metadata={"provider": provider, "user_id": str(current_user.id)},
+    )
 
 
 # -------------------------------------------------------------------

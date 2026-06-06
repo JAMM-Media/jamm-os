@@ -9,7 +9,8 @@ from app.dependencies.roles import require_firm_owner
 from app.dependencies.tenant import get_current_firm
 from app.models.firm import Firm
 from app.models.user import User
-from app.schemas.settings import StaffAuthPolicyOut, StaffAuthPolicyUpdate, EmailSettingsUpdate, ReviewSettingsUpdate
+from app.schemas.firm import FirmOut
+from app.schemas.settings import StaffAuthPolicyOut, StaffAuthPolicyUpdate, EmailSettingsUpdate, ReviewSettingsUpdate, EmailCalendarSyncUpdate
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
@@ -54,6 +55,29 @@ def update_review_settings(
         current_firm.feature_flags = {**existing_flags, "review_requests_enabled": body.review_requests_enabled}
     db.commit()
     return current_firm.settings
+
+
+@router.patch("/email-calendar-sync", response_model=FirmOut)
+def update_email_calendar_sync(
+    body: EmailCalendarSyncUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_firm_owner),
+    current_firm: Firm = Depends(get_current_firm),
+):
+    existing = current_firm.settings or {}
+    merged = {**existing}
+    if body.email_sync_enabled is not None:
+        merged["email_sync_enabled"] = body.email_sync_enabled
+    if body.calendar_sync_enabled is not None:
+        merged["calendar_sync_enabled"] = body.calendar_sync_enabled
+    if body.staff_can_disable_email_sync is not None:
+        merged["staff_can_disable_email_sync"] = body.staff_can_disable_email_sync
+    if body.staff_can_disable_calendar_sync is not None:
+        merged["staff_can_disable_calendar_sync"] = body.staff_can_disable_calendar_sync
+    current_firm.settings = merged
+    db.commit()
+    db.refresh(current_firm)
+    return current_firm
 
 
 @router.patch("/email")

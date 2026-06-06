@@ -24,6 +24,7 @@ import {
   Clock,
   LayoutTemplate,
   BotMessageSquare,
+  Plug,
 } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { cn } from '@/lib/utils'
@@ -46,6 +47,7 @@ const navItems = [
 ]
 
 const settingsItem = { href: '/settings', label: 'Settings', icon: Settings }
+const myIntegrationsItem = { href: '/settings/my-integrations', label: 'My Integrations', icon: Plug }
 
 interface SidebarProps {
   collapsed: boolean
@@ -191,12 +193,28 @@ export function Sidebar({ collapsed, onToggle, onConciergeOpen }: SidebarProps) 
           {!collapsed && <span className="truncate">JAMM Concierge</span>}
         </button>
 
+        {/* My Integrations */}
+        <Link
+          href={myIntegrationsItem.href}
+          className={cn(
+            'flex items-center gap-3 px-2 py-2 rounded text-[13px] transition-colors',
+            pathname === myIntegrationsItem.href
+              ? 'bg-white/15 text-white'
+              : 'text-white/60 hover:text-white hover:bg-white/10',
+            collapsed && 'justify-center px-2'
+          )}
+          title={collapsed ? myIntegrationsItem.label : undefined}
+        >
+          <Plug className="h-4 w-4 flex-shrink-0" />
+          {!collapsed && <span className="truncate">{myIntegrationsItem.label}</span>}
+        </Link>
+
         {/* Settings */}
         <Link
           href={settingsItem.href}
           className={cn(
             'flex items-center gap-3 px-2 py-2 rounded text-[13px] transition-colors',
-            pathname.startsWith(settingsItem.href)
+            pathname.startsWith(settingsItem.href) && pathname !== myIntegrationsItem.href
               ? 'bg-white/15 text-white'
               : 'text-white/60 hover:text-white hover:bg-white/10',
             collapsed && 'justify-center px-2'

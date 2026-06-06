@@ -19,7 +19,9 @@ from app.services.token_encryption import encrypt_token
 logger = logging.getLogger(__name__)
 
 GMAIL_SCOPES = [
-    "https://www.googleapis.com/auth/gmail.metadata",
+    "https://www.googleapis.com/auth/gmail.readonly",
+    "https://www.googleapis.com/auth/gmail.send",
+    "https://www.googleapis.com/auth/calendar.readonly",
     "https://www.googleapis.com/auth/userinfo.email",
     "openid",
 ]
@@ -44,25 +46,29 @@ class GmailService:
             redirect_uri=settings.GOOGLE_REDIRECT_URI,
         )
 
-    def get_authorization_url(self, firm_id: UUID) -> str:
+    def get_authorization_url(self, firm_id: UUID, user_id: UUID) -> str:
         flow = self._build_flow()
+        state = f"{firm_id}:{user_id}"
         authorization_url, _ = flow.authorization_url(
             access_type="offline",
-            state=str(firm_id),
+            state=state,
             include_granted_scopes="true",
+            prompt="consent",
         )
         return authorization_url
 
     def handle_callback(self, code: str, state: str, db: Session) -> Integration:
         try:
-            firm_id = UUID(state)
+            firm_id_str, user_id_str = state.split(":")
+            firm_id = UUID(firm_id_str)
+            user_id = UUID(user_id_str)
         except (ValueError, AttributeError) as e:
             logger.error("Invalid state parameter: %s", type(e).__name__)
             raise ValueError("Invalid state parameter") from e
 
-        integration = crud_integration.get_integration(db, firm_id=firm_id, provider=GMAIL_PROVIDER)
+        integration = crud_integration.get_user_integration(db, firm_id=firm_id, user_id=user_id, provider=GMAIL_PROVIDER)
         if not integration:
-            integration = crud_integration.create_integration(db, firm_id=firm_id, provider=GMAIL_PROVIDER)
+            integration = crud_integration.create_user_integration(db, firm_id=firm_id, user_id=user_id, provider=GMAIL_PROVIDER)
 
         try:
             flow = self._build_flow()
@@ -104,7 +110,7 @@ class GmailService:
                     "firm_id": firm_id,
                     "entity_type": "integration",
                     "entity_id": integration_id,
-                    "metadata": {"provider": GMAIL_PROVIDER, "scopes": scopes_string},
+                    "metadata": {"provider": GMAIL_PROVIDER, "scopes": scopes_string, "user_id": str(user_id)},
                 },
                 daemon=True,
             ).start()
@@ -113,10 +119,10 @@ class GmailService:
                 db=db,
                 firm_id=firm_id,
                 action="integration.connected",
-                actor_type="system",
+                actor_type="staff",
                 entity_type="integration",
                 entity_id=integration.id,
-                metadata={"provider": GMAIL_PROVIDER},
+                metadata={"provider": GMAIL_PROVIDER, "user_id": str(user_id)},
             )
 
             return integration

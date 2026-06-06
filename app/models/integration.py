@@ -20,7 +20,7 @@ class Integration(Base):
     __tablename__ = "integrations"
 
     __table_args__ = (
-        UniqueConstraint("firm_id", "provider", name="uq_integration_firm_provider"),
+        UniqueConstraint("firm_id", "user_id", "provider", name="uq_integration_firm_user_provider"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -33,6 +33,13 @@ class Integration(Base):
         PG_UUID(as_uuid=True),
         ForeignKey("firms.id", ondelete="CASCADE"),
         nullable=False,
+        index=True,
+    )
+
+    user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=True,
         index=True,
     )
 
@@ -78,3 +85,4 @@ class Integration(Base):
     )
 
     firm: Mapped["Firm"] = relationship("Firm", back_populates="integrations")
+    user: Mapped[Optional["User"]] = relationship("User", back_populates=None, foreign_keys=[user_id])

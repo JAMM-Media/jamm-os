@@ -77,3 +77,38 @@ def update_integration_status(
 def delete_integration(db: Session, integration: Integration) -> None:
     db.delete(integration)
     db.commit()
+
+
+def get_user_integration(
+    db: Session, firm_id: uuid.UUID, user_id: uuid.UUID, provider: str
+) -> Optional[Integration]:
+    return db.execute(
+        select(Integration).where(
+            Integration.firm_id == firm_id,
+            Integration.user_id == user_id,
+            Integration.provider == provider,
+        )
+    ).scalar_one_or_none()
+
+
+def create_user_integration(
+    db: Session, firm_id: uuid.UUID, user_id: uuid.UUID, provider: str
+) -> Integration:
+    integration = Integration(firm_id=firm_id, user_id=user_id, provider=provider, status="disconnected")
+    db.add(integration)
+    db.commit()
+    db.refresh(integration)
+    return integration
+
+
+def get_integrations_for_user(
+    db: Session, firm_id: uuid.UUID, user_id: uuid.UUID
+) -> list[Integration]:
+    return list(
+        db.execute(
+            select(Integration).where(
+                Integration.firm_id == firm_id,
+                Integration.user_id == user_id,
+            )
+        ).scalars().all()
+    )

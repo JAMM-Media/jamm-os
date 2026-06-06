@@ -29,6 +29,7 @@ class QuickBooksConnectResponse(BaseModel):
 class IntegrationOut(BaseModel):
     id: uuid.UUID
     firm_id: uuid.UUID
+    user_id: Optional[uuid.UUID] = None
     provider: str
     status: str
     token_expires_at: Optional[datetime] = None
