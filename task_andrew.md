@@ -33,258 +33,86 @@ All models must be imported in migrations/env.py or autogenerate silently misses
 
 ---
 
-PHASE INSTRUCTIONS -- CALENDAR SESSION 3
-Full calendar rebuild with color system, staff overlay, sidebar, and custom categories
+PHASE INSTRUCTIONS -- CALENDAR UI FIXES
+
+No migrations. No backend changes. One file only: frontend/src/app/calendar/page.tsx
+
+Read the entire file before making any changes.
 
 ---
 
-STEP 1 -- MIGRATION
+FIX 1 -- Move sidebar to the right
 
-Current head: 0047_per_staff_integrations
+The current layout is: aside (left, 240px) | main area (flex-1)
+Change to: main area (flex-1) | aside (right, 240px)
 
-Write a clean manual migration:
-revision = '0048_user_calendar_settings'
-down_revision = '0047_per_staff_integrations'
-
-Add one column to the users table:
-  calendar_settings: JSONB, nullable=True
-
-This stores per-user calendar color preferences and custom categories.
-
-Also add one column to the firms table:
-  staff_calendar_colors: JSONB, nullable=True
-
-This stores firm-owner-assigned colors per staff member (keyed by user_id string).
-
-Run alembic upgrade head. Confirm at new head.
+Move the aside element to appear AFTER the main area div in the JSX. Change border-r to border-l on the aside. Everything else about the aside stays identical.
 
 ---
 
-STEP 2 -- MODEL UPDATES
+FIX 2 -- Fix staff color mismatch
 
-app/models/user.py -- add after the locked_until field:
-    calendar_settings: Mapped[Optional[dict]] = mapped_column(
-        JSONB, nullable=True
-    )
+The bug: the staffList is fetched including the firm owner. The filter bar then does staffList.filter((s) => s.id !== user?.id) to exclude the firm owner. But staffIndexMap is built from the FULL staffList including the firm owner. So the index used to assign colors to staff members in the filter bar (which excludes the firm owner) is off by one compared to the index used to assign colors to events (which uses staffIndexMap built from the full list).
 
-app/models/firm.py -- add after the portal_domain_verification_token field:
-    staff_calendar_colors: Mapped[Optional[dict]] = mapped_column(
-        JSONB, nullable=True
-    )
+Fix: Build staffIndexMap from the FILTERED staff list (excluding the firm owner), not the full staffList. This ensures the color assigned to each person in the filter bar matches the color used to fill their events on the calendar.
 
-Import JSONB from sqlalchemy.dialects.postgresql in both files if not already imported.
+Find where staffIndexMap is built:
+  const staffIndexMap: Record<string, number> = {}
+  staffList.forEach((s, i) => { staffIndexMap[s.id] = i })
 
----
+Replace with:
+  const filteredStaffList = staffList.filter((s) => s.id !== user?.id)
+  const staffIndexMap: Record<string, number> = {}
+  filteredStaffList.forEach((s, i) => { staffIndexMap[s.id] = i })
 
-STEP 3 -- BACKEND: Calendar endpoint updates in app/api/engagements.py
-
-Read the existing GET /engagements/calendar endpoint. It returns CalendarResponse with CalendarEngagementItem items. Update it to also include the assigned staff member's user_id when available.
-
-Update CalendarEngagementItem schema in app/schemas/engagement.py to add:
-  assigned_to: Optional[UUID] = None
-
-In the endpoint, when building each CalendarEngagementItem, include:
-  assigned_to=eng.assigned_to if hasattr(eng, 'assigned_to') else None
+Then update the staff filter bar render to use filteredStaffList instead of staffList.filter((s) => s.id !== user?.id) -- they are now the same list, just reference filteredStaffList directly.
 
 ---
 
-STEP 4 -- BACKEND: New calendar support endpoints in app/api/calendar.py (new file)
+FIX 3 -- Replace horizontal staff filter bar with dropdown
 
-Create app/api/calendar.py with these endpoints. Router prefix: /calendar. Tag: calendar.
+Remove the entire horizontal staff filter bar (the div with flex items-center gap-2 px-4 py-1.5 border-b that contains "View:", "Just me" button, and the staff chip row).
 
--- GET /calendar/staff-colors --
-Returns the firm's staff_calendar_colors dict. Requires get_current_firm.
-Returns: { "colors": dict } where dict is keyed by user_id string, value is hex color string.
-If staff_calendar_colors is None, return { "colors": {} }
+Replace it with a compact dropdown in the TOOLBAR row (the div with flex items-center justify-between px-4 py-2 border-b). Add the staff dropdown between the navigation controls (left side) and the view toggle buttons (right side).
 
--- PATCH /calendar/staff-colors --
-Requires firm_owner. Body: { "user_id": str, "color": str }
-Validates color is a valid hex string (starts with #, 4 or 7 chars).
-Merges into firm.staff_calendar_colors. db.commit().
-Returns { "colors": dict }
+The dropdown:
+- Trigger button: shows "Just me" when justMe is true, or "X staff selected" when staff are selected. Has a ChevronDown icon. Same style as the view toggle buttons.
+- Dropdown panel: absolute positioned below the trigger, z-50, bg-surface-card border border-surface-border rounded shadow-lg, width 220px, max-height 300px overflow-y-auto
+- Search input at top of panel: placeholder "Search staff...", filters the staff list by name or email
+- Options list:
+  - "Just me" row with a checkmark when justMe is true. Clicking sets justMe=true and clears selectedStaff.
+  - "Select all" row. Clicking sets justMe=false and sets selectedStaff to all filteredStaffList ids.
+  - Divider line
+  - One row per staff member: color swatch (clickable to open inline ColorPicker) + name/email + checkbox. Clicking the row (not the swatch) toggles that staff member in selectedStaff and sets justMe=false.
+- Clicking outside the dropdown closes it. Use a useRef + useEffect with mousedown listener, same pattern as the ColorPicker component already in the file.
+- Add isDropdownOpen state (boolean) and staffSearch state (string) to control the dropdown.
 
--- GET /calendar/my-settings --
-Returns current user's calendar_settings. Requires get_current_user.
-Returns the full calendar_settings dict or defaults if null:
-{
-  "colors": {
-    "deadline": "#EF4444",
-    "extension": "#F97316",
-    "task": "#3B82F6",
-    "call": "#22C55E",
-    "holiday": "#9CA3AF"
-  },
-  "custom_categories": []
-}
-
--- PATCH /calendar/my-settings --
-Requires get_current_user. Body: { "colors": dict | None, "custom_categories": list | None }
-Merges changes into current_user.calendar_settings. db.commit().
-Returns updated settings.
-
-Register in app/main.py:
-  from app.api.calendar import router as calendar_router
-  app.include_router(calendar_router, prefix="/api/v1")
+Remove the separate staff filter bar div entirely. The dropdown now lives in the toolbar row.
 
 ---
 
-STEP 5 -- BACKEND: External calendar events endpoint
+FIX 4 -- Rename calls to meetings everywhere in the file
 
-Add to app/api/calendar.py:
+Find every occurrence of:
+- 'call' as an EventType value -> change to 'meeting'
+- 'call' in DEFAULT_COLORS -> change key to 'meeting'
+- 'call' in TYPE_LABELS -> change key to 'meeting', value to 'Meetings'
+- 'call' in allDefaultTypes array -> change to 'meeting'
+- type: 'call' in the external events mapping -> change to 'meeting'
+- Any string 'Calls' -> change to 'Meetings'
+- EventType union type: replace 'call' with 'meeting'
+- sidebarFilter default ['deadline'] stays the same -- no call reference there
 
--- GET /calendar/external-events --
-Requires get_current_user. Fetches calendar events from the user's connected Gmail or Outlook calendar (whichever is connected).
-
-For Gmail: uses the Google Calendar API (not Gmail).
-  - Build credentials using get_fresh_credentials from gmail_signals_service.py
-  - Call Google Calendar API: GET https://www.googleapis.com/calendar/v3/calendars/primary/events
-  - Params: timeMin=today ISO, timeMax=today+180days ISO, singleEvents=true, orderBy=startTime, maxResults=100
-  - Each event returns: id, summary, start.dateTime or start.date, end.dateTime or end.date, description
-
-For Outlook: uses Microsoft Graph calendar.
-  - Use get_fresh_outlook_credentials from outlook_signals_service.py
-  - GET https://graph.microsoft.com/v1.0/me/calendarView?startDateTime={today}&endDateTime={today+180days}&$select=id,subject,start,end,bodyPreview&$top=100
-  - Each event returns: id, subject, start.dateTime, end.dateTime, bodyPreview
-
-If no integration connected: return { "events": [], "provider": null }
-If integration exists but Calendar scope not available (scopes don't include calendar.readonly or Calendars.Read): return { "events": [], "provider": null, "needs_reconnect": true }
-
-Return shape:
-{
-  "events": [
-    {
-      "id": str,
-      "title": str,
-      "start": str,  -- ISO datetime or date string
-      "end": str,
-      "description": str,
-      "type": "call"  -- all external events are type "call"
-    }
-  ],
-  "provider": "gmail" | "outlook" | null
-}
-
-Wrap all API calls in try/except. If the calendar API call fails (token expired, scope missing), return empty events rather than 500.
+Make sure every reference to 'call' as an event type key is updated to 'meeting'. Do a thorough search through the entire file.
 
 ---
 
-STEP 6 -- FRONTEND: Full calendar page rebuild
-
-Replace frontend/src/app/calendar/page.tsx entirely.
-
-The new calendar has three zones:
-- Left sidebar (240px): upcoming events list + color key at bottom
-- Main calendar area (flex-1): month/week/agenda view with toolbar
-- Firm owner only: staff filter bar above the calendar (horizontal checkboxes)
-
--- COLOR SYSTEM --
-
-Default event type colors (border color):
-  deadline: #EF4444 (red)
-  extension: #F97316 (orange)
-  task: #3B82F6 (blue)
-  call: #22C55E (green)
-  holiday: #9CA3AF (gray)
-
-On mount: fetch GET /api/v1/calendar/my-settings to get user's custom colors. Merge with defaults (user overrides win). Store in state as eventColors.
-
-Default staff colors (8 distinct colors that work as fill):
-  ['#6366F1', '#EC4899', '#14B8A6', '#F59E0B', '#8B5CF6', '#06B6D4', '#F43F5E', '#84CC16']
-  Assign sequentially by staff member index.
-
-On mount (firm owner only): fetch GET /api/v1/calendar/staff-colors to get any custom-assigned staff colors.
-
--- EVENT RENDERING --
-
-Each calendar event is rendered as a pill/block with:
-- Border: 2px solid, color = eventColors[event.type]
-- Fill: staff member's assigned color (aggregate view) OR white/surface color (personal view)
-- 1px white/surface gap between border and fill (use box-shadow: inset 0 0 0 1px white or outline technique)
-- Text: event title, truncated
-
-In personal view (viewing only your own events):
-- Border = event type color
-- Fill = white (light mode) or dark-card (dark mode)
-- This gives clean bordered events without color fill noise
-
-In aggregate view (firm owner with staff selected):
-- Border = event type color
-- Fill = selected staff member's color
-- Firm owner's own events: border = event type color, fill = white (no fill)
-
--- STAFF FILTER (firm owner only) --
-
-Above the calendar, show a horizontal filter bar. Fetch staff list from GET /api/v1/users/ on mount (firm owner only).
-
-Show: "View:" label, then "Just me" button + one checkbox-style toggle per staff member showing their name and a small color swatch of their assigned color.
-
-Default state: "Just me" selected (firm owner sees only their own data).
-Reset button: clicking "Just me" at any time resets to personal view.
-
-Multi-select: clicking a staff member's name adds them to the view. Their events are overlaid with their fill color.
-
--- MAIN CALENDAR AREA --
-
-View toggle: Month / Week / Agenda (same as current page, keep existing logic).
-
-Month view: each day cell shows event pills. Truncate at 3 pills, show "+N more" link that opens a day popover.
-
-Week view: 7-column grid, time-based positioning. Each day column shows events for that day.
-
-Agenda view: list grouped by date, same as current ListView but with colored dots using eventColors.
-
-Events to show:
-1. Engagement deadlines and extensions: from GET /api/v1/engagements/calendar
-2. Tasks due: from GET /api/v1/tasks/?limit=200 (filter to those with due_date in the 180-day window)
-3. External calendar events (calls): from GET /api/v1/calendar/external-events
-4. Holidays: hardcode US federal holidays for current year
-
-When viewing a staff member's overlay (firm owner aggregate view), also fetch their engagement deadlines filtered by assigned_to = staff_member_id. The calendar endpoint already returns assigned_to -- filter client-side.
-
--- LEFT SIDEBAR --
-
-Width: 240px. Background: surface-card. Border-right: 0.5px surface-border.
-
-Top section -- Upcoming events list:
-- Heading: "Upcoming" (13px weight 500)
-- Filter: small multi-select pill row below heading. Default: "Deadlines" selected. Options: Deadlines, Extensions, Tasks, Calls. Each pill toggles on/off.
-- List: events matching selected filter types, sorted by date, show as many as fit. Each item:
-  - Colored dot (eventColors[type])
-  - Event title (12px, truncated)
-  - Date (11px muted)
-- Scrollable within its section.
-
-Bottom section -- Color key:
-- Heading: "Color Key" (11px uppercase muted)
-- One row per event type: colored swatch + label + edit icon
-- Clicking edit icon (or the swatch itself) opens an inline color picker (use <input type="color"> positioned absolutely)
-- Custom categories appear below the defaults with a small delete icon
-- "+ Add category" button at bottom of key: opens inline form with name input + color picker, saves via PATCH /api/v1/calendar/my-settings
-- Any change to colors calls PATCH /api/v1/calendar/my-settings immediately (optimistic update)
-
--- STAFF COLOR ASSIGNMENT (firm owner only) --
-
-In the staff filter bar, clicking a staff member's color swatch opens an inline color picker. Saving calls PATCH /api/v1/calendar/staff-colors with { user_id, color }.
-
----
-
-STEP 7 -- SIDEBAR NAV: Calendar visibility
-
-The Calendar link is already in the sidebar navItems. No change needed.
-
----
-
-DO NOT skip the migration. This build requires alembic upgrade head on the droplet.
+DO NOT run migrations. No backend changes. One file only.
 
 After completing confirm:
-- Migration 0048 exists with calendar_settings on users and staff_calendar_colors on firms
-- Both model files updated
-- CalendarEngagementItem schema has assigned_to field
-- app/api/calendar.py with 5 endpoints registered in main.py
-- frontend/src/app/calendar/page.tsx fully rebuilt with:
-  - Left sidebar (upcoming list + color key with inline editing)
-  - Staff filter bar (firm owner only)
-  - Month/Week/Agenda views with bordered colored event pills
-  - Border = event type color, fill = staff color or white
-  - Color customization via color key
-  - Custom category support
+- Sidebar is on the right (border-l, appears after main area)
+- staffIndexMap built from filteredStaffList
+- Filter bar replaced with dropdown in toolbar row
+- Dropdown has search, Just me, Select all, and per-staff rows with color swatches
+- All 'call' event type references replaced with 'meeting'
+- TYPE_LABELS shows 'Meetings' not 'Calls'

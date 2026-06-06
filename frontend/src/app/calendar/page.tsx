@@ -8,13 +8,13 @@ import { engagementsApi } from '@/lib/api/engagements'
 import { tasksApi } from '@/lib/api/tasks'
 import { useAuth } from '@/lib/hooks/useAuth'
 import api from '@/lib/api'
-import { ChevronLeft, ChevronRight, Pencil, Plus, X } from 'lucide-react'
+import { ChevronDown, ChevronLeft, ChevronRight, Pencil, Plus, X } from 'lucide-react'
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
-type EventType = 'deadline' | 'extension' | 'task' | 'call' | 'holiday'
+type EventType = 'deadline' | 'extension' | 'task' | 'meeting' | 'holiday'
 
 interface CalEvent {
   id: string
@@ -47,7 +47,7 @@ const DEFAULT_COLORS: Record<string, string> = {
   deadline: '#EF4444',
   extension: '#F97316',
   task: '#3B82F6',
-  call: '#22C55E',
+  meeting: '#22C55E',
   holiday: '#9CA3AF',
 }
 
@@ -66,7 +66,7 @@ const TYPE_LABELS: Record<string, string> = {
   deadline: 'Deadlines',
   extension: 'Extensions',
   task: 'Tasks',
-  call: 'Calls',
+  meeting: 'Meetings',
   holiday: 'Holidays',
 }
 
@@ -230,6 +230,21 @@ export default function CalendarPage() {
   // Staff color picker
   const [editingStaffColor, setEditingStaffColor] = useState<string | null>(null)
 
+  // Staff dropdown
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false)
+  const [staffSearch, setStaffSearch] = useState('')
+  const dropdownRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    function handleMouseDown(e: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setIsDropdownOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleMouseDown)
+    return () => document.removeEventListener('mousedown', handleMouseDown)
+  }, [])
+
   const year = today.getFullYear()
   const holidays = usHolidays(year)
 
@@ -351,7 +366,7 @@ export default function CalendarPage() {
         id: `ext-${ev.id}`,
         title: ev.title,
         date: start,
-        type: 'call',
+        type: 'meeting',
         description: ev.description,
       })
     }
@@ -379,8 +394,9 @@ export default function CalendarPage() {
   // Staff index map
   // ---------------------------------------------------------------------------
 
+  const filteredStaffList = staffList.filter((s) => s.id !== user?.id)
   const staffIndexMap: Record<string, number> = {}
-  staffList.forEach((s, i) => { staffIndexMap[s.id] = i })
+  filteredStaffList.forEach((s, i) => { staffIndexMap[s.id] = i })
 
   // ---------------------------------------------------------------------------
   // Navigation
@@ -640,13 +656,129 @@ export default function CalendarPage() {
   // Render
   // ---------------------------------------------------------------------------
 
-  const allDefaultTypes: EventType[] = ['deadline', 'extension', 'task', 'call', 'holiday']
+  const allDefaultTypes: EventType[] = ['deadline', 'extension', 'task', 'meeting', 'holiday']
 
   return (
     <AppShell>
       <div className="flex h-full overflow-hidden">
-        {/* LEFT SIDEBAR */}
-        <aside className="w-60 flex-shrink-0 flex flex-col bg-surface-card border-r border-surface-border overflow-hidden">
+        {/* MAIN AREA */}
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {/* Toolbar */}
+          <div className="flex items-center justify-between px-4 py-2 border-b border-surface-border flex-shrink-0">
+            <div className="flex items-center gap-2">
+              <button onClick={prev} className="p-1 rounded hover:bg-surface-card"><ChevronLeft size={16} /></button>
+              <span className="text-sm font-medium min-w-[160px] text-center">{cursorLabel()}</span>
+              <button onClick={next} className="p-1 rounded hover:bg-surface-card"><ChevronRight size={16} /></button>
+              <button
+                onClick={() => { setCursor(new Date(today.getFullYear(), today.getMonth(), 1)) }}
+                className="text-xs px-2 py-0.5 border border-surface-border rounded hover:bg-surface-card ml-1"
+              >
+                Today
+              </button>
+            </div>
+            {isFirmOwner && (
+              <div ref={dropdownRef} className="relative">
+                <button
+                  onClick={() => setIsDropdownOpen((o) => !o)}
+                  className="flex items-center gap-1 text-xs px-2 py-1 rounded border border-surface-border hover:bg-surface-card"
+                >
+                  {justMe ? 'Just me' : `${selectedStaff.length} staff selected`}
+                  <ChevronDown size={12} />
+                </button>
+                {isDropdownOpen && (
+                  <div
+                    className="absolute top-full mt-1 left-0 z-50 bg-surface-card border border-surface-border rounded shadow-lg overflow-y-auto"
+                    style={{ width: '220px', maxHeight: '300px' }}
+                  >
+                    <div className="p-2 border-b border-surface-border">
+                      <input
+                        type="text"
+                        placeholder="Search staff..."
+                        value={staffSearch}
+                        onChange={(e) => setStaffSearch(e.target.value)}
+                        className="w-full text-xs border border-surface-border rounded px-2 py-1 bg-transparent"
+                      />
+                    </div>
+                    <div className="py-1">
+                      <button
+                        onClick={() => { resetToJustMe(); setIsDropdownOpen(false) }}
+                        className="w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-surface-card/80 text-left"
+                      >
+                        <span className="w-4 text-primary">{justMe ? '✓' : ''}</span>
+                        Just me
+                      </button>
+                      <button
+                        onClick={() => { setJustMe(false); setSelectedStaff(filteredStaffList.map((s) => s.id)) }}
+                        className="w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-surface-card/80 text-left"
+                      >
+                        <span className="w-4" />
+                        Select all
+                      </button>
+                      <div className="border-t border-surface-border my-1" />
+                      {filteredStaffList
+                        .filter((s) => {
+                          const q = staffSearch.toLowerCase()
+                          return !q || (s.full_name ?? '').toLowerCase().includes(q) || s.email.toLowerCase().includes(q)
+                        })
+                        .map((s) => {
+                          const staffIdx = staffIndexMap[s.id] ?? 0
+                          const color = getStaffColor(s.id, staffIdx)
+                          const isSelected = selectedStaff.includes(s.id)
+                          const isEditingThis = editingStaffColor === s.id
+                          return (
+                            <div key={s.id} className="flex items-center gap-2 px-3 py-1.5 hover:bg-surface-card/80 relative">
+                              <div
+                                className="w-3 h-3 rounded-full cursor-pointer border border-white/30 flex-shrink-0"
+                                style={{ backgroundColor: color }}
+                                onClick={(e) => { e.stopPropagation(); setEditingStaffColor(isEditingThis ? null : s.id) }}
+                              />
+                              {isEditingThis && (
+                                <ColorPicker
+                                  value={color}
+                                  onChange={(c) => patchStaffColor.mutate({ user_id: s.id, color: c })}
+                                  onClose={() => setEditingStaffColor(null)}
+                                />
+                              )}
+                              <button
+                                onClick={() => { toggleStaff(s.id) }}
+                                className="flex-1 flex items-center justify-between text-xs text-left"
+                              >
+                                <span className="truncate">{s.full_name ?? s.email}</span>
+                                {isSelected && <span className="text-primary flex-shrink-0">✓</span>}
+                              </button>
+                            </div>
+                          )
+                        })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+            <div className="flex items-center gap-1">
+              {(['month', 'week', 'agenda'] as ViewMode[]).map((v) => (
+                <button
+                  key={v}
+                  onClick={() => setView(v)}
+                  className={`text-xs px-2 py-1 rounded capitalize transition-colors ${
+                    view === v ? 'bg-primary text-primary-foreground' : 'hover:bg-surface-card border border-surface-border'
+                  }`}
+                >
+                  {v}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Calendar view */}
+          <div className="flex-1 overflow-hidden flex flex-col">
+            {view === 'month' && <MonthView />}
+            {view === 'week' && <WeekView />}
+            {view === 'agenda' && <AgendaView />}
+          </div>
+        </div>
+
+        {/* RIGHT SIDEBAR */}
+        <aside className="w-60 flex-shrink-0 flex flex-col bg-surface-card border-l border-surface-border overflow-hidden">
           {/* Upcoming events */}
           <div className="flex-1 overflow-y-auto p-3">
             <div className="text-[13px] font-medium mb-2">Upcoming</div>
@@ -794,91 +926,6 @@ export default function CalendarPage() {
             )}
           </div>
         </aside>
-
-        {/* MAIN AREA */}
-        <div className="flex-1 flex flex-col overflow-hidden">
-          {/* Toolbar */}
-          <div className="flex items-center justify-between px-4 py-2 border-b border-surface-border flex-shrink-0">
-            <div className="flex items-center gap-2">
-              <button onClick={prev} className="p-1 rounded hover:bg-surface-card"><ChevronLeft size={16} /></button>
-              <span className="text-sm font-medium min-w-[160px] text-center">{cursorLabel()}</span>
-              <button onClick={next} className="p-1 rounded hover:bg-surface-card"><ChevronRight size={16} /></button>
-              <button
-                onClick={() => { setCursor(new Date(today.getFullYear(), today.getMonth(), 1)) }}
-                className="text-xs px-2 py-0.5 border border-surface-border rounded hover:bg-surface-card ml-1"
-              >
-                Today
-              </button>
-            </div>
-            <div className="flex items-center gap-1">
-              {(['month', 'week', 'agenda'] as ViewMode[]).map((v) => (
-                <button
-                  key={v}
-                  onClick={() => setView(v)}
-                  className={`text-xs px-2 py-1 rounded capitalize transition-colors ${
-                    view === v ? 'bg-primary text-primary-foreground' : 'hover:bg-surface-card border border-surface-border'
-                  }`}
-                >
-                  {v}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Staff filter bar (firm owner only) */}
-          {isFirmOwner && (
-            <div className="flex items-center gap-2 px-4 py-1.5 border-b border-surface-border flex-shrink-0 overflow-x-auto">
-              <span className="text-xs text-muted-foreground flex-shrink-0">View:</span>
-              <button
-                onClick={resetToJustMe}
-                className={`text-xs px-2 py-0.5 rounded border transition-colors flex-shrink-0 ${
-                  justMe ? 'bg-primary text-primary-foreground border-primary' : 'border-surface-border hover:bg-surface-card'
-                }`}
-              >
-                Just me
-              </button>
-              {staffList
-                .filter((s) => s.id !== user?.id)
-                .map((s, idx) => {
-                  const color = getStaffColor(s.id, idx)
-                  const isSelected = selectedStaff.includes(s.id)
-                  const isEditingThis = editingStaffColor === s.id
-                  return (
-                    <div key={s.id} className="flex items-center gap-1 flex-shrink-0 relative">
-                      <div
-                        className="w-3 h-3 rounded-full cursor-pointer border border-white/30 flex-shrink-0"
-                        style={{ backgroundColor: color }}
-                        onClick={() => setEditingStaffColor(isEditingThis ? null : s.id)}
-                      />
-                      {isEditingThis && (
-                        <ColorPicker
-                          value={color}
-                          onChange={(c) => patchStaffColor.mutate({ user_id: s.id, color: c })}
-                          onClose={() => setEditingStaffColor(null)}
-                        />
-                      )}
-                      <button
-                        onClick={() => toggleStaff(s.id)}
-                        className={`text-xs px-2 py-0.5 rounded border transition-colors ${
-                          isSelected ? 'border-transparent text-white' : 'border-surface-border hover:bg-surface-card'
-                        }`}
-                        style={isSelected ? { backgroundColor: color } : undefined}
-                      >
-                        {s.full_name ?? s.email}
-                      </button>
-                    </div>
-                  )
-                })}
-            </div>
-          )}
-
-          {/* Calendar view */}
-          <div className="flex-1 overflow-hidden flex flex-col">
-            {view === 'month' && <MonthView />}
-            {view === 'week' && <WeekView />}
-            {view === 'agenda' && <AgendaView />}
-          </div>
-        </div>
       </div>
     </AppShell>
   )
