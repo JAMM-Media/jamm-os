@@ -30,191 +30,177 @@ All models must be imported in migrations/env.py or autogenerate silently misses
 
 ---
 
-# PHASE INSTRUCTIONS — WEEK 3, RUN 3 OF 3: IRS ACK FILE PARSER
+# PHASE INSTRUCTIONS — WEEK 4: GMAIL BEHAVIORAL SIGNAL EXTRACTION
 
 ## Context
-This run builds the .ack file parser endpoint and the frontend drag-and-drop UI.
-The Engagement model already has efiled_at, irs_confirmation_number, and
-is_efileable from Run 2. The acknowledged status is already in EngagementStatus.
-No migration needed — this run is a new service file, a new endpoint, and
-frontend UI only.
+Gmail OAuth is already complete. The integration record exists with encrypted
+access and refresh tokens stored on the Integration model. The scope granted
+is gmail.metadata only — no email content is ever accessible or stored.
+google-api-python-client and google-auth-oauthlib are already installed.
+No migration needed. No frontend changes. One new service file, one new
+cron job registration in main.py.
 
-The .ack file is a small structured text file produced by tax software after
-the IRS accepts or rejects an e-filed return. It contains one record per return.
-Different tax software produces slightly different formats but all share the same
-core fields on each line, typically pipe-delimited or fixed-width.
-
-Security rules for this endpoint — non-negotiable:
-- Parse only: confirmation number, form type, accept/reject status, and tax ID
-- Tax ID is used as a lookup key only — find the matching client, then discard it
-- Tax ID must never be written to any column, log, or behavioral event metadata
-- Raw file contents must never be stored anywhere
-- The behavioral event log entry contains only: confirmation number, form type,
-  status, and engagement ID — never the tax ID
+Security rules — non-negotiable:
+- Never read, store, or log email subject lines, body content, or any
+  message content field
+- Never store sender or recipient email addresses beyond what is needed
+  to match a client record — discard immediately after matching
+- The behavioral event log entries contain only: signal type, computed
+  numeric value, client_id, and firm_id — never raw email metadata
+- If the Gmail API returns an error for any firm, log the error and
+  continue to the next firm — never surface Gmail errors to users
 
 ---
 
 ## Pre-task checkpoint
 git add -A
-git commit -m "checkpoint before week 3 ack parser"
+git commit -m "checkpoint before week 4 gmail signal extraction"
 
 ---
 
 ## VERIFY BEFORE STARTING
-grep -n "efiled_at\|irs_confirmation_number\|is_efileable" app/models/engagement.py
-grep -n "acknowledged\|EFILEABLE_ENGAGEMENT_TYPES" app/core/enums.py
-Paste both outputs before touching anything.
+grep -n "encrypt_token\|decrypt_token" app/services/token_encryption.py
+grep -n "GMAIL_SCOPES\|class GmailService\|gmail.metadata" app/services/gmail_service.py
+grep -n "APScheduler\|add_job\|scheduler" app/main.py
+Paste all three outputs before touching anything.
 
 ---
 
-## Change 1: Create app/services/ack_parser_service.py
+## Change 1: Create app/services/gmail_signals_service.py
 
 Create this file from scratch. Path comment at top.
 
-This service does one thing: parse a .ack file and return a list of structured
-records. It never touches the database. It never receives or returns a tax ID
-after the initial parse — the tax ID is returned only so the calling endpoint
-can use it as a lookup key and then discard it.
+This service reads Gmail thread metadata for all firms with a connected
+Gmail integration and fires behavioral events. It never reads message
+content. It uses internalDate (millisecond timestamp on each message)
+and thread structure only.
 
-The service must handle two common .ack file formats:
+### Token refresh helper
+Write a function get_fresh_credentials(integration: Integration) that:
+- Decrypts the access token using decrypt_token from token_encryption
+- Decrypts the refresh token using decrypt_token from token_encryption
+- Builds a google.oauth2.credentials.Credentials object
+- If token_expires_at is in the past or within 5 minutes of expiry,
+  uses google.auth.transport.requests.Request() to refresh the token
+- Returns the refreshed Credentials object
+- Never logs the token values
 
-FORMAT A — pipe-delimited lines:
-Each line looks like:
-RECTYPE|TAXPAYER_ID|CONFIRMATION_NUM|FORM_TYPE|STATUS|TAX_YEAR
-Example:
-ACK|123456789|20240415123456789|1040|A|2023
+### Signal extraction function
+Write a function extract_gmail_signals(firm_id: UUID, db: Session) that:
 
-FORMAT B — fixed-width or key=value lines:
-Some software produces lines like:
-TaxpayerID=123456789 ConfirmationNum=20240415123456789 FormType=1040 Status=A
+1. Loads the Gmail integration for this firm
+   - If not found or status != "connected", return immediately
+   - Never raise — just return
 
-The parser should:
-1. Detect which format the file uses based on whether lines contain pipe characters
-2. For each valid record line, extract:
-   - taxpayer_id (string, 9 digits, used for lookup only)
-   - confirmation_number (string)
-   - form_type (string, e.g. "1040", "1120")
-   - status (string: "A" = accepted, "R" = rejected)
-   - tax_year (string or int, optional)
-3. Skip blank lines and header lines
-4. Return a list of dicts with these keys:
-   taxpayer_id, confirmation_number, form_type, status, tax_year
-5. Raise a ValueError with a plain English message if the file cannot be parsed
-   or contains no valid records
+2. Calls get_fresh_credentials(integration)
+   - If this fails, log the error type only (not the token), return
 
-Function signature:
-def parse_ack_file(contents: str) -> list[dict]:
+3. Builds a Gmail API service using googleapiclient.discovery.build(
+   "gmail", "v1", credentials=credentials)
 
----
+4. Calls the Gmail API to list threads from the last 30 days:
+   service.users().threads().list(
+       userId="me",
+       maxResults=100,
+       q="after:" + thirty_days_ago_date_string
+   ).execute()
 
-## Change 2: Create app/api/ack_parser.py
+5. For each thread returned:
+   a. Call service.users().threads().get(
+          userId="me",
+          id=thread_id,
+          format="metadata",
+          metadataHeaders=["From", "To", "Date"]
+      ).execute()
+   b. Extract the list of messages in the thread
+   c. From each message extract internalDate (divide by 1000 for seconds)
+      and the From header value
+   d. Determine if this thread involves a client:
+      - Get all From addresses across all messages in the thread
+      - Query Client where Client.email is in those addresses
+        AND Client.firm_id == firm_id
+      - If no client found: skip this thread, discard all addresses
+      - If client found: use client.id for all event logging,
+        discard the email addresses immediately
+   e. Compute signals for this thread:
+      - thread_depth: count of messages in the thread
+      - last_contact_date: most recent internalDate in the thread
+        converted to a date string
+      - response_lag_hours: if there are 2 or more messages,
+        find pairs where sender alternates (firm then client or
+        client then firm) and compute average hours between pairs.
+        If only 1 message, response_lag_hours is None.
 
-Create this router from scratch. Path comment at top.
-Register it in app/main.py under the prefix /ack-parser.
+6. After processing all threads, aggregate per client:
+   - contact_frequency: count of distinct threads involving this client
+     in the last 30 days
+   - avg_response_lag_hours: average response lag across all threads
+     for this client where lag was calculable
+   - last_contact_date: most recent last_contact_date across all threads
 
-Single endpoint: POST /ack-parser/upload
-- Auth: require_manager_or_above
-- Accepts: UploadFile
-- File size limit: 512KB — reject anything larger with a 400
-- File type check: filename must end in .ack — reject anything else with a 400
-- Encoding: read as bytes, decode as utf-8 with errors="replace"
+7. Fire one behavioral event per client with signals found:
+   Use log_event with a fresh SessionLocal() in try/finally.
+   event_type: "gmail.signals_extracted"
+   entity_type: "client"
+   entity_id: client.id
+   actor_type: "system"
+   metadata:
+     contact_frequency: int
+     avg_response_lag_hours: float or None
+     last_contact_date: string or None
+     thread_count: int
+   NEVER include email addresses in metadata.
 
-Processing logic:
-1. Call parse_ack_file(contents) from the service
-2. For each record returned:
-   a. Use taxpayer_id to find the matching Client in this firm:
-      query Client where Client.firm_id == current_firm.id
-      and Client.tax_id == taxpayer_id
-      Do not search across firms. Do not log the taxpayer_id anywhere.
-   b. If no client found: add to unmatched list with confirmation_number
-      and form_type only — never include taxpayer_id in the response
-   c. If client found: find the most recent non-archived engagement for
-      that client where engagement.is_efileable is True
-   d. If no efileable engagement found: add to unmatched list
-   e. If engagement found:
-      - Set engagement.efiled_at = datetime.now(timezone.utc)
-      - Set engagement.irs_confirmation_number = record["confirmation_number"]
-      - If record["status"] == "A": set engagement.status = EngagementStatus.acknowledged
-      - If record["status"] == "R": leave status unchanged, flag as rejected
-      - db.commit()
-      - Fire behavioral event (fire-and-forget, own session):
-        event_type: "engagement.efiled"
-        entity_type: "engagement"
-        entity_id: engagement.id
-        actor_type: "staff"
-        metadata: confirmation_number, form_type, status (A or R), tax_year
-        NEVER include taxpayer_id in metadata
-      - Write audit log entry: action "engagement.efiled"
-3. Return a response with:
-   - matched: count of engagements successfully updated
-   - acknowledged: count where status set to acknowledged
-   - rejected: count where IRS returned rejection
-   - unmatched: list of dicts with confirmation_number and form_type only
-   - total_records: total records found in the file
+8. Return a summary dict:
+   firms_processed: 1
+   clients_with_signals: count
+   threads_processed: count
+   errors: list of error type strings (never message content)
 
----
-
-## Change 3: Register the router in app/main.py
-
-Find where other routers are registered in app/main.py.
-Add:
-from app.api.ack_parser import router as ack_parser_router
-app.include_router(ack_parser_router, prefix="/api/v1", tags=["ACK Parser"])
-
----
-
-## Change 4: Frontend drag-and-drop component
-
-Create a new file:
-frontend/src/components/engagements/AckFileUploader.tsx
-
-This is a self-contained drag-and-drop upload component.
-It renders a drop zone that accepts .ack files only.
-On drop or file select:
-- Validate file extension is .ack before uploading
-- Show a loading state while the upload is in progress
-- POST the file to /api/v1/ack-parser/upload using FormData
-- On success: show a summary of the result using the response fields:
-  matched count, acknowledged count, rejected count, and a list of
-  unmatched confirmation numbers if any
-- On error: show the error message from the API response
-- Allow the user to upload another file after a result is shown
-
-Styling: use the existing JAMM PX design system tokens.
-Drop zone: brand blue dashed border, muted background, centered text.
-Success state: green status indicator with counts.
-Rejected or unmatched: amber warning with details.
+### Batch runner function
+Write a function run_gmail_signals_for_all_firms() that:
+- Creates its own SessionLocal() in try/finally
+- Queries all Integration records where provider == "gmail"
+  and status == "connected"
+- Calls extract_gmail_signals(firm_id, db) for each
+- Logs a summary of results
+- Never raises — catches all exceptions per firm and continues
+This is the function the cron job calls.
 
 ---
 
-## Change 5: Add AckFileUploader to the Engagements page
+## Change 2: Register the cron job in app/main.py
 
-Find the engagements list page in the frontend.
-It is likely at:
-frontend/src/app/(dashboard)/engagements/page.tsx
+Find where APScheduler jobs are registered in app/main.py.
+Add one new job:
 
-Add the AckFileUploader component in a collapsible or card section
-below the main engagements table with the label:
-"IRS Acknowledgment File"
+from app.services.gmail_signals_service import run_gmail_signals_for_all_firms
 
-Import AckFileUploader and render it. Keep it visually secondary
-to the main engagements list — it should not dominate the page.
+Register it to run daily at 6:00 AM UTC:
+scheduler.add_job(
+    run_gmail_signals_for_all_firms,
+    "cron",
+    hour=6,
+    minute=0,
+    id="gmail_signals_daily",
+    replace_existing=True,
+)
+
+Place it alongside the other daily cron jobs already registered.
 
 ---
 
 ## Verify after all changes
-grep -n "def parse_ack_file\|taxpayer_id\|confirmation_number" app/services/ack_parser_service.py
-grep -n "def upload_ack\|parse_ack_file\|unmatched" app/api/ack_parser.py
-grep -n "ack_parser_router\|ack-parser" app/main.py
-python -m py_compile app/services/ack_parser_service.py
-python -m py_compile app/api/ack_parser.py
-All compiles must pass before deploying.
+grep -n "def extract_gmail_signals\|def run_gmail_signals\|def get_fresh_credentials" app/services/gmail_signals_service.py
+grep -n "gmail_signals_daily\|run_gmail_signals" app/main.py
+python -m py_compile app/services/gmail_signals_service.py
+Compile must pass before deploying.
 
 ---
 
 ## Deploy sequence
 git add -A
-git commit -m "week 3 ack file parser endpoint and frontend uploader"
+git commit -m "week 4 gmail behavioral signal extraction"
 git push origin main
 Then on the droplet:
 git pull origin main
