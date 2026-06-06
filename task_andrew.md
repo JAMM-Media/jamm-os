@@ -30,91 +30,45 @@ All models must be imported in migrations/env.py or autogenerate silently misses
 
 ---
 
-# PHASE INSTRUCTIONS — SECURITY TAB UI FIXES
+# PHASE INSTRUCTIONS — TOGGLE DOT SIZE FIX
 
 ## Context
-Three bugs to fix in SecurityTab.tsx only.
-No backend changes. No other files touched.
+One fix only in frontend/src/components/settings/SecurityTab.tsx.
+No other files. No backend. No migration.
 
----
-
-## Pre-task checkpoint
-git add -A
-git commit -m "checkpoint before security tab ui fixes"
+The toggle track is w-9 h-5 (36x20px).
+The dot is currently w-4 h-4 (16px) which is too large for the track.
+Positions translate-x-[19px] off and translate-x-1 on are also wrong.
 
 ---
 
 ## VERIFY BEFORE STARTING
-grep -n "translate-x-4\|translate-x-0\|w-16\|Number(e.target" frontend/src/components/settings/SecurityTab.tsx
+grep -n "translate-x-\|w-4 h-4\|absolute top" frontend/src/components/settings/SecurityTab.tsx
 Paste output before touching anything.
 
 ---
 
-## Fix 1: Toggle sliding outside container
+## Fix: Correct dot size and position
 
-Find every toggle button in the password policy section.
-The toggle button currently has:
-  className={cn('relative w-9 h-5 rounded-full transition-colors flex-shrink-0', ...)}
+Find exactly:
+                  'absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform',
+                  value ? 'translate-x-[19px]' : 'translate-x-1',
 
-Add overflow-hidden to the button className so the sliding dot stays clipped:
-  className={cn('relative w-9 h-5 rounded-full transition-colors flex-shrink-0 overflow-hidden', ...)}
-
-There are three toggle buttons (uppercase, number, special character).
-Apply overflow-hidden to all three.
+Replace with:
+                  'absolute top-[3px] left-[3px] w-3.5 h-3.5 rounded-full bg-white shadow transition-transform',
+                  value ? 'translate-x-[16px]' : 'translate-x-0',
 
 ---
 
-## Fix 2: Number input text too faint
-
-Find every number input in the password policy section.
-There are two: minLength and maxFailedAttempts.
-
-Both currently have className containing bg-white.
-Add text-[#1F3148] to each input className so the text is visible:
-
-Change:
-  className="w-16 text-center text-[13px] rounded-[6px] border border-[#C8CDD6] bg-white px-2 py-1 outline-none focus:border-[#1F3148]"
-
-To:
-  className="w-16 text-center text-[13px] text-[#1F3148] rounded-[6px] border border-[#C8CDD6] bg-white px-2 py-1 outline-none focus:border-[#1F3148]"
-
-Apply to both number inputs.
-
----
-
-## Fix 3: Number input showing 0 when typing double digits
-
-The issue is that Number("12") works fine but the controlled input
-loses the value mid-type because Number("1") then Number("12") causes
-a re-render that resets to 0 in some cases.
-
-Fix: change both onChange handlers to use parseInt with a fallback:
-
-For minLength input, change:
-  onChange={(e) => setMinLength(Number(e.target.value))}
-To:
-  onChange={(e) => { const v = parseInt(e.target.value, 10); if (!isNaN(v)) setMinLength(v) }}
-
-For maxFailedAttempts input, change:
-  onChange={(e) => setMaxFailedAttempts(Number(e.target.value))}
-To:
-  onChange={(e) => { const v = parseInt(e.target.value, 10); if (!isNaN(v)) setMaxFailedAttempts(v) }}
-
----
-
-## Verify after all changes
-grep -n "overflow-hidden\|text-\[#1F3148\]\|parseInt" frontend/src/components/settings/SecurityTab.tsx
-Confirm overflow-hidden appears 3 times, text-[#1F3148] appears on both inputs, parseInt appears twice.
-
-Check TypeScript:
+## Verify
+grep -n "translate-x-\[16px\]\|w-3.5 h-3.5\|left-\[3px\]" frontend/src/components/settings/SecurityTab.tsx
+All three must appear.
 cd frontend
 npx tsc --noEmit
-Zero errors required before deploying.
 
 ---
 
-## Deploy sequence
+## Deploy
 git add -A
-git commit -m "security tab password policy ui fixes"
+git commit -m "fix toggle dot size and position"
 git push origin main
-Frontend deploys automatically via Vercel. No backend deploy needed.
