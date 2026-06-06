@@ -23,6 +23,9 @@ export default function ClientsPage() {
   const [localClients, setLocalClients] = useState<Client[]>([])
   const [modalOpen, setModalOpen] = useState(false)
   const [prefillName, setPrefillName] = useState<string | undefined>()
+  const [prefillEmail, setPrefillEmail] = useState<string | undefined>()
+  const [prefillPhone, setPrefillPhone] = useState<string | undefined>()
+  const [prefillEntityType, setPrefillEntityType] = useState<string | undefined>()
 
   useEffect(() => {
     const raw = sessionStorage.getItem('jamm_concierge_pending')
@@ -36,6 +39,9 @@ export default function ClientsPage() {
       if (action.modal === 'new-client') {
         sessionStorage.removeItem('jamm_concierge_pending')
         if (action.prefill?.name) setPrefillName(action.prefill.name)
+        if (action.prefill?.email) setPrefillEmail(action.prefill.email)
+        if (action.prefill?.phone) setPrefillPhone(action.prefill.phone)
+        if (action.prefill?.entityType) setPrefillEntityType(action.prefill.entityType)
         setModalOpen(true)
       }
     } catch {
@@ -47,6 +53,9 @@ export default function ClientsPage() {
     return onConciergeAction((action) => {
       if (action.modal === 'new-client') {
         setPrefillName(action.prefill?.name)
+        setPrefillEmail(action.prefill?.email)
+        setPrefillPhone(action.prefill?.phone)
+        setPrefillEntityType(action.prefill?.entityType)
         setModalOpen(true)
       }
     })
@@ -189,9 +198,12 @@ export default function ClientsPage() {
         {/* Modal */}
         <NewClientModal
           open={modalOpen}
-          onClose={() => { setModalOpen(false); setPrefillName(undefined) }}
+          onClose={() => { setModalOpen(false); setPrefillName(undefined); setPrefillEmail(undefined); setPrefillPhone(undefined); setPrefillEntityType(undefined) }}
           onAdd={handleAddClient}
           initialName={prefillName}
+          initialEmail={prefillEmail}
+          initialPhone={prefillPhone}
+          initialEntityType={prefillEntityType}
         />
 
       </div>

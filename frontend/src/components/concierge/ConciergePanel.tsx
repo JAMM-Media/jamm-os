@@ -101,6 +101,8 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
   const [suggestions, setSuggestions] = useState<string[]>([])
   const [formDirty, setFormDirtyState] = useState(false)
   const [statusMessage, setStatusMessage] = useState('')
+  const [pasteMode, setPasteMode] = useState(false)
+  const [extracting, setExtracting] = useState(false)
 
   // Keep a ref so the async sendMessages callback always reads current value.
   const autopilotRef = useRef(false)
@@ -342,6 +344,69 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
     const newThread = [...messages, userMsg]
     setMessages(newThread)
     await sendMessages(newThread)
+  }
+
+  async function handlePasteSend() {
+    const text = input.trim()
+    if (!text || extracting) return
+    setExtracting(true)
+    setPasteMode(false)
+    setInput('')
+    const userMsg: Message = { role: 'user', content: `[Smart Paste] ${text}` }
+    setMessages((prev) => [...prev, userMsg])
+    try {
+      const res = await api.post('/concierge/extract-client', { text })
+      const extracted = res.data?.extracted
+      if (!extracted || !extracted.name) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: 'concierge',
+            content: 'I could not find a client name in that text. Try pasting text that includes at least a full name.',
+          },
+        ])
+        return
+      }
+      const parts: string[] = []
+      if (extracted.name) parts.push(`Name: ${extracted.name}`)
+      if (extracted.email) parts.push(`Email: ${extracted.email}`)
+      if (extracted.phone) parts.push(`Phone: ${extracted.phone}`)
+      if (extracted.entity_type) parts.push(`Type: ${extracted.entity_type}`)
+      if (extracted.company_name) parts.push(`Company: ${extracted.company_name}`)
+      const summary = parts.join('\n')
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: 'concierge',
+          content: `Here is what I found:\n\n${summary}\n\nTurn on Autopilot and I will open the New Client form with these fields pre-filled. Or navigate to Clients and select New Client to enter them manually.`,
+        },
+      ])
+      if (autopilotRef.current) {
+        const action: ConciergeAction = {
+          type: 'navigate-and-open',
+          route: '/clients',
+          modal: 'new-client',
+          prefill: {
+            name: extracted.name ?? '',
+            email: extracted.email ?? '',
+            phone: extracted.phone ?? '',
+            entityType: extracted.entity_type ?? '',
+            companyName: extracted.company_name ?? '',
+          },
+        }
+        void executeAction(action)
+      }
+    } catch {
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: 'concierge',
+          content: 'Something went wrong extracting client data. Please try again.',
+        },
+      ])
+    } finally {
+      setExtracting(false)
+    }
   }
 
   function handleSuggestion(label: string) {
@@ -723,12 +788,32 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
               onInput={handleInput}
-              placeholder="Ask anything about JAMM PX..."
+              placeholder={pasteMode ? 'Paste client data here...' : 'Ask anything about JAMM PX...'}
               rows={1}
               disabled={streaming}
               className="flex-1 rounded-[6px] border border-[0.5px] border-[#C8CDD6] focus:border-[#4A7FA5] focus:outline-none bg-[#F7F7F8] dark:bg-[#2D2D2D] text-[13px] text-[#374151] dark:text-[#9CA3AF] placeholder:text-[#9CA3AF] p-2.5 resize-none transition-colors disabled:opacity-60"
               style={{ minHeight: 36, maxHeight: 96, overflowY: 'auto' }}
             />
+            <button
+              onClick={() => {
+                if (pasteMode) {
+                  handlePasteSend()
+                } else {
+                  setPasteMode(true)
+                  setTimeout(() => textareaRef.current?.focus(), 50)
+                }
+              }}
+              disabled={extracting}
+              aria-label="Smart Paste"
+              title="Paste client data to extract and pre-fill"
+              className="h-9 w-9 rounded-[6px] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] flex items-center justify-center transition-all disabled:opacity-40 flex-shrink-0 bg-white dark:bg-[#2D2D2D] hover:border-[#4A7FA5] text-[#6B7280] hover:text-[#4A7FA5]"
+              style={pasteMode ? { borderColor: '#4A7FA5', color: '#4A7FA5' } : {}}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
+                <rect x="8" y="2" width="8" height="4" rx="1" ry="1"/>
+              </svg>
+            </button>
             <button
               onClick={() => handleSend()}
               disabled={!input.trim() || streaming}
