@@ -30,187 +30,81 @@ All models must be imported in migrations/env.py or autogenerate silently misses
 
 ---
 
-# PHASE INSTRUCTIONS — PASSWORD POLICY + SESSION TIMEOUT — FRONTEND
+# PHASE INSTRUCTIONS — SECURITY TAB UI FIXES
 
 ## Context
-No backend changes. Frontend only.
-The SecurityTab already exists at:
-frontend/src/components/settings/SecurityTab.tsx
-
-It currently has one section: Staff login policy (radio buttons for password/magic link/either).
-We are adding two new sections below it:
-1. Password policy — min length, require uppercase, require number, require special char, max failed attempts
-2. Session timeout — dropdown selecting token expiry duration
-
-Both sections read from and write to PATCH /users/firm/settings using the existing
-settingsApi pattern already used in the file.
-
-The settings keys are:
-- password_policy: { min_length, require_uppercase, require_number, require_special, max_failed_attempts }
-- session_timeout_minutes: number
+Three bugs to fix in SecurityTab.tsx only.
+No backend changes. No other files touched.
 
 ---
 
 ## Pre-task checkpoint
 git add -A
-git commit -m "checkpoint before password policy frontend"
+git commit -m "checkpoint before security tab ui fixes"
 
 ---
 
 ## VERIFY BEFORE STARTING
-grep -n "settingsApi\|staff_auth_policy\|handleSave\|getMyFirm" frontend/src/components/settings/SecurityTab.tsx
+grep -n "translate-x-4\|translate-x-0\|w-16\|Number(e.target" frontend/src/components/settings/SecurityTab.tsx
 Paste output before touching anything.
 
 ---
 
-## Change 1: Rewrite SecurityTab.tsx to add two new sections
+## Fix 1: Toggle sliding outside container
 
-Read the full current SecurityTab.tsx before making any changes.
-Keep the existing Staff login policy section exactly as it is.
-Add two new sections below it separated by a divider line.
+Find every toggle button in the password policy section.
+The toggle button currently has:
+  className={cn('relative w-9 h-5 rounded-full transition-colors flex-shrink-0', ...)}
 
-### New state to add
-Add these state variables alongside the existing policy state:
+Add overflow-hidden to the button className so the sliding dot stays clipped:
+  className={cn('relative w-9 h-5 rounded-full transition-colors flex-shrink-0 overflow-hidden', ...)}
 
-  // Password policy
-  const [minLength, setMinLength] = useState(8)
-  const [requireUppercase, setRequireUppercase] = useState(false)
-  const [requireNumber, setRequireNumber] = useState(false)
-  const [requireSpecial, setRequireSpecial] = useState(false)
-  const [maxFailedAttempts, setMaxFailedAttempts] = useState(5)
-  const [savingPassword, setSavingPassword] = useState(false)
+There are three toggle buttons (uppercase, number, special character).
+Apply overflow-hidden to all three.
 
-  // Session timeout
-  const [sessionTimeout, setSessionTimeout] = useState(480)
-  const [savingTimeout, setSavingTimeout] = useState(false)
+---
 
-### Update the useEffect that loads firm data
-The existing useEffect calls settingsApi.getMyFirm() and reads staff_auth_policy.
-Extend it to also read password_policy and session_timeout_minutes from the response:
+## Fix 2: Number input text too faint
 
-  const passwordPolicy = data.settings?.password_policy || {}
-  setMinLength(passwordPolicy.min_length ?? 8)
-  setRequireUppercase(passwordPolicy.require_uppercase ?? false)
-  setRequireNumber(passwordPolicy.require_number ?? false)
-  setRequireSpecial(passwordPolicy.require_special ?? false)
-  setMaxFailedAttempts(passwordPolicy.max_failed_attempts ?? 5)
-  setSessionTimeout(data.settings?.session_timeout_minutes ?? 480)
+Find every number input in the password policy section.
+There are two: minLength and maxFailedAttempts.
 
-Note: the firm settings are nested under data.settings in the API response.
-Check how the existing code reads staff_auth_policy to confirm the exact
-response shape before writing this — it may be at data.staff_auth_policy
-not data.settings.staff_auth_policy.
+Both currently have className containing bg-white.
+Add text-[#1F3148] to each input className so the text is visible:
 
-### Save function for password policy
-Add an async function handleSavePasswordPolicy():
-  setSavingPassword(true)
-  try {
-    await settingsApi.updateFirmSettings({
-      password_policy: {
-        min_length: minLength,
-        require_uppercase: requireUppercase,
-        require_number: requireNumber,
-        require_special: requireSpecial,
-        max_failed_attempts: maxFailedAttempts,
-      }
-    })
-    toast.success('Password policy saved.')
-  } catch {
-    toast.error('Could not save. Please try again.')
-  } finally {
-    setSavingPassword(false)
-  }
+Change:
+  className="w-16 text-center text-[13px] rounded-[6px] border border-[#C8CDD6] bg-white px-2 py-1 outline-none focus:border-[#1F3148]"
 
-### Save function for session timeout
-Add an async function handleSaveSessionTimeout(minutes: number):
-  setSessionTimeout(minutes)
-  setSavingTimeout(true)
-  try {
-    await settingsApi.updateFirmSettings({ session_timeout_minutes: minutes })
-    toast.success('Session timeout updated.')
-  } catch {
-    toast.error('Could not save. Please try again.')
-  } finally {
-    setSavingTimeout(false)
-  }
+To:
+  className="w-16 text-center text-[13px] text-[#1F3148] rounded-[6px] border border-[#C8CDD6] bg-white px-2 py-1 outline-none focus:border-[#1F3148]"
 
-### Check settingsApi for updateFirmSettings
-The settingsApi may not have an updateFirmSettings method yet.
-grep for it in frontend/src/lib/api/settingsApi.ts.
-If it does not exist, add it:
-  updateFirmSettings: (payload: Record<string, unknown>) =>
-    api.patch('/users/firm/settings', payload),
+Apply to both number inputs.
 
-### Section 2: Password Policy UI
+---
 
-Add a divider between sections:
-  <div className="border-t border-[0.5px] border-[#C8CDD6] dark:border-[#484848] my-6" />
+## Fix 3: Number input showing 0 when typing double digits
 
-Then add this section:
+The issue is that Number("12") works fine but the controlled input
+loses the value mid-type because Number("1") then Number("12") causes
+a re-render that resets to 0 in some cases.
 
-  <div>
-    <p className="text-[13px] font-[500] text-brand dark:text-[#EDEEF0] mb-1">
-      Password policy
-    </p>
-    <p className="text-[12px] text-[#6B7280] mb-4">
-      Set requirements for staff passwords at your firm.
-    </p>
+Fix: change both onChange handlers to use parseInt with a fallback:
 
-    Minimum length row:
-    Label "Minimum length" left, number input right (width 64px, value minLength,
-    min=6 max=32, onChange sets minLength).
+For minLength input, change:
+  onChange={(e) => setMinLength(Number(e.target.value))}
+To:
+  onChange={(e) => { const v = parseInt(e.target.value, 10); if (!isNaN(v)) setMinLength(v) }}
 
-    Four toggle rows below it, each with label left and a toggle switch right:
-    - "Require uppercase letter" — requireUppercase
-    - "Require number" — requireNumber
-    - "Require special character" — requireSpecial
-
-    Max failed attempts row:
-    Label "Lock account after N failed attempts" left,
-    number input right (width 64px, value maxFailedAttempts, min=3 max=20).
-    Muted helper text below: "Account is locked for 30 minutes after this many consecutive failed logins."
-
-    Save button right-aligned below:
-    "Save password policy" — brand blue background, white text, 32px height,
-    disabled and showing spinner while savingPassword is true.
-  </div>
-
-Use the same toggle switch component pattern already in the file if one exists,
-or use a simple checkbox-based toggle matching the design system.
-All rows use consistent spacing: 12px padding, flex row, items-center, justify-between.
-
-### Section 3: Session Timeout UI
-
-Add another divider, then:
-
-  <div>
-    <p className="text-[13px] font-[500] text-brand dark:text-[#EDEEF0] mb-1">
-      Session timeout
-    </p>
-    <p className="text-[12px] text-[#6B7280] mb-4">
-      How long staff stay logged in before being asked to sign in again.
-    </p>
-
-    A set of radio-style option cards (same pattern as the existing login policy cards):
-    Options:
-    - value: 30,   label: "30 minutes",  description: "High security. Staff sign in frequently."
-    - value: 60,   label: "1 hour",      description: "Recommended for shared workstations."
-    - value: 120,  label: "2 hours",     description: "Balanced security for most firms."
-    - value: 240,  label: "4 hours",     description: "Standard for dedicated work machines."
-    - value: 480,  label: "8 hours",     description: "Default. One sign-in per workday."
-    - value: 1440, label: "24 hours",    description: "Convenient for trusted devices."
-
-    Selecting any option immediately calls handleSaveSessionTimeout(value).
-    Show saving spinner next to selected option while savingTimeout is true.
-    Amber note at bottom: "Changes take effect on the next login. Active sessions are not affected."
-  </div>
+For maxFailedAttempts input, change:
+  onChange={(e) => setMaxFailedAttempts(Number(e.target.value))}
+To:
+  onChange={(e) => { const v = parseInt(e.target.value, 10); if (!isNaN(v)) setMaxFailedAttempts(v) }}
 
 ---
 
 ## Verify after all changes
-grep -n "handleSavePasswordPolicy\|handleSaveSessionTimeout\|minLength\|sessionTimeout" frontend/src/components/settings/SecurityTab.tsx
-grep -n "updateFirmSettings" frontend/src/lib/api/settingsApi.ts
-Both must return results.
+grep -n "overflow-hidden\|text-\[#1F3148\]\|parseInt" frontend/src/components/settings/SecurityTab.tsx
+Confirm overflow-hidden appears 3 times, text-[#1F3148] appears on both inputs, parseInt appears twice.
 
 Check TypeScript:
 cd frontend
@@ -221,7 +115,6 @@ Zero errors required before deploying.
 
 ## Deploy sequence
 git add -A
-git commit -m "password policy and session timeout frontend"
+git commit -m "security tab password policy ui fixes"
 git push origin main
-Frontend deploys automatically via Vercel.
-No backend deploy needed.
+Frontend deploys automatically via Vercel. No backend deploy needed.

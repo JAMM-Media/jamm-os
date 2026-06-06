@@ -22924,6 +22924,239 @@ export default function AutomationEditModal({ rule, onClose, onSaved }: Props) {
 
 
 ================================================================================
+FILE: frontend\src\components\settings\AutomationSimulateModal.tsx
+================================================================================
+// path: frontend/src/components/settings/AutomationSimulateModal.tsx
+'use client'
+
+import { useState } from 'react'
+import { X, Loader2, CheckCircle } from 'lucide-react'
+import api from '@/lib/api'
+
+type SimulateRule = {
+  id: string
+  name: string
+  trigger_event: string
+  is_enabled: boolean
+}
+
+type ActionSummary = {
+  type: string
+  order: number
+}
+
+type SimulateResult = {
+  would_trigger: boolean
+  conditions_evaluated: number
+  conditions_passed: boolean
+  trigger_event: string
+  actions_that_would_execute: ActionSummary[]
+  rule_is_enabled: boolean
+}
+
+type FieldDef = { key: string; label: string; defaultValue: string }
+
+function getFields(trigger_event: string): FieldDef[] {
+  if (trigger_event.includes('engagement')) {
+    return [
+      { key: 'status', label: 'Status', defaultValue: 'completed' },
+      { key: 'engagement_type', label: 'Engagement Type', defaultValue: 'tax_return_1040' },
+    ]
+  }
+  if (trigger_event.includes('invoice')) {
+    return [
+      { key: 'status', label: 'Status', defaultValue: 'overdue' },
+      { key: 'amount', label: 'Amount', defaultValue: '500' },
+    ]
+  }
+  if (trigger_event.includes('document')) {
+    return [
+      { key: 'status', label: 'Status', defaultValue: 'completed' },
+      { key: 'item_count', label: 'Item Count', defaultValue: '3' },
+    ]
+  }
+  if (trigger_event.includes('client')) {
+    return [
+      { key: 'entity_type', label: 'Entity Type', defaultValue: 'individual' },
+    ]
+  }
+  return [
+    { key: 'event_type', label: 'Event Type', defaultValue: trigger_event },
+  ]
+}
+
+const inputClass =
+  'w-full h-9 px-3 rounded-[6px] text-[13px] bg-[#F7F7F8] dark:bg-[#2D2D2D] ' +
+  'border border-[0.5px] border-[#C8CDD6] focus:border-[#4A7FA5] focus:outline-none transition-colors'
+const labelClass =
+  'block text-[11px] font-[500] text-[#1F3148] dark:text-[#EDEEF0] mb-1'
+
+interface Props {
+  rule: SimulateRule
+  onClose: () => void
+}
+
+export default function AutomationSimulateModal({ rule, onClose }: Props) {
+  const fields = getFields(rule.trigger_event)
+  const [formValues, setFormValues] = useState<Record<string, string>>(
+    Object.fromEntries(fields.map((f) => [f.key, f.defaultValue])),
+  )
+  const [result, setResult] = useState<SimulateResult | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const handleTest = async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await api.post(`/automation-rules/${rule.id}/simulate`, {
+        mock_payload: formValues,
+      })
+      setResult(res.data)
+    } catch {
+      setError('Simulation failed. Please try again.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleReset = () => {
+    setResult(null)
+    setError(null)
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center"
+      style={{ backgroundColor: 'rgba(0,0,0,0.35)' }}
+      onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}
+    >
+      <div
+        className="w-[480px] max-w-[95vw] flex flex-col rounded-[10px] bg-[#EDEEF0] dark:bg-[#383838]"
+        style={{ border: '0.5px solid #C8CDD6' }}
+      >
+        {/* Header */}
+        <div
+          className="flex items-center justify-between px-4 py-3"
+          style={{ borderBottom: '0.5px solid #C8CDD6' }}
+        >
+          <span className="text-[13px] font-[500] text-[#1F3148] dark:text-[#EDEEF0]">
+            {rule.name}
+          </span>
+          <button
+            onClick={onClose}
+            className="text-[#6B7280] hover:text-[#1F3148] dark:hover:text-[#EDEEF0] transition-colors"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="px-4 py-3.5">
+          {result === null ? (
+            <div className="flex flex-col gap-3">
+              <p className="text-[12px] text-[#6B7280] dark:text-[#9CA3AF]">
+                Enter mock values to test whether this rule would trigger.
+              </p>
+              {fields.map((f) => (
+                <div key={f.key}>
+                  <label className={labelClass}>{f.label}</label>
+                  <input
+                    type="text"
+                    value={formValues[f.key] ?? ''}
+                    onChange={(e) =>
+                      setFormValues((prev) => ({ ...prev, [f.key]: e.target.value }))
+                    }
+                    className={inputClass}
+                  />
+                </div>
+              ))}
+              {error && (
+                <p className="text-[12px] text-[#991B1B]">{error}</p>
+              )}
+            </div>
+          ) : (
+            <div className="flex flex-col gap-3">
+              {result.would_trigger ? (
+                <div className="flex items-center gap-2">
+                  <CheckCircle className="w-6 h-6 text-green-500 shrink-0" />
+                  <span className="text-[15px] font-[600] text-green-600 dark:text-green-400">
+                    Would trigger
+                  </span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <span className="text-[22px] leading-none text-amber-500">&#x2717;</span>
+                  <span className="text-[15px] font-[600] text-amber-600 dark:text-amber-400">
+                    Would not trigger
+                  </span>
+                </div>
+              )}
+              <p className="text-[11px] text-[#6B7280] dark:text-[#9CA3AF]">
+                Rule is currently {result.rule_is_enabled ? 'enabled' : 'disabled'}
+              </p>
+              {result.would_trigger && result.actions_that_would_execute.length > 0 && (
+                <div>
+                  <p className="text-[11px] font-[500] text-[#1F3148] dark:text-[#EDEEF0] mb-2">
+                    Actions that would execute:
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {result.actions_that_would_execute.map((a) => (
+                      <span
+                        key={a.order}
+                        className="text-[11px] font-[500] bg-[#1F3148] text-white dark:bg-[#4A7FA5] px-2 py-0.5 rounded-full"
+                      >
+                        {a.type}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {!result.would_trigger && !result.rule_is_enabled && (
+                <p className="text-[12px] text-[#6B7280] dark:text-[#9CA3AF] italic">
+                  This rule is currently disabled
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div
+          className="flex items-center justify-between px-4 py-3"
+          style={{ borderTop: '0.5px solid #C8CDD6' }}
+        >
+          <button
+            onClick={onClose}
+            className="h-8 px-3 text-[12px] rounded-[6px] text-[#6B7280] hover:text-[#1F3148] dark:hover:text-[#EDEEF0] transition-colors"
+          >
+            Cancel
+          </button>
+          {result === null ? (
+            <button
+              onClick={handleTest}
+              disabled={loading}
+              className="h-8 px-4 text-[12px] font-[500] rounded-[6px] bg-[#1F3148] text-white hover:bg-[#2a4060] disabled:opacity-50 transition-colors flex items-center gap-1"
+            >
+              {loading && <Loader2 className="w-3 h-3 animate-spin" />}
+              Test Rule
+            </button>
+          ) : (
+            <button
+              onClick={handleReset}
+              className="h-8 px-4 text-[12px] font-[500] rounded-[6px] bg-[#1F3148] text-white hover:bg-[#2a4060] transition-colors"
+            >
+              Test again
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+
+================================================================================
 FILE: frontend\src\components\settings\AutomationsTab.tsx
 ================================================================================
 // path: frontend/src/components/settings/AutomationsTab.tsx
@@ -22936,6 +23169,7 @@ import api from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/lib/hooks/useAuth'
 import AutomationEditModal from './AutomationEditModal'
+import AutomationSimulateModal from './AutomationSimulateModal'
 
 type Action = {
   type: string
@@ -22947,6 +23181,7 @@ interface AutomationRule {
   id: string
   name: string
   description: string
+  trigger_event: string
   is_enabled: boolean
   execution_count: number
   last_executed_at: string | null
@@ -23021,6 +23256,8 @@ function RuleCard({
   canEdit,
   onToggle,
   onEdit,
+  onSimulate,
+  simulatingId,
 }: {
   rule: AutomationRule
   section: 'active' | 'available'
@@ -23028,6 +23265,8 @@ function RuleCard({
   canEdit: boolean
   onToggle: (rule: AutomationRule) => void
   onEdit: (rule: AutomationRule) => void
+  onSimulate: (rule: AutomationRule) => void
+  simulatingId: string | null
 }) {
   const [expanded, setExpanded] = useState(false)
   const showBadge =
@@ -23079,6 +23318,14 @@ function RuleCard({
       <div className="flex items-center gap-3 shrink-0">
         {canEdit && (
           <button
+            onClick={() => onSimulate(rule)}
+            className="text-[12px] text-[#6B7280] dark:text-[#9CA3AF] hover:text-brand dark:hover:text-[#4A7FA5] hover:underline focus:outline-none"
+          >
+            Test
+          </button>
+        )}
+        {canEdit && (
+          <button
             onClick={() => onEdit(rule)}
             className="text-[12px] text-brand dark:text-[#4A7FA5] hover:underline focus:outline-none"
           >
@@ -23109,6 +23356,7 @@ export default function AutomationsTab() {
   const [fetchError, setFetchError] = useState(false)
   const [pendingIds, setPendingIds] = useState<Set<string>>(new Set())
   const [editingRule, setEditingRule] = useState<AutomationRule | null>(null)
+  const [simulatingRule, setSimulatingRule] = useState<AutomationRule | null>(null)
 
   const fetchRules = useCallback(() => {
     setLoading(true)
@@ -23204,6 +23452,8 @@ export default function AutomationsTab() {
             canEdit={canEdit}
             onToggle={handleToggle}
             onEdit={setEditingRule}
+            onSimulate={setSimulatingRule}
+            simulatingId={simulatingRule?.id ?? null}
           />
         ))
       )}
@@ -23221,6 +23471,8 @@ export default function AutomationsTab() {
             canEdit={canEdit}
             onToggle={handleToggle}
             onEdit={setEditingRule}
+            onSimulate={setSimulatingRule}
+            simulatingId={simulatingRule?.id ?? null}
           />
         ))
       )}
@@ -23233,6 +23485,12 @@ export default function AutomationsTab() {
             setEditingRule(null)
             fetchRules()
           }}
+        />
+      )}
+      {simulatingRule && (
+        <AutomationSimulateModal
+          rule={simulatingRule}
+          onClose={() => setSimulatingRule(null)}
         />
       )}
     </div>
@@ -24590,19 +24848,56 @@ const POLICY_OPTIONS: PolicyOption[] = [
   },
 ]
 
+interface TimeoutOption {
+  value: number
+  label: string
+  description: string
+}
+
+const TIMEOUT_OPTIONS: TimeoutOption[] = [
+  { value: 30, label: '30 minutes', description: 'High security. Staff sign in frequently.' },
+  { value: 60, label: '1 hour', description: 'Recommended for shared workstations.' },
+  { value: 120, label: '2 hours', description: 'Balanced security for most firms.' },
+  { value: 240, label: '4 hours', description: 'Standard for dedicated work machines.' },
+  { value: 480, label: '8 hours', description: 'Default. One sign-in per workday.' },
+  { value: 1440, label: '24 hours', description: 'Convenient for trusted devices.' },
+]
+
 export default function SecurityTab() {
   const [policy, setPolicy] = useState<StaffAuthPolicy>('either')
   const [saving, setSaving] = useState(false)
   const [loading, setLoading] = useState(true)
 
+  // Password policy
+  const [minLength, setMinLength] = useState(8)
+  const [requireUppercase, setRequireUppercase] = useState(false)
+  const [requireNumber, setRequireNumber] = useState(false)
+  const [requireSpecial, setRequireSpecial] = useState(false)
+  const [maxFailedAttempts, setMaxFailedAttempts] = useState(5)
+  const [savingPassword, setSavingPassword] = useState(false)
+
+  // Session timeout
+  const [sessionTimeout, setSessionTimeout] = useState(480)
+  const [savingTimeout, setSavingTimeout] = useState(false)
+
   useEffect(() => {
     settingsApi
       .getMyFirm()
       .then((r) => {
-        const data = r.data as { staff_auth_policy?: string }
+        const data = r.data as {
+          staff_auth_policy?: string
+          settings?: Record<string, unknown> | null
+        }
         if (data.staff_auth_policy) {
           setPolicy(data.staff_auth_policy as StaffAuthPolicy)
         }
+        const passwordPolicy = (data.settings?.password_policy as Record<string, unknown>) || {}
+        setMinLength((passwordPolicy.min_length as number) ?? 8)
+        setRequireUppercase((passwordPolicy.require_uppercase as boolean) ?? false)
+        setRequireNumber((passwordPolicy.require_number as boolean) ?? false)
+        setRequireSpecial((passwordPolicy.require_special as boolean) ?? false)
+        setMaxFailedAttempts((passwordPolicy.max_failed_attempts as number) ?? 5)
+        setSessionTimeout((data.settings?.session_timeout_minutes as number) ?? 480)
       })
       .finally(() => setLoading(false))
   }, [])
@@ -24620,6 +24915,39 @@ export default function SecurityTab() {
     }
   }
 
+  async function handleSavePasswordPolicy() {
+    setSavingPassword(true)
+    try {
+      await settingsApi.updateFirmSettings({
+        password_policy: {
+          min_length: minLength,
+          require_uppercase: requireUppercase,
+          require_number: requireNumber,
+          require_special: requireSpecial,
+          max_failed_attempts: maxFailedAttempts,
+        },
+      })
+      toast.success('Password policy saved.')
+    } catch {
+      toast.error('Could not save. Please try again.')
+    } finally {
+      setSavingPassword(false)
+    }
+  }
+
+  async function handleSaveSessionTimeout(minutes: number) {
+    setSessionTimeout(minutes)
+    setSavingTimeout(true)
+    try {
+      await settingsApi.updateFirmSettings({ session_timeout_minutes: minutes })
+      toast.success('Session timeout updated.')
+    } catch {
+      toast.error('Could not save. Please try again.')
+    } finally {
+      setSavingTimeout(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex justify-center py-12">
@@ -24630,6 +24958,7 @@ export default function SecurityTab() {
 
   return (
     <div className="flex flex-col gap-4 max-w-lg">
+      {/* Section 1: Staff login policy */}
       <div>
         <p className="text-[13px] font-[500] text-brand dark:text-[#EDEEF0] mb-1">
           Staff login policy
@@ -24655,7 +24984,6 @@ export default function SecurityTab() {
                 )}
                 style={{ backgroundColor: '#EDEEF0' }}
               >
-                {/* Radio dot */}
                 <div
                   className="mt-0.5 flex-shrink-0 w-4 h-4 rounded-full flex items-center justify-center"
                   style={{
@@ -24667,8 +24995,6 @@ export default function SecurityTab() {
                     <div className="w-1.5 h-1.5 rounded-full bg-white" />
                   )}
                 </div>
-
-                {/* Label + description */}
                 <div className="flex flex-col gap-0.5">
                   <span className="text-[13px] font-[500] text-[#1F3148]">{opt.label}</span>
                   <span className="text-[11px] text-[#6B7280] leading-snug">{opt.description}</span>
@@ -24678,7 +25004,6 @@ export default function SecurityTab() {
           })}
         </div>
 
-        {/* Amber note */}
         <div
           className="mt-3 rounded-[6px] px-3 py-2 text-[11px]"
           style={{ backgroundColor: '#FEF3C7', color: '#92400E' }}
@@ -24686,13 +25011,168 @@ export default function SecurityTab() {
           Your own login always requires a password regardless of this setting.
         </div>
 
-        {/* Save indicator */}
         {saving && (
           <div className="flex items-center gap-2 mt-3 text-[11px] text-[#6B7280]">
             <Loader2 className="w-3.5 h-3.5 animate-spin" />
             Saving...
           </div>
         )}
+      </div>
+
+      <div className="border-t border-[0.5px] border-[#C8CDD6] dark:border-[#484848] my-6" />
+
+      {/* Section 2: Password policy */}
+      <div>
+        <p className="text-[13px] font-[500] text-brand dark:text-[#EDEEF0] mb-1">
+          Password policy
+        </p>
+        <p className="text-[12px] text-[#6B7280] mb-4">
+          Set requirements for staff passwords at your firm.
+        </p>
+
+        {/* Minimum length */}
+        <div
+          className="flex items-center justify-between px-3 py-3 rounded-[8px] border border-[0.5px] border-[#C8CDD6] mb-2"
+          style={{ backgroundColor: '#EDEEF0' }}
+        >
+          <span className="text-[13px] text-[#1F3148]">Minimum length</span>
+          <input
+            type="number"
+            value={minLength}
+            min={6}
+            max={32}
+            onChange={(e) => setMinLength(Number(e.target.value))}
+            className="w-16 text-center text-[13px] rounded-[6px] border border-[#C8CDD6] bg-white px-2 py-1 outline-none focus:border-[#1F3148]"
+          />
+        </div>
+
+        {/* Toggle rows */}
+        {(
+          [
+            { label: 'Require uppercase letter', value: requireUppercase, set: setRequireUppercase },
+            { label: 'Require number', value: requireNumber, set: setRequireNumber },
+            { label: 'Require special character', value: requireSpecial, set: setRequireSpecial },
+          ] as { label: string; value: boolean; set: (v: boolean) => void }[]
+        ).map(({ label, value, set }) => (
+          <div
+            key={label}
+            className="flex items-center justify-between px-3 py-3 rounded-[8px] border border-[0.5px] border-[#C8CDD6] mb-2"
+            style={{ backgroundColor: '#EDEEF0' }}
+          >
+            <span className="text-[13px] text-[#1F3148]">{label}</span>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={value}
+              onClick={() => set(!value)}
+              className={cn(
+                'relative w-9 h-5 rounded-full transition-colors flex-shrink-0',
+                value ? 'bg-[#1F3148]' : 'bg-[#C8CDD6]',
+              )}
+            >
+              <span
+                className={cn(
+                  'absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform',
+                  value ? 'translate-x-4' : 'translate-x-0.5',
+                )}
+              />
+            </button>
+          </div>
+        ))}
+
+        {/* Max failed attempts */}
+        <div
+          className="px-3 py-3 rounded-[8px] border border-[0.5px] border-[#C8CDD6] mb-2"
+          style={{ backgroundColor: '#EDEEF0' }}
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-[13px] text-[#1F3148]">Lock account after N failed attempts</span>
+            <input
+              type="number"
+              value={maxFailedAttempts}
+              min={3}
+              max={20}
+              onChange={(e) => setMaxFailedAttempts(Number(e.target.value))}
+              className="w-16 text-center text-[13px] rounded-[6px] border border-[#C8CDD6] bg-white px-2 py-1 outline-none focus:border-[#1F3148]"
+            />
+          </div>
+          <p className="text-[11px] text-[#6B7280] mt-1">
+            Account is locked for 30 minutes after this many consecutive failed logins.
+          </p>
+        </div>
+
+        {/* Save button */}
+        <div className="flex justify-end mt-4">
+          <button
+            type="button"
+            onClick={handleSavePasswordPolicy}
+            disabled={savingPassword}
+            className="flex items-center gap-2 h-8 px-4 rounded-[6px] text-[13px] font-[500] text-white disabled:opacity-70 cursor-pointer"
+            style={{ backgroundColor: '#1F3148' }}
+          >
+            {savingPassword && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+            Save password policy
+          </button>
+        </div>
+      </div>
+
+      <div className="border-t border-[0.5px] border-[#C8CDD6] dark:border-[#484848] my-6" />
+
+      {/* Section 3: Session timeout */}
+      <div>
+        <p className="text-[13px] font-[500] text-brand dark:text-[#EDEEF0] mb-1">
+          Session timeout
+        </p>
+        <p className="text-[12px] text-[#6B7280] mb-4">
+          How long staff stay logged in before being asked to sign in again.
+        </p>
+
+        <div className="flex flex-col gap-2">
+          {TIMEOUT_OPTIONS.map((opt) => {
+            const selected = sessionTimeout === opt.value
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => handleSaveSessionTimeout(opt.value)}
+                disabled={savingTimeout}
+                className={cn(
+                  'flex items-start gap-3 rounded-[8px] px-3.5 py-3 text-left transition-colors disabled:opacity-70 cursor-pointer',
+                  selected
+                    ? 'border-[1.5px] border-[#1F3148]'
+                    : 'border border-[0.5px] border-[#C8CDD6] hover:border-[#A0A8B4]',
+                )}
+                style={{ backgroundColor: '#EDEEF0' }}
+              >
+                <div
+                  className="mt-0.5 flex-shrink-0 w-4 h-4 rounded-full flex items-center justify-center"
+                  style={{
+                    border: selected ? '1.5px solid #1F3148' : '1.5px solid #C8CDD6',
+                    backgroundColor: selected ? '#1F3148' : 'transparent',
+                  }}
+                >
+                  {selected && (
+                    <div className="w-1.5 h-1.5 rounded-full bg-white" />
+                  )}
+                </div>
+                <div className="flex flex-col gap-0.5 flex-1">
+                  <span className="text-[13px] font-[500] text-[#1F3148]">{opt.label}</span>
+                  <span className="text-[11px] text-[#6B7280] leading-snug">{opt.description}</span>
+                </div>
+                {selected && savingTimeout && (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-[#6B7280] mt-0.5 flex-shrink-0" />
+                )}
+              </button>
+            )
+          })}
+        </div>
+
+        <div
+          className="mt-3 rounded-[6px] px-3 py-2 text-[11px]"
+          style={{ backgroundColor: '#FEF3C7', color: '#92400E' }}
+        >
+          Changes take effect on the next login. Active sessions are not affected.
+        </div>
       </div>
     </div>
   )
