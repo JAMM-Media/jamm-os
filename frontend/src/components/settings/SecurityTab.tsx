@@ -56,10 +56,12 @@ export default function SecurityTab() {
 
   // Password policy
   const [minLength, setMinLength] = useState(8)
+  const [minLengthStr, setMinLengthStr] = useState('8')
   const [requireUppercase, setRequireUppercase] = useState(false)
   const [requireNumber, setRequireNumber] = useState(false)
   const [requireSpecial, setRequireSpecial] = useState(false)
   const [maxFailedAttempts, setMaxFailedAttempts] = useState(5)
+  const [maxFailedStr, setMaxFailedStr] = useState('5')
   const [savingPassword, setSavingPassword] = useState(false)
 
   // Session timeout
@@ -224,10 +226,11 @@ export default function SecurityTab() {
           <span className="text-[13px] text-[#1F3148]">Minimum length</span>
           <input
             type="number"
-            value={minLength}
+            value={minLengthStr}
             min={6}
             max={32}
-            onChange={(e) => { const v = parseInt(e.target.value, 10); if (!isNaN(v)) setMinLength(v) }}
+            onChange={(e) => { setMinLengthStr(e.target.value); const v = parseInt(e.target.value, 10); if (!isNaN(v) && v >= 6 && v <= 32) setMinLength(v) }}
+            onBlur={() => setMinLengthStr(String(minLength))}
             className="w-16 text-center text-[13px] text-[#1F3148] rounded-[6px] border border-[#C8CDD6] bg-white px-2 py-1 outline-none focus:border-[#1F3148]"
           />
         </div>
@@ -259,7 +262,7 @@ export default function SecurityTab() {
               <span
                 className={cn(
                   'absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform',
-                  value ? 'translate-x-4' : 'translate-x-0.5',
+                  value ? 'translate-x-[19px]' : 'translate-x-1',
                 )}
               />
             </button>
@@ -275,10 +278,11 @@ export default function SecurityTab() {
             <span className="text-[13px] text-[#1F3148]">Lock account after N failed attempts</span>
             <input
               type="number"
-              value={maxFailedAttempts}
+              value={maxFailedStr}
               min={3}
               max={20}
-              onChange={(e) => { const v = parseInt(e.target.value, 10); if (!isNaN(v)) setMaxFailedAttempts(v) }}
+              onChange={(e) => { setMaxFailedStr(e.target.value); const v = parseInt(e.target.value, 10); if (!isNaN(v) && v >= 3 && v <= 20) setMaxFailedAttempts(v) }}
+              onBlur={() => setMaxFailedStr(String(maxFailedAttempts))}
               className="w-16 text-center text-[13px] text-[#1F3148] rounded-[6px] border border-[#C8CDD6] bg-white px-2 py-1 outline-none focus:border-[#1F3148]"
             />
           </div>
