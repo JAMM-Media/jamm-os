@@ -30,268 +30,170 @@ All models must be imported in migrations/env.py or autogenerate silently misses
 
 ---
 
-# PHASE INSTRUCTIONS — OUTLOOK OAUTH + SIGNAL EXTRACTION
+# PHASE INSTRUCTIONS — AUTOMATION RULE SIMULATOR UI
 
 ## Context
-Gmail OAuth and signal extraction are fully built and live.
-The Outlook build follows the exact same pattern using Microsoft Graph API
-instead of Google's Gmail API.
-The Microsoft env vars are already in the .env file:
-MICROSOFT_CLIENT_ID, MICROSOFT_CLIENT_SECRET, MICROSOFT_TENANT_ID,
-MICROSOFT_REDIRECT_URI=https://api.jammpx.com/integrations/outlook/callback
+The backend simulate endpoint is fully built at:
+POST /automation-rules/{rule_id}/simulate
+It accepts a mock_payload dict and returns:
+- would_trigger: bool
+- conditions_evaluated: int
+- conditions_passed: bool
+- trigger_event: string
+- actions_that_would_execute: list of {type, order}
+- rule_is_enabled: bool
 
-The msal package is required. Check if it is installed before writing any code:
-pip show msal
-If not installed, add it to requirements.txt and note it must be installed on
-the droplet during deploy.
+The AutomationsTab component is at:
+frontend/src/components/settings/AutomationsTab.tsx
 
-No migration needed — the Integration model already supports any provider string.
-No frontend changes needed — the connect button pattern already exists for Gmail.
+It already has:
+- RuleCard component with Edit button and onEdit prop
+- AutomationEditModal imported and used
+- canEdit flag (firm_owner or manager only)
 
-Security rules — identical to Gmail, non-negotiable:
-- Scope is Mail.Read only — metadata and headers only, never message body content
-- Never store, log, or include email addresses in behavioral event metadata
-- Email addresses used as lookup keys only — discard after matching client
-- Raw message content never read, never stored, never logged
+No backend changes. No migration. Frontend only.
 
 ---
 
 ## Pre-task checkpoint
 git add -A
-git commit -m "checkpoint before outlook oauth build"
+git commit -m "checkpoint before automation simulator UI"
 
 ---
 
 ## VERIFY BEFORE STARTING
-grep -n "GOOGLE_CLIENT_ID\|GOOGLE_CLIENT_SECRET\|GOOGLE_REDIRECT_URI" app/core/config.py
-grep -n "class GmailService\|GMAIL_SCOPES\|handle_callback\|get_authorization_url" app/services/gmail_service.py
-grep -n "gmail/connect\|gmail/callback" app/api/integrations.py
-Paste all three outputs before touching anything.
+grep -n "RuleCard\|onEdit\|AutomationEditModal\|canEdit" frontend/src/components/settings/AutomationsTab.tsx
+Paste output before touching anything.
 
 ---
 
-## Change 1: Add Microsoft config fields to app/core/config.py
+## Change 1: Create frontend/src/components/settings/AutomationSimulateModal.tsx
 
-Find the Settings class in app/core/config.py.
-Find where GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI are defined.
-Add these four fields immediately after the Google fields:
+Create this file from scratch. Path comment at top.
 
-    MICROSOFT_CLIENT_ID: str = ""
-    MICROSOFT_CLIENT_SECRET: str = ""
-    MICROSOFT_TENANT_ID: str = ""
-    MICROSOFT_REDIRECT_URI: str = "https://api.jammpx.com/integrations/outlook/callback"
+This is a modal component that lets firm owners test an automation rule
+against a mock payload and see whether it would trigger.
 
----
+Props:
+  rule: { id: string, name: string, trigger_event: string, is_enabled: boolean }
+  onClose: () => void
 
-## Change 2: Check msal installation
+State:
+  result: the API response object or null
+  loading: bool
+  error: string or null
 
-Run: pip show msal
-If msal is installed: note the version, proceed to Change 3.
-If msal is not installed:
-- Add msal to requirements.txt on its own line
-- Note that pip install msal must be run on the droplet during deploy
+On mount: result is null, show the mock payload form.
 
----
+### Mock payload form
+The trigger_event string tells us what context this rule fires in.
+Show a simple key-value pair form with 2-3 relevant fields pre-populated
+based on the trigger_event value:
 
-## Change 3: Create app/services/outlook_service.py
+If trigger_event contains "engagement":
+  Fields: status (text, default "completed"), engagement_type (text, default "tax_return_1040")
 
-Mirror the structure of app/services/gmail_service.py exactly.
-Path comment at top.
+If trigger_event contains "invoice":
+  Fields: status (text, default "overdue"), amount (text, default "500")
 
-OUTLOOK_SCOPES:
-- "https://graph.microsoft.com/Mail.Read"
-- "https://graph.microsoft.com/User.Read"
-- "offline_access"
+If trigger_event contains "document":
+  Fields: status (text, default "completed"), item_count (text, default "3")
 
-OUTLOOK_PROVIDER = "outlook"
+If trigger_event contains "client":
+  Fields: entity_type (text, default "individual")
 
-class OutlookService:
+For all other trigger_event values:
+  Show one generic field: event_type (text, pre-filled with the trigger_event value)
 
-### get_authorization_url(self, firm_id: UUID) -> str
-Use msal.ConfidentialClientApplication:
-    app = msal.ConfidentialClientApplication(
-        client_id=settings.MICROSOFT_CLIENT_ID,
-        client_credential=settings.MICROSOFT_CLIENT_SECRET,
-        authority=f"https://login.microsoftonline.com/{settings.MICROSOFT_TENANT_ID}"
-    )
-    result = app.get_authorization_request_url(
-        scopes=OUTLOOK_SCOPES,
-        state=str(firm_id),
-        redirect_uri=settings.MICROSOFT_REDIRECT_URI,
-    )
-    return result
+All fields are editable. Label each field clearly. This is a power-user feature
+so plain text inputs are fine.
 
-### handle_callback(self, code: str, state: str, db: Session) -> Integration
-Parse firm_id from state.
-Load or create Integration record for this firm with provider="outlook".
-Exchange code for tokens:
-    app = msal.ConfidentialClientApplication(...)
-    result = app.acquire_token_by_authorization_code(
-        code=code,
-        scopes=OUTLOOK_SCOPES,
-        redirect_uri=settings.MICROSOFT_REDIRECT_URI,
-    )
-If result contains "error": raise ValueError with the error description.
-Extract from result:
-- access_token: result["access_token"]
-- refresh_token: result.get("refresh_token")
-- expires_in: result.get("expires_in", 3600)
-- token_expiry: datetime.now(timezone.utc) + timedelta(seconds=expires_in)
+### Test button
+"Test Rule" button at bottom of form.
+Calls POST /automation-rules/{rule.id}/simulate with the form values as the payload.
+Shows loading spinner while in flight.
+On success: replace the form with the result view.
+On error: show inline error message, keep form visible.
 
-Get the connected email address by calling Microsoft Graph:
-    resp = http_requests.get(
-        "https://graph.microsoft.com/v1.0/me",
-        headers={"Authorization": f"Bearer {result['access_token']}"},
-        timeout=10,
-    )
-    email = resp.json().get("mail") or resp.json().get("userPrincipalName")
+### Result view
+Show clearly:
+- Large green checkmark + "Would trigger" if would_trigger is true
+- Large amber X + "Would not trigger" if would_trigger is false
+- Rule enabled/disabled status in muted text
+- If would_trigger is true: list the actions that would execute,
+  each as a pill showing the action type
+- If would_trigger is false and rule_is_enabled is false:
+  add a note "This rule is currently disabled"
+- "Test again" button that resets result to null and shows the form again
 
-Store on Integration:
-- encrypted_access_token: encrypt_token(access_token)
-- encrypted_refresh_token: encrypt_token(refresh_token) if refresh_token else unchanged
-- token_expires_at: token_expiry
-- scopes: " ".join(OUTLOOK_SCOPES)
-- external_account_id: email
-- status: "connected"
-- connected_at: datetime.now(timezone.utc)
-
-Fire behavioral event and write audit log — same pattern as gmail_service.py.
-Use provider="outlook" in all metadata.
-Return the integration.
+### Modal structure
+Follow the existing modal pattern from the design system:
+- Overlay: rgba(0,0,0,0.35)
+- Modal background: #EDEEF0 light / #383838 dark
+- Border-radius: 10px
+- Header: rule name left, X close button right, border-bottom
+- Body: form or result view
+- Footer: Cancel button left, Test Rule button right (only shown on form view)
+- Width: 480px fixed
 
 ---
 
-## Change 4: Add Outlook connect and callback endpoints to app/api/integrations.py
+## Change 2: Add simulate button to RuleCard in AutomationsTab.tsx
 
-Mirror the Gmail endpoints exactly. Find:
-GET /integrations/gmail/connect
-GET /integrations/gmail/callback
+Find the RuleCard component.
+Add two new props:
+  onSimulate: (rule: AutomationRule) => void
+  simulatingId: string | null
 
-Add immediately after them:
+In the RuleCard JSX, find the flex row that contains the Edit button and toggle.
+Add a "Test" button immediately before the Edit button:
 
-GET /integrations/outlook/connect
-- Same pattern as gmail/connect
-- Uses OutlookService().get_authorization_url(current_firm.id)
-- Checks for existing integration with provider="outlook"
+  {canEdit && (
+    <button
+      onClick={() => onSimulate(rule)}
+      className="text-[12px] text-[#6B7280] dark:text-[#9CA3AF] hover:text-brand dark:hover:text-[#4A7FA5] hover:underline focus:outline-none"
+    >
+      Test
+    </button>
+  )}
 
-GET /integrations/outlook/callback
-- Same pattern as gmail/callback
-- Uses OutlookService().handle_callback(code=code, state=state, db=db)
-- Returns {"status": "connected", "message": "Outlook connected successfully"}
-
-Import OutlookService at the top of the file alongside GmailService.
-
----
-
-## Change 5: Create app/services/outlook_signals_service.py
-
-Mirror app/services/gmail_signals_service.py exactly.
-Path comment at top.
-
-Use Microsoft Graph API instead of Gmail API.
-No google packages needed — use http_requests directly with the access token.
-
-### get_fresh_outlook_credentials(integration: Integration) -> str
-Returns a valid access token string (not a credentials object).
-- Decrypt access token using decrypt_token
-- If token_expires_at is None or within 5 minutes of expiry:
-  Use msal to refresh:
-      app = msal.ConfidentialClientApplication(...)
-      result = app.acquire_token_by_refresh_token(
-          refresh_token=decrypt_token(integration.encrypted_refresh_token),
-          scopes=OUTLOOK_SCOPES,
-      )
-  If refresh succeeds: return result["access_token"]
-  If refresh fails: raise ValueError("Token refresh failed")
-- Otherwise: return decrypted access token
-- Never log the token value
-
-### extract_outlook_signals(firm_id: UUID, db: Session) -> dict
-Same structure as extract_gmail_signals.
-
-1. Load outlook integration, check status == "connected", return early if not.
-
-2. Get fresh access token via get_fresh_outlook_credentials.
-
-3. Fetch messages from last 30 days using Microsoft Graph:
-   GET https://graph.microsoft.com/v1.0/me/messages
-   Query params:
-     $select=id,conversationId,from,receivedDateTime,sender
-     $filter=receivedDateTime ge {thirty_days_ago_iso}
-     $top=100
-   Headers: Authorization: Bearer {access_token}
-   Never request body content. Never request subject lines.
-
-4. Group messages by conversationId — this is the thread equivalent.
-
-5. For each conversation group:
-   a. Extract from address from each message:
-      message["from"]["emailAddress"]["address"].lower().strip()
-   b. Match to a client by email address scoped to firm_id — same logic as Gmail.
-   c. If no client found: skip, discard addresses.
-   d. Compute signals:
-      - thread_depth: message count in conversation
-      - last_contact_date: max receivedDateTime converted to date string
-      - response_lag_hours: same alternating sender logic as Gmail version,
-        using receivedDateTime parsed as ISO datetime for timestamps
-
-6. Aggregate per client and fire behavioral events:
-   event_type: "outlook.signals_extracted"
-   metadata: contact_frequency, avg_response_lag_hours,
-             last_contact_date, thread_count
-   NEVER include email addresses in metadata.
-
-7. Return summary dict: firms_processed, clients_with_signals,
-   threads_processed, errors.
-
-### run_outlook_signals_for_all_firms()
-Identical structure to run_gmail_signals_for_all_firms.
-Queries integrations where provider == "outlook" and status == "connected".
-Never raises. Own SessionLocal in try/finally.
+The Test button is muted by default, brand color on hover.
+Visually secondary to the Edit button.
 
 ---
 
-## Change 6: Register Outlook signals cron job in app/main.py
+## Change 3: Wire simulate state into AutomationsTab
 
-Find where gmail_signals_daily is registered.
-Add immediately after it:
-
-from app.services.outlook_signals_service import run_outlook_signals_for_all_firms
-
-scheduler.add_job(
-    run_outlook_signals_for_all_firms,
-    "cron",
-    hour=6,
-    minute=15,
-    id="outlook_signals_daily",
-    replace_existing=True,
-)
-
-15 minutes after Gmail so they do not run simultaneously.
+In AutomationsTab:
+1. Add import: import AutomationSimulateModal from './AutomationSimulateModal'
+2. Add state: const [simulatingRule, setSimulatingRule] = useState<AutomationRule | null>(null)
+3. Pass onSimulate={setSimulatingRule} and simulatingId={simulatingRule?.id ?? null}
+   to every RuleCard render (both enabled and disabled sections)
+4. Add the modal at the bottom of the return, alongside AutomationEditModal:
+   {simulatingRule && (
+     <AutomationSimulateModal
+       rule={simulatingRule}
+       onClose={() => setSimulatingRule(null)}
+     />
+   )}
 
 ---
 
 ## Verify after all changes
-grep -n "MICROSOFT_CLIENT_ID\|MICROSOFT_CLIENT_SECRET\|MICROSOFT_TENANT_ID" app/core/config.py
-grep -n "class OutlookService\|OUTLOOK_SCOPES\|handle_callback" app/services/outlook_service.py
-grep -n "outlook/connect\|outlook/callback" app/api/integrations.py
-grep -n "def extract_outlook_signals\|def run_outlook_signals\|def get_fresh_outlook_credentials" app/services/outlook_signals_service.py
-grep -n "outlook_signals_daily\|run_outlook_signals" app/main.py
-python -m py_compile app/services/outlook_service.py
-python -m py_compile app/services/outlook_signals_service.py
-python -m py_compile app/api/integrations.py
-All three compiles must pass before deploying.
+grep -n "AutomationSimulateModal\|onSimulate\|simulatingRule" frontend/src/components/settings/AutomationsTab.tsx
+grep -n "would_trigger\|Test Rule\|actions_that_would_execute" frontend/src/components/settings/AutomationSimulateModal.tsx
+Both must return results before deploying.
+
+Check TypeScript compiles:
+cd frontend
+npx tsc --noEmit
+Zero errors required before deploying.
 
 ---
 
 ## Deploy sequence
 git add -A
-git commit -m "outlook oauth and signal extraction"
+git commit -m "automation rule simulator UI restored"
 git push origin main
-Then on the droplet:
-pip install msal --quiet (only if msal was not already installed)
-git pull origin main
-alembic upgrade head
-alembic current
-systemctl restart jammpx.service
-journalctl -u jammpx.service -n 20 --no-pager
+Frontend deploys automatically via Vercel on push to main.
+No backend deploy needed — no backend changes.
