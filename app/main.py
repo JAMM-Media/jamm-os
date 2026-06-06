@@ -8,6 +8,7 @@ from app.services.anniversary_service import check_client_anniversaries, check_d
 from app.services.recurring_engagement_service import spawn_recurring_engagements
 from app.services.qbo_budget_service import run_budget_variance_checks
 from app.services.gmail_signals_service import run_gmail_signals_for_all_firms
+from app.services.outlook_signals_service import run_outlook_signals_for_all_firms
 from app.core.scheduler_lock import try_acquire_scheduler_lock, release_scheduler_lock
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
@@ -108,6 +109,14 @@ async def lifespan(app: FastAPI):
             hour=6,
             minute=0,
             id="gmail_signals_daily",
+            replace_existing=True,
+        )
+        scheduler.add_job(
+            run_outlook_signals_for_all_firms,
+            "cron",
+            hour=6,
+            minute=15,
+            id="outlook_signals_daily",
             replace_existing=True,
         )
         scheduler.start()

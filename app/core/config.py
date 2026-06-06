@@ -64,6 +64,12 @@ class Settings(BaseSettings):
     GOOGLE_CLIENT_SECRET: str = ""
     GOOGLE_REDIRECT_URI: str = "https://api.jammpx.com/integrations/gmail/callback"
 
+    # Microsoft OAuth (Outlook integration)
+    MICROSOFT_CLIENT_ID: str = ""
+    MICROSOFT_CLIENT_SECRET: str = ""
+    MICROSOFT_TENANT_ID: str = ""
+    MICROSOFT_REDIRECT_URI: str = "https://api.jammpx.com/integrations/outlook/callback"
+
     # Anthropic (Concierge)
     ANTHROPIC_API_KEY: str = ""
     ANTHROPIC_CONCIERGE_KEY: str = ""

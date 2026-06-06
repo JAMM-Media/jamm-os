@@ -17,6 +17,7 @@ from app.dependencies.tenant import get_current_firm
 from app.dependencies.roles import require_firm_owner, require_manager_or_above
 from app.services.quickbooks_service import QuickBooksService
 from app.services.gmail_service import GmailService
+from app.services.outlook_service import OutlookService
 from app.services.audit_service import write_audit_log
 from app.services.behavioral_log import log_event
 
@@ -24,6 +25,7 @@ router = APIRouter(prefix="/integrations", tags=["integrations"])
 
 _qb_service = QuickBooksService()
 _gmail_service = GmailService()
+_outlook_service = OutlookService()
 
 
 # -------------------------------------------------------------------
@@ -263,6 +265,43 @@ def gmail_callback(
     try:
         _gmail_service.handle_callback(code=code, state=state, db=db)
         return {"status": "connected", "message": "Gmail connected successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+# -------------------------------------------------------------------
+# GET /integrations/outlook/connect — Start Outlook OAuth2 flow
+# Must be defined BEFORE /{provider} to avoid route shadowing.
+# -------------------------------------------------------------------
+@router.get("/outlook/connect")
+def outlook_connect(
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    _: object = Depends(require_firm_owner),
+):
+    integration = crud_integration.get_integration(
+        db, firm_id=current_firm.id, provider="outlook"
+    )
+    if not integration:
+        crud_integration.create_integration(db, firm_id=current_firm.id, provider="outlook")
+
+    authorization_url = _outlook_service.get_authorization_url(current_firm.id)
+    return {"authorization_url": authorization_url}
+
+
+# -------------------------------------------------------------------
+# GET /integrations/outlook/callback — Microsoft redirects here after auth
+# No JWT required — Microsoft calls this endpoint directly.
+# -------------------------------------------------------------------
+@router.get("/outlook/callback")
+def outlook_callback(
+    code: str = Query(...),
+    state: str = Query(...),
+    db: Session = Depends(get_db),
+):
+    try:
+        _outlook_service.handle_callback(code=code, state=state, db=db)
+        return {"status": "connected", "message": "Outlook connected successfully"}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
