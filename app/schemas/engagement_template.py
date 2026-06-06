@@ -26,8 +26,11 @@ class EngagementTemplateBase(BaseModel):
     recurrence_month: Optional[int] = None
     recurrence_advance_days: Optional[int] = 14
 
+
+
+class EngagementTemplateCreate(EngagementTemplateBase):
     @model_validator(mode='after')
-    def validate_recurrence(self) -> 'EngagementTemplateBase':
+    def validate_recurrence(self) -> 'EngagementTemplateCreate':
         if self.is_recurring:
             if self.recurrence_cadence not in ('monthly', 'quarterly', 'annually'):
                 raise ValueError("recurrence_cadence must be 'monthly', 'quarterly', or 'annually' when is_recurring is True")
@@ -37,10 +40,6 @@ class EngagementTemplateBase(BaseModel):
             if self.recurrence_month is None or not (1 <= self.recurrence_month <= 12):
                 raise ValueError("recurrence_month must be between 1 and 12 when cadence is 'annually'")
         return self
-
-
-class EngagementTemplateCreate(EngagementTemplateBase):
-    pass
 
 
 class EngagementTemplateUpdate(BaseModel):
@@ -58,6 +57,18 @@ class EngagementTemplateUpdate(BaseModel):
     recurrence_month: Optional[int] = None
     recurrence_advance_days: Optional[int] = None
     last_spawned_at: Optional[datetime] = None
+
+    @model_validator(mode='after')
+    def validate_recurrence(self) -> 'EngagementTemplateUpdate':
+        if self.is_recurring is True:
+            if self.recurrence_cadence not in ('monthly', 'quarterly', 'annually'):
+                raise ValueError("recurrence_cadence must be 'monthly', 'quarterly', or 'annually' when is_recurring is True")
+            if self.recurrence_day is None or not (1 <= self.recurrence_day <= 28):
+                raise ValueError("recurrence_day must be between 1 and 28 when is_recurring is True")
+        if self.recurrence_cadence == 'annually':
+            if self.recurrence_month is None or not (1 <= self.recurrence_month <= 12):
+                raise ValueError("recurrence_month must be between 1 and 12 when cadence is 'annually'")
+        return self
 
 
 class EngagementTemplateOut(EngagementTemplateBase):
