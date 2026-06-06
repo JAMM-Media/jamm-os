@@ -1,7 +1,7 @@
 // frontend/src/app/settings/my-integrations/page.tsx
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
 import { Plug, CheckCircle2, XCircle } from 'lucide-react'
@@ -17,7 +17,7 @@ interface Integration {
   external_account_id: string | null
 }
 
-export default function MyIntegrationsPage() {
+function MyIntegrationsContent() {
   const searchParams = useSearchParams()
   const [integrations, setIntegrations] = useState<Integration[]>([])
   const [firmSettings, setFirmSettings] = useState<Record<string, unknown>>({})
@@ -192,5 +192,13 @@ export default function MyIntegrationsPage() {
         )}
       </div>
     </AppShell>
+  )
+}
+
+export default function MyIntegrationsPage() {
+  return (
+    <Suspense fallback={<div />}>
+      <MyIntegrationsContent />
+    </Suspense>
   )
 }

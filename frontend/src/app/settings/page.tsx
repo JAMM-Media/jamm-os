@@ -2,7 +2,6 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { useSearchParams } from 'next/navigation'
 import { AppShell } from '@/components/layout/AppShell'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { useFetch } from '@/lib/hooks/useFetch'
@@ -29,12 +28,13 @@ interface Integration {
 }
 
 function MyIntegrationsTabContent() {
-  const searchParams = useSearchParams()
   const [integrations, setIntegrations] = useState<Integration[]>([])
   const [firmSettings, setFirmSettings] = useState<Record<string, unknown>>({})
   const [loading, setLoading] = useState(true)
   const [connecting, setConnecting] = useState<string | null>(null)
   const [disconnecting, setDisconnecting] = useState<string | null>(null)
+  const [pausing, setPausing] = useState<string | null>(null)
+  const [resuming, setResuming] = useState<string | null>(null)
 
   async function fetchData() {
     try {
@@ -56,13 +56,15 @@ function MyIntegrationsTabContent() {
   }, [])
 
   useEffect(() => {
-    const connected = searchParams.get('connected')
-    const error = searchParams.get('error')
+    if (typeof window === 'undefined') return
+    const params = new URLSearchParams(window.location.search)
+    const connected = params.get('connected')
+    const error = params.get('error')
     if (connected === 'gmail') toast.success('Gmail connected successfully.')
     if (connected === 'outlook') toast.success('Outlook connected successfully.')
     if (error === 'gmail_failed') toast.error('Gmail connection failed. Please try again.')
     if (error === 'outlook_failed') toast.error('Outlook connection failed. Please try again.')
-  }, [searchParams])
+  }, [])
 
   async function handleConnect(provider: 'gmail' | 'outlook') {
     setConnecting(provider)
@@ -88,11 +90,38 @@ function MyIntegrationsTabContent() {
     }
   }
 
+  async function handlePause(provider: string) {
+    setPausing(provider)
+    try {
+      await api.post(`/api/v1/integrations/staff/${provider}/disable`)
+      toast.success('Inbox sync paused.')
+      await fetchData()
+    } catch {
+      toast.error('Failed to pause inbox sync. Please try again.')
+    } finally {
+      setPausing(null)
+    }
+  }
+
+  async function handleResume(provider: string) {
+    setResuming(provider)
+    try {
+      await api.post(`/api/v1/integrations/staff/${provider}/enable`)
+      toast.success('Inbox sync resumed.')
+      await fetchData()
+    } catch {
+      toast.error('Failed to resume inbox sync. Please try again.')
+    } finally {
+      setResuming(null)
+    }
+  }
+
   function getIntegration(provider: string): Integration | undefined {
     return integrations.find((i) => i.provider === provider)
   }
 
   const emailSyncEnabled = firmSettings.email_sync_enabled !== false
+  const staffCanDisable = firmSettings.staff_can_disable_email_sync !== false
 
   const providers: { key: 'gmail' | 'outlook'; label: string }[] = [
     { key: 'gmail', label: 'Gmail' },
@@ -119,6 +148,7 @@ function MyIntegrationsTabContent() {
           {providers.map(({ key, label }) => {
             const integration = getIntegration(key)
             const connected = integration?.status === 'connected'
+            const optedOut = integration?.status === 'opted_out'
 
             if (!emailSyncEnabled) {
               return (
@@ -149,11 +179,17 @@ function MyIntegrationsTabContent() {
                 <div
                   className={cn(
                     'flex items-center justify-center w-9 h-9 rounded-lg flex-shrink-0',
-                    connected ? 'bg-[#D1FAE5] dark:bg-[#064E3B]/30' : 'bg-[#F3F4F6] dark:bg-[#333333]',
+                    connected
+                      ? 'bg-[#D1FAE5] dark:bg-[#064E3B]/30'
+                      : optedOut
+                      ? 'bg-[#FEF3C7] dark:bg-[#78350F]/30'
+                      : 'bg-[#F3F4F6] dark:bg-[#333333]',
                   )}
                 >
                   {connected ? (
                     <CheckCircle2 className="h-4 w-4 text-[#059669]" />
+                  ) : optedOut ? (
+                    <Plug className="h-4 w-4 text-[#D97706]" />
                   ) : (
                     <Plug className="h-4 w-4 text-[#6B7280]" />
                   )}
@@ -166,25 +202,51 @@ function MyIntegrationsTabContent() {
                         Connected
                       </span>
                     )}
+                    {optedOut && (
+                      <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-[#FEF3C7] text-[#92400E]">
+                        Paused
+                      </span>
+                    )}
                   </div>
-                  {connected && integration?.external_account_id && (
+                  {(connected || optedOut) && integration?.external_account_id && (
                     <p className="text-[11px] text-[#6B7280] mt-0.5 truncate">
                       {integration.external_account_id}
                     </p>
                   )}
-                  {!connected && (
+                  {!connected && !optedOut && (
                     <p className="text-[11px] text-[#9CA3AF] mt-0.5">Not connected</p>
                   )}
                 </div>
-                <div className="flex-shrink-0">
-                  {connected ? (
-                    <button
-                      onClick={() => handleDisconnect(key)}
-                      disabled={disconnecting === key}
-                      className="h-7 px-3 text-[12px] font-medium rounded-[6px] border border-[#E5E7EB] dark:border-dark-border text-[#6B7280] hover:text-[#DC2626] hover:border-[#DC2626] transition-colors disabled:opacity-60"
-                    >
-                      {disconnecting === key ? 'Disconnecting...' : 'Disconnect'}
-                    </button>
+                <div className="flex-shrink-0 flex flex-col items-end gap-1">
+                  {(connected || optedOut) ? (
+                    <>
+                      <button
+                        onClick={() => handleDisconnect(key)}
+                        disabled={disconnecting === key}
+                        className="h-7 px-3 text-[12px] font-medium rounded-[6px] border border-[#E5E7EB] dark:border-dark-border text-[#6B7280] hover:text-[#DC2626] hover:border-[#DC2626] transition-colors disabled:opacity-60"
+                      >
+                        {disconnecting === key ? 'Disconnecting...' : 'Disconnect'}
+                      </button>
+                      {staffCanDisable && (
+                        optedOut ? (
+                          <button
+                            onClick={() => handleResume(key)}
+                            disabled={resuming === key}
+                            className="text-[11px] text-[#4A7FA5] hover:underline disabled:opacity-60"
+                          >
+                            {resuming === key ? 'Resuming...' : 'Resume inbox'}
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => handlePause(key)}
+                            disabled={pausing === key}
+                            className="text-[11px] text-[#6B7280] hover:underline disabled:opacity-60"
+                          >
+                            {pausing === key ? 'Pausing...' : 'Pause inbox'}
+                          </button>
+                        )
+                      )}
+                    </>
                   ) : (
                     <button
                       onClick={() => handleConnect(key)}

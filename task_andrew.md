@@ -33,377 +33,122 @@ All models must be imported in migrations/env.py or autogenerate silently misses
 
 ---
 
-PHASE INSTRUCTIONS -- EMAIL INBOX SESSION 2
-Inbox view, email threading to clients, reply and compose
+PHASE INSTRUCTIONS -- FIX INBOX BUILD ERROR + SIDEBAR VISIBILITY + PER-STAFF OPT-OUT
 
-This session builds the email inbox inside JAMM PX. Emails are fetched on demand from Gmail/Outlook APIs -- never stored in the database. Email body content is never written to PostgreSQL. Only metadata (thread IDs, subjects, sender addresses, timestamps) used for threading and display is kept in memory per request.
-
----
-
-STEP 1 -- BACKEND: app/services/inbox_service.py (new file)
-
-Create app/services/inbox_service.py
-
-This service handles fetching emails from Gmail and Outlook for a specific user's integration. It is called by the API layer -- not a background cron.
-
-The service has two providers. Read the existing gmail_signals_service.py and outlook_signals_service.py to understand the credential refresh pattern -- replicate it exactly.
-
--- Gmail inbox functions --
-
-def get_gmail_inbox(integration: Integration, page_token: str | None = None) -> dict:
-    """
-    Fetch inbox threads for a connected Gmail account.
-    Returns a paginated list of thread summaries.
-    Never fetches email body content -- metadata only for the list view.
-    Full message content is fetched separately in get_gmail_thread.
-    """
-    credentials = get_fresh_credentials(integration)  -- import from gmail_signals_service
-    service = build("gmail", "v1", credentials=credentials)
-
-    params = {
-        "userId": "me",
-        "maxResults": 20,
-        "labelIds": ["INBOX"],
-    }
-    if page_token:
-        params["pageToken"] = page_token
-
-    result = service.users().threads().list(**params).execute()
-    threads = result.get("threads", [])
-    next_page_token = result.get("nextPageToken")
-
-    thread_summaries = []
-    for thread_stub in threads:
-        thread_id = thread_stub["id"]
-        try:
-            thread_data = service.users().threads().get(
-                userId="me",
-                id=thread_id,
-                format="metadata",
-                metadataHeaders=["From", "To", "Cc", "Subject", "Date"],
-            ).execute()
-
-            messages = thread_data.get("messages", [])
-            if not messages:
-                continue
-
-            first_msg = messages[0]
-            last_msg = messages[-1]
-
-            def get_header(msg, name):
-                for h in msg.get("payload", {}).get("headers", []):
-                    if h["name"].lower() == name.lower():
-                        return h["value"]
-                return ""
-
-            thread_summaries.append({
-                "thread_id": thread_id,
-                "subject": get_header(first_msg, "Subject") or "(no subject)",
-                "from": get_header(last_msg, "From"),
-                "to": get_header(first_msg, "To"),
-                "date": get_header(last_msg, "Date"),
-                "message_count": len(messages),
-                "snippet": last_msg.get("snippet", ""),
-                "unread": any(
-                    "UNREAD" in m.get("labelIds", []) for m in messages
-                ),
-            })
-        except Exception:
-            continue
-
-    return {
-        "threads": thread_summaries,
-        "next_page_token": next_page_token,
-        "provider": "gmail",
-    }
-
-
-def get_gmail_thread(integration: Integration, thread_id: str) -> dict:
-    """
-    Fetch full thread content including message bodies.
-    Bodies are decoded from base64 but never stored in the database.
-    """
-    import base64
-
-    credentials = get_fresh_credentials(integration)
-    service = build("gmail", "v1", credentials=credentials)
-
-    thread_data = service.users().threads().get(
-        userId="me",
-        id=thread_id,
-        format="full",
-    ).execute()
-
-    messages = []
-    for msg in thread_data.get("messages", []):
-        def get_header(name):
-            for h in msg.get("payload", {}).get("headers", []):
-                if h["name"].lower() == name.lower():
-                    return h["value"]
-            return ""
-
-        def extract_body(payload):
-            if payload.get("body", {}).get("data"):
-                try:
-                    return base64.urlsafe_b64decode(
-                        payload["body"]["data"] + "=="
-                    ).decode("utf-8", errors="replace")
-                except Exception:
-                    return ""
-            for part in payload.get("parts", []):
-                if part.get("mimeType") == "text/plain":
-                    data = part.get("body", {}).get("data", "")
-                    if data:
-                        try:
-                            return base64.urlsafe_b64decode(
-                                data + "=="
-                            ).decode("utf-8", errors="replace")
-                        except Exception:
-                            return ""
-                if part.get("mimeType") == "text/html":
-                    data = part.get("body", {}).get("data", "")
-                    if data:
-                        try:
-                            return base64.urlsafe_b64decode(
-                                data + "=="
-                            ).decode("utf-8", errors="replace")
-                        except Exception:
-                            return ""
-            return ""
-
-        body = extract_body(msg.get("payload", {}))
-
-        messages.append({
-            "message_id": msg["id"],
-            "from": get_header("From"),
-            "to": get_header("To"),
-            "cc": get_header("Cc"),
-            "subject": get_header("Subject"),
-            "date": get_header("Date"),
-            "body": body,
-            "unread": "UNREAD" in msg.get("labelIds", []),
-        })
-
-    return {
-        "thread_id": thread_id,
-        "messages": messages,
-        "provider": "gmail",
-    }
-
-
-def send_gmail_reply(integration: Integration, thread_id: str, to: str, subject: str, body: str) -> dict:
-    """
-    Send a reply to a Gmail thread.
-    """
-    import base64
-    from email.mime.text import MIMEText
-
-    credentials = get_fresh_credentials(integration)
-    service = build("gmail", "v1", credentials=credentials)
-
-    message = MIMEText(body, "plain")
-    message["to"] = to
-    message["subject"] = subject if subject.startswith("Re:") else f"Re: {subject}"
-
-    raw = base64.urlsafe_b64encode(message.as_bytes()).decode()
-
-    result = service.users().messages().send(
-        userId="me",
-        body={"raw": raw, "threadId": thread_id},
-    ).execute()
-
-    return {"message_id": result["id"], "thread_id": thread_id}
-
-
-def send_gmail_compose(integration: Integration, to: str, subject: str, body: str) -> dict:
-    """
-    Send a new email (not a reply).
-    """
-    import base64
-    from email.mime.text import MIMEText
-
-    credentials = get_fresh_credentials(integration)
-    service = build("gmail", "v1", credentials=credentials)
-
-    message = MIMEText(body, "plain")
-    message["to"] = to
-    message["subject"] = subject
-
-    raw = base64.urlsafe_b64encode(message.as_bytes()).decode()
-    result = service.users().messages().send(
-        userId="me",
-        body={"raw": raw},
-    ).execute()
-
-    return {"message_id": result["id"]}
-
-
--- Outlook inbox functions --
-
-Same four functions for Outlook: get_outlook_inbox, get_outlook_thread, send_outlook_reply, send_outlook_compose.
-
-Use the get_fresh_outlook_credentials pattern from outlook_signals_service.py -- import it from there.
-
-Outlook API calls use Microsoft Graph:
-  Base URL: https://graph.microsoft.com/v1.0/me
-
-get_outlook_inbox: GET /me/mailFolders/inbox/messages
-  params: $top=20, $select=id,conversationId,subject,from,toRecipients,receivedDateTime,bodyPreview,isRead
-  if page_token: $skip=page_token (integer offset)
-  Group by conversationId for threading.
-  Return same shape as Gmail: { threads, next_page_token, provider: "outlook" }
-
-get_outlook_thread: GET /me/messages?$filter=conversationId eq '{conversation_id}'
-  $select=id,subject,from,toRecipients,ccRecipients,receivedDateTime,body,isRead
-  body.contentType is "text" or "html" -- return body.content
-  Return same shape as Gmail thread.
-
-send_outlook_reply: POST /me/messages/{message_id}/reply
-  body: { comment: reply_text }
-
-send_outlook_compose: POST /me/sendMail
-  body: { message: { subject, body: { contentType: "Text", content: body }, toRecipients: [{ emailAddress: { address: to } }] } }
-
--- Client email matching --
-
-Add a function match_emails_to_clients that takes a list of email addresses (from/to fields) and a firm_id and returns a dict mapping email address -> client_id + client_name.
-
-def match_emails_to_clients(db: Session, firm_id: UUID, email_addresses: list[str]) -> dict[str, dict]:
-    """
-    Given a list of email addresses, find matching clients in this firm.
-    Returns { email_address: { client_id, client_name } }
-    Used to thread emails to client profiles.
-    """
-    from app.models.client import Client
-    normalized = [e.lower().strip() for e in email_addresses if e]
-    if not normalized:
-        return {}
-    clients = db.execute(
-        select(Client.id, Client.name, Client.email).where(
-            Client.firm_id == firm_id,
-            func.lower(Client.email).in_(normalized),
-        )
-    ).all()
-    return {
-        row[2].lower(): {"client_id": str(row[0]), "client_name": row[1]}
-        for row in clients
-        if row[2]
-    }
+No migrations. No backend changes. Three frontend files.
 
 ---
 
-STEP 2 -- BACKEND: app/api/inbox.py (new file)
+FIX 1 -- Inbox page Suspense boundary (Vercel build error)
 
-Create app/api/inbox.py with these endpoints. Router prefix: /inbox. Tag: inbox. All endpoints require get_current_user (any authenticated staff).
+Read frontend/src/app/(dashboard)/inbox/page.tsx
 
-All endpoints look up the current user's integration by firm_id + user_id + provider. If no connected integration exists, return 404 "No connected email account. Connect Gmail or Outlook in My Integrations."
+The page uses useSearchParams() directly in the top-level component. Next.js App Router requires useSearchParams() to be wrapped in a Suspense boundary or it fails to build.
 
--- GET /inbox/threads?provider=gmail&page_token= --
+Fix: Extract the part of the component that uses useSearchParams() into a separate inner component called InboxContent. Wrap it in <Suspense fallback={<div />}> in the default export.
 
-Query params: provider (gmail or outlook, default gmail), page_token (optional)
+The default export should look like:
 
-Finds the user's integration for that provider. Calls get_gmail_inbox or get_outlook_inbox. For each thread summary, calls match_emails_to_clients to find if any thread participants match a client in the firm. Adds client_id and client_name to each thread summary if a match is found.
+export default function InboxPage() {
+  return (
+    <Suspense fallback={<div />}>
+      <InboxContent />
+    </Suspense>
+  )
+}
 
-Returns the full response from the inbox service plus the client matches.
+Move all the existing page logic into InboxContent. Import Suspense from 'react'.
 
--- GET /inbox/threads/{thread_id}?provider=gmail --
+Same fix needed in frontend/src/app/settings/my-integrations/page.tsx if it also uses useSearchParams() directly -- read it and apply the same pattern if so.
 
-Fetches full thread content. Calls get_gmail_thread or get_outlook_thread. Adds client match to the response. Marks the thread as read via a fire-and-forget background thread (call Gmail/Outlook API to mark as read -- do not block the response).
+Also check frontend/src/app/settings/page.tsx -- it now has a MyIntegrationsTabContent component that uses useSearchParams(). Wrap that component's useSearchParams call in a useEffect or wrap the component itself in Suspense where it is rendered. The simplest fix: in MyIntegrationsTabContent, replace the useSearchParams() usage with a useEffect that reads window.location.search directly, avoiding the need for Suspense entirely.
 
-Return the thread with messages.
+Specifically in MyIntegrationsTabContent:
+- Remove the useSearchParams import if it is only used there
+- Replace the searchParams effect with:
 
--- POST /inbox/reply --
-
-Body: { thread_id: str, to: str, subject: str, body: str, provider: str }
-
-Calls send_gmail_reply or send_outlook_reply. Returns the sent message info.
-
--- POST /inbox/compose --
-
-Body: { to: str, subject: str, body: str, provider: str }
-
-Calls send_gmail_compose or send_outlook_compose. Returns the sent message info.
-
-Register in app/main.py:
-  from app.api.inbox import router as inbox_router
-  app.include_router(inbox_router, prefix="/api/v1")
-
----
-
-STEP 3 -- FRONTEND: Inbox page
-
-Create frontend/src/app/(dashboard)/inbox/page.tsx
-
-This is a two-panel layout matching the firm chat page structure exactly -- left panel is thread list, right panel is open thread content. Use the firm chat page as a visual and structural reference.
-
-The page has:
-- A provider toggle at the top of the left panel: Gmail / Outlook buttons. Switching provider reloads the thread list.
-- A "Compose" button in the left panel header.
-- Thread list on the left (scrollable, 280px wide)
-- Thread detail on the right (fills remaining width)
-
--- Thread list item --
-Each thread shows:
-- Unread indicator: 6px filled brand blue dot on the left if unread
-- From address (bold if unread, normal if read)
-- Subject (truncated)
-- Snippet (12px muted, truncated to one line)
-- Date (right-aligned, muted)
-- Client badge: if thread has a client match, show a small pill with the client name in brand blue
-
-On click: fetch GET /api/v1/inbox/threads/{thread_id}?provider={provider} and show in right panel.
-
--- Thread detail (right panel) --
-Header: subject, client badge if matched (clickable -- navigates to /clients/{client_id})
-Messages listed oldest to newest, each showing:
-- From / To / Date header row
-- Body content (plain text, preserve line breaks, render as pre-wrap)
-- Horizontal divider between messages
-
-At the bottom: reply compose box. Textarea + Send button. On send: POST /api/v1/inbox/reply.
-
--- Compose modal --
-Triggered by Compose button. Simple modal with To, Subject, Body fields. Send button calls POST /api/v1/inbox/compose.
-
--- Empty states --
-No integration connected: show message "Connect Gmail or Outlook in Settings to see your inbox." with a link to /settings?tab=my_integrations
-No threads: "Your inbox is empty."
-No thread selected: "Select a conversation to read it."
-
--- Loading states --
-Thread list: animate-pulse skeleton rows while fetching
-Thread detail: skeleton while fetching
-
-Style: match firm chat page exactly -- same two-column layout, same left panel background, same message item sizing, same compose box pinned to bottom.
+useEffect(() => {
+  if (typeof window === 'undefined') return
+  const params = new URLSearchParams(window.location.search)
+  const connected = params.get('connected')
+  const error = params.get('error')
+  if (connected === 'gmail') toast.success('Gmail connected successfully.')
+  if (connected === 'outlook') toast.success('Outlook connected successfully.')
+  if (error === 'gmail_failed') toast.error('Gmail connection failed. Please try again.')
+  if (error === 'outlook_failed') toast.error('Outlook connection failed. Please try again.')
+}, [])
 
 ---
 
-STEP 4 -- SIDEBAR: Add Inbox to navigation
+FIX 2 -- Sidebar inbox visibility based on firm setting AND per-staff opt-out
 
-In frontend/src/components/layout/Sidebar.tsx, add Inbox to the main navigation items list. Use the Mail icon from lucide-react.
+Read frontend/src/components/layout/Sidebar.tsx
 
-Place it between Billing and Firm Chat in the nav order:
-Dashboard / Clients / Engagements / Tasks / Documents / Billing / Inbox / Firm Chat / [divider] / Settings
+The sidebar needs to hide the Inbox link when:
+- Firm owner has email_sync_enabled = false (firm-wide disable), OR
+- The current staff member has personally opted out (inbox_disabled stored in their user settings)
+
+Add a useQuery for firm settings right after the existing notifications useQuery:
+
+const { data: firmData } = useQuery({
+  queryKey: ['firm-settings-sidebar'],
+  queryFn: () => api.get('/api/v1/firms/me').then((r) => r.data),
+  staleTime: 5 * 60 * 1000,
+})
+
+Derive visibility:
+  const emailSyncEnabled = firmData?.settings?.email_sync_enabled !== false
+  const userInboxDisabled = user?.settings?.inbox_disabled === true
+  const showInbox = emailSyncEnabled && !userInboxDisabled
+
+Update the visibleNavItems filter:
+  if (item.href === '/inbox') return showInbox
+
+Place this after the dashboard condition.
 
 ---
 
-STEP 5 -- CLIENT PROFILE: Email thread preview
+FIX 3 -- Per-staff inbox opt-out in My Integrations tab
 
-In frontend/src/app/clients/[id]/page.tsx, add an Emails tab to the client detail tab row alongside Overview, Engagements, Documents, Billing.
+The User model has a settings JSON field (check the model -- if it does not exist yet, store the opt-out in the Integration model's status field instead: set status to "disabled" to mean opted out by staff, "connected" to mean active).
 
-The Emails tab shows threads where this client's email address appears. On tab mount: fetch GET /api/v1/inbox/threads?provider=gmail (and outlook if connected) then filter client-matched threads where client_id matches.
+Actually: use the Integration model. When a staff member opts out, set integration.status = "opted_out". When they opt back in, set it back to "connected" or create a new connection.
 
-Show a simplified thread list (no compose, no full detail view -- clicking a thread navigates to /inbox with that thread pre-selected via URL param ?thread_id=X&provider=Y).
+In the backend, add one new endpoint to app/api/integrations.py:
 
-If neither Gmail nor Outlook is connected: show "Connect your email in My Integrations to see client email threads." with link to settings.
+POST /integrations/staff/{provider}/disable
+Requires get_current_user. Finds the user's integration for that provider. If not found, create one with status "opted_out". If found, set status = "opted_out". db.commit(). Return 200.
+
+POST /integrations/staff/{provider}/enable  
+Requires get_current_user. Finds the user's integration. Sets status = "connected" if previously opted_out. If no integration exists, redirect them to connect flow (return 400 "No integration connected. Connect first."). db.commit(). Return 200.
+
+In frontend/src/app/settings/page.tsx, update MyIntegrationsTabContent:
+
+The firm owner may allow or disallow staff from opting out, controlled by staff_can_disable_email_sync in firm settings.
+
+For each provider card, when the staff member is connected (status = "connected"):
+- If firmData.settings.staff_can_disable_email_sync is true (or missing): show a small "Pause inbox" link below the Disconnect button. Clicking it calls POST /api/v1/integrations/staff/{provider}/disable and refreshes state. When status is "opted_out", show "Resume inbox" link instead.
+- If staff_can_disable_email_sync is false: do not show the pause/resume option.
+
+When status is "opted_out":
+- Show an amber badge "Paused" instead of the green "Connected" badge
+- Show "Resume inbox" button that calls the enable endpoint
+
+Update the sidebar FIX 2 to also check for opted_out status:
+  const userInboxDisabled = integrations?.some(i => i.status === 'opted_out') ?? false
+
+But the sidebar does not fetch integrations. Keep it simple: the sidebar hides Inbox only on the firm-level toggle. The per-staff opt-out is handled by the Inbox page itself showing an appropriate message when all integrations are opted_out.
+
+So for FIX 2: only check emailSyncEnabled (firm level). The per-staff opted_out state is visible within the Inbox page and My Integrations tab, not the sidebar.
 
 ---
 
-NO MIGRATIONS required. No new database tables. Email content is never stored.
+DO NOT run migrations. No schema changes.
 
 After completing confirm:
-- app/services/inbox_service.py exists with 8 functions (4 Gmail, 4 Outlook including match_emails_to_clients)
-- app/api/inbox.py exists with 4 endpoints registered in main.py
-- frontend/src/app/(dashboard)/inbox/page.tsx exists with two-panel layout
-- Inbox added to sidebar between Billing and Firm Chat
-- Client profile has Emails tab
+- Inbox page wraps InboxContent in Suspense
+- settings/page.tsx MyIntegrationsTabContent uses window.location.search instead of useSearchParams
+- my-integrations/page.tsx wrapped in Suspense if it uses useSearchParams
+- Sidebar hides Inbox when email_sync_enabled is false
+- Two new endpoints: POST /integrations/staff/{provider}/disable and /enable
+- MyIntegrationsTabContent shows Pause/Resume option when staff_can_disable_email_sync allows it

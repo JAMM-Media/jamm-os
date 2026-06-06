@@ -435,6 +435,54 @@ def staff_disconnect_integration(
 
 
 # -------------------------------------------------------------------
+# POST /integrations/staff/{provider}/disable — Staff: opt out of inbox sync
+# -------------------------------------------------------------------
+@router.post("/staff/{provider}/disable", status_code=status.HTTP_200_OK)
+def staff_disable_integration(
+    provider: str,
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    current_user: User = Depends(get_current_user),
+):
+    integration = crud_integration.get_user_integration(
+        db, firm_id=current_firm.id, user_id=current_user.id, provider=provider
+    )
+    if not integration:
+        crud_integration.create_user_integration(
+            db, firm_id=current_firm.id, user_id=current_user.id, provider=provider
+        )
+        integration = crud_integration.get_user_integration(
+            db, firm_id=current_firm.id, user_id=current_user.id, provider=provider
+        )
+    crud_integration.update_integration_status(db, integration, status="opted_out")
+    return {"status": "opted_out"}
+
+
+# -------------------------------------------------------------------
+# POST /integrations/staff/{provider}/enable — Staff: opt back into inbox sync
+# -------------------------------------------------------------------
+@router.post("/staff/{provider}/enable", status_code=status.HTTP_200_OK)
+def staff_enable_integration(
+    provider: str,
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    current_user: User = Depends(get_current_user),
+):
+    integration = crud_integration.get_user_integration(
+        db, firm_id=current_firm.id, user_id=current_user.id, provider=provider
+    )
+    if not integration:
+        raise HTTPException(
+            status_code=400,
+            detail="No integration connected. Connect first.",
+        )
+    if integration.status != "opted_out":
+        return {"status": integration.status}
+    crud_integration.update_integration_status(db, integration, status="connected")
+    return {"status": "connected"}
+
+
+# -------------------------------------------------------------------
 # GET /integrations/ — List all integrations for this firm
 # -------------------------------------------------------------------
 @router.get("/", response_model=list[IntegrationOut])

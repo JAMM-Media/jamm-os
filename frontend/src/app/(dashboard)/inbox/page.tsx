@@ -1,7 +1,7 @@
 // path: frontend/src/app/(dashboard)/inbox/page.tsx
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { AppShell } from '@/components/layout/AppShell'
 import { Mail, X } from 'lucide-react'
@@ -210,7 +210,7 @@ function ComposeModal({ provider, onClose }: ComposeModalProps) {
 // Page
 // ---------------------------------------------------------------------------
 
-export default function InboxPage() {
+function InboxContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const initialThreadId = searchParams.get('thread_id')
@@ -546,5 +546,13 @@ export default function InboxPage() {
         <ComposeModal provider={provider} onClose={() => setShowCompose(false)} />
       )}
     </AppShell>
+  )
+}
+
+export default function InboxPage() {
+  return (
+    <Suspense fallback={<div />}>
+      <InboxContent />
+    </Suspense>
   )
 }

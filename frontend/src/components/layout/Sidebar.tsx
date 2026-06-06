@@ -72,8 +72,17 @@ export function Sidebar({ collapsed, onToggle, onConciergeOpen }: SidebarProps) 
   })
   const notifUnread: number = notifData?.count ?? 0
 
+  const { data: firmData } = useQuery({
+    queryKey: ['firm-settings-sidebar'],
+    queryFn: () => api.get('/api/v1/firms/me').then((r) => r.data),
+    staleTime: 5 * 60 * 1000,
+  })
+
+  const emailSyncEnabled = (firmData as { settings?: { email_sync_enabled?: boolean } } | undefined)?.settings?.email_sync_enabled !== false
+
   const visibleNavItems = navItems.filter((item) => {
     if (item.href === '/dashboard' && user?.role === 'staff') return false
+    if (item.href === '/inbox') return emailSyncEnabled
     return true
   })
 
