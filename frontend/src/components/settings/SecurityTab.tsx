@@ -227,8 +227,8 @@ export default function SecurityTab() {
             value={minLength}
             min={6}
             max={32}
-            onChange={(e) => setMinLength(Number(e.target.value))}
-            className="w-16 text-center text-[13px] rounded-[6px] border border-[#C8CDD6] bg-white px-2 py-1 outline-none focus:border-[#1F3148]"
+            onChange={(e) => { const v = parseInt(e.target.value, 10); if (!isNaN(v)) setMinLength(v) }}
+            className="w-16 text-center text-[13px] text-[#1F3148] rounded-[6px] border border-[#C8CDD6] bg-white px-2 py-1 outline-none focus:border-[#1F3148]"
           />
         </div>
 
@@ -252,7 +252,7 @@ export default function SecurityTab() {
               aria-checked={value}
               onClick={() => set(!value)}
               className={cn(
-                'relative w-9 h-5 rounded-full transition-colors flex-shrink-0',
+                'relative w-9 h-5 rounded-full transition-colors flex-shrink-0 overflow-hidden',
                 value ? 'bg-[#1F3148]' : 'bg-[#C8CDD6]',
               )}
             >
@@ -278,8 +278,8 @@ export default function SecurityTab() {
               value={maxFailedAttempts}
               min={3}
               max={20}
-              onChange={(e) => setMaxFailedAttempts(Number(e.target.value))}
-              className="w-16 text-center text-[13px] rounded-[6px] border border-[#C8CDD6] bg-white px-2 py-1 outline-none focus:border-[#1F3148]"
+              onChange={(e) => { const v = parseInt(e.target.value, 10); if (!isNaN(v)) setMaxFailedAttempts(v) }}
+              className="w-16 text-center text-[13px] text-[#1F3148] rounded-[6px] border border-[#C8CDD6] bg-white px-2 py-1 outline-none focus:border-[#1F3148]"
             />
           </div>
           <p className="text-[11px] text-[#6B7280] mt-1">
