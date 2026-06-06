@@ -377,6 +377,78 @@ Return only the corrected text. No explanation. No preamble. No commentary.""",
         return {"text": body.text}
 
 
+class ExtractClientRequest(BaseModel):
+    text: str
+
+@router.post("/extract-client")
+def extract_client(
+    body: ExtractClientRequest,
+    current_firm: Firm = Depends(get_current_firm),
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.role == UserRole.client_portal_user:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied.",
+        )
+
+    if not body.text or not body.text.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Text cannot be empty.",
+        )
+
+    settings = get_settings()
+    extract_api_key = settings.ANTHROPIC_API_KEY
+    if not extract_api_key:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="API key not configured.",
+        )
+
+    try:
+        extract_client_api = anthropic.Anthropic(api_key=extract_api_key)
+        response = extract_client_api.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=500,
+            system="""You are a data extraction utility for an accounting firm software.
+Extract client information from the text provided.
+
+Return a JSON object with exactly these fields:
+{
+  "name": "full name of the client or business",
+  "email": "email address or null",
+  "phone": "phone number or null",
+  "entity_type": "individual or business or trust or estate or null",
+  "company_name": "company or business name or null"
+}
+
+Rules:
+- name is required. If you cannot find a clear name, return null for name.
+- entity_type must be exactly one of: individual, business, trust, estate, or null.
+- If the text describes a person (not a business), entity_type is individual.
+- If the text describes a business, LLC, Corp, or partnership, entity_type is business.
+- Return null for any field you cannot confidently extract.
+- Return only the JSON object. No explanation. No preamble. No markdown fences.""",
+            messages=[{"role": "user", "content": body.text}],
+        )
+        import json
+        raw = response.content[0].text.strip()
+        extracted = json.loads(raw)
+        return {"extracted": extracted}
+    except json.JSONDecodeError:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Could not extract client data from the provided text.",
+        )
+    except Exception as e:
+        logger.warning(f"Extract client failed for firm {current_firm.id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Extraction failed. Please try again.",
+        )
+
+
 @router.get("/clients/resolve")
 @limiter.limit("30/minute")
 def resolve_client_by_name(
