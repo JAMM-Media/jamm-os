@@ -30,45 +30,117 @@ All models must be imported in migrations/env.py or autogenerate silently misses
 
 ---
 
-# PHASE INSTRUCTIONS — TOGGLE DOT SIZE FIX
+# PHASE INSTRUCTIONS — FAILED LOGIN EMAIL ALERT
 
 ## Context
-One fix only in frontend/src/components/settings/SecurityTab.tsx.
-No other files. No backend. No migration.
+When a staff login attempt fails, the event is already logged to the audit log
+and behavioral event log in app/services/auth_service.py.
+This build adds one thing: send an email alert to the firm owner.
 
-The toggle track is w-9 h-5 (36x20px).
-The dot is currently w-4 h-4 (16px) which is too large for the track.
-Positions translate-x-[19px] off and translate-x-1 on are also wrong.
+No migration. No frontend changes. One targeted edit to auth_service.py only.
+
+Rules:
+- Fire-and-forget only — never block the login response
+- Use a background thread exactly like other fire-and-forget email patterns
+- Never send the alert if the firm owner cannot be found
+- Never surface email errors to the user
+- The alert goes to the firm owner email, not the user who failed to log in
+
+---
+
+## Pre-task checkpoint
+git add -A
+git commit -m "checkpoint before failed login alert"
 
 ---
 
 ## VERIFY BEFORE STARTING
-grep -n "translate-x-\|w-4 h-4\|absolute top" frontend/src/components/settings/SecurityTab.tsx
+grep -n "login_failed\|write_audit_log\|log_event\|failed_login_count" app/services/auth_service.py
 Paste output before touching anything.
 
 ---
 
-## Fix: Correct dot size and position
+## Change 1: Add failed login email alert to auth_service.py
 
-Find exactly:
-                  'absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform',
-                  value ? 'translate-x-[19px]' : 'translate-x-1',
+Find the block in authenticate_staff that handles invalid credentials.
+It currently:
+1. Calls write_audit_log with action="user.login_failed"
+2. Calls log_event with event_type="user.login_failed"
+3. Loads firm settings and increments failed_login_count
 
-Replace with:
-                  'absolute top-[3px] left-[3px] w-3.5 h-3.5 rounded-full bg-white shadow transition-transform',
-                  value ? 'translate-x-[16px]' : 'translate-x-0',
+After step 2 (after the log_event call, before the firm settings load),
+add a fire-and-forget email alert in a background thread:
+
+```python
+# Fire-and-forget failed login alert to firm owner
+def _send_failed_login_alert(firm_id, user_email: str) -> None:
+    try:
+        from app.db.session import SessionLocal
+        from app.models.user import User
+        from app.core.enums import UserRole
+        from app.models.firm import Firm
+        from app.services.email_service import EmailService
+        _db = SessionLocal()
+        try:
+            firm_owner = _db.query(User).filter(
+                User.firm_id == firm_id,
+                User.role == UserRole.firm_owner,
+                User.is_active == True,
+            ).first()
+            if not firm_owner:
+                return
+            firm = _db.query(Firm).filter(Firm.id == firm_id).first()
+            firm_name = firm.name if firm else "Your firm"
+            EmailService.send_notification_email(
+                to_email=firm_owner.email,
+                firm_name=firm_name,
+                recipient_name=firm_owner.full_name or "Firm Owner",
+                title="Failed login attempt",
+                body=f"A failed login attempt was made for the account {user_email}. If this was not you or a member of your team, review your firm security settings.",
+                app_url="https://app.jammpx.com/settings?tab=security",
+            )
+        finally:
+            _db.close()
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).warning("Failed login alert email error: %s", type(exc).__name__)
+```
+
+Define this function at the module level in auth_service.py
+(not inside authenticate_staff).
+
+Then inside the invalid credentials block, after the log_event call,
+add:
+```python
+import threading
+threading.Thread(
+    target=_send_failed_login_alert,
+    kwargs={"firm_id": user.firm_id, "user_email": user.email},
+    daemon=True,
+).start()
+```
+
+Important: only fire this when user is not None (we already know the
+email exists but the password was wrong). Do not fire it when user
+is None (unknown email) to avoid leaking account existence.
 
 ---
 
-## Verify
-grep -n "translate-x-\[16px\]\|w-3.5 h-3.5\|left-\[3px\]" frontend/src/components/settings/SecurityTab.tsx
+## Verify after changes
+grep -n "_send_failed_login_alert\|Failed login alert\|threading.Thread" app/services/auth_service.py
 All three must appear.
-cd frontend
-npx tsc --noEmit
+python -m py_compile app/services/auth_service.py
+Must pass before deploying.
 
 ---
 
-## Deploy
+## Deploy sequence
 git add -A
-git commit -m "fix toggle dot size and position"
+git commit -m "failed login email alert to firm owner"
 git push origin main
+Then on the droplet:
+git pull origin main
+alembic upgrade head
+alembic current
+systemctl restart jammpx.service
+journalctl -u jammpx.service -n 20 --no-pager
