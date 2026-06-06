@@ -1,14 +1,60 @@
 // path: frontend/src/app/calendar/page.tsx
 'use client'
 
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { useQuery } from '@tanstack/react-query'
+import { useState, useCallback, useRef, useEffect } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { AppShell } from '@/components/layout/AppShell'
-import { engagementsApi, type CalendarItem } from '@/lib/api'
-import { CheckCircle, ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react'
+import { engagementsApi } from '@/lib/api/engagements'
+import { tasksApi } from '@/lib/api/tasks'
+import { useAuth } from '@/lib/hooks/useAuth'
+import api from '@/lib/api'
+import { ChevronLeft, ChevronRight, Pencil, Plus, X } from 'lucide-react'
 
-type ViewMode = 'list' | 'month'
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+type EventType = 'deadline' | 'extension' | 'task' | 'call' | 'holiday'
+
+interface CalEvent {
+  id: string
+  title: string
+  date: string // YYYY-MM-DD
+  type: EventType
+  assignedTo?: string | null
+  description?: string
+}
+
+interface MySettings {
+  colors: Record<string, string>
+  custom_categories: Array<{ name: string; color: string }>
+}
+
+interface StaffMember {
+  id: string
+  full_name: string | null
+  email: string
+  role: string
+}
+
+type ViewMode = 'month' | 'week' | 'agenda'
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+const DEFAULT_COLORS: Record<string, string> = {
+  deadline: '#EF4444',
+  extension: '#F97316',
+  task: '#3B82F6',
+  call: '#22C55E',
+  holiday: '#9CA3AF',
+}
+
+const STAFF_PALETTE = [
+  '#6366F1', '#EC4899', '#14B8A6', '#F59E0B',
+  '#8B5CF6', '#06B6D4', '#F43F5E', '#84CC16',
+]
 
 const MONTH_NAMES = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -16,314 +62,823 @@ const MONTH_NAMES = [
 ]
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
-function parseDate(dateStr: string): Date {
-  const [y, m, d] = dateStr.split('-').map(Number)
+const TYPE_LABELS: Record<string, string> = {
+  deadline: 'Deadlines',
+  extension: 'Extensions',
+  task: 'Tasks',
+  call: 'Calls',
+  holiday: 'Holidays',
+}
+
+// ---------------------------------------------------------------------------
+// US Federal Holidays for current year
+// ---------------------------------------------------------------------------
+
+function usHolidays(year: number): CalEvent[] {
+  const fixed = [
+    { month: 1, day: 1, name: "New Year's Day" },
+    { month: 6, day: 19, name: 'Juneteenth' },
+    { month: 7, day: 4, name: 'Independence Day' },
+    { month: 11, day: 11, name: "Veterans Day" },
+    { month: 12, day: 25, name: 'Christmas Day' },
+  ]
+
+  function nthWeekday(y: number, m: number, weekday: number, n: number): string {
+    const d = new Date(y, m - 1, 1)
+    let count = 0
+    while (true) {
+      if (d.getDay() === weekday) {
+        count++
+        if (count === n) break
+      }
+      d.setDate(d.getDate() + 1)
+    }
+    return `${y}-${String(m).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  }
+
+  function lastWeekday(y: number, m: number, weekday: number): string {
+    const d = new Date(y, m, 0)
+    while (d.getDay() !== weekday) d.setDate(d.getDate() - 1)
+    return `${y}-${String(m).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  }
+
+  const computed = [
+    { date: nthWeekday(year, 1, 1, 3), name: 'MLK Day' },
+    { date: nthWeekday(year, 2, 1, 3), name: "Presidents' Day" },
+    { date: lastWeekday(year, 5, 1), name: 'Memorial Day' },
+    { date: nthWeekday(year, 9, 1, 1), name: 'Labor Day' },
+    { date: nthWeekday(year, 10, 1, 2), name: 'Columbus Day' },
+    { date: nthWeekday(year, 11, 4, 4), name: 'Thanksgiving' },
+  ]
+
+  const holidays: CalEvent[] = []
+
+  for (const h of fixed) {
+    const ds = `${year}-${String(h.month).padStart(2, '0')}-${String(h.day).padStart(2, '0')}`
+    holidays.push({ id: `holiday-${ds}`, title: h.name, date: ds, type: 'holiday' })
+  }
+
+  for (const h of computed) {
+    holidays.push({ id: `holiday-${h.date}`, title: h.name, date: h.date, type: 'holiday' })
+  }
+
+  return holidays
+}
+
+// ---------------------------------------------------------------------------
+// Date helpers
+// ---------------------------------------------------------------------------
+
+function toDateStr(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+function parseDate(s: string): Date {
+  const [y, m, d] = s.split('-').map(Number)
   return new Date(y, m - 1, d)
 }
 
-function formatDate(dateStr: string): string {
-  const d = parseDate(dateStr)
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+function formatDate(s: string): string {
+  return parseDate(s).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
-function urgencyColor(dateStr: string): string {
+// ---------------------------------------------------------------------------
+// Color picker popover
+// ---------------------------------------------------------------------------
+
+interface ColorPickerProps {
+  value: string
+  onChange: (c: string) => void
+  onClose: () => void
+}
+
+function ColorPicker({ value, onChange, onClose }: ColorPickerProps) {
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    function onClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose()
+    }
+    document.addEventListener('mousedown', onClick)
+    return () => document.removeEventListener('mousedown', onClick)
+  }, [onClose])
+
+  return (
+    <div ref={ref} className="absolute z-50 bg-surface-card border border-surface-border rounded shadow-lg p-2" style={{ top: '100%', left: 0 }}>
+      <input
+        type="color"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-10 h-10 cursor-pointer border-0 p-0 bg-transparent"
+        autoFocus
+      />
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Event pill
+// ---------------------------------------------------------------------------
+
+interface PillProps {
+  event: CalEvent
+  borderColor: string
+  fillColor: string
+  isOwner: boolean
+  isPersonalView: boolean
+}
+
+function EventPill({ event, borderColor, fillColor, isOwner, isPersonalView }: PillProps) {
+  const useFill = isOwner && !isPersonalView ? fillColor : 'transparent'
+  return (
+    <div
+      title={`${event.title} — ${formatDate(event.date)}`}
+      className="text-xs px-1 py-0.5 rounded truncate cursor-default"
+      style={{
+        border: `2px solid ${borderColor}`,
+        backgroundColor: useFill,
+        color: 'inherit',
+        maxWidth: '100%',
+      }}
+    >
+      {event.title}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Main page
+// ---------------------------------------------------------------------------
+
+export default function CalendarPage() {
+  const { user } = useAuth()
+  const qc = useQueryClient()
+  const isFirmOwner = user?.role === 'firm_owner'
+
   const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  const deadline = parseDate(dateStr)
-  const days = Math.ceil((deadline.getTime() - today.getTime()) / 86400000)
-  if (days <= 7) return 'bg-red-500'
-  if (days <= 14) return 'bg-amber-400'
-  return 'bg-green-500'
-}
+  const [view, setView] = useState<ViewMode>('month')
+  const [cursor, setCursor] = useState(new Date(today.getFullYear(), today.getMonth(), 1))
+  const [selectedStaff, setSelectedStaff] = useState<string[]>([])
+  const [justMe, setJustMe] = useState(true)
+  const [sidebarFilter, setSidebarFilter] = useState<EventType[]>(['deadline'])
+  const [editingColor, setEditingColor] = useState<string | null>(null)
+  const [addCatOpen, setAddCatOpen] = useState(false)
+  const [newCatName, setNewCatName] = useState('')
+  const [newCatColor, setNewCatColor] = useState('#3B82F6')
+  const [expandedDay, setExpandedDay] = useState<string | null>(null)
 
-function urgencyTextColor(dateStr: string): string {
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  const deadline = parseDate(dateStr)
-  const days = Math.ceil((deadline.getTime() - today.getTime()) / 86400000)
-  if (days <= 7) return 'text-red-600 dark:text-red-400'
-  if (days <= 14) return 'text-amber-600 dark:text-amber-400'
-  return 'text-green-600 dark:text-green-400'
-}
+  // Staff color picker
+  const [editingStaffColor, setEditingStaffColor] = useState<string | null>(null)
 
-function getWeekLabel(dateStr: string): string {
-  const d = parseDate(dateStr)
-  const day = d.getDay()
-  const monday = new Date(d)
-  monday.setDate(d.getDate() - day)
-  return `Week of ${monday.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
-}
+  const year = today.getFullYear()
+  const holidays = usHolidays(year)
 
-function groupByWeek(items: CalendarItem[]): Record<string, CalendarItem[]> {
-  const groups: Record<string, CalendarItem[]> = {}
-  for (const item of items) {
-    const key = getWeekLabel(item.effectiveDeadline)
-    if (!groups[key]) groups[key] = []
-    groups[key].push(item)
+  // ---------------------------------------------------------------------------
+  // Data fetching
+  // ---------------------------------------------------------------------------
+
+  const { data: calendarItems = [] } = useQuery({
+    queryKey: ['engagements-calendar'],
+    queryFn: () => engagementsApi.getCalendar(180),
+  })
+
+  const { data: tasksData } = useQuery({
+    queryKey: ['tasks-calendar'],
+    queryFn: () => tasksApi.list(0, 200),
+  })
+
+  const { data: externalData } = useQuery({
+    queryKey: ['external-events'],
+    queryFn: async () => {
+      const { data } = await api.get('/api/v1/calendar/external-events')
+      return data as { events: Array<{ id: string; title: string; start: string; end: string; description: string; type: string }>; provider: string | null }
+    },
+    retry: false,
+  })
+
+  const { data: mySettings } = useQuery({
+    queryKey: ['my-calendar-settings'],
+    queryFn: async () => {
+      const { data } = await api.get('/api/v1/calendar/my-settings')
+      return data as MySettings
+    },
+  })
+
+  const { data: staffColors } = useQuery({
+    queryKey: ['staff-colors'],
+    queryFn: async () => {
+      const { data } = await api.get('/api/v1/calendar/staff-colors')
+      return data.colors as Record<string, string>
+    },
+    enabled: isFirmOwner,
+  })
+
+  const { data: staffList = [] } = useQuery({
+    queryKey: ['staff-list'],
+    queryFn: async () => {
+      const { data } = await api.get('/users/', { params: { limit: 100, offset: 0 } })
+      const items = Array.isArray(data) ? data : (data.items ?? [])
+      return items.filter((u: StaffMember) => u.role !== 'client_portal_user') as StaffMember[]
+    },
+    enabled: isFirmOwner,
+  })
+
+  const patchSettings = useMutation({
+    mutationFn: async (payload: { colors?: Record<string, string>; custom_categories?: Array<{ name: string; color: string }> }) => {
+      const { data } = await api.patch('/api/v1/calendar/my-settings', payload)
+      return data as MySettings
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['my-calendar-settings'] }),
+  })
+
+  const patchStaffColor = useMutation({
+    mutationFn: async (payload: { user_id: string; color: string }) => {
+      const { data } = await api.patch('/api/v1/calendar/staff-colors', payload)
+      return data
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['staff-colors'] }),
+  })
+
+  // ---------------------------------------------------------------------------
+  // Derived colors
+  // ---------------------------------------------------------------------------
+
+  const eventColors: Record<string, string> = { ...DEFAULT_COLORS, ...(mySettings?.colors ?? {}) }
+  const customCategories = mySettings?.custom_categories ?? []
+
+  function getStaffColor(userId: string, index: number): string {
+    return (staffColors ?? {})[userId] ?? STAFF_PALETTE[index % STAFF_PALETTE.length]
   }
-  return groups
-}
 
-function ListView({ items, onRowClick }: { items: CalendarItem[]; onRowClick: (id: string) => void }) {
-  if (items.length === 0) {
+  // ---------------------------------------------------------------------------
+  // Build unified event list
+  // ---------------------------------------------------------------------------
+
+  const today180 = new Date(today)
+  today180.setDate(today180.getDate() + 180)
+
+  const allEvents: CalEvent[] = []
+
+  for (const item of calendarItems) {
+    allEvents.push({
+      id: `eng-${item.engagementId}`,
+      title: item.engagementName,
+      date: item.effectiveDeadline,
+      type: item.deadlineType === 'extended' ? 'extension' : 'deadline',
+      assignedTo: item.assignedTo ?? null,
+    })
+  }
+
+  const taskItems = tasksData?.items ?? []
+  for (const task of taskItems) {
+    if (!task.dueDate) continue
+    const d = parseDate(task.dueDate)
+    if (d >= today && d <= today180) {
+      allEvents.push({
+        id: `task-${task.id}`,
+        title: task.title,
+        date: task.dueDate,
+        type: 'task',
+        assignedTo: task.assignedTo,
+      })
+    }
+  }
+
+  if (externalData?.events) {
+    for (const ev of externalData.events) {
+      const start = ev.start.includes('T') ? ev.start.split('T')[0] : ev.start
+      allEvents.push({
+        id: `ext-${ev.id}`,
+        title: ev.title,
+        date: start,
+        type: 'call',
+        description: ev.description,
+      })
+    }
+  }
+
+  for (const h of holidays) allEvents.push(h)
+
+  // Filtering by selected staff (firm owner aggregate view)
+  function isEventVisible(ev: CalEvent): boolean {
+    if (justMe || !isFirmOwner) return true
+    if (!ev.assignedTo) return true
+    return selectedStaff.includes(ev.assignedTo)
+  }
+
+  const visibleEvents = allEvents.filter(isEventVisible)
+
+  // Group by date for easy lookup
+  const byDate: Record<string, CalEvent[]> = {}
+  for (const ev of visibleEvents) {
+    if (!byDate[ev.date]) byDate[ev.date] = []
+    byDate[ev.date].push(ev)
+  }
+
+  // ---------------------------------------------------------------------------
+  // Staff index map
+  // ---------------------------------------------------------------------------
+
+  const staffIndexMap: Record<string, number> = {}
+  staffList.forEach((s, i) => { staffIndexMap[s.id] = i })
+
+  // ---------------------------------------------------------------------------
+  // Navigation
+  // ---------------------------------------------------------------------------
+
+  function prev() {
+    if (view === 'month') setCursor(new Date(cursor.getFullYear(), cursor.getMonth() - 1, 1))
+    else if (view === 'week') {
+      const d = new Date(cursor)
+      d.setDate(d.getDate() - 7)
+      setCursor(d)
+    }
+  }
+
+  function next() {
+    if (view === 'month') setCursor(new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1))
+    else if (view === 'week') {
+      const d = new Date(cursor)
+      d.setDate(d.getDate() + 7)
+      setCursor(d)
+    }
+  }
+
+  function cursorLabel(): string {
+    if (view === 'month') return `${MONTH_NAMES[cursor.getMonth()]} ${cursor.getFullYear()}`
+    if (view === 'week') {
+      const sun = new Date(cursor)
+      sun.setDate(sun.getDate() - sun.getDay())
+      const sat = new Date(sun)
+      sat.setDate(sat.getDate() + 6)
+      return `${sun.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${sat.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
+    }
+    return 'Agenda'
+  }
+
+  // ---------------------------------------------------------------------------
+  // Pill rendering helpers
+  // ---------------------------------------------------------------------------
+
+  function renderPills(events: CalEvent[], limit = 99) {
+    return events.slice(0, limit).map((ev) => {
+      const borderColor = eventColors[ev.type] ?? '#9CA3AF'
+      const staffIdx = ev.assignedTo ? (staffIndexMap[ev.assignedTo] ?? 0) : 0
+      const fillColor = ev.assignedTo ? getStaffColor(ev.assignedTo, staffIdx) : 'transparent'
+      return (
+        <EventPill
+          key={ev.id}
+          event={ev}
+          borderColor={borderColor}
+          fillColor={fillColor}
+          isOwner={isFirmOwner}
+          isPersonalView={justMe}
+        />
+      )
+    })
+  }
+
+  // ---------------------------------------------------------------------------
+  // Month view
+  // ---------------------------------------------------------------------------
+
+  function MonthView() {
+    const year = cursor.getFullYear()
+    const month = cursor.getMonth()
+    const firstDay = new Date(year, month, 1).getDay()
+    const daysInMonth = new Date(year, month + 1, 0).getDate()
+    const todayStr = toDateStr(today)
+
+    const cells: (string | null)[] = Array(firstDay).fill(null)
+    for (let d = 1; d <= daysInMonth; d++) {
+      cells.push(`${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`)
+    }
+    while (cells.length % 7 !== 0) cells.push(null)
+
     return (
-      <div className="flex flex-col items-center justify-center py-24 gap-3">
-        <CheckCircle className="h-10 w-10 text-green-500" />
-        <p className="text-[14px] font-medium text-brand dark:text-[#EDEEF0]">No upcoming deadlines in the next 6 months.</p>
-        <p className="text-[12px] text-[#6B7280]">You&apos;re all clear — well done.</p>
+      <div className="flex-1 overflow-auto">
+        <div className="grid grid-cols-7 border-b border-surface-border">
+          {DAY_NAMES.map((d) => (
+            <div key={d} className="text-center text-xs font-medium py-1 text-muted-foreground">{d}</div>
+          ))}
+        </div>
+        <div className="grid grid-cols-7">
+          {cells.map((ds, i) => {
+            if (!ds) return <div key={i} className="min-h-[80px] border-b border-r border-surface-border/50 bg-surface-card/30" />
+            const dayEvents = byDate[ds] ?? []
+            const isToday = ds === todayStr
+            const isExpanded = expandedDay === ds
+            return (
+              <div
+                key={ds}
+                className="min-h-[80px] border-b border-r border-surface-border/50 p-1 relative"
+              >
+                <div
+                  className={`text-xs font-medium mb-1 w-5 h-5 flex items-center justify-center rounded-full ${isToday ? 'bg-primary text-primary-foreground' : 'text-foreground'}`}
+                >
+                  {parseDate(ds).getDate()}
+                </div>
+                <div className="flex flex-col gap-0.5">
+                  {renderPills(dayEvents, 3)}
+                  {dayEvents.length > 3 && (
+                    <button
+                      className="text-xs text-primary underline text-left"
+                      onClick={() => setExpandedDay(isExpanded ? null : ds)}
+                    >
+                      +{dayEvents.length - 3} more
+                    </button>
+                  )}
+                </div>
+                {isExpanded && dayEvents.length > 3 && (
+                  <div className="absolute top-0 left-0 z-40 bg-surface-card border border-surface-border rounded shadow-lg p-2 w-56">
+                    <div className="flex justify-between items-center mb-1">
+                      <span className="text-xs font-medium">{formatDate(ds)}</span>
+                      <button onClick={() => setExpandedDay(null)}><X size={12} /></button>
+                    </div>
+                    <div className="flex flex-col gap-0.5">{renderPills(dayEvents)}</div>
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
       </div>
     )
   }
 
-  const groups = groupByWeek(items)
+  // ---------------------------------------------------------------------------
+  // Week view
+  // ---------------------------------------------------------------------------
 
-  return (
-    <div className="flex flex-col gap-4">
-      {Object.entries(groups).map(([week, engagements]) => (
-        <div key={week}>
-          <p className="text-[11px] uppercase tracking-[0.05em] text-[#6B7280] mb-2">{week}</p>
-          <div className="flex flex-col gap-1.5">
-            {engagements.map((eng) => (
-              <div
-                key={eng.engagementId}
-                onClick={() => onRowClick(eng.engagementId)}
-                className="flex items-center justify-between bg-white dark:bg-dark-card border border-[0.5px] border-surface-border dark:border-dark-border rounded-[8px] px-3.5 py-2.5 cursor-pointer hover:bg-[#F9FAFB] dark:hover:bg-[#2A2A2A] transition-colors"
-              >
-                <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                  <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${urgencyColor(eng.effectiveDeadline)}`} />
-                  <div className="min-w-0">
-                    <p className="text-[13px] font-[500] text-[#111827] dark:text-[#EDEEF0] truncate">{eng.engagementName}</p>
-                    <p className="text-[12px] text-[#6B7280] truncate">{eng.clientName}</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 flex-shrink-0 ml-3">
-                  <span className={`text-[12px] font-[500] ${urgencyTextColor(eng.effectiveDeadline)}`}>
-                    {formatDate(eng.effectiveDeadline)}
-                  </span>
-                  {eng.deadlineType === 'extended' ? (
-                    <span className="text-[11px] font-medium px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
-                      Extended
-                    </span>
-                  ) : (
-                    <span className="text-[11px] font-medium px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
-                      Filing
-                    </span>
-                  )}
+  function WeekView() {
+    const sun = new Date(cursor)
+    sun.setDate(sun.getDate() - sun.getDay())
+    const days: string[] = []
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(sun)
+      d.setDate(d.getDate() + i)
+      days.push(toDateStr(d))
+    }
+    const todayStr = toDateStr(today)
+
+    return (
+      <div className="flex-1 overflow-auto">
+        <div className="grid grid-cols-7 border-b border-surface-border">
+          {days.map((ds) => {
+            const d = parseDate(ds)
+            const isToday = ds === todayStr
+            return (
+              <div key={ds} className="text-center py-2 border-r border-surface-border/50 last:border-r-0">
+                <div className="text-xs text-muted-foreground">{DAY_NAMES[d.getDay()]}</div>
+                <div className={`text-sm font-medium mx-auto w-7 h-7 flex items-center justify-center rounded-full ${isToday ? 'bg-primary text-primary-foreground' : ''}`}>
+                  {d.getDate()}
                 </div>
               </div>
-            ))}
-          </div>
+            )
+          })}
         </div>
-      ))}
-    </div>
-  )
-}
-
-function MonthView({ items, month, year, onPrev, onNext, onRowClick }: {
-  items: CalendarItem[]
-  month: number
-  year: number
-  onPrev: () => void
-  onNext: () => void
-  onRowClick: (id: string) => void
-}) {
-  const [popoverDay, setPopoverDay] = useState<number | null>(null)
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-
-  const firstDay = new Date(year, month, 1).getDay()
-  const daysInMonth = new Date(year, month + 1, 0).getDate()
-  const prevMonthDays = new Date(year, month, 0).getDate()
-
-  const byDay: Record<number, CalendarItem[]> = {}
-  for (const item of items) {
-    const d = parseDate(item.effectiveDeadline)
-    if (d.getFullYear() === year && d.getMonth() === month) {
-      const day = d.getDate()
-      if (!byDay[day]) byDay[day] = []
-      byDay[day].push(item)
-    }
-  }
-
-  const cells: Array<{ day: number; inMonth: boolean }> = []
-  for (let i = firstDay - 1; i >= 0; i--) cells.push({ day: prevMonthDays - i, inMonth: false })
-  for (let d = 1; d <= daysInMonth; d++) cells.push({ day: d, inMonth: true })
-  while (cells.length % 7 !== 0) {
-    cells.push({ day: cells.length - daysInMonth - firstDay + 1, inMonth: false })
-  }
-
-  const rows: typeof cells[] = []
-  for (let i = 0; i < cells.length; i += 7) rows.push(cells.slice(i, i + 7))
-
-  return (
-    <div>
-      {/* Month navigation */}
-      <div className="flex items-center justify-between mb-3">
-        <button onClick={onPrev} className="p-1.5 rounded hover:bg-[#F3F4F6] dark:hover:bg-[#333333] text-[#374151] dark:text-[#D1D5DB]">
-          <ChevronLeft className="h-4 w-4" />
-        </button>
-        <p className="text-[14px] font-[500] text-brand dark:text-[#EDEEF0]">
-          {MONTH_NAMES[month]} {year}
-        </p>
-        <button onClick={onNext} className="p-1.5 rounded hover:bg-[#F3F4F6] dark:hover:bg-[#333333] text-[#374151] dark:text-[#D1D5DB]">
-          <ChevronRight className="h-4 w-4" />
-        </button>
+        <div className="grid grid-cols-7 min-h-[400px]">
+          {days.map((ds) => {
+            const dayEvents = byDate[ds] ?? []
+            return (
+              <div key={ds} className="border-r border-surface-border/50 last:border-r-0 p-1 flex flex-col gap-0.5">
+                {renderPills(dayEvents)}
+              </div>
+            )
+          })}
+        </div>
       </div>
+    )
+  }
 
-      <div className="bg-white dark:bg-dark-card rounded-[8px] border border-surface-border dark:border-dark-border overflow-hidden">
-        {/* Day headers */}
-        <div className="grid grid-cols-7 border-b border-surface-border dark:border-dark-border">
-          {DAY_NAMES.map((d) => (
-            <div key={d} className="px-2 py-2 text-[11px] font-medium text-[#6B7280] text-center uppercase tracking-[0.05em]">
-              {d}
+  // ---------------------------------------------------------------------------
+  // Agenda view
+  // ---------------------------------------------------------------------------
+
+  function AgendaView() {
+    const sorted = [...visibleEvents].sort((a, b) => a.date.localeCompare(b.date))
+    const grouped: Record<string, CalEvent[]> = {}
+    for (const ev of sorted) {
+      if (!grouped[ev.date]) grouped[ev.date] = []
+      grouped[ev.date].push(ev)
+    }
+    const dates = Object.keys(grouped).sort()
+
+    if (dates.length === 0) {
+      return <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">No upcoming events.</div>
+    }
+
+    return (
+      <div className="flex-1 overflow-auto px-4 py-2">
+        {dates.map((ds) => (
+          <div key={ds} className="mb-4">
+            <div className="text-xs font-semibold text-muted-foreground uppercase mb-1">{formatDate(ds)}</div>
+            <div className="flex flex-col gap-1">
+              {grouped[ds].map((ev) => {
+                const color = eventColors[ev.type] ?? '#9CA3AF'
+                return (
+                  <div key={ev.id} className="flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
+                    <span className="text-sm">{ev.title}</span>
+                  </div>
+                )
+              })}
             </div>
-          ))}
-        </div>
-
-        {/* Rows */}
-        {rows.map((row, ri) => (
-          <div key={ri} className="grid grid-cols-7 border-b border-surface-border dark:border-dark-border last:border-0">
-            {row.map((cell, ci) => {
-              const cellDate = cell.inMonth ? new Date(year, month, cell.day) : null
-              const isToday = cellDate?.getTime() === today.getTime()
-              const engInDay = cell.inMonth ? (byDay[cell.day] ?? []) : []
-
-              return (
-                <div
-                  key={ci}
-                  className={[
-                    'min-h-[72px] p-1.5 border-r border-surface-border dark:border-dark-border last:border-0 relative',
-                    !cell.inMonth ? 'opacity-40' : '',
-                  ].join(' ')}
-                >
-                  <span className={[
-                    'text-[12px] font-medium inline-flex items-center justify-center w-6 h-6 rounded-full',
-                    isToday ? 'bg-brand text-white' : 'text-[#374151] dark:text-[#D1D5DB]',
-                  ].join(' ')}>
-                    {cell.day}
-                  </span>
-                  {engInDay.length > 0 && (
-                    <div className="mt-1 relative">
-                      <button
-                        onClick={() => setPopoverDay(popoverDay === cell.day ? null : cell.day)}
-                        className="flex items-center justify-center bg-brand text-white text-[10px] font-medium rounded-full px-1.5 py-0.5 min-w-[20px]"
-                      >
-                        {engInDay.length}
-                      </button>
-                      {popoverDay === cell.day && (
-                        <div className="absolute top-full mt-1 left-0 z-30 bg-white dark:bg-dark-card border border-[0.5px] border-surface-border dark:border-dark-border rounded-[8px] shadow-md max-h-[200px] overflow-y-auto min-w-[220px]">
-                          {engInDay.map((eng) => (
-                            <button
-                              key={eng.engagementId}
-                              onClick={(e) => { e.stopPropagation(); onRowClick(eng.engagementId) }}
-                              className="w-full text-left px-3 py-2 hover:bg-[#F3F4F6] dark:hover:bg-[#333333] border-b border-[0.5px] border-[#E5E7EB] dark:border-dark-border last:border-0"
-                            >
-                              <p className="text-[12px] font-medium text-[#111827] dark:text-[#EDEEF0] truncate">{eng.engagementName}</p>
-                              <p className="text-[11px] text-[#6B7280] truncate">{eng.clientName}</p>
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )
-            })}
           </div>
         ))}
       </div>
-    </div>
-  )
-}
-
-export default function CalendarPage() {
-  const router = useRouter()
-  const [view, setView] = useState<ViewMode>('list')
-  const now = new Date()
-  const [calMonth, setCalMonth] = useState(now.getMonth())
-  const [calYear, setCalYear] = useState(now.getFullYear())
-
-  const { data: items = [], isLoading, isError, refetch } = useQuery<CalendarItem[]>({
-    queryKey: ['engagements-calendar'],
-    queryFn: () => engagementsApi.getCalendar(180),
-    staleTime: 5 * 60 * 1000,
-  })
-
-  function prevMonth() {
-    if (calMonth === 0) { setCalMonth(11); setCalYear((y) => y - 1) }
-    else setCalMonth((m) => m - 1)
+    )
   }
-  function nextMonth() {
-    if (calMonth === 11) { setCalMonth(0); setCalYear((y) => y + 1) }
-    else setCalMonth((m) => m + 1)
+
+  // ---------------------------------------------------------------------------
+  // Color key handlers
+  // ---------------------------------------------------------------------------
+
+  const handleColorChange = useCallback((typeKey: string, color: string) => {
+    const currentColors = mySettings?.colors ?? {}
+    patchSettings.mutate({ colors: { ...currentColors, [typeKey]: color } })
+  }, [mySettings, patchSettings])
+
+  const handleDeleteCustomCategory = useCallback((name: string) => {
+    const updated = (mySettings?.custom_categories ?? []).filter((c) => c.name !== name)
+    patchSettings.mutate({ custom_categories: updated })
+  }, [mySettings, patchSettings])
+
+  const handleAddCategory = useCallback(() => {
+    if (!newCatName.trim()) return
+    const updated = [...(mySettings?.custom_categories ?? []), { name: newCatName.trim(), color: newCatColor }]
+    patchSettings.mutate({ custom_categories: updated })
+    setNewCatName('')
+    setNewCatColor('#3B82F6')
+    setAddCatOpen(false)
+  }, [newCatName, newCatColor, mySettings, patchSettings])
+
+  // ---------------------------------------------------------------------------
+  // Staff filter
+  // ---------------------------------------------------------------------------
+
+  function toggleStaff(id: string) {
+    setJustMe(false)
+    setSelectedStaff((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id])
   }
+
+  function resetToJustMe() {
+    setJustMe(true)
+    setSelectedStaff([])
+  }
+
+  // ---------------------------------------------------------------------------
+  // Sidebar upcoming list
+  // ---------------------------------------------------------------------------
+
+  const upcomingEvents = [...visibleEvents]
+    .filter((ev) => sidebarFilter.includes(ev.type))
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .slice(0, 50)
+
+  // ---------------------------------------------------------------------------
+  // Render
+  // ---------------------------------------------------------------------------
+
+  const allDefaultTypes: EventType[] = ['deadline', 'extension', 'task', 'call', 'holiday']
 
   return (
     <AppShell>
-      <div className="flex flex-col p-6 gap-4">
-
-        {/* Header */}
-        <div className="flex items-start justify-between">
-          <div>
-            <h1 className="text-[24px] font-[500] text-brand dark:text-[#EDEEF0]">
-              Deadline Calendar
-            </h1>
+      <div className="flex h-full overflow-hidden">
+        {/* LEFT SIDEBAR */}
+        <aside className="w-60 flex-shrink-0 flex flex-col bg-surface-card border-r border-surface-border overflow-hidden">
+          {/* Upcoming events */}
+          <div className="flex-1 overflow-y-auto p-3">
+            <div className="text-[13px] font-medium mb-2">Upcoming</div>
+            {/* Filter pills */}
+            <div className="flex flex-wrap gap-1 mb-3">
+              {allDefaultTypes.map((t) => (
+                <button
+                  key={t}
+                  onClick={() =>
+                    setSidebarFilter((prev) =>
+                      prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]
+                    )
+                  }
+                  className={`text-[11px] px-2 py-0.5 rounded-full border transition-colors ${
+                    sidebarFilter.includes(t)
+                      ? 'border-transparent text-white'
+                      : 'border-surface-border text-muted-foreground'
+                  }`}
+                  style={sidebarFilter.includes(t) ? { backgroundColor: eventColors[t] } : undefined}
+                >
+                  {TYPE_LABELS[t]}
+                </button>
+              ))}
+            </div>
+            {/* List */}
+            <div className="flex flex-col gap-1.5">
+              {upcomingEvents.map((ev) => (
+                <div key={ev.id} className="flex items-start gap-1.5">
+                  <div
+                    className="w-2 h-2 rounded-full mt-1 flex-shrink-0"
+                    style={{ backgroundColor: eventColors[ev.type] ?? '#9CA3AF' }}
+                  />
+                  <div className="min-w-0">
+                    <div className="text-[12px] truncate">{ev.title}</div>
+                    <div className="text-[11px] text-muted-foreground">{formatDate(ev.date)}</div>
+                  </div>
+                </div>
+              ))}
+              {upcomingEvents.length === 0 && (
+                <div className="text-[11px] text-muted-foreground">No events matching filter.</div>
+              )}
+            </div>
           </div>
-          {/* View toggle */}
-          <div className="flex rounded-[6px] border border-surface-border dark:border-dark-border overflow-hidden">
-            {(['list', 'month'] as const).map((v) => (
-              <button
-                key={v}
-                onClick={() => setView(v)}
-                className={[
-                  'px-3 py-1.5 text-[12px] font-medium transition-colors',
-                  view === v
-                    ? 'bg-brand text-white'
-                    : 'bg-white dark:bg-dark-card text-[#374151] dark:text-[#D1D5DB] hover:bg-[#F3F4F6] dark:hover:bg-[#2A2A2A]',
-                ].join(' ')}
-              >
-                {v.charAt(0).toUpperCase() + v.slice(1)}
-              </button>
-            ))}
-          </div>
-        </div>
 
-        {isLoading ? (
-          <div className="flex flex-col gap-4">
-            {Array.from({ length: 3 }).map((_, i) => (
-              <div key={i}>
-                <div className="h-3 w-32 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded mb-2" />
-                <div className="flex flex-col gap-1.5">
-                  {Array.from({ length: 2 }).map((_, j) => (
-                    <div key={j} className="h-14 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded-[8px]" />
-                  ))}
+          {/* Color key */}
+          <div className="border-t border-surface-border p-3">
+            <div className="text-[11px] uppercase font-medium text-muted-foreground mb-2 tracking-wide">Color Key</div>
+            <div className="flex flex-col gap-1.5">
+              {allDefaultTypes.map((t) => {
+                const color = eventColors[t]
+                const isEditing = editingColor === t
+                return (
+                  <div key={t} className="flex items-center gap-2 relative">
+                    <div
+                      className="w-3 h-3 rounded-sm cursor-pointer flex-shrink-0"
+                      style={{ backgroundColor: color }}
+                      onClick={() => setEditingColor(isEditing ? null : t)}
+                    />
+                    <span className="text-[12px] flex-1">{TYPE_LABELS[t]}</span>
+                    <button onClick={() => setEditingColor(isEditing ? null : t)} className="opacity-40 hover:opacity-100">
+                      <Pencil size={10} />
+                    </button>
+                    {isEditing && (
+                      <ColorPicker
+                        value={color}
+                        onChange={(c) => { handleColorChange(t, c) }}
+                        onClose={() => setEditingColor(null)}
+                      />
+                    )}
+                  </div>
+                )
+              })}
+              {/* Custom categories */}
+              {customCategories.map((cat) => {
+                const catKey = `custom-${cat.name}`
+                const isEditing = editingColor === catKey
+                return (
+                  <div key={catKey} className="flex items-center gap-2 relative">
+                    <div
+                      className="w-3 h-3 rounded-sm cursor-pointer flex-shrink-0"
+                      style={{ backgroundColor: cat.color }}
+                      onClick={() => setEditingColor(isEditing ? null : catKey)}
+                    />
+                    <span className="text-[12px] flex-1 truncate">{cat.name}</span>
+                    <button
+                      onClick={() => handleDeleteCustomCategory(cat.name)}
+                      className="opacity-40 hover:opacity-100"
+                    >
+                      <X size={10} />
+                    </button>
+                    {isEditing && (
+                      <ColorPicker
+                        value={cat.color}
+                        onChange={(c) => {
+                          const updated = customCategories.map((x) => x.name === cat.name ? { ...x, color: c } : x)
+                          patchSettings.mutate({ custom_categories: updated })
+                        }}
+                        onClose={() => setEditingColor(null)}
+                      />
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+
+            {/* Add category */}
+            {addCatOpen ? (
+              <div className="mt-2 flex flex-col gap-1">
+                <input
+                  className="text-[12px] border border-surface-border rounded px-1.5 py-0.5 bg-transparent"
+                  placeholder="Category name"
+                  value={newCatName}
+                  onChange={(e) => setNewCatName(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleAddCategory()}
+                  autoFocus
+                />
+                <div className="flex items-center gap-1">
+                  <input
+                    type="color"
+                    value={newCatColor}
+                    onChange={(e) => setNewCatColor(e.target.value)}
+                    className="w-6 h-6 border-0 p-0 bg-transparent cursor-pointer"
+                  />
+                  <button
+                    onClick={handleAddCategory}
+                    className="text-[11px] text-primary underline"
+                  >
+                    Add
+                  </button>
+                  <button
+                    onClick={() => { setAddCatOpen(false); setNewCatName('') }}
+                    className="text-[11px] text-muted-foreground underline"
+                  >
+                    Cancel
+                  </button>
                 </div>
               </div>
-            ))}
+            ) : (
+              <button
+                onClick={() => setAddCatOpen(true)}
+                className="mt-2 flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
+              >
+                <Plus size={10} /> Add category
+              </button>
+            )}
           </div>
-        ) : isError ? (
-          <div className="flex flex-col items-center justify-center py-24 gap-3">
-            <p className="text-[13px] text-[#DC2626]">Failed to load calendar data.</p>
-            <button
-              onClick={() => refetch()}
-              className="flex items-center gap-1.5 text-[13px] font-medium px-4 py-2 rounded-[6px] bg-brand text-white hover:opacity-90"
-            >
-              <RefreshCw className="h-4 w-4" /> Retry
-            </button>
-          </div>
-        ) : view === 'list' ? (
-          <ListView items={items} onRowClick={(id) => router.push(`/engagements/${id}`)} />
-        ) : (
-          <MonthView
-            items={items}
-            month={calMonth}
-            year={calYear}
-            onPrev={prevMonth}
-            onNext={nextMonth}
-            onRowClick={(id) => router.push(`/engagements/${id}`)}
-          />
-        )}
+        </aside>
 
+        {/* MAIN AREA */}
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {/* Toolbar */}
+          <div className="flex items-center justify-between px-4 py-2 border-b border-surface-border flex-shrink-0">
+            <div className="flex items-center gap-2">
+              <button onClick={prev} className="p-1 rounded hover:bg-surface-card"><ChevronLeft size={16} /></button>
+              <span className="text-sm font-medium min-w-[160px] text-center">{cursorLabel()}</span>
+              <button onClick={next} className="p-1 rounded hover:bg-surface-card"><ChevronRight size={16} /></button>
+              <button
+                onClick={() => { setCursor(new Date(today.getFullYear(), today.getMonth(), 1)) }}
+                className="text-xs px-2 py-0.5 border border-surface-border rounded hover:bg-surface-card ml-1"
+              >
+                Today
+              </button>
+            </div>
+            <div className="flex items-center gap-1">
+              {(['month', 'week', 'agenda'] as ViewMode[]).map((v) => (
+                <button
+                  key={v}
+                  onClick={() => setView(v)}
+                  className={`text-xs px-2 py-1 rounded capitalize transition-colors ${
+                    view === v ? 'bg-primary text-primary-foreground' : 'hover:bg-surface-card border border-surface-border'
+                  }`}
+                >
+                  {v}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Staff filter bar (firm owner only) */}
+          {isFirmOwner && (
+            <div className="flex items-center gap-2 px-4 py-1.5 border-b border-surface-border flex-shrink-0 overflow-x-auto">
+              <span className="text-xs text-muted-foreground flex-shrink-0">View:</span>
+              <button
+                onClick={resetToJustMe}
+                className={`text-xs px-2 py-0.5 rounded border transition-colors flex-shrink-0 ${
+                  justMe ? 'bg-primary text-primary-foreground border-primary' : 'border-surface-border hover:bg-surface-card'
+                }`}
+              >
+                Just me
+              </button>
+              {staffList
+                .filter((s) => s.id !== user?.id)
+                .map((s, idx) => {
+                  const color = getStaffColor(s.id, idx)
+                  const isSelected = selectedStaff.includes(s.id)
+                  const isEditingThis = editingStaffColor === s.id
+                  return (
+                    <div key={s.id} className="flex items-center gap-1 flex-shrink-0 relative">
+                      <div
+                        className="w-3 h-3 rounded-full cursor-pointer border border-white/30 flex-shrink-0"
+                        style={{ backgroundColor: color }}
+                        onClick={() => setEditingStaffColor(isEditingThis ? null : s.id)}
+                      />
+                      {isEditingThis && (
+                        <ColorPicker
+                          value={color}
+                          onChange={(c) => patchStaffColor.mutate({ user_id: s.id, color: c })}
+                          onClose={() => setEditingStaffColor(null)}
+                        />
+                      )}
+                      <button
+                        onClick={() => toggleStaff(s.id)}
+                        className={`text-xs px-2 py-0.5 rounded border transition-colors ${
+                          isSelected ? 'border-transparent text-white' : 'border-surface-border hover:bg-surface-card'
+                        }`}
+                        style={isSelected ? { backgroundColor: color } : undefined}
+                      >
+                        {s.full_name ?? s.email}
+                      </button>
+                    </div>
+                  )
+                })}
+            </div>
+          )}
+
+          {/* Calendar view */}
+          <div className="flex-1 overflow-hidden flex flex-col">
+            {view === 'month' && <MonthView />}
+            {view === 'week' && <WeekView />}
+            {view === 'agenda' && <AgendaView />}
+          </div>
+        </div>
       </div>
     </AppShell>
   )

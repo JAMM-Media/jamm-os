@@ -117,6 +117,7 @@ export const engagementsApi = {
       effectiveDeadline: String(item.effective_deadline),
       deadlineType: String(item.deadline_type ?? 'filing') as 'extended' | 'filing',
       status: String(item.status ?? ''),
+      assignedTo: item.assigned_to ? String(item.assigned_to) : null,
     }))
   },
 }
@@ -130,4 +131,5 @@ export interface CalendarItem {
   effectiveDeadline: string
   deadlineType: 'extended' | 'filing'
   status: string
+  assignedTo: string | null
 }

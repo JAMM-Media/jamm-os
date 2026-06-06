@@ -112,6 +112,7 @@ class CalendarEngagementItem(BaseModel):
     effective_deadline: date
     deadline_type: str  # "extended" or "filing"
     status: str
+    assigned_to: Optional[UUID] = None
 
     model_config = ConfigDict(from_attributes=True)
 

@@ -6,6 +6,7 @@ from typing import Optional
 
 from sqlalchemy import String, DateTime, Boolean, Text, Integer, ForeignKey
 from sqlalchemy import Enum as PgEnum
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base_class import Base
@@ -131,6 +132,10 @@ class User(Base):
     )
     staff_refresh_expires_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True
+    )
+
+    calendar_settings: Mapped[Optional[dict]] = mapped_column(
+        JSONB, nullable=True
     )
 
     created_at: Mapped[datetime] = mapped_column(

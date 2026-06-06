@@ -6,6 +6,7 @@ from typing import Optional
 
 import sqlalchemy as sa
 from sqlalchemy import String, Boolean, DateTime, Text, JSON, Integer
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base_class import Base
@@ -122,6 +123,10 @@ class Firm(Base):
     portal_domain: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     portal_domain_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     portal_domain_verification_token: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+
+    staff_calendar_colors: Mapped[Optional[dict]] = mapped_column(
+        JSONB, nullable=True
+    )
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

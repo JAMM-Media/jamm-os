@@ -262,6 +262,7 @@ def get_engagement_calendar(
             effective_deadline=effective,
             deadline_type=deadline_type,
             status=eng.status,
+            assigned_to=eng.assigned_to if hasattr(eng, 'assigned_to') else None,
         ))
 
     results.sort(key=lambda x: x.effective_deadline)
