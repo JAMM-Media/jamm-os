@@ -74,6 +74,7 @@ def create_document_request(
                 portal_url=f"{_settings.FRONTEND_URL}/portal",
                 reply_to=email_settings["reply_to"],
                 display_name=email_settings["display_name"],
+                sending_domain=email_settings.get("sending_domain"),
             )
     except Exception as _e:
         import logging as _logging

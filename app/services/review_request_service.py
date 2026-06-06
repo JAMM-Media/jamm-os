@@ -170,4 +170,5 @@ def _send_review_email(
         from_name=firm_name,
         reply_to=email_settings.get("reply_to"),
         display_name=email_settings.get("display_name"),
+        sending_domain=email_settings.get("sending_domain"),
     )

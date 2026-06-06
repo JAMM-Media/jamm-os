@@ -37,6 +37,7 @@ class Settings(BaseSettings):
 
     # Postmark
     POSTMARK_API_KEY: str = ""
+    POSTMARK_ACCOUNT_TOKEN: str = ""
 
     # Dropbox Sign (e-signature)
     DROPBOX_SIGN_API_KEY: str = ""

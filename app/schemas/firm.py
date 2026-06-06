@@ -29,6 +29,12 @@ class FirmBase(BaseModel):
     is_active: bool = True
     settings: Optional[dict] = None
     feature_flags: Optional[dict] = None
+    sending_domain: Optional[str] = None
+    sending_domain_verified: bool = False
+    sending_domain_dkim_host: Optional[str] = None
+    sending_domain_dkim_value: Optional[str] = None
+    sending_domain_return_path_host: Optional[str] = None
+    sending_domain_return_path_value: Optional[str] = None
 
     @field_validator("slug", mode="before")
     @classmethod

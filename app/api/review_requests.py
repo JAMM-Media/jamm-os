@@ -186,6 +186,7 @@ def submit_feedback(
                 html_body=html,
                 from_name="JAMM PX",
                 reply_to=email_settings.get("reply_to"),
+                sending_domain=email_settings.get("sending_domain"),
             )
     except Exception as e:
         import logging

@@ -71,7 +71,7 @@ def generate_magic_link(
         try:
             firm = db.execute(select(Firm).where(Firm.id == firm_id)).scalar_one_or_none()
             firm_name = firm.name if firm else "Your Accounting Firm"
-            email_settings = EmailService.get_firm_email_settings(firm) if firm else {"reply_to": None, "display_name": None}
+            email_settings = EmailService.get_firm_email_settings(firm) if firm else {"reply_to": None, "display_name": None, "sending_domain": None}
             magic_url = f"{settings.FRONTEND_URL}/portal/auth?token={raw_token}"
             html_body = (
                 f"<p>Click the link below to access your client portal. "
@@ -85,6 +85,7 @@ def generate_magic_link(
                 firm_name,
                 reply_to=email_settings["reply_to"],
                 display_name=email_settings["display_name"],
+                sending_domain=email_settings.get("sending_domain"),
             )
         except Exception as e:
             logger.error("Magic link email failed: client_id=%s error=%s", client_id, str(e))

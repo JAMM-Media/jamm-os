@@ -32,6 +32,7 @@ class EmailService:
         from_name: str,
         reply_to: str | None = None,
         display_name: str | None = None,
+        sending_domain: str | None = None,
     ) -> None:
         """Send email via Postmark HTTP API. Raises on failure."""
         from app.core.config import get_settings
@@ -42,8 +43,9 @@ class EmailService:
             raise RuntimeError("POSTMARK_API_KEY is not configured — email not sent")
 
         effective_name = display_name if display_name else from_name
+        from_domain = sending_domain if sending_domain else "jammpx.com"
         payload = {
-            "From": f"{effective_name} <noreply@jammpx.com>",
+            "From": f"{effective_name} <noreply@{from_domain}>",
             "To": to_email,
             "Subject": subject,
             "HtmlBody": html_body,
@@ -72,9 +74,10 @@ class EmailService:
         from_name: str,
         reply_to: str | None = None,
         display_name: str | None = None,
+        sending_domain: str | None = None,
     ) -> None:
-        """Direct HTML send — used by magic link and portal invite flows."""
-        EmailService._send(to_email, subject, html_body, from_name, reply_to, display_name)
+        """Direct HTML send -- used by magic link and portal invite flows."""
+        EmailService._send(to_email, subject, html_body, from_name, reply_to, display_name, sending_domain)
 
     @staticmethod
     def get_firm_email_settings(firm) -> dict:
@@ -82,6 +85,7 @@ class EmailService:
         return {
             "reply_to": settings.get("email_reply_to") or None,
             "display_name": settings.get("email_display_name") or None,
+            "sending_domain": firm.sending_domain if firm.sending_domain_verified else None,
         }
 
     @staticmethod
@@ -115,6 +119,7 @@ class EmailService:
         portal_url: str,
         reply_to: str | None = None,
         display_name: str | None = None,
+        sending_domain: str | None = None,
     ) -> bool:
         html = EmailService._render_template("document_request.html", {
             "firm_name": firm_name,
@@ -125,7 +130,7 @@ class EmailService:
             "portal_url": portal_url,
         })
         subject = f"[{firm_name}] Document Request: {document_request_title}"
-        EmailService._send(to_email, subject, html, firm_name, reply_to, display_name)
+        EmailService._send(to_email, subject, html, firm_name, reply_to, display_name, sending_domain)
         return True
 
     @staticmethod
@@ -139,6 +144,7 @@ class EmailService:
         payment_url: str,
         reply_to: str | None = None,
         display_name: str | None = None,
+        sending_domain: str | None = None,
     ) -> bool:
         html = EmailService._render_template("invoice.html", {
             "firm_name": firm_name,
@@ -149,7 +155,7 @@ class EmailService:
             "payment_url": payment_url,
         })
         subject = f"[{firm_name}] Invoice {invoice_number} — Payment Due"
-        EmailService._send(to_email, subject, html, firm_name, reply_to, display_name)
+        EmailService._send(to_email, subject, html, firm_name, reply_to, display_name, sending_domain)
         return True
 
     @staticmethod

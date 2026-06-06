@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 import sqlalchemy as sa
-from sqlalchemy import String, Boolean, DateTime, Text, JSON
+from sqlalchemy import String, Boolean, DateTime, Text, JSON, Integer
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base_class import Base
@@ -110,6 +110,14 @@ class Firm(Base):
     concierge_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default='false')
     firm_type: Mapped[Optional[str]] = mapped_column(String(30), nullable=True)
     concierge_onboarded: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default='false')
+
+    sending_domain: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    sending_domain_postmark_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    sending_domain_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    sending_domain_dkim_host: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    sending_domain_dkim_value: Mapped[Optional[str]] = mapped_column(String(1000), nullable=True)
+    sending_domain_return_path_host: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    sending_domain_return_path_value: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
