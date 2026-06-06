@@ -8,6 +8,7 @@ import api from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/lib/hooks/useAuth'
 import AutomationEditModal from './AutomationEditModal'
+import AutomationSimulateModal from './AutomationSimulateModal'
 
 type Action = {
   type: string
@@ -19,6 +20,7 @@ interface AutomationRule {
   id: string
   name: string
   description: string
+  trigger_event: string
   is_enabled: boolean
   execution_count: number
   last_executed_at: string | null
@@ -93,6 +95,8 @@ function RuleCard({
   canEdit,
   onToggle,
   onEdit,
+  onSimulate,
+  simulatingId,
 }: {
   rule: AutomationRule
   section: 'active' | 'available'
@@ -100,6 +104,8 @@ function RuleCard({
   canEdit: boolean
   onToggle: (rule: AutomationRule) => void
   onEdit: (rule: AutomationRule) => void
+  onSimulate: (rule: AutomationRule) => void
+  simulatingId: string | null
 }) {
   const [expanded, setExpanded] = useState(false)
   const showBadge =
@@ -151,6 +157,14 @@ function RuleCard({
       <div className="flex items-center gap-3 shrink-0">
         {canEdit && (
           <button
+            onClick={() => onSimulate(rule)}
+            className="text-[12px] text-[#6B7280] dark:text-[#9CA3AF] hover:text-brand dark:hover:text-[#4A7FA5] hover:underline focus:outline-none"
+          >
+            Test
+          </button>
+        )}
+        {canEdit && (
+          <button
             onClick={() => onEdit(rule)}
             className="text-[12px] text-brand dark:text-[#4A7FA5] hover:underline focus:outline-none"
           >
@@ -181,6 +195,7 @@ export default function AutomationsTab() {
   const [fetchError, setFetchError] = useState(false)
   const [pendingIds, setPendingIds] = useState<Set<string>>(new Set())
   const [editingRule, setEditingRule] = useState<AutomationRule | null>(null)
+  const [simulatingRule, setSimulatingRule] = useState<AutomationRule | null>(null)
 
   const fetchRules = useCallback(() => {
     setLoading(true)
@@ -276,6 +291,8 @@ export default function AutomationsTab() {
             canEdit={canEdit}
             onToggle={handleToggle}
             onEdit={setEditingRule}
+            onSimulate={setSimulatingRule}
+            simulatingId={simulatingRule?.id ?? null}
           />
         ))
       )}
@@ -293,6 +310,8 @@ export default function AutomationsTab() {
             canEdit={canEdit}
             onToggle={handleToggle}
             onEdit={setEditingRule}
+            onSimulate={setSimulatingRule}
+            simulatingId={simulatingRule?.id ?? null}
           />
         ))
       )}
@@ -305,6 +324,12 @@ export default function AutomationsTab() {
             setEditingRule(null)
             fetchRules()
           }}
+        />
+      )}
+      {simulatingRule && (
+        <AutomationSimulateModal
+          rule={simulatingRule}
+          onClose={() => setSimulatingRule(null)}
         />
       )}
     </div>
