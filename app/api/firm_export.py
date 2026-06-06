@@ -19,6 +19,34 @@ from app.services.firm_export_service import generate_firm_export_zip
 router = APIRouter(prefix="/firm-export", tags=["Firm Export"])
 
 
+@router.post("/request-document-archive")
+def request_document_archive(
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    current_user: User = Depends(require_firm_owner),
+):
+    import threading
+    from app.services.document_archive_service import generate_and_deliver_document_archive
+
+    threading.Thread(
+        target=generate_and_deliver_document_archive,
+        kwargs={"firm_id": current_firm.id},
+        daemon=True,
+    ).start()
+
+    write_audit_log(
+        db=db,
+        firm_id=current_firm.id,
+        actor_id=current_user.id,
+        actor_type="user",
+        action="firm.document_archive_requested",
+        entity_type="firm",
+        entity_id=current_firm.id,
+    )
+
+    return {"status": "processing", "message": "Your document archive is being prepared. You will receive an email with a download link shortly."}
+
+
 @router.get("/download")
 def download_firm_export(
     background_tasks: BackgroundTasks,

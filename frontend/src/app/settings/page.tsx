@@ -55,6 +55,7 @@ function RoleBadge({ role }: { role: string }) {
 
 function DataExportSection() {
   const [exporting, setExporting] = useState(false)
+  const [requestingArchive, setRequestingArchive] = useState(false)
 
   async function handleExport() {
     setExporting(true)
@@ -78,6 +79,18 @@ function DataExportSection() {
     }
   }
 
+  async function handleRequestArchive() {
+    setRequestingArchive(true)
+    try {
+      await api.post('/api/v1/firm-export/request-document-archive')
+      toast.success('Document archive requested. You will receive an email with a download link shortly.')
+    } catch {
+      toast.error('Request failed. Please try again.')
+    } finally {
+      setRequestingArchive(false)
+    }
+  }
+
   return (
     <div className="bg-surface-card dark:bg-dark-card rounded-[10px] p-4 flex flex-col gap-3 max-w-lg" style={{ marginTop: '12px' }}>
       <p className="text-[13px] font-medium text-brand dark:text-[#EDEEF0]">Data export</p>
@@ -98,6 +111,22 @@ function DataExportSection() {
           )}
           {exporting ? 'Exporting...' : 'Download export'}
         </button>
+      </div>
+      <div className="flex flex-col gap-1">
+        <button
+          onClick={handleRequestArchive}
+          disabled={requestingArchive}
+          className="h-8 px-3 text-[13px] font-medium rounded-[6px] bg-brand text-white hover:bg-brand/90 transition-colors disabled:opacity-60 flex items-center gap-2 w-fit"
+        >
+          {requestingArchive && (
+            <svg className="animate-spin h-3.5 w-3.5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+            </svg>
+          )}
+          {requestingArchive ? 'Requesting...' : 'Request document archive'}
+        </button>
+        <p className="text-[11px] text-[#6B7280]">Large archives may take a few minutes. A download link will be sent to your email.</p>
       </div>
     </div>
   )
