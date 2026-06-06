@@ -30,113 +30,179 @@ All models must be imported in migrations/env.py or autogenerate silently misses
 
 ---
 
-# PHASE INSTRUCTIONS — FAILED LOGIN EMAIL ALERT
+# PHASE INSTRUCTIONS — FULL FIRM DATA EXPORT
 
 ## Context
-When a staff login attempt fails, the event is already logged to the audit log
-and behavioral event log in app/services/auth_service.py.
-This build adds one thing: send an email alert to the firm owner.
+No migration needed. No frontend changes beyond a single button in settings.
+This is a new backend endpoint plus a minimal frontend trigger.
 
-No migration. No frontend changes. One targeted edit to auth_service.py only.
+The export produces a ZIP file containing these CSVs:
+- clients.csv
+- engagements.csv
+- invoices.csv
+- tasks.csv
+- irs_authorizations.csv
+- notes.csv
+- time_entries.csv
+- documents_manifest.csv (metadata only — no actual files)
 
-Rules:
-- Fire-and-forget only — never block the login response
-- Use a background thread exactly like other fire-and-forget email patterns
-- Never send the alert if the firm owner cannot be found
-- Never surface email errors to the user
-- The alert goes to the firm owner email, not the user who failed to log in
+The endpoint streams the ZIP directly as a file download response.
+Firm owner only. No data from other firms ever included.
 
 ---
 
 ## Pre-task checkpoint
 git add -A
-git commit -m "checkpoint before failed login alert"
+git commit -m "checkpoint before firm data export"
 
 ---
 
 ## VERIFY BEFORE STARTING
-grep -n "login_failed\|write_audit_log\|log_event\|failed_login_count" app/services/auth_service.py
-Paste output before touching anything.
+grep -n "require_firm_owner\|firm_owner" app/dependencies/roles.py | head -5
+grep -n "StreamingResponse\|FileResponse\|BytesIO" app/api/timesheets.py | head -5
+Paste both outputs before touching anything.
 
 ---
 
-## Change 1: Add failed login email alert to auth_service.py
+## Change 1: Create app/services/firm_export_service.py
 
-Find the block in authenticate_staff that handles invalid credentials.
-It currently:
-1. Calls write_audit_log with action="user.login_failed"
-2. Calls log_event with event_type="user.login_failed"
-3. Loads firm settings and increments failed_login_count
+Create this file from scratch. Path comment at top.
 
-After step 2 (after the log_event call, before the firm settings load),
-add a fire-and-forget email alert in a background thread:
+Import: io, csv, zipfile, datetime, uuid, from sqlalchemy.orm import Session,
+and all relevant models.
 
-```python
-# Fire-and-forget failed login alert to firm owner
-def _send_failed_login_alert(firm_id, user_email: str) -> None:
-    try:
-        from app.db.session import SessionLocal
-        from app.models.user import User
-        from app.core.enums import UserRole
-        from app.models.firm import Firm
-        from app.services.email_service import EmailService
-        _db = SessionLocal()
-        try:
-            firm_owner = _db.query(User).filter(
-                User.firm_id == firm_id,
-                User.role == UserRole.firm_owner,
-                User.is_active == True,
-            ).first()
-            if not firm_owner:
-                return
-            firm = _db.query(Firm).filter(Firm.id == firm_id).first()
-            firm_name = firm.name if firm else "Your firm"
-            EmailService.send_notification_email(
-                to_email=firm_owner.email,
-                firm_name=firm_name,
-                recipient_name=firm_owner.full_name or "Firm Owner",
-                title="Failed login attempt",
-                body=f"A failed login attempt was made for the account {user_email}. If this was not you or a member of your team, review your firm security settings.",
-                app_url="https://app.jammpx.com/settings?tab=security",
-            )
-        finally:
-            _db.close()
-    except Exception as exc:
-        import logging
-        logging.getLogger(__name__).warning("Failed login alert email error: %s", type(exc).__name__)
-```
+Write one function: generate_firm_export_zip(firm_id: UUID, db: Session) -> bytes
 
-Define this function at the module level in auth_service.py
-(not inside authenticate_staff).
+This function:
+1. Creates an in-memory ZIP using zipfile.ZipFile with BytesIO
+2. For each CSV below, queries the database scoped to firm_id,
+   writes rows using csv.DictWriter, and adds to the ZIP
+3. Returns the ZIP as bytes
 
-Then inside the invalid credentials block, after the log_event call,
-add:
-```python
-import threading
-threading.Thread(
-    target=_send_failed_login_alert,
-    kwargs={"firm_id": user.firm_id, "user_email": user.email},
-    daemon=True,
-).start()
-```
+### clients.csv
+Query: all Client records where firm_id == firm_id
+Columns: id, name, email, phone, company_name, entity_type,
+         address_line1, address_line2, city, state, postal_code,
+         country, tags, notes, is_active, created_at
 
-Important: only fire this when user is not None (we already know the
-email exists but the password was wrong). Do not fire it when user
-is None (unknown email) to avoid leaking account existence.
+Exclude: portal_password_hash, portal_invite_token, tax_id,
+         quickbooks_customer_id — never export sensitive or
+         integration-specific fields
+
+### engagements.csv
+Query: all Engagement records where firm_id == firm_id
+Columns: id, client_id, name, description, status,
+         engagement_type, start_date, end_date,
+         filing_deadline, extended_deadline,
+         efiled_at, irs_confirmation_number,
+         notes, is_active, created_at
+
+### invoices.csv
+Query: all Invoice records where firm_id == firm_id
+       and is_deleted == False
+Columns: id, client_id, engagement_id, invoice_number,
+         subtotal, tax_rate, tax_amount, total_amount,
+         status, due_date, paid_at, sent_at, created_at
+
+Exclude: stripe_payment_intent_id, stripe_charge_id
+
+### tasks.csv
+Query: all Task records where firm_id == firm_id
+Columns: id, client_id, engagement_id, title, description,
+         status, assigned_to, due_date, completed_at, created_at
+
+### irs_authorizations.csv
+Query: all IrsAuthorization records where firm_id == firm_id
+Columns: id, client_id, form_type, status, expiry_date,
+         granted_at, created_at
+
+### notes.csv
+Query: all Note records where firm_id == firm_id
+Columns: id, entity_type, entity_id, author_id,
+         content, is_private, created_at
+
+### time_entries.csv
+Query: all TimeEntry records where firm_id == firm_id
+Columns: id, engagement_id, client_id, user_id,
+         date, hours, hourly_rate, is_billable,
+         is_billed, description, activity_type, created_at
+
+### documents_manifest.csv
+Query: all Document records where firm_id == firm_id
+Columns: id, client_id, engagement_id, filename,
+         file_type, file_size, uploaded_by,
+         is_superseded, created_at
+
+Note: document_manifest is metadata only.
+Never attempt to download or include actual document files.
+
+All datetime values: format as ISO 8601 strings.
+All None values: write as empty string.
+All UUID values: write as string.
+
+ZIP filename inside the archive: use the column names above.
+ZIP compression: zipfile.ZIP_DEFLATED
 
 ---
 
-## Verify after changes
-grep -n "_send_failed_login_alert\|Failed login alert\|threading.Thread" app/services/auth_service.py
-All three must appear.
-python -m py_compile app/services/auth_service.py
-Must pass before deploying.
+## Change 2: Create app/api/firm_export.py
+
+Create this router from scratch. Path comment at top.
+
+Single endpoint: GET /firm-export/download
+- Auth: require_firm_owner
+- Calls generate_firm_export_zip(firm_id, db)
+- Returns StreamingResponse with:
+  - media_type: "application/zip"
+  - headers: Content-Disposition: attachment; filename="jammpx_export_{date}.zip"
+    where date is today in YYYY-MM-DD format
+- Write audit log entry: action "firm.data_exported"
+- Fire behavioral event: event_type "firm.data_exported"
+
+---
+
+## Change 3: Register router in app/main.py
+
+Find where other routers are registered.
+Add:
+from app.api.firm_export import router as firm_export_router
+app.include_router(firm_export_router, prefix="/api/v1", tags=["Firm Export"])
+
+---
+
+## Change 4: Add export button to settings frontend
+
+Find the firm settings tab in the frontend.
+It is likely at: frontend/src/components/settings/FirmTab.tsx
+or similar — grep for "firm settings" or "firm name" in the
+frontend components to find the right file.
+
+Add a new section at the bottom of the firm settings tab with:
+- Section heading: "Data export" (13px, font-500, brand color)
+- Subtext: "Download a complete export of your firm data as a ZIP file containing CSVs for all clients, engagements, invoices, tasks, IRS authorizations, notes, time entries, and documents." (12px, muted)
+- A single button: "Download export"
+  - Brand blue background, white text, 32px height
+  - On click: calls GET /api/v1/firm-export/download via axios
+    with responseType: 'blob', then triggers a browser download
+  - Shows loading spinner while in flight
+  - Shows success toast on complete: "Export downloaded"
+  - Shows error toast on failure: "Export failed. Please try again."
+
+---
+
+## Verify after all changes
+grep -n "def generate_firm_export_zip\|clients.csv\|documents_manifest" app/services/firm_export_service.py
+grep -n "firm-export\|firm_export_router\|data_exported" app/api/firm_export.py
+grep -n "firm_export_router" app/main.py
+python -m py_compile app/services/firm_export_service.py
+python -m py_compile app/api/firm_export.py
+Both compiles must pass before deploying.
 
 ---
 
 ## Deploy sequence
 git add -A
-git commit -m "failed login email alert to firm owner"
+git commit -m "full firm data export endpoint and settings button"
 git push origin main
 Then on the droplet:
 git pull origin main
