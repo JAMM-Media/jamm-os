@@ -1,5 +1,6 @@
 # app/services/auth_service.py
 
+import threading
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 from sqlalchemy.orm import Session
@@ -15,6 +16,39 @@ from app.services.totp_service import verify_totp_code, verify_backup_code
 from app.services.behavioral_log import log_event
 
 settings = get_settings()
+
+
+def _send_failed_login_alert(firm_id, user_email: str) -> None:
+    try:
+        from app.db.session import SessionLocal
+        from app.models.user import User
+        from app.core.enums import UserRole
+        from app.models.firm import Firm
+        from app.services.email_service import EmailService
+        _db = SessionLocal()
+        try:
+            firm_owner = _db.query(User).filter(
+                User.firm_id == firm_id,
+                User.role == UserRole.firm_owner,
+                User.is_active == True,
+            ).first()
+            if not firm_owner:
+                return
+            firm = _db.query(Firm).filter(Firm.id == firm_id).first()
+            firm_name = firm.name if firm else "Your firm"
+            EmailService.send_notification_email(
+                to_email=firm_owner.email,
+                firm_name=firm_name,
+                recipient_name=firm_owner.full_name or "Firm Owner",
+                title="Failed login attempt",
+                body=f"A failed login attempt was made for the account {user_email}. If this was not you or a member of your team, review your firm security settings.",
+                app_url="https://app.jammpx.com/settings?tab=security",
+            )
+        finally:
+            _db.close()
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).warning("Failed login alert email error: %s", type(exc).__name__)
 
 
 def authenticate_staff(
@@ -60,6 +94,11 @@ def authenticate_staff(
                     "day_of_week": datetime.now(timezone.utc).weekday(),
                 }
             )
+            threading.Thread(
+                target=_send_failed_login_alert,
+                kwargs={"firm_id": user.firm_id, "user_email": user.email},
+                daemon=True,
+            ).start()
 
             firm = db.query(Firm).filter(Firm.id == user.firm_id).first()
             firm_settings = firm.settings or {} if firm else {}
