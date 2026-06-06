@@ -14,6 +14,7 @@ import AutomationsTab from '@/components/settings/AutomationsTab'
 import SecurityTab from '@/components/settings/SecurityTab'
 import FeeScheduleTab from '@/components/settings/FeeScheduleTab'
 import PortalBrandingTab from '@/components/settings/PortalBrandingTab'
+import MigrationTab from '@/components/settings/MigrationTab'
 import { onConciergeAction, setFormDirty } from '@/lib/events/conciergeEvents'
 
 const TABS = [
@@ -24,6 +25,7 @@ const TABS = [
   { key: 'automations', label: 'Automations' },
   { key: 'fee_schedule', label: 'Fee Schedule' },
   { key: 'portal_branding', label: 'Portal' },
+  { key: 'migration', label: 'Migration' },
 ]
 
 function formatRoleLabel(role: string): string {
@@ -282,6 +284,7 @@ export default function SettingsPage() {
   const isFirmOwner = user?.role === 'firm_owner'
   const canSeeAutomations = user?.role === 'firm_owner' || user?.role === 'manager'
   const canSeeSecurity = isFirmOwner
+  const canSeeMigration = isFirmOwner
 
   const fieldClass = 'flex flex-col gap-1.5'
   const labelClass = 'text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em]'
@@ -307,6 +310,7 @@ export default function SettingsPage() {
             if (tab.key === 'security') return canSeeSecurity
             if (tab.key === 'fee_schedule') return isFirmOwner
             if (tab.key === 'portal_branding') return isFirmOwner
+            if (tab.key === 'migration') return canSeeMigration
             return true
           }).map((tab) => (
             <button
@@ -741,6 +745,8 @@ export default function SettingsPage() {
         {/* Portal Branding tab */}
         {activeTab === 'portal_branding' && isFirmOwner && <PortalBrandingTab />}
 
+        {/* Migration tab */}
+        {activeTab === 'migration' && canSeeMigration && <MigrationTab />}
 
       </div>
     </AppShell>
