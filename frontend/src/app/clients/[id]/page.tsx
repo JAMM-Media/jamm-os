@@ -70,6 +70,7 @@ function ClientDetailContent() {
   const portalLinkRef = useRef<HTMLButtonElement>(null)
   const [qboEditMode, setQboEditMode] = useState(false)
   const [qboEditValue, setQboEditValue] = useState('')
+  const [qboDeepLinkLoading, setQboDeepLinkLoading] = useState(false)
   const [billingDetailOpen, setBillingDetailOpen] = useState(false)
 
   useEffect(() => {
@@ -492,6 +493,30 @@ function ClientDetailContent() {
                     >
                       <Pencil className="h-3.5 w-3.5" />
                     </button>
+                    {client.quickbooksCustomerId && (
+                      <button
+                        onClick={async () => {
+                          setQboDeepLinkLoading(true)
+                          try {
+                            const res = await api.get(`/api/v1/integrations/quickbooks/deep-link/client/${clientId}`)
+                            window.open(res.data.url, '_blank')
+                          } catch {
+                            toast.error('Could not open QuickBooks link.')
+                          } finally {
+                            setQboDeepLinkLoading(false)
+                          }
+                        }}
+                        disabled={qboDeepLinkLoading}
+                        className="flex items-center gap-1 text-[12px] text-[#6B7280] hover:text-brand transition-colors disabled:opacity-60"
+                      >
+                        {qboDeepLinkLoading ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <ExternalLink className="h-3.5 w-3.5" />
+                        )}
+                        Open in QuickBooks
+                      </button>
+                    )}
                   </div>
                 )}
               </div>

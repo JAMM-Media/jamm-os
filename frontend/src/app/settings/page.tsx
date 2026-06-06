@@ -145,6 +145,7 @@ export default function SettingsPage() {
   const [savingEmail, setSavingEmail] = useState(false)
 
   const [googleReviewUrl, setGoogleReviewUrl] = useState('')
+  const [reviewEnabled, setReviewEnabled] = useState(false)
   const [savingReview, setSavingReview] = useState(false)
 
   const { data: firmData, isLoading: firmLoading } = useFetch<FirmDetails>(
@@ -234,6 +235,7 @@ export default function SettingsPage() {
       setEmailDisplayName((firmData.settings.email_display_name as string) ?? '')
       setGoogleReviewUrl((firmData.settings.google_review_url as string) ?? '')
     }
+    setReviewEnabled((firmData as (FirmDetails & { feature_flags?: Record<string, unknown> }) | undefined)?.feature_flags?.review_requests_enabled === true)
   }, [firmData])
 
   async function handleSaveEmailSettings() {
@@ -256,6 +258,7 @@ export default function SettingsPage() {
     try {
       await api.patch('/settings/review', {
         google_review_url: googleReviewUrl || null,
+        review_requests_enabled: reviewEnabled,
       })
       toast.success('Review settings saved')
     } catch {
@@ -517,6 +520,31 @@ export default function SettingsPage() {
             {isFirmOwner && (
               <div className="bg-surface-card dark:bg-dark-card rounded-[10px] p-4 flex flex-col gap-3 max-w-lg" style={{ marginTop: '12px' }}>
                 <p className="text-[13px] font-medium text-brand dark:text-[#EDEEF0]">Review Requests</p>
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex-1">
+                    <p className="text-[13px] text-brand dark:text-[#EDEEF0]">Enable review requests</p>
+                    <p className="text-[11px] text-[#6B7280] mt-0.5">
+                      When enabled, clients who rate their experience 9 or 10 will be prompted to leave a Google review after an engagement is marked complete.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={reviewEnabled}
+                    onClick={() => setReviewEnabled((v) => !v)}
+                    className={cn(
+                      'relative w-9 h-5 rounded-full transition-colors flex-shrink-0 overflow-hidden',
+                      reviewEnabled ? 'bg-brand dark:bg-brand-btn' : 'bg-[#D1D5DB]',
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        'absolute top-[3px] left-[3px] w-3.5 h-3.5 rounded-full bg-white shadow transition-transform',
+                        reviewEnabled ? 'translate-x-[16px]' : 'translate-x-0',
+                      )}
+                    />
+                  </button>
+                </div>
                 <div className={fieldClass}>
                   <label className={labelClass}>Google Review Link</label>
                   <input

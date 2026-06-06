@@ -49,6 +49,9 @@ def update_review_settings(
     else:
         merged.pop("google_review_url", None)
     current_firm.settings = merged
+    if body.review_requests_enabled is not None:
+        existing_flags = current_firm.feature_flags or {}
+        current_firm.feature_flags = {**existing_flags, "review_requests_enabled": body.review_requests_enabled}
     db.commit()
     return current_firm.settings
 

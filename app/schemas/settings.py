@@ -20,4 +20,5 @@ class EmailSettingsUpdate(BaseModel):
 
 class ReviewSettingsUpdate(BaseModel):
     google_review_url: str | None = None
+    review_requests_enabled: bool | None = None
     model_config = ConfigDict(str_strip_whitespace=True)
