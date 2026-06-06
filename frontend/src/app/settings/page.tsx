@@ -53,6 +53,56 @@ function RoleBadge({ role }: { role: string }) {
   )
 }
 
+function DataExportSection() {
+  const [exporting, setExporting] = useState(false)
+
+  async function handleExport() {
+    setExporting(true)
+    try {
+      const response = await api.get('/api/v1/firm-export/download', { responseType: 'blob' })
+      const url = window.URL.createObjectURL(new Blob([response.data]))
+      const link = document.createElement('a')
+      link.href = url
+      const disposition = response.headers['content-disposition'] ?? ''
+      const match = disposition.match(/filename="([^"]+)"/)
+      link.setAttribute('download', match ? match[1] : 'jammpx_export.zip')
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.URL.revokeObjectURL(url)
+      toast.success('Export downloaded')
+    } catch {
+      toast.error('Export failed. Please try again.')
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  return (
+    <div className="bg-surface-card dark:bg-dark-card rounded-[10px] p-4 flex flex-col gap-3 max-w-lg" style={{ marginTop: '12px' }}>
+      <p className="text-[13px] font-medium text-brand dark:text-[#EDEEF0]">Data export</p>
+      <p className="text-[12px] text-[#6B7280]">
+        Download a complete export of your firm data as a ZIP file containing CSVs for all clients, engagements, invoices, tasks, IRS authorizations, notes, time entries, and documents.
+      </p>
+      <div>
+        <button
+          onClick={handleExport}
+          disabled={exporting}
+          className="h-8 px-3 text-[13px] font-medium rounded-[6px] bg-brand text-white hover:bg-brand/90 transition-colors disabled:opacity-60 flex items-center gap-2"
+        >
+          {exporting && (
+            <svg className="animate-spin h-3.5 w-3.5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+            </svg>
+          )}
+          {exporting ? 'Exporting...' : 'Download export'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState('profile')
   const { user } = useAuth()
@@ -457,6 +507,11 @@ export default function SettingsPage() {
                   </button>
                 </div>
               </div>
+            )}
+
+            {/* Data export section */}
+            {isFirmOwner && (
+              <DataExportSection />
             )}
           </>
         )}
