@@ -30,232 +30,156 @@ All models must be imported in migrations/env.py or autogenerate silently misses
 
 ---
 
-# PHASE INSTRUCTIONS — DOCUMENT ARCHIVE EXPORT (ASYNC)
+# PHASE INSTRUCTIONS — TIMER BEHAVIORAL EVENT TRACKING
 
 ## Context
-The CSV firm export is already live at GET /api/v1/firm-export/download.
-This build adds a separate async document archive export.
+The start/stop timer exists in the frontend at:
+frontend/src/components/timesheets/DailyTab.tsx
 
-The document archive is async because fetching potentially hundreds of files
-from S3 and assembling a ZIP could take 30-60 seconds -- too long for a
-synchronous HTTP response.
+It uses localStorage under the key 'jamm_active_timer'.
+The startTimer() and stopTimer() functions already work correctly.
+This build adds two backend endpoints that fire behavioral events only,
+and wires two silent fire-and-forget API calls into those functions.
 
-Pattern:
-1. Firm owner clicks "Request document archive" in settings
-2. Backend kicks off a background job immediately, returns 202 Accepted
-3. Background job: fetches all documents from S3, assembles ZIP,
-   uploads ZIP to S3 under exports/{firm_id}/documents_{date}.zip,
-   generates a presigned download URL (24 hour expiry),
-   emails the firm owner with the download link
-4. Firm owner gets an email with a download link within a few minutes
-
-No migration needed. No new models needed.
-S3 functions available: generate_presigned_url(s3_key),
-upload_fileobj(fileobj, s3_key, content_type).
-Document model has: s3_key, filename, content_type, size_bytes,
-client_id, engagement_id, firm_id.
+Zero visible changes to the UI. Zero changes to timer behavior.
+If either API call fails, the timer continues working normally.
+No migration. No new models. No database writes in the new endpoints.
 
 ---
 
 ## Pre-task checkpoint
 git add -A
-git commit -m "checkpoint before document archive export"
+git commit -m "checkpoint before timer behavioral event tracking"
 
 ---
 
 ## VERIFY BEFORE STARTING
-grep -n "def upload_fileobj\|def generate_presigned_url" app/services/s3.py
-grep -n "class Document\b\|s3_key\|filename" app/models/document.py
+grep -n "def startTimer\|def stopTimer\|TIMER_KEY\|localStorage" frontend/src/components/timesheets/DailyTab.tsx | head -10
+grep -n "time.entry\|time_entry" app/core/enums.py | head -10
 Paste both outputs before touching anything.
 
 ---
 
-## Change 1: Create app/services/document_archive_service.py
+## Change 1: Add two endpoints to the time entries router
 
-Create this file from scratch. Path comment at top.
+Find the time entries router file.
+grep -rn "router.*time" app/api/ to locate it if not obvious.
 
-### Main function: generate_and_deliver_document_archive(firm_id: UUID) -> None
+Add two new endpoints at the bottom of the router.
+Both require staff_or_above auth.
+Both fire behavioral events only — no database writes.
 
-This function runs in a background thread. It owns its own database session
-and S3 connections. It never raises to the caller -- all exceptions are caught
-and logged.
+### POST /time-entries/timer/start
 
-Structure:
+Accepts this request body:
+    class TimerStartRequest(BaseModel):
+        engagement_id: UUID
+        activity_type: str
+        is_billable: bool
 
-```python
-def generate_and_deliver_document_archive(firm_id: UUID) -> None:
-    import logging
-    log = logging.getLogger(__name__)
-    db = None
-    try:
-        from app.db.session import SessionLocal
-        db = SessionLocal()
-        _run_archive(firm_id, db, log)
-    except Exception as exc:
-        log.error("document_archive: top-level error firm=%s: %s", firm_id, type(exc).__name__)
-    finally:
-        if db:
-            db.close()
-```
+Logic:
+- Validate that the engagement exists and belongs to current_firm.id
+- If not found: return 404
+- Fire behavioral event:
+    event_type: "time_entry.timer_started"
+    entity_type: "engagement"
+    entity_id: engagement_id
+    actor_type: "staff"
+    actor_id: current_user.id
+    metadata:
+        activity_type: activity_type
+        is_billable: is_billable
+        hour_of_day: datetime.now(timezone.utc).hour
+        day_of_week: datetime.now(timezone.utc).weekday()
+- Return: {"status": "ok"}
 
-### Inner function: _run_archive(firm_id, db, log)
+### POST /time-entries/timer/stop
 
-Step 1: Load all documents for this firm
-```python
-from app.models.document import Document
-from sqlalchemy import select
-documents = db.execute(
-    select(Document).where(Document.firm_id == firm_id)
-).scalars().all()
-```
-If no documents: send email saying "No documents found to archive" and return.
+Accepts this request body:
+    class TimerStopRequest(BaseModel):
+        engagement_id: UUID
+        duration_seconds: int
+        activity_type: str
+        is_billable: bool
 
-Step 2: Assemble ZIP in memory
-```python
-import io, zipfile, requests as http_requests
-zip_buf = io.BytesIO()
-with zipfile.ZipFile(zip_buf, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
-    for doc in documents:
-        try:
-            from app.services.s3 import generate_presigned_url
-            url = generate_presigned_url(doc.s3_key)
-            resp = http_requests.get(url, timeout=30)
-            resp.raise_for_status()
-            # Use client_id/engagement_id as folder structure in ZIP
-            folder = str(doc.client_id)
-            if doc.engagement_id:
-                folder = f"{folder}/{doc.engagement_id}"
-            zf.writestr(f"{folder}/{doc.filename}", resp.content)
-        except Exception as exc:
-            log.warning("document_archive: skipped doc %s: %s", doc.id, type(exc).__name__)
-            continue
-zip_buf.seek(0)
-```
+Logic:
+- No engagement lookup needed on stop
+- Fire behavioral event:
+    event_type: "time_entry.timer_stopped"
+    entity_type: "engagement"
+    entity_id: engagement_id
+    actor_type: "staff"
+    actor_id: current_user.id
+    metadata:
+        duration_seconds: duration_seconds
+        duration_minutes: round(duration_seconds / 60, 1)
+        activity_type: activity_type
+        is_billable: is_billable
+        hour_of_day: datetime.now(timezone.utc).hour
+        day_of_week: datetime.now(timezone.utc).weekday()
+- Return: {"status": "ok"}
 
-Step 3: Upload ZIP to S3
-```python
-from datetime import date
-from app.services.s3 import upload_fileobj
-s3_key = f"exports/{firm_id}/documents_{date.today().isoformat()}.zip"
-upload_fileobj(zip_buf, s3_key, "application/zip")
-```
-
-Step 4: Generate presigned download URL with 24 hour expiry
-```python
-import boto3
-from app.core.config import get_settings
-settings = get_settings()
-s3_client = boto3.client(
-    "s3",
-    aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
-    aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
-    region_name=settings.AWS_REGION,
-)
-download_url = s3_client.generate_presigned_url(
-    "get_object",
-    Params={"Bucket": settings.S3_BUCKET_NAME, "Key": s3_key},
-    ExpiresIn=86400,
-)
-```
-
-Step 5: Find firm owner and send email
-```python
-from app.models.user import User
-from app.models.firm import Firm
-from app.core.enums import UserRole
-from app.services.email_service import EmailService
-
-firm_owner = db.query(User).filter(
-    User.firm_id == firm_id,
-    User.role == UserRole.firm_owner,
-    User.is_active == True,
-).first()
-if not firm_owner:
-    log.warning("document_archive: no firm owner found for firm %s", firm_id)
-    return
-
-firm = db.query(Firm).filter(Firm.id == firm_id).first()
-firm_name = firm.name if firm else "Your firm"
-doc_count = len(documents)
-
-EmailService.send_notification_email(
-    to_email=firm_owner.email,
-    firm_name=firm_name,
-    recipient_name=firm_owner.full_name or "Firm Owner",
-    title="Your document archive is ready",
-    body=f"Your document archive containing {doc_count} files is ready to download. The link below will expire in 24 hours.",
-    app_url=download_url,
-)
-```
-
-Step 6: Fire behavioral event
-```python
-from app.services.behavioral_log import log_event
-log_event(
-    firm_id=firm_id,
-    event_type="firm.document_archive_requested",
-    entity_type="firm",
-    entity_id=firm_id,
-    actor_type="staff",
-    metadata={"document_count": doc_count},
-)
-```
+Both endpoints import log_event inside the function body
+using the fire-and-forget pattern — never block the response.
 
 ---
 
-## Change 2: Add endpoint to app/api/firm_export.py
+## Change 2: Wire API calls into startTimer in DailyTab.tsx
 
-Open the existing firm_export.py router.
-Add one new endpoint: POST /firm-export/request-document-archive
+Find the startTimer function in DailyTab.tsx.
+It currently sets localStorage and updates state.
 
-- Auth: require_firm_owner
-- Immediately starts background thread:
-```python
-  import threading
-  from app.services.document_archive_service import generate_and_deliver_document_archive
-  threading.Thread(
-      target=generate_and_deliver_document_archive,
-      kwargs={"firm_id": current_firm.id},
-      daemon=True,
-  ).start()
-```
-- Returns immediately:
-```python
-  return {"status": "processing", "message": "Your document archive is being prepared. You will receive an email with a download link shortly."}
-```
-- Write audit log: action "firm.document_archive_requested"
-- No BackgroundTasks dependency needed -- use threading directly
+After the localStorage.setItem call, add a fire-and-forget API call:
+    api.post('/time-entries/timer/start', {
+      engagement_id: form.engagementId,
+      activity_type: form.activityType || 'Other',
+      is_billable: form.isBillable,
+    }).catch(() => {})
+
+The .catch(() => {}) is intentional and required.
+If the call fails for any reason the timer continues working normally.
+Never await this call. Never show an error to the user if it fails.
 
 ---
 
-## Change 3: Add "Request document archive" button to settings frontend
+## Change 3: Wire API call into stopTimer in DailyTab.tsx
 
-Find the DataExportSection component in frontend/src/app/settings/page.tsx.
-It currently has one button: "Download export".
+Find the stopTimer function in DailyTab.tsx.
+It currently calculates startTime, endTime, hours from timestamps
+and populates the form.
 
-Add a second button below it: "Request document archive"
-- Same styling as the download button
-- On click: calls POST /api/v1/firm-export/request-document-archive
-- Shows loading spinner while in flight
-- On success: shows toast "Document archive requested. You will receive an email with a download link shortly."
-- On error: shows toast "Request failed. Please try again."
-- Add a second loading state: const [requestingArchive, setRequestingArchive] = useState(false)
-- Add muted helper text below the button: "Large archives may take a few minutes. A download link will be sent to your email."
+After the form population logic, add a fire-and-forget API call:
+    const durationSeconds = Math.floor(
+      (new Date().getTime() - new Date(timerState.startedAt).getTime()) / 1000
+    )
+    api.post('/time-entries/timer/stop', {
+      engagement_id: timerState.engagementId,
+      duration_seconds: durationSeconds,
+      activity_type: timerState.activityType || 'Other',
+      is_billable: timerState.isBillable,
+    }).catch(() => {})
+
+Same rules: never await, never surface errors, timer works regardless.
+
+Then clear localStorage and reset timer state as it already does.
 
 ---
 
 ## Verify after all changes
-grep -n "def generate_and_deliver_document_archive\|def _run_archive\|document_archive" app/services/document_archive_service.py
-grep -n "request-document-archive\|document_archive" app/api/firm_export.py
-python -m py_compile app/services/document_archive_service.py
-python -m py_compile app/api/firm_export.py
-Both compiles must pass before deploying.
+grep -n "timer/start\|timer/stop\|timer_started\|timer_stopped" app/api/time_entries.py
+grep -n "timer/start\|timer/stop" frontend/src/components/timesheets/DailyTab.tsx
+python -m py_compile app/api/time_entries.py
+All must pass before deploying.
+
+cd frontend
+npx tsc --noEmit
+Zero TypeScript errors required.
 
 ---
 
 ## Deploy sequence
 git add -A
-git commit -m "async document archive export with email delivery"
+git commit -m "timer behavioral event tracking"
 git push origin main
 Then on the droplet:
 git pull origin main
