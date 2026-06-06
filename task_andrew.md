@@ -30,171 +30,224 @@ All models must be imported in migrations/env.py or autogenerate silently misses
 
 ---
 
-# PHASE INSTRUCTIONS — FULL FIRM DATA EXPORT
+# PHASE INSTRUCTIONS — DOCUMENT ARCHIVE EXPORT (ASYNC)
 
 ## Context
-No migration needed. No frontend changes beyond a single button in settings.
-This is a new backend endpoint plus a minimal frontend trigger.
+The CSV firm export is already live at GET /api/v1/firm-export/download.
+This build adds a separate async document archive export.
 
-The export produces a ZIP file containing these CSVs:
-- clients.csv
-- engagements.csv
-- invoices.csv
-- tasks.csv
-- irs_authorizations.csv
-- notes.csv
-- time_entries.csv
-- documents_manifest.csv (metadata only — no actual files)
+The document archive is async because fetching potentially hundreds of files
+from S3 and assembling a ZIP could take 30-60 seconds -- too long for a
+synchronous HTTP response.
 
-The endpoint streams the ZIP directly as a file download response.
-Firm owner only. No data from other firms ever included.
+Pattern:
+1. Firm owner clicks "Request document archive" in settings
+2. Backend kicks off a background job immediately, returns 202 Accepted
+3. Background job: fetches all documents from S3, assembles ZIP,
+   uploads ZIP to S3 under exports/{firm_id}/documents_{date}.zip,
+   generates a presigned download URL (24 hour expiry),
+   emails the firm owner with the download link
+4. Firm owner gets an email with a download link within a few minutes
+
+No migration needed. No new models needed.
+S3 functions available: generate_presigned_url(s3_key),
+upload_fileobj(fileobj, s3_key, content_type).
+Document model has: s3_key, filename, content_type, size_bytes,
+client_id, engagement_id, firm_id.
 
 ---
 
 ## Pre-task checkpoint
 git add -A
-git commit -m "checkpoint before firm data export"
+git commit -m "checkpoint before document archive export"
 
 ---
 
 ## VERIFY BEFORE STARTING
-grep -n "require_firm_owner\|firm_owner" app/dependencies/roles.py | head -5
-grep -n "StreamingResponse\|FileResponse\|BytesIO" app/api/timesheets.py | head -5
+grep -n "def upload_fileobj\|def generate_presigned_url" app/services/s3.py
+grep -n "class Document\b\|s3_key\|filename" app/models/document.py
 Paste both outputs before touching anything.
 
 ---
 
-## Change 1: Create app/services/firm_export_service.py
+## Change 1: Create app/services/document_archive_service.py
 
 Create this file from scratch. Path comment at top.
 
-Import: io, csv, zipfile, datetime, uuid, from sqlalchemy.orm import Session,
-and all relevant models.
+### Main function: generate_and_deliver_document_archive(firm_id: UUID) -> None
 
-Write one function: generate_firm_export_zip(firm_id: UUID, db: Session) -> bytes
+This function runs in a background thread. It owns its own database session
+and S3 connections. It never raises to the caller -- all exceptions are caught
+and logged.
 
-This function:
-1. Creates an in-memory ZIP using zipfile.ZipFile with BytesIO
-2. For each CSV below, queries the database scoped to firm_id,
-   writes rows using csv.DictWriter, and adds to the ZIP
-3. Returns the ZIP as bytes
+Structure:
 
-### clients.csv
-Query: all Client records where firm_id == firm_id
-Columns: id, name, email, phone, company_name, entity_type,
-         address_line1, address_line2, city, state, postal_code,
-         country, tags, notes, is_active, created_at
+```python
+def generate_and_deliver_document_archive(firm_id: UUID) -> None:
+    import logging
+    log = logging.getLogger(__name__)
+    db = None
+    try:
+        from app.db.session import SessionLocal
+        db = SessionLocal()
+        _run_archive(firm_id, db, log)
+    except Exception as exc:
+        log.error("document_archive: top-level error firm=%s: %s", firm_id, type(exc).__name__)
+    finally:
+        if db:
+            db.close()
+```
 
-Exclude: portal_password_hash, portal_invite_token, tax_id,
-         quickbooks_customer_id — never export sensitive or
-         integration-specific fields
+### Inner function: _run_archive(firm_id, db, log)
 
-### engagements.csv
-Query: all Engagement records where firm_id == firm_id
-Columns: id, client_id, name, description, status,
-         engagement_type, start_date, end_date,
-         filing_deadline, extended_deadline,
-         efiled_at, irs_confirmation_number,
-         notes, is_active, created_at
+Step 1: Load all documents for this firm
+```python
+from app.models.document import Document
+from sqlalchemy import select
+documents = db.execute(
+    select(Document).where(Document.firm_id == firm_id)
+).scalars().all()
+```
+If no documents: send email saying "No documents found to archive" and return.
 
-### invoices.csv
-Query: all Invoice records where firm_id == firm_id
-       and is_deleted == False
-Columns: id, client_id, engagement_id, invoice_number,
-         subtotal, tax_rate, tax_amount, total_amount,
-         status, due_date, paid_at, sent_at, created_at
+Step 2: Assemble ZIP in memory
+```python
+import io, zipfile, requests as http_requests
+zip_buf = io.BytesIO()
+with zipfile.ZipFile(zip_buf, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
+    for doc in documents:
+        try:
+            from app.services.s3 import generate_presigned_url
+            url = generate_presigned_url(doc.s3_key)
+            resp = http_requests.get(url, timeout=30)
+            resp.raise_for_status()
+            # Use client_id/engagement_id as folder structure in ZIP
+            folder = str(doc.client_id)
+            if doc.engagement_id:
+                folder = f"{folder}/{doc.engagement_id}"
+            zf.writestr(f"{folder}/{doc.filename}", resp.content)
+        except Exception as exc:
+            log.warning("document_archive: skipped doc %s: %s", doc.id, type(exc).__name__)
+            continue
+zip_buf.seek(0)
+```
 
-Exclude: stripe_payment_intent_id, stripe_charge_id
+Step 3: Upload ZIP to S3
+```python
+from datetime import date
+from app.services.s3 import upload_fileobj
+s3_key = f"exports/{firm_id}/documents_{date.today().isoformat()}.zip"
+upload_fileobj(zip_buf, s3_key, "application/zip")
+```
 
-### tasks.csv
-Query: all Task records where firm_id == firm_id
-Columns: id, client_id, engagement_id, title, description,
-         status, assigned_to, due_date, completed_at, created_at
+Step 4: Generate presigned download URL with 24 hour expiry
+```python
+import boto3
+from app.core.config import get_settings
+settings = get_settings()
+s3_client = boto3.client(
+    "s3",
+    aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
+    aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
+    region_name=settings.AWS_REGION,
+)
+download_url = s3_client.generate_presigned_url(
+    "get_object",
+    Params={"Bucket": settings.S3_BUCKET_NAME, "Key": s3_key},
+    ExpiresIn=86400,
+)
+```
 
-### irs_authorizations.csv
-Query: all IrsAuthorization records where firm_id == firm_id
-Columns: id, client_id, form_type, status, expiry_date,
-         granted_at, created_at
+Step 5: Find firm owner and send email
+```python
+from app.models.user import User
+from app.models.firm import Firm
+from app.core.enums import UserRole
+from app.services.email_service import EmailService
 
-### notes.csv
-Query: all Note records where firm_id == firm_id
-Columns: id, entity_type, entity_id, author_id,
-         content, is_private, created_at
+firm_owner = db.query(User).filter(
+    User.firm_id == firm_id,
+    User.role == UserRole.firm_owner,
+    User.is_active == True,
+).first()
+if not firm_owner:
+    log.warning("document_archive: no firm owner found for firm %s", firm_id)
+    return
 
-### time_entries.csv
-Query: all TimeEntry records where firm_id == firm_id
-Columns: id, engagement_id, client_id, user_id,
-         date, hours, hourly_rate, is_billable,
-         is_billed, description, activity_type, created_at
+firm = db.query(Firm).filter(Firm.id == firm_id).first()
+firm_name = firm.name if firm else "Your firm"
+doc_count = len(documents)
 
-### documents_manifest.csv
-Query: all Document records where firm_id == firm_id
-Columns: id, client_id, engagement_id, filename,
-         file_type, file_size, uploaded_by,
-         is_superseded, created_at
+EmailService.send_notification_email(
+    to_email=firm_owner.email,
+    firm_name=firm_name,
+    recipient_name=firm_owner.full_name or "Firm Owner",
+    title="Your document archive is ready",
+    body=f"Your document archive containing {doc_count} files is ready to download. The link below will expire in 24 hours.",
+    app_url=download_url,
+)
+```
 
-Note: document_manifest is metadata only.
-Never attempt to download or include actual document files.
-
-All datetime values: format as ISO 8601 strings.
-All None values: write as empty string.
-All UUID values: write as string.
-
-ZIP filename inside the archive: use the column names above.
-ZIP compression: zipfile.ZIP_DEFLATED
+Step 6: Fire behavioral event
+```python
+from app.services.behavioral_log import log_event
+log_event(
+    firm_id=firm_id,
+    event_type="firm.document_archive_requested",
+    entity_type="firm",
+    entity_id=firm_id,
+    actor_type="staff",
+    metadata={"document_count": doc_count},
+)
+```
 
 ---
 
-## Change 2: Create app/api/firm_export.py
+## Change 2: Add endpoint to app/api/firm_export.py
 
-Create this router from scratch. Path comment at top.
+Open the existing firm_export.py router.
+Add one new endpoint: POST /firm-export/request-document-archive
 
-Single endpoint: GET /firm-export/download
 - Auth: require_firm_owner
-- Calls generate_firm_export_zip(firm_id, db)
-- Returns StreamingResponse with:
-  - media_type: "application/zip"
-  - headers: Content-Disposition: attachment; filename="jammpx_export_{date}.zip"
-    where date is today in YYYY-MM-DD format
-- Write audit log entry: action "firm.data_exported"
-- Fire behavioral event: event_type "firm.data_exported"
+- Immediately starts background thread:
+```python
+  import threading
+  from app.services.document_archive_service import generate_and_deliver_document_archive
+  threading.Thread(
+      target=generate_and_deliver_document_archive,
+      kwargs={"firm_id": current_firm.id},
+      daemon=True,
+  ).start()
+```
+- Returns immediately:
+```python
+  return {"status": "processing", "message": "Your document archive is being prepared. You will receive an email with a download link shortly."}
+```
+- Write audit log: action "firm.document_archive_requested"
+- No BackgroundTasks dependency needed -- use threading directly
 
 ---
 
-## Change 3: Register router in app/main.py
+## Change 3: Add "Request document archive" button to settings frontend
 
-Find where other routers are registered.
-Add:
-from app.api.firm_export import router as firm_export_router
-app.include_router(firm_export_router, prefix="/api/v1", tags=["Firm Export"])
+Find the DataExportSection component in frontend/src/app/settings/page.tsx.
+It currently has one button: "Download export".
 
----
-
-## Change 4: Add export button to settings frontend
-
-Find the firm settings tab in the frontend.
-It is likely at: frontend/src/components/settings/FirmTab.tsx
-or similar — grep for "firm settings" or "firm name" in the
-frontend components to find the right file.
-
-Add a new section at the bottom of the firm settings tab with:
-- Section heading: "Data export" (13px, font-500, brand color)
-- Subtext: "Download a complete export of your firm data as a ZIP file containing CSVs for all clients, engagements, invoices, tasks, IRS authorizations, notes, time entries, and documents." (12px, muted)
-- A single button: "Download export"
-  - Brand blue background, white text, 32px height
-  - On click: calls GET /api/v1/firm-export/download via axios
-    with responseType: 'blob', then triggers a browser download
-  - Shows loading spinner while in flight
-  - Shows success toast on complete: "Export downloaded"
-  - Shows error toast on failure: "Export failed. Please try again."
+Add a second button below it: "Request document archive"
+- Same styling as the download button
+- On click: calls POST /api/v1/firm-export/request-document-archive
+- Shows loading spinner while in flight
+- On success: shows toast "Document archive requested. You will receive an email with a download link shortly."
+- On error: shows toast "Request failed. Please try again."
+- Add a second loading state: const [requestingArchive, setRequestingArchive] = useState(false)
+- Add muted helper text below the button: "Large archives may take a few minutes. A download link will be sent to your email."
 
 ---
 
 ## Verify after all changes
-grep -n "def generate_firm_export_zip\|clients.csv\|documents_manifest" app/services/firm_export_service.py
-grep -n "firm-export\|firm_export_router\|data_exported" app/api/firm_export.py
-grep -n "firm_export_router" app/main.py
-python -m py_compile app/services/firm_export_service.py
+grep -n "def generate_and_deliver_document_archive\|def _run_archive\|document_archive" app/services/document_archive_service.py
+grep -n "request-document-archive\|document_archive" app/api/firm_export.py
+python -m py_compile app/services/document_archive_service.py
 python -m py_compile app/api/firm_export.py
 Both compiles must pass before deploying.
 
@@ -202,7 +255,7 @@ Both compiles must pass before deploying.
 
 ## Deploy sequence
 git add -A
-git commit -m "full firm data export endpoint and settings button"
+git commit -m "async document archive export with email delivery"
 git push origin main
 Then on the droplet:
 git pull origin main
