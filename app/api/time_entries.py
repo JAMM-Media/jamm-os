@@ -1,15 +1,18 @@
 # app/api/time_entries.py
 
-from datetime import date as date_type
+from datetime import date as date_type, datetime, timezone
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
+from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.dependencies.auth import get_current_user
 from app.dependencies.roles import require_manager_or_above, require_staff_or_above
+from app.models.engagement import Engagement
 from app.models.firm import Firm
 from app.models.user import User
 from app.schemas.time_entry import (
@@ -172,6 +175,88 @@ def get_timesheet_settings(
     ).scalar_one_or_none()
     approval_required = getattr(firm, "timesheet_approval_required", False) if firm else False
     return {"approval_required": bool(approval_required)}
+
+
+# ---------------------------------------------------------
+# TIMER START
+# ---------------------------------------------------------
+class TimerStartRequest(BaseModel):
+    engagement_id: UUID
+    activity_type: str
+    is_billable: bool
+
+
+@router.post("/timer/start")
+def timer_start(
+    payload: TimerStartRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_staff_or_above),
+):
+    engagement = db.execute(
+        select(Engagement).where(
+            Engagement.id == payload.engagement_id,
+            Engagement.firm_id == current_user.firm_id,
+        )
+    ).scalar_one_or_none()
+    if not engagement:
+        raise HTTPException(status_code=404, detail="Engagement not found")
+
+    from app.services.behavioral_log import log_event
+    background_tasks.add_task(
+        log_event,
+        event_type="time_entry.timer_started",
+        firm_id=current_user.firm_id,
+        entity_type="engagement",
+        entity_id=payload.engagement_id,
+        actor_type="staff",
+        actor_id=current_user.id,
+        metadata={
+            "activity_type": payload.activity_type,
+            "is_billable": payload.is_billable,
+            "hour_of_day": datetime.now(timezone.utc).hour,
+            "day_of_week": datetime.now(timezone.utc).weekday(),
+        },
+    )
+    return {"status": "ok"}
+
+
+# ---------------------------------------------------------
+# TIMER STOP
+# ---------------------------------------------------------
+class TimerStopRequest(BaseModel):
+    engagement_id: UUID
+    duration_seconds: int
+    activity_type: str
+    is_billable: bool
+
+
+@router.post("/timer/stop")
+def timer_stop(
+    payload: TimerStopRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_staff_or_above),
+):
+    from app.services.behavioral_log import log_event
+    background_tasks.add_task(
+        log_event,
+        event_type="time_entry.timer_stopped",
+        firm_id=current_user.firm_id,
+        entity_type="engagement",
+        entity_id=payload.engagement_id,
+        actor_type="staff",
+        actor_id=current_user.id,
+        metadata={
+            "duration_seconds": payload.duration_seconds,
+            "duration_minutes": round(payload.duration_seconds / 60, 1),
+            "activity_type": payload.activity_type,
+            "is_billable": payload.is_billable,
+            "hour_of_day": datetime.now(timezone.utc).hour,
+            "day_of_week": datetime.now(timezone.utc).weekday(),
+        },
+    )
+    return {"status": "ok"}
 
 
 # ---------------------------------------------------------

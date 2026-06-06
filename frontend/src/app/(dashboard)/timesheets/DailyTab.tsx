@@ -376,6 +376,11 @@ export default function DailyTab({
       isBillable: form.isBillable,
     }
     localStorage.setItem(TIMER_KEY, JSON.stringify(state))
+    api.post('/time-entries/timer/start', {
+      engagement_id: form.engagementId,
+      activity_type: form.activityType || 'Other',
+      is_billable: form.isBillable,
+    }).catch(() => {})
     setTimerState(state)
     setElapsed(0)
   }
@@ -402,6 +407,16 @@ export default function DailyTab({
 
     const eng = engagements.find((e) => e.id === timerState.engagementId)
     if (eng) setEngSearch(getEngLabel(eng))
+
+    const durationSeconds = Math.floor(
+      (new Date().getTime() - new Date(timerState.startedAt).getTime()) / 1000
+    )
+    api.post('/time-entries/timer/stop', {
+      engagement_id: timerState.engagementId,
+      duration_seconds: durationSeconds,
+      activity_type: timerState.activityType || 'Other',
+      is_billable: timerState.isBillable,
+    }).catch(() => {})
 
     localStorage.removeItem(TIMER_KEY)
     setTimerState(null)
