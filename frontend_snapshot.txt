@@ -6600,6 +6600,7 @@ export default function ClientsPage() {
             <option value="business">Business</option>
             <option value="trust">Trust</option>
             <option value="estate">Estate</option>
+            <option value="non_profit">Non-Profit</option>
           </select>
 
           <select
@@ -6698,7 +6699,7 @@ import { parseMessage } from '@/lib/entityLinkParser'
 import { NotesTab, NotesPanel } from '@/components/notes'
 import { useNotes } from '@/components/notes'
 import { useUnreadMessages } from '@/components/messaging/useUnreadMessages'
-import { cn, formatEngagementType } from '@/lib/utils'
+import { cn, formatEngagementType, formatEntityType, formatEntitySubtype } from '@/lib/utils'
 import api from '@/lib/api'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { IrsAuthBadge } from '@/components/clients/IrsAuthBadge'
@@ -6752,6 +6753,7 @@ function ClientDetailContent() {
   const portalLinkRef = useRef<HTMLButtonElement>(null)
   const [qboEditMode, setQboEditMode] = useState(false)
   const [qboEditValue, setQboEditValue] = useState('')
+  const [qboDeepLinkLoading, setQboDeepLinkLoading] = useState(false)
   const [billingDetailOpen, setBillingDetailOpen] = useState(false)
 
   useEffect(() => {
@@ -6972,7 +6974,10 @@ function ClientDetailContent() {
                 onClick={() => setActiveTab('irs-auth')}
               />
               {client.entityType && (
-                <span className="text-[12px] text-[#6B7280]">{client.entityType}</span>
+                <span className="text-[12px] text-[#6B7280]">{formatEntityType(client.entityType)}</span>
+              )}
+              {client.entitySubtype && (
+                <span className="text-[12px] text-[#6B7280]">{formatEntitySubtype(client.entitySubtype)}</span>
               )}
             </div>
           </div>
@@ -7174,6 +7179,30 @@ function ClientDetailContent() {
                     >
                       <Pencil className="h-3.5 w-3.5" />
                     </button>
+                    {client.quickbooksCustomerId && (
+                      <button
+                        onClick={async () => {
+                          setQboDeepLinkLoading(true)
+                          try {
+                            const res = await api.get(`/api/v1/integrations/quickbooks/deep-link/client/${clientId}`)
+                            window.open(res.data.url, '_blank')
+                          } catch {
+                            toast.error('Could not open QuickBooks link.')
+                          } finally {
+                            setQboDeepLinkLoading(false)
+                          }
+                        }}
+                        disabled={qboDeepLinkLoading}
+                        className="flex items-center gap-1 text-[12px] text-[#6B7280] hover:text-brand transition-colors disabled:opacity-60"
+                      >
+                        {qboDeepLinkLoading ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <ExternalLink className="h-3.5 w-3.5" />
+                        )}
+                        Open in QuickBooks
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
@@ -10240,14 +10269,50 @@ export default function NotificationsPage() {
 FILE: frontend\src\app\portal\layout.tsx
 ================================================================================
 // path: frontend/src/app/portal/layout.tsx
+import type { Metadata, Viewport } from 'next'
+
 export const dynamic = 'force-dynamic'
+
+export const viewport: Viewport = {
+  themeColor: '#1F3148',
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+}
+
+export const metadata: Metadata = {
+  title: 'Client Portal',
+  description: 'Your secure client portal',
+  manifest: '/portal-manifest.json',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'black-translucent',
+    title: 'Client Portal',
+  },
+}
 
 export default function PortalLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
-  return <>{children}</>
+  return (
+    <>
+      <script
+        dangerouslySetInnerHTML={{
+          __html: `
+            if ('serviceWorker' in navigator) {
+              window.addEventListener('load', function() {
+                navigator.serviceWorker.register('/portal-sw.js')
+              })
+            }
+          `,
+        }}
+      />
+      {children}
+    </>
+  )
 }
 
 
@@ -11382,6 +11447,7 @@ import AutomationsTab from '@/components/settings/AutomationsTab'
 import SecurityTab from '@/components/settings/SecurityTab'
 import FeeScheduleTab from '@/components/settings/FeeScheduleTab'
 import PortalBrandingTab from '@/components/settings/PortalBrandingTab'
+import MigrationTab from '@/components/settings/MigrationTab'
 import { onConciergeAction, setFormDirty } from '@/lib/events/conciergeEvents'
 
 const TABS = [
@@ -11392,6 +11458,7 @@ const TABS = [
   { key: 'automations', label: 'Automations' },
   { key: 'fee_schedule', label: 'Fee Schedule' },
   { key: 'portal_branding', label: 'Portal' },
+  { key: 'migration', label: 'Migration' },
 ]
 
 function formatRoleLabel(role: string): string {
@@ -11511,6 +11578,7 @@ export default function SettingsPage() {
   const [savingEmail, setSavingEmail] = useState(false)
 
   const [googleReviewUrl, setGoogleReviewUrl] = useState('')
+  const [reviewEnabled, setReviewEnabled] = useState(false)
   const [savingReview, setSavingReview] = useState(false)
 
   const { data: firmData, isLoading: firmLoading } = useFetch<FirmDetails>(
@@ -11600,6 +11668,7 @@ export default function SettingsPage() {
       setEmailDisplayName((firmData.settings.email_display_name as string) ?? '')
       setGoogleReviewUrl((firmData.settings.google_review_url as string) ?? '')
     }
+    setReviewEnabled((firmData as (FirmDetails & { feature_flags?: Record<string, unknown> }) | undefined)?.feature_flags?.review_requests_enabled === true)
   }, [firmData])
 
   async function handleSaveEmailSettings() {
@@ -11622,6 +11691,7 @@ export default function SettingsPage() {
     try {
       await api.patch('/settings/review', {
         google_review_url: googleReviewUrl || null,
+        review_requests_enabled: reviewEnabled,
       })
       toast.success('Review settings saved')
     } catch {
@@ -11650,6 +11720,7 @@ export default function SettingsPage() {
   const isFirmOwner = user?.role === 'firm_owner'
   const canSeeAutomations = user?.role === 'firm_owner' || user?.role === 'manager'
   const canSeeSecurity = isFirmOwner
+  const canSeeMigration = isFirmOwner
 
   const fieldClass = 'flex flex-col gap-1.5'
   const labelClass = 'text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em]'
@@ -11675,6 +11746,7 @@ export default function SettingsPage() {
             if (tab.key === 'security') return canSeeSecurity
             if (tab.key === 'fee_schedule') return isFirmOwner
             if (tab.key === 'portal_branding') return isFirmOwner
+            if (tab.key === 'migration') return canSeeMigration
             return true
           }).map((tab) => (
             <button
@@ -11881,6 +11953,31 @@ export default function SettingsPage() {
             {isFirmOwner && (
               <div className="bg-surface-card dark:bg-dark-card rounded-[10px] p-4 flex flex-col gap-3 max-w-lg" style={{ marginTop: '12px' }}>
                 <p className="text-[13px] font-medium text-brand dark:text-[#EDEEF0]">Review Requests</p>
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex-1">
+                    <p className="text-[13px] text-brand dark:text-[#EDEEF0]">Enable review requests</p>
+                    <p className="text-[11px] text-[#6B7280] mt-0.5">
+                      When enabled, clients who rate their experience 9 or 10 will be prompted to leave a Google review after an engagement is marked complete.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={reviewEnabled}
+                    onClick={() => setReviewEnabled((v) => !v)}
+                    className={cn(
+                      'relative w-9 h-5 rounded-full transition-colors flex-shrink-0 overflow-hidden',
+                      reviewEnabled ? 'bg-brand dark:bg-brand-btn' : 'bg-[#D1D5DB]',
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        'absolute top-[3px] left-[3px] w-3.5 h-3.5 rounded-full bg-white shadow transition-transform',
+                        reviewEnabled ? 'translate-x-[16px]' : 'translate-x-0',
+                      )}
+                    />
+                  </button>
+                </div>
                 <div className={fieldClass}>
                   <label className={labelClass}>Google Review Link</label>
                   <input
@@ -12109,6 +12206,8 @@ export default function SettingsPage() {
         {/* Portal Branding tab */}
         {activeTab === 'portal_branding' && isFirmOwner && <PortalBrandingTab />}
 
+        {/* Migration tab */}
+        {activeTab === 'migration' && canSeeMigration && <MigrationTab />}
 
       </div>
     </AppShell>
@@ -12188,9 +12287,184 @@ FILE: frontend\src\app\settings\integrations\page.tsx
 // frontend/src/app/settings/integrations/page.tsx
 'use client'
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { AppShell } from '@/components/layout/AppShell'
 import { onConciergeAction } from '@/lib/events/conciergeEvents'
+import { toast } from 'sonner'
+import api from '@/lib/api'
+
+interface QboCustomer {
+  quickbooks_customer_id: string
+  name: string
+  email: string | null
+  is_active: boolean
+}
+
+function QboImportWizard() {
+  const [step, setStep] = useState<'idle' | 'select' | 'empty' | 'done'>('idle')
+  const [loading, setLoading] = useState(false)
+  const [importing, setImporting] = useState(false)
+  const [customers, setCustomers] = useState<QboCustomer[]>([])
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [result, setResult] = useState<{ created: number; skipped: number } | null>(null)
+
+  async function handlePreview() {
+    setLoading(true)
+    try {
+      const res = await api.get('/api/v1/integrations/quickbooks/import-preview')
+      const data = res.data
+      if (data.customers.length === 0) {
+        setStep('empty')
+      } else {
+        setCustomers(data.customers)
+        setSelectedIds(new Set(data.customers.map((c: QboCustomer) => c.quickbooks_customer_id)))
+        setStep('select')
+      }
+    } catch (err: unknown) {
+      const status = (err as { response?: { status?: number; data?: { detail?: string } } })?.response?.status
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      if (status === 400) {
+        toast.error('QuickBooks is not connected.')
+      } else {
+        toast.error(detail ?? 'Failed to load QuickBooks customers.')
+      }
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function handleImport() {
+    if (selectedIds.size === 0) return
+    setImporting(true)
+    try {
+      const res = await api.post('/api/v1/integrations/quickbooks/import-clients', {
+        quickbooks_customer_ids: Array.from(selectedIds),
+      })
+      setResult(res.data)
+      setStep('done')
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      toast.error(detail ?? 'Import failed. Please try again.')
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  function reset() {
+    setStep('idle')
+    setCustomers([])
+    setSelectedIds(new Set())
+    setResult(null)
+  }
+
+  function toggleAll() {
+    if (selectedIds.size === customers.length) {
+      setSelectedIds(new Set())
+    } else {
+      setSelectedIds(new Set(customers.map((c) => c.quickbooks_customer_id)))
+    }
+  }
+
+  function toggleOne(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) {
+        next.delete(id)
+      } else {
+        next.add(id)
+      }
+      return next
+    })
+  }
+
+  return (
+    <div className="mt-4 pt-4 border-t border-[0.5px] border-surface-border dark:border-dark-border">
+      {step === 'idle' && (
+        <button
+          onClick={handlePreview}
+          disabled={loading}
+          className="h-8 px-4 rounded-[6px] bg-brand dark:bg-brand-btn text-white text-[12px] font-medium hover:opacity-90 transition-opacity disabled:opacity-60 flex items-center gap-2"
+        >
+          {loading && (
+            <svg className="animate-spin h-3 w-3 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+            </svg>
+          )}
+          {loading ? 'Loading...' : 'Import from QuickBooks'}
+        </button>
+      )}
+
+      {step === 'empty' && (
+        <p className="text-[12px] text-[#6B7280]">All QuickBooks customers are already in JAMM PX.</p>
+      )}
+
+      {step === 'select' && (
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center justify-between">
+            <button
+              onClick={toggleAll}
+              className="text-[12px] text-brand dark:text-[#EDEEF0] underline"
+            >
+              {selectedIds.size === customers.length ? 'Deselect all' : 'Select all'}
+            </button>
+            <span className="text-[12px] text-[#6B7280]">{selectedIds.size} of {customers.length} selected</span>
+          </div>
+          <div className="flex flex-col divide-y divide-[0.5px] divide-surface-border dark:divide-dark-border rounded-[8px] border border-[0.5px] border-surface-border dark:border-dark-border overflow-hidden">
+            {customers.map((c) => (
+              <label
+                key={c.quickbooks_customer_id}
+                className="flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-[#F3F4F6] dark:hover:bg-[#303030]"
+              >
+                <input
+                  type="checkbox"
+                  checked={selectedIds.has(c.quickbooks_customer_id)}
+                  onChange={() => toggleOne(c.quickbooks_customer_id)}
+                  className="w-3.5 h-3.5 accent-brand"
+                />
+                <span className="text-[13px] text-brand dark:text-[#EDEEF0] flex-1">{c.name}</span>
+                {c.email && (
+                  <span className="text-[12px] text-[#6B7280]">{c.email}</span>
+                )}
+              </label>
+            ))}
+          </div>
+          <div className="flex justify-end">
+            <button
+              onClick={handleImport}
+              disabled={selectedIds.size === 0 || importing}
+              className="h-8 px-4 rounded-[6px] bg-brand dark:bg-brand-btn text-white text-[12px] font-medium hover:opacity-90 transition-opacity disabled:opacity-60 flex items-center gap-2"
+            >
+              {importing && (
+                <svg className="animate-spin h-3 w-3 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                </svg>
+              )}
+              {importing ? 'Importing...' : 'Import Selected'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {step === 'done' && result && (
+        <div className="flex flex-col gap-3">
+          <p className="text-[12px] text-[#374151] dark:text-[#9CA3AF]">
+            {result.created} client{result.created !== 1 ? 's' : ''} imported, {result.skipped} skipped.
+          </p>
+          <div className="flex justify-end">
+            <button
+              onClick={reset}
+              className="h-8 px-4 rounded-[6px] bg-brand dark:bg-brand-btn text-white text-[12px] font-medium hover:opacity-90 transition-opacity"
+            >
+              Done
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
 
 export default function SettingsIntegrationsPage() {
   const qboRef = useRef<HTMLDivElement>(null)
@@ -12245,6 +12519,7 @@ export default function SettingsIntegrationsPage() {
           >
             Connect QuickBooks
           </button>
+          <QboImportWizard />
         </div>
       </div>
     </AppShell>
@@ -13510,6 +13785,7 @@ import { type Client } from '@/lib/api'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { IrsAuthBadge } from '@/components/clients/IrsAuthBadge'
 import { HealthDot } from '@/components/clients/HealthDot'
+import { formatEntityType, formatEntitySubtype } from '@/lib/utils'
 
 interface ClientCardProps {
   client: Client
@@ -13531,7 +13807,7 @@ export function ClientCard({ client }: ClientCardProps) {
           </span>
         </div>
         <span className="text-[10px] text-[#6B7280] ml-2 flex-shrink-0">
-          {client.entityType ?? ''}
+          {formatEntityType(client.entityType)}{client.entitySubtype ? ` -- ${formatEntitySubtype(client.entitySubtype)}` : ''}
         </span>
       </div>
       <div className="text-[11px] text-[#6B7280] mb-2">
@@ -13595,6 +13871,7 @@ import { useRouter } from 'next/navigation'
 import { type Client } from '@/lib/api'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { HealthDot } from '@/components/clients/HealthDot'
+import { formatEntityType, formatEntitySubtype } from '@/lib/utils'
 
 interface ClientTableProps {
   clients: Client[]
@@ -13652,7 +13929,9 @@ export function ClientTable({ clients }: ClientTableProps) {
               </td>
               <td className="px-4 py-3">
                 <span className="text-[12px] text-[#374151] dark:text-[#9CA3AF]">
-                  {client.entityType ?? '—'}
+                  {formatEntityType(client.entityType)
+                    ? `${formatEntityType(client.entityType)}${client.entitySubtype ? ` -- ${formatEntitySubtype(client.entitySubtype)}` : ''}`
+                    : '—'}
                 </span>
               </td>
               <td className="px-4 py-3">
@@ -14058,7 +14337,31 @@ const ENTITY_TYPE_OPTIONS = [
   { value: 'business', label: 'Business' },
   { value: 'trust', label: 'Trust' },
   { value: 'estate', label: 'Estate' },
+  { value: 'non_profit', label: 'Non-Profit' },
 ]
+
+const SUBTYPE_OPTIONS: Record<string, { value: string; label: string }[]> = {
+  business: [
+    { value: 'sole_proprietor', label: 'Sole Proprietor' },
+    { value: 'partnership', label: 'Partnership' },
+    { value: 'llc', label: 'LLC' },
+    { value: 's_corp', label: 'S-Corp' },
+    { value: 'c_corp', label: 'C-Corp' },
+    { value: 'professional_corp', label: 'Professional Corp' },
+  ],
+  trust: [
+    { value: 'revocable_trust', label: 'Revocable Trust' },
+    { value: 'irrevocable_trust', label: 'Irrevocable Trust' },
+    { value: 'charitable_trust', label: 'Charitable Trust' },
+    { value: 'special_needs_trust', label: 'Special Needs Trust' },
+  ],
+  non_profit: [
+    { value: 'public_charity', label: 'Public Charity (501c3)' },
+    { value: 'private_foundation', label: 'Private Foundation (501c3)' },
+    { value: 'social_welfare', label: 'Social Welfare (501c4)' },
+    { value: 'other_tax_exempt', label: 'Other Tax-Exempt' },
+  ],
+}
 
 interface EditClientModalProps {
   isOpen: boolean
@@ -14072,6 +14375,7 @@ interface FormState {
   email: string
   phone: string
   entity_type: string
+  entity_subtype: string
   company_name: string
   notes: string
 }
@@ -14082,6 +14386,7 @@ function toFormState(client: Client): FormState {
     email: client.email ?? '',
     phone: client.phone ?? '',
     entity_type: client.entityType ?? '',
+    entity_subtype: client.entitySubtype ?? '',
     company_name: client.companyName ?? '',
     notes: client.notes ?? '',
   }
@@ -14101,7 +14406,11 @@ export function EditClientModal({ isOpen, onClose, client, onSuccess }: EditClie
 
   function handleChange(field: keyof FormState, value: string) {
     setFormDirty(true)
-    setForm((prev) => ({ ...prev, [field]: value }))
+    if (field === 'entity_type' && (value === 'individual' || value === 'estate')) {
+      setForm((prev) => ({ ...prev, entity_type: value, entity_subtype: '' }))
+    } else {
+      setForm((prev) => ({ ...prev, [field]: value }))
+    }
     if (field === 'name') setNameError('')
   }
 
@@ -14117,6 +14426,7 @@ export function EditClientModal({ isOpen, onClose, client, onSuccess }: EditClie
     if (form.email !== original.email) patch.email = form.email || null
     if (form.phone !== original.phone) patch.phone = form.phone || null
     if (form.entity_type !== original.entity_type) patch.entity_type = form.entity_type || null
+    if (form.entity_subtype !== original.entity_subtype) patch.entity_subtype = form.entity_subtype || null
     if (form.company_name !== original.company_name) patch.company_name = form.company_name || null
     if (form.notes !== original.notes) patch.notes = form.notes || null
 
@@ -14200,6 +14510,17 @@ export function EditClientModal({ isOpen, onClose, client, onSuccess }: EditClie
             placeholder="Select type"
           />
         </FormField>
+
+        {SUBTYPE_OPTIONS[form.entity_type] && (
+          <FormField label="Entity Subtype">
+            <SelectInput
+              value={form.entity_subtype}
+              onChange={(e) => handleChange('entity_subtype', e.target.value)}
+              options={[{ value: '', label: '-- Select subtype --' }, ...SUBTYPE_OPTIONS[form.entity_type]]}
+              placeholder="-- Select subtype --"
+            />
+          </FormField>
+        )}
 
         <FormField label="Company Name">
           <TextInput
@@ -14896,7 +15217,31 @@ const ENTITY_TYPE_OPTIONS = [
   { value: 'business', label: 'Business' },
   { value: 'trust', label: 'Trust' },
   { value: 'estate', label: 'Estate' },
+  { value: 'non_profit', label: 'Non-Profit' },
 ]
+
+const SUBTYPE_OPTIONS: Record<string, { value: string; label: string }[]> = {
+  business: [
+    { value: 'sole_proprietor', label: 'Sole Proprietor' },
+    { value: 'partnership', label: 'Partnership' },
+    { value: 'llc', label: 'LLC' },
+    { value: 's_corp', label: 'S-Corp' },
+    { value: 'c_corp', label: 'C-Corp' },
+    { value: 'professional_corp', label: 'Professional Corp' },
+  ],
+  trust: [
+    { value: 'revocable_trust', label: 'Revocable Trust' },
+    { value: 'irrevocable_trust', label: 'Irrevocable Trust' },
+    { value: 'charitable_trust', label: 'Charitable Trust' },
+    { value: 'special_needs_trust', label: 'Special Needs Trust' },
+  ],
+  non_profit: [
+    { value: 'public_charity', label: 'Public Charity (501c3)' },
+    { value: 'private_foundation', label: 'Private Foundation (501c3)' },
+    { value: 'social_welfare', label: 'Social Welfare (501c4)' },
+    { value: 'other_tax_exempt', label: 'Other Tax-Exempt' },
+  ],
+}
 
 interface NewClientModalProps {
   open: boolean
@@ -14910,6 +15255,7 @@ interface FormState {
   email: string
   phone: string
   entity_type: string
+  entity_subtype: string
 }
 
 interface FormErrors {
@@ -14933,6 +15279,7 @@ export function NewClientModal({ open, onClose, onAdd, initialName }: NewClientM
     email: '',
     phone: '',
     entity_type: '',
+    entity_subtype: '',
   })
 
   useEffect(() => {
@@ -14943,7 +15290,11 @@ export function NewClientModal({ open, onClose, onAdd, initialName }: NewClientM
 
   function handleChange(field: keyof FormState, value: string) {
     setFormDirty(true)
-    setForm((prev) => ({ ...prev, [field]: value }))
+    if (field === 'entity_type' && (value === 'individual' || value === 'estate')) {
+      setForm((prev) => ({ ...prev, entity_type: value, entity_subtype: '' }))
+    } else {
+      setForm((prev) => ({ ...prev, [field]: value }))
+    }
     if (errors[field as keyof FormErrors]) {
       setErrors((prev) => ({ ...prev, [field]: undefined }))
     }
@@ -14951,7 +15302,7 @@ export function NewClientModal({ open, onClose, onAdd, initialName }: NewClientM
 
   function handleClose() {
     setFormDirty(false)
-    setForm({ name: '', email: '', phone: '', entity_type: '' })
+    setForm({ name: '', email: '', phone: '', entity_type: '', entity_subtype: '' })
     setErrors({})
     onClose()
   }
@@ -14970,6 +15321,7 @@ export function NewClientModal({ open, onClose, onAdd, initialName }: NewClientM
         email: form.email.trim() || undefined,
         phone: form.phone.trim() || undefined,
         entity_type: form.entity_type || undefined,
+        entity_subtype: form.entity_subtype || undefined,
       })
       onAdd(newClient)
       handleClose()
@@ -15027,6 +15379,18 @@ export function NewClientModal({ open, onClose, onAdd, initialName }: NewClientM
             />
           </FormField>
         </div>
+
+        {/* Entity Subtype (conditional) */}
+        {SUBTYPE_OPTIONS[form.entity_type] && (
+          <FormField label="Entity Subtype">
+            <SelectInput
+              value={form.entity_subtype}
+              onChange={(e) => handleChange('entity_subtype', e.target.value)}
+              options={[{ value: '', label: '-- Select subtype --' }, ...SUBTYPE_OPTIONS[form.entity_type]]}
+              placeholder="-- Select subtype --"
+            />
+          </FormField>
+        )}
 
         {/* Row 2: Email + Phone */}
         <div className="grid grid-cols-2 gap-3">
@@ -24439,6 +24803,1377 @@ export default function LetterTemplatesTab() {
 
 
 ================================================================================
+FILE: frontend\src\components\settings\MigrationTab.tsx
+================================================================================
+// frontend/src/components/settings/MigrationTab.tsx
+'use client'
+
+import { useState, useRef, DragEvent, ChangeEvent } from 'react'
+import { Upload, CheckCircle, AlertTriangle } from 'lucide-react'
+import api from '@/lib/api'
+import { cn, formatEntityType } from '@/lib/utils'
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+type RowStatus = 'import' | 'skip' | 'warning'
+
+interface ClientPreviewRow {
+  row_number: number
+  name: string
+  email: string | null
+  phone: string | null
+  entity_type: string | null
+  tags: string | null
+  state: string | null
+  status: RowStatus
+  reason: string | null
+}
+
+interface ClientPreviewResult {
+  total_rows: number
+  will_import: number
+  will_skip: number
+  warnings: number
+  rows: ClientPreviewRow[]
+}
+
+interface ClientImportResult {
+  created: number
+  skipped: number
+  warnings: number
+  errors: { row: number; reason: string }[]
+}
+
+interface JobPreviewRow {
+  row_number: number
+  job_name: string
+  client_name: string
+  client_found: boolean
+  mapped_status: string | null
+  filing_deadline: string | null
+  description: string | null
+  status: RowStatus
+  reason: string | null
+}
+
+interface JobPreviewResult {
+  total_rows: number
+  will_import: number
+  will_skip: number
+  warnings: number
+  rows: JobPreviewRow[]
+}
+
+interface JobImportResult {
+  created: number
+  skipped: number
+  warnings: number
+  errors: { row: number; reason: string }[]
+}
+
+type SectionState = 'upload' | 'preview' | 'success' | 'error'
+
+// ---------------------------------------------------------------------------
+// Small shared components
+// ---------------------------------------------------------------------------
+
+function StatPill({ label, value, variant }: { label: string; value: number; variant: 'default' | 'green' | 'amber' }) {
+  const colors = {
+    default: 'bg-[#E5E7EB] text-[#374151]',
+    green: 'bg-[#D1FAE5] text-[#065F46]',
+    amber: value > 0 ? 'bg-[#FEF3C7] text-[#92400E]' : 'bg-[#E5E7EB] text-[#6B7280]',
+  }
+  return (
+    <div className={cn('px-3 py-1.5 rounded-[6px] flex flex-col items-center gap-0.5', colors[variant])}>
+      <span className="text-[15px] font-semibold leading-none">{value}</span>
+      <span className="text-[10px] uppercase tracking-[0.05em] font-medium">{label}</span>
+    </div>
+  )
+}
+
+function StatusBadge({ status }: { status: RowStatus }) {
+  if (status === 'import') {
+    return (
+      <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-[#D1FAE5] text-[#065F46]">
+        Import
+      </span>
+    )
+  }
+  if (status === 'skip') {
+    return (
+      <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-[#FEF3C7] text-[#92400E]">
+        Skip
+      </span>
+    )
+  }
+  return (
+    <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-[#FEF3C7] text-[#92400E]">
+      <AlertTriangle className="w-3 h-3" />
+      Warning
+    </span>
+  )
+}
+
+function DropZone({
+  file,
+  onFile,
+  disabled,
+}: {
+  file: File | null
+  onFile: (f: File) => void
+  disabled?: boolean
+}) {
+  const [dragOver, setDragOver] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  function handleDrop(e: DragEvent<HTMLDivElement>) {
+    e.preventDefault()
+    setDragOver(false)
+    const f = e.dataTransfer.files[0]
+    if (f) onFile(f)
+  }
+
+  function handleChange(e: ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0]
+    if (f) onFile(f)
+  }
+
+  return (
+    <div
+      onClick={() => !disabled && inputRef.current?.click()}
+      onDragOver={(e) => { e.preventDefault(); if (!disabled) setDragOver(true) }}
+      onDragLeave={() => setDragOver(false)}
+      onDrop={handleDrop}
+      className={cn(
+        'flex flex-col items-center justify-center gap-2 rounded-[8px] border-2 border-dashed p-6 cursor-pointer transition-colors',
+        dragOver ? 'border-[#1F3148] bg-[#EEF2FF]' : 'border-[#C8CDD6] hover:border-[#A0A8B4]',
+        disabled && 'opacity-50 cursor-not-allowed',
+      )}
+    >
+      <Upload className="w-6 h-6 text-[#6B7280]" />
+      {file ? (
+        <span className="text-[13px] text-brand dark:text-[#EDEEF0] font-medium text-center break-all">
+          {file.name}
+        </span>
+      ) : (
+        <>
+          <span className="text-[13px] text-[#6B7280]">Drop CSV here or click to browse</span>
+          <span className="text-[11px] text-[#9CA3AF]">Accepts .csv only</span>
+        </>
+      )}
+      <input
+        ref={inputRef}
+        type="file"
+        accept=".csv"
+        className="hidden"
+        onChange={handleChange}
+        disabled={disabled}
+      />
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// CSV import section (general)
+// ---------------------------------------------------------------------------
+
+interface CsvImportResult {
+  created: number
+  skipped: number
+  errors: { row: number; reason: string }[]
+}
+
+function CsvImportSection() {
+  const [state, setState] = useState<'upload' | 'success' | 'error'>('upload')
+  const [file, setFile] = useState<File | null>(null)
+  const [importing, setImporting] = useState(false)
+  const [result, setResult] = useState<CsvImportResult | null>(null)
+  const [errorMsg, setErrorMsg] = useState<string | null>(null)
+  const [showErrors, setShowErrors] = useState(false)
+
+  function reset() {
+    setState('upload')
+    setFile(null)
+    setResult(null)
+    setErrorMsg(null)
+    setShowErrors(false)
+  }
+
+  async function handleImport() {
+    if (!file) return
+    setImporting(true)
+    try {
+      const form = new FormData()
+      form.append('file', file)
+      const res = await api.post('/api/v1/clients/import', form, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+      setResult(res.data)
+      setState('success')
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Import failed. Please try again.'
+      setErrorMsg(detail)
+      setState('error')
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div>
+        <p className="text-[13px] font-[500] text-brand dark:text-[#EDEEF0]">Import Clients from CSV</p>
+        <p className="text-[12px] text-[#6B7280] mt-1">
+          Upload a CSV file with your client list. Required column: name. Optional columns: email, phone, entity_type (individual, business, trust, or estate), company_name, address_line1, address_line2, city, state, postal_code, country, tags, notes. Maximum 500 clients per import.
+        </p>
+      </div>
+
+      {state === 'upload' && (
+        <div className="flex flex-col gap-3">
+          <DropZone file={file} onFile={setFile} disabled={importing} />
+          <div className="flex justify-end">
+            <button
+              onClick={handleImport}
+              disabled={!file || importing}
+              className="h-8 px-4 text-[13px] font-medium rounded-[6px] bg-brand text-white hover:bg-brand/90 transition-colors disabled:opacity-60 flex items-center gap-2"
+            >
+              {importing && (
+                <svg className="animate-spin h-3.5 w-3.5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                </svg>
+              )}
+              {importing ? 'Importing...' : 'Import Clients'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {state === 'success' && result && (
+        <div className="flex flex-col gap-3">
+          <div className="flex items-start gap-2 rounded-[8px] p-3 bg-[#D1FAE5] border border-[#6EE7B7]">
+            <CheckCircle className="w-4 h-4 text-[#065F46] mt-0.5 flex-shrink-0" />
+            <div className="flex flex-col gap-1">
+              <p className="text-[13px] text-[#065F46] font-medium">
+                {result.created} client{result.created !== 1 ? 's' : ''} imported, {result.skipped} skipped.
+              </p>
+              {result.errors.length > 0 && (
+                <button
+                  onClick={() => setShowErrors((v) => !v)}
+                  className="text-[12px] text-[#065F46] underline text-left"
+                >
+                  {showErrors ? 'Hide errors' : `Show errors (${result.errors.length})`}
+                </button>
+              )}
+              {showErrors && result.errors.length > 0 && (
+                <ul className="mt-1 flex flex-col gap-0.5">
+                  {result.errors.map((e) => (
+                    <li key={e.row} className="text-[12px] text-[#065F46]">
+                      Row {e.row}: {e.reason}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+          <div className="flex justify-end">
+            <button
+              onClick={reset}
+              className="h-8 px-4 text-[13px] font-medium rounded-[6px] border border-[0.5px] border-[#C8CDD6] text-[#374151] dark:text-[#EDEEF0] hover:bg-[#F3F4F6] transition-colors"
+            >
+              Import Another File
+            </button>
+          </div>
+        </div>
+      )}
+
+      {state === 'error' && (
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center gap-2 rounded-[8px] p-3 bg-[#FEE2E2] border border-[#FCA5A5]">
+            <p className="text-[13px] text-[#991B1B]">{errorMsg}</p>
+          </div>
+          <div className="flex justify-end">
+            <button
+              onClick={reset}
+              className="h-8 px-4 text-[13px] font-medium rounded-[6px] bg-brand text-white hover:bg-brand/90 transition-colors"
+            >
+              Try Again
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Client section
+// ---------------------------------------------------------------------------
+
+function ClientSection() {
+  const [state, setState] = useState<SectionState>('upload')
+  const [file, setFile] = useState<File | null>(null)
+  const [previewing, setPreviewing] = useState(false)
+  const [importing, setImporting] = useState(false)
+  const [preview, setPreview] = useState<ClientPreviewResult | null>(null)
+  const [result, setResult] = useState<ClientImportResult | null>(null)
+  const [errorMsg, setErrorMsg] = useState<string | null>(null)
+
+  function reset() {
+    setState('upload')
+    setFile(null)
+    setPreview(null)
+    setResult(null)
+    setErrorMsg(null)
+  }
+
+  async function handlePreview() {
+    if (!file) return
+    setPreviewing(true)
+    try {
+      const form = new FormData()
+      form.append('file', file)
+      const res = await api.post('/api/v1/migration/taxdome/preview-clients', form, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+      setPreview(res.data)
+      setState('preview')
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Preview failed. Please try again.'
+      setErrorMsg(detail)
+      setState('error')
+    } finally {
+      setPreviewing(false)
+    }
+  }
+
+  async function handleImport() {
+    if (!file) return
+    setImporting(true)
+    try {
+      const form = new FormData()
+      form.append('file', file)
+      const res = await api.post('/api/v1/migration/taxdome/import-clients', form, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+      setResult(res.data)
+      setState('success')
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Import failed. Please try again.'
+      setErrorMsg(detail)
+      setState('error')
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div>
+        <p className="text-[13px] font-[500] text-brand dark:text-[#EDEEF0]">Import Clients from TaxDome</p>
+        <p className="text-[12px] text-[#6B7280] mt-1">
+          Upload your TaxDome Accounts export. Download it from TaxDome under Clients, select all, and export as CSV. JAMM PX will preview every row before importing anything.
+        </p>
+      </div>
+
+      {state === 'upload' && (
+        <div className="flex flex-col gap-3">
+          <DropZone file={file} onFile={setFile} disabled={previewing} />
+          <div className="flex justify-end">
+            <button
+              onClick={handlePreview}
+              disabled={!file || previewing}
+              className="h-8 px-4 text-[13px] font-medium rounded-[6px] bg-brand text-white hover:bg-brand/90 transition-colors disabled:opacity-60 flex items-center gap-2"
+            >
+              {previewing && (
+                <svg className="animate-spin h-3.5 w-3.5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                </svg>
+              )}
+              {previewing ? 'Previewing...' : 'Preview Import'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {state === 'preview' && preview && (
+        <div className="flex flex-col gap-4">
+          <div className="flex items-center gap-2 flex-wrap">
+            <StatPill label="rows found" value={preview.total_rows} variant="default" />
+            <StatPill label="will import" value={preview.will_import} variant="green" />
+            <StatPill label="will skip" value={preview.will_skip} variant="amber" />
+            <StatPill label="warnings" value={preview.warnings} variant="amber" />
+          </div>
+
+          <div className="rounded-modal border border-[0.5px] border-surface-border dark:border-dark-border overflow-hidden overflow-x-auto">
+            <table className="w-full border-collapse text-left">
+              <thead>
+                <tr className="bg-[#EDEEF0] dark:bg-[#252525]">
+                  {['#', 'Name', 'Email', 'Phone', 'Entity Type', 'State', 'Status', 'Reason'].map((col) => (
+                    <th key={col} className="px-3 py-2 text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em] whitespace-nowrap">
+                      {col}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {preview.rows.map((row, idx) => (
+                  <tr
+                    key={row.row_number}
+                    className={cn(
+                      'bg-surface-page dark:bg-dark-page',
+                      idx !== preview.rows.length - 1 ? 'border-b border-[0.5px] border-[#D5D8DE] dark:border-dark-card' : '',
+                    )}
+                  >
+                    <td className="px-3 py-2 text-[12px] text-[#6B7280]">{row.row_number}</td>
+                    <td className="px-3 py-2 text-[12px] text-brand dark:text-[#EDEEF0] whitespace-nowrap">{row.name || <span className="text-[#9CA3AF]">blank</span>}</td>
+                    <td className="px-3 py-2 text-[12px] text-[#374151] dark:text-[#9CA3AF]">{row.email ?? ''}</td>
+                    <td className="px-3 py-2 text-[12px] text-[#374151] dark:text-[#9CA3AF]">{row.phone ?? ''}</td>
+                    <td className="px-3 py-2 text-[12px] text-[#374151] dark:text-[#9CA3AF]">{row.entity_type ?? ''}</td>
+                    <td className="px-3 py-2 text-[12px] text-[#374151] dark:text-[#9CA3AF]">{row.state ?? ''}</td>
+                    <td className="px-3 py-2"><StatusBadge status={row.status} /></td>
+                    <td className="px-3 py-2 text-[12px] text-[#6B7280] max-w-[200px]">{row.reason ?? ''}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="flex justify-end gap-2">
+            <button
+              onClick={reset}
+              disabled={importing}
+              className="h-8 px-4 text-[13px] font-medium rounded-[6px] border border-[0.5px] border-[#C8CDD6] text-[#374151] dark:text-[#EDEEF0] hover:bg-[#F3F4F6] transition-colors disabled:opacity-60"
+            >
+              Start Over
+            </button>
+            <button
+              onClick={handleImport}
+              disabled={importing}
+              className="h-8 px-4 text-[13px] font-medium rounded-[6px] bg-brand text-white hover:bg-brand/90 transition-colors disabled:opacity-60 flex items-center gap-2"
+            >
+              {importing && (
+                <svg className="animate-spin h-3.5 w-3.5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                </svg>
+              )}
+              {importing ? 'Importing...' : 'Confirm Import'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {state === 'success' && result && (
+        <div className="flex flex-col gap-3">
+          <div className="flex items-start gap-2 rounded-[8px] p-3 bg-[#D1FAE5] border border-[#6EE7B7]">
+            <CheckCircle className="w-4 h-4 text-[#065F46] mt-0.5 flex-shrink-0" />
+            <p className="text-[13px] text-[#065F46] font-medium">
+              Import complete -- {result.created} client{result.created !== 1 ? 's' : ''} imported, {result.skipped} skipped.
+            </p>
+          </div>
+          <div className="flex justify-end">
+            <button
+              onClick={reset}
+              className="h-8 px-4 text-[13px] font-medium rounded-[6px] border border-[0.5px] border-[#C8CDD6] text-[#374151] dark:text-[#EDEEF0] hover:bg-[#F3F4F6] transition-colors"
+            >
+              Import Another File
+            </button>
+          </div>
+        </div>
+      )}
+
+      {state === 'error' && (
+        <div className="flex flex-col gap-3">
+          {preview && (
+            <div className="rounded-modal border border-[0.5px] border-surface-border overflow-hidden overflow-x-auto">
+              <table className="w-full border-collapse text-left">
+                <thead>
+                  <tr className="bg-[#EDEEF0]">
+                    {['#', 'Name', 'Email', 'Phone', 'Entity Type', 'State', 'Status', 'Reason'].map((col) => (
+                      <th key={col} className="px-3 py-2 text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em] whitespace-nowrap">{col}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {preview.rows.map((row, idx) => (
+                    <tr key={row.row_number} className={cn('bg-surface-page', idx !== preview.rows.length - 1 ? 'border-b border-[0.5px] border-[#D5D8DE]' : '')}>
+                      <td className="px-3 py-2 text-[12px] text-[#6B7280]">{row.row_number}</td>
+                      <td className="px-3 py-2 text-[12px] text-brand whitespace-nowrap">{row.name || <span className="text-[#9CA3AF]">blank</span>}</td>
+                      <td className="px-3 py-2 text-[12px] text-[#374151]">{row.email ?? ''}</td>
+                      <td className="px-3 py-2 text-[12px] text-[#374151]">{row.phone ?? ''}</td>
+                      <td className="px-3 py-2 text-[12px] text-[#374151]">{row.entity_type ?? ''}</td>
+                      <td className="px-3 py-2 text-[12px] text-[#374151]">{row.state ?? ''}</td>
+                      <td className="px-3 py-2"><StatusBadge status={row.status} /></td>
+                      <td className="px-3 py-2 text-[12px] text-[#6B7280] max-w-[200px]">{row.reason ?? ''}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <div className="flex items-center gap-2 rounded-[8px] p-3 bg-[#FEE2E2] border border-[#FCA5A5]">
+            <p className="text-[13px] text-[#991B1B]">{errorMsg}</p>
+          </div>
+          <div className="flex justify-end">
+            <button
+              onClick={() => setState(preview ? 'preview' : 'upload')}
+              className="h-8 px-4 text-[13px] font-medium rounded-[6px] bg-brand text-white hover:bg-brand/90 transition-colors"
+            >
+              Try Again
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Canopy import section
+// ---------------------------------------------------------------------------
+
+function CanopyImportSection() {
+  const [state, setState] = useState<SectionState>('upload')
+  const [file, setFile] = useState<File | null>(null)
+  const [previewing, setPreviewing] = useState(false)
+  const [importing, setImporting] = useState(false)
+  const [preview, setPreview] = useState<ClientPreviewResult | null>(null)
+  const [result, setResult] = useState<ClientImportResult | null>(null)
+  const [errorMsg, setErrorMsg] = useState<string | null>(null)
+
+  function reset() {
+    setState('upload')
+    setFile(null)
+    setPreview(null)
+    setResult(null)
+    setErrorMsg(null)
+  }
+
+  async function handlePreview() {
+    if (!file) return
+    setPreviewing(true)
+    try {
+      const form = new FormData()
+      form.append('file', file)
+      const res = await api.post('/api/v1/migration/canopy/preview-clients', form, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+      setPreview(res.data)
+      setState('preview')
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Preview failed. Please try again.'
+      setErrorMsg(detail)
+      setState('error')
+    } finally {
+      setPreviewing(false)
+    }
+  }
+
+  async function handleImport() {
+    if (!file) return
+    setImporting(true)
+    try {
+      const form = new FormData()
+      form.append('file', file)
+      const res = await api.post('/api/v1/migration/canopy/import-clients', form, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+      setResult(res.data)
+      setState('success')
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Import failed. Please try again.'
+      setErrorMsg(detail)
+      setState('error')
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div>
+        <p className="text-[13px] font-[500] text-brand dark:text-[#EDEEF0]">Import from Canopy</p>
+        <p className="text-[12px] text-[#6B7280] mt-1">
+          Upload your Canopy contacts export. In Canopy, go to Clients, select all contacts, and export as CSV. JAMM PX reads the Contact Type column automatically -- individuals and businesses are assigned the correct entity type.
+        </p>
+      </div>
+
+      {state === 'upload' && (
+        <div className="flex flex-col gap-3">
+          <DropZone file={file} onFile={setFile} disabled={previewing} />
+          <div className="flex justify-end">
+            <button
+              onClick={handlePreview}
+              disabled={!file || previewing}
+              className="h-8 px-4 text-[13px] font-medium rounded-[6px] bg-brand text-white hover:bg-brand/90 transition-colors disabled:opacity-60 flex items-center gap-2"
+            >
+              {previewing && (
+                <svg className="animate-spin h-3.5 w-3.5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                </svg>
+              )}
+              {previewing ? 'Previewing...' : 'Preview Import'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {state === 'preview' && preview && (
+        <div className="flex flex-col gap-4">
+          <div className="flex items-center gap-2 flex-wrap">
+            <StatPill label="rows found" value={preview.total_rows} variant="default" />
+            <StatPill label="will import" value={preview.will_import} variant="green" />
+            <StatPill label="will skip" value={preview.will_skip} variant="amber" />
+            <StatPill label="warnings" value={preview.warnings} variant="amber" />
+          </div>
+
+          <div className="rounded-modal border border-[0.5px] border-surface-border dark:border-dark-border overflow-hidden overflow-x-auto">
+            <table className="w-full border-collapse text-left">
+              <thead>
+                <tr className="bg-[#EDEEF0] dark:bg-[#252525]">
+                  {['#', 'Name', 'Email', 'Entity Type', 'Status', 'Reason'].map((col) => (
+                    <th key={col} className="px-3 py-2 text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em] whitespace-nowrap">
+                      {col}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {preview.rows.map((row, idx) => (
+                  <tr
+                    key={row.row_number}
+                    className={cn(
+                      'bg-surface-page dark:bg-dark-page',
+                      idx !== preview.rows.length - 1 ? 'border-b border-[0.5px] border-[#D5D8DE] dark:border-dark-card' : '',
+                    )}
+                  >
+                    <td className="px-3 py-2 text-[12px] text-[#6B7280]">{row.row_number}</td>
+                    <td className="px-3 py-2 text-[12px] text-brand dark:text-[#EDEEF0] whitespace-nowrap">{row.name || <span className="text-[#9CA3AF]">blank</span>}</td>
+                    <td className="px-3 py-2 text-[12px] text-[#374151] dark:text-[#9CA3AF]">{row.email ?? ''}</td>
+                    <td className="px-3 py-2 text-[12px] text-[#374151] dark:text-[#9CA3AF]">{row.entity_type ? formatEntityType(row.entity_type) : ''}</td>
+                    <td className="px-3 py-2"><StatusBadge status={row.status} /></td>
+                    <td className="px-3 py-2 text-[12px] text-[#6B7280] max-w-[200px]">{row.reason ?? ''}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="flex justify-end gap-2">
+            <button
+              onClick={reset}
+              disabled={importing}
+              className="h-8 px-4 text-[13px] font-medium rounded-[6px] border border-[0.5px] border-[#C8CDD6] text-[#374151] dark:text-[#EDEEF0] hover:bg-[#F3F4F6] transition-colors disabled:opacity-60"
+            >
+              Start Over
+            </button>
+            <button
+              onClick={handleImport}
+              disabled={importing}
+              className="h-8 px-4 text-[13px] font-medium rounded-[6px] bg-brand text-white hover:bg-brand/90 transition-colors disabled:opacity-60 flex items-center gap-2"
+            >
+              {importing && (
+                <svg className="animate-spin h-3.5 w-3.5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                </svg>
+              )}
+              {importing ? 'Importing...' : 'Confirm Import'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {state === 'success' && result && (
+        <div className="flex flex-col gap-3">
+          <div className="flex items-start gap-2 rounded-[8px] p-3 bg-[#D1FAE5] border border-[#6EE7B7]">
+            <CheckCircle className="w-4 h-4 text-[#065F46] mt-0.5 flex-shrink-0" />
+            <p className="text-[13px] text-[#065F46] font-medium">
+              Import complete -- {result.created} client{result.created !== 1 ? 's' : ''} imported, {result.skipped} skipped.
+            </p>
+          </div>
+          <div className="flex justify-end">
+            <button
+              onClick={reset}
+              className="h-8 px-4 text-[13px] font-medium rounded-[6px] border border-[0.5px] border-[#C8CDD6] text-[#374151] dark:text-[#EDEEF0] hover:bg-[#F3F4F6] transition-colors"
+            >
+              Import Another File
+            </button>
+          </div>
+        </div>
+      )}
+
+      {state === 'error' && (
+        <div className="flex flex-col gap-3">
+          {preview && (
+            <div className="rounded-modal border border-[0.5px] border-surface-border overflow-hidden overflow-x-auto">
+              <table className="w-full border-collapse text-left">
+                <thead>
+                  <tr className="bg-[#EDEEF0]">
+                    {['#', 'Name', 'Email', 'Entity Type', 'Status', 'Reason'].map((col) => (
+                      <th key={col} className="px-3 py-2 text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em] whitespace-nowrap">{col}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {preview.rows.map((row, idx) => (
+                    <tr key={row.row_number} className={cn('bg-surface-page', idx !== preview.rows.length - 1 ? 'border-b border-[0.5px] border-[#D5D8DE]' : '')}>
+                      <td className="px-3 py-2 text-[12px] text-[#6B7280]">{row.row_number}</td>
+                      <td className="px-3 py-2 text-[12px] text-brand whitespace-nowrap">{row.name || <span className="text-[#9CA3AF]">blank</span>}</td>
+                      <td className="px-3 py-2 text-[12px] text-[#374151]">{row.email ?? ''}</td>
+                      <td className="px-3 py-2 text-[12px] text-[#374151]">{row.entity_type ? formatEntityType(row.entity_type) : ''}</td>
+                      <td className="px-3 py-2"><StatusBadge status={row.status} /></td>
+                      <td className="px-3 py-2 text-[12px] text-[#6B7280] max-w-[200px]">{row.reason ?? ''}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <div className="flex items-center gap-2 rounded-[8px] p-3 bg-[#FEE2E2] border border-[#FCA5A5]">
+            <p className="text-[13px] text-[#991B1B]">{errorMsg}</p>
+          </div>
+          <div className="flex justify-end">
+            <button
+              onClick={() => setState(preview ? 'preview' : 'upload')}
+              className="h-8 px-4 text-[13px] font-medium rounded-[6px] bg-brand text-white hover:bg-brand/90 transition-colors"
+            >
+              Try Again
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Karbon import section
+// ---------------------------------------------------------------------------
+
+function KarbonImportSection() {
+  const [state, setState] = useState<SectionState>('upload')
+  const [file, setFile] = useState<File | null>(null)
+  const [previewing, setPreviewing] = useState(false)
+  const [importing, setImporting] = useState(false)
+  const [preview, setPreview] = useState<ClientPreviewResult | null>(null)
+  const [result, setResult] = useState<ClientImportResult | null>(null)
+  const [errorMsg, setErrorMsg] = useState<string | null>(null)
+
+  function reset() {
+    setState('upload')
+    setFile(null)
+    setPreview(null)
+    setResult(null)
+    setErrorMsg(null)
+  }
+
+  async function handlePreview() {
+    if (!file) return
+    setPreviewing(true)
+    try {
+      const form = new FormData()
+      form.append('file', file)
+      const res = await api.post('/api/v1/migration/karbon/preview-clients', form, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+      setPreview(res.data)
+      setState('preview')
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Preview failed. Please try again.'
+      setErrorMsg(detail)
+      setState('error')
+    } finally {
+      setPreviewing(false)
+    }
+  }
+
+  async function handleImport() {
+    if (!file) return
+    setImporting(true)
+    try {
+      const form = new FormData()
+      form.append('file', file)
+      const res = await api.post('/api/v1/migration/karbon/import-clients', form, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+      setResult(res.data)
+      setState('success')
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Import failed. Please try again.'
+      setErrorMsg(detail)
+      setState('error')
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div>
+        <p className="text-[13px] font-[500] text-brand dark:text-[#EDEEF0]">Import from Karbon</p>
+        <p className="text-[12px] text-[#6B7280] mt-1">
+          Upload your Karbon contacts export. In Karbon, go to Contacts, click the cloud icon, and select All contacts. The Type column (Person or Organisation) maps automatically to Individual or Business in JAMM PX.
+        </p>
+      </div>
+
+      {state === 'upload' && (
+        <div className="flex flex-col gap-3">
+          <DropZone file={file} onFile={setFile} disabled={previewing} />
+          <div className="flex justify-end">
+            <button
+              onClick={handlePreview}
+              disabled={!file || previewing}
+              className="h-8 px-4 text-[13px] font-medium rounded-[6px] bg-brand text-white hover:bg-brand/90 transition-colors disabled:opacity-60 flex items-center gap-2"
+            >
+              {previewing && (
+                <svg className="animate-spin h-3.5 w-3.5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                </svg>
+              )}
+              {previewing ? 'Previewing...' : 'Preview Import'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {state === 'preview' && preview && (
+        <div className="flex flex-col gap-4">
+          <div className="flex items-center gap-2 flex-wrap">
+            <StatPill label="rows found" value={preview.total_rows} variant="default" />
+            <StatPill label="will import" value={preview.will_import} variant="green" />
+            <StatPill label="will skip" value={preview.will_skip} variant="amber" />
+            <StatPill label="warnings" value={preview.warnings} variant="amber" />
+          </div>
+
+          <div className="rounded-modal border border-[0.5px] border-surface-border dark:border-dark-border overflow-hidden overflow-x-auto">
+            <table className="w-full border-collapse text-left">
+              <thead>
+                <tr className="bg-[#EDEEF0] dark:bg-[#252525]">
+                  {['#', 'Name', 'Email', 'Entity Type', 'Status', 'Reason'].map((col) => (
+                    <th key={col} className="px-3 py-2 text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em] whitespace-nowrap">
+                      {col}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {preview.rows.map((row, idx) => (
+                  <tr
+                    key={row.row_number}
+                    className={cn(
+                      'bg-surface-page dark:bg-dark-page',
+                      idx !== preview.rows.length - 1 ? 'border-b border-[0.5px] border-[#D5D8DE] dark:border-dark-card' : '',
+                    )}
+                  >
+                    <td className="px-3 py-2 text-[12px] text-[#6B7280]">{row.row_number}</td>
+                    <td className="px-3 py-2 text-[12px] text-brand dark:text-[#EDEEF0] whitespace-nowrap">{row.name || <span className="text-[#9CA3AF]">blank</span>}</td>
+                    <td className="px-3 py-2 text-[12px] text-[#374151] dark:text-[#9CA3AF]">{row.email ?? ''}</td>
+                    <td className="px-3 py-2 text-[12px] text-[#374151] dark:text-[#9CA3AF]">{row.entity_type ? formatEntityType(row.entity_type) : ''}</td>
+                    <td className="px-3 py-2"><StatusBadge status={row.status} /></td>
+                    <td className="px-3 py-2 text-[12px] text-[#6B7280] max-w-[200px]">{row.reason ?? ''}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="flex justify-end gap-2">
+            <button
+              onClick={reset}
+              disabled={importing}
+              className="h-8 px-4 text-[13px] font-medium rounded-[6px] border border-[0.5px] border-[#C8CDD6] text-[#374151] dark:text-[#EDEEF0] hover:bg-[#F3F4F6] transition-colors disabled:opacity-60"
+            >
+              Start Over
+            </button>
+            <button
+              onClick={handleImport}
+              disabled={importing}
+              className="h-8 px-4 text-[13px] font-medium rounded-[6px] bg-brand text-white hover:bg-brand/90 transition-colors disabled:opacity-60 flex items-center gap-2"
+            >
+              {importing && (
+                <svg className="animate-spin h-3.5 w-3.5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                </svg>
+              )}
+              {importing ? 'Importing...' : 'Confirm Import'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {state === 'success' && result && (
+        <div className="flex flex-col gap-3">
+          <div className="flex items-start gap-2 rounded-[8px] p-3 bg-[#D1FAE5] border border-[#6EE7B7]">
+            <CheckCircle className="w-4 h-4 text-[#065F46] mt-0.5 flex-shrink-0" />
+            <p className="text-[13px] text-[#065F46] font-medium">
+              Import complete -- {result.created} client{result.created !== 1 ? 's' : ''} imported, {result.skipped} skipped.
+            </p>
+          </div>
+          <div className="flex justify-end">
+            <button
+              onClick={reset}
+              className="h-8 px-4 text-[13px] font-medium rounded-[6px] border border-[0.5px] border-[#C8CDD6] text-[#374151] dark:text-[#EDEEF0] hover:bg-[#F3F4F6] transition-colors"
+            >
+              Import Another File
+            </button>
+          </div>
+        </div>
+      )}
+
+      {state === 'error' && (
+        <div className="flex flex-col gap-3">
+          {preview && (
+            <div className="rounded-modal border border-[0.5px] border-surface-border overflow-hidden overflow-x-auto">
+              <table className="w-full border-collapse text-left">
+                <thead>
+                  <tr className="bg-[#EDEEF0]">
+                    {['#', 'Name', 'Email', 'Entity Type', 'Status', 'Reason'].map((col) => (
+                      <th key={col} className="px-3 py-2 text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em] whitespace-nowrap">{col}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {preview.rows.map((row, idx) => (
+                    <tr key={row.row_number} className={cn('bg-surface-page', idx !== preview.rows.length - 1 ? 'border-b border-[0.5px] border-[#D5D8DE]' : '')}>
+                      <td className="px-3 py-2 text-[12px] text-[#6B7280]">{row.row_number}</td>
+                      <td className="px-3 py-2 text-[12px] text-brand whitespace-nowrap">{row.name || <span className="text-[#9CA3AF]">blank</span>}</td>
+                      <td className="px-3 py-2 text-[12px] text-[#374151]">{row.email ?? ''}</td>
+                      <td className="px-3 py-2 text-[12px] text-[#374151]">{row.entity_type ? formatEntityType(row.entity_type) : ''}</td>
+                      <td className="px-3 py-2"><StatusBadge status={row.status} /></td>
+                      <td className="px-3 py-2 text-[12px] text-[#6B7280] max-w-[200px]">{row.reason ?? ''}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <div className="flex items-center gap-2 rounded-[8px] p-3 bg-[#FEE2E2] border border-[#FCA5A5]">
+            <p className="text-[13px] text-[#991B1B]">{errorMsg}</p>
+          </div>
+          <div className="flex justify-end">
+            <button
+              onClick={() => setState(preview ? 'preview' : 'upload')}
+              className="h-8 px-4 text-[13px] font-medium rounded-[6px] bg-brand text-white hover:bg-brand/90 transition-colors"
+            >
+              Try Again
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Financial Cents import section
+// ---------------------------------------------------------------------------
+
+function FinancialCentsImportSection() {
+  const [state, setState] = useState<'upload' | 'success' | 'error'>('upload')
+  const [file, setFile] = useState<File | null>(null)
+  const [importing, setImporting] = useState(false)
+  const [result, setResult] = useState<CsvImportResult | null>(null)
+  const [errorMsg, setErrorMsg] = useState<string | null>(null)
+  const [showErrors, setShowErrors] = useState(false)
+
+  function reset() {
+    setState('upload')
+    setFile(null)
+    setResult(null)
+    setErrorMsg(null)
+    setShowErrors(false)
+  }
+
+  async function handleImport() {
+    if (!file) return
+    setImporting(true)
+    try {
+      const form = new FormData()
+      form.append('file', file)
+      const res = await api.post('/api/v1/clients/import', form, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+      setResult(res.data)
+      setState('success')
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Import failed. Please try again.'
+      setErrorMsg(detail)
+      setState('error')
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div>
+        <p className="text-[13px] font-[500] text-brand dark:text-[#EDEEF0]">Import from Financial Cents</p>
+        <p className="text-[12px] text-[#6B7280] mt-1">
+          Upload your Financial Cents client export. In Financial Cents, go to Clients, click Export, and download as CSV. JAMM PX will import the Name, Email, Phone, and Address fields automatically.
+        </p>
+      </div>
+
+      {state === 'upload' && (
+        <div className="flex flex-col gap-3">
+          <DropZone file={file} onFile={setFile} disabled={importing} />
+          <div className="flex justify-end">
+            <button
+              onClick={handleImport}
+              disabled={!file || importing}
+              className="h-8 px-4 text-[13px] font-medium rounded-[6px] bg-brand text-white hover:bg-brand/90 transition-colors disabled:opacity-60 flex items-center gap-2"
+            >
+              {importing && (
+                <svg className="animate-spin h-3.5 w-3.5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                </svg>
+              )}
+              {importing ? 'Importing...' : 'Import Clients'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {state === 'success' && result && (
+        <div className="flex flex-col gap-3">
+          <div className="flex items-start gap-2 rounded-[8px] p-3 bg-[#D1FAE5] border border-[#6EE7B7]">
+            <CheckCircle className="w-4 h-4 text-[#065F46] mt-0.5 flex-shrink-0" />
+            <div className="flex flex-col gap-1">
+              <p className="text-[13px] text-[#065F46] font-medium">
+                {result.created} client{result.created !== 1 ? 's' : ''} imported, {result.skipped} skipped.
+              </p>
+              {result.errors.length > 0 && (
+                <button
+                  onClick={() => setShowErrors((v) => !v)}
+                  className="text-[12px] text-[#065F46] underline text-left"
+                >
+                  {showErrors ? 'Hide errors' : `Show errors (${result.errors.length})`}
+                </button>
+              )}
+              {showErrors && result.errors.length > 0 && (
+                <ul className="mt-1 flex flex-col gap-0.5">
+                  {result.errors.map((e) => (
+                    <li key={e.row} className="text-[12px] text-[#065F46]">
+                      Row {e.row}: {e.reason}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+          <div className="flex justify-end">
+            <button
+              onClick={reset}
+              className="h-8 px-4 text-[13px] font-medium rounded-[6px] border border-[0.5px] border-[#C8CDD6] text-[#374151] dark:text-[#EDEEF0] hover:bg-[#F3F4F6] transition-colors"
+            >
+              Import Another File
+            </button>
+          </div>
+        </div>
+      )}
+
+      {state === 'error' && (
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center gap-2 rounded-[8px] p-3 bg-[#FEE2E2] border border-[#FCA5A5]">
+            <p className="text-[13px] text-[#991B1B]">{errorMsg}</p>
+          </div>
+          <div className="flex justify-end">
+            <button
+              onClick={reset}
+              className="h-8 px-4 text-[13px] font-medium rounded-[6px] bg-brand text-white hover:bg-brand/90 transition-colors"
+            >
+              Try Again
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Job section
+// ---------------------------------------------------------------------------
+
+function JobSection() {
+  const [state, setState] = useState<SectionState>('upload')
+  const [file, setFile] = useState<File | null>(null)
+  const [previewing, setPreviewing] = useState(false)
+  const [importing, setImporting] = useState(false)
+  const [preview, setPreview] = useState<JobPreviewResult | null>(null)
+  const [result, setResult] = useState<JobImportResult | null>(null)
+  const [errorMsg, setErrorMsg] = useState<string | null>(null)
+
+  function reset() {
+    setState('upload')
+    setFile(null)
+    setPreview(null)
+    setResult(null)
+    setErrorMsg(null)
+  }
+
+  async function handlePreview() {
+    if (!file) return
+    setPreviewing(true)
+    try {
+      const form = new FormData()
+      form.append('file', file)
+      const res = await api.post('/api/v1/migration/taxdome/preview-jobs', form, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+      setPreview(res.data)
+      setState('preview')
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Preview failed. Please try again.'
+      setErrorMsg(detail)
+      setState('error')
+    } finally {
+      setPreviewing(false)
+    }
+  }
+
+  async function handleImport() {
+    if (!file) return
+    setImporting(true)
+    try {
+      const form = new FormData()
+      form.append('file', file)
+      const res = await api.post('/api/v1/migration/taxdome/import-jobs', form, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+      setResult(res.data)
+      setState('success')
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Import failed. Please try again.'
+      setErrorMsg(detail)
+      setState('error')
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div>
+        <p className="text-[13px] font-[500] text-brand dark:text-[#EDEEF0]">Import Jobs from TaxDome</p>
+        <p className="text-[12px] text-[#6B7280] mt-1">
+          Upload your TaxDome Jobs export. Download it from TaxDome under Work, select all jobs, and export as CSV. Import clients first -- job matching uses client names.
+        </p>
+      </div>
+
+      {state === 'upload' && (
+        <div className="flex flex-col gap-3">
+          <DropZone file={file} onFile={setFile} disabled={previewing} />
+          <div className="flex justify-end">
+            <button
+              onClick={handlePreview}
+              disabled={!file || previewing}
+              className="h-8 px-4 text-[13px] font-medium rounded-[6px] bg-brand text-white hover:bg-brand/90 transition-colors disabled:opacity-60 flex items-center gap-2"
+            >
+              {previewing && (
+                <svg className="animate-spin h-3.5 w-3.5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                </svg>
+              )}
+              {previewing ? 'Previewing...' : 'Preview Import'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {state === 'preview' && preview && (
+        <div className="flex flex-col gap-4">
+          <div className="flex items-center gap-2 flex-wrap">
+            <StatPill label="rows found" value={preview.total_rows} variant="default" />
+            <StatPill label="will import" value={preview.will_import} variant="green" />
+            <StatPill label="will skip" value={preview.will_skip} variant="amber" />
+            <StatPill label="warnings" value={preview.warnings} variant="amber" />
+          </div>
+
+          <div className="rounded-modal border border-[0.5px] border-surface-border dark:border-dark-border overflow-hidden overflow-x-auto">
+            <table className="w-full border-collapse text-left">
+              <thead>
+                <tr className="bg-[#EDEEF0] dark:bg-[#252525]">
+                  {['#', 'Job Name', 'Client', 'Status', 'Filing Deadline', 'Description', 'Import Status', 'Reason'].map((col) => (
+                    <th key={col} className="px-3 py-2 text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em] whitespace-nowrap">
+                      {col}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {preview.rows.map((row, idx) => (
+                  <tr
+                    key={row.row_number}
+                    className={cn(
+                      'bg-surface-page dark:bg-dark-page',
+                      idx !== preview.rows.length - 1 ? 'border-b border-[0.5px] border-[#D5D8DE] dark:border-dark-card' : '',
+                    )}
+                  >
+                    <td className="px-3 py-2 text-[12px] text-[#6B7280]">{row.row_number}</td>
+                    <td className="px-3 py-2 text-[12px] text-brand dark:text-[#EDEEF0] whitespace-nowrap">{row.job_name || <span className="text-[#9CA3AF]">blank</span>}</td>
+                    <td className="px-3 py-2 text-[12px] text-[#374151] dark:text-[#9CA3AF] whitespace-nowrap">
+                      <span className={cn(!row.client_found && 'text-[#EF4444]')}>{row.client_name}</span>
+                    </td>
+                    <td className="px-3 py-2 text-[12px] text-[#374151] dark:text-[#9CA3AF]">{row.mapped_status ?? ''}</td>
+                    <td className="px-3 py-2 text-[12px] text-[#374151] dark:text-[#9CA3AF]">{row.filing_deadline ?? ''}</td>
+                    <td className="px-3 py-2 text-[12px] text-[#374151] dark:text-[#9CA3AF] max-w-[150px] truncate">{row.description ?? ''}</td>
+                    <td className="px-3 py-2"><StatusBadge status={row.status} /></td>
+                    <td className="px-3 py-2 text-[12px] text-[#6B7280] max-w-[200px]">{row.reason ?? ''}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="flex justify-end gap-2">
+            <button
+              onClick={reset}
+              disabled={importing}
+              className="h-8 px-4 text-[13px] font-medium rounded-[6px] border border-[0.5px] border-[#C8CDD6] text-[#374151] dark:text-[#EDEEF0] hover:bg-[#F3F4F6] transition-colors disabled:opacity-60"
+            >
+              Start Over
+            </button>
+            <button
+              onClick={handleImport}
+              disabled={importing}
+              className="h-8 px-4 text-[13px] font-medium rounded-[6px] bg-brand text-white hover:bg-brand/90 transition-colors disabled:opacity-60 flex items-center gap-2"
+            >
+              {importing && (
+                <svg className="animate-spin h-3.5 w-3.5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                </svg>
+              )}
+              {importing ? 'Importing...' : 'Confirm Import'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {state === 'success' && result && (
+        <div className="flex flex-col gap-3">
+          <div className="flex items-start gap-2 rounded-[8px] p-3 bg-[#D1FAE5] border border-[#6EE7B7]">
+            <CheckCircle className="w-4 h-4 text-[#065F46] mt-0.5 flex-shrink-0" />
+            <p className="text-[13px] text-[#065F46] font-medium">
+              Import complete -- {result.created} job{result.created !== 1 ? 's' : ''} imported, {result.skipped} skipped.
+            </p>
+          </div>
+          <div className="flex justify-end">
+            <button
+              onClick={reset}
+              className="h-8 px-4 text-[13px] font-medium rounded-[6px] border border-[0.5px] border-[#C8CDD6] text-[#374151] dark:text-[#EDEEF0] hover:bg-[#F3F4F6] transition-colors"
+            >
+              Import Another File
+            </button>
+          </div>
+        </div>
+      )}
+
+      {state === 'error' && (
+        <div className="flex flex-col gap-3">
+          {preview && (
+            <div className="rounded-modal border border-[0.5px] border-surface-border overflow-hidden overflow-x-auto">
+              <table className="w-full border-collapse text-left">
+                <thead>
+                  <tr className="bg-[#EDEEF0]">
+                    {['#', 'Job Name', 'Client', 'Status', 'Filing Deadline', 'Description', 'Import Status', 'Reason'].map((col) => (
+                      <th key={col} className="px-3 py-2 text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em] whitespace-nowrap">{col}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {preview.rows.map((row, idx) => (
+                    <tr key={row.row_number} className={cn('bg-surface-page', idx !== preview.rows.length - 1 ? 'border-b border-[0.5px] border-[#D5D8DE]' : '')}>
+                      <td className="px-3 py-2 text-[12px] text-[#6B7280]">{row.row_number}</td>
+                      <td className="px-3 py-2 text-[12px] text-brand whitespace-nowrap">{row.job_name || <span className="text-[#9CA3AF]">blank</span>}</td>
+                      <td className="px-3 py-2 text-[12px] text-[#374151] whitespace-nowrap"><span className={cn(!row.client_found && 'text-[#EF4444]')}>{row.client_name}</span></td>
+                      <td className="px-3 py-2 text-[12px] text-[#374151]">{row.mapped_status ?? ''}</td>
+                      <td className="px-3 py-2 text-[12px] text-[#374151]">{row.filing_deadline ?? ''}</td>
+                      <td className="px-3 py-2 text-[12px] text-[#374151] max-w-[150px] truncate">{row.description ?? ''}</td>
+                      <td className="px-3 py-2"><StatusBadge status={row.status} /></td>
+                      <td className="px-3 py-2 text-[12px] text-[#6B7280] max-w-[200px]">{row.reason ?? ''}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <div className="flex items-center gap-2 rounded-[8px] p-3 bg-[#FEE2E2] border border-[#FCA5A5]">
+            <p className="text-[13px] text-[#991B1B]">{errorMsg}</p>
+          </div>
+          <div className="flex justify-end">
+            <button
+              onClick={() => setState(preview ? 'preview' : 'upload')}
+              className="h-8 px-4 text-[13px] font-medium rounded-[6px] bg-brand text-white hover:bg-brand/90 transition-colors"
+            >
+              Try Again
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Main tab
+// ---------------------------------------------------------------------------
+
+export default function MigrationTab() {
+  return (
+    <div className="flex flex-col gap-0 max-w-4xl">
+      <div className="bg-[#EDEEF0] dark:bg-[#383838] rounded-[10px] border border-[#C8CDD6] dark:border-[#484848] p-4">
+        <CsvImportSection />
+      </div>
+
+      <div className="border-t border-[0.5px] border-[#C8CDD6] dark:border-[#484848] my-6" />
+
+      <div className="bg-[#EDEEF0] dark:bg-[#383838] rounded-[10px] border border-[#C8CDD6] dark:border-[#484848] p-4">
+        <CanopyImportSection />
+      </div>
+
+      <div className="border-t border-[0.5px] border-[#C8CDD6] dark:border-[#484848] my-6" />
+
+      <div className="bg-[#EDEEF0] dark:bg-[#383838] rounded-[10px] border border-[#C8CDD6] dark:border-[#484848] p-4">
+        <KarbonImportSection />
+      </div>
+
+      <div className="border-t border-[0.5px] border-[#C8CDD6] dark:border-[#484848] my-6" />
+
+      <div className="bg-[#EDEEF0] dark:bg-[#383838] rounded-[10px] border border-[#C8CDD6] dark:border-[#484848] p-4">
+        <FinancialCentsImportSection />
+      </div>
+
+      <div className="border-t border-[0.5px] border-[#C8CDD6] dark:border-[#484848] my-6" />
+
+      <p className="text-[13px] font-[500] text-brand dark:text-[#EDEEF0]">TaxDome Import</p>
+      <p className="text-[12px] text-[#6B7280] mt-1 mb-4">If migrating from TaxDome, import clients first, then jobs. Job matching uses client names.</p>
+
+      <div className="bg-[#EDEEF0] dark:bg-[#383838] rounded-[10px] border border-[#C8CDD6] dark:border-[#484848] p-4">
+        <ClientSection />
+      </div>
+
+      <div className="border-t border-[0.5px] border-[#C8CDD6] dark:border-[#484848] my-6" />
+
+      <div className="bg-[#EDEEF0] dark:bg-[#383838] rounded-[10px] border border-[#C8CDD6] dark:border-[#484848] p-4">
+        <JobSection />
+      </div>
+    </div>
+  )
+}
+
+
+================================================================================
 FILE: frontend\src\components\settings\PortalBrandingTab.tsx
 ================================================================================
 // path: frontend/src/components/settings/PortalBrandingTab.tsx
@@ -29582,6 +31317,39 @@ export function formatFileSize(kb: number): string {
   return `${(kb / 1024).toFixed(1)} MB`
 }
 
+export function formatEntityType(entityType: string | null | undefined): string {
+  if (!entityType) return ''
+  const labels: Record<string, string> = {
+    individual: 'Individual',
+    business: 'Business',
+    trust: 'Trust',
+    estate: 'Estate',
+    non_profit: 'Non-Profit',
+  }
+  return labels[entityType] ?? entityType
+}
+
+export function formatEntitySubtype(entitySubtype: string | null | undefined): string {
+  if (!entitySubtype) return ''
+  const labels: Record<string, string> = {
+    sole_proprietor: 'Sole Proprietor',
+    partnership: 'Partnership',
+    llc: 'LLC',
+    s_corp: 'S-Corp',
+    c_corp: 'C-Corp',
+    professional_corp: 'Professional Corp',
+    revocable_trust: 'Revocable Trust',
+    irrevocable_trust: 'Irrevocable Trust',
+    charitable_trust: 'Charitable Trust',
+    special_needs_trust: 'Special Needs Trust',
+    public_charity: 'Public Charity (501c3)',
+    private_foundation: 'Private Foundation (501c3)',
+    social_welfare: 'Social Welfare (501c4)',
+    other_tax_exempt: 'Other Tax-Exempt',
+  }
+  return labels[entitySubtype] ?? entitySubtype
+}
+
 
 ================================================================================
 FILE: frontend\src\lib\api\clients.ts
@@ -29603,6 +31371,7 @@ export interface Client {
   country: string | null
   isActive: boolean
   entityType: string | null
+  entitySubtype: string | null
   tags: string[]
   notes: string | null
   createdAt: string
@@ -29650,6 +31419,7 @@ function mapClient(raw: Record<string, unknown>): Client {
     country: raw.country ? String(raw.country) : null,
     isActive: Boolean(raw.is_active ?? true),
     entityType: raw.entity_type ? String(raw.entity_type) : null,
+    entitySubtype: raw.entity_subtype ? String(raw.entity_subtype) : null,
     tags: Array.isArray(raw.tags) ? (raw.tags as string[]) : [],
     notes: raw.notes ? String(raw.notes) : null,
     createdAt: String(raw.created_at ?? ''),
@@ -29678,6 +31448,7 @@ export const clientsApi = {
     email?: string
     phone?: string
     entity_type?: string
+    entity_subtype?: string
   }): Promise<Client> => {
     const { data } = await api.post('/clients/', payload)
     return mapClient(data)

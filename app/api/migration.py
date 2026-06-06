@@ -483,11 +483,11 @@ async def import_jobs(
 
 
 # ---------------------------------------------------------------------------
-# ENDPOINT 5 -- canopy preview clients
+# ENDPOINT 5 -- canopy individuals preview
 # ---------------------------------------------------------------------------
 
-@router.post("/canopy/preview-clients", response_model=ClientPreviewResult)
-async def canopy_preview_clients(
+@router.post("/canopy/individuals/preview", response_model=ClientPreviewResult)
+async def canopy_individuals_preview(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     current_firm: Firm = Depends(get_current_firm),
@@ -506,45 +506,34 @@ async def canopy_preview_clients(
 
     preview_rows: list[ClientPreviewRow] = []
     for i, row in enumerate(rows, start=2):
-        contact_type = row.get("Contact Type", "").strip()
-        row_warnings: list[str] = []
-
-        if contact_type == "Business":
-            entity_type = "business"
-            name = row.get("Business Name", "").strip()
-        else:
-            entity_type = "individual"
-            if contact_type and contact_type != "Individual":
-                row_warnings.append(f"Unknown Contact Type '{contact_type}' -- defaulted to individual.")
-            first = row.get("First Name", "").strip()
-            last = row.get("Last Name", "").strip()
-            name = f"{first} {last}".strip()
+        first = row.get("First Name", "").strip()
+        last = row.get("Last Name", "").strip()
+        name = f"{first} {last}".strip()
 
         if not name:
             preview_rows.append(ClientPreviewRow(
                 row_number=i, name="",
-                status="warning", reason="Could not determine client name.",
+                status="warning", reason="Row skipped: name is blank after combining First Name and Last Name.",
             ))
             continue
 
         email = row.get("Email", "") or None
+        phone = row.get("Phone", "") or None
         tags = row.get("Tags", "") or None
         state = row.get("State", "") or None
 
         if name.lower() in existing_names:
             preview_rows.append(ClientPreviewRow(
-                row_number=i, name=name, email=email,
-                entity_type=entity_type, tags=tags, state=state,
+                row_number=i, name=name, email=email, phone=phone,
+                entity_type="individual", tags=tags, state=state,
                 status="skip", reason="Client with this name already exists.",
             ))
             continue
 
-        reason = " ".join(row_warnings) or None
-        status = "warning" if reason else "import"
         preview_rows.append(ClientPreviewRow(
-            row_number=i, name=name, email=email,
-            entity_type=entity_type, tags=tags, state=state,
-            status=status, reason=reason,
+            row_number=i, name=name, email=email, phone=phone,
+            entity_type="individual", tags=tags, state=state,
+            status="import",
         ))
 
     will_import = sum(1 for r in preview_rows if r.status == "import")
@@ -561,11 +550,11 @@ async def canopy_preview_clients(
 
 
 # ---------------------------------------------------------------------------
-# ENDPOINT 6 -- canopy import clients
+# ENDPOINT 6 -- canopy individuals import
 # ---------------------------------------------------------------------------
 
-@router.post("/canopy/import-clients", response_model=ClientImportResult)
-async def canopy_import_clients(
+@router.post("/canopy/individuals/import", response_model=ClientImportResult)
+async def canopy_individuals_import(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     current_firm: Firm = Depends(get_current_firm),
@@ -588,26 +577,13 @@ async def canopy_import_clients(
     errors: list[dict] = []
 
     for i, row in enumerate(rows, start=2):
-        contact_type = row.get("Contact Type", "").strip()
-
-        if contact_type == "Business":
-            entity_type = "business"
-            name = row.get("Business Name", "").strip()
-        else:
-            entity_type = "individual"
-            if contact_type and contact_type != "Individual":
-                warnings += 1
-                errors.append({
-                    "row": i,
-                    "reason": f"Unknown Contact Type '{contact_type}' -- defaulted to individual.",
-                })
-            first = row.get("First Name", "").strip()
-            last = row.get("Last Name", "").strip()
-            name = f"{first} {last}".strip()
+        first = row.get("First Name", "").strip()
+        last = row.get("Last Name", "").strip()
+        name = f"{first} {last}".strip()
 
         if not name:
             warnings += 1
-            errors.append({"row": i, "reason": "Could not determine client name."})
+            errors.append({"row": i, "reason": "Row skipped: name is blank after combining First Name and Last Name."})
             continue
 
         if name.lower() in existing_names:
@@ -615,17 +591,29 @@ async def canopy_import_clients(
             continue
 
         email = row.get("Email", "") or None
-        tags = row.get("Tags", "") or None
+        phone = row.get("Phone", "") or None
+        address_line1 = row.get("Street 1", "") or None
+        address_line2 = row.get("Street 2", "") or None
+        city = row.get("City", "") or None
         state = row.get("State", "") or None
+        postal_code = row.get("Zip", "") or None
+        country = row.get("Country", "") or None
+        tags = row.get("Tags", "") or None
 
         try:
             new_client = Client(
                 firm_id=current_firm.id,
                 name=name,
                 email=email,
-                entity_type=entity_type,
-                tags=tags,
+                phone=phone,
+                entity_type="individual",
+                address_line1=address_line1,
+                address_line2=address_line2,
+                city=city,
                 state=state,
+                postal_code=postal_code,
+                country=country,
+                tags=tags,
                 is_active=True,
             )
             db.add(new_client)
@@ -642,7 +630,7 @@ async def canopy_import_clients(
     from app.services.behavioral_log import log_event
     log_event(
         firm_id=current_firm.id,
-        event_type="migration.canopy_clients_imported",
+        event_type="migration.canopy_individuals_imported",
         entity_type="firm",
         entity_id=current_firm.id,
         actor_type="staff",
@@ -658,7 +646,166 @@ async def canopy_import_clients(
 
 
 # ---------------------------------------------------------------------------
-# ENDPOINT 7 -- karbon preview clients
+# ENDPOINT 7 -- canopy businesses preview
+# ---------------------------------------------------------------------------
+
+@router.post("/canopy/businesses/preview", response_model=ClientPreviewResult)
+async def canopy_businesses_preview(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    _: object = Depends(require_firm_owner),
+):
+    _validate_csv_extension(file)
+    rows = await _read_csv_rows(file)
+
+    existing_names = {
+        r[0].lower()
+        for r in db.execute(
+            select(Client.name).where(Client.firm_id == current_firm.id)
+        ).all()
+        if r[0]
+    }
+
+    preview_rows: list[ClientPreviewRow] = []
+    for i, row in enumerate(rows, start=2):
+        name = row.get("Business Name", "").strip()
+
+        if not name:
+            preview_rows.append(ClientPreviewRow(
+                row_number=i, name="",
+                status="warning", reason="Row skipped: Business Name is blank.",
+            ))
+            continue
+
+        email = row.get("Email", "") or None
+        phone = row.get("Phone", "") or None
+        tags = row.get("Tags", "") or None
+        state = row.get("State", "") or None
+
+        if name.lower() in existing_names:
+            preview_rows.append(ClientPreviewRow(
+                row_number=i, name=name, email=email, phone=phone,
+                entity_type="business", tags=tags, state=state,
+                status="skip", reason="Client with this name already exists.",
+            ))
+            continue
+
+        preview_rows.append(ClientPreviewRow(
+            row_number=i, name=name, email=email, phone=phone,
+            entity_type="business", tags=tags, state=state,
+            status="import",
+        ))
+
+    will_import = sum(1 for r in preview_rows if r.status == "import")
+    will_skip = sum(1 for r in preview_rows if r.status == "skip")
+    warnings = sum(1 for r in preview_rows if r.status == "warning")
+
+    return ClientPreviewResult(
+        total_rows=len(rows),
+        will_import=will_import,
+        will_skip=will_skip,
+        warnings=warnings,
+        rows=preview_rows,
+    )
+
+
+# ---------------------------------------------------------------------------
+# ENDPOINT 8 -- canopy businesses import
+# ---------------------------------------------------------------------------
+
+@router.post("/canopy/businesses/import", response_model=ClientImportResult)
+async def canopy_businesses_import(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    _: object = Depends(require_firm_owner),
+):
+    _validate_csv_extension(file)
+    rows = await _read_csv_rows(file)
+
+    existing_names = {
+        r[0].lower()
+        for r in db.execute(
+            select(Client.name).where(Client.firm_id == current_firm.id)
+        ).all()
+        if r[0]
+    }
+
+    created = 0
+    skipped = 0
+    warnings = 0
+    errors: list[dict] = []
+
+    for i, row in enumerate(rows, start=2):
+        name = row.get("Business Name", "").strip()
+
+        if not name:
+            warnings += 1
+            errors.append({"row": i, "reason": "Row skipped: Business Name is blank."})
+            continue
+
+        if name.lower() in existing_names:
+            skipped += 1
+            continue
+
+        email = row.get("Email", "") or None
+        phone = row.get("Phone", "") or None
+        address_line1 = row.get("Street 1", "") or None
+        address_line2 = row.get("Street 2", "") or None
+        city = row.get("City", "") or None
+        state = row.get("State", "") or None
+        postal_code = row.get("Zip", "") or None
+        country = row.get("Country", "") or None
+        tags = row.get("Tags", "") or None
+
+        try:
+            new_client = Client(
+                firm_id=current_firm.id,
+                name=name,
+                email=email,
+                phone=phone,
+                entity_type="business",
+                address_line1=address_line1,
+                address_line2=address_line2,
+                city=city,
+                state=state,
+                postal_code=postal_code,
+                country=country,
+                tags=tags,
+                is_active=True,
+            )
+            db.add(new_client)
+            db.flush()
+            existing_names.add(name.lower())
+            created += 1
+        except Exception as exc:
+            db.rollback()
+            errors.append({"row": i, "reason": f"Database error: {str(exc)}"})
+            continue
+
+    db.commit()
+
+    from app.services.behavioral_log import log_event
+    log_event(
+        firm_id=current_firm.id,
+        event_type="migration.canopy_businesses_imported",
+        entity_type="firm",
+        entity_id=current_firm.id,
+        actor_type="staff",
+        metadata={
+            "created": created,
+            "skipped": skipped,
+            "warnings": warnings,
+            "total_rows": len(rows),
+        },
+    )
+
+    return ClientImportResult(created=created, skipped=skipped, warnings=warnings, errors=errors)
+
+
+# ---------------------------------------------------------------------------
+# ENDPOINT 9 -- karbon preview clients
 # ---------------------------------------------------------------------------
 
 @router.post("/karbon/preview-clients", response_model=ClientPreviewResult)

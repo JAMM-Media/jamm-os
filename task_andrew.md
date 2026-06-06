@@ -33,61 +33,115 @@ All models must be imported in migrations/env.py or autogenerate silently misses
 
 ---
 
-PHASE INSTRUCTIONS — FINANCIAL CENTS MIGRATION SECTION
+PHASE INSTRUCTIONS — FIX CANOPY IMPORTER (TWO UPLOAD ZONES)
 
-No backend changes. No migrations. One file only: frontend/src/components/settings/MigrationTab.tsx
+No migrations. Two files only: app/api/migration.py and frontend/src/components/settings/MigrationTab.tsx.
 
-Read the file first.
+Context: Canopy exports two separate CSV files -- one for Individuals and one for Businesses. They have different column structures. The current Canopy importer reads a "Contact Type" column that does not exist in Canopy's actual exports. Replace the existing two Canopy endpoints with four, and replace the single Canopy frontend section with two upload zones.
 
-Add a new FinancialCentsImportSection component. It follows the exact same two-step upload/result pattern as CsvImportSection (the general CSV section at the top of the file) -- same states, same drag-drop zone, same result display. The only differences are the heading, description text, and it is a separate component so firm owners see their tool listed by name.
+---
 
--- FinancialCentsImportSection component --
+STEP 1 — BACKEND: Replace Canopy endpoints in app/api/migration.py
 
-Copy the CsvImportSection component exactly and rename it FinancialCentsImportSection. Change only these things:
+Read the file first. Find the two existing Canopy endpoints:
+  POST /canopy/preview-clients
+  POST /canopy/import-clients
 
-1. Heading text: "Import from Financial Cents"
+Replace them with four endpoints:
 
-2. Description text: "Upload your Financial Cents client export. In Financial Cents, go to Clients, click Export, and download as CSV. JAMM PX will import the Name, Email, Phone, and Address fields automatically."
+-- ENDPOINT: POST /canopy/individuals/preview --
 
-3. Button label: "Import Clients" (same as CsvImportSection -- no change needed here)
+Canopy Individuals CSV columns:
+  "First Name" + "Last Name" -> combined as "{First Name} {Last Name}".strip() -> name (required -- skip row if blank after combining)
+  "Email" -> email
+  "Phone" -> phone
+  "Street 1" -> address_line1
+  "Street 2" -> address_line2
+  "City" -> city
+  "State" -> state
+  "Zip" -> postal_code
+  "Country" -> country
+  "Tags" -> tags
 
-4. Success message: "Import complete -- X clients imported, X skipped." (same pattern as CsvImportSection)
+entity_type is hardcoded to "individual" for every row -- no detection needed.
 
-The API endpoint is identical: POST /api/v1/clients/import with the file as FormData field named "file".
+Deduplication: ILIKE name match scoped to firm_id marks row as skip.
+Return shape: ClientPreviewResult (same as all other preview endpoints)
 
--- Section placement in MigrationTab render --
+-- ENDPOINT: POST /canopy/individuals/import --
 
-Read the current render order in MigrationTab. It currently is:
-1. CsvImportSection card
-2. divider
-3. CanopyImportSection card
-4. divider
-5. KarbonImportSection card
-6. divider
-7. TaxDome heading + description
-8. ClientSection card
-9. divider
-10. JobSection card
+Same column mapping as preview. Writes Client records with entity_type="individual" hardcoded.
+Fires behavioral event: event_type="migration.canopy_individuals_imported"
+Return shape: ClientImportResult
 
-Insert FinancialCentsImportSection between KarbonImportSection and the TaxDome heading. New order:
-1. CsvImportSection card
-2. divider
-3. CanopyImportSection card
-4. divider
-5. KarbonImportSection card
-6. divider
-7. FinancialCentsImportSection card (new)
-8. divider
-9. TaxDome heading + description
-10. ClientSection card
-11. divider
-12. JobSection card
+-- ENDPOINT: POST /canopy/businesses/preview --
 
-Use the exact same card wrapper and divider pattern already in the file.
+Canopy Businesses CSV columns:
+  "Business Name" -> name (required -- skip row if blank)
+  "Email" -> email
+  "Phone" -> phone
+  "Street 1" -> address_line1
+  "Street 2" -> address_line2
+  "City" -> city
+  "State" -> state
+  "Zip" -> postal_code
+  "Country" -> country
+  "Tags" -> tags
 
-DO NOT run migrations. No backend changes. One file only.
+entity_type is hardcoded to "business" for every row.
+
+Deduplication: same ILIKE pattern.
+Return shape: ClientPreviewResult
+
+-- ENDPOINT: POST /canopy/businesses/import --
+
+Same column mapping as preview. Writes Client records with entity_type="business" hardcoded.
+Fires behavioral event: event_type="migration.canopy_businesses_imported"
+Return shape: ClientImportResult
+
+All four endpoints: require firm_owner role, validate .csv extension, tenant-scoped.
+
+---
+
+STEP 2 — FRONTEND: Replace CanopyImportSection in MigrationTab.tsx
+
+Read the file first. Find CanopyImportSection. Replace it entirely with two separate components: CanopyIndividualsSection and CanopyBusinessesSection.
+
+Each component follows the exact same two-step pattern as the existing KarbonImportSection (upload -> preview table -> confirm -> success/error).
+
+-- CanopyIndividualsSection --
+
+Heading: "Import Individuals from Canopy"
+Description: "Upload your Canopy Individuals export. In Canopy, go to Clients, select Import clients, choose Individual as the client type, and export your current individual clients as CSV."
+Preview endpoint: POST /api/v1/migration/canopy/individuals/preview
+Import endpoint: POST /api/v1/migration/canopy/individuals/import
+Success message: "Import complete -- X clients imported, X skipped."
+
+-- CanopyBusinessesSection --
+
+Heading: "Import Businesses from Canopy"
+Description: "Upload your Canopy Businesses export. In Canopy, go to Clients, select Import clients, choose Business as the client type, and export your current business clients as CSV."
+Preview endpoint: POST /api/v1/migration/canopy/businesses/preview
+Import endpoint: POST /api/v1/migration/canopy/businesses/import
+Success message: "Import complete -- X clients imported, X skipped."
+
+-- Section layout in MigrationTab render --
+
+Find where CanopyImportSection is rendered. Replace the single CanopyImportSection card with two cards separated by a divider:
+
+<card><CanopyIndividualsSection /></card>
+<divider />
+<card><CanopyBusinessesSection /></card>
+
+Keep the dividers before and after the Canopy block exactly as they are. Only the interior changes.
+
+---
+
+DO NOT run migrations. No schema changes.
 
 After completing confirm:
-- FinancialCentsImportSection component exists in MigrationTab.tsx
-- It hits POST /api/v1/clients/import (same as CsvImportSection)
-- It appears between KarbonImportSection and the TaxDome heading in the render
+- Old /canopy/preview-clients and /canopy/import-clients endpoints removed
+- Four new endpoints exist: /canopy/individuals/preview, /canopy/individuals/import, /canopy/businesses/preview, /canopy/businesses/import
+- CanopyImportSection removed from MigrationTab
+- CanopyIndividualsSection and CanopyBusinessesSection replace it
+- Karbon, Financial Cents, and TaxDome sections unchanged
