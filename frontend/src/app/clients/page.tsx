@@ -122,6 +122,7 @@ export default function ClientsPage() {
             <option value="business">Business</option>
             <option value="trust">Trust</option>
             <option value="estate">Estate</option>
+            <option value="non_profit">Non-Profit</option>
           </select>
 
           <select

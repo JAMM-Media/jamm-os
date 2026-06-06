@@ -16,7 +16,7 @@ import { parseMessage } from '@/lib/entityLinkParser'
 import { NotesTab, NotesPanel } from '@/components/notes'
 import { useNotes } from '@/components/notes'
 import { useUnreadMessages } from '@/components/messaging/useUnreadMessages'
-import { cn, formatEngagementType } from '@/lib/utils'
+import { cn, formatEngagementType, formatEntityType, formatEntitySubtype } from '@/lib/utils'
 import api from '@/lib/api'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { IrsAuthBadge } from '@/components/clients/IrsAuthBadge'
@@ -291,7 +291,10 @@ function ClientDetailContent() {
                 onClick={() => setActiveTab('irs-auth')}
               />
               {client.entityType && (
-                <span className="text-[12px] text-[#6B7280]">{client.entityType}</span>
+                <span className="text-[12px] text-[#6B7280]">{formatEntityType(client.entityType)}</span>
+              )}
+              {client.entitySubtype && (
+                <span className="text-[12px] text-[#6B7280]">{formatEntitySubtype(client.entitySubtype)}</span>
               )}
             </div>
           </div>

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { type Client } from '@/lib/api'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { HealthDot } from '@/components/clients/HealthDot'
+import { formatEntityType, formatEntitySubtype } from '@/lib/utils'
 
 interface ClientTableProps {
   clients: Client[]
@@ -62,7 +63,9 @@ export function ClientTable({ clients }: ClientTableProps) {
               </td>
               <td className="px-4 py-3">
                 <span className="text-[12px] text-[#374151] dark:text-[#9CA3AF]">
-                  {client.entityType ?? '—'}
+                  {formatEntityType(client.entityType)
+                    ? `${formatEntityType(client.entityType)}${client.entitySubtype ? ` -- ${formatEntitySubtype(client.entitySubtype)}` : ''}`
+                    : '—'}
                 </span>
               </td>
               <td className="px-4 py-3">

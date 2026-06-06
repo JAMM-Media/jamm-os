@@ -24,6 +24,9 @@ ENTITY_TYPE_MAP = {
     "business": "business",
     "trust": "trust",
     "estate": "estate",
+    "non-profit": "non_profit",
+    "nonprofit": "non_profit",
+    "non_profit": "non_profit",
 }
 
 ENGAGEMENT_STATUS_MAP = {

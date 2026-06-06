@@ -15,6 +15,7 @@ export interface Client {
   country: string | null
   isActive: boolean
   entityType: string | null
+  entitySubtype: string | null
   tags: string[]
   notes: string | null
   createdAt: string
@@ -62,6 +63,7 @@ function mapClient(raw: Record<string, unknown>): Client {
     country: raw.country ? String(raw.country) : null,
     isActive: Boolean(raw.is_active ?? true),
     entityType: raw.entity_type ? String(raw.entity_type) : null,
+    entitySubtype: raw.entity_subtype ? String(raw.entity_subtype) : null,
     tags: Array.isArray(raw.tags) ? (raw.tags as string[]) : [],
     notes: raw.notes ? String(raw.notes) : null,
     createdAt: String(raw.created_at ?? ''),
@@ -90,6 +92,7 @@ export const clientsApi = {
     email?: string
     phone?: string
     entity_type?: string
+    entity_subtype?: string
   }): Promise<Client> => {
     const { data } = await api.post('/clients/', payload)
     return mapClient(data)

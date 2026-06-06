@@ -15,7 +15,31 @@ const ENTITY_TYPE_OPTIONS = [
   { value: 'business', label: 'Business' },
   { value: 'trust', label: 'Trust' },
   { value: 'estate', label: 'Estate' },
+  { value: 'non_profit', label: 'Non-Profit' },
 ]
+
+const SUBTYPE_OPTIONS: Record<string, { value: string; label: string }[]> = {
+  business: [
+    { value: 'sole_proprietor', label: 'Sole Proprietor' },
+    { value: 'partnership', label: 'Partnership' },
+    { value: 'llc', label: 'LLC' },
+    { value: 's_corp', label: 'S-Corp' },
+    { value: 'c_corp', label: 'C-Corp' },
+    { value: 'professional_corp', label: 'Professional Corp' },
+  ],
+  trust: [
+    { value: 'revocable_trust', label: 'Revocable Trust' },
+    { value: 'irrevocable_trust', label: 'Irrevocable Trust' },
+    { value: 'charitable_trust', label: 'Charitable Trust' },
+    { value: 'special_needs_trust', label: 'Special Needs Trust' },
+  ],
+  non_profit: [
+    { value: 'public_charity', label: 'Public Charity (501c3)' },
+    { value: 'private_foundation', label: 'Private Foundation (501c3)' },
+    { value: 'social_welfare', label: 'Social Welfare (501c4)' },
+    { value: 'other_tax_exempt', label: 'Other Tax-Exempt' },
+  ],
+}
 
 interface NewClientModalProps {
   open: boolean
@@ -29,6 +53,7 @@ interface FormState {
   email: string
   phone: string
   entity_type: string
+  entity_subtype: string
 }
 
 interface FormErrors {
@@ -52,6 +77,7 @@ export function NewClientModal({ open, onClose, onAdd, initialName }: NewClientM
     email: '',
     phone: '',
     entity_type: '',
+    entity_subtype: '',
   })
 
   useEffect(() => {
@@ -62,7 +88,11 @@ export function NewClientModal({ open, onClose, onAdd, initialName }: NewClientM
 
   function handleChange(field: keyof FormState, value: string) {
     setFormDirty(true)
-    setForm((prev) => ({ ...prev, [field]: value }))
+    if (field === 'entity_type' && (value === 'individual' || value === 'estate')) {
+      setForm((prev) => ({ ...prev, entity_type: value, entity_subtype: '' }))
+    } else {
+      setForm((prev) => ({ ...prev, [field]: value }))
+    }
     if (errors[field as keyof FormErrors]) {
       setErrors((prev) => ({ ...prev, [field]: undefined }))
     }
@@ -70,7 +100,7 @@ export function NewClientModal({ open, onClose, onAdd, initialName }: NewClientM
 
   function handleClose() {
     setFormDirty(false)
-    setForm({ name: '', email: '', phone: '', entity_type: '' })
+    setForm({ name: '', email: '', phone: '', entity_type: '', entity_subtype: '' })
     setErrors({})
     onClose()
   }
@@ -89,6 +119,7 @@ export function NewClientModal({ open, onClose, onAdd, initialName }: NewClientM
         email: form.email.trim() || undefined,
         phone: form.phone.trim() || undefined,
         entity_type: form.entity_type || undefined,
+        entity_subtype: form.entity_subtype || undefined,
       })
       onAdd(newClient)
       handleClose()
@@ -146,6 +177,18 @@ export function NewClientModal({ open, onClose, onAdd, initialName }: NewClientM
             />
           </FormField>
         </div>
+
+        {/* Entity Subtype (conditional) */}
+        {SUBTYPE_OPTIONS[form.entity_type] && (
+          <FormField label="Entity Subtype">
+            <SelectInput
+              value={form.entity_subtype}
+              onChange={(e) => handleChange('entity_subtype', e.target.value)}
+              options={[{ value: '', label: '-- Select subtype --' }, ...SUBTYPE_OPTIONS[form.entity_type]]}
+              placeholder="-- Select subtype --"
+            />
+          </FormField>
+        )}
 
         {/* Row 2: Email + Phone */}
         <div className="grid grid-cols-2 gap-3">

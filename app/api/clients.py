@@ -104,10 +104,10 @@ async def import_clients_csv(
     - Max 500 rows per import
     - Rows with no name are skipped with an error
     - Rows where email already exists for this firm are skipped (not errors)
-    - entity_type must be one of: individual, business, trust, estate
+    - entity_type must be one of: individual, business, trust, estate, non_profit
     - firm_id is always injected from JWT — never from the CSV
     """
-    VALID_ENTITY_TYPES = {"individual", "business", "trust", "estate"}
+    VALID_ENTITY_TYPES = {"individual", "business", "trust", "estate", "non_profit"}
     MAX_ROWS = 500
 
     # Read and decode the uploaded file
@@ -187,6 +187,7 @@ async def import_clients_csv(
 
         email = row.get("email", "").strip() or None
         entity_type = row.get("entity_type", "").strip().lower() or None
+        entity_subtype = row.get("entity_subtype", "").strip().lower() or None
         phone = row.get("phone", "").strip() or None
         company_name = row.get("company_name", "").strip() or None
         address_line1 = row.get("address_line1", "").strip() or None
@@ -218,6 +219,7 @@ async def import_clients_csv(
                 name=name,
                 email=email,
                 entity_type=entity_type,
+                entity_subtype=entity_subtype,
                 phone=phone,
                 company_name=company_name,
                 address_line1=address_line1,

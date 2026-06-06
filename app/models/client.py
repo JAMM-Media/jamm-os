@@ -49,7 +49,13 @@ class Client(Base):
     entity_type: Mapped[Optional[str]] = mapped_column(
         String(20),
         nullable=True,
-        comment="individual | business | trust | estate",
+        comment="individual | business | trust | estate | non_profit",
+    )
+
+    entity_subtype: Mapped[Optional[str]] = mapped_column(
+        String(50),
+        nullable=True,
+        comment="sole_proprietor | partnership | llc | s_corp | c_corp | professional_corp | revocable_trust | irrevocable_trust | charitable_trust | special_needs_trust | public_charity | private_foundation | social_welfare | other_tax_exempt",
     )
 
     tags: Mapped[str | None] = mapped_column(String(500))

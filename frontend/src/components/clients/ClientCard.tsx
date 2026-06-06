@@ -6,6 +6,7 @@ import { type Client } from '@/lib/api'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { IrsAuthBadge } from '@/components/clients/IrsAuthBadge'
 import { HealthDot } from '@/components/clients/HealthDot'
+import { formatEntityType, formatEntitySubtype } from '@/lib/utils'
 
 interface ClientCardProps {
   client: Client
@@ -27,7 +28,7 @@ export function ClientCard({ client }: ClientCardProps) {
           </span>
         </div>
         <span className="text-[10px] text-[#6B7280] ml-2 flex-shrink-0">
-          {client.entityType ?? ''}
+          {formatEntityType(client.entityType)}{client.entitySubtype ? ` -- ${formatEntitySubtype(client.entitySubtype)}` : ''}
         </span>
       </div>
       <div className="text-[11px] text-[#6B7280] mb-2">

@@ -16,7 +16,31 @@ const ENTITY_TYPE_OPTIONS = [
   { value: 'business', label: 'Business' },
   { value: 'trust', label: 'Trust' },
   { value: 'estate', label: 'Estate' },
+  { value: 'non_profit', label: 'Non-Profit' },
 ]
+
+const SUBTYPE_OPTIONS: Record<string, { value: string; label: string }[]> = {
+  business: [
+    { value: 'sole_proprietor', label: 'Sole Proprietor' },
+    { value: 'partnership', label: 'Partnership' },
+    { value: 'llc', label: 'LLC' },
+    { value: 's_corp', label: 'S-Corp' },
+    { value: 'c_corp', label: 'C-Corp' },
+    { value: 'professional_corp', label: 'Professional Corp' },
+  ],
+  trust: [
+    { value: 'revocable_trust', label: 'Revocable Trust' },
+    { value: 'irrevocable_trust', label: 'Irrevocable Trust' },
+    { value: 'charitable_trust', label: 'Charitable Trust' },
+    { value: 'special_needs_trust', label: 'Special Needs Trust' },
+  ],
+  non_profit: [
+    { value: 'public_charity', label: 'Public Charity (501c3)' },
+    { value: 'private_foundation', label: 'Private Foundation (501c3)' },
+    { value: 'social_welfare', label: 'Social Welfare (501c4)' },
+    { value: 'other_tax_exempt', label: 'Other Tax-Exempt' },
+  ],
+}
 
 interface EditClientModalProps {
   isOpen: boolean
@@ -30,6 +54,7 @@ interface FormState {
   email: string
   phone: string
   entity_type: string
+  entity_subtype: string
   company_name: string
   notes: string
 }
@@ -40,6 +65,7 @@ function toFormState(client: Client): FormState {
     email: client.email ?? '',
     phone: client.phone ?? '',
     entity_type: client.entityType ?? '',
+    entity_subtype: client.entitySubtype ?? '',
     company_name: client.companyName ?? '',
     notes: client.notes ?? '',
   }
@@ -59,7 +85,11 @@ export function EditClientModal({ isOpen, onClose, client, onSuccess }: EditClie
 
   function handleChange(field: keyof FormState, value: string) {
     setFormDirty(true)
-    setForm((prev) => ({ ...prev, [field]: value }))
+    if (field === 'entity_type' && (value === 'individual' || value === 'estate')) {
+      setForm((prev) => ({ ...prev, entity_type: value, entity_subtype: '' }))
+    } else {
+      setForm((prev) => ({ ...prev, [field]: value }))
+    }
     if (field === 'name') setNameError('')
   }
 
@@ -75,6 +105,7 @@ export function EditClientModal({ isOpen, onClose, client, onSuccess }: EditClie
     if (form.email !== original.email) patch.email = form.email || null
     if (form.phone !== original.phone) patch.phone = form.phone || null
     if (form.entity_type !== original.entity_type) patch.entity_type = form.entity_type || null
+    if (form.entity_subtype !== original.entity_subtype) patch.entity_subtype = form.entity_subtype || null
     if (form.company_name !== original.company_name) patch.company_name = form.company_name || null
     if (form.notes !== original.notes) patch.notes = form.notes || null
 
@@ -158,6 +189,17 @@ export function EditClientModal({ isOpen, onClose, client, onSuccess }: EditClie
             placeholder="Select type"
           />
         </FormField>
+
+        {SUBTYPE_OPTIONS[form.entity_type] && (
+          <FormField label="Entity Subtype">
+            <SelectInput
+              value={form.entity_subtype}
+              onChange={(e) => handleChange('entity_subtype', e.target.value)}
+              options={[{ value: '', label: '-- Select subtype --' }, ...SUBTYPE_OPTIONS[form.entity_type]]}
+              placeholder="-- Select subtype --"
+            />
+          </FormField>
+        )}
 
         <FormField label="Company Name">
           <TextInput

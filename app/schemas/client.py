@@ -29,6 +29,7 @@ class ClientBase(BaseModel):
     notes: Optional[str] = None
     is_active: Optional[bool] = True
     entity_type: Optional[str] = None
+    entity_subtype: Optional[str] = None
 
     @field_validator("tags", mode="before")
     @classmethod
@@ -40,9 +41,23 @@ class ClientBase(BaseModel):
     def validate_entity_type(cls, v):
         if v is None:
             return v
-        valid = {"individual", "business", "trust", "estate"}
+        valid = {"individual", "business", "trust", "estate", "non_profit"}
         if v not in valid:
             raise ValueError(f"entity_type must be one of {sorted(valid)}")
+        return v
+
+    @field_validator("entity_subtype")
+    @classmethod
+    def validate_entity_subtype(cls, v):
+        if v is None:
+            return v
+        valid = {
+            "sole_proprietor", "partnership", "llc", "s_corp", "c_corp", "professional_corp",
+            "revocable_trust", "irrevocable_trust", "charitable_trust", "special_needs_trust",
+            "public_charity", "private_foundation", "social_welfare", "other_tax_exempt",
+        }
+        if v not in valid:
+            raise ValueError(f"entity_subtype must be one of {sorted(valid)}")
         return v
 
 
@@ -66,6 +81,7 @@ class ClientUpdate(BaseModel):
     notes: Optional[str] = None
     is_active: Optional[bool] = None
     entity_type: Optional[str] = None
+    entity_subtype: Optional[str] = None
 
     @field_validator("tags", mode="before")
     @classmethod
@@ -77,9 +93,23 @@ class ClientUpdate(BaseModel):
     def validate_entity_type(cls, v):
         if v is None:
             return v
-        valid = {"individual", "business", "trust", "estate"}
+        valid = {"individual", "business", "trust", "estate", "non_profit"}
         if v not in valid:
             raise ValueError(f"entity_type must be one of {sorted(valid)}")
+        return v
+
+    @field_validator("entity_subtype")
+    @classmethod
+    def validate_entity_subtype(cls, v):
+        if v is None:
+            return v
+        valid = {
+            "sole_proprietor", "partnership", "llc", "s_corp", "c_corp", "professional_corp",
+            "revocable_trust", "irrevocable_trust", "charitable_trust", "special_needs_trust",
+            "public_charity", "private_foundation", "social_welfare", "other_tax_exempt",
+        }
+        if v not in valid:
+            raise ValueError(f"entity_subtype must be one of {sorted(valid)}")
         return v
 
 
