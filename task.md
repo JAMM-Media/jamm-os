@@ -49,143 +49,86 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK 1 OF 3: Audit log API endpoint -- new file app/api/audit_log.py
+TASK 3 OF 3: Fill in missing write_audit_log calls
 
 Pre-task:
-cd /home/corby/jamm-os
-git add -A && git commit -m "checkpoint before phase 4F audit log"
+VERIFY BEFORE ACT:
+grep -rn "write_audit_log" /home/corby/jamm-os/app/api/clients.py 2>/dev/null | head -5
+grep -rn "write_audit_log" /home/corby/jamm-os/app/api/invoices.py 2>/dev/null | head -5
+grep -rn "write_audit_log" /home/corby/jamm-os/app/api/irs_authorizations.py 2>/dev/null | head -5
+Paste all three before touching anything.
+
+For each file that shows zero results, add write_audit_log calls
+on the significant actions following the same pattern already used
+in engagements.py and users.py.
+
+File: app/api/clients.py
+Actions to log:
+- client created: action='client.created', entity_type='client', entity_id=new_client.id
+- client updated: action='client.updated', entity_type='client', entity_id=client.id
+- client deleted: action='client.deleted', entity_type='client', entity_id=client_id
+
+File: app/api/invoices.py (if it exists)
+Actions to log:
+- invoice created: action='invoice.created', entity_type='invoice', entity_id=invoice.id
+- invoice sent: action='invoice.sent', entity_type='invoice', entity_id=invoice.id
+- invoice marked paid: action='invoice.paid', entity_type='invoice', entity_id=invoice.id
+
+File: app/api/irs_authorizations.py (if it exists)
+Actions to log:
+- IRS auth created: action='irs_auth.created', entity_type='irs_authorization', entity_id=auth.id
+- IRS auth sent: action='irs_auth.sent', entity_type='irs_authorization', entity_id=auth.id
+
+For each file, follow this pattern exactly:
+1. Add import at top: from app.services.audit_service import write_audit_log
+2. After the successful DB operation, call write_audit_log with the correct params
+3. Never let a failed audit log write surface as a user error -- audit_service is already fire-and-forget safe
+
+VERIFY AFTER ACT:
+grep -rn "write_audit_log" /home/corby/jamm-os/app/api/clients.py | head -5
+grep -rn "write_audit_log" /home/corby/jamm-os/app/api/invoices.py 2>/dev/null | head -5
+grep -rn "write_audit_log" /home/corby/jamm-os/app/api/irs_authorizations.py 2>/dev/null | head -5
+Confirm results appear for each file that was modified.
+python3 -c "from app.main import app; print('OK')"
+Must pass before stopping.
+Restart the backend.
+
+Browser tests:
+Test 1 -- Audit Log tab visible:
+Navigate to Settings. Confirm Audit Log tab appears.
+Click it. Confirm the table loads with entries.
+
+Test 2 -- Entries are real:
+Confirm at least some entries appear -- logins, document events, etc.
+Read a few rows and confirm they make sense.
+
+Test 3 -- Filter works:
+Type "login" in the action filter and click Filter.
+Confirm only login-related entries appear.
+
+Test 4 -- Entity type filter:
+Select Document from the entity type dropdown.
+Confirm only document entries appear.
+
+Test 5 -- Staff cannot see it:
+This requires a staff-level login to test. Skip if no staff account available.TASK: Fix audit log router prefix -- main.py
 
 VERIFY BEFORE ACT:
-ls /home/corby/jamm-os/app/api/ | grep audit
-Confirm no audit_log.py exists yet.
-
----
-
-Change 1: Create app/api/audit_log.py
-
-Create new file at /home/corby/jamm-os/app/api/audit_log.py with this content:
-
-# app/api/audit_log.py
-
-from datetime import datetime
-from typing import Optional
-from uuid import UUID
-
-from fastapi import APIRouter, Depends, Query
-from sqlalchemy import select, desc
-from sqlalchemy.orm import Session
-
-from app.core.enums import UserRole
-from app.db.session import get_db
-from app.dependencies.auth import get_current_user
-from app.dependencies.tenant import get_current_firm
-from app.models.audit_log import AuditLog
-from app.models.firm import Firm
-from app.models.user import User
-
-router = APIRouter(prefix="/audit-log", tags=["audit-log"])
-
-
-@router.get("/")
-def list_audit_log(
-    current_firm: Firm = Depends(get_current_firm),
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-    action: Optional[str] = None,
-    actor_id: Optional[UUID] = None,
-    entity_type: Optional[str] = None,
-    date_from: Optional[datetime] = None,
-    date_to: Optional[datetime] = None,
-    skip: int = Query(0, ge=0),
-    limit: int = Query(50, ge=1, le=200),
-):
-    if current_user.role not in (UserRole.firm_owner, UserRole.manager):
-        from fastapi import HTTPException, status
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied.",
-        )
-
-    query = select(AuditLog).where(AuditLog.firm_id == current_firm.id)
-
-    if action:
-        query = query.where(AuditLog.action.ilike(f"%{action}%"))
-    if actor_id:
-        query = query.where(AuditLog.actor_id == actor_id)
-    if entity_type:
-        query = query.where(AuditLog.entity_type == entity_type)
-    if date_from:
-        query = query.where(AuditLog.created_at >= date_from)
-    if date_to:
-        query = query.where(AuditLog.created_at <= date_to)
-
-    query = query.order_by(desc(AuditLog.created_at)).offset(skip).limit(limit)
-    rows = db.execute(query).scalars().all()
-
-    # Resolve actor names
-    actor_ids = list({r.actor_id for r in rows if r.actor_id})
-    actor_map: dict = {}
-    if actor_ids:
-        users = db.execute(
-            select(User).where(User.id.in_(actor_ids))
-        ).scalars().all()
-        actor_map = {str(u.id): u.full_name for u in users}
-
-    items = []
-    for row in rows:
-        items.append({
-            "id": str(row.id),
-            "action": row.action,
-            "actor_id": str(row.actor_id) if row.actor_id else None,
-            "actor_name": actor_map.get(str(row.actor_id)) if row.actor_id else "System",
-            "actor_type": row.actor_type,
-            "entity_type": row.entity_type,
-            "entity_id": str(row.entity_id) if row.entity_id else None,
-            "ip_address": row.ip_address,
-            "metadata": row.extra_metadata,
-            "created_at": row.created_at.isoformat(),
-        })
-
-    # Total count for pagination
-    from sqlalchemy import func
-    count_query = select(func.count()).select_from(AuditLog).where(
-        AuditLog.firm_id == current_firm.id
-    )
-    if action:
-        count_query = count_query.where(AuditLog.action.ilike(f"%{action}%"))
-    if actor_id:
-        count_query = count_query.where(AuditLog.actor_id == actor_id)
-    if entity_type:
-        count_query = count_query.where(AuditLog.entity_type == entity_type)
-    if date_from:
-        count_query = count_query.where(AuditLog.created_at >= date_from)
-    if date_to:
-        count_query = count_query.where(AuditLog.created_at <= date_to)
-
-    total = db.execute(count_query).scalar() or 0
-
-    return {"items": items, "total": total, "skip": skip, "limit": limit}
-
----
-
-Change 2: Register the router in app/main.py
-
-VERIFY BEFORE ACT:
-grep -n "audit\|from app.api" /home/corby/jamm-os/app/main.py | head -20
+grep -n "audit_log" /home/corby/jamm-os/app/main.py
 Paste output before touching anything.
 
-Find the block where other routers are imported and registered.
-Add the audit log router following the same pattern as the others.
-
-Import:
-from app.api.audit_log import router as audit_log_router
-
-Register (find the line with app.include_router for another router and
-add this immediately after it):
+Find exactly:
 app.include_router(audit_log_router, prefix="/api/v1")
+
+Replace with:
+app.include_router(audit_log_router)
 
 VERIFY AFTER ACT:
 grep -n "audit_log" /home/corby/jamm-os/app/main.py
-Confirm the import and include_router both appear.
+Confirm prefix="/api/v1" is gone.
 python3 -c "from app.api.audit_log import router; print('OK')"
-Must pass before stopping.
+Restart the backend.
+
+Browser test:
+Navigate to Settings > Audit Log.
+Confirm login entries appear in the table.

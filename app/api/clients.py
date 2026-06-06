@@ -452,10 +452,21 @@ def create_client(
     _: object = Depends(require_staff_or_above),
     current_user: User = Depends(get_current_user),
 ):
-    return client_service.create_client(
+    from app.services.audit_service import write_audit_log
+    new_client = client_service.create_client(
         db=db, payload=payload, firm_id=current_firm.id,
         current_user_id=current_user.id,
     )
+    write_audit_log(
+        db=db,
+        firm_id=current_firm.id,
+        action='client.created',
+        actor_id=current_user.id,
+        actor_type='staff',
+        entity_type='client',
+        entity_id=new_client.id,
+    )
+    return new_client
 
 
 # ---------------------------------------------------------
@@ -468,11 +479,23 @@ def update_client(
     db: Session = Depends(get_db),
     current_firm: Firm = Depends(get_current_firm),
     _: object = Depends(require_staff_or_above),
+    current_user: User = Depends(get_current_user),
 ):
+    from app.services.audit_service import write_audit_log
     client = crud_client.get_client_for_firm(db, client_id, current_firm.id)
     if not client:
         raise HTTPException(status_code=404, detail="Client not found")
-    return crud_client.update_client(db, client, payload)
+    updated = crud_client.update_client(db, client, payload)
+    write_audit_log(
+        db=db,
+        firm_id=current_firm.id,
+        action='client.updated',
+        actor_id=current_user.id,
+        actor_type='staff',
+        entity_type='client',
+        entity_id=client.id,
+    )
+    return updated
 
 
 # ---------------------------------------------------------
@@ -486,9 +509,19 @@ def delete_client(
     _: object = Depends(require_staff_or_above),
     current_user: User = Depends(get_current_user),
 ):
+    from app.services.audit_service import write_audit_log
     result = client_service.delete_client(
         db=db, client_id=client_id, firm_id=current_firm.id,
         current_user_id=current_user.id,
     )
     if result is None:
         raise HTTPException(status_code=404, detail="Client not found")
+    write_audit_log(
+        db=db,
+        firm_id=current_firm.id,
+        action='client.deleted',
+        actor_id=current_user.id,
+        actor_type='staff',
+        entity_type='client',
+        entity_id=client_id,
+    )
