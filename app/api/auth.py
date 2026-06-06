@@ -62,6 +62,11 @@ def login(
         ip_address=_client_ip(request),
         user_agent=request.headers.get("user-agent"),
     )
+    if error == "account_locked":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account temporarily locked due to too many failed login attempts. Try again in 30 minutes.",
+        )
     if error == "invalid_credentials":
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -232,13 +237,17 @@ def reset_password(
     Returns 400 if the token is invalid, expired, or already used.
     On success, all existing sessions for that user are invalidated.
     """
-    success = password_reset_service.reset_password(
+    success, policy_error = password_reset_service.reset_password(
         token=payload.token,
         new_password=payload.new_password,
         db=db,
     )
+    if policy_error:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=policy_error,
+        )
     if not success:
-        from fastapi import HTTPException, status
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid or expired reset token.",

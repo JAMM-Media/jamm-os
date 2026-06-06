@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.security import get_password_hash
+from app.models.firm import Firm
 from app.models.user import User
 from app.services.email_service import EmailService
 
@@ -20,6 +21,18 @@ EXPIRY_HOURS = 1
 
 def _hash_token(raw_token: str) -> str:
     return hashlib.sha256(raw_token.encode()).hexdigest()
+
+
+def validate_password_policy(password: str, policy: dict) -> str | None:
+    if len(password) < policy.get("min_length", 8):
+        return f"Password must be at least {policy.get('min_length', 8)} characters."
+    if policy.get("require_uppercase") and not any(c.isupper() for c in password):
+        return "Password must contain at least one uppercase letter."
+    if policy.get("require_number") and not any(c.isdigit() for c in password):
+        return "Password must contain at least one number."
+    if policy.get("require_special") and not any(not c.isalnum() for c in password):
+        return "Password must contain at least one special character."
+    return None
 
 
 def request_password_reset(email: str, db: Session) -> None:
@@ -60,12 +73,14 @@ def request_password_reset(email: str, db: Session) -> None:
     )
 
 
-def reset_password(token: str, new_password: str, db: Session) -> bool:
+def reset_password(token: str, new_password: str, db: Session) -> tuple[bool, str | None]:
     """
-    Validates the token, hashes the new password with bcrypt, updates
-    the user record, and clears the reset token fields.
+    Validates the token, checks the firm password policy, hashes the new
+    password, updates the user record, and clears the reset token fields.
 
-    Returns True on success, False if the token is invalid or expired.
+    Returns (True, None) on success.
+    Returns (False, None) if the token is invalid or expired.
+    Returns (False, error_message) if the password violates the firm policy.
 
     On success, increments token_version to invalidate all existing
     staff JWTs — forces a fresh login after password reset.
@@ -80,10 +95,15 @@ def reset_password(token: str, new_password: str, db: Session) -> bool:
     user = db.execute(stmt).scalar_one_or_none()
 
     if user is None:
-        return False
+        return False, None
 
-    if len(new_password) < 8:
-        return False
+    firm = db.query(Firm).filter(Firm.id == user.firm_id).first()
+    firm_settings = firm.settings or {} if firm else {}
+    policy = firm_settings.get("password_policy", {})
+
+    policy_error = validate_password_policy(new_password, policy)
+    if policy_error:
+        return False, policy_error
 
     user.hashed_password = get_password_hash(new_password)
     user.password_reset_token_hash = None
@@ -91,4 +111,4 @@ def reset_password(token: str, new_password: str, db: Session) -> bool:
     user.token_version = (user.token_version or 0) + 1
 
     db.commit()
-    return True
+    return True, None

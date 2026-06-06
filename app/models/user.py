@@ -113,6 +113,19 @@ class User(Base):
         default=None,
     )
 
+    failed_login_count: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        nullable=False,
+        server_default="0",
+    )
+
+    locked_until: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        default=None,
+    )
+
     staff_refresh_token_hash: Mapped[Optional[str]] = mapped_column(
         String(64), nullable=True, unique=True, index=True
     )
