@@ -46,6 +46,9 @@ interface NewClientModalProps {
   onClose: () => void
   onAdd: (client: Client) => void
   initialName?: string
+  initialEmail?: string
+  initialPhone?: string
+  initialEntityType?: string
 }
 
 interface FormState {
@@ -71,7 +74,7 @@ function validate(form: FormState): FormErrors {
   return errors
 }
 
-export function NewClientModal({ open, onClose, onAdd, initialName }: NewClientModalProps) {
+export function NewClientModal({ open, onClose, onAdd, initialName, initialEmail, initialPhone, initialEntityType }: NewClientModalProps) {
   const [form, setForm] = useState<FormState>({
     name: initialName ?? '',
     email: '',
@@ -81,8 +84,13 @@ export function NewClientModal({ open, onClose, onAdd, initialName }: NewClientM
   })
 
   useEffect(() => {
-    if (open && initialName) setForm((prev) => ({ ...prev, name: initialName }))
-  }, [open, initialName])
+    if (open) {
+      if (initialName) setForm((prev) => ({ ...prev, name: initialName }))
+      if (initialEmail) setForm((prev) => ({ ...prev, email: initialEmail }))
+      if (initialPhone) setForm((prev) => ({ ...prev, phone: initialPhone }))
+      if (initialEntityType) setForm((prev) => ({ ...prev, entity_type: initialEntityType }))
+    }
+  }, [open, initialName, initialEmail, initialPhone, initialEntityType])
   const [errors, setErrors] = useState<FormErrors>({})
   const [submitting, setSubmitting] = useState(false)
 
