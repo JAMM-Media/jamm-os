@@ -480,3 +480,357 @@ async def import_jobs(
     )
 
     return JobImportResult(created=created, skipped=skipped, warnings=warnings, errors=errors)
+
+
+# ---------------------------------------------------------------------------
+# ENDPOINT 5 -- canopy preview clients
+# ---------------------------------------------------------------------------
+
+@router.post("/canopy/preview-clients", response_model=ClientPreviewResult)
+async def canopy_preview_clients(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    _: object = Depends(require_firm_owner),
+):
+    _validate_csv_extension(file)
+    rows = await _read_csv_rows(file)
+
+    existing_names = {
+        r[0].lower()
+        for r in db.execute(
+            select(Client.name).where(Client.firm_id == current_firm.id)
+        ).all()
+        if r[0]
+    }
+
+    preview_rows: list[ClientPreviewRow] = []
+    for i, row in enumerate(rows, start=2):
+        contact_type = row.get("Contact Type", "").strip()
+        row_warnings: list[str] = []
+
+        if contact_type == "Business":
+            entity_type = "business"
+            name = row.get("Business Name", "").strip()
+        else:
+            entity_type = "individual"
+            if contact_type and contact_type != "Individual":
+                row_warnings.append(f"Unknown Contact Type '{contact_type}' -- defaulted to individual.")
+            first = row.get("First Name", "").strip()
+            last = row.get("Last Name", "").strip()
+            name = f"{first} {last}".strip()
+
+        if not name:
+            preview_rows.append(ClientPreviewRow(
+                row_number=i, name="",
+                status="warning", reason="Could not determine client name.",
+            ))
+            continue
+
+        email = row.get("Email", "") or None
+        tags = row.get("Tags", "") or None
+        state = row.get("State", "") or None
+
+        if name.lower() in existing_names:
+            preview_rows.append(ClientPreviewRow(
+                row_number=i, name=name, email=email,
+                entity_type=entity_type, tags=tags, state=state,
+                status="skip", reason="Client with this name already exists.",
+            ))
+            continue
+
+        reason = " ".join(row_warnings) or None
+        status = "warning" if reason else "import"
+        preview_rows.append(ClientPreviewRow(
+            row_number=i, name=name, email=email,
+            entity_type=entity_type, tags=tags, state=state,
+            status=status, reason=reason,
+        ))
+
+    will_import = sum(1 for r in preview_rows if r.status == "import")
+    will_skip = sum(1 for r in preview_rows if r.status == "skip")
+    warnings = sum(1 for r in preview_rows if r.status == "warning")
+
+    return ClientPreviewResult(
+        total_rows=len(rows),
+        will_import=will_import,
+        will_skip=will_skip,
+        warnings=warnings,
+        rows=preview_rows,
+    )
+
+
+# ---------------------------------------------------------------------------
+# ENDPOINT 6 -- canopy import clients
+# ---------------------------------------------------------------------------
+
+@router.post("/canopy/import-clients", response_model=ClientImportResult)
+async def canopy_import_clients(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    _: object = Depends(require_firm_owner),
+):
+    _validate_csv_extension(file)
+    rows = await _read_csv_rows(file)
+
+    existing_names = {
+        r[0].lower()
+        for r in db.execute(
+            select(Client.name).where(Client.firm_id == current_firm.id)
+        ).all()
+        if r[0]
+    }
+
+    created = 0
+    skipped = 0
+    warnings = 0
+    errors: list[dict] = []
+
+    for i, row in enumerate(rows, start=2):
+        contact_type = row.get("Contact Type", "").strip()
+
+        if contact_type == "Business":
+            entity_type = "business"
+            name = row.get("Business Name", "").strip()
+        else:
+            entity_type = "individual"
+            if contact_type and contact_type != "Individual":
+                warnings += 1
+                errors.append({
+                    "row": i,
+                    "reason": f"Unknown Contact Type '{contact_type}' -- defaulted to individual.",
+                })
+            first = row.get("First Name", "").strip()
+            last = row.get("Last Name", "").strip()
+            name = f"{first} {last}".strip()
+
+        if not name:
+            warnings += 1
+            errors.append({"row": i, "reason": "Could not determine client name."})
+            continue
+
+        if name.lower() in existing_names:
+            skipped += 1
+            continue
+
+        email = row.get("Email", "") or None
+        tags = row.get("Tags", "") or None
+        state = row.get("State", "") or None
+
+        try:
+            new_client = Client(
+                firm_id=current_firm.id,
+                name=name,
+                email=email,
+                entity_type=entity_type,
+                tags=tags,
+                state=state,
+                is_active=True,
+            )
+            db.add(new_client)
+            db.flush()
+            existing_names.add(name.lower())
+            created += 1
+        except Exception as exc:
+            db.rollback()
+            errors.append({"row": i, "reason": f"Database error: {str(exc)}"})
+            continue
+
+    db.commit()
+
+    from app.services.behavioral_log import log_event
+    log_event(
+        firm_id=current_firm.id,
+        event_type="migration.canopy_clients_imported",
+        entity_type="firm",
+        entity_id=current_firm.id,
+        actor_type="staff",
+        metadata={
+            "created": created,
+            "skipped": skipped,
+            "warnings": warnings,
+            "total_rows": len(rows),
+        },
+    )
+
+    return ClientImportResult(created=created, skipped=skipped, warnings=warnings, errors=errors)
+
+
+# ---------------------------------------------------------------------------
+# ENDPOINT 7 -- karbon preview clients
+# ---------------------------------------------------------------------------
+
+@router.post("/karbon/preview-clients", response_model=ClientPreviewResult)
+async def karbon_preview_clients(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    _: object = Depends(require_firm_owner),
+):
+    _validate_csv_extension(file)
+    rows = await _read_csv_rows(file)
+
+    existing_names = {
+        r[0].lower()
+        for r in db.execute(
+            select(Client.name).where(Client.firm_id == current_firm.id)
+        ).all()
+        if r[0]
+    }
+
+    preview_rows: list[ClientPreviewRow] = []
+    for i, row in enumerate(rows, start=2):
+        name = row.get("Name", "").strip()
+        if not name:
+            preview_rows.append(ClientPreviewRow(
+                row_number=i, name="",
+                status="warning", reason="Row skipped: Name is blank.",
+            ))
+            continue
+
+        raw_type = row.get("Type", "").strip()
+        row_warnings: list[str] = []
+        if raw_type == "Organisation":
+            entity_type = "business"
+        elif raw_type == "Person":
+            entity_type = "individual"
+        else:
+            entity_type = "individual"
+            if raw_type:
+                row_warnings.append(f"Unknown Type '{raw_type}' -- defaulted to individual.")
+
+        raw_email = row.get("Email", "").strip()
+        email = (raw_email.split(",")[0].strip() or None) if raw_email else None
+
+        raw_phone = row.get("Phone", "").strip()
+        phone = (raw_phone.split(",")[0].strip() or None) if raw_phone else None
+
+        state = row.get("State/Region", "") or None
+
+        if name.lower() in existing_names:
+            preview_rows.append(ClientPreviewRow(
+                row_number=i, name=name, email=email, phone=phone,
+                entity_type=entity_type, state=state,
+                status="skip", reason="Client with this name already exists.",
+            ))
+            continue
+
+        reason = " ".join(row_warnings) or None
+        status = "warning" if reason else "import"
+        preview_rows.append(ClientPreviewRow(
+            row_number=i, name=name, email=email, phone=phone,
+            entity_type=entity_type, state=state,
+            status=status, reason=reason,
+        ))
+
+    will_import = sum(1 for r in preview_rows if r.status == "import")
+    will_skip = sum(1 for r in preview_rows if r.status == "skip")
+    warnings = sum(1 for r in preview_rows if r.status == "warning")
+
+    return ClientPreviewResult(
+        total_rows=len(rows),
+        will_import=will_import,
+        will_skip=will_skip,
+        warnings=warnings,
+        rows=preview_rows,
+    )
+
+
+# ---------------------------------------------------------------------------
+# ENDPOINT 8 -- karbon import clients
+# ---------------------------------------------------------------------------
+
+@router.post("/karbon/import-clients", response_model=ClientImportResult)
+async def karbon_import_clients(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    _: object = Depends(require_firm_owner),
+):
+    _validate_csv_extension(file)
+    rows = await _read_csv_rows(file)
+
+    existing_names = {
+        r[0].lower()
+        for r in db.execute(
+            select(Client.name).where(Client.firm_id == current_firm.id)
+        ).all()
+        if r[0]
+    }
+
+    created = 0
+    skipped = 0
+    warnings = 0
+    errors: list[dict] = []
+
+    for i, row in enumerate(rows, start=2):
+        name = row.get("Name", "").strip()
+        if not name:
+            warnings += 1
+            errors.append({"row": i, "reason": "Row skipped: Name is blank."})
+            continue
+
+        if name.lower() in existing_names:
+            skipped += 1
+            continue
+
+        raw_type = row.get("Type", "").strip()
+        if raw_type == "Organisation":
+            entity_type = "business"
+        elif raw_type == "Person":
+            entity_type = "individual"
+        else:
+            entity_type = "individual"
+            if raw_type:
+                warnings += 1
+                errors.append({
+                    "row": i,
+                    "reason": f"Unknown Type '{raw_type}' -- defaulted to individual.",
+                })
+
+        raw_email = row.get("Email", "").strip()
+        email = (raw_email.split(",")[0].strip() or None) if raw_email else None
+
+        raw_phone = row.get("Phone", "").strip()
+        phone = (raw_phone.split(",")[0].strip() or None) if raw_phone else None
+
+        state = row.get("State/Region", "") or None
+
+        try:
+            new_client = Client(
+                firm_id=current_firm.id,
+                name=name,
+                email=email,
+                phone=phone,
+                entity_type=entity_type,
+                state=state,
+                is_active=True,
+            )
+            db.add(new_client)
+            db.flush()
+            existing_names.add(name.lower())
+            created += 1
+        except Exception as exc:
+            db.rollback()
+            errors.append({"row": i, "reason": f"Database error: {str(exc)}"})
+            continue
+
+    db.commit()
+
+    from app.services.behavioral_log import log_event
+    log_event(
+        firm_id=current_firm.id,
+        event_type="migration.karbon_clients_imported",
+        entity_type="firm",
+        entity_id=current_firm.id,
+        actor_type="staff",
+        metadata={
+            "created": created,
+            "skipped": skipped,
+            "warnings": warnings,
+            "total_rows": len(rows),
+        },
+    )
+
+    return ClientImportResult(created=created, skipped=skipped, warnings=warnings, errors=errors)

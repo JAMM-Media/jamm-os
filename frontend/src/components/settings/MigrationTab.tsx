@@ -4,7 +4,7 @@
 import { useState, useRef, DragEvent, ChangeEvent } from 'react'
 import { Upload, CheckCircle, AlertTriangle } from 'lucide-react'
 import api from '@/lib/api'
-import { cn } from '@/lib/utils'
+import { cn, formatEntityType } from '@/lib/utils'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -526,6 +526,446 @@ function ClientSection() {
 }
 
 // ---------------------------------------------------------------------------
+// Canopy import section
+// ---------------------------------------------------------------------------
+
+function CanopyImportSection() {
+  const [state, setState] = useState<SectionState>('upload')
+  const [file, setFile] = useState<File | null>(null)
+  const [previewing, setPreviewing] = useState(false)
+  const [importing, setImporting] = useState(false)
+  const [preview, setPreview] = useState<ClientPreviewResult | null>(null)
+  const [result, setResult] = useState<ClientImportResult | null>(null)
+  const [errorMsg, setErrorMsg] = useState<string | null>(null)
+
+  function reset() {
+    setState('upload')
+    setFile(null)
+    setPreview(null)
+    setResult(null)
+    setErrorMsg(null)
+  }
+
+  async function handlePreview() {
+    if (!file) return
+    setPreviewing(true)
+    try {
+      const form = new FormData()
+      form.append('file', file)
+      const res = await api.post('/api/v1/migration/canopy/preview-clients', form, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+      setPreview(res.data)
+      setState('preview')
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Preview failed. Please try again.'
+      setErrorMsg(detail)
+      setState('error')
+    } finally {
+      setPreviewing(false)
+    }
+  }
+
+  async function handleImport() {
+    if (!file) return
+    setImporting(true)
+    try {
+      const form = new FormData()
+      form.append('file', file)
+      const res = await api.post('/api/v1/migration/canopy/import-clients', form, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+      setResult(res.data)
+      setState('success')
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Import failed. Please try again.'
+      setErrorMsg(detail)
+      setState('error')
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div>
+        <p className="text-[13px] font-[500] text-brand dark:text-[#EDEEF0]">Import from Canopy</p>
+        <p className="text-[12px] text-[#6B7280] mt-1">
+          Upload your Canopy contacts export. In Canopy, go to Clients, select all contacts, and export as CSV. JAMM PX reads the Contact Type column automatically -- individuals and businesses are assigned the correct entity type.
+        </p>
+      </div>
+
+      {state === 'upload' && (
+        <div className="flex flex-col gap-3">
+          <DropZone file={file} onFile={setFile} disabled={previewing} />
+          <div className="flex justify-end">
+            <button
+              onClick={handlePreview}
+              disabled={!file || previewing}
+              className="h-8 px-4 text-[13px] font-medium rounded-[6px] bg-brand text-white hover:bg-brand/90 transition-colors disabled:opacity-60 flex items-center gap-2"
+            >
+              {previewing && (
+                <svg className="animate-spin h-3.5 w-3.5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                </svg>
+              )}
+              {previewing ? 'Previewing...' : 'Preview Import'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {state === 'preview' && preview && (
+        <div className="flex flex-col gap-4">
+          <div className="flex items-center gap-2 flex-wrap">
+            <StatPill label="rows found" value={preview.total_rows} variant="default" />
+            <StatPill label="will import" value={preview.will_import} variant="green" />
+            <StatPill label="will skip" value={preview.will_skip} variant="amber" />
+            <StatPill label="warnings" value={preview.warnings} variant="amber" />
+          </div>
+
+          <div className="rounded-modal border border-[0.5px] border-surface-border dark:border-dark-border overflow-hidden overflow-x-auto">
+            <table className="w-full border-collapse text-left">
+              <thead>
+                <tr className="bg-[#EDEEF0] dark:bg-[#252525]">
+                  {['#', 'Name', 'Email', 'Entity Type', 'Status', 'Reason'].map((col) => (
+                    <th key={col} className="px-3 py-2 text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em] whitespace-nowrap">
+                      {col}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {preview.rows.map((row, idx) => (
+                  <tr
+                    key={row.row_number}
+                    className={cn(
+                      'bg-surface-page dark:bg-dark-page',
+                      idx !== preview.rows.length - 1 ? 'border-b border-[0.5px] border-[#D5D8DE] dark:border-dark-card' : '',
+                    )}
+                  >
+                    <td className="px-3 py-2 text-[12px] text-[#6B7280]">{row.row_number}</td>
+                    <td className="px-3 py-2 text-[12px] text-brand dark:text-[#EDEEF0] whitespace-nowrap">{row.name || <span className="text-[#9CA3AF]">blank</span>}</td>
+                    <td className="px-3 py-2 text-[12px] text-[#374151] dark:text-[#9CA3AF]">{row.email ?? ''}</td>
+                    <td className="px-3 py-2 text-[12px] text-[#374151] dark:text-[#9CA3AF]">{row.entity_type ? formatEntityType(row.entity_type) : ''}</td>
+                    <td className="px-3 py-2"><StatusBadge status={row.status} /></td>
+                    <td className="px-3 py-2 text-[12px] text-[#6B7280] max-w-[200px]">{row.reason ?? ''}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="flex justify-end gap-2">
+            <button
+              onClick={reset}
+              disabled={importing}
+              className="h-8 px-4 text-[13px] font-medium rounded-[6px] border border-[0.5px] border-[#C8CDD6] text-[#374151] dark:text-[#EDEEF0] hover:bg-[#F3F4F6] transition-colors disabled:opacity-60"
+            >
+              Start Over
+            </button>
+            <button
+              onClick={handleImport}
+              disabled={importing}
+              className="h-8 px-4 text-[13px] font-medium rounded-[6px] bg-brand text-white hover:bg-brand/90 transition-colors disabled:opacity-60 flex items-center gap-2"
+            >
+              {importing && (
+                <svg className="animate-spin h-3.5 w-3.5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                </svg>
+              )}
+              {importing ? 'Importing...' : 'Confirm Import'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {state === 'success' && result && (
+        <div className="flex flex-col gap-3">
+          <div className="flex items-start gap-2 rounded-[8px] p-3 bg-[#D1FAE5] border border-[#6EE7B7]">
+            <CheckCircle className="w-4 h-4 text-[#065F46] mt-0.5 flex-shrink-0" />
+            <p className="text-[13px] text-[#065F46] font-medium">
+              Import complete -- {result.created} client{result.created !== 1 ? 's' : ''} imported, {result.skipped} skipped.
+            </p>
+          </div>
+          <div className="flex justify-end">
+            <button
+              onClick={reset}
+              className="h-8 px-4 text-[13px] font-medium rounded-[6px] border border-[0.5px] border-[#C8CDD6] text-[#374151] dark:text-[#EDEEF0] hover:bg-[#F3F4F6] transition-colors"
+            >
+              Import Another File
+            </button>
+          </div>
+        </div>
+      )}
+
+      {state === 'error' && (
+        <div className="flex flex-col gap-3">
+          {preview && (
+            <div className="rounded-modal border border-[0.5px] border-surface-border overflow-hidden overflow-x-auto">
+              <table className="w-full border-collapse text-left">
+                <thead>
+                  <tr className="bg-[#EDEEF0]">
+                    {['#', 'Name', 'Email', 'Entity Type', 'Status', 'Reason'].map((col) => (
+                      <th key={col} className="px-3 py-2 text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em] whitespace-nowrap">{col}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {preview.rows.map((row, idx) => (
+                    <tr key={row.row_number} className={cn('bg-surface-page', idx !== preview.rows.length - 1 ? 'border-b border-[0.5px] border-[#D5D8DE]' : '')}>
+                      <td className="px-3 py-2 text-[12px] text-[#6B7280]">{row.row_number}</td>
+                      <td className="px-3 py-2 text-[12px] text-brand whitespace-nowrap">{row.name || <span className="text-[#9CA3AF]">blank</span>}</td>
+                      <td className="px-3 py-2 text-[12px] text-[#374151]">{row.email ?? ''}</td>
+                      <td className="px-3 py-2 text-[12px] text-[#374151]">{row.entity_type ? formatEntityType(row.entity_type) : ''}</td>
+                      <td className="px-3 py-2"><StatusBadge status={row.status} /></td>
+                      <td className="px-3 py-2 text-[12px] text-[#6B7280] max-w-[200px]">{row.reason ?? ''}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <div className="flex items-center gap-2 rounded-[8px] p-3 bg-[#FEE2E2] border border-[#FCA5A5]">
+            <p className="text-[13px] text-[#991B1B]">{errorMsg}</p>
+          </div>
+          <div className="flex justify-end">
+            <button
+              onClick={() => setState(preview ? 'preview' : 'upload')}
+              className="h-8 px-4 text-[13px] font-medium rounded-[6px] bg-brand text-white hover:bg-brand/90 transition-colors"
+            >
+              Try Again
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Karbon import section
+// ---------------------------------------------------------------------------
+
+function KarbonImportSection() {
+  const [state, setState] = useState<SectionState>('upload')
+  const [file, setFile] = useState<File | null>(null)
+  const [previewing, setPreviewing] = useState(false)
+  const [importing, setImporting] = useState(false)
+  const [preview, setPreview] = useState<ClientPreviewResult | null>(null)
+  const [result, setResult] = useState<ClientImportResult | null>(null)
+  const [errorMsg, setErrorMsg] = useState<string | null>(null)
+
+  function reset() {
+    setState('upload')
+    setFile(null)
+    setPreview(null)
+    setResult(null)
+    setErrorMsg(null)
+  }
+
+  async function handlePreview() {
+    if (!file) return
+    setPreviewing(true)
+    try {
+      const form = new FormData()
+      form.append('file', file)
+      const res = await api.post('/api/v1/migration/karbon/preview-clients', form, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+      setPreview(res.data)
+      setState('preview')
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Preview failed. Please try again.'
+      setErrorMsg(detail)
+      setState('error')
+    } finally {
+      setPreviewing(false)
+    }
+  }
+
+  async function handleImport() {
+    if (!file) return
+    setImporting(true)
+    try {
+      const form = new FormData()
+      form.append('file', file)
+      const res = await api.post('/api/v1/migration/karbon/import-clients', form, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+      setResult(res.data)
+      setState('success')
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Import failed. Please try again.'
+      setErrorMsg(detail)
+      setState('error')
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div>
+        <p className="text-[13px] font-[500] text-brand dark:text-[#EDEEF0]">Import from Karbon</p>
+        <p className="text-[12px] text-[#6B7280] mt-1">
+          Upload your Karbon contacts export. In Karbon, go to Contacts, click the cloud icon, and select All contacts. The Type column (Person or Organisation) maps automatically to Individual or Business in JAMM PX.
+        </p>
+      </div>
+
+      {state === 'upload' && (
+        <div className="flex flex-col gap-3">
+          <DropZone file={file} onFile={setFile} disabled={previewing} />
+          <div className="flex justify-end">
+            <button
+              onClick={handlePreview}
+              disabled={!file || previewing}
+              className="h-8 px-4 text-[13px] font-medium rounded-[6px] bg-brand text-white hover:bg-brand/90 transition-colors disabled:opacity-60 flex items-center gap-2"
+            >
+              {previewing && (
+                <svg className="animate-spin h-3.5 w-3.5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                </svg>
+              )}
+              {previewing ? 'Previewing...' : 'Preview Import'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {state === 'preview' && preview && (
+        <div className="flex flex-col gap-4">
+          <div className="flex items-center gap-2 flex-wrap">
+            <StatPill label="rows found" value={preview.total_rows} variant="default" />
+            <StatPill label="will import" value={preview.will_import} variant="green" />
+            <StatPill label="will skip" value={preview.will_skip} variant="amber" />
+            <StatPill label="warnings" value={preview.warnings} variant="amber" />
+          </div>
+
+          <div className="rounded-modal border border-[0.5px] border-surface-border dark:border-dark-border overflow-hidden overflow-x-auto">
+            <table className="w-full border-collapse text-left">
+              <thead>
+                <tr className="bg-[#EDEEF0] dark:bg-[#252525]">
+                  {['#', 'Name', 'Email', 'Entity Type', 'Status', 'Reason'].map((col) => (
+                    <th key={col} className="px-3 py-2 text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em] whitespace-nowrap">
+                      {col}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {preview.rows.map((row, idx) => (
+                  <tr
+                    key={row.row_number}
+                    className={cn(
+                      'bg-surface-page dark:bg-dark-page',
+                      idx !== preview.rows.length - 1 ? 'border-b border-[0.5px] border-[#D5D8DE] dark:border-dark-card' : '',
+                    )}
+                  >
+                    <td className="px-3 py-2 text-[12px] text-[#6B7280]">{row.row_number}</td>
+                    <td className="px-3 py-2 text-[12px] text-brand dark:text-[#EDEEF0] whitespace-nowrap">{row.name || <span className="text-[#9CA3AF]">blank</span>}</td>
+                    <td className="px-3 py-2 text-[12px] text-[#374151] dark:text-[#9CA3AF]">{row.email ?? ''}</td>
+                    <td className="px-3 py-2 text-[12px] text-[#374151] dark:text-[#9CA3AF]">{row.entity_type ? formatEntityType(row.entity_type) : ''}</td>
+                    <td className="px-3 py-2"><StatusBadge status={row.status} /></td>
+                    <td className="px-3 py-2 text-[12px] text-[#6B7280] max-w-[200px]">{row.reason ?? ''}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="flex justify-end gap-2">
+            <button
+              onClick={reset}
+              disabled={importing}
+              className="h-8 px-4 text-[13px] font-medium rounded-[6px] border border-[0.5px] border-[#C8CDD6] text-[#374151] dark:text-[#EDEEF0] hover:bg-[#F3F4F6] transition-colors disabled:opacity-60"
+            >
+              Start Over
+            </button>
+            <button
+              onClick={handleImport}
+              disabled={importing}
+              className="h-8 px-4 text-[13px] font-medium rounded-[6px] bg-brand text-white hover:bg-brand/90 transition-colors disabled:opacity-60 flex items-center gap-2"
+            >
+              {importing && (
+                <svg className="animate-spin h-3.5 w-3.5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                </svg>
+              )}
+              {importing ? 'Importing...' : 'Confirm Import'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {state === 'success' && result && (
+        <div className="flex flex-col gap-3">
+          <div className="flex items-start gap-2 rounded-[8px] p-3 bg-[#D1FAE5] border border-[#6EE7B7]">
+            <CheckCircle className="w-4 h-4 text-[#065F46] mt-0.5 flex-shrink-0" />
+            <p className="text-[13px] text-[#065F46] font-medium">
+              Import complete -- {result.created} client{result.created !== 1 ? 's' : ''} imported, {result.skipped} skipped.
+            </p>
+          </div>
+          <div className="flex justify-end">
+            <button
+              onClick={reset}
+              className="h-8 px-4 text-[13px] font-medium rounded-[6px] border border-[0.5px] border-[#C8CDD6] text-[#374151] dark:text-[#EDEEF0] hover:bg-[#F3F4F6] transition-colors"
+            >
+              Import Another File
+            </button>
+          </div>
+        </div>
+      )}
+
+      {state === 'error' && (
+        <div className="flex flex-col gap-3">
+          {preview && (
+            <div className="rounded-modal border border-[0.5px] border-surface-border overflow-hidden overflow-x-auto">
+              <table className="w-full border-collapse text-left">
+                <thead>
+                  <tr className="bg-[#EDEEF0]">
+                    {['#', 'Name', 'Email', 'Entity Type', 'Status', 'Reason'].map((col) => (
+                      <th key={col} className="px-3 py-2 text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em] whitespace-nowrap">{col}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {preview.rows.map((row, idx) => (
+                    <tr key={row.row_number} className={cn('bg-surface-page', idx !== preview.rows.length - 1 ? 'border-b border-[0.5px] border-[#D5D8DE]' : '')}>
+                      <td className="px-3 py-2 text-[12px] text-[#6B7280]">{row.row_number}</td>
+                      <td className="px-3 py-2 text-[12px] text-brand whitespace-nowrap">{row.name || <span className="text-[#9CA3AF]">blank</span>}</td>
+                      <td className="px-3 py-2 text-[12px] text-[#374151]">{row.email ?? ''}</td>
+                      <td className="px-3 py-2 text-[12px] text-[#374151]">{row.entity_type ? formatEntityType(row.entity_type) : ''}</td>
+                      <td className="px-3 py-2"><StatusBadge status={row.status} /></td>
+                      <td className="px-3 py-2 text-[12px] text-[#6B7280] max-w-[200px]">{row.reason ?? ''}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <div className="flex items-center gap-2 rounded-[8px] p-3 bg-[#FEE2E2] border border-[#FCA5A5]">
+            <p className="text-[13px] text-[#991B1B]">{errorMsg}</p>
+          </div>
+          <div className="flex justify-end">
+            <button
+              onClick={() => setState(preview ? 'preview' : 'upload')}
+              className="h-8 px-4 text-[13px] font-medium rounded-[6px] bg-brand text-white hover:bg-brand/90 transition-colors"
+            >
+              Try Again
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Job section
 // ---------------------------------------------------------------------------
 
@@ -763,6 +1203,21 @@ export default function MigrationTab() {
       </div>
 
       <div className="border-t border-[0.5px] border-[#C8CDD6] dark:border-[#484848] my-6" />
+
+      <div className="bg-[#EDEEF0] dark:bg-[#383838] rounded-[10px] border border-[#C8CDD6] dark:border-[#484848] p-4">
+        <CanopyImportSection />
+      </div>
+
+      <div className="border-t border-[0.5px] border-[#C8CDD6] dark:border-[#484848] my-6" />
+
+      <div className="bg-[#EDEEF0] dark:bg-[#383838] rounded-[10px] border border-[#C8CDD6] dark:border-[#484848] p-4">
+        <KarbonImportSection />
+      </div>
+
+      <div className="border-t border-[0.5px] border-[#C8CDD6] dark:border-[#484848] my-6" />
+
+      <p className="text-[13px] font-[500] text-brand dark:text-[#EDEEF0]">TaxDome Import</p>
+      <p className="text-[12px] text-[#6B7280] mt-1 mb-4">If migrating from TaxDome, import clients first, then jobs. Job matching uses client names.</p>
 
       <div className="bg-[#EDEEF0] dark:bg-[#383838] rounded-[10px] border border-[#C8CDD6] dark:border-[#484848] p-4">
         <ClientSection />
