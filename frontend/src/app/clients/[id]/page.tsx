@@ -45,6 +45,7 @@ const CLIENT_TABS = [
   { key: 'irs-auth', label: 'IRS Authorizations' },
   { key: 'organizer', label: 'Tax Organizer' },
   { key: 'portal', label: 'Portal' },
+  { key: 'emails', label: 'Emails' },
   { key: 'messages', label: 'Messages' },
 ]
 
@@ -125,6 +126,19 @@ function ClientDetailContent() {
   const [messageCompose, setMessageCompose] = useState('')
   const [messageSending, setMessageSending] = useState(false)
 
+  const [clientEmailThreads, setClientEmailThreads] = useState<Array<{
+    thread_id: string
+    subject: string
+    from: string
+    date: string
+    snippet: string
+    unread: boolean
+    client_id: string | null
+    provider: string
+  }>>([])
+  const [emailsLoading, setEmailsLoading] = useState(false)
+  const [emailsNoIntegration, setEmailsNoIntegration] = useState(false)
+
   const { data: client, isLoading: clientLoading, refetch: refetchClient } = useFetch(
     () => clientsApi.get(clientId),
     [clientId]
@@ -177,6 +191,40 @@ function ClientDetailContent() {
       .catch(() => {})
       .finally(() => setMessagesLoading(false))
   }, [activeTab, clientId])
+
+  useEffect(() => {
+    if (activeTab !== 'emails' || !clientId || !client?.email) return
+    setEmailsLoading(true)
+    setEmailsNoIntegration(false)
+    const providers = ['gmail', 'outlook']
+    Promise.allSettled(
+      providers.map((p) => api.get(`/api/v1/inbox/threads?provider=${p}`))
+    ).then((results) => {
+      const allConnected = results.some((r) => r.status === 'fulfilled')
+      if (!allConnected) {
+        setEmailsNoIntegration(true)
+        return
+      }
+      const clientEmail = (client.email ?? '').toLowerCase()
+      const matched: typeof clientEmailThreads = []
+      results.forEach((r, idx) => {
+        if (r.status !== 'fulfilled') return
+        const threads = r.value.data?.threads ?? []
+        threads.forEach((t: {
+          thread_id: string; subject: string; from: string; to: string
+          date: string; snippet: string; unread: boolean; client_id: string | null
+        }) => {
+          const addrs = `${t.from},${t.to}`.toLowerCase()
+          if (addrs.includes(clientEmail)) {
+            matched.push({ ...t, provider: providers[idx] })
+          }
+        })
+      })
+      setClientEmailThreads(matched)
+    }).catch(() => {
+      setEmailsNoIntegration(true)
+    }).finally(() => setEmailsLoading(false))
+  }, [activeTab, clientId, client?.email])
 
   const handleSendMessage = async () => {
     if (!messageCompose.trim() || messageSending) return
@@ -787,6 +835,68 @@ function ClientDetailContent() {
 
         {activeTab === 'portal' && (
           <PortalPreview clientId={clientId} clientName={client?.name ?? ''} />
+        )}
+
+        {activeTab === 'emails' && (
+          <div>
+            {emailsNoIntegration ? (
+              <div className="flex flex-col items-center justify-center py-16 gap-3 text-center">
+                <p className="text-[13px] text-[#374151] dark:text-[#9CA3AF]">
+                  Connect your email in My Integrations to see client email threads.
+                </p>
+                <a
+                  href="/settings?tab=my_integrations"
+                  className="text-[12px] font-medium text-[#4A7FA5] hover:underline"
+                >
+                  Go to My Integrations
+                </a>
+              </div>
+            ) : emailsLoading ? (
+              <div className="space-y-0 animate-pulse">
+                {[...Array(4)].map((_, i) => (
+                  <div key={i} className="px-0 py-3 border-b border-[#C8CDD6] dark:border-[#484848]">
+                    <div className="h-2.5 bg-[#D5D8DE] dark:bg-[#444444] rounded w-2/5 mb-1.5" />
+                    <div className="h-2 bg-[#D5D8DE] dark:bg-[#444444] rounded w-full" />
+                  </div>
+                ))}
+              </div>
+            ) : clientEmailThreads.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-16 gap-2">
+                <p className="text-[13px] font-medium text-brand dark:text-[#EDEEF0]">No email threads found</p>
+                <p className="text-[12px] text-[#6B7280]">
+                  Emails involving this client's address will appear here.
+                </p>
+              </div>
+            ) : (
+              <div className="rounded-modal border border-[0.5px] border-surface-border dark:border-dark-border overflow-hidden">
+                {clientEmailThreads.map((thread, i) => (
+                  <a
+                    key={`${thread.provider}-${thread.thread_id}`}
+                    href={`/inbox?thread_id=${thread.thread_id}&provider=${thread.provider}`}
+                    className={[
+                      'flex items-start gap-3 px-4 py-3 transition-colors bg-surface-page dark:bg-dark-page hover:bg-[#F3F4F6] dark:hover:bg-[#323232]',
+                      i !== clientEmailThreads.length - 1 ? 'border-b border-[0.5px] border-[#D5D8DE] dark:border-dark-card' : '',
+                    ].join(' ')}
+                  >
+                    {thread.unread && (
+                      <div className="w-1.5 h-1.5 rounded-full bg-[#4A7FA5] mt-1.5 flex-shrink-0" />
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-2 mb-0.5">
+                        <span className={`text-[12px] truncate ${thread.unread ? 'font-semibold text-[#1F3148] dark:text-[#EDEEF0]' : 'font-normal text-[#374151] dark:text-[#9CA3AF]'}`}>
+                          {thread.subject || '(no subject)'}
+                        </span>
+                        <span className="text-[11px] text-[#6B7280] flex-shrink-0">
+                          {thread.date ? new Date(thread.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : ''}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-[#6B7280] truncate">{thread.snippet}</p>
+                    </div>
+                  </a>
+                ))}
+              </div>
+            )}
+          </div>
         )}
 
         {activeTab === 'messages' && (
