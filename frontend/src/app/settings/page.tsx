@@ -599,9 +599,13 @@ export default function SettingsPage() {
               if (visibleTabs.length === 0) return null
               return (
                 <div key={section.label} className="border-t border-[#D5D8DE] dark:border-[#484848] mt-1 first:border-t-0 first:mt-0">
-                  <span className="block text-[11px] font-semibold text-[#4B5563] dark:text-[#9CA3AF] px-4 pt-2 pb-1">
-                    {section.label}
-                  </span>
+                  <div className="flex items-center gap-2 px-3 pt-2 pb-1">
+                    <div className="h-px flex-1 bg-[#D5D8DE] dark:bg-[#484848]" />
+                    <span className="text-[10px] font-semibold text-[#6B7280] dark:text-[#6B7280] whitespace-nowrap">
+                      {section.label}
+                    </span>
+                    <div className="h-px flex-1 bg-[#D5D8DE] dark:bg-[#484848]" />
+                  </div>
                   {visibleTabs.map((tab) => (
                     <button
                       key={tab.key}
