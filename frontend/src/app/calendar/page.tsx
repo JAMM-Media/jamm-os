@@ -23,6 +23,8 @@ interface CalEvent {
   type: EventType
   assignedTo?: string | null
   description?: string
+  engagementId?: string | null
+  location?: string | null
 }
 
 interface MySettings {
@@ -186,22 +188,100 @@ interface PillProps {
   fillColor: string
   isOwner: boolean
   isPersonalView: boolean
+  onClick?: (e: React.MouseEvent) => void
 }
 
-function EventPill({ event, borderColor, fillColor, isOwner, isPersonalView }: PillProps) {
+function EventPill({ event, borderColor, fillColor, isOwner, isPersonalView, onClick }: PillProps) {
   const useFill = isOwner && !isPersonalView ? fillColor : 'transparent'
   return (
     <div
-      title={`${event.title} — ${formatDate(event.date)}`}
-      className="text-xs px-1 py-0.5 rounded truncate cursor-default"
+      title={event.title}
+      className="rounded truncate cursor-pointer"
       style={{
-        border: `2px solid ${borderColor}`,
-        backgroundColor: useFill,
-        color: 'inherit',
+        padding: '2px',
+        backgroundColor: borderColor,
         maxWidth: '100%',
       }}
+      onClick={onClick}
     >
-      {event.title}
+      <div
+        className="text-xs px-1 rounded-sm truncate"
+        style={{
+          backgroundColor: useFill !== 'transparent' ? useFill : 'var(--background)',
+          color: 'inherit',
+          lineHeight: '1.4',
+        }}
+      >
+        {event.title}
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Meeting URL extractor
+// ---------------------------------------------------------------------------
+
+function extractJoinUrl(description: string, location: string): string | null {
+  const combined = `${description} ${location}`
+  const patterns = [
+    /https?:\/\/[^\s]*zoom\.us\/[^\s]*/i,
+    /https?:\/\/meet\.google\.com\/[^\s]*/i,
+    /https?:\/\/teams\.microsoft\.com\/[^\s]*/i,
+    /https?:\/\/[^\s]*webex\.com\/[^\s]*/i,
+    /https?:\/\/[^\s]*gotomeeting\.com\/[^\s]*/i,
+  ]
+  for (const pattern of patterns) {
+    const match = combined.match(pattern)
+    if (match) return match[0].replace(/[.,;)>]+$/, '')
+  }
+  return null
+}
+
+// ---------------------------------------------------------------------------
+// Meeting popover
+// ---------------------------------------------------------------------------
+
+function MeetingPopover({ event, pos, onClose }: { event: CalEvent; pos: { x: number; y: number }; onClose: () => void }) {
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose()
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [onClose])
+
+  const joinUrl = extractJoinUrl(event.description ?? '', event.location ?? '')
+
+  return (
+    <div
+      ref={ref}
+      className="fixed z-50 bg-surface-card border border-surface-border rounded-[10px] shadow-lg p-4 w-72"
+      style={{ top: pos.y, left: Math.min(pos.x, window.innerWidth - 300) }}
+    >
+      <div className="flex items-start justify-between gap-2 mb-3">
+        <p className="text-[13px] font-medium text-brand dark:text-[#EDEEF0] leading-snug">{event.title}</p>
+        <button onClick={onClose} className="text-[#6B7280] hover:text-brand flex-shrink-0"><X size={14} /></button>
+      </div>
+      <p className="text-[12px] text-[#6B7280] mb-1">{formatDate(event.date)}</p>
+      {event.location && (
+        <p className="text-[12px] text-[#6B7280] mb-1">{event.location}</p>
+      )}
+      {event.description && !joinUrl && (
+        <p className="text-[12px] text-[#6B7280] line-clamp-3 mb-2">{event.description}</p>
+      )}
+      {joinUrl && (
+        <a
+          href={joinUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-2 flex items-center gap-2 h-8 px-3 rounded-[6px] bg-brand text-white text-[12px] font-medium hover:bg-brand/90 transition-colors w-full justify-center"
+        >
+          Join Meeting
+        </a>
+      )}
     </div>
   )
 }
@@ -226,6 +306,10 @@ export default function CalendarPage() {
   const [newCatName, setNewCatName] = useState('')
   const [newCatColor, setNewCatColor] = useState('#3B82F6')
   const [expandedDay, setExpandedDay] = useState<string | null>(null)
+
+  // Clicked event popover
+  const [clickedEvent, setClickedEvent] = useState<CalEvent | null>(null)
+  const [popoverPos, setPopoverPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 })
 
   // Staff color picker
   const [editingStaffColor, setEditingStaffColor] = useState<string | null>(null)
@@ -266,7 +350,7 @@ export default function CalendarPage() {
     queryKey: ['external-events'],
     queryFn: async () => {
       const { data } = await api.get('/api/v1/calendar/external-events')
-      return data as { events: Array<{ id: string; title: string; start: string; end: string; description: string; type: string }>; provider: string | null }
+      return data as { events: Array<{ id: string; title: string; start: string; end: string; description: string; location: string; type: string }>; provider: string | null }
     },
     retry: false,
   })
@@ -341,6 +425,7 @@ export default function CalendarPage() {
       date: item.effectiveDeadline,
       type: item.deadlineType === 'extended' ? 'extension' : 'deadline',
       assignedTo: item.assignedTo ?? null,
+      engagementId: item.engagementId,
     })
   }
 
@@ -368,6 +453,7 @@ export default function CalendarPage() {
         date: start,
         type: 'meeting',
         description: ev.description,
+        location: ev.location ?? null,
       })
     }
   }
@@ -433,6 +519,33 @@ export default function CalendarPage() {
   }
 
   // ---------------------------------------------------------------------------
+  // Event click handler
+  // ---------------------------------------------------------------------------
+
+  function handleEventClick(ev: CalEvent, e: React.MouseEvent) {
+    e.stopPropagation()
+    if (ev.type === 'deadline' || ev.type === 'extension') {
+      if (ev.engagementId) {
+        window.location.href = `/engagements/${ev.engagementId}`
+      }
+      return
+    }
+    if (ev.type === 'task') {
+      if (ev.engagementId) {
+        window.location.href = `/engagements/${ev.engagementId}`
+      }
+      return
+    }
+    if (ev.type === 'meeting') {
+      const rect = (e.target as HTMLElement).getBoundingClientRect()
+      setPopoverPos({ x: rect.left, y: rect.bottom + 8 })
+      setClickedEvent(clickedEvent?.id === ev.id ? null : ev)
+      return
+    }
+    // holidays: no action
+  }
+
+  // ---------------------------------------------------------------------------
   // Pill rendering helpers
   // ---------------------------------------------------------------------------
 
@@ -449,6 +562,7 @@ export default function CalendarPage() {
           fillColor={fillColor}
           isOwner={isFirmOwner}
           isPersonalView={justMe}
+          onClick={(e) => handleEventClick(ev, e)}
         />
       )
     })
@@ -770,7 +884,7 @@ export default function CalendarPage() {
           </div>
 
           {/* Calendar view */}
-          <div className="flex-1 overflow-hidden flex flex-col">
+          <div className="flex-1 overflow-hidden flex flex-col" onClick={() => setClickedEvent(null)}>
             {view === 'month' && <MonthView />}
             {view === 'week' && <WeekView />}
             {view === 'agenda' && <AgendaView />}
@@ -927,6 +1041,13 @@ export default function CalendarPage() {
           </div>
         </aside>
       </div>
+      {clickedEvent && clickedEvent.type === 'meeting' && (
+        <MeetingPopover
+          event={clickedEvent}
+          pos={popoverPos}
+          onClose={() => setClickedEvent(null)}
+        />
+      )}
     </AppShell>
   )
 }

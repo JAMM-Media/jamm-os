@@ -33,86 +33,196 @@ All models must be imported in migrations/env.py or autogenerate silently misses
 
 ---
 
-PHASE INSTRUCTIONS -- CALENDAR UI FIXES
+PHASE INSTRUCTIONS -- CALENDAR CLICKABLE EVENTS
 
-No migrations. No backend changes. One file only: frontend/src/app/calendar/page.tsx
-
-Read the entire file before making any changes.
+No migrations. Two files: app/api/calendar.py (small update) and frontend/src/app/calendar/page.tsx (main work).
 
 ---
 
-FIX 1 -- Move sidebar to the right
+STEP 1 -- BACKEND: Add location to external events
 
-The current layout is: aside (left, 240px) | main area (flex-1)
-Change to: main area (flex-1) | aside (right, 240px)
+Read app/api/calendar.py
 
-Move the aside element to appear AFTER the main area div in the JSX. Change border-r to border-l on the aside. Everything else about the aside stays identical.
+Find the GET /calendar/external-events endpoint. It currently returns events with: id, title, start, end, description, type.
 
----
+Update to also return location for each event:
 
-FIX 2 -- Fix staff color mismatch
+For Gmail Calendar events:
+- The Google Calendar API event object has a location field at the top level. Add location to the $fields or select param if used, otherwise just read event.get("location", "") from the response.
+- Add "location": event.get("location", "") to each event dict in the response.
 
-The bug: the staffList is fetched including the firm owner. The filter bar then does staffList.filter((s) => s.id !== user?.id) to exclude the firm owner. But staffIndexMap is built from the FULL staffList including the firm owner. So the index used to assign colors to staff members in the filter bar (which excludes the firm owner) is off by one compared to the index used to assign colors to events (which uses staffIndexMap built from the full list).
+For Outlook events:
+- Microsoft Graph returns a location object: location.displayName
+- Add "location": msg.get("location", {}).get("displayName", "") to each event dict.
 
-Fix: Build staffIndexMap from the FILTERED staff list (excluding the firm owner), not the full staffList. This ensures the color assigned to each person in the filter bar matches the color used to fill their events on the calendar.
-
-Find where staffIndexMap is built:
-  const staffIndexMap: Record<string, number> = {}
-  staffList.forEach((s, i) => { staffIndexMap[s.id] = i })
-
-Replace with:
-  const filteredStaffList = staffList.filter((s) => s.id !== user?.id)
-  const staffIndexMap: Record<string, number> = {}
-  filteredStaffList.forEach((s, i) => { staffIndexMap[s.id] = i })
-
-Then update the staff filter bar render to use filteredStaffList instead of staffList.filter((s) => s.id !== user?.id) -- they are now the same list, just reference filteredStaffList directly.
+Update the return shape comment to include location: str.
 
 ---
 
-FIX 3 -- Replace horizontal staff filter bar with dropdown
+STEP 2 -- FRONTEND: Clickable events and meeting popover
 
-Remove the entire horizontal staff filter bar (the div with flex items-center gap-2 px-4 py-1.5 border-b that contains "View:", "Just me" button, and the staff chip row).
+Read frontend/src/app/calendar/page.tsx in full before making changes.
 
-Replace it with a compact dropdown in the TOOLBAR row (the div with flex items-center justify-between px-4 py-2 border-b). Add the staff dropdown between the navigation controls (left side) and the view toggle buttons (right side).
+-- CalEvent interface update --
 
-The dropdown:
-- Trigger button: shows "Just me" when justMe is true, or "X staff selected" when staff are selected. Has a ChevronDown icon. Same style as the view toggle buttons.
-- Dropdown panel: absolute positioned below the trigger, z-50, bg-surface-card border border-surface-border rounded shadow-lg, width 220px, max-height 300px overflow-y-auto
-- Search input at top of panel: placeholder "Search staff...", filters the staff list by name or email
-- Options list:
-  - "Just me" row with a checkmark when justMe is true. Clicking sets justMe=true and clears selectedStaff.
-  - "Select all" row. Clicking sets justMe=false and sets selectedStaff to all filteredStaffList ids.
-  - Divider line
-  - One row per staff member: color swatch (clickable to open inline ColorPicker) + name/email + checkbox. Clicking the row (not the swatch) toggles that staff member in selectedStaff and sets justMe=false.
-- Clicking outside the dropdown closes it. Use a useRef + useEffect with mousedown listener, same pattern as the ColorPicker component already in the file.
-- Add isDropdownOpen state (boolean) and staffSearch state (string) to control the dropdown.
+Add two fields to the CalEvent interface:
+  engagementId?: string | null
+  location?: string | null
 
-Remove the separate staff filter bar div entirely. The dropdown now lives in the toolbar row.
+-- Event data mapping update --
+
+When building allEvents from calendarItems (engagement deadlines/extensions):
+- The item has engagementId available. Add it: engagementId: item.engagementId
+
+When building allEvents from external events:
+- Add location: ev.location ?? null to each external event
+
+-- Click handler --
+
+Add a new state variable:
+  const [clickedEvent, setClickedEvent] = useState<CalEvent | null>(null)
+  const [popoverPos, setPopoverPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 })
+
+Add a handleEventClick function:
+  function handleEventClick(ev: CalEvent, e: React.MouseEvent) {
+    e.stopPropagation()
+    if (ev.type === 'deadline' || ev.type === 'extension') {
+      if (ev.engagementId) {
+        window.location.href = `/engagements/${ev.engagementId}`
+      }
+      return
+    }
+    if (ev.type === 'task') {
+      if (ev.engagementId) {
+        window.location.href = `/engagements/${ev.engagementId}`
+      }
+      return
+    }
+    if (ev.type === 'meeting') {
+      const rect = (e.target as HTMLElement).getBoundingClientRect()
+      setPopoverPos({ x: rect.left, y: rect.bottom + 8 })
+      setClickedEvent(clickedEvent?.id === ev.id ? null : ev)
+      return
+    }
+    // holidays: no action
+  }
+
+-- EventPill component update --
+
+Add onClick prop to EventPill:
+  onClick?: (e: React.MouseEvent) => void
+
+In the EventPill div, add:
+  onClick={onClick}
+  cursor: 'pointer' in the style
+
+-- renderPills update --
+
+Pass the click handler to each EventPill:
+  <EventPill
+    key={ev.id}
+    event={ev}
+    borderColor={borderColor}
+    fillColor={fillColor}
+    isOwner={isFirmOwner}
+    isPersonalView={justMe}
+    onClick={(e) => handleEventClick(ev, e)}
+  />
+
+-- Meeting popover --
+
+Add a MeetingPopover component inside the file:
+
+function MeetingPopover({ event, pos, onClose }: { event: CalEvent; pos: { x: number; y: number }; onClose: () => void }) {
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose()
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [onClose])
+
+  // Extract meeting join URL from description or location
+  // Look for Zoom, Meet, Teams URLs
+  const joinUrl = extractJoinUrl(event.description ?? '', event.location ?? '')
+
+  return (
+    <div
+      ref={ref}
+      className="fixed z-50 bg-surface-card border border-surface-border rounded-[10px] shadow-lg p-4 w-72"
+      style={{ top: pos.y, left: Math.min(pos.x, window.innerWidth - 300) }}
+    >
+      <div className="flex items-start justify-between gap-2 mb-3">
+        <p className="text-[13px] font-medium text-brand dark:text-[#EDEEF0] leading-snug">{event.title}</p>
+        <button onClick={onClose} className="text-[#6B7280] hover:text-brand flex-shrink-0"><X size={14} /></button>
+      </div>
+      <p className="text-[12px] text-[#6B7280] mb-1">{formatDate(event.date)}</p>
+      {event.location && (
+        <p className="text-[12px] text-[#6B7280] mb-1">{event.location}</p>
+      )}
+      {event.description && !joinUrl && (
+        <p className="text-[12px] text-[#6B7280] line-clamp-3 mb-2">{event.description}</p>
+      )}
+      {joinUrl && (
+        
+          href={joinUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-2 flex items-center gap-2 h-8 px-3 rounded-[6px] bg-brand text-white text-[12px] font-medium hover:bg-brand/90 transition-colors w-full justify-center"
+        >
+          Join Meeting
+        </a>
+      )}
+    </div>
+  )
+}
+
+Add extractJoinUrl helper function:
+
+function extractJoinUrl(description: string, location: string): string | null {
+  const combined = `${description} ${location}`
+  const patterns = [
+    /https?:\/\/[^\s]*zoom\.us\/[^\s]*/i,
+    /https?:\/\/meet\.google\.com\/[^\s]*/i,
+    /https?:\/\/teams\.microsoft\.com\/[^\s]*/i,
+    /https?:\/\/[^\s]*webex\.com\/[^\s]*/i,
+    /https?:\/\/[^\s]*gotomeeting\.com\/[^\s]*/i,
+  ]
+  for (const pattern of patterns) {
+    const match = combined.match(pattern)
+    if (match) return match[0].replace(/[.,;)>]+$/, '')
+  }
+  return null
+}
+
+-- Render the popover --
+
+In the main return JSX, just before the closing </AppShell> tag, add:
+  {clickedEvent && clickedEvent.type === 'meeting' && (
+    <MeetingPopover
+      event={clickedEvent}
+      pos={popoverPos}
+      onClose={() => setClickedEvent(null)}
+    />
+  )}
+
+-- Close popover on calendar background click --
+
+On the main calendar area div (the flex-1 overflow-hidden flex flex-col div), add:
+  onClick={() => setClickedEvent(null)}
 
 ---
 
-FIX 4 -- Rename calls to meetings everywhere in the file
-
-Find every occurrence of:
-- 'call' as an EventType value -> change to 'meeting'
-- 'call' in DEFAULT_COLORS -> change key to 'meeting'
-- 'call' in TYPE_LABELS -> change key to 'meeting', value to 'Meetings'
-- 'call' in allDefaultTypes array -> change to 'meeting'
-- type: 'call' in the external events mapping -> change to 'meeting'
-- Any string 'Calls' -> change to 'Meetings'
-- EventType union type: replace 'call' with 'meeting'
-- sidebarFilter default ['deadline'] stays the same -- no call reference there
-
-Make sure every reference to 'call' as an event type key is updated to 'meeting'. Do a thorough search through the entire file.
-
----
-
-DO NOT run migrations. No backend changes. One file only.
+DO NOT run migrations. No schema changes.
 
 After completing confirm:
-- Sidebar is on the right (border-l, appears after main area)
-- staffIndexMap built from filteredStaffList
-- Filter bar replaced with dropdown in toolbar row
-- Dropdown has search, Just me, Select all, and per-staff rows with color swatches
-- All 'call' event type references replaced with 'meeting'
-- TYPE_LABELS shows 'Meetings' not 'Calls'
+- app/api/calendar.py returns location for Gmail and Outlook events
+- CalEvent interface has engagementId and location fields
+- Engagement and task events navigate to /engagements/{id} on click
+- Meeting events open MeetingPopover on click
+- MeetingPopover shows title, date, location, description, and Join Meeting button when URL detected
+- extractJoinUrl handles Zoom, Meet, Teams, Webex, GoToMeeting
+- Holidays have no click action
+- Popover closes on outside click

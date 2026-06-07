@@ -187,6 +187,7 @@ def get_external_events(
                     "start": start_obj.get("dateTime") or start_obj.get("date", ""),
                     "end": end_obj.get("dateTime") or end_obj.get("date", ""),
                     "description": ev.get("description", ""),
+                    "location": ev.get("location", ""),
                     "type": "call",
                 })
             return {"events": events, "provider": "gmail"}
@@ -204,7 +205,7 @@ def get_external_events(
             params = {
                 "startDateTime": today.isoformat(),
                 "endDateTime": window_end.isoformat(),
-                "$select": "id,subject,start,end,bodyPreview",
+                "$select": "id,subject,start,end,bodyPreview,location",
                 "$top": 100,
             }
             resp = http_requests.get(
@@ -225,6 +226,7 @@ def get_external_events(
                     "start": start_obj.get("dateTime", ""),
                     "end": end_obj.get("dateTime", ""),
                     "description": ev.get("bodyPreview", ""),
+                    "location": ev.get("location", {}).get("displayName", ""),
                     "type": "call",
                 })
             return {"events": events, "provider": "outlook"}
