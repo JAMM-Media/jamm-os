@@ -202,10 +202,10 @@ async def send_organizer(
                 f"contact {firm_name}.</p>"
             )
             EmailService._send_raw(
-                to=client.email,
-                subject=f"Your {organizer.tax_year} tax organizer from {current_firm.name}",
-                html_body=html_body,
-                firm_name=current_firm.name,
+                client.email,
+                f"Your {organizer.tax_year} tax organizer from {current_firm.name}",
+                html_body,
+                current_firm.name,
                 reply_to=email_settings.get("reply_to"),
                 display_name=email_settings.get("display_name"),
                 sending_domain=email_settings.get("sending_domain"),
