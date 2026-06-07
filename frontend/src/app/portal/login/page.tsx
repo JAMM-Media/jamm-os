@@ -2,7 +2,6 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
 import { Loader2 } from 'lucide-react'
 
 const inputClass =
@@ -10,48 +9,10 @@ const inputClass =
 const borderNormal = 'border-[#484848]'
 
 export default function PortalLoginPage() {
-  const router = useRouter()
-
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [loginLoading, setLoginLoading] = useState(false)
-  const [loginError, setLoginError] = useState('')
-  const [noPasswordSet, setNoPasswordSet] = useState(false)
-
   const [magicEmail, setMagicEmail] = useState('')
   const [magicLoading, setMagicLoading] = useState(false)
   const [magicSent, setMagicSent] = useState(false)
   const [magicDisabled, setMagicDisabled] = useState(false)
-
-  async function handleLogin(e: React.FormEvent) {
-    e.preventDefault()
-    setLoginError('')
-    setNoPasswordSet(false)
-    setLoginLoading(true)
-    try {
-      const res = await fetch('/api/backend/portal/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-      })
-      const data = await res.json()
-      if (!res.ok) {
-        const detail: string = data.detail ?? ''
-        if (detail.toLowerCase().includes('no password')) {
-          setNoPasswordSet(true)
-        } else {
-          setLoginError(detail || 'Sign in failed. Please try again.')
-        }
-        return
-      }
-      localStorage.setItem('portal_access_token', data.access_token)
-      router.replace('/portal')
-    } catch {
-      setLoginError('Sign in failed. Please try again.')
-    } finally {
-      setLoginLoading(false)
-    }
-  }
 
   async function handleMagicLink(e: React.FormEvent) {
     e.preventDefault()
@@ -59,11 +20,10 @@ export default function PortalLoginPage() {
     setMagicDisabled(true)
     setTimeout(() => setMagicDisabled(false), 60_000)
     try {
-      const target = magicEmail || email
       await fetch('/api/backend/portal/request-magic-link', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: target }),
+        body: JSON.stringify({ email: magicEmail }),
       })
     } catch {
       // never surface errors — always show success
@@ -72,8 +32,6 @@ export default function PortalLoginPage() {
       setMagicSent(true)
     }
   }
-
-  const effectiveMagicEmail = magicEmail || email
 
   return (
     <div
@@ -97,85 +55,10 @@ export default function PortalLoginPage() {
 
         {/* Heading */}
         <p className="text-[16px] font-[500] mb-1" style={{ color: '#EDEEF0' }}>
-          Sign in
+          Sign in to your portal
         </p>
         <p className="text-[12px] mb-6" style={{ color: '#9CA3AF' }}>
-          Access your documents, invoices, and to-do items.
-        </p>
-
-        {/* Password login */}
-        <form onSubmit={handleLogin} className="flex flex-col gap-3">
-          <div className="flex flex-col gap-1">
-            <label className="text-[11px] font-[500]" style={{ color: '#EDEEF0' }}>
-              Email
-            </label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@example.com"
-              required
-              className={`${inputClass} ${borderNormal}`}
-            />
-          </div>
-
-          <div className="flex flex-col gap-1">
-            <label className="text-[11px] font-[500]" style={{ color: '#EDEEF0' }}>
-              Password
-            </label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              className={`${inputClass} ${borderNormal}`}
-            />
-          </div>
-
-          <button
-            type="submit"
-            disabled={loginLoading}
-            className="w-full h-9 rounded-[6px] text-[12px] font-[500] text-white flex items-center justify-center gap-2 disabled:opacity-60"
-            style={{ backgroundColor: '#3A6A94' }}
-          >
-            {loginLoading ? (
-              <>
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                Signing in...
-              </>
-            ) : (
-              'Sign in'
-            )}
-          </button>
-
-          {noPasswordSet && (
-            <p className="text-[11px]" style={{ color: '#E24B4A' }}>
-              No password set yet. Use a magic link below to log in, then set a password in your
-              account settings.
-            </p>
-          )}
-          {loginError && !noPasswordSet && (
-            <p className="text-[11px]" style={{ color: '#E24B4A' }}>
-              {loginError}
-            </p>
-          )}
-        </form>
-
-        {/* Divider */}
-        <div className="flex items-center gap-3 my-5">
-          <div className="flex-1 h-px" style={{ backgroundColor: '#484848' }} />
-          <span className="text-[11px]" style={{ color: '#9CA3AF' }}>
-            or
-          </span>
-          <div className="flex-1 h-px" style={{ backgroundColor: '#484848' }} />
-        </div>
-
-        {/* Magic link section */}
-        <p className="text-[13px] font-[500] mb-1" style={{ color: '#EDEEF0' }}>
-          Get a magic link
-        </p>
-        <p className="text-[11px] mb-3" style={{ color: '#9CA3AF' }}>
-          We&apos;ll email you a one-time link. No password needed.
+          Enter your email and we&apos;ll send you a one-time link.
         </p>
 
         {magicSent ? (
@@ -186,7 +69,7 @@ export default function PortalLoginPage() {
           <form onSubmit={handleMagicLink} className="flex flex-col gap-3">
             <input
               type="email"
-              value={effectiveMagicEmail}
+              value={magicEmail}
               onChange={(e) => setMagicEmail(e.target.value)}
               placeholder="you@example.com"
               required
@@ -208,7 +91,7 @@ export default function PortalLoginPage() {
                   Sending...
                 </>
               ) : (
-                'Send link'
+                'Send magic link'
               )}
             </button>
           </form>
