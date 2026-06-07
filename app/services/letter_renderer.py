@@ -13,6 +13,10 @@ SUPPORTED_VARIABLES: dict[str, str] = {
     "engagement_date": "Date the engagement letter is issued",
     "due_date": "Engagement due date",
     "firm_owner_name": "Name of the firm owner signing the letter",
+    "firm_address": "Firm mailing address",
+    "firm_phone": "Firm phone number",
+    "firm_website": "Firm website URL",
+    "firm_contact_email": "Firm contact email address",
 }
 
 # Minimal page CSS applied when rendering to PDF so the output looks like

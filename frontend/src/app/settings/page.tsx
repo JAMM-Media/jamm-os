@@ -406,6 +406,12 @@ export default function SettingsPage() {
   const [emailDisplayName, setEmailDisplayName] = useState('')
   const [savingEmail, setSavingEmail] = useState(false)
 
+  const [firmAddress, setFirmAddress] = useState('')
+  const [firmPhone, setFirmPhone] = useState('')
+  const [firmWebsite, setFirmWebsite] = useState('')
+  const [firmContactEmail, setFirmContactEmail] = useState('')
+  const [savingContact, setSavingContact] = useState(false)
+
   const [googleReviewUrl, setGoogleReviewUrl] = useState('')
   const [reviewEnabled, setReviewEnabled] = useState(false)
   const [savingReview, setSavingReview] = useState(false)
@@ -496,6 +502,10 @@ export default function SettingsPage() {
       setEmailReplyTo((firmData.settings.email_reply_to as string) ?? '')
       setEmailDisplayName((firmData.settings.email_display_name as string) ?? '')
       setGoogleReviewUrl((firmData.settings.google_review_url as string) ?? '')
+      setFirmAddress((firmData.settings.firm_address as string) ?? '')
+      setFirmPhone((firmData.settings.firm_phone as string) ?? '')
+      setFirmWebsite((firmData.settings.firm_website as string) ?? '')
+      setFirmContactEmail((firmData.settings.firm_contact_email as string) ?? '')
     }
     setReviewEnabled((firmData as (FirmDetails & { feature_flags?: Record<string, unknown> }) | undefined)?.feature_flags?.review_requests_enabled === true)
   }, [firmData])
@@ -512,6 +522,23 @@ export default function SettingsPage() {
       toast.error('Failed to save email settings')
     } finally {
       setSavingEmail(false)
+    }
+  }
+
+  async function handleSaveContactDetails() {
+    setSavingContact(true)
+    try {
+      await api.patch('/users/firm/settings', {
+        firm_address: firmAddress || null,
+        firm_phone: firmPhone || null,
+        firm_website: firmWebsite || null,
+        firm_contact_email: firmContactEmail || null,
+      })
+      toast.success('Contact details saved')
+    } catch {
+      toast.error('Failed to save contact details')
+    } finally {
+      setSavingContact(false)
     }
   }
 
@@ -742,6 +769,72 @@ export default function SettingsPage() {
               <p className="text-[11px] text-[#6B7280]" style={{ marginTop: '8px' }}>
                 To update firm details or change your subscription, contact JAMM PX support.
               </p>
+            )}
+
+            {isFirmOwner && (
+              <div
+                className="bg-surface-card dark:bg-dark-card rounded-[10px] p-4 flex flex-col gap-3 max-w-lg"
+                style={{ marginTop: '12px' }}
+              >
+                <p className="text-[13px] font-medium text-brand dark:text-[#EDEEF0]">
+                  Firm Contact Details
+                </p>
+                <p className="text-[12px] text-[#6B7280]">
+                  This information appears on engagement letters and client-facing documents.
+                </p>
+                <div className={fieldClass}>
+                  <label className={labelClass}>Mailing Address</label>
+                  <input
+                    type="text"
+                    value={firmAddress}
+                    onChange={(e) => setFirmAddress(e.target.value)}
+                    placeholder="123 Main St, Suite 100, Boston, MA 02101"
+                    className={inputClass}
+                  />
+                </div>
+                <div className={fieldClass}>
+                  <label className={labelClass}>Phone Number</label>
+                  <input
+                    type="text"
+                    value={firmPhone}
+                    onChange={(e) => setFirmPhone(e.target.value)}
+                    placeholder="(617) 555-0100"
+                    className={inputClass}
+                  />
+                </div>
+                <div className={fieldClass}>
+                  <label className={labelClass}>Website</label>
+                  <input
+                    type="text"
+                    value={firmWebsite}
+                    onChange={(e) => setFirmWebsite(e.target.value)}
+                    placeholder="https://www.yourfirm.com"
+                    className={inputClass}
+                  />
+                </div>
+                <div className={fieldClass}>
+                  <label className={labelClass}>Contact Email</label>
+                  <input
+                    type="email"
+                    value={firmContactEmail}
+                    onChange={(e) => setFirmContactEmail(e.target.value)}
+                    placeholder="hello@yourfirm.com"
+                    className={inputClass}
+                  />
+                  <span className="text-[11px] text-[#6B7280]">
+                    Appears on documents. For email reply routing use the Email Settings section above.
+                  </span>
+                </div>
+                <div className="flex justify-end">
+                  <button
+                    onClick={handleSaveContactDetails}
+                    disabled={savingContact}
+                    className="h-8 px-3 text-[13px] font-medium rounded-[6px] bg-brand text-white hover:bg-brand/90 transition-colors disabled:opacity-60"
+                  >
+                    {savingContact ? 'Saving...' : 'Save'}
+                  </button>
+                </div>
+              </div>
             )}
 
             {/* Timesheets section */}
