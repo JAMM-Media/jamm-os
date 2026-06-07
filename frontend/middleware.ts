@@ -6,6 +6,7 @@ const PUBLIC_PATHS = [
   '/api/auth/login',
   '/api/auth/logout',
   '/api/auth/me',
+  '/api/auth/magic',
   '/api/backend/auth/request-magic-link',
   '/api/backend/auth/verify-magic-link',
   '/api/backend/auth/refresh',
