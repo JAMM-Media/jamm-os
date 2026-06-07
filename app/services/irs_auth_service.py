@@ -51,10 +51,27 @@ def generate_auth_stub_pdf(
     valid_until_str = valid_until.isoformat() if valid_until else "Indefinite"
     generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
+    logo_url = None
+    firm_settings = firm.settings or {} if firm.settings else {}
+    s3_key = firm_settings.get("portal_logo_s3_key")
+    if s3_key:
+        try:
+            from app.services.s3 import generate_presigned_url
+            logo_url = generate_presigned_url(s3_key)
+        except Exception:
+            pass
+
+    logo_block = (
+        f'<img src="{logo_url}" style="max-height:50px;width:auto;'
+        f'display:block;margin-bottom:8px;" />'
+        if logo_url else
+        f'<h1>{firm.name}</h1>'
+    )
+
     html = f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8">
 <style>
-  body {{ font-family: Arial, sans-serif; font-size: 12px; margin: 40px; color: #1F3148; }}
+  body {{ font-family: Arial, sans-serif; font-size: 12px; margin: 40px; color: #111111; }}
   h1 {{ font-size: 18px; font-weight: bold; margin-bottom: 4px; }}
   h2 {{ font-size: 14px; font-weight: bold; margin-top: 24px; margin-bottom: 8px;
         border-bottom: 1px solid #C8CDD6; padding-bottom: 4px; }}
@@ -64,11 +81,12 @@ def generate_auth_stub_pdf(
   td {{ padding: 6px 8px; vertical-align: top; }}
   td:first-child {{ font-weight: bold; width: 40%; color: #6B7280; }}
   .sig-block {{ border: 1px solid #C8CDD6; padding: 16px; border-radius: 6px; margin-top: 32px; }}
-  .sig-line {{ border-bottom: 1px solid #1F3148; margin-top: 32px; margin-bottom: 4px; }}
+  .sig-line {{ border-bottom: 1px solid #111111; margin-top: 32px; margin-bottom: 4px; }}
   .footer {{ margin-top: 40px; font-size: 10px; color: #9CA3AF; }}
 </style></head>
 <body>
-  <h1>IRS Form {form_type} — {form_name}</h1>
+  {logo_block}
+  <h2 style="margin-top:4px;">IRS Form {form_type} — {form_name}</h2>
   <p style="color:#6B7280;font-size:11px;">Prepared by JAMM PX · {generated_at}</p>
   <div class="stub-banner">
     &#9888; STUB DOCUMENT — Review all information below before signing.

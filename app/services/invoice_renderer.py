@@ -40,6 +40,7 @@ def _build_invoice_html(
     firm: "Firm",
     client: "Client",
     engagement_name: str | None = None,
+    logo_url: str | None = None,
 ) -> str:
     status_val = invoice.status.value if hasattr(invoice.status, "value") else str(invoice.status)
     badge_color = _STATUS_COLORS.get(status_val, "#6b7280")
@@ -73,7 +74,7 @@ def _build_invoice_html(
     if invoice.notes_client_visible:
         notes_section = f"""
         <div style="margin-top:32px;padding:16px;background:#f9fafb;border-radius:6px;border:1px solid #e5e7eb;">
-            <div style="font-weight:600;margin-bottom:6px;color:#1a2e4a;">Notes:</div>
+            <div style="font-weight:600;margin-bottom:6px;color:#111111;">Notes:</div>
             <div style="font-size:14px;color:#374151;">{invoice.notes_client_visible}</div>
         </div>"""
 
@@ -98,12 +99,12 @@ def _build_invoice_html(
 </head>
 <body>
     <!-- HEADER -->
-    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:40px;padding-bottom:24px;border-bottom:3px solid #1a2e4a;">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:40px;padding-bottom:24px;border-bottom:3px solid #111111;">
         <div>
-            <div style="font-size:26px;font-weight:700;color:#1a2e4a;">{firm.name}</div>
+            {'<img src="' + logo_url + '" style="max-height:60px;width:auto;display:block;margin-bottom:4px;" />' if logo_url else f'<div style="font-size:26px;font-weight:700;color:#111111;">{firm.name}</div>'}
         </div>
         <div style="text-align:right;">
-            <div style="font-size:28px;font-weight:700;color:#1a2e4a;letter-spacing:2px;">INVOICE</div>
+            <div style="font-size:28px;font-weight:700;color:#111111;letter-spacing:2px;">INVOICE</div>
             <div style="font-size:16px;color:#6b7280;margin-top:4px;">{invoice.invoice_number}</div>
             <div style="margin-top:8px;">
                 <span style="display:inline-block;padding:3px 12px;border-radius:12px;font-size:12px;font-weight:600;color:#ffffff;background:{badge_color};">{status_val.upper()}</span>
@@ -115,7 +116,7 @@ def _build_invoice_html(
     <div style="display:flex;justify-content:space-between;margin-bottom:32px;">
         <div>
             <div style="font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">Bill To</div>
-            <div style="font-size:16px;font-weight:600;color:#1a2e4a;">{client_name}</div>
+            <div style="font-size:16px;font-weight:600;color:#111111;">{client_name}</div>
             <div style="font-size:14px;color:#6b7280;">{client_email}</div>
         </div>
         <div style="text-align:right;">
@@ -135,7 +136,7 @@ def _build_invoice_html(
     <!-- LINE ITEMS TABLE -->
     <table style="width:100%;border-collapse:collapse;margin-bottom:16px;">
         <thead>
-            <tr style="background:#1a2e4a;color:#ffffff;">
+            <tr style="background:#111111;color:#ffffff;">
                 <th style="padding:12px;text-align:left;font-size:13px;font-weight:600;">Description</th>
                 <th style="padding:12px;text-align:center;font-size:13px;font-weight:600;">Qty</th>
                 <th style="padding:12px;text-align:right;font-size:13px;font-weight:600;">Unit Price</th>
@@ -158,9 +159,9 @@ def _build_invoice_html(
                 <td style="padding:8px 12px;color:#6b7280;font-size:13px;">Tax ({tax_pct:.2f}%)</td>
                 <td style="padding:8px 12px;text-align:right;font-size:13px;">{_fmt_currency(invoice.tax_amount)}</td>
             </tr>
-            <tr style="border-top:2px solid #1a2e4a;">
-                <td style="padding:10px 12px;font-size:16px;font-weight:700;color:#1a2e4a;">Total</td>
-                <td style="padding:10px 12px;text-align:right;font-size:16px;font-weight:700;color:#1a2e4a;">{_fmt_currency(invoice.total_amount)}</td>
+            <tr style="border-top:2px solid #111111;">
+                <td style="padding:10px 12px;font-size:16px;font-weight:700;color:#111111;">Total</td>
+                <td style="padding:10px 12px;text-align:right;font-size:16px;font-weight:700;color:#111111;">{_fmt_currency(invoice.total_amount)}</td>
             </tr>
         </table>
     </div>
@@ -170,7 +171,7 @@ def _build_invoice_html(
     <!-- FOOTER -->
     <div style="margin-top:48px;padding-top:16px;border-top:1px solid #e5e7eb;text-align:center;color:#6b7280;font-size:13px;">
         <div>Thank you for your business.</div>
-        <div style="margin-top:4px;font-weight:600;color:#1a2e4a;">{firm.name}</div>
+        <div style="margin-top:4px;font-weight:600;color:#111111;">{firm.name}</div>
     </div>
 </body>
 </html>"""
@@ -183,6 +184,17 @@ def render_invoice_to_pdf(
     client: "Client",
     engagement_name: str | None = None,
 ) -> bytes:
-    from weasyprint import HTML  # lazy import — requires GTK system libraries at runtime
-    html_content = _build_invoice_html(invoice, firm, client, engagement_name)
+    from weasyprint import HTML
+    firm_settings = firm.settings or {} if firm.settings else {}
+    s3_key = firm_settings.get("portal_logo_s3_key")
+    logo_url = None
+    if s3_key:
+        try:
+            from app.services.s3 import generate_presigned_url
+            logo_url = generate_presigned_url(s3_key)
+        except Exception:
+            pass
+    html_content = _build_invoice_html(
+        invoice, firm, client, engagement_name, logo_url=logo_url
+    )
     return HTML(string=html_content).write_pdf()

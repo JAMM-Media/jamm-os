@@ -23,7 +23,7 @@ SUPPORTED_VARIABLES: dict[str, str] = {
 # a real letter rather than a browser viewport screenshot.
 _PDF_CSS = """
     body {
-        font-family: Georgia, serif;
+        font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
         font-size: 12pt;
         line-height: 1.6;
         margin: 0;
@@ -59,16 +59,27 @@ def validate_context(template_variable_fields: list[str], context: dict) -> list
     return [field for field in template_variable_fields if field not in context]
 
 
-def render_to_pdf(template_body_html: str, context: dict) -> bytes:
-    """
-    Renders the template against context and converts the result to a PDF.
+def render_to_pdf(
+    template_body_html: str,
+    context: dict,
+    firm_settings: dict | None = None,
+) -> bytes:
+    from app.services.s3 import generate_presigned_url
 
-    Steps:
-      1. Replace merge fields via render_template().
-      2. Wrap the rendered fragment in a complete HTML document with print-
-         friendly CSS.
-      3. Convert to PDF bytes using WeasyPrint and return them.
-    """
+    logo_html = ""
+    if firm_settings:
+        s3_key = firm_settings.get("portal_logo_s3_key")
+        if s3_key:
+            try:
+                logo_url = generate_presigned_url(s3_key)
+                logo_html = (
+                    f'<div style="margin-bottom: 8px;">'
+                    f'<img src="{logo_url}" style="max-height: 60px; '
+                    f'width: auto; display: block;" /></div>'
+                )
+            except Exception:
+                pass
+
     rendered_html = render_template(template_body_html, context)
 
     full_document = (
@@ -79,10 +90,11 @@ def render_to_pdf(template_body_html: str, context: dict) -> bytes:
         f"<style>{_PDF_CSS}</style>"
         "</head>"
         "<body>"
+        f"{logo_html}"
         f"{rendered_html}"
         "</body>"
         "</html>"
     )
 
-    from weasyprint import HTML  # lazy import — requires GTK system libraries at runtime
+    from weasyprint import HTML
     return HTML(string=full_document).write_pdf()

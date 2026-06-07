@@ -176,13 +176,17 @@ def _build_billing_detail_html(data: dict) -> str:
 </style>
 </head>
 <body>
-    <div style="margin-bottom:28px;padding-bottom:18px;border-bottom:3px solid #1F3148;">
-        <div style="font-size:22px;font-weight:700;color:#1F3148;">{data['firm_name']}</div>
-        <div style="font-size:16px;font-weight:600;color:#1F3148;margin-top:4px;">Billing Detail</div>
+    <div style="margin-bottom:28px;padding-bottom:18px;border-bottom:3px solid #111111;">
+        {('<img src="' + data['logo_url'] + '" style="max-height:60px;'
+        'width:auto;display:block;margin-bottom:4px;" />')
+        if data.get('logo_url') else
+        ('<div style="font-size:22px;font-weight:700;color:#111111;">'
+        + data['firm_name'] + '</div>')}
+        <div style="font-size:16px;font-weight:600;color:#111111;margin-top:4px;">Billing Detail</div>
         <div style="margin-top:10px;display:flex;gap:32px;">
             <div>
                 <span style="font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:1px;">Client</span>
-                <div style="font-size:14px;font-weight:600;color:#1F3148;">{data['client_name']}</div>
+                <div style="font-size:14px;font-weight:600;color:#111111;">{data['client_name']}</div>
             </div>
             <div>
                 <span style="font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:1px;">Period</span>
@@ -193,7 +197,7 @@ def _build_billing_detail_html(data: dict) -> str:
 
     <table style="width:100%;border-collapse:collapse;">
         <thead>
-            <tr style="background:#1F3148;color:#ffffff;">
+            <tr style="background:#111111;color:#ffffff;">
                 <th style="padding:10px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">Date</th>
                 <th style="padding:10px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">Staff</th>
                 <th style="padding:10px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">Engagement</th>
@@ -208,11 +212,11 @@ def _build_billing_detail_html(data: dict) -> str:
             {entry_rows}
         </tbody>
         <tfoot>
-            <tr style="background:#f9fafb;border-top:2px solid #1F3148;">
-                <td colspan="5" style="padding:10px;font-size:13px;font-weight:700;color:#1F3148;">Total</td>
-                <td style="padding:10px;text-align:right;font-size:13px;font-weight:700;color:#1F3148;">{total_hours_fmt}</td>
+            <tr style="background:#f9fafb;border-top:2px solid #111111;">
+                <td colspan="5" style="padding:10px;font-size:13px;font-weight:700;color:#111111;">Total</td>
+                <td style="padding:10px;text-align:right;font-size:13px;font-weight:700;color:#111111;">{total_hours_fmt}</td>
                 <td style="padding:10px;"></td>
-                <td style="padding:10px;text-align:right;font-size:13px;font-weight:700;color:#1F3148;">{total_amount_fmt}</td>
+                <td style="padding:10px;text-align:right;font-size:13px;font-weight:700;color:#111111;">{total_amount_fmt}</td>
             </tr>
         </tfoot>
     </table>
@@ -244,9 +248,20 @@ def get_billing_detail(
     total_hours = round(sum(e["hours"] for e in entries), 2)
     total_amount = round(sum(e["amount"] for e in entries), 2)
 
+    firm_settings = current_firm.settings or {}
+    s3_key = firm_settings.get("portal_logo_s3_key")
+    logo_url = None
+    if s3_key:
+        try:
+            from app.services.s3 import generate_presigned_url
+            logo_url = generate_presigned_url(s3_key)
+        except Exception:
+            pass
+
     data = {
         "client_name": client.name,
         "firm_name": current_firm.name,
+        "logo_url": logo_url,
         "date_from": str(date_from) if date_from else None,
         "date_to": str(date_to) if date_to else None,
         "entries": entries,

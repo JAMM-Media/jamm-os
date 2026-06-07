@@ -82,7 +82,11 @@ def prepare_and_create_envelope(
     if missing:
         raise MissingContextFieldsError(missing)
 
-    pdf_bytes = letter_renderer.render_to_pdf(template.body_html, context)
+    pdf_bytes = letter_renderer.render_to_pdf(
+        template.body_html,
+        context,
+        firm_settings=firm.settings or {},
+    )
 
     s3_key = (
         f"{firm.id}/letters/{engagement.id}"
