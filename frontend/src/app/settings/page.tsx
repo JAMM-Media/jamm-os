@@ -396,6 +396,15 @@ function DataExportSection() {
   )
 }
 
+function formatPhoneNumber(value: string): string {
+  const digits = value.replace(/\D/g, '').slice(0, 10)
+  if (digits.length === 0) return ''
+  if (digits.length <= 3) return `(${digits}`
+  if (digits.length <= 6)
+    return `(${digits.slice(0, 3)}) ${digits.slice(3)}`
+  return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`
+}
+
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState('profile')
   const { user } = useAuth()
@@ -797,7 +806,7 @@ export default function SettingsPage() {
                   <input
                     type="text"
                     value={firmPhone}
-                    onChange={(e) => setFirmPhone(e.target.value)}
+                    onChange={(e) => setFirmPhone(formatPhoneNumber(e.target.value))}
                     placeholder="(617) 555-0100"
                     className={inputClass}
                   />
