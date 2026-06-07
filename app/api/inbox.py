@@ -51,6 +51,11 @@ def _get_integration(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="No connected email account. Connect Gmail or Outlook in My Integrations.",
         )
+    if integration.firm_disabled:
+        raise HTTPException(
+            status_code=403,
+            detail="Email sync has been disabled for your account by your firm owner.",
+        )
     return integration
 
 

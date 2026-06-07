@@ -112,3 +112,17 @@ def get_integrations_for_user(
             )
         ).scalars().all()
     )
+
+
+def firm_disable_user_integration(db: Session, integration: Integration) -> Integration:
+    integration.firm_disabled = True
+    db.commit()
+    db.refresh(integration)
+    return integration
+
+
+def firm_enable_user_integration(db: Session, integration: Integration) -> Integration:
+    integration.firm_disabled = False
+    db.commit()
+    db.refresh(integration)
+    return integration

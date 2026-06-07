@@ -57,6 +57,176 @@ function ToggleRow({ label, description, checked, onChange, saving }: ToggleRowP
   )
 }
 
+interface StaffIntegration {
+  id: string
+  user_id: string
+  provider: string
+  status: string
+  firm_disabled: boolean
+}
+
+interface StaffUser {
+  id: string
+  first_name: string
+  last_name: string
+  email: string
+}
+
+function StatusPill({ status, firmDisabled }: { status: string; firmDisabled: boolean }) {
+  if (firmDisabled) {
+    return (
+      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">
+        Disabled by firm
+      </span>
+    )
+  }
+  if (status === 'opted_out') {
+    return (
+      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+        Paused by staff
+      </span>
+    )
+  }
+  if (status === 'connected') {
+    return (
+      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
+        Active
+      </span>
+    )
+  }
+  return (
+    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400">
+      Not connected
+    </span>
+  )
+}
+
+function StaffIntegrationControls() {
+  const [staffIntegrations, setStaffIntegrations] = useState<StaffIntegration[]>([])
+  const [staffUsers, setStaffUsers] = useState<StaffUser[]>([])
+  const [loading, setLoading] = useState(true)
+  const [toggling, setToggling] = useState<Record<string, boolean>>({})
+
+  useEffect(() => {
+    async function load() {
+      try {
+        const [intRes, usersRes] = await Promise.all([
+          api.get('/api/v1/integrations/firm/staff'),
+          api.get('/api/v1/users/'),
+        ])
+        setStaffIntegrations(intRes.data)
+        setStaffUsers(usersRes.data)
+      } catch {
+        toast.error('Failed to load staff integrations.')
+      } finally {
+        setLoading(false)
+      }
+    }
+    load()
+  }, [])
+
+  async function handleToggle(userId: string, provider: string, currentlyDisabled: boolean) {
+    const key = `${userId}:${provider}`
+    setToggling((prev) => ({ ...prev, [key]: true }))
+    const action = currentlyDisabled ? 'enable' : 'disable'
+
+    setStaffIntegrations((prev) =>
+      prev.map((i) =>
+        i.user_id === userId && i.provider === provider
+          ? { ...i, firm_disabled: !currentlyDisabled }
+          : i,
+      ),
+    )
+
+    try {
+      await api.post(`/api/v1/integrations/firm/${userId}/${provider}/${action}`)
+    } catch {
+      setStaffIntegrations((prev) =>
+        prev.map((i) =>
+          i.user_id === userId && i.provider === provider
+            ? { ...i, firm_disabled: currentlyDisabled }
+            : i,
+        ),
+      )
+      toast.error('Failed to update integration. Please try again.')
+    } finally {
+      setToggling((prev) => ({ ...prev, [key]: false }))
+    }
+  }
+
+  const userIds = Array.from(new Set(staffIntegrations.map((i) => i.user_id)))
+
+  if (loading) {
+    return (
+      <div className="flex flex-col gap-3">
+        {[1, 2, 3].map((n) => (
+          <div key={n} className="h-12 rounded-lg bg-gray-100 dark:bg-gray-800 animate-pulse" />
+        ))}
+      </div>
+    )
+  }
+
+  if (userIds.length === 0) {
+    return (
+      <p className="text-[12px] text-[#6B7280]">
+        No staff have connected their email yet. Controls will appear here once staff connect their Gmail or Outlook from My Integrations.
+      </p>
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      {userIds.map((uid) => {
+        const user = staffUsers.find((u) => u.id === uid)
+        const gmailInt = staffIntegrations.find((i) => i.user_id === uid && i.provider === 'gmail')
+        const outlookInt = staffIntegrations.find((i) => i.user_id === uid && i.provider === 'outlook')
+        const displayName = user ? `${user.first_name} ${user.last_name}` : 'Unknown'
+        const displayEmail = user?.email ?? ''
+
+        return (
+          <div
+            key={uid}
+            className="flex items-start justify-between gap-4 py-2 border-b border-surface-border dark:border-dark-border last:border-0"
+            style={{ borderBottomWidth: '0.5px' }}
+          >
+            <div className="flex-1 min-w-0">
+              <p className="text-[13px] text-brand dark:text-[#EDEEF0] font-medium truncate">{displayName}</p>
+              <p className="text-[11px] text-[#6B7280] truncate">{displayEmail}</p>
+            </div>
+
+            <div className="flex flex-col gap-2 items-end flex-shrink-0">
+              {(['gmail', 'outlook'] as const).map((provider) => {
+                const intRec = provider === 'gmail' ? gmailInt : outlookInt
+                if (!intRec) return null
+                const key = `${uid}:${provider}`
+                const isToggling = toggling[key] ?? false
+                return (
+                  <div key={provider} className="flex items-center gap-2">
+                    <span className="text-[11px] text-[#6B7280] capitalize">{provider}</span>
+                    <StatusPill status={intRec.status} firmDisabled={intRec.firm_disabled} />
+                    <button
+                      disabled={isToggling}
+                      onClick={() => handleToggle(uid, provider, intRec.firm_disabled)}
+                      className={cn(
+                        'text-[11px] px-2 py-0.5 rounded border transition-colors disabled:opacity-50',
+                        intRec.firm_disabled
+                          ? 'border-brand text-brand dark:border-brand-btn dark:text-brand-btn hover:bg-brand/5'
+                          : 'border-red-400 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/10',
+                      )}
+                    >
+                      {isToggling ? '...' : intRec.firm_disabled ? 'Enable' : 'Disable'}
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 export default function EmailCalendarTab() {
   const { data: firmData } = useFetch<FirmDetails>(
     () => settingsApi.getMyFirm().then((r) => r.data as FirmDetails),
@@ -138,6 +308,16 @@ export default function EmailCalendarTab() {
           onChange={(val) => handleToggle('staff_can_disable_calendar_sync', val, setStaffCanDisableCalendar)}
           saving={saving}
         />
+      </div>
+
+      <div className="bg-surface-card dark:bg-dark-card rounded-[10px] p-4 flex flex-col gap-4 border border-surface-border dark:border-dark-border" style={{ borderWidth: '0.5px' }}>
+        <div>
+          <p className="text-[13px] font-medium text-brand dark:text-[#EDEEF0]">Staff Integration Controls</p>
+          <p className="text-[11px] text-[#6B7280] mt-0.5">
+            Manage email and calendar sync access for individual staff members. This overrides their personal connection -- disabling here prevents them from using their inbox in JAMM PX regardless of whether they have connected.
+          </p>
+        </div>
+        <StaffIntegrationControls />
       </div>
     </div>
   )

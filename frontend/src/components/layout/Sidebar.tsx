@@ -78,11 +78,22 @@ export function Sidebar({ collapsed, onToggle, onConciergeOpen }: SidebarProps) 
     staleTime: 5 * 60 * 1000,
   })
 
+  const { data: myIntegrations } = useQuery({
+    queryKey: ['my-integrations-sidebar'],
+    queryFn: () => api.get('/api/v1/integrations/staff/me').then((r) => r.data),
+    staleTime: 5 * 60 * 1000,
+  })
+
   const emailSyncEnabled = (firmData as { settings?: { email_sync_enabled?: boolean } } | undefined)?.settings?.email_sync_enabled !== false
+
+  const myEmailDisabledByFirm = Array.isArray(myIntegrations) && myIntegrations.some(
+    (i: { provider: string; firm_disabled: boolean }) =>
+      (i.provider === 'gmail' || i.provider === 'outlook') && i.firm_disabled
+  )
 
   const visibleNavItems = navItems.filter((item) => {
     if (item.href === '/dashboard' && user?.role === 'staff') return false
-    if (item.href === '/inbox') return emailSyncEnabled
+    if (item.href === '/inbox') return emailSyncEnabled && !myEmailDisabledByFirm
     return true
   })
 

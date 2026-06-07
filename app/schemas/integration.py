@@ -32,6 +32,7 @@ class IntegrationOut(BaseModel):
     user_id: Optional[uuid.UUID] = None
     provider: str
     status: str
+    firm_disabled: bool = False
     token_expires_at: Optional[datetime] = None
     scopes: Optional[str] = None
     external_account_id: Optional[str] = None

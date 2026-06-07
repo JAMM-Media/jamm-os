@@ -483,6 +483,81 @@ def staff_enable_integration(
 
 
 # -------------------------------------------------------------------
+# POST /integrations/firm/{user_id}/{provider}/disable — Firm owner disables a staff member's integration
+# -------------------------------------------------------------------
+@router.post("/firm/{user_id}/{provider}/disable", response_model=IntegrationOut)
+def firm_disable_staff_integration(
+    user_id: _uuid.UUID,
+    provider: str,
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    _: object = Depends(require_firm_owner),
+):
+    integration = crud_integration.get_user_integration(
+        db, firm_id=current_firm.id, user_id=user_id, provider=provider
+    )
+    if not integration:
+        raise HTTPException(status_code=404, detail="No integration found for this staff member.")
+    result = crud_integration.firm_disable_user_integration(db, integration)
+    write_audit_log(
+        db=db,
+        firm_id=current_firm.id,
+        action="integration.firm_disabled",
+        actor_type="firm_owner",
+        entity_type="integration",
+        entity_id=integration.id,
+        metadata={"provider": provider, "target_user_id": str(user_id)},
+    )
+    return result
+
+
+# -------------------------------------------------------------------
+# POST /integrations/firm/{user_id}/{provider}/enable — Firm owner re-enables a staff member's integration
+# -------------------------------------------------------------------
+@router.post("/firm/{user_id}/{provider}/enable", response_model=IntegrationOut)
+def firm_enable_staff_integration(
+    user_id: _uuid.UUID,
+    provider: str,
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    _: object = Depends(require_firm_owner),
+):
+    integration = crud_integration.get_user_integration(
+        db, firm_id=current_firm.id, user_id=user_id, provider=provider
+    )
+    if not integration:
+        raise HTTPException(status_code=404, detail="No integration found for this staff member.")
+    result = crud_integration.firm_enable_user_integration(db, integration)
+    write_audit_log(
+        db=db,
+        firm_id=current_firm.id,
+        action="integration.firm_enabled",
+        actor_type="firm_owner",
+        entity_type="integration",
+        entity_id=integration.id,
+        metadata={"provider": provider, "target_user_id": str(user_id)},
+    )
+    return result
+
+
+# -------------------------------------------------------------------
+# GET /integrations/firm/staff — List all per-staff integrations for this firm
+# -------------------------------------------------------------------
+@router.get("/firm/staff", response_model=list[IntegrationOut])
+def firm_list_staff_integrations(
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    _: object = Depends(require_firm_owner),
+):
+    return db.execute(
+        select(Integration).where(
+            Integration.firm_id == current_firm.id,
+            Integration.user_id != None,
+        )
+    ).scalars().all()
+
+
+# -------------------------------------------------------------------
 # GET /integrations/ — List all integrations for this firm
 # -------------------------------------------------------------------
 @router.get("/", response_model=list[IntegrationOut])

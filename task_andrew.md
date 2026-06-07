@@ -17,7 +17,7 @@ Architecture rules:
 - Always use SQLAlchemy 2.0 Mapped[] syntax — never Column() style
 - Always use Pydantic v2 — model_dump() and field_validator() only, never .dict() or @validator
 - DATABASE_URL uses postgresql+psycopg:// dialect prefix — never plain postgresql://
-- Never use && to chain commands in PowerShell -- separate every command onto its own line
+- Never use && to chain commands in PowerShell — separate every command onto its own line
 - Never use em dashes anywhere in any string, copy, or comment
 
 ---
@@ -33,270 +33,170 @@ All models must be imported in migrations/env.py or autogenerate silently misses
 
 ---
 
-PHASE INSTRUCTIONS -- EMAIL AND CALENDAR INTELLIGENCE WIRING SESSION 4
+PHASE INSTRUCTIONS -- PER-STAFF INTEGRATION FIRM OVERRIDE
 
-No migrations. Backend only -- adding comprehensive behavioral event firing to the inbox API, calendar API, and signal extraction services. Also enhancing the Gmail and Outlook signal extraction to capture more granular metrics.
-
-The goal: every meaningful email and calendar interaction fires a behavioral event with enough metadata that the intelligence layer can later answer: which clients are going cold, who takes too long to respond, which staff are most responsive, what communication patterns predict good vs bad client outcomes.
-
-Never store email content or addresses in behavioral events. Only metadata.
+Firm owners can disable Gmail or Outlook integration for specific staff members independently of the firm-wide toggle. This is separate from the staff member's own opt-out (status = opted_out). Firm owner control uses a new firm_disabled boolean field.
 
 ---
 
-STEP 1 -- INBOX API: app/api/inbox.py
+STEP 1 -- MIGRATION
 
-Read the file. Currently none of the four endpoints fire any behavioral events. Add fire-and-forget behavioral event firing to each endpoint using threading.Thread with log_event.
+Current head: 0048_user_calendar_settings
 
-Import log_event from app.services.behavioral_log at the top of the file.
+Write a clean manual migration:
+revision = '0049_integration_firm_disabled'
+down_revision = '0048_user_calendar_settings'
 
--- GET /inbox/threads --
+Add one column to the integrations table:
+  firm_disabled: BOOLEAN, nullable=False, server_default='false'
 
-After successfully fetching threads, fire in a background thread:
-  event_type: "email.inbox_viewed"
-  firm_id: current_firm.id
-  actor_type: "staff"
-  actor_id: current_user.id
-  metadata: {
-    "provider": provider,
-    "thread_count": len(result["threads"]),
-    "client_matched_count": sum(1 for t in result["threads"] if t.get("client_id")),
-    "unread_count": sum(1 for t in result["threads"] if t.get("unread")),
-  }
-
--- GET /inbox/threads/{thread_id} --
-
-After fetching the thread, check if any thread participants match a client. Fire two events:
-
-Event 1:
-  event_type: "email.thread_opened"
-  firm_id: current_firm.id
-  actor_type: "staff"
-  actor_id: current_user.id
-  entity_type: "client" if client_match else None
-  entity_id: UUID(client_match["client_id"]) if client_match else None
-  metadata: {
-    "provider": provider,
-    "thread_id": thread_id,
-    "message_count": len(thread["messages"]),
-    "client_matched": bool(client_match),
-    "client_id": client_match["client_id"] if client_match else None,
-  }
-
-Event 2 (only if client matched -- this is the unanswered check):
-  Look at the last message in the thread. If the last message sender is NOT the current user's email (integration.external_account_id), the client sent the last message and the firm has not yet replied.
-  If last message is from the client side: fire event_type: "email.awaiting_firm_reply"
-  metadata: {
-    "provider": provider,
-    "thread_id": thread_id,
-    "client_id": client_match["client_id"],
-    "last_client_message_date": thread["messages"][-1]["date"],
-    "message_count": len(thread["messages"]),
-  }
-
--- POST /inbox/reply --
-
-After successfully sending a reply, fire:
-  event_type: "email.reply_sent"
-  firm_id: current_firm.id
-  actor_type: "staff"
-  actor_id: current_user.id
-  metadata: {
-    "provider": body.provider,
-    "thread_id": body.thread_id,
-    "to_address_domain": body.to.split("@")[-1] if "@" in body.to else None,
-    -- note: never log the full to address, only the domain
-  }
-
--- POST /inbox/compose --
-
-After successfully sending, fire:
-  event_type: "email.composed_sent"
-  firm_id: current_firm.id
-  actor_type: "staff"
-  actor_id: current_user.id
-  metadata: {
-    "provider": body.provider,
-    "to_address_domain": body.to.split("@")[-1] if "@" in body.to else None,
-  }
-
-All events use threading.Thread(target=log_event, kwargs={...}, daemon=True).start() pattern. Never block the response.
+Run alembic upgrade head. Confirm at new head.
 
 ---
 
-STEP 2 -- CALENDAR API: app/api/calendar.py
+STEP 2 -- MODEL: app/models/integration.py
 
-Read the file. Add behavioral event firing.
+Read the file first.
 
--- GET /calendar/external-events --
+Add after the status field:
+    firm_disabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
 
-After fetching events, fire:
-  event_type: "calendar.external_events_synced"
-  firm_id: current_firm.id
-  actor_type: "staff"
-  actor_id: current_user.id
-  metadata: {
-    "provider": result["provider"],
-    "event_count": len(result["events"]),
-    "has_join_links": sum(1 for ev in result["events"] if any(
-      p in (ev.get("description", "") + " " + ev.get("location", ""))
-      for p in ["zoom.us", "meet.google.com", "teams.microsoft.com"]
-    )),
-  }
-
-Import log_event and threading at the top of calendar.py.
+Import Boolean from sqlalchemy if not already imported.
 
 ---
 
-STEP 3 -- GMAIL SIGNAL EXTRACTION: app/services/gmail_signals_service.py
+STEP 3 -- SCHEMA: app/schemas/integration.py
 
-Read the existing extract_gmail_signals function. It currently fires one event per client with: contact_frequency, avg_response_lag_hours, last_contact_date, thread_count.
-
-Enhance to also compute and include in the metadata:
-
-1. firm_initiated_count: number of threads where the firm sent the first message
-2. client_initiated_count: number of threads where the client sent the first message
-3. unanswered_count: number of threads where the last message is from the client (firm has not replied)
-4. max_response_lag_hours: the single longest response lag observed across all threads (not just average)
-5. min_response_lag_hours: the fastest response time observed
-6. threads_with_no_response: threads where the firm never replied at all
-
-Add these to the existing metadata dict in the log_event call. The computation requires looking at thread message order -- which is already being done when computing avg_response_lag_hours. Extend that logic to also track:
-
-For each thread:
-- first_sender_is_firm: bool -- whether firm_email appears as sender of the first message
-- last_sender_is_client: bool -- whether the last message sender is NOT the firm email
-- had_any_reply: bool -- whether there was at least one back-and-forth exchange
-
-Add a second behavioral event per client for threads where last_sender_is_client is True:
-  event_type: "email.unanswered_client_thread"
-  firm_id: firm_id
-  entity_type: "client"
-  entity_id: client_id
-  actor_type: "system"
-  metadata: {
-    "thread_count": number of unanswered threads for this client,
-    "last_client_message_date": most recent date among unanswered threads,
-    "provider": "gmail",
-  }
-
-Fire this only if unanswered_count > 0 for that client.
+Read the file. Add to IntegrationOut:
+  firm_disabled: bool = False
+  user_id: Optional[uuid.UUID] = None  -- add if not already present from session 1
 
 ---
 
-STEP 4 -- OUTLOOK SIGNAL EXTRACTION: app/services/outlook_signals_service.py
+STEP 4 -- CRUD: app/crud/integration.py
 
-Read the existing extract_outlook_signals function. Apply the exact same enhancements as Step 3 -- same six new metrics, same unanswered thread detection logic, same second behavioral event for unanswered threads.
+Read the file. Add two new functions:
 
-The Outlook service uses Microsoft Graph message data with from.emailAddress.address for sender detection instead of raw headers. Adapt the logic accordingly.
+def firm_disable_user_integration(db: Session, integration: Integration) -> Integration:
+    integration.firm_disabled = True
+    db.commit()
+    db.refresh(integration)
+    return integration
 
----
-
-STEP 5 -- FRONTEND: Client profile Emails tab behavioral events
-
-Read frontend/src/app/clients/[id]/page.tsx
-
-The Emails tab already exists. Add two fire-and-forget API calls:
-
-1. When the emails tab becomes active (in the useEffect that fires when activeTab === 'emails'), after the data fetch completes, call:
-   api.post('/api/v1/inbox/events', { event_type: 'client.emails_tab_viewed', client_id: clientId })
-   Use .catch(() => {}) -- fire and forget, never block.
-
-2. When a thread item is clicked (the <a> tag that navigates to /inbox?thread_id=...), add an onClick that fires:
-   api.post('/api/v1/inbox/events', { event_type: 'client.email_thread_clicked', client_id: clientId, thread_id: thread.thread_id, provider: thread.provider })
-   Use .catch(() => {}) -- fire and forget.
+def firm_enable_user_integration(db: Session, integration: Integration) -> Integration:
+    integration.firm_disabled = False
+    db.commit()
+    db.refresh(integration)
+    return integration
 
 ---
 
-STEP 6 -- BACKEND: Simple client-side event receiver endpoint
+STEP 5 -- BACKEND: New firm-owner endpoints in app/api/integrations.py
 
-Add to app/api/inbox.py:
+Read the file. Add two new endpoints:
 
-POST /inbox/events
-Requires get_current_user. Accepts any event dict from the frontend.
-Body: { event_type: str, client_id: str | None, thread_id: str | None, provider: str | None }
+-- POST /integrations/firm/{user_id}/{provider}/disable --
+Requires require_firm_owner.
+Looks up the integration by firm_id + user_id (from path) + provider.
+If not found: return 404 "No integration found for this staff member."
+Calls crud_integration.firm_disable_user_integration(db, integration).
+Fires audit log: action="integration.firm_disabled", entity_type="integration", entity_id=integration.id, metadata={"provider": provider, "target_user_id": str(user_id)}
+Returns IntegrationOut.
 
-Validates that event_type starts with "client." or "email." to prevent abuse.
-Fires the event via log_event with firm_id from current_firm, actor_id from current_user.id.
-Returns 200.
+-- POST /integrations/firm/{user_id}/{provider}/enable --
+Same pattern. Calls firm_enable_user_integration.
+Fires audit log: action="integration.firm_enabled"
+Returns IntegrationOut.
 
-This lets the frontend fire behavioral events for UI interactions (tab views, clicks) without needing dedicated backend endpoints for each.
-
----
-
-STEP 7 -- MORNING BRIEFING QUERY: app/services/morning_briefing_service.py (new file)
-
-Create this service now even though the morning briefing UI is not yet built. The service reads from the behavioral_events table to produce the signals that will eventually power the morning briefing.
-
-The service has one public function:
-
-def get_morning_briefing_signals(firm_id: UUID, db: Session) -> dict:
-    """
-    Reads behavioral event history to produce actionable signals for the morning briefing.
-    Returns a dict of signal categories, each with a list of items sorted by urgency.
-    This function is read-only -- it never writes to the database.
-    """
-
-The function queries the behavioral_events table for events in the last 30 days for this firm.
-
-Returns:
-{
-  "clients_going_cold": [
-    -- clients where last_contact_date in gmail/outlook signals is 30+ days ago
-    -- source: gmail.signals_extracted and outlook.signals_extracted events
-    -- fields per item: client_id, client_name (join to clients table), last_contact_date, days_since_contact
-    -- sorted by days_since_contact DESC (most neglected first)
-    -- max 10 items
-  ],
-  "unanswered_client_messages": [
-    -- clients with email.unanswered_client_thread events in last 7 days
-    -- fields per item: client_id, client_name, unanswered_count, last_client_message_date
-    -- sorted by last_client_message_date ASC (oldest unanswered first)
-    -- max 10 items
-  ],
-  "slow_response_clients": [
-    -- clients where avg_response_lag_hours > firm average across all clients
-    -- source: gmail.signals_extracted metadata
-    -- fields per item: client_id, client_name, avg_response_lag_hours, firm_average_hours
-    -- sorted by avg_response_lag_hours DESC
-    -- max 5 items
-  ],
-  "engagement_deadlines_today": [
-    -- engagements with effective deadline = today
-    -- query directly from Engagement table (not behavioral events)
-    -- fields per item: engagement_id, engagement_name, client_name, deadline_type
-  ],
-  "engagement_deadlines_this_week": [
-    -- engagements with effective deadline within next 7 days
-    -- same source
-    -- max 10 items
-  ],
-  "staff_email_activity": {
-    -- aggregate email activity stats for the firm in last 7 days
-    -- source: email.reply_sent and email.composed_sent events
-    -- fields: total_replies_sent, total_composed_sent, active_staff_count (distinct actor_ids)
-  }
-}
-
-Use SQLAlchemy 2.0 select() syntax throughout. Never use raw SQL strings.
-All queries are scoped to firm_id.
-Return empty lists/dicts for any category where no data exists -- never return None.
-
-Add a GET /morning-briefing endpoint in a new file app/api/morning_briefing.py:
-  Requires manager_or_above role.
-  Calls get_morning_briefing_signals(current_firm.id, db).
-  Returns the dict directly.
-  Register in main.py with prefix="/api/v1".
+-- GET /integrations/firm/staff --
+Requires require_firm_owner.
+Returns all per-staff integrations for the firm (user_id is not null).
+Calls: db.execute(select(Integration).where(Integration.firm_id == current_firm.id, Integration.user_id != None)).scalars().all()
+Returns list[IntegrationOut].
 
 ---
 
-DO NOT run migrations. No schema changes.
+STEP 6 -- INBOX API: Respect firm_disabled
+
+Read app/api/inbox.py. In the _get_integration helper function that looks up the integration, after finding the integration record, add a check:
+
+If integration.firm_disabled is True, raise HTTPException(status_code=403, detail="Email sync has been disabled for your account by your firm owner.")
+
+This means if a firm owner disables a staff member's inbox, that staff member gets a clear error when trying to use it rather than a confusing failure.
+
+---
+
+STEP 7 -- FRONTEND: Per-staff controls in EmailCalendarTab
+
+Read frontend/src/components/settings/EmailCalendarTab.tsx in full.
+
+The tab currently shows four firm-wide toggles. Add a new section below them: "Staff Email Integration Controls".
+
+This section:
+1. On mount, fetches GET /api/v1/integrations/firm/staff to get all per-staff integrations
+2. Also fetches GET /api/v1/users/ to get the staff list with names
+3. Groups integrations by user_id, showing one row per staff member who has at least one integration
+
+Staff member row layout:
+- Staff name and email (from users list)
+- Two status pills: one for Gmail, one for Outlook
+  - If no integration record exists for that provider: gray pill "Not connected"
+  - If integration exists and firm_disabled=false and status=connected: green pill "Active"
+  - If integration exists and status=opted_out: amber pill "Paused by staff"
+  - If integration exists and firm_disabled=true: red pill "Disabled by firm"
+- Two toggle buttons per provider (Gmail / Outlook):
+  - If firm_disabled=false: show "Disable" button (ghost, small, red text on hover)
+  - If firm_disabled=true: show "Enable" button (ghost, small, brand color)
+  - If no integration exists for that provider: show nothing (staff hasn't connected yet)
+  - Disable calls POST /api/v1/integrations/firm/{user_id}/{provider}/disable
+  - Enable calls POST /api/v1/integrations/firm/{user_id}/{provider}/enable
+  - Optimistic update -- toggle immediately, revert on error with toast
+
+Section heading: "Staff Integration Controls"
+Subtext: "Manage email and calendar sync access for individual staff members. This overrides their personal connection -- disabling here prevents them from using their inbox in JAMM PX regardless of whether they have connected."
+
+Empty state (no staff have connected anything yet): "No staff have connected their email yet. Controls will appear here once staff connect their Gmail or Outlook from My Integrations."
+
+Loading state: skeleton rows.
+
+Style: same card pattern as the rest of the tab. Separate card below the four toggles with a divider between them.
+
+---
+
+STEP 8 -- SIDEBAR: Respect firm_disabled
+
+Read frontend/src/components/layout/Sidebar.tsx.
+
+The sidebar currently hides Inbox when email_sync_enabled is false (firm-wide). Extend this to also hide Inbox for the current user if their integration is firm_disabled.
+
+The sidebar already fetches firm settings via useQuery. Add a second query:
+
+const { data: myIntegrations } = useQuery({
+  queryKey: ['my-integrations-sidebar'],
+  queryFn: () => api.get('/api/v1/integrations/staff/me').then((r) => r.data),
+  staleTime: 5 * 60 * 1000,
+})
+
+const myEmailDisabledByFirm = Array.isArray(myIntegrations) && myIntegrations.some(
+  (i: { provider: string; firm_disabled: boolean }) =>
+    (i.provider === 'gmail' || i.provider === 'outlook') && i.firm_disabled
+)
+
+Update the visibleNavItems filter:
+if (item.href === '/inbox') return emailSyncEnabled && !myEmailDisabledByFirm
+
+---
+
+DO NOT skip the migration. Requires alembic upgrade head on the droplet.
 
 After completing confirm:
-- app/api/inbox.py fires email.inbox_viewed, email.thread_opened, email.awaiting_firm_reply, email.reply_sent, email.composed_sent
-- app/api/inbox.py has POST /inbox/events endpoint
-- app/api/calendar.py fires calendar.external_events_synced
-- gmail_signals_service.py fires enhanced metadata + email.unanswered_client_thread
-- outlook_signals_service.py same enhancements
-- frontend client profile fires client.emails_tab_viewed and client.email_thread_clicked
-- app/services/morning_briefing_service.py exists with get_morning_briefing_signals
-- app/api/morning_briefing.py exists with GET /morning-briefing endpoint registered in main.py
+- Migration 0049 exists with firm_disabled boolean on integrations
+- Integration model has firm_disabled field
+- IntegrationOut schema has firm_disabled field
+- Two new CRUD functions: firm_disable_user_integration, firm_enable_user_integration
+- Three new endpoints: POST /integrations/firm/{user_id}/{provider}/disable, POST .../enable, GET /integrations/firm/staff
+- _get_integration in inbox.py returns 403 when firm_disabled is true
+- EmailCalendarTab has Staff Integration Controls section with per-staff disable/enable
+- Sidebar hides Inbox when firm_disabled is true for current user's integration

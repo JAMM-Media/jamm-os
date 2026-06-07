@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import String, Text, DateTime, ForeignKey, UniqueConstraint, func
+from sqlalchemy import Boolean, String, Text, DateTime, ForeignKey, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -48,6 +48,10 @@ class Integration(Base):
 
     # "connected", "disconnected", "error"
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="disconnected")
+
+    firm_disabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
 
     encrypted_access_token: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     encrypted_refresh_token: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
