@@ -80,5 +80,5 @@ def delete_template(
     db: Session,
     template: EngagementLetterTemplate,
 ) -> None:
-    db.delete(template)
+    template.is_active = False
     db.commit()
