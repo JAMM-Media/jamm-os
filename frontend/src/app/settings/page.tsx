@@ -284,7 +284,7 @@ const TABS = [
 
 const SECTIONS = [
   { label: 'Account', keys: ['my_integrations', 'profile', 'security'] },
-  { label: 'Firm', keys: ['firm', 'team', 'automations', 'fee_schedule'] },
+  { label: 'Firm Settings', keys: ['firm', 'team', 'automations', 'fee_schedule'] },
   { label: 'Portal', keys: ['portal_branding', 'portal_domain'] },
   { label: 'Email', keys: ['sending_domain', 'email_calendar'] },
   { label: 'Data', keys: ['migration'] },
@@ -599,7 +599,7 @@ export default function SettingsPage() {
               if (visibleTabs.length === 0) return null
               return (
                 <div key={section.label}>
-                  <span className="block text-[10px] uppercase tracking-wider text-[#6B7280] px-4 pt-3 pb-1">
+                  <span className="block text-[11px] font-semibold uppercase tracking-wider text-[#4B5563] dark:text-[#9CA3AF] px-4 pt-3 pb-1">
                     {section.label}
                   </span>
                   {visibleTabs.map((tab) => (
@@ -610,7 +610,7 @@ export default function SettingsPage() {
                         'w-full text-left h-9 px-4 text-[13px] transition-colors',
                         activeTab === tab.key
                           ? 'text-brand dark:text-[#4A7FA5] font-medium bg-white/30 dark:bg-white/10 border-l-2 border-[#1F3148] dark:border-[#4A7FA5]'
-                          : 'text-[#6B7280] hover:text-brand dark:hover:text-[#EDEEF0] hover:bg-[#E4E6EA] dark:hover:bg-[#2D2D2D]'
+                          : 'text-[#4B5563] dark:text-[#C4C9D4] hover:text-brand dark:hover:text-[#EDEEF0] hover:bg-[#E4E6EA] dark:hover:bg-[#2D2D2D]'
                       )}
                     >
                       {tab.label}
