@@ -598,8 +598,8 @@ export default function SettingsPage() {
               )
               if (visibleTabs.length === 0) return null
               return (
-                <div key={section.label}>
-                  <span className="block text-[11px] font-semibold uppercase tracking-wider text-[#4B5563] dark:text-[#9CA3AF] px-4 pt-3 pb-1">
+                <div key={section.label} className="border-t border-[#D5D8DE] dark:border-[#484848] mt-1 first:border-t-0 first:mt-0">
+                  <span className="block text-[11px] font-semibold text-[#4B5563] dark:text-[#9CA3AF] px-4 pt-2 pb-1">
                     {section.label}
                   </span>
                   {visibleTabs.map((tab) => (
