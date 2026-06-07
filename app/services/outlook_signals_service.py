@@ -181,18 +181,25 @@ def extract_outlook_signals(firm_id: UUID, db: Session) -> dict:
                 last_ts.date().isoformat() if last_ts else None
             )
 
+            first_sender_is_firm = bool(sorted_msgs) and sorted_msgs[0][1] == firm_email
+            last_sender_is_client = bool(sorted_msgs) and sorted_msgs[-1][1] != firm_email
+            had_any_reply = len(sorted_msgs) >= 2 and any(
+                sorted_msgs[i][1] != sorted_msgs[i + 1][1]
+                for i in range(len(sorted_msgs) - 1)
+            )
+
             response_lag_hours: Optional[float] = None
+            thread_lag_values: list[float] = []
             if len(sorted_msgs) >= 2:
-                lag_values: list[float] = []
                 for i in range(len(sorted_msgs) - 1):
                     ts_a, addr_a = sorted_msgs[i]
                     ts_b, addr_b = sorted_msgs[i + 1]
                     a_is_firm = addr_a == firm_email
                     b_is_firm = addr_b == firm_email
                     if a_is_firm != b_is_firm:
-                        lag_values.append((ts_b - ts_a).total_seconds() / 3600.0)
-                if lag_values:
-                    response_lag_hours = sum(lag_values) / len(lag_values)
+                        thread_lag_values.append((ts_b - ts_a).total_seconds() / 3600.0)
+                if thread_lag_values:
+                    response_lag_hours = sum(thread_lag_values) / len(thread_lag_values)
 
             del msg_data
 
@@ -201,6 +208,10 @@ def extract_outlook_signals(firm_id: UUID, db: Session) -> dict:
                     "thread_depth": thread_depth,
                     "last_contact_date": last_contact_date,
                     "response_lag_hours": response_lag_hours,
+                    "lag_values": thread_lag_values,
+                    "first_sender_is_firm": first_sender_is_firm,
+                    "last_sender_is_client": last_sender_is_client,
+                    "had_any_reply": had_any_reply,
                 }
             )
             threads_processed += 1
@@ -236,6 +247,15 @@ def extract_outlook_signals(firm_id: UUID, db: Session) -> dict:
         ]
         agg_last_contact: Optional[str] = max(date_vals) if date_vals else None
 
+        all_lag_vals = [lag for t in thread_list for lag in t.get("lag_values", [])]
+        max_response_lag_hours: Optional[float] = max(all_lag_vals) if all_lag_vals else None
+        min_response_lag_hours: Optional[float] = min(all_lag_vals) if all_lag_vals else None
+
+        firm_initiated_count = sum(1 for t in thread_list if t["first_sender_is_firm"])
+        client_initiated_count = sum(1 for t in thread_list if not t["first_sender_is_firm"])
+        unanswered_count = sum(1 for t in thread_list if t["last_sender_is_client"])
+        threads_with_no_response = sum(1 for t in thread_list if not t["had_any_reply"])
+
         log_event(
             event_type="outlook.signals_extracted",
             firm_id=firm_id,
@@ -247,8 +267,36 @@ def extract_outlook_signals(firm_id: UUID, db: Session) -> dict:
                 "avg_response_lag_hours": avg_response_lag_hours,
                 "last_contact_date": agg_last_contact,
                 "thread_count": contact_frequency,
+                "firm_initiated_count": firm_initiated_count,
+                "client_initiated_count": client_initiated_count,
+                "unanswered_count": unanswered_count,
+                "max_response_lag_hours": max_response_lag_hours,
+                "min_response_lag_hours": min_response_lag_hours,
+                "threads_with_no_response": threads_with_no_response,
             },
         )
+
+        if unanswered_count > 0:
+            unanswered_threads = [t for t in thread_list if t["last_sender_is_client"]]
+            unanswered_dates = [
+                t["last_contact_date"]
+                for t in unanswered_threads
+                if t["last_contact_date"] is not None
+            ]
+            last_client_message_date: Optional[str] = max(unanswered_dates) if unanswered_dates else None
+            log_event(
+                event_type="email.unanswered_client_thread",
+                firm_id=firm_id,
+                entity_type="client",
+                entity_id=client_id,
+                actor_type="system",
+                metadata={
+                    "thread_count": unanswered_count,
+                    "last_client_message_date": last_client_message_date,
+                    "provider": "outlook",
+                },
+            )
+
         clients_with_signals += 1
 
     # 7. Return summary

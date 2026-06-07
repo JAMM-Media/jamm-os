@@ -1,6 +1,7 @@
 # app/api/calendar.py
 
 import re
+import threading
 from datetime import date, timedelta, timezone, datetime
 from typing import Optional
 
@@ -16,6 +17,7 @@ from app.dependencies.tenant import get_current_firm
 from app.models.firm import Firm
 from app.models.integration import Integration
 from app.models.user import User
+from app.services.behavioral_log import log_event
 
 router = APIRouter(prefix="/calendar", tags=["calendar"])
 
@@ -190,7 +192,28 @@ def get_external_events(
                     "location": ev.get("location", ""),
                     "type": "call",
                 })
-            return {"events": events, "provider": "gmail"}
+            result = {"events": events, "provider": "gmail"}
+            threading.Thread(
+                target=log_event,
+                kwargs={
+                    "event_type": "calendar.external_events_synced",
+                    "firm_id": current_firm.id,
+                    "actor_type": "staff",
+                    "actor_id": current_user.id,
+                    "metadata": {
+                        "provider": result["provider"],
+                        "event_count": len(result["events"]),
+                        "has_join_links": sum(
+                            1 for ev in result["events"] if any(
+                                p in (ev.get("description", "") + " " + ev.get("location", ""))
+                                for p in ["zoom.us", "meet.google.com", "teams.microsoft.com"]
+                            )
+                        ),
+                    },
+                },
+                daemon=True,
+            ).start()
+            return result
         except Exception:
             return {"events": [], "provider": "gmail"}
 
@@ -229,7 +252,28 @@ def get_external_events(
                     "location": ev.get("location", {}).get("displayName", ""),
                     "type": "call",
                 })
-            return {"events": events, "provider": "outlook"}
+            result = {"events": events, "provider": "outlook"}
+            threading.Thread(
+                target=log_event,
+                kwargs={
+                    "event_type": "calendar.external_events_synced",
+                    "firm_id": current_firm.id,
+                    "actor_type": "staff",
+                    "actor_id": current_user.id,
+                    "metadata": {
+                        "provider": result["provider"],
+                        "event_count": len(result["events"]),
+                        "has_join_links": sum(
+                            1 for ev in result["events"] if any(
+                                p in (ev.get("description", "") + " " + ev.get("location", ""))
+                                for p in ["zoom.us", "meet.google.com", "teams.microsoft.com"]
+                            )
+                        ),
+                    },
+                },
+                daemon=True,
+            ).start()
+            return result
         except Exception:
             return {"events": [], "provider": "outlook"}
 

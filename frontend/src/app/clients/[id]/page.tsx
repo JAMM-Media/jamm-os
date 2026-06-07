@@ -221,6 +221,7 @@ function ClientDetailContent() {
         })
       })
       setClientEmailThreads(matched)
+      api.post('/api/v1/inbox/events', { event_type: 'client.emails_tab_viewed', client_id: clientId }).catch(() => {})
     }).catch(() => {
       setEmailsNoIntegration(true)
     }).finally(() => setEmailsLoading(false))
@@ -873,6 +874,9 @@ function ClientDetailContent() {
                   <a
                     key={`${thread.provider}-${thread.thread_id}`}
                     href={`/inbox?thread_id=${thread.thread_id}&provider=${thread.provider}`}
+                    onClick={() => {
+                      api.post('/api/v1/inbox/events', { event_type: 'client.email_thread_clicked', client_id: clientId, thread_id: thread.thread_id, provider: thread.provider }).catch(() => {})
+                    }}
                     className={[
                       'flex items-start gap-3 px-4 py-3 transition-colors bg-surface-page dark:bg-dark-page hover:bg-[#F3F4F6] dark:hover:bg-[#323232]',
                       i !== clientEmailThreads.length - 1 ? 'border-b border-[0.5px] border-[#D5D8DE] dark:border-dark-card' : '',
