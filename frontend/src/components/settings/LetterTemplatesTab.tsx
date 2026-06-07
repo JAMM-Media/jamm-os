@@ -226,6 +226,7 @@ export default function LetterTemplatesTab() {
   const [isNew, setIsNew] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
   const [previewing, setPreviewing] = useState<string | null>(null)
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
 
   // Editor state
   const [editName, setEditName] = useState('')
@@ -258,13 +259,17 @@ export default function LetterTemplatesTab() {
       const url = URL.createObjectURL(
         new Blob([res.data], { type: 'application/pdf' })
       )
-      window.open(url, '_blank')
-      setTimeout(() => URL.revokeObjectURL(url), 60000)
+      setPreviewUrl(url)
     } catch {
       toast.error('Failed to generate preview')
     } finally {
       setPreviewing(null)
     }
+  }
+
+  function closePreview() {
+    if (previewUrl) URL.revokeObjectURL(previewUrl)
+    setPreviewUrl(null)
   }
 
   function openNew() {
@@ -442,6 +447,39 @@ export default function LetterTemplatesTab() {
             Use Ctrl+Z to undo, Ctrl+B for bold, Ctrl+I for italic.
           </p>
         </div>
+
+        {previewUrl && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center p-6"
+            style={{ backgroundColor: 'rgba(0,0,0,0.6)' }}
+            onClick={closePreview}
+          >
+            <div
+              className="bg-surface-card dark:bg-dark-card rounded-[10px] border border-surface-border dark:border-dark-border flex flex-col w-full max-w-4xl"
+              style={{ height: '90vh' }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between px-4 py-3 border-b border-surface-border dark:border-dark-border flex-shrink-0">
+                <p className="text-[13px] font-medium text-brand dark:text-[#EDEEF0]">
+                  Letter Preview
+                </p>
+                <button
+                  onClick={closePreview}
+                  className="text-[#6B7280] hover:text-brand dark:hover:text-[#EDEEF0] transition-colors"
+                >
+                  <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              <iframe
+                src={previewUrl}
+                className="flex-1 w-full rounded-b-[10px]"
+                title="Letter preview"
+              />
+            </div>
+          </div>
+        )}
       </div>
     )
   }
@@ -569,6 +607,39 @@ export default function LetterTemplatesTab() {
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {previewUrl && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-6"
+          style={{ backgroundColor: 'rgba(0,0,0,0.6)' }}
+          onClick={closePreview}
+        >
+          <div
+            className="bg-surface-card dark:bg-dark-card rounded-[10px] border border-surface-border dark:border-dark-border flex flex-col w-full max-w-4xl"
+            style={{ height: '90vh' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-4 py-3 border-b border-surface-border dark:border-dark-border flex-shrink-0">
+              <p className="text-[13px] font-medium text-brand dark:text-[#EDEEF0]">
+                Letter Preview
+              </p>
+              <button
+                onClick={closePreview}
+                className="text-[#6B7280] hover:text-brand dark:hover:text-[#EDEEF0] transition-colors"
+              >
+                <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <iframe
+              src={previewUrl}
+              className="flex-1 w-full rounded-b-[10px]"
+              title="Letter preview"
+            />
+          </div>
         </div>
       )}
     </div>
