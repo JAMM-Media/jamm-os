@@ -18,18 +18,12 @@ function MagicLinkContent() {
       return
     }
 
-    fetch(`/api/backend/auth/verify-magic-link?token=${encodeURIComponent(token)}`)
+    fetch(`/api/auth/magic?token=${encodeURIComponent(token)}`)
       .then(async (res) => {
         if (!res.ok) {
           setError('This link has expired or already been used. Request a new one.')
           return
         }
-        const data = await res.json()
-        if (!data.access_token) {
-          setError('Invalid response from server. Please try again.')
-          return
-        }
-        localStorage.setItem('access_token', data.access_token)
         router.replace('/dashboard')
       })
       .catch(() => {
