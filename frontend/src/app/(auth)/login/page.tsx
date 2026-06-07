@@ -216,7 +216,7 @@ export default function LoginPage() {
 
               {magicSent ? (
                 <p className="text-[12px] text-[#10B981] text-center py-1">
-                  Link sent — check your email. It expires in 15 minutes.
+                  Link sent — check your email. It expires in 30 minutes.
                 </p>
               ) : (
                 <button
