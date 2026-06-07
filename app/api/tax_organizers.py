@@ -214,11 +214,12 @@ def send_organizer_magic_link(
         db=db,
     )
 
+    from urllib.parse import quote
     redirect_path = f"/portal?tab=organizer&organizer_id={organizer_id}"
     magic_url = (
         f"{settings.FRONTEND_URL}/portal/auth"
         f"?token={raw_token}"
-        f"&redirect={redirect_path}"
+        f"&redirect={quote(redirect_path, safe='')}"
     )
 
     firm_name = current_firm.name
