@@ -2,10 +2,11 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import { useRouter } from 'next/navigation'
 import { AppShell } from '@/components/layout/AppShell'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { useFetch } from '@/lib/hooks/useFetch'
-import { Eye, EyeOff, Plug, CheckCircle2 } from 'lucide-react'
+import { Eye, EyeOff, Plug, CheckCircle2, ChevronLeft } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 import api from '@/lib/api'
@@ -281,6 +282,14 @@ const TABS = [
   { key: 'migration', label: 'Migration' },
 ]
 
+const SECTIONS = [
+  { label: 'Account', keys: ['my_integrations', 'profile', 'security'] },
+  { label: 'Firm', keys: ['firm', 'team', 'automations', 'fee_schedule'] },
+  { label: 'Portal', keys: ['portal_branding', 'portal_domain'] },
+  { label: 'Email', keys: ['sending_domain', 'email_calendar'] },
+  { label: 'Data', keys: ['migration'] },
+]
+
 function formatRoleLabel(role: string): string {
   if (role === 'firm_owner') return 'Partner'
   return role.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
@@ -545,6 +554,21 @@ export default function SettingsPage() {
   const canSeeEmailCalendar = isFirmOwner
   const canSeeMigration = isFirmOwner
 
+  const router = useRouter()
+
+  function isTabVisible(key: string): boolean {
+    if (key === 'my_integrations') return true
+    if (key === 'automations') return canSeeAutomations
+    if (key === 'security') return canSeeSecurity
+    if (key === 'fee_schedule') return isFirmOwner
+    if (key === 'portal_branding') return isFirmOwner
+    if (key === 'sending_domain') return canSeeSendingDomain
+    if (key === 'portal_domain') return canSeePortalDomain
+    if (key === 'email_calendar') return canSeeEmailCalendar
+    if (key === 'migration') return canSeeMigration
+    return true
+  }
+
   const fieldClass = 'flex flex-col gap-1.5'
   const labelClass = 'text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em]'
   const valueClass = 'text-[13px] text-brand dark:text-[#EDEEF0]'
@@ -553,48 +577,61 @@ export default function SettingsPage() {
 
   return (
     <AppShell>
-      <div className="p-6 flex flex-col gap-6">
-
-        <div>
-          <h1 className="text-2xl font-medium text-brand dark:text-[#EDEEF0]">Settings</h1>
-          <p className="text-[12px] text-[#6B7280] mt-0.5">
-            Manage your profile and firm configuration.
-          </p>
+      <div className="flex h-full">
+        {/* Left nav panel */}
+        <div
+          className="flex flex-col flex-shrink-0 bg-surface-card dark:bg-[#383838] h-full border-r border-[#C8CDD6] dark:border-[#484848]"
+          style={{ width: '200px', borderRightWidth: '0.5px' }}
+        >
+          <button
+            onClick={() => router.back()}
+            className="flex items-center gap-2 h-12 px-4 border-b border-[#C8CDD6] dark:border-[#484848] hover:bg-surface-page dark:hover:bg-dark-page transition-colors flex-shrink-0 w-full"
+            style={{ borderBottomWidth: '0.5px' }}
+          >
+            <ChevronLeft className="h-4 w-4 text-brand dark:text-[#4A7FA5]" />
+            <span className="text-[13px] font-medium text-brand dark:text-[#4A7FA5]">Settings</span>
+          </button>
+          <div className="flex flex-col overflow-y-auto flex-1">
+            {SECTIONS.map((section) => {
+              const visibleTabs = TABS.filter(
+                (tab) => section.keys.includes(tab.key) && isTabVisible(tab.key)
+              )
+              if (visibleTabs.length === 0) return null
+              return (
+                <div key={section.label}>
+                  <span className="block text-[10px] uppercase tracking-wider text-[#6B7280] px-4 pt-3 pb-1">
+                    {section.label}
+                  </span>
+                  {visibleTabs.map((tab) => (
+                    <button
+                      key={tab.key}
+                      onClick={() => setActiveTab(tab.key)}
+                      className={cn(
+                        'w-full text-left h-9 px-4 text-[13px] transition-colors',
+                        activeTab === tab.key
+                          ? 'text-brand dark:text-[#4A7FA5] font-medium bg-white/30 dark:bg-white/10 border-l-2 border-[#1F3148] dark:border-[#4A7FA5]'
+                          : 'text-[#6B7280] hover:text-brand dark:hover:text-[#EDEEF0] hover:bg-[#E4E6EA] dark:hover:bg-[#2D2D2D]'
+                      )}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+              )
+            })}
+          </div>
         </div>
+        {/* Content area */}
+        <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-6">
 
-        {/* Tab bar */}
-        <div className="flex items-end gap-0 border-b border-surface-border dark:border-dark-border">
-          {TABS.filter((tab) => {
-            if (tab.key === 'my_integrations') return true
-            if (tab.key === 'automations') return canSeeAutomations
-            if (tab.key === 'security') return canSeeSecurity
-            if (tab.key === 'fee_schedule') return isFirmOwner
-            if (tab.key === 'portal_branding') return isFirmOwner
-            if (tab.key === 'sending_domain') return canSeeSendingDomain
-            if (tab.key === 'portal_domain') return canSeePortalDomain
-            if (tab.key === 'email_calendar') return canSeeEmailCalendar
-            if (tab.key === 'migration') return canSeeMigration
-            return true
-          }).map((tab) => (
-            <button
-              key={tab.key}
-              onClick={() => setActiveTab(tab.key)}
-              className={cn(
-                'px-4 py-2.5 text-[13px] transition-colors relative',
-                activeTab === tab.key
-                  ? 'text-brand dark:text-[#4A7FA5] font-medium'
-                  : 'text-[#6B7280] hover:text-brand dark:hover:text-[#EDEEF0] font-normal',
-              )}
-            >
-              {tab.label}
-              {activeTab === tab.key && (
-                <span className="absolute bottom-0 left-0 right-0 h-[2px] bg-brand dark:bg-[#4A7FA5]" />
-              )}
-            </button>
-          ))}
-        </div>
+          <div>
+            <h1 className="text-2xl font-medium text-brand dark:text-[#EDEEF0]">Settings</h1>
+            <p className="text-[12px] text-[#6B7280] mt-0.5">
+              Manage your profile and firm configuration.
+            </p>
+          </div>
 
-        {/* My Integrations tab */}
+          {/* My Integrations tab */}
         {activeTab === 'my_integrations' && <MyIntegrationsTabContent />}
 
         {/* Profile tab */}
@@ -1045,9 +1082,10 @@ export default function SettingsPage() {
         {/* Email & Calendar tab */}
         {activeTab === 'email_calendar' && canSeeEmailCalendar && <EmailCalendarTab />}
 
-        {/* Migration tab */}
-        {activeTab === 'migration' && canSeeMigration && <MigrationTab />}
+          {/* Migration tab */}
+          {activeTab === 'migration' && canSeeMigration && <MigrationTab />}
 
+        </div>
       </div>
     </AppShell>
   )

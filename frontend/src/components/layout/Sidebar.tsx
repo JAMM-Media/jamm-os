@@ -53,9 +53,10 @@ interface SidebarProps {
   collapsed: boolean
   onToggle: () => void
   onConciergeOpen: () => void
+  locked?: boolean
 }
 
-export function Sidebar({ collapsed, onToggle, onConciergeOpen }: SidebarProps) {
+export function Sidebar({ collapsed, onToggle, onConciergeOpen, locked }: SidebarProps) {
   const pathname = usePathname()
   const { theme, setTheme } = useTheme()
   const [mounted, setMounted] = useState(false)
@@ -105,27 +106,31 @@ export function Sidebar({ collapsed, onToggle, onConciergeOpen }: SidebarProps) 
       )}
     >
       {/* Logo / wordmark + collapse toggle */}
-      <div className="flex items-center h-14 px-3 border-b border-white/10 flex-shrink-0">
-        {!collapsed && (
-          <span className="text-white font-medium text-sm tracking-wide truncate">
-            JAMM <span style={{ color: '#B07D3A' }}>PX</span>
-          </span>
-        )}
-        <button
-          onClick={onToggle}
-          className={cn(
-            'ml-auto p-1 rounded text-white/60 hover:text-white hover:bg-white/10 transition-colors',
-            collapsed && 'mx-auto'
+      {locked ? (
+        <div className="h-14 border-b border-white/10 flex-shrink-0" />
+      ) : (
+        <div className="flex items-center h-14 px-3 border-b border-white/10 flex-shrink-0">
+          {!collapsed && (
+            <span className="text-white font-medium text-sm tracking-wide truncate">
+              JAMM <span style={{ color: '#B07D3A' }}>PX</span>
+            </span>
           )}
-          aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-        >
-          {collapsed ? (
-            <ChevronRight className="h-4 w-4" />
-          ) : (
-            <ChevronLeft className="h-4 w-4" />
-          )}
-        </button>
-      </div>
+          <button
+            onClick={onToggle}
+            className={cn(
+              'ml-auto p-1 rounded text-white/60 hover:text-white hover:bg-white/10 transition-colors',
+              collapsed && 'mx-auto'
+            )}
+            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          >
+            {collapsed ? (
+              <ChevronRight className="h-4 w-4" />
+            ) : (
+              <ChevronLeft className="h-4 w-4" />
+            )}
+          </button>
+        </div>
+      )}
 
       {/* Main nav */}
       <nav className="flex-1 py-3 overflow-y-auto">
