@@ -125,6 +125,7 @@ class TriggerEvent(str, Enum):
     extension_filed = "extension.filed"
     extension_deadline_approaching = "extension.deadline_approaching"
     qbo_budget_variance = "qbo.budget_variance"
+    morning_briefing = "morning_briefing"
 
 
 class AutomationActionType(str, Enum):
@@ -139,6 +140,7 @@ class AutomationActionType(str, Enum):
     add_internal_note = "add_internal_note"
     webhook_post = "webhook_post"
     send_irs_auth_reminder = "send_irs_auth_reminder"
+    morning_briefing = "morning_briefing"
 
 
 class ConditionOperator(str, Enum):

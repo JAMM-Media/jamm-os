@@ -682,6 +682,25 @@ def _get_preset_rules(firm_id: UUID) -> List[Dict[str, Any]]:
             "created_at": now,
             "updated_at": now,
         },
+        # PRESET 17 — Morning Briefing
+        {
+            "id": uuid4(),
+            "firm_id": firm_id,
+            "name": "Morning Briefing",
+            "description": (
+                "Get a daily summary of your firm's current engagement status, "
+                "incomplete items, and upcoming due dates when you open the dashboard each morning."
+            ),
+            "is_enabled": False,
+            "trigger_event": TriggerEvent.morning_briefing,
+            "trigger_conditions": [],
+            "actions": [],
+            "default_actions": [],
+            "execution_count": 0,
+            "last_executed_at": None,
+            "created_at": now,
+            "updated_at": now,
+        },
         # PRESET 16 — Budget Variance Alert
         {
             "id": uuid4(),

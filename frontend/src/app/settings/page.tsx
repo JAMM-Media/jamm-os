@@ -572,7 +572,7 @@ export default function SettingsPage() {
     setApprovalRequired(next)
     setSavingApproval(true)
     try {
-      await api.patch('/api/v1/firms/me', { timesheet_approval_required: next })
+      await api.patch('/firms/me', { timesheet_approval_required: next })
       toast.success('Timesheet setting saved')
     } catch {
       setApprovalRequired(!next)

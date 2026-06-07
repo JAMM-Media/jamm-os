@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from starlette.responses import StreamingResponse
+from fastapi.responses import JSONResponse, Response
 
 from app.core.config import get_settings
 from app.core.enums import UserRole
@@ -23,7 +24,7 @@ from app.models.client import Client
 from app.models.user import User
 from app.models.concierge_notification import ConciergeNotification
 from app.models.security_event import SecurityEvent
-from app.api.concierge.prompts import get_system_prompt
+from app.api.concierge.prompts import get_system_prompt, MORNING_BRIEFING_PROMPT
 from app.api.concierge.context import router as context_router
 from app.api.concierge.cron import run_trigger_check
 
@@ -324,6 +325,55 @@ Respond with exactly one word: SAFE or UNSAFE. Nothing else.""",
                 yield f"data: {filtered}\n\n"
 
     return StreamingResponse(generate(), media_type="text/event-stream")
+
+
+@router.post("/morning-briefing")
+def morning_briefing(
+    current_firm: Firm = Depends(get_current_firm),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if current_user.role in ("staff", "client_portal_user"):
+        return JSONResponse({"detail": "Access denied"}, status_code=403)
+
+    from sqlalchemy import select as _sel
+    from app.models.automation_rule import AutomationRule
+    rule = db.execute(
+        _sel(AutomationRule).where(
+            AutomationRule.firm_id == current_firm.id,
+            AutomationRule.trigger_event == "morning_briefing",
+        )
+    ).scalars().first()
+    if not rule or not rule.is_enabled:
+        return JSONResponse({"detail": "Morning briefing is not enabled"}, status_code=403)
+
+    if current_firm.briefing_sent_at is not None:
+        elapsed = (datetime.now(timezone.utc) - current_firm.briefing_sent_at).total_seconds()
+        if elapsed < 64800:
+            return Response(status_code=204)
+
+    try:
+        from app.api.concierge.context import get_firm_context
+        context_data = get_firm_context(current_firm.id, db)
+
+        settings = get_settings()
+        briefing_api_key = settings.ANTHROPIC_API_KEY
+        briefing_client = anthropic.Anthropic(api_key=briefing_api_key)
+        response = briefing_client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=600,
+            system=MORNING_BRIEFING_PROMPT,
+            messages=[{"role": "user", "content": f"Firm data:\n{context_data}\n\nReturn structured markdown only. Use the exact format specified. No prose."}],
+        )
+        briefing_text = response.content[0].text.strip()
+
+        current_firm.briefing_sent_at = datetime.now(timezone.utc)
+        db.commit()
+
+        return JSONResponse({"briefing": briefing_text})
+    except Exception as e:
+        logger.warning(f"Morning briefing failed for firm {current_firm.id}: {e}")
+        return Response(status_code=204)
 
 
 class PolishRequest(BaseModel):

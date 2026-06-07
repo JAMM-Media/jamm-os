@@ -2,7 +2,7 @@
 
 from uuid import UUID
 from datetime import datetime
-from typing import Optional, List, Any, Dict
+from typing import Optional, List, Any, Dict, Union
 
 from pydantic import BaseModel, ConfigDict, field_validator
 
@@ -29,13 +29,6 @@ class AutomationRuleBase(BaseModel):
     trigger_conditions: List[ConditionSchema] = []
     actions: List[ActionSchema] = []
 
-    @field_validator("actions")
-    @classmethod
-    def actions_required_when_enabled(cls, v: List[ActionSchema], info) -> List[ActionSchema]:
-        is_enabled = info.data.get("is_enabled", False)
-        if is_enabled and len(v) == 0:
-            raise ValueError("An enabled rule must have at least one action.")
-        return v
 
 
 class AutomationRuleCreate(AutomationRuleBase):
@@ -54,6 +47,7 @@ class AutomationRuleUpdate(BaseModel):
 class AutomationRuleOut(AutomationRuleBase):
     id: UUID
     firm_id: UUID
+    trigger_event: Union[TriggerEvent, str]  # accepts morning_briefing and future values
     execution_count: int
     last_executed_at: Optional[datetime]
     created_at: datetime

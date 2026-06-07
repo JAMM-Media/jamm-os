@@ -14,7 +14,9 @@ from app.models.engagement import Engagement
 from app.models.firm import Firm
 from app.models.irs_authorization import IrsAuthorization
 from app.models.user import User
+from datetime import datetime, timezone, timedelta
 from app.models.behavioral_event import BehavioralEvent
+from app.models.document_request import DocumentRequest
 from app.dependencies.tenant import get_current_firm
 
 router = APIRouter()
@@ -52,6 +54,9 @@ def _run_queries(firm_id: uuid.UUID, db: Session) -> dict:
     staff_summary = _query_staff_summary(firm_id, db)
     portal_adoption = _query_portal_adoption(firm_id, db)
     irs_coverage = _query_irs_coverage(firm_id, db)
+    upcoming_deadlines = _query_upcoming_deadlines(firm_id, db)
+    overdue_document_requests = _query_overdue_document_requests(firm_id, db)
+    stale_engagements = _query_stale_engagements(firm_id, db)
     firm = db.execute(select(Firm).where(Firm.id == firm_id)).scalar_one_or_none()
     firm_type = firm.firm_type if firm else None
     return {
@@ -64,6 +69,9 @@ def _run_queries(firm_id: uuid.UUID, db: Session) -> dict:
         "staff_summary": staff_summary,
         "portal_adoption": portal_adoption,
         "irs_coverage": irs_coverage,
+        "upcoming_deadlines": upcoming_deadlines,
+        "overdue_document_requests": overdue_document_requests,
+        "stale_engagements": stale_engagements,
         "firm_type": firm_type,
     }
 
@@ -275,3 +283,91 @@ def get_context_endpoint(
     db: Session = Depends(get_db),
 ):
     return get_firm_context(firm_id=current_firm.id, db=db)
+
+
+# ---------------------------------------------------------------------------
+# Query: upcoming_deadlines
+# ---------------------------------------------------------------------------
+def _query_upcoming_deadlines(firm_id: uuid.UUID, db: Session) -> list:
+    now = datetime.now(timezone.utc).date()
+    in_7_days = now + timedelta(days=7)
+    rows = db.execute(
+        select(
+            Engagement.name.label('engagement_name'),
+            Client.name.label('client_name'),
+            Engagement.filing_deadline,
+            Engagement.status,
+        )
+        .join(Client, Engagement.client_id == Client.id)
+        .where(
+            Engagement.firm_id == firm_id,
+            Engagement.filing_deadline >= now,
+            Engagement.filing_deadline <= in_7_days,
+            Engagement.status.notin_(['complete', 'cancelled']),
+        )
+        .order_by(Engagement.filing_deadline.asc())
+        .limit(10)
+    ).all()
+    return [
+        {
+            "name": r.engagement_name,
+            "client_name": r.client_name,
+            "due_date": r.filing_deadline.isoformat() if r.filing_deadline else None,
+            "status": r.status,
+        }
+        for r in rows
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Query: overdue_document_requests
+# ---------------------------------------------------------------------------
+def _query_overdue_document_requests(firm_id: uuid.UUID, db: Session) -> list:
+    cutoff = datetime.now(timezone.utc) - timedelta(days=5)
+    rows = db.execute(
+        select(DocumentRequest.title, Client.name)
+        .join(Client, DocumentRequest.client_id == Client.id)
+        .where(
+            DocumentRequest.firm_id == firm_id,
+            DocumentRequest.status != 'complete',
+            DocumentRequest.created_at <= cutoff,
+        )
+        .order_by(DocumentRequest.created_at.asc())
+        .limit(10)
+    ).all()
+    return [
+        {"title": r.title, "client_name": r.name}
+        for r in rows
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Query: stale_engagements
+# ---------------------------------------------------------------------------
+def _query_stale_engagements(firm_id: uuid.UUID, db: Session) -> list:
+    cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+    rows = db.execute(
+        select(
+            Engagement.name.label('engagement_name'),
+            Client.name.label('client_name'),
+            Engagement.status,
+            Engagement.updated_at,
+        )
+        .join(Client, Engagement.client_id == Client.id)
+        .where(
+            Engagement.firm_id == firm_id,
+            Engagement.updated_at <= cutoff,
+            Engagement.status.notin_(['complete', 'cancelled']),
+        )
+        .order_by(Engagement.updated_at.asc())
+        .limit(10)
+    ).all()
+    return [
+        {
+            "name": r.engagement_name,
+            "client_name": r.client_name,
+            "status": r.status,
+            "updated_at": r.updated_at.isoformat() if r.updated_at else None,
+        }
+        for r in rows
+    ]

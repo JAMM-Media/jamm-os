@@ -141,7 +141,11 @@ class Firm(Base):
         nullable=False,
     )
 
-    # Relationships — every model that has a firm_id points back here.
+    briefing_sent_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    # Relationships -- every model that has a firm_id points back here.
     # "cascade all, delete-orphan" means: if a Firm is deleted,
     # all its users/clients/etc are also deleted automatically.
     users: Mapped[list["User"]] = relationship(

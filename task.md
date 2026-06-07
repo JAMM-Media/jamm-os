@@ -49,86 +49,25 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK 3 OF 3: Fill in missing write_audit_log calls
-
-Pre-task:
-VERIFY BEFORE ACT:
-grep -rn "write_audit_log" /home/corby/jamm-os/app/api/clients.py 2>/dev/null | head -5
-grep -rn "write_audit_log" /home/corby/jamm-os/app/api/invoices.py 2>/dev/null | head -5
-grep -rn "write_audit_log" /home/corby/jamm-os/app/api/irs_authorizations.py 2>/dev/null | head -5
-Paste all three before touching anything.
-
-For each file that shows zero results, add write_audit_log calls
-on the significant actions following the same pattern already used
-in engagements.py and users.py.
-
-File: app/api/clients.py
-Actions to log:
-- client created: action='client.created', entity_type='client', entity_id=new_client.id
-- client updated: action='client.updated', entity_type='client', entity_id=client.id
-- client deleted: action='client.deleted', entity_type='client', entity_id=client_id
-
-File: app/api/invoices.py (if it exists)
-Actions to log:
-- invoice created: action='invoice.created', entity_type='invoice', entity_id=invoice.id
-- invoice sent: action='invoice.sent', entity_type='invoice', entity_id=invoice.id
-- invoice marked paid: action='invoice.paid', entity_type='invoice', entity_id=invoice.id
-
-File: app/api/irs_authorizations.py (if it exists)
-Actions to log:
-- IRS auth created: action='irs_auth.created', entity_type='irs_authorization', entity_id=auth.id
-- IRS auth sent: action='irs_auth.sent', entity_type='irs_authorization', entity_id=auth.id
-
-For each file, follow this pattern exactly:
-1. Add import at top: from app.services.audit_service import write_audit_log
-2. After the successful DB operation, call write_audit_log with the correct params
-3. Never let a failed audit log write surface as a user error -- audit_service is already fire-and-forget safe
-
-VERIFY AFTER ACT:
-grep -rn "write_audit_log" /home/corby/jamm-os/app/api/clients.py | head -5
-grep -rn "write_audit_log" /home/corby/jamm-os/app/api/invoices.py 2>/dev/null | head -5
-grep -rn "write_audit_log" /home/corby/jamm-os/app/api/irs_authorizations.py 2>/dev/null | head -5
-Confirm results appear for each file that was modified.
-python3 -c "from app.main import app; print('OK')"
-Must pass before stopping.
-Restart the backend.
-
-Browser tests:
-Test 1 -- Audit Log tab visible:
-Navigate to Settings. Confirm Audit Log tab appears.
-Click it. Confirm the table loads with entries.
-
-Test 2 -- Entries are real:
-Confirm at least some entries appear -- logins, document events, etc.
-Read a few rows and confirm they make sense.
-
-Test 3 -- Filter works:
-Type "login" in the action filter and click Filter.
-Confirm only login-related entries appear.
-
-Test 4 -- Entity type filter:
-Select Document from the entity type dropdown.
-Confirm only document entries appear.
-
-Test 5 -- Staff cannot see it:
-This requires a staff-level login to test. Skip if no staff account available.TASK: Fix audit log router prefix -- main.py
+TASK: Fix avatar showing ? during morning briefing skeleton load in ConciergePanel.tsx
 
 VERIFY BEFORE ACT:
-grep -n "audit_log" /home/corby/jamm-os/app/main.py
-Paste output before touching anything.
+grep -n "briefingLoading\|avatar\|\?" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx | head -20
+Paste before touching anything.
 
-Find exactly:
-app.include_router(audit_log_router, prefix="/api/v1")
+In ConciergePanel.tsx, in the skeleton render block (where briefingLoading && messages.length === 0),
+the avatar circle currently shows ? because the user initials aren't available yet.
 
-Replace with:
-app.include_router(audit_log_router)
+Replace the skeleton avatar div with a static JC-style circle using the brand color:
+<div className="w-7 h-7 rounded-full bg-[#1F3148] flex items-center justify-center flex-shrink-0">
+  <span className="text-white text-[10px] font-medium">JC</span>
+</div>
 
 VERIFY AFTER ACT:
-grep -n "audit_log" /home/corby/jamm-os/app/main.py
-Confirm prefix="/api/v1" is gone.
-python3 -c "from app.api.audit_log import router; print('OK')"
-Restart the backend.
+grep -n "JC" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx | head -5
+Must show JC in the skeleton avatar.
 
-Browser test:
-Navigate to Settings > Audit Log.
-Confirm login entries appear in the table.
+Build check:
+cd /home/corby/jamm-os/frontend
+/usr/bin/npm run build
+Zero TypeScript errors before stopping.
