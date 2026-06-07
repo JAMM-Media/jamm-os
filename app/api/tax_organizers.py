@@ -1,6 +1,7 @@
 # app/api/tax_organizers.py
 
 import logging
+from urllib.parse import quote
 from typing import Optional
 from uuid import UUID
 
@@ -214,7 +215,6 @@ def send_organizer_magic_link(
         db=db,
     )
 
-    from urllib.parse import quote
     redirect_path = f"/portal?tab=organizer&organizer_id={organizer_id}"
     magic_url = (
         f"{settings.FRONTEND_URL}/portal/auth"
