@@ -11,7 +11,12 @@ interface AppShellProps {
 }
 
 export function AppShell({ children }: AppShellProps) {
-  const [collapsed, setCollapsed] = useState(false)
+  const [collapsed, setCollapsed] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('jamm_sidebar_collapsed') === 'true'
+    }
+    return false
+  })
   const pathname = usePathname()
   const isSettingsRoute = pathname.startsWith('/settings')
   const [conciergeOpen, setConciergeOpen] = useState(() => {
@@ -35,7 +40,11 @@ export function AppShell({ children }: AppShellProps) {
     <div className="flex h-screen overflow-hidden bg-surface-page dark:bg-dark-page">
       <Sidebar
         collapsed={isSettingsRoute ? true : collapsed}
-        onToggle={isSettingsRoute ? () => {} : () => setCollapsed((c) => !c)}
+        onToggle={isSettingsRoute ? () => {} : () => setCollapsed((c) => {
+          const next = !c
+          localStorage.setItem('jamm_sidebar_collapsed', String(next))
+          return next
+        })}
         onConciergeOpen={handleConciergeOpen}
         locked={isSettingsRoute}
       />
