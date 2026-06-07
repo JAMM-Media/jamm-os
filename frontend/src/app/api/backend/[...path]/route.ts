@@ -129,6 +129,20 @@ async function proxyRequest(
       })
     }
 
+    // Pass PDF responses through as raw binary — res.text()
+    // corrupts binary bytes by decoding as UTF-8.
+    if (contentType.includes('application/pdf') && res.body) {
+      const arrayBuffer = await res.arrayBuffer()
+      return new NextResponse(arrayBuffer, {
+        status: res.status,
+        headers: {
+          'Content-Type': 'application/pdf',
+          'Content-Disposition':
+            res.headers.get('Content-Disposition') ?? 'inline',
+        },
+      })
+    }
+
     const data = await res.text()
     return new NextResponse(data, {
       status: res.status,
