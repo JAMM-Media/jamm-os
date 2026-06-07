@@ -35,7 +35,20 @@ interface PortalMe {
 
 export default function PortalPage() {
   const router = useRouter()
-  const [activeTab, setActiveTab] = useState('todo')
+  const [activeTab, setActiveTab] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search)
+      const tab = params.get('tab')
+      if (tab) return tab
+    }
+    return 'todo'
+  })
+  const [deepLinkOrganizerId, setDeepLinkOrganizerId] = useState<string | null>(() => {
+    if (typeof window !== 'undefined') {
+      return new URLSearchParams(window.location.search).get('organizer_id')
+    }
+    return null
+  })
   const [me, setMe] = useState<PortalMe | null>(null)
 
   useEffect(() => {
@@ -102,7 +115,7 @@ export default function PortalPage() {
         <PortalMessages clientId={me.client_id} firmName={me.firm_name} cardColor={me.portal_card_color} accentColor={me.portal_accent_color} portalMode={me.portal_mode} textPrimary={me.portal_text_primary} textMuted={me.portal_text_muted} />
       )}
       {activeTab === 'organizer' && (
-        <PortalOrganizer clientId={me.client_id} cardColor={me.portal_card_color} portalMode={me.portal_mode} textPrimary={me.portal_text_primary} textMuted={me.portal_text_muted} />
+        <PortalOrganizer clientId={me.client_id} initialOrganizerId={deepLinkOrganizerId} cardColor={me.portal_card_color} portalMode={me.portal_mode} textPrimary={me.portal_text_primary} textMuted={me.portal_text_muted} />
       )}
       {activeTab === 'billing-detail' && <PortalBillingDetail cardColor={me.portal_card_color} accentColor={me.portal_accent_color} portalMode={me.portal_mode} textPrimary={me.portal_text_primary} textMuted={me.portal_text_muted} />}
     </PortalShell>

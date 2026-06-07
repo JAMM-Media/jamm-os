@@ -1,11 +1,12 @@
 // frontend/src/components/portal/PortalOrganizer.tsx
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Check } from 'lucide-react'
 
 interface PortalOrganizerProps {
   clientId: string
+  initialOrganizerId?: string | null
   cardColor?: string
   portalMode?: 'light' | 'dark'
   textPrimary?: string
@@ -63,7 +64,7 @@ function getInputClass(portalMode: 'light' | 'dark') {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-export default function PortalOrganizer({ clientId: _clientId, cardColor = '#383838', portalMode = 'dark', textPrimary = '#EDEEF0', textMuted = '#9CA3AF' }: PortalOrganizerProps) {
+export default function PortalOrganizer({ clientId: _clientId, initialOrganizerId = null, cardColor = '#383838', portalMode = 'dark', textPrimary = '#EDEEF0', textMuted = '#9CA3AF' }: PortalOrganizerProps) {
   const primaryText = textPrimary
   const mutedText = textMuted
 
@@ -101,6 +102,18 @@ export default function PortalOrganizer({ clientId: _clientId, cardColor = '#383
     loadOrganizers()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  const deepLinkHandled = useRef(false)
+
+  useEffect(() => {
+    if (!initialOrganizerId || loading || organizers.length === 0 || deepLinkHandled.current) return
+    const match = organizers.find((o) => o.id === initialOrganizerId)
+    if (match) {
+      deepLinkHandled.current = true
+      openOrganizer(match.id, match.status === 'submitted')
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, organizers])
 
   async function openOrganizer(id: string, isReadOnly: boolean) {
     setLoadingDetail(true)
