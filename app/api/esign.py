@@ -9,6 +9,7 @@ from uuid import UUID
 
 import requests
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, Request, status, UploadFile
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -658,6 +659,56 @@ def get_letter_template(
     if not template:
         raise HTTPException(status_code=404, detail="Template not found")
     return template
+
+
+@router.get("/templates/{template_id}/preview")
+def preview_letter_template(
+    template_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_manager_or_above),
+    current_firm: Firm = Depends(get_current_firm),
+):
+    """
+    Render a letter template to PDF using sample placeholder values.
+    Returns the PDF inline so browsers display it in a new tab.
+    Auth: manager or above.
+    """
+    template = crud_template.get_template(db, template_id, current_firm.id)
+    if template is None:
+        raise HTTPException(status_code=404, detail="Template not found")
+
+    sample_context = {
+        "client_name": "Alex Johnson",
+        "firm_name": current_firm.name,
+        "firm_owner_name": current_user.full_name or "Your Name",
+        "firm_address": (current_firm.settings or {}).get(
+            "firm_address", "123 Main Street, Suite 100, Boston, MA 02101"),
+        "firm_phone": (current_firm.settings or {}).get(
+            "firm_phone", "(617) 555-0100"),
+        "firm_contact_email": (current_firm.settings or {}).get(
+            "firm_contact_email", "hello@yourfirm.com"),
+        "firm_website": (current_firm.settings or {}).get(
+            "firm_website", "https://www.yourfirm.com"),
+        "engagement_name": "2024 Individual Tax Return",
+        "engagement_type": "Individual Tax Return (1040)",
+        "fee_amount": "$850",
+        "engagement_date": datetime.now().strftime("%B %d, %Y"),
+        "due_date": "April 15, 2025",
+    }
+
+    pdf_bytes = letter_renderer.render_to_pdf(
+        template.body_html,
+        sample_context,
+        firm_settings=current_firm.settings or {},
+    )
+
+    return StreamingResponse(
+        io.BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": "inline; filename=preview.pdf"
+        },
+    )
 
 
 @router.patch("/templates/{template_id}", response_model=EngagementLetterTemplateOut)

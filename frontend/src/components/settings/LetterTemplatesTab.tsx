@@ -225,6 +225,7 @@ export default function LetterTemplatesTab() {
   const [editing, setEditing] = useState<LetterTemplate | null>(null)
   const [isNew, setIsNew] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
+  const [previewing, setPreviewing] = useState<string | null>(null)
 
   // Editor state
   const [editName, setEditName] = useState('')
@@ -246,6 +247,25 @@ export default function LetterTemplatesTab() {
   }, [])
 
   useEffect(() => { fetchTemplates() }, [fetchTemplates])
+
+  async function handlePreview(templateId: string) {
+    setPreviewing(templateId)
+    try {
+      const res = await api.get(
+        `/esign/templates/${templateId}/preview`,
+        { responseType: 'blob' }
+      )
+      const url = URL.createObjectURL(
+        new Blob([res.data], { type: 'application/pdf' })
+      )
+      window.open(url, '_blank')
+      setTimeout(() => URL.revokeObjectURL(url), 60000)
+    } catch {
+      toast.error('Failed to generate preview')
+    } finally {
+      setPreviewing(null)
+    }
+  }
 
   function openNew() {
     setIsNew(true)
@@ -500,6 +520,15 @@ export default function LetterTemplatesTab() {
                   <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
                     t.is_active ? 'translate-x-4' : 'translate-x-0.5'
                   }`} />
+                </button>
+
+                {/* Preview */}
+                <button
+                  onClick={() => handlePreview(t.id)}
+                  disabled={previewing === t.id}
+                  className="h-7 px-2.5 rounded-[6px] border border-surface-border dark:border-dark-border text-[11px] font-medium text-[#6B7280] hover:text-brand dark:hover:text-[#EDEEF0] hover:bg-surface-page dark:hover:bg-dark-page transition-colors disabled:opacity-50"
+                >
+                  {previewing === t.id ? 'Loading...' : 'Preview'}
                 </button>
 
                 {/* Edit */}

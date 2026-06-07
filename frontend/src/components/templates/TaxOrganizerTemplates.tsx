@@ -542,6 +542,7 @@ export default function TaxOrganizerTemplates() {
   const [loading, setLoading] = useState(true)
   const [editorTemplate, setEditorTemplate] = useState<TaxOrganizerTemplate | null | undefined>(undefined)
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
+  const [previewTemplate, setPreviewTemplate] = useState<TaxOrganizerTemplate | null>(null)
 
   const fetchTemplates = useCallback(async () => {
     setLoading(true)
@@ -651,6 +652,12 @@ export default function TaxOrganizerTemplates() {
               {isManager && (
                 <div className="flex items-center gap-2 flex-shrink-0">
                   <button
+                    onClick={() => setPreviewTemplate(t)}
+                    className="h-7 px-2.5 rounded-[6px] border border-surface-border dark:border-dark-border text-[11px] font-medium text-[#6B7280] hover:text-brand dark:hover:text-[#EDEEF0] hover:bg-surface-page dark:hover:bg-dark-page transition-colors"
+                  >
+                    Preview
+                  </button>
+                  <button
                     onClick={() => setEditorTemplate(t)}
                     className="p-1.5 rounded text-[#6B7280] hover:text-brand dark:hover:text-[#EDEEF0] hover:bg-[#F3F4F6] dark:hover:bg-[#333] transition-colors"
                     title="Edit template"
@@ -696,6 +703,103 @@ export default function TaxOrganizerTemplates() {
           onClose={() => setEditorTemplate(undefined)}
           onSaved={fetchTemplates}
         />
+      )}
+
+      {/* Preview modal */}
+      {previewTemplate && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center"
+          style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}
+          onClick={() => setPreviewTemplate(null)}
+        >
+          <div
+            className="bg-surface-card dark:bg-dark-card rounded-[10px] border border-surface-border dark:border-dark-border w-full max-w-2xl max-h-[85vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal header */}
+            <div className="flex items-center justify-between px-5 py-4 border-b border-surface-border dark:border-dark-border flex-shrink-0">
+              <div>
+                <p className="text-[14px] font-medium text-brand dark:text-[#EDEEF0]">
+                  {previewTemplate.name}
+                </p>
+                <p className="text-[11px] text-[#6B7280] mt-0.5">
+                  Client view -- read only
+                </p>
+              </div>
+              <button
+                onClick={() => setPreviewTemplate(null)}
+                className="text-[#6B7280] hover:text-brand dark:hover:text-[#EDEEF0] transition-colors"
+              >
+                <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Scrollable content */}
+            <div className="overflow-y-auto flex-1 px-5 py-4 flex flex-col gap-6">
+              {(previewTemplate.sections ?? []).map((section: TaxOrganizerSection, si: number) => (
+                <div key={si} className="flex flex-col gap-3">
+                  <div>
+                    <p className="text-[13px] font-semibold text-brand dark:text-[#EDEEF0]">
+                      {section.title}
+                    </p>
+                    {section.description && (
+                      <p className="text-[12px] text-[#6B7280] mt-0.5">
+                        {section.description}
+                      </p>
+                    )}
+                  </div>
+                  {(section.questions ?? []).map((q: TaxOrganizerQuestion, qi: number) => (
+                    <div key={qi} className="flex flex-col gap-1">
+                      <label className="text-[12px] font-medium text-brand dark:text-[#EDEEF0]">
+                        {q.label}
+                        {q.required && (
+                          <span className="text-red-500 ml-1">*</span>
+                        )}
+                      </label>
+                      {q.type === 'boolean' && (
+                        <div className="flex gap-3">
+                          <span className="text-[12px] px-3 py-1 rounded-[6px] border border-surface-border dark:border-dark-border text-[#6B7280]">
+                            Yes
+                          </span>
+                          <span className="text-[12px] px-3 py-1 rounded-[6px] border border-surface-border dark:border-dark-border text-[#6B7280]">
+                            No
+                          </span>
+                        </div>
+                      )}
+                      {q.type === 'select' && q.options && (
+                        <div className="flex flex-wrap gap-2">
+                          {q.options.map((opt: string, oi: number) => (
+                            <span key={oi} className="text-[12px] px-3 py-1 rounded-[6px] border border-surface-border dark:border-dark-border text-[#6B7280]">
+                              {opt}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      {(q.type === 'text' || q.type === 'number') && (
+                        <div className="h-8 rounded-[6px] border border-surface-border dark:border-dark-border bg-surface-page dark:bg-dark-page" />
+                      )}
+                      {q.type === 'textarea' && (
+                        <div className="h-16 rounded-[6px] border border-surface-border dark:border-dark-border bg-surface-page dark:bg-dark-page" />
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+
+            {/* Modal footer */}
+            <div className="px-5 py-3 border-t border-surface-border dark:border-dark-border flex-shrink-0 flex justify-end">
+              <button
+                onClick={() => setPreviewTemplate(null)}
+                className="h-8 px-4 rounded-[6px] bg-brand dark:bg-brand-btn text-white text-[12px] font-medium"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )
