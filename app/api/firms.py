@@ -21,6 +21,7 @@ from app.dependencies.roles import require_firm_owner, require_system_admin
 from app.models.user import User
 from app.services.automation_presets import seed_firm_presets
 from app.services.tax_organizer_service import seed_firm_organizer_templates
+from app.services.engagement_letter_seed import seed_firm_letter_templates
 from app.services import s3 as s3_service
 
 router = APIRouter(prefix="/firms", tags=["firms"])
@@ -48,6 +49,8 @@ def create_firm(
     logger.info(f"Firm {new_firm.id} created with {seeded} automation presets")
     seeded_templates = seed_firm_organizer_templates(firm_id=new_firm.id, db=db)
     logger.info(f"Firm {new_firm.id} created with {seeded_templates} organizer templates")
+    seeded_letters = seed_firm_letter_templates(firm_id=new_firm.id, db=db)
+    logger.info(f"Firm {new_firm.id} created with {seeded_letters} letter templates")
     return new_firm
 
 
