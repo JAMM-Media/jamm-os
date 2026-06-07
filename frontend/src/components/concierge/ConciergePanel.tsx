@@ -324,14 +324,29 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
     if (isOpen && !hasInitialized.current) {
       hasInitialized.current = true
       if (messages.length === 0) {
-        if (!user?.firm_type) {
-          setMessages([{
-            role: 'concierge',
-            content: 'Welcome to JAMM Concierge. Before we start -- what does your firm do most? This lets me point you to the right setup path.\n\n1. Tax prep and returns\n2. Bookkeeping and monthly close\n3. Advisory and planning',
-          }])
-        } else {
-          sendMessages([{ role: 'user', content: '__OPEN__' }])
+        const _open = async () => {
+          if (pathname.startsWith('/dashboard')) {
+            try {
+              const res = await api.post('/concierge/morning-briefing')
+              if (res.status === 200 && res.data?.briefing) {
+                setMessages([{ role: 'concierge', content: res.data.briefing }])
+                hasInitialized.current = true
+                return
+              }
+            } catch {
+              // fall through to standard opening
+            }
+          }
+          if (!user?.firm_type) {
+            setMessages([{
+              role: 'concierge',
+              content: 'Welcome to JAMM Concierge. Before we start -- what does your firm do most? This lets me point you to the right setup path.\n\n1. Tax prep and returns\n2. Bookkeeping and monthly close\n3. Advisory and planning',
+            }])
+          } else {
+            sendMessages([{ role: 'user', content: '__OPEN__' }])
+          }
         }
+        _open()
       }
     }
     if (isOpen) {

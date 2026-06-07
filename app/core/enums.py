@@ -125,6 +125,7 @@ class TriggerEvent(str, Enum):
     extension_filed = "extension.filed"
     extension_deadline_approaching = "extension.deadline_approaching"
     qbo_budget_variance = "qbo.budget_variance"
+    morning_briefing = "morning_briefing"
 
 
 class AutomationActionType(str, Enum):
