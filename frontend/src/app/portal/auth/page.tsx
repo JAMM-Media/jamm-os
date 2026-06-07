@@ -46,10 +46,11 @@ export default function PortalAuthPage() {
           return
         }
         localStorage.setItem('portal_access_token', data.access_token)
-        // Verify it was written before navigating
         const stored = localStorage.getItem('portal_access_token')
         if (stored) {
-          window.location.replace('/portal')
+          const params = new URLSearchParams(window.location.search)
+          const redirect = params.get('redirect')
+          window.location.replace(redirect || '/portal')
         } else {
           setExchangeError('Could not store session. Please try again.')
           setExchanging(false)

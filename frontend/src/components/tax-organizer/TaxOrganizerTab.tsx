@@ -82,6 +82,7 @@ export default function TaxOrganizerTab({ clientId, userRole }: TaxOrganizerTabP
 
   const [viewingOrganizer, setViewingOrganizer] = useState<OrganizerDetail | null>(null)
   const [loadingDetail, setLoadingDetail] = useState(false)
+  const [sendingLink, setSendingLink] = useState<string | null>(null)
 
   function fetchOrganizers() {
     setLoadingOrganizers(true)
@@ -144,6 +145,21 @@ export default function TaxOrganizerTab({ clientId, userRole }: TaxOrganizerTabP
       toast.error(detail ?? 'Failed to send organizer')
     } finally {
       setSending(false)
+    }
+  }
+
+  async function handleSendLink(organizerId: string) {
+    setSendingLink(organizerId)
+    try {
+      await api.post(`/tax-organizers/${organizerId}/send-link`)
+      toast.success('Portal link sent to client')
+    } catch (err: unknown) {
+      const detail =
+        (err as { response?: { data?: { detail?: string } } })
+          ?.response?.data?.detail
+      toast.error(detail ?? 'Failed to send link')
+    } finally {
+      setSendingLink(null)
     }
   }
 
@@ -299,6 +315,16 @@ export default function TaxOrganizerTab({ clientId, userRole }: TaxOrganizerTabP
                     className="text-[12px] text-[#3A6A94] hover:text-[#4A7FA5] font-medium disabled:opacity-60"
                   >
                     View Responses
+                  </button>
+                )}
+                {org.status !== 'submitted' && (
+                  <button
+                    onClick={() => handleSendLink(org.id)}
+                    disabled={sendingLink === org.id}
+                    className="text-[12px] font-medium text-brand dark:text-[#4A7FA5]
+                      hover:underline disabled:opacity-50 disabled:no-underline"
+                  >
+                    {sendingLink === org.id ? 'Sending...' : 'Send Link'}
                   </button>
                 )}
               </div>
