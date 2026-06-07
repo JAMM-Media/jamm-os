@@ -225,8 +225,7 @@ export default function LetterTemplatesTab() {
   const [editing, setEditing] = useState<LetterTemplate | null>(null)
   const [isNew, setIsNew] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
-  const [previewing, setPreviewing] = useState<string | null>(null)
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+  const [previewTemplateId, setPreviewTemplateId] = useState<string | null>(null)
 
   // Editor state
   const [editName, setEditName] = useState('')
@@ -249,27 +248,12 @@ export default function LetterTemplatesTab() {
 
   useEffect(() => { fetchTemplates() }, [fetchTemplates])
 
-  async function handlePreview(templateId: string) {
-    setPreviewing(templateId)
-    try {
-      const res = await api.get(
-        `/esign/templates/${templateId}/preview`,
-        { responseType: 'blob' }
-      )
-      const url = URL.createObjectURL(
-        new Blob([res.data], { type: 'application/pdf' })
-      )
-      setPreviewUrl(url)
-    } catch {
-      toast.error('Failed to generate preview')
-    } finally {
-      setPreviewing(null)
-    }
+  function handlePreview(templateId: string) {
+    setPreviewTemplateId(templateId)
   }
 
   function closePreview() {
-    if (previewUrl) URL.revokeObjectURL(previewUrl)
-    setPreviewUrl(null)
+    setPreviewTemplateId(null)
   }
 
   function openNew() {
@@ -448,7 +432,7 @@ export default function LetterTemplatesTab() {
           </p>
         </div>
 
-        {previewUrl && (
+        {previewTemplateId && (
           <div
             className="fixed inset-0 z-50 flex items-center justify-center p-6"
             style={{ backgroundColor: 'rgba(0,0,0,0.6)' }}
@@ -473,7 +457,7 @@ export default function LetterTemplatesTab() {
                 </button>
               </div>
               <iframe
-                src={previewUrl}
+                src={`/api/backend/esign/templates/${previewTemplateId}/preview`}
                 className="flex-1 w-full rounded-b-[10px]"
                 title="Letter preview"
               />
@@ -563,10 +547,9 @@ export default function LetterTemplatesTab() {
                 {/* Preview */}
                 <button
                   onClick={() => handlePreview(t.id)}
-                  disabled={previewing === t.id}
-                  className="h-7 px-2.5 rounded-[6px] border border-surface-border dark:border-dark-border text-[11px] font-medium text-[#6B7280] hover:text-brand dark:hover:text-[#EDEEF0] hover:bg-surface-page dark:hover:bg-dark-page transition-colors disabled:opacity-50"
+                  className="h-7 px-2.5 rounded-[6px] border border-surface-border dark:border-dark-border text-[11px] font-medium text-[#6B7280] hover:text-brand dark:hover:text-[#EDEEF0] hover:bg-surface-page dark:hover:bg-dark-page transition-colors"
                 >
-                  {previewing === t.id ? 'Loading...' : 'Preview'}
+                  Preview
                 </button>
 
                 {/* Edit */}
@@ -610,7 +593,7 @@ export default function LetterTemplatesTab() {
         </div>
       )}
 
-      {previewUrl && (
+      {previewTemplateId && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center p-6"
           style={{ backgroundColor: 'rgba(0,0,0,0.6)' }}
@@ -635,7 +618,7 @@ export default function LetterTemplatesTab() {
               </button>
             </div>
             <iframe
-              src={previewUrl}
+              src={`/api/backend/esign/templates/${previewTemplateId}/preview`}
               className="flex-1 w-full rounded-b-[10px]"
               title="Letter preview"
             />
