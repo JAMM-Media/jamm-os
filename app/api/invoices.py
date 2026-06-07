@@ -49,11 +49,22 @@ async def create_invoice(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_manager_or_above),
 ):
-    return await invoice_service.create_invoice(
+    from app.services.audit_service import write_audit_log
+    invoice = await invoice_service.create_invoice(
         db=db, payload=payload, firm_id=current_user.firm_id,
         current_user_id=current_user.id,
         background_tasks=background_tasks,
     )
+    write_audit_log(
+        db=db,
+        firm_id=current_user.firm_id,
+        action='invoice.created',
+        actor_id=current_user.id,
+        actor_type='staff',
+        entity_type='invoice',
+        entity_id=invoice.id,
+    )
+    return invoice
 
 
 # ---------------------------------------------------------
@@ -190,6 +201,16 @@ async def send_invoice(
         raise HTTPException(status_code=400, detail="Cannot send a paid or void invoice")
     if error == "already_sent":
         raise HTTPException(status_code=400, detail="Invoice already sent")
+    from app.services.audit_service import write_audit_log
+    write_audit_log(
+        db=db,
+        firm_id=current_user.firm_id,
+        action='invoice.sent',
+        actor_id=current_user.id,
+        actor_type='staff',
+        entity_type='invoice',
+        entity_id=result.id,
+    )
     return result
 
 

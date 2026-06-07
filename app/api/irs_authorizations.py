@@ -76,6 +76,17 @@ async def send_authorization(
 
     authorization = result["authorization"]
 
+    from app.services.audit_service import write_audit_log
+    write_audit_log(
+        db=db,
+        firm_id=current_firm.id,
+        action='irs_auth.sent',
+        actor_id=current_user.id,
+        actor_type='staff',
+        entity_type='irs_authorization',
+        entity_id=authorization.id,
+    )
+
     await emit_event(
         event=TriggerEvent.irs_authorization_signed,
         payload={
