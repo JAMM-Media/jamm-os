@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
         secure: process.env.NODE_ENV === 'production',
         sameSite: 'lax',
         path: '/',
-        maxAge: 60 * 30,  // 30 minutes — matches ACCESS_TOKEN_EXPIRE_MINUTES
+        maxAge: 60 * 60 * 8,  // 8 hours — matches ACCESS_TOKEN_EXPIRE_MINUTES in config
       })
       // Forward the refresh token cookie set by the backend
       const backendSetCookie = res.headers.get('set-cookie')
