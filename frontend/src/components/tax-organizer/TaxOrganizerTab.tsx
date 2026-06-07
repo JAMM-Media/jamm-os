@@ -324,7 +324,7 @@ export default function TaxOrganizerTab({ clientId, userRole }: TaxOrganizerTabP
                     className="text-[12px] font-medium text-brand dark:text-[#4A7FA5]
                       hover:underline disabled:opacity-50 disabled:no-underline"
                   >
-                    {sendingLink === org.id ? 'Sending...' : 'Send Link'}
+                    {sendingLink === org.id ? 'Sending...' : 'Resend Magic Link'}
                   </button>
                 )}
               </div>

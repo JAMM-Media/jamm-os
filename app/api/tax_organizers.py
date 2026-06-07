@@ -168,6 +168,54 @@ async def send_organizer(
         background_tasks=background_tasks,
     )
 
+    try:
+        if client.email:
+            from app.services import portal_magic_link
+            from app.core.config import get_settings
+            settings = get_settings()
+
+            _, raw_token = portal_magic_link.generate_magic_link(
+                client_id=client.id,
+                firm_id=current_firm.id,
+                expiry_hours=72,
+                db=db,
+            )
+            redirect_path = f"/portal?tab=organizer&organizer_id={organizer.id}"
+            magic_url = (
+                f"{settings.FRONTEND_URL}/portal/auth"
+                f"?token={raw_token}"
+                f"&redirect={quote(redirect_path, safe='')}"
+            )
+            firm_name = current_firm.name
+            email_settings = EmailService.get_firm_email_settings(current_firm)
+            html_body = (
+                f"<p>Hi {client.name},</p>"
+                f"<p>{firm_name} has sent you a tax organizer to fill out. "
+                f"Click the link below to open it and get started. No login or password required "
+                f"-- the link is your access.</p>"
+                f"<p><a href='{magic_url}' style='display:inline-block;"
+                f"padding:10px 20px;background:#1F3148;color:#ffffff;"
+                f"text-decoration:none;border-radius:6px;font-weight:600;"
+                f"font-size:14px;'>Open My Tax Organizer</a></p>"
+                f"<p style='color:#6B7280;font-size:12px;'>This link expires "
+                f"in 72 hours and can only be used once. If you need a new link, "
+                f"contact {firm_name}.</p>"
+            )
+            EmailService._send_raw(
+                to=client.email,
+                subject=f"Your {organizer.tax_year} tax organizer from {current_firm.name}",
+                html_body=html_body,
+                firm_name=current_firm.name,
+                reply_to=email_settings.get("reply_to"),
+                display_name=email_settings.get("display_name"),
+                sending_domain=email_settings.get("sending_domain"),
+            )
+    except Exception as e:
+        logger.error(
+            "Auto magic link email failed on organizer creation: organizer_id=%s error=%s",
+            organizer.id, str(e)
+        )
+
     return organizer
 
 
