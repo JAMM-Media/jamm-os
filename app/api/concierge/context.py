@@ -292,7 +292,12 @@ def _query_upcoming_deadlines(firm_id: uuid.UUID, db: Session) -> list:
     now = datetime.now(timezone.utc).date()
     in_7_days = now + timedelta(days=7)
     rows = db.execute(
-        select(Engagement.name, Client.full_name, Engagement.filing_deadline, Engagement.status)
+        select(
+            Engagement.name.label('engagement_name'),
+            Client.name.label('client_name'),
+            Engagement.filing_deadline,
+            Engagement.status,
+        )
         .join(Client, Engagement.client_id == Client.id)
         .where(
             Engagement.firm_id == firm_id,
@@ -305,8 +310,8 @@ def _query_upcoming_deadlines(firm_id: uuid.UUID, db: Session) -> list:
     ).all()
     return [
         {
-            "name": r.name,
-            "client_name": r.full_name,
+            "name": r.engagement_name,
+            "client_name": r.client_name,
             "due_date": r.filing_deadline.isoformat() if r.filing_deadline else None,
             "status": r.status,
         }
@@ -320,7 +325,7 @@ def _query_upcoming_deadlines(firm_id: uuid.UUID, db: Session) -> list:
 def _query_overdue_document_requests(firm_id: uuid.UUID, db: Session) -> list:
     cutoff = datetime.now(timezone.utc) - timedelta(days=5)
     rows = db.execute(
-        select(DocumentRequest.title, Client.full_name)
+        select(DocumentRequest.title, Client.name)
         .join(Client, DocumentRequest.client_id == Client.id)
         .where(
             DocumentRequest.firm_id == firm_id,
@@ -331,7 +336,7 @@ def _query_overdue_document_requests(firm_id: uuid.UUID, db: Session) -> list:
         .limit(10)
     ).all()
     return [
-        {"title": r.title, "client_name": r.full_name}
+        {"title": r.title, "client_name": r.name}
         for r in rows
     ]
 
@@ -342,7 +347,12 @@ def _query_overdue_document_requests(firm_id: uuid.UUID, db: Session) -> list:
 def _query_stale_engagements(firm_id: uuid.UUID, db: Session) -> list:
     cutoff = datetime.now(timezone.utc) - timedelta(days=7)
     rows = db.execute(
-        select(Engagement.name, Client.full_name, Engagement.status, Engagement.updated_at)
+        select(
+            Engagement.name.label('engagement_name'),
+            Client.name.label('client_name'),
+            Engagement.status,
+            Engagement.updated_at,
+        )
         .join(Client, Engagement.client_id == Client.id)
         .where(
             Engagement.firm_id == firm_id,
@@ -354,8 +364,8 @@ def _query_stale_engagements(firm_id: uuid.UUID, db: Session) -> list:
     ).all()
     return [
         {
-            "name": r.name,
-            "client_name": r.full_name,
+            "name": r.engagement_name,
+            "client_name": r.client_name,
             "status": r.status,
             "updated_at": r.updated_at.isoformat() if r.updated_at else None,
         }

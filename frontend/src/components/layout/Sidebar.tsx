@@ -75,7 +75,7 @@ export function Sidebar({ collapsed, onToggle, onConciergeOpen, locked }: Sideba
 
   const { data: firmData } = useQuery({
     queryKey: ['firm-settings-sidebar'],
-    queryFn: () => api.get('/api/v1/firms/me').then((r) => r.data),
+    queryFn: () => api.get('/users/firm').then((r) => r.data),
     staleTime: 5 * 60 * 1000,
   })
 

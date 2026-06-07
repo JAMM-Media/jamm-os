@@ -140,6 +140,7 @@ class AutomationActionType(str, Enum):
     add_internal_note = "add_internal_note"
     webhook_post = "webhook_post"
     send_irs_auth_reminder = "send_irs_auth_reminder"
+    morning_briefing = "morning_briefing"
 
 
 class ConditionOperator(str, Enum):

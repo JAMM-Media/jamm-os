@@ -102,6 +102,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
   const [formDirty, setFormDirtyState] = useState(false)
   const [statusMessage, setStatusMessage] = useState('')
   const [pasteFormOpen, setPasteFormOpen] = useState(false)
+  const [briefingLoading, setBriefingLoading] = useState(false)
   const [pasteForm, setPasteForm] = useState({
     name: '',
     email: '',
@@ -326,15 +327,19 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
       if (messages.length === 0) {
         const _open = async () => {
           if (pathname.startsWith('/dashboard')) {
+            setBriefingLoading(true)
             try {
               const res = await api.post('/concierge/morning-briefing')
               if (res.status === 200 && res.data?.briefing) {
                 setMessages([{ role: 'concierge', content: res.data.briefing }])
                 hasInitialized.current = true
+                setBriefingLoading(false)
                 return
               }
             } catch {
               // fall through to standard opening
+            } finally {
+              setBriefingLoading(false)
             }
           }
           if (!user?.firm_type) {
@@ -705,6 +710,25 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
 
           {/* Opening message fires automatically via __OPEN__ sentinel on first open */}
 
+          {briefingLoading && messages.length === 0 && (
+            <div className="flex gap-2.5 px-3 py-2">
+              <div className="w-7 h-7 rounded-full bg-[#1F3148] flex items-center justify-center flex-shrink-0">
+                <span className="text-white text-[10px] font-medium">JC</span>
+              </div>
+              <div className="flex flex-col gap-2 flex-1 pt-1">
+                <div className="h-3 w-24 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+                <div className="h-2 w-full bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+                <div className="h-2 w-4/5 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+                <div className="h-2 w-16 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded mt-1" />
+                <div className="h-2 w-full bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+                <div className="h-2 w-3/4 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+                <div className="h-2 w-16 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded mt-1" />
+                <div className="h-2 w-full bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+                <div className="h-2 w-2/3 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+              </div>
+            </div>
+          )}
+
           {messages.map((msg, i) => (
             <div key={i}>
             <div className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} items-start gap-2`}>
@@ -725,11 +749,15 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
                   <div className={`prose prose-sm max-w-none text-[13px] ${msg.role === 'user' ? 'text-white' : 'text-[#374151] dark:text-[#9CA3AF]'}`}>
                     <ReactMarkdown
                       components={{
+                        h2: ({node, ...props}) => <h2 className="text-[13px] font-semibold text-[#1F3148] dark:text-[#EDEEF0] mt-3 mb-1 first:mt-0" {...props} />,
+                        h3: ({node, ...props}) => <h3 className="text-[12px] font-semibold text-[#4A7FA5] uppercase tracking-wide mt-2.5 mb-1" {...props} />,
+                        hr: ({node, ...props}) => <hr className="border-t border-[#C8CDD6] dark:border-[#484848] my-2" />,
                         ul: ({node, ...props}) => <ul className="list-disc list-outside ml-4 my-1 space-y-0.5" {...props} />,
                         ol: ({node, ...props}) => <ol className="list-decimal list-outside ml-4 my-1 space-y-0.5" {...props} />,
                         li: ({node, ...props}) => <li className="leading-snug" {...props} />,
                         p: ({node, ...props}) => <p className="mb-1 last:mb-0" {...props} />,
                         strong: ({node, ...props}) => <strong className="font-medium text-[#1F3148] dark:text-[#EDEEF0]" {...props} />,
+                        em: ({node, ...props}) => <em className="not-italic text-[11px] text-[#6B7280]" {...props} />,
                       }}
                     >
                       {msg.content}

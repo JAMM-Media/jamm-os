@@ -361,9 +361,9 @@ def morning_briefing(
         briefing_client = anthropic.Anthropic(api_key=briefing_api_key)
         response = briefing_client.messages.create(
             model="claude-haiku-4-5-20251001",
-            max_tokens=400,
+            max_tokens=600,
             system=MORNING_BRIEFING_PROMPT,
-            messages=[{"role": "user", "content": str(context_data)}],
+            messages=[{"role": "user", "content": f"Firm data:\n{context_data}\n\nReturn structured markdown only. Use the exact format specified. No prose."}],
         )
         briefing_text = response.content[0].text.strip()
 
