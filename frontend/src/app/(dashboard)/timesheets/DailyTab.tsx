@@ -1193,15 +1193,15 @@ function EntryRow({
           {entry.activity_type && (
             <span className="text-[12px] text-[#6B7280]">{entry.activity_type}</span>
           )}
-          {entry.description && entry.description !== entry.activity_type && (
-            <span className="text-[12px] text-[#9CA3AF] italic truncate max-w-[300px]">{entry.description}</span>
-          )}
           <span className="text-[12px] text-[#9CA3AF]">
             {entry.start_time && entry.end_time
               ? `${formatTime12h(entry.start_time)} – ${formatTime12h(entry.end_time)} (${calcDuration(entry.start_time, entry.end_time) ?? ''})`
               : `${Number(entry.hours).toFixed(2)}h`}
           </span>
         </div>
+        {entry.description && entry.description !== entry.activity_type && (
+          <p className="text-[12px] text-[#9CA3AF] mt-1 pl-0.5 italic line-clamp-2">{entry.description}</p>
+        )}
       </div>
       <div className="flex items-center gap-1 flex-shrink-0">
         {!isSubmitted ? (
