@@ -1,7 +1,7 @@
 // frontend/src/components/layout/Sidebar.tsx
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useTheme } from 'next-themes'
@@ -62,6 +62,21 @@ export function Sidebar({ collapsed, onToggle, onConciergeOpen, locked }: Sideba
   const [mounted, setMounted] = useState(false)
   useEffect(() => setMounted(true), [])
 
+  const navRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const nav = navRef.current
+    if (!nav) return
+
+    const saved = sessionStorage.getItem('jamm_sidebar_scroll')
+    if (saved) nav.scrollTop = parseInt(saved, 10)
+
+    function handleScroll() {
+      sessionStorage.setItem('jamm_sidebar_scroll', String(nav!.scrollTop))
+    }
+    nav.addEventListener('scroll', handleScroll)
+    return () => nav.removeEventListener('scroll', handleScroll)
+  }, [])
   const { totalUnread } = useChannels()
   const { logout, user } = useAuth()
 
@@ -133,7 +148,7 @@ export function Sidebar({ collapsed, onToggle, onConciergeOpen, locked }: Sideba
       )}
 
       {/* Main nav */}
-      <nav className="flex-1 py-3 overflow-y-auto">
+      <nav ref={navRef} className="flex-1 py-3 overflow-y-auto">
         <ul className="space-y-0.5 px-1.5">
           {visibleNavItems.map((item) => {
             const isActive = pathname.startsWith(item.href)
@@ -148,6 +163,7 @@ export function Sidebar({ collapsed, onToggle, onConciergeOpen, locked }: Sideba
               <li key={item.href}>
                 <Link
                   href={item.href}
+                  scroll={false}
                   className={cn(
                     'flex items-center gap-3 px-2 py-2 rounded text-[13px] transition-colors',
                     isActive
@@ -221,6 +237,7 @@ export function Sidebar({ collapsed, onToggle, onConciergeOpen, locked }: Sideba
         {/* Settings */}
         <Link
           href={settingsItem.href}
+          scroll={false}
           className={cn(
             'flex items-center gap-3 px-2 py-2 rounded text-[13px] transition-colors',
             pathname.startsWith(settingsItem.href)

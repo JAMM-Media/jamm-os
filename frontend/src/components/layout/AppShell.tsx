@@ -1,7 +1,7 @@
 // frontend/src/components/layout/AppShell.tsx
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { usePathname } from 'next/navigation'
 import { Sidebar } from './Sidebar'
 import { ConciergePanel } from '@/components/concierge/ConciergePanel'
@@ -19,12 +19,30 @@ export function AppShell({ children }: AppShellProps) {
   })
   const pathname = usePathname()
   const isSettingsRoute = pathname.startsWith('/settings')
+  const mainRef = useRef<HTMLDivElement>(null)
   const [conciergeOpen, setConciergeOpen] = useState(() => {
     if (typeof window !== 'undefined') {
       return sessionStorage.getItem('jamm_concierge_open') === 'true'
     }
     return false
   })
+
+  useEffect(() => {
+    const main = mainRef.current
+    if (!main) return
+    const saved = sessionStorage.getItem(`jamm_scroll_${pathname}`)
+    if (saved) {
+      requestAnimationFrame(() => {
+        main.scrollTop = parseInt(saved, 10)
+      })
+    }
+
+    function handleScroll() {
+      sessionStorage.setItem(`jamm_scroll_${pathname}`, String(main!.scrollTop))
+    }
+    main.addEventListener('scroll', handleScroll)
+    return () => main.removeEventListener('scroll', handleScroll)
+  }, [pathname])
 
   function handleConciergeOpen() {
     sessionStorage.setItem('jamm_concierge_open', 'true')
@@ -48,7 +66,7 @@ export function AppShell({ children }: AppShellProps) {
         onConciergeOpen={handleConciergeOpen}
         locked={isSettingsRoute}
       />
-      <main className="flex-1 overflow-y-auto">
+      <main ref={mainRef} className="flex-1 overflow-y-auto">
         {children}
       </main>
       <ConciergePanel isOpen={conciergeOpen} onClose={handleConciergeClose} />
