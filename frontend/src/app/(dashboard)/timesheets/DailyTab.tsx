@@ -1200,7 +1200,7 @@ function EntryRow({
           </span>
         </div>
         {entry.description && entry.description !== entry.activity_type && (
-          <p className="text-[12px] text-[#9CA3AF] mt-1 pl-0.5 italic line-clamp-2">{entry.description}</p>
+          <p className="text-[12px] text-[#374151] dark:text-[#D1D5DB] mt-1 pl-0.5 italic line-clamp-2">{entry.description}</p>
         )}
       </div>
       <div className="flex items-center gap-1 flex-shrink-0">
