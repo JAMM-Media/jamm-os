@@ -186,7 +186,7 @@ export default function AggregateTab({
     const params = new URLSearchParams({ start_date: startISO, end_date: endISO })
     if (effectiveUserId) params.set('user_id', effectiveUserId)
     api
-      .get(`/api/v1/time-entries/summary?${params}`)
+      .get(`/time-entries/summary?${params}`)
       .then((r) => {
         const rows: SummaryRow[] = r.data ?? []
         setSummary(rows)
@@ -201,7 +201,7 @@ export default function AggregateTab({
     const eParams = new URLSearchParams({ start_date: startISO, end_date: endISO, limit: '500' })
     if (effectiveUserId) eParams.set('user_id', effectiveUserId)
     api
-      .get(`/api/v1/time-entries/?${eParams}`)
+      .get(`/time-entries/?${eParams}`)
       .then((r) => setEntries(r.data?.items ?? []))
       .catch(() => setEntries([]))
       .finally(() => setLoadingEntries(false))
@@ -211,13 +211,13 @@ export default function AggregateTab({
   function handleExport() {
     const params = new URLSearchParams({ start_date: startISO, end_date: endISO })
     if (effectiveUserId) params.set('user_id', effectiveUserId)
-    const url = `/api/v1/time-entries/export?${params}`
+    const url = `/time-entries/export?${params}`
     window.open(url, '_blank')
   }
 
   async function handleApprove(entryId: string) {
     try {
-      await api.post(`/api/v1/time-entries/${entryId}/approve`)
+      await api.post(`/time-entries/${entryId}/approve`)
       setEntries((prev) =>
         prev.map((e) => (e.id === entryId ? { ...e, is_approved: true } : e))
       )
@@ -230,7 +230,7 @@ export default function AggregateTab({
   async function handleSubmittedEdit() {
     if (!editModal) return
     try {
-      await api.patch(`/api/v1/time-entries/${editModal.id}/submitted-edit`, {
+      await api.patch(`/time-entries/${editModal.id}/submitted-edit`, {
         ...editFields,
         edit_note: editNote || undefined,
       })
@@ -240,7 +240,7 @@ export default function AggregateTab({
       // Reload
       const params = new URLSearchParams({ start_date: startISO, end_date: endISO, limit: '500' })
       if (effectiveUserId) params.set('user_id', effectiveUserId)
-      const r = await api.get(`/api/v1/time-entries/?${params}`)
+      const r = await api.get(`/time-entries/?${params}`)
       setEntries(r.data?.items ?? [])
       toast.success('Entry updated')
     } catch {

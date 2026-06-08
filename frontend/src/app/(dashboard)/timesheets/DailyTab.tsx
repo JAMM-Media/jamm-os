@@ -222,7 +222,7 @@ export default function DailyTab({
     }).catch(() => {})
 
     if (isManagerOrAbove) {
-      api.get('/api/v1/time-entries/settings').then((r) => {
+      api.get('/time-entries/settings').then((r) => {
         setApprovalRequired(r.data?.approval_required ?? false)
       }).catch(() => {})
     }
@@ -238,7 +238,7 @@ export default function DailyTab({
     const params = new URLSearchParams({ date: today, limit: '100' })
     if (effectiveUserId !== currentUserId) params.set('user_id', effectiveUserId)
     api
-      .get(`/api/v1/time-entries/?${params}`)
+      .get(`/time-entries/?${params}`)
       .then((r) => {
         setEntries(r.data?.items ?? [])
       })
@@ -488,7 +488,7 @@ export default function DailyTab({
   async function handleSubmitDay() {
     setSubmittingDay(true)
     try {
-      await api.post('/api/v1/time-entries/submit-day', { date: today })
+      await api.post('/time-entries/submit-day', { date: today })
       toast.success('Day submitted')
       loadEntries()
     } catch (err: unknown) {
@@ -501,7 +501,7 @@ export default function DailyTab({
 
   async function handleDeleteEntry(id: string) {
     try {
-      await api.delete(`/api/v1/time-entries/${id}`)
+      await api.delete(`/time-entries/${id}`)
       setDeleteConfirmId(null)
       loadEntries()
       toast.success('Entry deleted')
@@ -512,7 +512,7 @@ export default function DailyTab({
 
   async function handleEditSubmit(id: string) {
     try {
-      await api.patch(`/api/v1/time-entries/${id}`, editForm)
+      await api.patch(`/time-entries/${id}`, editForm)
       setEditingId(null)
       loadEntries()
       toast.success('Entry updated')
@@ -523,7 +523,7 @@ export default function DailyTab({
 
   async function handleSubmittedEdit(id: string) {
     try {
-      await api.patch(`/api/v1/time-entries/${id}/submitted-edit`, {
+      await api.patch(`/time-entries/${id}/submitted-edit`, {
         ...editForm,
         edit_note: editNote || undefined,
       })
