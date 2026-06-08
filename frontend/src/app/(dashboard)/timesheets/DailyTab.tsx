@@ -614,7 +614,7 @@ export default function DailyTab({
                     setEngDropOpen(true)
                     if (!e.target.value) setForm((f) => ({ ...f, engagementId: '' }))
                   }}
-                  onFocus={() => setEngDropOpen(true)}
+                  onFocus={() => { setEngSearch(''); setEngDropOpen(true) }}
                   placeholder="Search engagements..."
                   className={inputClass}
                 />
@@ -1177,9 +1177,9 @@ function EntryRow({
           <span className="text-[12px] font-medium text-brand dark:text-[#EDEEF0] truncate">
             {eng?.name ?? '—'}{clientName ? ` — ${clientName}` : ''}
           </span>
-          {entry.is_billable && (
-            <span className="w-2 h-2 rounded-full bg-green-500 flex-shrink-0" title="Billable" />
-          )}
+          <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${entry.is_billable ? 'bg-[#D1FAE5] text-[#065F46]' : 'bg-[#E5E7EB] text-[#1F3148]'}`}>
+            {entry.is_billable ? 'Billable' : 'Non-billable'}
+          </span>
           {isSubmitted && entry.is_approved && (
             <span className="flex items-center gap-0.5 text-[11px] text-green-600">
               <Check className="h-3 w-3" /> Approved
@@ -1192,6 +1192,9 @@ function EntryRow({
         <div className="flex items-center gap-2 mt-0.5 flex-wrap">
           {entry.activity_type && (
             <span className="text-[12px] text-[#6B7280]">{entry.activity_type}</span>
+          )}
+          {entry.description && entry.description !== entry.activity_type && (
+            <span className="text-[12px] text-[#9CA3AF] italic truncate max-w-[300px]">{entry.description}</span>
           )}
           <span className="text-[12px] text-[#9CA3AF]">
             {entry.start_time && entry.end_time

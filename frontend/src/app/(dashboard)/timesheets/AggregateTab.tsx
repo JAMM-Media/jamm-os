@@ -28,6 +28,7 @@ interface SummaryRow {
   billable_pct: number
   entry_count: number
   is_submitted: boolean
+  is_approved: boolean
   has_edits: boolean
 }
 
@@ -123,10 +124,13 @@ function groupByUser(rows: SummaryRow[]): Record<string, SummaryRow[]> {
   return result
 }
 
-function userStatus(rows: SummaryRow[]): 'green' | 'amber' | 'red' {
-  if (rows.every((r) => r.is_submitted)) return 'green'
-  if (rows.some((r) => r.is_submitted)) return 'amber'
-  return 'red'
+function userStatus(rows: SummaryRow[], approvalRequired: boolean): 'green' | 'amber' | 'red' {
+  const allSubmitted = rows.every((r) => r.is_submitted)
+  const someSubmitted = rows.some((r) => r.is_submitted)
+  if (!someSubmitted) return 'red'
+  if (!allSubmitted) return 'amber'
+  if (approvalRequired && rows.some((r) => !r.is_approved)) return 'amber'
+  return 'green'
 }
 
 function totalHoursForUser(rows: SummaryRow[]): number {
@@ -160,6 +164,7 @@ export default function AggregateTab({
   const [editModal, setEditModal] = useState<TimeEntry | null>(null)
   const [editNote, setEditNote] = useState('')
   const [editFields, setEditFields] = useState<Partial<TimeEntry>>({})
+  const [approvalRequired, setApprovalRequired] = useState(false)
 
   const { start, end } = calcDateRange(period, offset)
   const startISO = toISO(start)
@@ -179,6 +184,12 @@ export default function AggregateTab({
       setEngagements(nameMap)
       setEngagementClientMap(clientMap)
     }).catch(() => {})
+    if (isManagerOrAbove) {
+      api.get('/time-entries/settings').then((r) => {
+        setApprovalRequired(r.data?.approval_required ?? false)
+      }).catch(() => {})
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {
@@ -312,7 +323,7 @@ export default function AggregateTab({
                 const pct =
                   total > 0 ? Math.round((billable / total) * 100) : 0
                 const count = rows.reduce((s, r) => s + r.entry_count, 0)
-                const status = userStatus(rows)
+                const status = userStatus(rows, approvalRequired)
                 const isOT = total > WEEKLY_OT_HOURS
                 const isHardOT = total > 50
                 return (
@@ -343,7 +354,7 @@ export default function AggregateTab({
                     <td className="px-3 py-2">
                       <span
                         className={cn('inline-block w-2.5 h-2.5 rounded-full', STATUS_COLORS[status])}
-                        title={status}
+                        title={status === 'green' ? 'All submitted and approved' : status === 'amber' ? 'Awaiting submission or approval' : 'Not submitted'}
                       />
                     </td>
                   </tr>
