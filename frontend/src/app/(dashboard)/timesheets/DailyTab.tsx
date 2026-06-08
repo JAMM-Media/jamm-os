@@ -79,6 +79,14 @@ function formatElapsed(seconds: number): string {
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
 }
 
+function formatTime12h(time: string | null | undefined): string {
+  if (!time) return ''
+  const [h, m] = time.split(':').map(Number)
+  const period = h >= 12 ? 'PM' : 'AM'
+  const hour12 = h === 0 ? 12 : h > 12 ? h - 12 : h
+  return `${hour12}:${String(m).padStart(2, '0')} ${period}`
+}
+
 interface Engagement {
   id: string
   name: string
@@ -826,6 +834,13 @@ export default function DailyTab({
                 placeholder="0.00"
                 className={inputClass}
               />
+              {(() => {
+                const v = parseFloat(form.hours)
+                if (!form.hours || isNaN(v) || v <= 0) return null
+                const wh = Math.floor(v)
+                const rm = Math.round((v % 1) * 60)
+                return <p className="text-[11px] mt-1" style={{ color: '#6B7280' }}>{wh}h {rm}m</p>
+              })()}
             </div>
 
             {/* Billable toggle */}
@@ -1180,7 +1195,7 @@ function EntryRow({
           )}
           <span className="text-[12px] text-[#9CA3AF]">
             {entry.start_time && entry.end_time
-              ? `${entry.start_time} – ${entry.end_time} (${Number(entry.hours).toFixed(2)}h / ${calcDuration(entry.start_time, entry.end_time) ?? ''})`
+              ? `${formatTime12h(entry.start_time)} – ${formatTime12h(entry.end_time)} (${calcDuration(entry.start_time, entry.end_time) ?? ''})`
               : `${Number(entry.hours).toFixed(2)}h`}
           </span>
         </div>
