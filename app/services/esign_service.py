@@ -49,11 +49,16 @@ def prepare_and_create_envelope(
     if not client:
         raise ValueError(f"Client not found for engagement {engagement.id}")
 
+    firm_settings = firm.settings or {}
     context: dict = {
         "client_name": getattr(client, "full_name", None) or client.name,
         "client_email": client.email or "",
         "firm_name": firm.name,
         "firm_owner_name": current_user.full_name or current_user.email,
+        "firm_address": firm_settings.get("firm_address", ""),
+        "firm_phone": firm_settings.get("firm_phone", ""),
+        "firm_contact_email": firm_settings.get("firm_contact_email", ""),
+        "firm_website": firm_settings.get("firm_website", ""),
         "engagement_name": engagement.name,
         "engagement_type": getattr(engagement, "engagement_type", None) or "",
         "engagement_date": date.today().strftime("%B %d, %Y"),
