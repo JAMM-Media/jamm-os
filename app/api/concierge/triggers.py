@@ -28,6 +28,15 @@ def _oldest_event_age_hours(firm_id: UUID, event_type: str, db: Session) -> floa
     return (now - oldest).total_seconds() / 3600
 
 
+def is_tax_season() -> bool:
+    """Returns True between January 15 and April 20 (inclusive), UTC."""
+    from datetime import date
+    today = date.today()
+    start = date(today.year, 1, 15)
+    end = date(today.year, 4, 20)
+    return start <= today <= end
+
+
 def evaluate_triggers(firm_id: UUID, db: Session) -> list[dict]:
     ctx = get_firm_context(firm_id, db)
 
@@ -40,6 +49,7 @@ def evaluate_triggers(firm_id: UUID, db: Session) -> list[dict]:
     onboarding_completed = ctx.get("onboarding_steps", {}).get("completed", [])
 
     results: list[dict] = []
+    _tax_season = is_tax_season()
 
     # Trigger 1 -- no_engagement_after_import
     if engagement_total == 0 and client_count > 0:
@@ -53,8 +63,8 @@ def evaluate_triggers(firm_id: UUID, db: Session) -> list[dict]:
                 ),
             })
 
-    # Trigger 2 -- no_portal_invite_sent
-    if portal_logged_in == 0 and client_count > 0:
+    # Trigger 2 -- no_portal_invite_sent (suppressed during tax season)
+    if not _tax_season and portal_logged_in == 0 and client_count > 0:
         age = _oldest_event_age_hours(firm_id, "client.created", db)
         if age is not None and age > 48:
             results.append({
@@ -66,8 +76,8 @@ def evaluate_triggers(firm_id: UUID, db: Session) -> list[dict]:
                 ),
             })
 
-    # Trigger 3 -- staff_invite_pending
-    if staff_pending > 0:
+    # Trigger 3 -- staff_invite_pending (suppressed during tax season)
+    if not _tax_season and staff_pending > 0:
         results.append({
             "trigger_type": "staff_invite_pending",
             "message": (
@@ -76,8 +86,8 @@ def evaluate_triggers(firm_id: UUID, db: Session) -> list[dict]:
             ),
         })
 
-    # Trigger 4 -- missing_email_clients
-    if clients_missing_email > 0:
+    # Trigger 4 -- missing_email_clients (suppressed during tax season)
+    if not _tax_season and clients_missing_email > 0:
         results.append({
             "trigger_type": "missing_email_clients",
             "message": (
@@ -87,8 +97,8 @@ def evaluate_triggers(firm_id: UUID, db: Session) -> list[dict]:
             ),
         })
 
-    # Trigger 5 -- no_automation_enabled
-    if "automation_enabled" not in onboarding_completed and client_count > 0:
+    # Trigger 5 -- no_automation_enabled (suppressed during tax season)
+    if not _tax_season and "automation_enabled" not in onboarding_completed and client_count > 0:
         age = _oldest_event_age_hours(firm_id, "client.created", db)
         if age is not None and age > 72:
             results.append({
@@ -100,8 +110,8 @@ def evaluate_triggers(firm_id: UUID, db: Session) -> list[dict]:
                 ),
             })
 
-    # Trigger 6 -- irs_auth_gap
-    if irs_with_auth == 0 and client_count > 0:
+    # Trigger 6 -- irs_auth_gap (suppressed during tax season)
+    if not _tax_season and irs_with_auth == 0 and client_count > 0:
         results.append({
             "trigger_type": "irs_auth_gap",
             "message": (
