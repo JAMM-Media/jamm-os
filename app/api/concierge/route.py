@@ -260,6 +260,13 @@ Respond with exactly one word: SAFE or UNSAFE. Nothing else.""",
 
     sanitized_messages = sanitize_messages(body.messages)
 
+    # Fetch live firm context for system prompt injection (Phase 2)
+    try:
+        from app.api.concierge.context import get_firm_context
+        _firm_context = get_firm_context(current_firm.id, db)
+    except Exception:
+        _firm_context = None
+
     import re
 
     SSN_PATTERN = re.compile(r'\b\d{3}-\d{2}-\d{4}\b')
@@ -308,7 +315,7 @@ Respond with exactly one word: SAFE or UNSAFE. Nothing else.""",
         with client.messages.stream(
             model="claude-sonnet-4-6",
             max_tokens=2000,
-            system=get_system_prompt(autopilot_enabled=body.autopilot_enabled),
+            system=get_system_prompt(firm_context=_firm_context, autopilot_enabled=body.autopilot_enabled),
             messages=sanitized_messages,
         ) as stream:
             assembled = ""
