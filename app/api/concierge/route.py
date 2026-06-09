@@ -23,6 +23,7 @@ from app.models.firm import Firm
 from app.models.client import Client
 from app.models.user import User
 from app.models.concierge_notification import ConciergeNotification
+from app.models.concierge_question_log import ConciergeQuestionLog
 from app.models.security_event import SecurityEvent
 from app.api.concierge.prompts import get_system_prompt, MORNING_BRIEFING_PROMPT, MORNING_BRIEFING_DETAIL_PROMPT
 from app.api.concierge.context import router as context_router, get_firm_context_detail
@@ -331,7 +332,49 @@ Respond with exactly one word: SAFE or UNSAFE. Nothing else.""",
                 yield f"data: [FILTERED]\n\n"
                 yield f"data: {filtered}\n\n"
 
-    return StreamingResponse(generate(), media_type="text/event-stream")
+    def generate_and_log():
+        assembled_for_log = []
+        for chunk in generate():
+            assembled_for_log.append(chunk)
+            yield chunk
+        try:
+            full_response = "".join(assembled_for_log)
+            # Extract plain text from SSE lines for logging
+            response_text = "\n".join(
+                line[6:] for line in full_response.split("\n")
+                if line.startswith("data:") and not line.startswith("data: [FILTERED]")
+            ).strip()
+            if response_text:
+                last_user_text = next(
+                    (m.content for m in reversed(body.messages) if m.role == "user"),
+                    "",
+                )
+                LOW_CONFIDENCE_PHRASES = [
+                    "i'm not sure",
+                    "i don't have information",
+                    "i don't know",
+                    "i cannot confirm",
+                    "i'm unable to",
+                    "i am not sure",
+                    "i am unable to",
+                    "i don't have access",
+                    "i cannot find",
+                    "not available in my",
+                ]
+                lower_response = response_text.lower()
+                is_low_confidence = any(p in lower_response for p in LOW_CONFIDENCE_PHRASES)
+                log_entry = ConciergeQuestionLog(
+                    firm_id=current_firm.id,
+                    question_text=last_user_text[:2000],
+                    response_summary=response_text[:500],
+                    low_confidence=is_low_confidence,
+                )
+                db.add(log_entry)
+                db.commit()
+        except Exception:
+            pass  # non-fatal -- logging failure must never block the response
+
+    return StreamingResponse(generate_and_log(), media_type="text/event-stream")
 
 
 @router.post("/morning-briefing")
