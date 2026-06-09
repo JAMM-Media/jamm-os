@@ -320,6 +320,42 @@ def _query_upcoming_deadlines(firm_id: uuid.UUID, db: Session) -> list:
 
 
 # ---------------------------------------------------------------------------
+# Query: all_engagements (unfiltered, for detail briefing)
+# ---------------------------------------------------------------------------
+def _query_all_engagements(firm_id: uuid.UUID, db: Session) -> list:
+    rows = db.execute(
+        select(
+            Engagement.name.label("engagement_name"),
+            Client.name.label("client_name"),
+            Engagement.status,
+            Engagement.updated_at,
+        )
+        .join(Client, Engagement.client_id == Client.id)
+        .where(Engagement.firm_id == firm_id)
+        .order_by(Engagement.updated_at.desc())
+    ).all()
+    now = datetime.now(timezone.utc)
+    return [
+        {
+            "name": r.engagement_name,
+            "client_name": r.client_name,
+            "status": r.status,
+            "updated_at": r.updated_at.isoformat() if r.updated_at else None,
+            "days_since_update": (now - r.updated_at).days if r.updated_at else None,
+        }
+        for r in rows
+    ]
+
+
+def get_firm_context_detail(firm_id: uuid.UUID, db: Session) -> dict:
+    data = get_firm_context(firm_id, db)
+    data = dict(data)
+    data["all_engagements_with_staleness"] = _query_all_engagements(firm_id, db)
+    data.pop("stale_engagements", None)
+    return data
+
+
+# ---------------------------------------------------------------------------
 # Query: overdue_document_requests
 # ---------------------------------------------------------------------------
 def _query_overdue_document_requests(firm_id: uuid.UUID, db: Session) -> list:
@@ -345,7 +381,7 @@ def _query_overdue_document_requests(firm_id: uuid.UUID, db: Session) -> list:
 # Query: stale_engagements
 # ---------------------------------------------------------------------------
 def _query_stale_engagements(firm_id: uuid.UUID, db: Session) -> list:
-    cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+    cutoff = datetime.now(timezone.utc) - timedelta(days=14)
     rows = db.execute(
         select(
             Engagement.name.label('engagement_name'),
@@ -362,12 +398,14 @@ def _query_stale_engagements(firm_id: uuid.UUID, db: Session) -> list:
         .order_by(Engagement.updated_at.asc())
         .limit(10)
     ).all()
+    now = datetime.now(timezone.utc)
     return [
         {
             "name": r.engagement_name,
             "client_name": r.client_name,
             "status": r.status,
             "updated_at": r.updated_at.isoformat() if r.updated_at else None,
+            "days_since_update": (now - r.updated_at).days if r.updated_at else None,
         }
         for r in rows
     ]

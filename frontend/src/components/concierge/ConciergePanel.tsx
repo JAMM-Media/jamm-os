@@ -3,8 +3,9 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
-import { X, Send, Zap } from 'lucide-react'
+import { X, Send, Zap, Download } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
+import jsPDF from 'jspdf'
 import { useAuth } from '@/lib/hooks/useAuth'
 import api from '@/lib/api'
 import {
@@ -16,6 +17,7 @@ interface Message {
   role: 'user' | 'concierge'
   content: string
   actionConfirm?: string
+  isBriefing?: boolean
 }
 
 interface Notification {
@@ -103,6 +105,9 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
   const [statusMessage, setStatusMessage] = useState('')
   const [pasteFormOpen, setPasteFormOpen] = useState(false)
   const [briefingLoading, setBriefingLoading] = useState(false)
+  const [isDownloading, setIsDownloading] = useState(false)
+  const [detailBriefing, setDetailBriefing] = useState<string | null>(null)
+  const [detailReady, setDetailReady] = useState(false)
   const [pasteForm, setPasteForm] = useState({
     name: '',
     email: '',
@@ -331,7 +336,10 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
             try {
               const res = await api.post('/concierge/morning-briefing')
               if (res.status === 200 && res.data?.briefing) {
-                setMessages([{ role: 'concierge', content: res.data.briefing }])
+                setMessages([{ role: 'concierge', content: res.data.briefing, isBriefing: true }])
+                api.post('/concierge/morning-briefing/detail')
+                  .then((r) => { if (r.data?.briefing) { setDetailBriefing(r.data.briefing); setDetailReady(true) } })
+                  .catch(() => {})
                 hasInitialized.current = true
                 setBriefingLoading(false)
                 return
@@ -766,6 +774,205 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
                 ) : streaming && i === messages.length - 1 ? (
                   <span className="text-[13px] text-[#6B7280] animate-pulse">Thinking...</span>
                 ) : null}
+                {msg.isBriefing && (
+                  <div className="mt-2">
+                    <button
+                      disabled={!detailReady || isDownloading}
+                      onClick={async () => {
+                        setIsDownloading(true)
+                        try {
+                          let briefingText = detailBriefing
+                          if (!briefingText) {
+                            const res = await api.post('/concierge/morning-briefing/detail')
+                            if (res.status === 200 && res.data?.briefing) {
+                              briefingText = res.data.briefing
+                              setDetailBriefing(res.data.briefing)
+                            }
+                          }
+                          if (briefingText) {
+                            const doc = new jsPDF({ format: 'a4' })
+                            const dateStr = new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
+                            let pageNum = 1
+
+                            // BUG 1: strip leading lines the AI echoes back (title, date, firm name)
+                            const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December']
+                            const strippedLines = briefingText.split('\n')
+                            let stripIdx = 0
+                            while (stripIdx < strippedLines.length && stripIdx < 6) {
+                              const l = strippedLines[stripIdx].trim()
+                              if (
+                                l === '' ||
+                                l.includes('JAMM PX Morning Briefing') ||
+                                monthNames.some((m) => l.includes(m)) ||
+                                l.includes('2026') || l.includes('2025') ||
+                                l.includes('Tax') || l.includes('Bookkeeping') || l.includes('Accounting') || l.includes('Firm')
+                              ) {
+                                stripIdx++
+                              } else {
+                                break
+                              }
+                            }
+                            const cleanedText = strippedLines
+                              .slice(stripIdx)
+                              .filter((l) =>
+                                !l.includes('{firm name}') &&
+                                !l.includes('{firm_name}') &&
+                                l.trim() !== 'JAMM PX' &&
+                                !l.match(/^JAMM PX Morning Briefing/)
+                              )
+                              .join('\n')
+
+                            // BUG 5: first-page header with full branding; subsequent pages get minimal gray header only
+                            const addPageHeader = (isFirst: boolean) => {
+                              if (isFirst) {
+                                doc.setFillColor(31, 49, 72)
+                                doc.rect(0, 0, 210, 26, 'F')
+                                doc.setFont('helvetica', 'bold')
+                                doc.setFontSize(15)
+                                doc.setTextColor(255, 255, 255)
+                                doc.text('JAMM', 20, 13)
+                                const jammWidth = doc.getTextWidth('JAMM')
+                                doc.setTextColor(211, 165, 97)
+                                doc.text(' PX', 20 + jammWidth, 13)
+                                doc.setTextColor(255, 255, 255)
+                                doc.setFont('helvetica', 'bold')
+                                doc.setFontSize(9)
+                                doc.text('Morning Briefing', 20, 19)
+                                doc.setFont('helvetica', 'normal')
+                                doc.setFontSize(9)
+                                doc.setTextColor(255, 255, 255)
+                                doc.text(dateStr, 190, 19, { align: 'right' })
+                              } else {
+                                doc.setFont('helvetica', 'normal')
+                                doc.setFontSize(8)
+                                doc.setTextColor(156, 163, 175)
+                                doc.text('JAMM PX Morning Briefing (continued)', 20, 10)
+                              }
+                              doc.setDrawColor(74, 127, 165)
+                              doc.setLineWidth(0.3)
+                            }
+
+                            const addPageNumber = () => {
+                              doc.setFont('helvetica', 'normal')
+                              doc.setFontSize(8)
+                              doc.setTextColor(156, 163, 175)
+                              doc.text(`Page ${pageNum}`, 190, 285, { align: 'right' })
+                            }
+
+                            addPageHeader(true)
+
+                            let y = 28
+
+                            const sections = cleanedText.split('---')
+                            const knownHeaders = ['FIRM OVERVIEW', 'NEEDS ATTENTION', 'THIS WEEK', 'ALL ACTIVE ENGAGEMENTS', 'RECENT ACTIVITY', 'STAFF & PORTAL SUMMARY']
+
+                            for (const section of sections) {
+                              const rawLines = section.trim().split('\n')
+                              if (rawLines.length === 0) continue
+                              const firstLine = rawLines[0].trim()
+                              if (!firstLine) continue
+                              const isHeader = (firstLine === firstLine.toUpperCase() && firstLine.length > 2) || knownHeaders.some((h) => firstLine.includes(h))
+
+                              if (isHeader) {
+                                // FIX 2: skip sections whose only content is "None." or "None"
+                                const nonEmptyBody = rawLines.slice(1).map((l) => l.trim()).filter((l) => l.length > 0)
+                                if (nonEmptyBody.length === 1 && (nonEmptyBody[0] === 'None.' || nonEmptyBody[0] === 'None')) continue
+                                if (y > 260) {
+                                  addPageNumber()
+                                  doc.addPage()
+                                  pageNum++
+                                  addPageHeader(false)
+                                  y = 30
+                                }
+                                y += 4
+                                doc.setFont('helvetica', 'bold')
+                                doc.setFontSize(11)
+                                doc.setTextColor(74, 127, 165)
+                                doc.text(firstLine, 20, y)
+                                doc.setDrawColor(74, 127, 165)
+                                doc.setLineWidth(0.3)
+                                doc.line(20, y + 1, 190, y + 1)
+                                y += 7
+                                doc.setFont('helvetica', 'normal')
+                                doc.setFontSize(9)
+                                doc.setTextColor(55, 65, 81)
+                                const bodyLines = rawLines.slice(1)
+                                for (const bl of bodyLines) {
+                                  const trimmed = bl.trim()
+                                  if (!trimmed) continue
+                                  const wrapped = doc.splitTextToSize(trimmed, 165)
+                                  for (const wl of wrapped) {
+                                    if (y > 272) {
+                                      addPageNumber()
+                                      doc.addPage()
+                                      pageNum++
+                                      addPageHeader(false)
+                                      y = 30
+                                      doc.setFont('helvetica', 'normal')
+                                      doc.setFontSize(9)
+                                      doc.setTextColor(55, 65, 81)
+                                    }
+                                    doc.text(wl, 25, y)
+                                    y += 5
+                                  }
+                                }
+                              } else {
+                                for (const bl of rawLines) {
+                                  const trimmed = bl.trim()
+                                  if (!trimmed) continue
+                                  const wrapped = doc.splitTextToSize(trimmed, 165)
+                                  for (const wl of wrapped) {
+                                    if (y > 272) {
+                                      addPageNumber()
+                                      doc.addPage()
+                                      pageNum++
+                                      addPageHeader(false)
+                                      y = 30
+                                      doc.setFont('helvetica', 'normal')
+                                      doc.setFontSize(9)
+                                      doc.setTextColor(55, 65, 81)
+                                    }
+                                    doc.setFont('helvetica', 'normal')
+                                    doc.setFontSize(9)
+                                    doc.setTextColor(55, 65, 81)
+                                    doc.text(wl, 25, y)
+                                    y += 5
+                                  }
+                                }
+                              }
+                            }
+
+                            addPageNumber()
+                            const finalY = Math.min(y + 10, 282)
+                            doc.setFont('helvetica', 'normal')
+                            doc.setFontSize(8)
+                            doc.setTextColor(200, 205, 214)
+                            doc.text('Generated by JAMM PX', 105, finalY, { align: 'center' })
+                            doc.save(`jamm-briefing-${new Date().toISOString().slice(0, 10)}.pdf`)
+                          } else {
+                            setStatusMessage('Could not generate report. Try again.')
+                          }
+                        } catch {
+                          setStatusMessage('Could not generate report. Try again.')
+                        } finally {
+                          setIsDownloading(false)
+                        }
+                      }}
+                      className="flex items-center gap-1.5 text-[11px] text-[#6B7280] hover:text-brand transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {!detailReady ? (
+                        <span className="animate-pulse">Preparing report...</span>
+                      ) : isDownloading ? (
+                        <span>Generating PDF...</span>
+                      ) : (
+                        <>
+                          <Download className="h-3 w-3" />
+                          Download briefing
+                        </>
+                      )}
+                    </button>
+                  </div>
+                )}
                 {msg.actionConfirm && (
                   <p className="text-[11px] text-[#6B7280] mt-1 italic">{msg.actionConfirm}</p>
                 )}

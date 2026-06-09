@@ -49,23 +49,27 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Fix avatar showing ? during morning briefing skeleton load in ConciergePanel.tsx
+USE: claude sonnet
+
+TASK: Fix section header underline missing on page break in PDF in ConciergePanel.tsx
 
 VERIFY BEFORE ACT:
-grep -n "briefingLoading\|avatar\|\?" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx | head -20
+grep -n "addPage\|addPageHeader\|setDrawColor\|line(20" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx | head -20
 Paste before touching anything.
 
-In ConciergePanel.tsx, in the skeleton render block (where briefingLoading && messages.length === 0),
-the avatar circle currently shows ? because the user initials aren't available yet.
+When a section header falls immediately after a page break, the underline rule
+is sometimes not rendered because the draw color or line width is not reset
+after addPage().
 
-Replace the skeleton avatar div with a static JC-style circle using the brand color:
-<div className="w-7 h-7 rounded-full bg-[#1F3148] flex items-center justify-center flex-shrink-0">
-  <span className="text-white text-[10px] font-medium">JC</span>
-</div>
+After every addPage() call, reset:
+  doc.setDrawColor(74, 127, 165)
+  doc.setLineWidth(0.3)
+
+This ensures section header underlines render correctly on all pages.
 
 VERIFY AFTER ACT:
-grep -n "JC" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx | head -5
-Must show JC in the skeleton avatar.
+grep -n "setDrawColor\|setLineWidth" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx | head -10
+Must show setDrawColor and setLineWidth calls after addPage.
 
 Build check:
 cd /home/corby/jamm-os/frontend

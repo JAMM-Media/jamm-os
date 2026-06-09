@@ -24,8 +24,8 @@ from app.models.client import Client
 from app.models.user import User
 from app.models.concierge_notification import ConciergeNotification
 from app.models.security_event import SecurityEvent
-from app.api.concierge.prompts import get_system_prompt, MORNING_BRIEFING_PROMPT
-from app.api.concierge.context import router as context_router
+from app.api.concierge.prompts import get_system_prompt, MORNING_BRIEFING_PROMPT, MORNING_BRIEFING_DETAIL_PROMPT
+from app.api.concierge.context import router as context_router, get_firm_context_detail
 from app.api.concierge.cron import run_trigger_check
 
 logger = logging.getLogger(__name__)
@@ -373,6 +373,34 @@ def morning_briefing(
         return JSONResponse({"briefing": briefing_text})
     except Exception as e:
         logger.warning(f"Morning briefing failed for firm {current_firm.id}: {e}")
+        return Response(status_code=204)
+
+
+@router.post("/morning-briefing/detail")
+def morning_briefing_detail(
+    current_firm: Firm = Depends(get_current_firm),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if current_user.role in ("staff", "client_portal_user"):
+        return JSONResponse({"detail": "Access denied"}, status_code=403)
+
+    try:
+        context_data = get_firm_context_detail(current_firm.id, db)
+
+        settings = get_settings()
+        detail_client = anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY)
+        response = detail_client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=2000,
+            system=MORNING_BRIEFING_DETAIL_PROMPT,
+            messages=[{"role": "user", "content": f"Firm data:\n{context_data}\n\nReturn a comprehensive plain-text briefing report. Be exhaustive. Include every client, engagement, and item. No truncation."}],
+        )
+        briefing_text = response.content[0].text.strip()
+
+        return JSONResponse({"briefing": briefing_text})
+    except Exception as e:
+        logger.warning(f"Morning briefing detail failed for firm {current_firm.id}: {e}")
         return Response(status_code=204)
 
 
