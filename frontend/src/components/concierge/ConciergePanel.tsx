@@ -26,6 +26,7 @@ interface Notification {
   trigger_type: string
   message: string
   created_at: string
+  metadata?: Record<string, unknown> | null
 }
 
 interface ConciergePanelProps {
@@ -108,6 +109,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
   const [pasteFormOpen, setPasteFormOpen] = useState(false)
   const [briefingLoading, setBriefingLoading] = useState(false)
   const [isDownloading, setIsDownloading] = useState(false)
+  const [copiedId, setCopiedId] = useState<string | null>(null)
   const [detailBriefing, setDetailBriefing] = useState<string | null>(null)
   const [detailReady, setDetailReady] = useState(false)
   const [pasteForm, setPasteForm] = useState({
@@ -706,24 +708,62 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
         {/* Notification cards */}
         {notifications.length > 0 && (
           <div className="flex flex-col gap-2 px-4 pt-3 flex-shrink-0">
-            {notifications.map((n) => (
-              <div
-                key={n.id}
-                className="flex items-start gap-2 bg-white dark:bg-[#2D2D2D] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] rounded-[8px] px-3 py-2.5 cursor-pointer hover:bg-[#E4E6EA] dark:hover:bg-[#333333] transition-colors"
-                onClick={() => { dismissNotification(n.id); handleSend(n.message) }}
-              >
-                <p className="flex-1 text-[12px] leading-[1.5] text-[#1F3148] dark:text-[#EDEEF0]">
-                  {n.message}
-                </p>
-                <button
-                  onClick={(e) => { e.stopPropagation(); dismissNotification(n.id) }}
-                  aria-label="Dismiss notification"
-                  className="flex-shrink-0 text-[#6B7280] hover:text-[#1F3148] dark:hover:text-[#EDEEF0] transition-colors mt-0.5"
+            {notifications.map((n) => {
+              const draft = n.metadata?.draft as string | undefined
+              return (
+                <div
+                  key={n.id}
+                  className="flex flex-col gap-2 bg-white dark:bg-[#2D2D2D] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] rounded-[8px] px-3 py-2.5"
                 >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            ))}
+                  <div className="flex items-start gap-2">
+                    <p
+                      className="flex-1 text-[12px] leading-[1.5] text-[#1F3148] dark:text-[#EDEEF0] cursor-pointer"
+                      onClick={() => { dismissNotification(n.id); handleSend(n.message) }}
+                    >
+                      {n.message}
+                    </p>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); dismissNotification(n.id) }}
+                      aria-label="Dismiss notification"
+                      className="flex-shrink-0 text-[#6B7280] hover:text-[#1F3148] dark:hover:text-[#EDEEF0] transition-colors mt-0.5"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                  {draft && (
+                    <div className="mt-1 rounded-[6px] bg-[#F0F4F8] dark:bg-[#1a2a3a] border border-[0.5px] border-[#C8CDD6] dark:border-[#3a4a5a] px-2.5 py-2">
+                      <p className="text-[11px] text-[#6B7280] dark:text-[#9CA3AF] mb-1.5 font-medium uppercase tracking-wide">Draft</p>
+                      <p className="text-[12px] leading-[1.5] text-[#374151] dark:text-[#D1D5DB] whitespace-pre-wrap">{draft}</p>
+                      <div className="flex gap-2 mt-2">
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText(draft).then(() => {
+                              setCopiedId(n.id)
+                              setTimeout(() => setCopiedId(null), 2000)
+                            }).catch(() => {})
+                          }}
+                          className="text-[11px] font-medium px-2.5 py-1 rounded-[4px] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] text-[#6B7280] dark:text-[#9CA3AF] hover:border-[#4A7FA5] hover:text-[#4A7FA5] transition-colors"
+                        >
+                          {copiedId === n.id ? 'Copied' : 'Copy'}
+                        </button>
+                        <button
+                          onClick={() => {
+                            const confirmed = window.confirm('Send this message to the client?')
+                            if (confirmed) {
+                              dismissNotification(n.id)
+                              handleSend(`Send this message: ${draft}`)
+                            }
+                          }}
+                          className="text-[11px] font-medium px-2.5 py-1 rounded-[4px] bg-[#1F3148] text-white hover:bg-[#2a4060] transition-colors"
+                        >
+                          Send
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
           </div>
         )}
 

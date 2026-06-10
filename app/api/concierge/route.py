@@ -695,6 +695,7 @@ def list_notifications(
                 "trigger_type": n.trigger_type,
                 "message": n.message,
                 "created_at": n.created_at.isoformat(),
+                "metadata": n.notification_metadata,
             }
             for n in rows
         ],

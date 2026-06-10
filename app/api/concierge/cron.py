@@ -45,6 +45,7 @@ def run_trigger_check(firm_id: UUID, db: Session) -> int:
             firm_id=firm_id,
             trigger_type=trigger_type,
             message=trigger["message"],
+            notification_metadata=trigger.get("metadata"),
             created_at=datetime.now(timezone.utc),
             is_read=False,
         )
