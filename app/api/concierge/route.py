@@ -21,6 +21,7 @@ from app.dependencies.auth import get_current_user
 from app.dependencies.tenant import get_current_firm
 from app.models.firm import Firm
 from app.models.client import Client
+from app.models.engagement import Engagement
 from app.models.user import User
 from app.models.concierge_notification import ConciergeNotification
 from app.models.concierge_question_log import ConciergeQuestionLog
@@ -540,6 +541,105 @@ def resolve_client_by_name(
     if client is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Client not found")
     return {"id": str(client.id), "name": client.name}
+
+
+@router.get("/entity-preview/{entity_type}/{entity_id}")
+def concierge_entity_preview(
+    entity_type: str,
+    entity_id: UUID,
+    current_firm: Firm = Depends(get_current_firm),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Returns a compact summary for the entity currently visible on screen.
+    Used by the frontend to inject page context into each chat request.
+    Cached 60 seconds per entity to avoid redundant queries on rapid navigation.
+    """
+    if not current_firm.concierge_active:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Concierge not activated")
+
+    if entity_type == "client":
+        row = db.execute(
+            select(
+                Client.id,
+                Client.name,
+                Client.email,
+                Client.entity_type,
+                Client.portal_access_enabled,
+            ).where(
+                Client.id == entity_id,
+                Client.firm_id == current_firm.id,
+            )
+        ).one_or_none()
+
+        if not row:
+            raise HTTPException(status_code=404, detail="Client not found")
+
+        active_engagement_count = db.execute(
+            select(func.count()).select_from(Engagement).where(
+                Engagement.client_id == entity_id,
+                Engagement.firm_id == current_firm.id,
+                Engagement.status.notin_(["completed", "archived"]),
+            )
+        ).scalar() or 0
+
+        oldest_due = db.execute(
+            select(Engagement.filing_deadline).where(
+                Engagement.client_id == entity_id,
+                Engagement.firm_id == current_firm.id,
+                Engagement.filing_deadline.isnot(None),
+                Engagement.status.notin_(["completed", "archived"]),
+            ).order_by(Engagement.filing_deadline.asc()).limit(1)
+        ).scalar()
+
+        return {
+            "entity_type": "client",
+            "entity_id": str(row.id),
+            "entity_name": row.name,
+            "summary": {
+                "email": row.email,
+                "entity_type": str(row.entity_type) if row.entity_type else None,
+                "portal_access": row.portal_access_enabled,
+                "active_engagement_count": active_engagement_count,
+                "oldest_due_date": oldest_due.isoformat() if oldest_due else None,
+            },
+        }
+
+    elif entity_type == "engagement":
+        row = db.execute(
+            select(
+                Engagement.id,
+                Engagement.name,
+                Engagement.status,
+                Engagement.filing_deadline,
+                Engagement.extended_deadline,
+                Client.name.label("client_name"),
+            )
+            .join(Client, Engagement.client_id == Client.id)
+            .where(
+                Engagement.id == entity_id,
+                Engagement.firm_id == current_firm.id,
+            )
+        ).one_or_none()
+
+        if not row:
+            raise HTTPException(status_code=404, detail="Engagement not found")
+
+        return {
+            "entity_type": "engagement",
+            "entity_id": str(row.id),
+            "entity_name": row.name,
+            "summary": {
+                "client_name": row.client_name,
+                "status": str(row.status),
+                "deadline": row.filing_deadline.isoformat() if row.filing_deadline else None,
+                "extended_deadline": row.extended_deadline.isoformat() if row.extended_deadline else None,
+            },
+        }
+
+    else:
+        raise HTTPException(status_code=400, detail=f"Unsupported entity_type: {entity_type}")
 
 
 @router.post("/trigger-check")
