@@ -371,6 +371,17 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
     }
   }, [isOpen, sendMessages, fetchNotifications, user])
 
+  // 60-second context refresh -- polls trigger check while panel is open
+  useEffect(() => {
+    if (!isOpen) return
+    const interval = setInterval(() => {
+      api.post('/concierge/trigger-check')
+        .then(() => fetchNotifications())
+        .catch(() => {})
+    }, 60_000)
+    return () => clearInterval(interval)
+  }, [isOpen, fetchNotifications])
+
   async function handleSend(text?: string) {
     const msg = (text ?? input).trim()
     if (!msg || streaming) return
