@@ -25,6 +25,7 @@ from app.models.user import User
 from app.models.concierge_notification import ConciergeNotification
 from app.models.concierge_question_log import ConciergeQuestionLog
 from app.models.security_event import SecurityEvent
+from app.services.behavioral_log import log_event
 from app.api.concierge.prompts import get_system_prompt, MORNING_BRIEFING_PROMPT, MORNING_BRIEFING_DETAIL_PROMPT
 from app.api.concierge.context import router as context_router, get_firm_context_detail
 from app.api.concierge.cron import run_trigger_check
@@ -371,6 +372,17 @@ Respond with exactly one word: SAFE or UNSAFE. Nothing else.""",
                 )
                 db.add(log_entry)
                 db.commit()
+                log_event(
+                    firm_id=current_firm.id,
+                    event_type="concierge.question_asked",
+                    actor_type="user",
+                    actor_id=current_user.id,
+                    metadata={
+                        "question": last_user_text[:500],
+                        "low_confidence": is_low_confidence,
+                        "response_length": len(response_text),
+                    },
+                )
         except Exception:
             pass  # non-fatal -- logging failure must never block the response
 
