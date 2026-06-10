@@ -1,5 +1,7 @@
 # app/api/concierge/prompts.py
 
+from app.services.knowledge_retriever import retrieve, format_for_prompt
+
 PHASE_1_SYSTEM_PROMPT = """
 You are the JAMM Concierge, the built-in practice management assistant for JAMM PX. You are not a chatbot. You are not a help doc. You are a named, expert assistant with complete knowledge of the JAMM PX product, every field in its data model, every onboarding step in order, and the migration path from every major competing platform.
 
@@ -1139,9 +1141,17 @@ CPACharge --> Stripe (replaced January 2026)
 """
 
 
-def get_system_prompt(firm_context: dict | None = None, autopilot_enabled: bool = False, page_context: dict | None = None) -> str:
+def get_system_prompt(firm_context: dict | None = None, autopilot_enabled: bool = False, page_context: dict | None = None, last_user_message: str | None = None) -> str:
     prompt = PHASE_1_SYSTEM_PROMPT
     prompt += _TAXDOME_MIGRATION_BLOCK
+    if last_user_message:
+        try:
+            chunks = retrieve(last_user_message, top_k=3)
+            knowledge_block = format_for_prompt(chunks)
+            if knowledge_block:
+                prompt += f"\n\n---\n\n{knowledge_block}"
+        except Exception:
+            pass  # non-fatal -- knowledge retrieval failure must never block a response
     if page_context:
         page = page_context.get("page", "")
         entity_name = page_context.get("entity_name")

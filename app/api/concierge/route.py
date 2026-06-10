@@ -315,6 +315,11 @@ Respond with exactly one word: SAFE or UNSAFE. Nothing else.""",
 
         return text
 
+    _last_user_msg = next(
+        (m.content for m in reversed(body.messages) if m.role == "user"),
+        None,
+    )
+
     def generate():
         with client.messages.stream(
             model="claude-sonnet-4-6",
@@ -323,6 +328,7 @@ Respond with exactly one word: SAFE or UNSAFE. Nothing else.""",
                 firm_context=_firm_context,
                 autopilot_enabled=body.autopilot_enabled,
                 page_context=body.page_context,
+                last_user_message=_last_user_msg,
             ),
             messages=sanitized_messages,
         ) as stream:
