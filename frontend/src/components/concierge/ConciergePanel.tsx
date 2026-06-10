@@ -7,6 +7,7 @@ import { X, Send, Zap, Download } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import jsPDF from 'jspdf'
 import { useAuth } from '@/lib/hooks/useAuth'
+import { useConciergeContext } from '@/lib/hooks/useConciergeContext'
 import api from '@/lib/api'
 import {
   emitConciergeAction,
@@ -76,6 +77,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
   }
   const currentPage = Object.entries(PAGE_LABELS).find(([k]) => pathname.startsWith(k))?.[1] ?? 'JAMM PX'
   const { user } = useAuth()
+  const uiContext = useConciergeContext()
   const logoUrl = user ? `/api/backend/firms/logo/${user.firm_id}` : null
   const initials =
     user?.full_name?.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase() ?? '?'
@@ -216,6 +218,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
           body: JSON.stringify({
             messages: apiMessages,
             autopilot_enabled: autopilotRef.current,
+            page_context: uiContext,
           }),
         })
 

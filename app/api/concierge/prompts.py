@@ -1139,9 +1139,34 @@ CPACharge --> Stripe (replaced January 2026)
 """
 
 
-def get_system_prompt(firm_context: dict | None = None, autopilot_enabled: bool = False) -> str:
+def get_system_prompt(firm_context: dict | None = None, autopilot_enabled: bool = False, page_context: dict | None = None) -> str:
     prompt = PHASE_1_SYSTEM_PROMPT
     prompt += _TAXDOME_MIGRATION_BLOCK
+    if page_context:
+        page = page_context.get("page", "")
+        entity_name = page_context.get("entity_name")
+        entity_type = page_context.get("entity_type")
+        summary = page_context.get("summary") or {}
+        context_line = f"The firm owner is currently on the {page} page."
+        if entity_name and entity_type:
+            context_line += f" They are viewing a {entity_type} record: {entity_name}."
+        if summary:
+            summary_parts = []
+            if entity_type == "client":
+                if summary.get("active_engagement_count") is not None:
+                    summary_parts.append(f"{summary['active_engagement_count']} active engagement(s)")
+                if summary.get("oldest_due_date"):
+                    summary_parts.append(f"next deadline {summary['oldest_due_date']}")
+                if summary.get("portal_access") is False:
+                    summary_parts.append("no portal access")
+            elif entity_type == "engagement":
+                if summary.get("status"):
+                    summary_parts.append(f"status: {summary['status']}")
+                if summary.get("deadline"):
+                    summary_parts.append(f"deadline: {summary['deadline']}")
+            if summary_parts:
+                context_line += " Summary: " + ", ".join(summary_parts) + "."
+        prompt += f"\n\n---\n\nCURRENT PAGE CONTEXT\n\n{context_line}"
     if firm_context:
         formatted = _format_firm_context(firm_context)
         prompt += f"\n\n---\n\nLIVE FIRM DATA\n\n{formatted}"

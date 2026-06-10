@@ -48,6 +48,7 @@ class MessageItem(BaseModel):
 class ChatRequest(BaseModel):
     messages: list[MessageItem]
     autopilot_enabled: bool = False
+    page_context: dict | None = None
 
 
 @router.post("/chat")
@@ -318,7 +319,11 @@ Respond with exactly one word: SAFE or UNSAFE. Nothing else.""",
         with client.messages.stream(
             model="claude-sonnet-4-6",
             max_tokens=2000,
-            system=get_system_prompt(firm_context=_firm_context, autopilot_enabled=body.autopilot_enabled),
+            system=get_system_prompt(
+                firm_context=_firm_context,
+                autopilot_enabled=body.autopilot_enabled,
+                page_context=body.page_context,
+            ),
             messages=sanitized_messages,
         ) as stream:
             assembled = ""
