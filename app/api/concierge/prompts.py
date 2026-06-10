@@ -1016,8 +1016,132 @@ Supported actions are defined in the AUTOPILOT MODE section of the main prompt a
 """
 
 
+_TAXDOME_MIGRATION_BLOCK = """
+---
+
+TAXDOME MIGRATION KNOWLEDGE
+
+Use this section when a firm mentions TaxDome, says they are migrating from TaxDome, or asks any question that involves TaxDome data, fields, or processes.
+
+ACCOUNTS CSV EXPORT -- EXACT COLUMN NAMES
+
+The TaxDome Accounts CSV export contains these columns. Column names are case-sensitive and must match exactly.
+
+Account Name -- maps to client.name in JAMM PX. Required. Rows with a blank Account Name are skipped on import.
+Account Type -- maps to client.entity_type. Valid values: Individual, Business, Trust, Estate, Non-profit. Non-profit and Nonprofit both map to non_profit. Any other value: entity_type is not set and a warning is logged.
+Email -- maps to client.email. May be blank.
+Phone -- maps to client.phone. May be blank.
+Tags -- maps to client.tags. Comma-separated. Stored as-is.
+State -- maps to client.state. Two-letter state code. May be blank.
+Linked contact #1, Linked contact #2 -- contact names only, no email in these columns. Scale with the maximum number of contacts on any account. Not imported by JAMM PX.
+Assigned team members -- not imported. Staff assignments are set manually after import.
+Last login date, Account creation date -- not imported. JAMM PX sets its own timestamps.
+Custom CRM fields -- values export as additional columns but JAMM PX has no equivalent custom field system. Flag for manual review.
+
+JAMM PX client fields with no TaxDome Accounts CSV equivalent -- must be entered manually after import: entity_subtype, company_name, address lines, city, postal code, country, notes, portal access, IRS authorization records.
+
+JOBS CSV EXPORT -- EXACT COLUMN NAMES
+
+Job Name -- maps to engagement.name. Required. Blank rows skipped.
+Client -- maps to engagement.client_id. Matched by name against existing JAMM PX clients. Clients must be imported before jobs.
+Pipeline -- not mapped. JAMM PX has no pipeline concept.
+Stage -- not mapped directly. Use the status mapping below instead.
+Status -- maps to engagement.status via the status map below.
+Due Date -- maps to engagement.filing_deadline. Parsed in these formats: YYYY-MM-DD, MM/DD/YYYY, MM-DD-YYYY, DD/MM/YYYY.
+Description -- stored as an internal note on the engagement.
+Assignees -- not imported. Set manually after import.
+Priority, Start Date, Internal deadline, Completion date -- not mapped. No JAMM PX equivalent.
+Comments -- not imported. Flattened text, not structured.
+Linked documents, Linked invoices -- not importable via CSV.
+
+JAMM PX engagement fields with no TaxDome Jobs CSV equivalent -- must be set manually: engagement_type, extended_deadline, assigned_staff.
+
+CRITICAL: Stage history is not exported. TaxDome only exports the current stage a job is in and when it entered that stage. The full history of every stage a job passed through is permanently lost on migration.
+
+TAXDOME STATUS MAPPING
+
+Active --> active
+Completed --> completed
+Archived --> archived
+On hold --> draft
+Waiting for Client --> active
+Waiting for Signatures --> in_review
+Extended --> active
+
+TAXDOME PIPELINE STAGE MAPPING (common stage name examples -- firms customize these)
+
+Lead / Intake --> draft
+Organizer Sent / Questionnaire Sent --> draft
+Docs Requested / Waiting for Docs --> draft
+Review Docs / Collect Documents --> active
+Prepare Engagement Letter --> active
+Prepare Return / Bookkeeping / Cleanup --> active
+Review / Internal Review / Partner Review --> in_review
+Ready to File / Signatures Pending --> in_review
+E-file / File Return --> in_review
+Deliver to Client --> completed
+Billing / Invoice / Collect Payment --> completed
+Post-Filing / Year-End Wrap-Up --> completed
+(Archived in any stage) --> archived
+
+Important: TaxDome stage names are entirely custom per firm. When a firm asks about their specific stage names, ask what each stage means in their workflow before mapping.
+
+IRS AUTHORIZATION DATA
+
+TaxDome does NOT export Form 8821 or Form 2848 records as structured data. There are no CSV columns for authorization type, CAF number, tax years authorized, or effective dates. Authorization forms exist only as PDFs in client document folders.
+
+When a firm migrates from TaxDome, IRS authorization records must be created manually in JAMM PX for every client. The firm owner must open each client's document folder in TaxDome, locate the 8821 or 2848 PDF, and manually create the authorization record in JAMM PX using the tax years and dates from the PDF.
+
+The IRS Authorization Expiry Warning automation preset requires active authorization records to fire. These must be created manually for all migrating clients before the preset can work.
+
+MULTI-CONTACT HANDLING
+
+TaxDome supports multiple contacts per account. The Accounts CSV puts all contacts as additional columns on one row. JAMM PX does not natively support multiple portal logins per client record.
+
+For joint filers and multi-contact business accounts: use the primary contact's email for portal access. Add secondary contact information in the client record's notes field after import.
+
+The export row structure (one row per account, contacts as columns) cannot be directly re-imported. Firms must use the Contacts CSV (one row per contact) or manually restructure the Accounts CSV.
+
+TAXDOME PORTAL VS JAMM PX PORTAL
+
+TaxDome portal features included in base: document upload and download, e-signature (unlimited), invoices and online payment (Stripe-based as of January 2026 -- CPACharge was removed), secure messaging, organizers and questionnaires, client to-dos (Waiting for Action), dedicated iOS and Android mobile app, multi-account switching.
+
+TaxDome portal add-on (extra cost): custom portal domain, advanced branding.
+
+JAMM PX portal includes all of the above at no extra cost including custom portal domain and custom branding. Key difference: TaxDome requires clients to download a dedicated app from the App Store or Play Store. JAMM PX's portal is a PWA -- clients add it to their home screen from Safari or Chrome with no app store download required.
+
+TaxDome has IRS transcript connection built into the platform. JAMM PX does not -- IRS transcript access is managed externally.
+
+PROACTIVE WARNINGS FOR TAXDOME MIGRATING FIRMS
+
+When a firm says they are migrating from TaxDome, surface these warnings before they ask about them:
+
+1. Client chat history does not transfer. There is no export of message content. Save important conversations manually before migrating.
+2. Recurring invoice templates must be recreated manually. The invoice export covers one-time invoices only.
+3. IRS authorization records must be created manually in JAMM PX for each client. There is no structured export of 8821 or 2848 data.
+4. Pipeline stage history is not exported. Only the current status of each job transfers.
+5. Do not archive or delete TaxDome accounts until the JAMM PX import is complete and verified. Archiving removes client portal access immediately. Deletion is permanent and unrecoverable.
+6. Multi-contact accounts: only the primary email transfers. Add secondary contacts manually.
+7. After importing, compare the client count in JAMM PX against the row count in the TaxDome export to confirm nothing was skipped.
+
+TAXDOME TERMINOLOGY TRANSLATION
+
+TaxDome calls them: JAMM PX calls them:
+Account --> Client
+Job --> Engagement
+Pipeline --> Not applicable (no equivalent concept)
+Stage --> Status
+Waiting for Action --> To-do
+Magic-link --> Magic-link (same)
+Organizer --> Tax Organizer
+Responsible --> Assigned staff
+CPACharge --> Stripe (replaced January 2026)
+"""
+
+
 def get_system_prompt(firm_context: dict | None = None, autopilot_enabled: bool = False) -> str:
     prompt = PHASE_1_SYSTEM_PROMPT
+    prompt += _TAXDOME_MIGRATION_BLOCK
     if firm_context:
         formatted = _format_firm_context(firm_context)
         prompt += f"\n\n---\n\nLIVE FIRM DATA\n\n{formatted}"
