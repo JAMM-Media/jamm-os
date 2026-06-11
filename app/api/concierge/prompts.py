@@ -981,17 +981,34 @@ def _format_firm_context(context: dict) -> str:
     if client_count:
         lines.append(f"Total clients: {client_count}")
 
+    staff = context.get("staff_summary", {})
+    staff_total = staff.get("total", 0)
+    if staff_total:
+        lines.append(f"Active staff members: {staff_total}")
+
     engagement_summary = context.get("engagement_summary", {})
-    if engagement_summary.get("total"):
-        lines.append(f"Total engagements: {engagement_summary['total']}")
+    if engagement_summary:
+        by_status = engagement_summary.get("by_status", {})
+        active_statuses = {"active", "in_review", "draft", "planning"}
+        active_count = sum(
+            v for k, v in by_status.items() if k in active_statuses
+        )
+        if active_count:
+            lines.append(f"Active engagements: {active_count}")
         no_eng = engagement_summary.get("clients_with_no_engagement", 0)
         if no_eng:
             lines.append(f"Clients with no engagement: {no_eng}")
 
     portal = context.get("portal_adoption", {})
     if portal.get("total_clients"):
+        access_enabled = portal.get("access_enabled", 0)
+        logged_in = portal.get("logged_in", 0)
+        total = portal["total_clients"]
         lines.append(
-            f"Portal adoption: {portal.get('logged_in', 0)} of {portal['total_clients']} clients have logged in."
+            f"Portal access enabled: {access_enabled} of {total} clients have portal access turned on."
+        )
+        lines.append(
+            f"Portal logins: {logged_in} of {total} clients have logged into the portal."
         )
 
     return "\n".join(lines)

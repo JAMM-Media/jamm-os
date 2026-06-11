@@ -253,7 +253,18 @@ def _query_portal_adoption(firm_id: uuid.UUID, db: Session) -> dict:
         )
     ).scalar() or 0
 
-    return {"logged_in": logged_in, "total_clients": total_clients}
+    access_enabled = db.execute(
+        select(func.count()).select_from(Client).where(
+            Client.firm_id == firm_id,
+            Client.portal_access_enabled == True,
+        )
+    ).scalar() or 0
+
+    return {
+        "logged_in": logged_in,
+        "access_enabled": access_enabled,
+        "total_clients": total_clients,
+    }
 
 
 # ---------------------------------------------------------------------------
