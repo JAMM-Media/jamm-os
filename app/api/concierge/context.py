@@ -301,7 +301,6 @@ def get_context_endpoint(
 # ---------------------------------------------------------------------------
 def _query_upcoming_deadlines(firm_id: uuid.UUID, db: Session) -> list:
     now = datetime.now(timezone.utc).date()
-    in_7_days = now + timedelta(days=7)
     rows = db.execute(
         select(
             Engagement.name.label('engagement_name'),
@@ -312,19 +311,19 @@ def _query_upcoming_deadlines(firm_id: uuid.UUID, db: Session) -> list:
         .join(Client, Engagement.client_id == Client.id)
         .where(
             Engagement.firm_id == firm_id,
-            Engagement.filing_deadline >= now,
-            Engagement.filing_deadline <= in_7_days,
-            Engagement.status.notin_(['complete', 'cancelled']),
+            Engagement.filing_deadline.isnot(None),
+            Engagement.status.notin_(['completed', 'archived', 'cancelled']),
         )
         .order_by(Engagement.filing_deadline.asc())
-        .limit(10)
+        .limit(5)
     ).all()
     return [
         {
             "name": r.engagement_name,
             "client_name": r.client_name,
             "due_date": r.filing_deadline.isoformat() if r.filing_deadline else None,
-            "status": r.status,
+            "status": str(r.status),
+            "is_past_due": r.filing_deadline < now if r.filing_deadline else False,
         }
         for r in rows
     ]

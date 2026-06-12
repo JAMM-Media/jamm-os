@@ -977,6 +977,10 @@ def _format_firm_context(context: dict) -> str:
         for step in incomplete:
             lines.append(f"  - {_STEP_LABELS.get(step, step)}")
 
+    firm_type = context.get("firm_type")
+    if firm_type:
+        lines.append(f"Firm type: {firm_type}")
+
     client_count = context.get("client_count", 0)
     if client_count:
         lines.append(f"Total clients: {client_count}")
@@ -1010,6 +1014,15 @@ def _format_firm_context(context: dict) -> str:
         lines.append(
             f"Portal logins: {logged_in} of {total} clients have logged into the portal."
         )
+
+    deadlines = context.get("upcoming_deadlines", [])
+    if deadlines:
+        lines.append("Engagement deadlines (nearest first):")
+        for d in deadlines:
+            past_flag = " -- PAST DUE" if d.get("is_past_due") else ""
+            lines.append(
+                f"  - {d['name']} ({d['client_name']}): due {d['due_date']}{past_flag}"
+            )
 
     return "\n".join(lines)
 
