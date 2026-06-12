@@ -616,7 +616,6 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
     <>
       {isOpen && (
         <div
-          onClick={onClose}
           style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.25)', zIndex: 39 }}
         />
       )}
