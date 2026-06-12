@@ -272,7 +272,16 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
         }
 
         console.log('[CONCIERGE RAW]', assembled)
-        const filteredAssembled = filterOutput(assembled)
+        let polishedAssembled = assembled
+        try {
+          const polishRes = await api.post('/concierge/polish', { text: assembled })
+          if (polishRes.data?.text) {
+            polishedAssembled = polishRes.data.text
+          }
+        } catch {
+          // non-fatal -- fall back to raw assembled text
+        }
+        const filteredAssembled = filterOutput(polishedAssembled)
         const cleanContent = handleConciergeAction(filteredAssembled)
         setMessages((prev) => {
           const updated = [...prev]
