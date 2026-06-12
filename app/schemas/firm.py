@@ -77,7 +77,7 @@ class FirmOut(FirmBase):
     staff_auth_policy: Optional[str] = "either"
     plan_override: bool = False
     timesheet_approval_required: bool = False
-    concierge_active: bool = False
+    concierge_active: bool = True
     firm_type: Optional[str] = None
     created_at: datetime
     updated_at: datetime

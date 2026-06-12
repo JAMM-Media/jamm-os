@@ -108,7 +108,7 @@ class Firm(Base):
         server_default="false",
     )
 
-    concierge_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default='false')
+    concierge_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default='true')
     firm_type: Mapped[Optional[str]] = mapped_column(String(30), nullable=True)
     concierge_onboarded: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default='false')
 
