@@ -431,14 +431,102 @@ Respond with exactly one word: SAFE or UNSAFE. Nothing else.""",
 
         return text
 
-    # ------------------------------------------------------------------
-    # Fable 5 tool use path -- operational questions with live data
-    # ------------------------------------------------------------------
     _last_user_msg = next(
         (m.content for m in reversed(body.messages) if m.role == "user"),
         None,
     )
 
+    # ------------------------------------------------------------------
+    # Sonnet path -- standard streaming for non-operational questions
+    # ------------------------------------------------------------------
+    def generate():
+        _sonnet_system = get_system_prompt(
+            firm_context=_firm_context,
+            autopilot_enabled=body.autopilot_enabled,
+            page_context=body.page_context,
+            last_user_message=_last_user_msg,
+        )
+        with client.messages.stream(
+            model="claude-sonnet-4-6",
+            max_tokens=2000,
+            system=[
+                {
+                    "type": "text",
+                    "text": _sonnet_system,
+                    "cache_control": {"type": "ephemeral"},
+                }
+            ],
+            messages=sanitized_messages,
+        ) as stream:
+            assembled = ""
+            for text in stream.text_stream:
+                assembled += text
+                data_lines = "\n".join(f"data: {line}" for line in text.split("\n"))
+                yield f"{data_lines}\n\n"
+            # Run output filter on fully assembled response
+            filtered = filter_output(assembled)
+            if filtered != assembled:
+                # If filter changed the response, send a replacement sentinel
+                yield f"data: \n\n"
+                yield f"data: [FILTERED]\n\n"
+                yield f"data: {filtered}\n\n"
+
+    def generate_and_log():
+        assembled_for_log = []
+        for chunk in generate():
+            assembled_for_log.append(chunk)
+            yield chunk
+        try:
+            full_response = "".join(assembled_for_log)
+            # Extract plain text from SSE lines for logging
+            response_text = "\n".join(
+                line[6:] for line in full_response.split("\n")
+                if line.startswith("data:") and not line.startswith("data: [FILTERED]")
+            ).strip()
+            if response_text:
+                last_user_text = next(
+                    (m.content for m in reversed(body.messages) if m.role == "user"),
+                    "",
+                )
+                LOW_CONFIDENCE_PHRASES = [
+                    "i'm not sure",
+                    "i don't have information",
+                    "i don't know",
+                    "i cannot confirm",
+                    "i'm unable to",
+                    "i am not sure",
+                    "i am unable to",
+                    "i don't have access",
+                    "i cannot find",
+                    "not available in my",
+                ]
+                lower_response = response_text.lower()
+                is_low_confidence = any(p in lower_response for p in LOW_CONFIDENCE_PHRASES)
+                log_entry = ConciergeQuestionLog(
+                    firm_id=current_firm.id,
+                    question_text=last_user_text[:2000],
+                    response_summary=response_text[:500],
+                    low_confidence=is_low_confidence,
+                )
+                db.add(log_entry)
+                db.commit()
+                log_event(
+                    firm_id=current_firm.id,
+                    event_type="concierge.question_asked",
+                    actor_type="user",
+                    actor_id=current_user.id,
+                    metadata={
+                        "question": last_user_text[:500],
+                        "low_confidence": is_low_confidence,
+                        "response_length": len(response_text),
+                    },
+                )
+        except Exception:
+            pass  # non-fatal -- logging failure must never block the response
+
+    # ------------------------------------------------------------------
+    # Fable 5 tool use path -- operational questions with live data
+    # ------------------------------------------------------------------
     if _last_user_msg and _last_user_msg != "__OPEN__" and _is_operational_question(_last_user_msg):
         fable_client = anthropic.Anthropic(api_key=api_key)
         _system_prompt_text = get_system_prompt(
@@ -582,94 +670,6 @@ Respond with exactly one word: SAFE or UNSAFE. Nothing else.""",
                 pass
 
         return StreamingResponse(generate_with_tools_and_log(), media_type="text/event-stream")
-
-    # ------------------------------------------------------------------
-    # Sonnet path -- standard streaming for non-operational questions
-    # ------------------------------------------------------------------
-    def generate():
-        _sonnet_system = get_system_prompt(
-            firm_context=_firm_context,
-            autopilot_enabled=body.autopilot_enabled,
-            page_context=body.page_context,
-            last_user_message=_last_user_msg,
-        )
-        with client.messages.stream(
-            model="claude-sonnet-4-6",
-            max_tokens=2000,
-            system=[
-                {
-                    "type": "text",
-                    "text": _sonnet_system,
-                    "cache_control": {"type": "ephemeral"},
-                }
-            ],
-            messages=sanitized_messages,
-        ) as stream:
-            assembled = ""
-            for text in stream.text_stream:
-                assembled += text
-                data_lines = "\n".join(f"data: {line}" for line in text.split("\n"))
-                yield f"{data_lines}\n\n"
-            # Run output filter on fully assembled response
-            filtered = filter_output(assembled)
-            if filtered != assembled:
-                # If filter changed the response, send a replacement sentinel
-                yield f"data: \n\n"
-                yield f"data: [FILTERED]\n\n"
-                yield f"data: {filtered}\n\n"
-
-    def generate_and_log():
-        assembled_for_log = []
-        for chunk in generate():
-            assembled_for_log.append(chunk)
-            yield chunk
-        try:
-            full_response = "".join(assembled_for_log)
-            # Extract plain text from SSE lines for logging
-            response_text = "\n".join(
-                line[6:] for line in full_response.split("\n")
-                if line.startswith("data:") and not line.startswith("data: [FILTERED]")
-            ).strip()
-            if response_text:
-                last_user_text = next(
-                    (m.content for m in reversed(body.messages) if m.role == "user"),
-                    "",
-                )
-                LOW_CONFIDENCE_PHRASES = [
-                    "i'm not sure",
-                    "i don't have information",
-                    "i don't know",
-                    "i cannot confirm",
-                    "i'm unable to",
-                    "i am not sure",
-                    "i am unable to",
-                    "i don't have access",
-                    "i cannot find",
-                    "not available in my",
-                ]
-                lower_response = response_text.lower()
-                is_low_confidence = any(p in lower_response for p in LOW_CONFIDENCE_PHRASES)
-                log_entry = ConciergeQuestionLog(
-                    firm_id=current_firm.id,
-                    question_text=last_user_text[:2000],
-                    response_summary=response_text[:500],
-                    low_confidence=is_low_confidence,
-                )
-                db.add(log_entry)
-                db.commit()
-                log_event(
-                    firm_id=current_firm.id,
-                    event_type="concierge.question_asked",
-                    actor_type="user",
-                    actor_id=current_user.id,
-                    metadata={
-                        "question": last_user_text[:500],
-                        "low_confidence": is_low_confidence,
-                        "response_length": len(response_text),
-                    },
-                )
-        except Exception:
-            pass  # non-fatal -- logging failure must never block the response
 
     return StreamingResponse(generate_and_log(), media_type="text/event-stream")
 
