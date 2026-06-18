@@ -39,6 +39,12 @@ from app.api.concierge.functions import (
     get_client_communication_gap,
     get_pipeline_bottleneck,
     get_client_full_snapshot,
+    get_weekly_summary,
+    get_deadline_calendar,
+    get_automation_health,
+    get_portal_inactive_clients,
+    get_irs_auth_expiring,
+    get_client_document_status,
 )
 
 logger = logging.getLogger(__name__)
@@ -109,6 +115,61 @@ _CONCIERGE_TOOLS = [
             "required": ["client_id"],
         },
     },
+    {
+        "name": "get_weekly_summary",
+        "description": "Returns firm performance for the past 7 days: engagements completed, invoices sent, invoices paid, revenue collected, document requests completed, automations fired. Call this when the firm owner asks how their week went, what they accomplished, or for a weekly performance recap.",
+        "input_schema": {"type": "object", "properties": {}, "required": []},
+    },
+    {
+        "name": "get_deadline_calendar",
+        "description": "Returns all engagement deadlines in the next N days with client name, assigned staff, and current status. Call this when the firm owner asks what deadlines are coming up, what is due soon, or what they need to complete in the next few weeks.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "days_ahead": {"type": "integer", "description": "How many days ahead to look. Default 14.", "default": 14}
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "get_automation_health",
+        "description": "Returns all automation rules with enabled status, fires this month, and last fired date. Call this when the firm owner asks if their automations are working, which rules are firing, or why automations are not running.",
+        "input_schema": {"type": "object", "properties": {}, "required": []},
+    },
+    {
+        "name": "get_portal_inactive_clients",
+        "description": "Returns clients who have not logged into the portal in more than N days and have active document requests outstanding. Call this when the firm owner asks which clients are ignoring the portal or which clients have not uploaded their documents.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "days": {"type": "integer", "description": "Days since last portal login threshold. Default 14.", "default": 14}
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "get_irs_auth_expiring",
+        "description": "Returns clients with IRS authorizations expiring within N days. Call this when the firm owner asks which authorizations are expiring, which clients need renewal, or about upcoming Form 2848 or 8821 expirations.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "days": {"type": "integer", "description": "Days until expiry threshold. Default 30.", "default": 30}
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "get_client_document_status",
+        "description": "Returns document request status for a specific client: items requested, items uploaded, items pending, days since last upload. Call this when the firm owner asks about a specific client's document status or what a client is still missing.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "client_id": {"type": "string", "description": "UUID of the client."},
+                "engagement_id": {"type": "string", "description": "Optional UUID of a specific engagement to scope the lookup."}
+            },
+            "required": ["client_id"],
+        },
+    },
 ]
 
 _OPERATIONAL_KEYWORDS = {
@@ -119,6 +180,10 @@ _OPERATIONAL_KEYWORDS = {
     "snapshot", "what needs", "who owes", "what work", "who has",
     "what clients", "which clients", "how many clients", "how many engagements",
     "ar ", "receivable", "piling",
+    "deadline", "deadlines", "due", "coming up", "this week", "last week",
+    "weekly", "week", "automation", "automations", "firing", "portal login",
+    "portal inactive", "irs auth", "authorization expir", "expiring", "2848", "8821",
+    "document status", "uploaded", "missing documents",
 }
 
 def _is_operational_question(message: str) -> bool:
@@ -285,6 +350,20 @@ Respond with exactly one word: SAFE or UNSAFE. Nothing else.""",
                 result = get_pipeline_bottleneck(current_firm.id, db)
             elif tool_name == "get_client_full_snapshot":
                 result = get_client_full_snapshot(current_firm.id, _uuid.UUID(tool_input["client_id"]), db)
+            elif tool_name == "get_weekly_summary":
+                result = get_weekly_summary(current_firm.id, db)
+            elif tool_name == "get_deadline_calendar":
+                result = get_deadline_calendar(current_firm.id, db, days_ahead=int(tool_input.get("days_ahead", 14)))
+            elif tool_name == "get_automation_health":
+                result = get_automation_health(current_firm.id, db)
+            elif tool_name == "get_portal_inactive_clients":
+                result = get_portal_inactive_clients(current_firm.id, db, days=int(tool_input.get("days", 14)))
+            elif tool_name == "get_irs_auth_expiring":
+                result = get_irs_auth_expiring(current_firm.id, db, days=int(tool_input.get("days", 30)))
+            elif tool_name == "get_client_document_status":
+                _cid = _uuid.UUID(tool_input["client_id"])
+                _eid = _uuid.UUID(tool_input["engagement_id"]) if tool_input.get("engagement_id") else None
+                result = get_client_document_status(current_firm.id, _cid, db, engagement_id=_eid)
             else:
                 result = {"error": f"Unknown tool: {tool_name}"}
             return _json.dumps(result, default=str)
