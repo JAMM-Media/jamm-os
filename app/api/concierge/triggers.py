@@ -17,6 +17,7 @@ from app.api.concierge.functions import (
     get_pipeline_bottleneck,
 )
 from app.models.behavioral_event import BehavioralEvent
+from app.models.firm import Firm
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +63,36 @@ def evaluate_triggers(firm_id: UUID, db: Session) -> list[dict]:
     onboarding_completed = ctx.get("onboarding_steps", {}).get("completed", [])
 
     results: list[dict] = []
+
+    # Transition check -- fires exactly once when first document_request.sent event exists
+    # and the firm has not yet been marked as transitioned (concierge_onboarded = False)
+    firm = db.execute(
+        select(Firm).where(Firm.id == firm_id)
+    ).scalar_one_or_none()
+
+    if firm and not firm.concierge_onboarded:
+        first_doc_request = db.execute(
+            select(BehavioralEvent.occurred_at)
+            .where(
+                BehavioralEvent.firm_id == firm_id,
+                BehavioralEvent.event_type == "document_request.sent",
+            )
+            .limit(1)
+        ).scalar()
+
+        if first_doc_request is not None:
+            firm.concierge_onboarded = True
+            db.commit()
+            results.append({
+                "trigger_type": "practice_assistant_transition",
+                "message": (
+                    "You just sent your first document request. Setup is complete. "
+                    "I will be here for any question about running your practice, "
+                    "and I will flag anything that needs your attention before you "
+                    "have to go looking for it."
+                ),
+            })
+
     _tax_season = is_tax_season()
 
     # Trigger 1 -- no_engagement_after_import
