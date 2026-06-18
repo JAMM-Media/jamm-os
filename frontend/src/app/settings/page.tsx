@@ -976,6 +976,56 @@ export default function SettingsPage() {
               </div>
             )}
 
+            {/* Last NPS score */}
+            {isFirmOwner && (
+              <div
+                className="bg-surface-card dark:bg-dark-card rounded-[10px] p-4 flex flex-col gap-3 max-w-lg"
+                style={{ marginTop: '12px' }}
+              >
+                <p className="text-[13px] font-medium text-brand dark:text-[#EDEEF0]">Most recent client rating</p>
+                <p className="text-[12px] text-[#6B7280]">
+                  The last NPS score submitted by a client through a review request email.
+                </p>
+                {(firmData?.settings?.last_nps_score as number | undefined) != null ? (
+                  <div className="flex items-center gap-3">
+                    <div
+                      className="flex items-center justify-center w-12 h-12 rounded-[8px] text-[22px] font-medium"
+                      style={{
+                        backgroundColor:
+                          (firmData?.settings?.last_nps_score as number) >= 9
+                            ? '#D1FAE5'
+                            : (firmData?.settings?.last_nps_score as number) >= 7
+                            ? '#FEF3C7'
+                            : '#FEE2E2',
+                        color:
+                          (firmData?.settings?.last_nps_score as number) >= 9
+                            ? '#065F46'
+                            : (firmData?.settings?.last_nps_score as number) >= 7
+                            ? '#92400E'
+                            : '#991B1B',
+                      }}
+                    >
+                      {firmData?.settings?.last_nps_score as number}
+                    </div>
+                    <div className="flex flex-col gap-0.5">
+                      <span className="text-[13px] font-medium text-brand dark:text-[#EDEEF0]">
+                        {(firmData?.settings?.last_nps_score as number) >= 9
+                          ? 'Promoter'
+                          : (firmData?.settings?.last_nps_score as number) >= 7
+                          ? 'Passive'
+                          : 'Detractor'}
+                      </span>
+                      <span className="text-[11px] text-[#6B7280]">out of 10</span>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-[12px] text-[#9CA3AF]">
+                    No ratings received yet. Send a review request from an engagement to collect your first score.
+                  </p>
+                )}
+              </div>
+            )}
+
             {/* Data export section */}
             {isFirmOwner && (
               <DataExportSection />
