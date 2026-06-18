@@ -85,6 +85,7 @@ def evaluate_triggers(firm_id: UUID, db: Session) -> list[dict]:
             db.commit()
             results.append({
                 "trigger_type": "practice_assistant_transition",
+                "urgency_rank": 0,
                 "message": (
                     "You just sent your first document request. Setup is complete. "
                     "I will be here for any question about running your practice, "
@@ -101,6 +102,7 @@ def evaluate_triggers(firm_id: UUID, db: Session) -> list[dict]:
         if age is not None and age > 24:
             results.append({
                 "trigger_type": "no_engagement_after_import",
+                "urgency_rank": 10,
                 "message": (
                     f"You have {client_count} clients in JAMM PX but no engagements set up yet. "
                     "Want me to walk you through creating your first one?"
@@ -113,6 +115,7 @@ def evaluate_triggers(firm_id: UUID, db: Session) -> list[dict]:
         if age is not None and age > 48:
             results.append({
                 "trigger_type": "no_portal_invite_sent",
+                "urgency_rank": 13,
                 "message": (
                     "None of your clients have been invited to the portal yet. "
                     "Sending a magic-link takes one click per client. "
@@ -124,6 +127,7 @@ def evaluate_triggers(firm_id: UUID, db: Session) -> list[dict]:
     if not _tax_season and staff_pending > 0:
         results.append({
             "trigger_type": "staff_invite_pending",
+            "urgency_rank": 15,
             "message": (
                 f"{staff_pending} team member(s) haven't accepted their invite yet. "
                 "Want me to draft a follow-up message you can send directly?"
@@ -134,6 +138,7 @@ def evaluate_triggers(firm_id: UUID, db: Session) -> list[dict]:
     if not _tax_season and clients_missing_email > 0:
         results.append({
             "trigger_type": "missing_email_clients",
+            "urgency_rank": 11,
             "message": (
                 f"{clients_missing_email} client(s) are missing email addresses. "
                 "They won't receive portal invitations or document requests until this is fixed. "
@@ -147,6 +152,7 @@ def evaluate_triggers(firm_id: UUID, db: Session) -> list[dict]:
         if age is not None and age > 72:
             results.append({
                 "trigger_type": "no_automation_enabled",
+                "urgency_rank": 14,
                 "message": (
                     "Your automation rules are all off. "
                     "Firms that enable presets in the first week save an average of 3 hours on follow-up per month. "
@@ -158,6 +164,7 @@ def evaluate_triggers(firm_id: UUID, db: Session) -> list[dict]:
     if not _tax_season and irs_with_auth == 0 and client_count > 0:
         results.append({
             "trigger_type": "irs_auth_gap",
+            "urgency_rank": 12,
             "message": (
                 "None of your clients have IRS authorization records. "
                 "If you handle any federal tax work, this is the gap most likely to create a problem. "
@@ -184,6 +191,7 @@ def evaluate_triggers(firm_id: UUID, db: Session) -> list[dict]:
             suffix = f" and {more} more" if more > 0 else ""
             results.append({
                 "trigger_type": "stalled_work",
+                "urgency_rank": 4,
                 "message": (
                     f"{stalled['stalled_count']} engagements have not been updated in over 14 days: "
                     f"{names}{suffix}. Want to review what is blocking them?"
@@ -198,6 +206,7 @@ def evaluate_triggers(firm_id: UUID, db: Session) -> list[dict]:
         if unbilled["total_unbilled_value"] >= 500:
             results.append({
                 "trigger_type": "unbilled_work",
+                "urgency_rank": 1,
                 "message": (
                     f"You have ${unbilled['total_unbilled_value']:,.0f} in completed work that has not been invoiced this month "
                     f"across {unbilled['unbilled_count']} engagement(s). Want me to draft the invoices now?"
@@ -214,6 +223,7 @@ def evaluate_triggers(firm_id: UUID, db: Session) -> list[dict]:
         if len(long_overdue) >= 5 or overdue_inv["total_overdue_amount"] >= 2000:
             results.append({
                 "trigger_type": "overdue_invoices_alert",
+                "urgency_rank": 2,
                 "message": (
                     f"{overdue_inv['overdue_count']} invoice(s) are overdue totaling "
                     f"${overdue_inv['total_overdue_amount']:,.0f}. "
@@ -231,6 +241,7 @@ def evaluate_triggers(firm_id: UUID, db: Session) -> list[dict]:
             names = ", ".join(s["name"] for s in overloaded[:3])
             results.append({
                 "trigger_type": "staff_overload",
+                "urgency_rank": 5,
                 "message": (
                     f"{names} {'is' if len(overloaded) == 1 else 'are'} at or above full capacity this week. "
                     "Want to review their task assignments and redistribute?"
@@ -251,6 +262,7 @@ def evaluate_triggers(firm_id: UUID, db: Session) -> list[dict]:
             suffix = f" and {more} more" if more > 0 else ""
             results.append({
                 "trigger_type": "client_comm_gap",
+                "urgency_rank": 6,
                 "message": (
                     f"You have not sent anything to {comm_gap['gap_count']} clients with active work in over 21 days: "
                     f"{names}{suffix}. Should I draft status update messages for them?"
@@ -266,6 +278,7 @@ def evaluate_triggers(firm_id: UUID, db: Session) -> list[dict]:
             top = bottleneck["bottlenecks"][0]
             results.append({
                 "trigger_type": "pipeline_bottleneck_alert",
+                "urgency_rank": 7,
                 "message": (
                     f"{top['count']} engagements are sitting at {top['status']} status, "
                     f"which is {top['ratio_vs_average']}x your usual volume for that stage. "
@@ -292,6 +305,7 @@ def evaluate_triggers(firm_id: UUID, db: Session) -> list[dict]:
         if _monthly_total > 0 and overdue_ar["total_overdue_amount"] >= float(_monthly_total):
             results.append({
                 "trigger_type": "ar_alert",
+                "urgency_rank": 3,
                 "message": (
                     f"Your overdue AR (${overdue_ar['total_overdue_amount']:,.0f}) has reached or exceeded "
                     f"your billing from last month (${float(_monthly_total):,.0f}). "

@@ -4,7 +4,7 @@ import logging
 from datetime import datetime, timezone, timedelta
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.orm import Session
 
 import anthropic
@@ -79,12 +79,43 @@ def _generate_notification_draft(trigger_type: str) -> str | None:
         return None
 
 
+_DAILY_NOTIFICATION_BUDGET = 3
+_BUDGET_EXEMPT_TRIGGERS = {"practice_assistant_transition"}
+
+
+def _count_notifications_last_24h(firm_id: UUID, db: Session) -> int:
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+    return db.execute(
+        select(func.count()).select_from(ConciergeNotification).where(
+            ConciergeNotification.firm_id == firm_id,
+            ConciergeNotification.created_at >= cutoff,
+            ConciergeNotification.trigger_type.not_in(list(_BUDGET_EXEMPT_TRIGGERS)),
+        )
+    ).scalar() or 0
+
+
 def run_trigger_check(firm_id: UUID, db: Session) -> int:
     triggers = evaluate_triggers(firm_id, db)
 
+    # Sort triggers by urgency_rank so highest priority fire first when budget is tight.
+    # Exempt triggers (rank 0) sort to the front regardless.
+    triggers_sorted = sorted(triggers, key=lambda t: t.get("urgency_rank", 99))
+
+    # Count how many non-exempt notifications already fired in the last 24 hours.
+    notifications_today = _count_notifications_last_24h(firm_id, db)
+
     fired = 0
-    for trigger in triggers:
+    for trigger in triggers_sorted:
         trigger_type = trigger["trigger_type"]
+
+        # Exempt triggers always fire regardless of budget.
+        is_exempt = trigger_type in _BUDGET_EXEMPT_TRIGGERS
+        if not is_exempt and notifications_today + fired >= _DAILY_NOTIFICATION_BUDGET:
+            logger.info(
+                "trigger_check budget_gate firm=%s trigger=%s skipped (budget=%d reached)",
+                firm_id, trigger_type, _DAILY_NOTIFICATION_BUDGET,
+            )
+            continue
 
         existing = db.execute(
             select(ConciergeNotification).where(
@@ -126,5 +157,5 @@ def run_trigger_check(firm_id: UUID, db: Session) -> int:
         fired += 1
 
     db.commit()
-    logger.info("trigger_check firm=%s fired=%d evaluated=%d", firm_id, fired, len(triggers))
+    logger.info("trigger_check firm=%s fired=%d evaluated=%d budget_today=%d", firm_id, fired, len(triggers), notifications_today)
     return fired
