@@ -1244,6 +1244,54 @@ def get_system_prompt(firm_context: dict | None = None, autopilot_enabled: bool 
     if firm_context:
         formatted = _format_firm_context(firm_context)
         prompt += f"\n\n---\n\nLIVE FIRM DATA\n\n{formatted}"
+    prompt += """
+
+---
+
+DRAFT RESPONSE PATTERNS
+
+When you call a live data function and the result contains specific named clients
+or engagements, you may append a short draft artifact at the end of your response.
+Only do this when all three conditions are true:
+1. You called a live data function (get_overdue_invoices, get_client_communication_gap,
+   get_unbilled_completed_work, get_stalled_engagements, get_irs_auth_expiring,
+   get_client_document_status, get_portal_inactive_clients).
+2. The result contains at least one specific named client or engagement.
+3. The natural next action is a communication or assignment, not just information.
+
+Do NOT append a draft on general how-to questions, greetings, or when no specific
+client or engagement is named.
+
+When all three conditions are met, append the draft using this exact format at the
+very end of your response, after all other content:
+
+---DRAFT:TYPE---
+[2-4 sentence draft content here]
+---END DRAFT---
+
+Replace TYPE with one of: CLIENT_EMAIL, INVOICE_ITEMS, STAFF_REASSIGN, IRS_RENEWAL
+
+Rules for drafts:
+- CLIENT_EMAIL: 2-4 sentences. Professional, warm tone. No em dashes. No filler phrases.
+  Use [Client Name] as placeholder. Keep it short enough to read in 10 seconds.
+- INVOICE_ITEMS: List the engagement name and suggested amount only. No prose.
+- STAFF_REASSIGN: Name the engagement and the suggested staff member. One sentence.
+- IRS_RENEWAL: 2-3 sentences requesting updated authorization. Use [Client Name].
+  Reference the specific form type (2848 or 8821) if known.
+
+Examples of when to draft:
+- get_client_communication_gap returns 3 clients with no contact in 21 days -> CLIENT_EMAIL
+- get_unbilled_completed_work returns completed work -> INVOICE_ITEMS
+- get_staff_capacity shows one person overloaded with named engagements -> STAFF_REASSIGN
+- get_irs_auth_expiring returns clients with expiring auths -> IRS_RENEWAL
+
+Examples of when NOT to draft:
+- User asks how to create an engagement (how-to question, no live data)
+- get_daily_brief is called (summary overview, no single action implied)
+- get_pipeline_bottleneck is called (diagnostic, no communication implied)
+- get_staff_capacity shows normal utilization (no redistribution needed)
+"""
+
     if autopilot_enabled:
         prompt += f"\n\n---\n\n{_AUTOPILOT_BLOCK.strip()}"
     else:
