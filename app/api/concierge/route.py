@@ -191,6 +191,88 @@ def _is_operational_question(message: str) -> bool:
     return any(kw in lower for kw in _OPERATIONAL_KEYWORDS)
 
 
+_TOPIC_KEYWORDS: dict[str, set[str]] = {
+    "clients": {
+        "client", "clients", "customer", "contact", "entity type", "entity_type",
+        "new client", "add client", "create client", "client record", "client profile",
+        "client list", "client search", "archive client", "qbo sync", "quickbooks sync",
+        "health indicator", "client health", "client tag",
+    },
+    "engagements": {
+        "engagement", "engagements", "job", "jobs", "work item", "project",
+        "status", "statuses", "under review", "in progress", "planning", "draft",
+        "filing deadline", "deadline", "assign", "assigned", "template", "templates",
+        "recurring", "reopen", "archive engagement", "complete engagement", "wip",
+        "engagement type", "1040", "1120", "1065", "1120s", "990", "amended",
+    },
+    "tasks": {
+        "task", "tasks", "to-do", "todo", "checklist", "subtask",
+        "task deadline", "task assignment", "task status", "bulk task",
+    },
+    "document_requests": {
+        "document request", "document requests", "doc request", "upload",
+        "checklist item", "client upload", "waive", "waived", "reminder",
+        "document checklist", "request template", "missing documents",
+        "documents", "client hasn't uploaded", "not uploaded",
+    },
+    "portal": {
+        "portal", "magic link", "magic-link", "client portal", "portal invite",
+        "portal access", "revoke access", "portal login", "portal notification",
+        "portal setup", "client hasn't logged in", "portal adoption",
+    },
+    "billing": {
+        "invoice", "invoices", "billing", "payment", "stripe", "overdue invoice",
+        "ar", "accounts receivable", "send invoice", "invoice status",
+        "partial payment", "payment receipt", "invoice line", "bill",
+        "unbilled", "collect payment", "paid", "unpaid", "owes", "owe", "money",
+    },
+    "time_tracking": {
+        "time", "time entry", "time entries", "hours", "billable", "non-billable",
+        "time log", "log time", "wip report", "convert to invoice", "time report",
+        "hourly", "rate",
+    },
+    "automations": {
+        "automation", "automations", "preset", "presets", "rule", "rules",
+        "auto reminder", "automatic", "workflow rule", "not firing", "trigger",
+        "automation log", "enable automation", "disable automation",
+    },
+    "irs_authorizations": {
+        "irs", "authorization", "authorizations", "2848", "8821", "form 2848",
+        "form 8821", "auth expiry", "expiring", "poa", "power of attorney",
+        "caf", "irs auth", "renew authorization",
+    },
+    "staff": {
+        "staff", "team", "invite", "staff member", "role", "roles", "manager",
+        "permission", "permissions", "capacity", "overloaded", "bandwidth",
+        "staff invite", "team member", "assign staff",
+    },
+    "settings": {
+        "settings", "setting", "branding", "integration", "api key",
+        "firm settings", "notification preference", "data export", "account",
+        "subscription", "billing settings", "portal branding",
+    },
+    "operational_data": {
+        "attention", "urgent", "focus", "today", "stalled", "stuck", "idle",
+        "unbilled", "overdue", "owes", "outstanding", "capacity", "overloaded",
+        "pipeline", "bottleneck", "brief", "summary", "overview", "snapshot",
+        "weekly", "week", "deadline calendar", "automation health", "inactive",
+        "irs expiring", "document status", "outstanding",
+    },
+}
+
+
+def _classify_topic(message: str) -> str:
+    lower = message.lower()
+    scores: dict[str, int] = {}
+    for topic, keywords in _TOPIC_KEYWORDS.items():
+        score = sum(1 for kw in keywords if kw in lower)
+        if score > 0:
+            scores[topic] = score
+    if not scores:
+        return "general"
+    return max(scores, key=lambda t: scores[t])
+
+
 class MessageItem(BaseModel):
     role: str
     content: str
@@ -594,6 +676,7 @@ Respond with exactly one word: SAFE or UNSAFE. Nothing else.""",
                     event_type="concierge.question_asked",
                     actor_type="user",
                     actor_id=current_user.id,
+                    entity_type=_classify_topic(last_user_text),
                     metadata={
                         "question": last_user_text[:500],
                         "low_confidence": is_low_confidence,
@@ -738,6 +821,7 @@ Respond with exactly one word: SAFE or UNSAFE. Nothing else.""",
                         event_type="concierge.question_asked",
                         actor_type="user",
                         actor_id=current_user.id,
+                        entity_type=_classify_topic(_last_user_msg),
                         metadata={
                             "question": _last_user_msg[:500],
                             "low_confidence": is_low_confidence,
