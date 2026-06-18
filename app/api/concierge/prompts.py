@@ -1208,6 +1208,38 @@ def get_system_prompt(firm_context: dict | None = None, autopilot_enabled: bool 
                     summary_parts.append(f"deadline: {summary['deadline']}")
             if summary_parts:
                 context_line += " Summary: " + ", ".join(summary_parts) + "."
+
+        # Behavioral instruction override based on current entity and page.
+        # This is what converts a generic context note into a true co-pilot behavior change.
+        if entity_type == "client" and entity_name:
+            context_line += (
+                f" When the firm owner asks what is overdue, what needs attention, "
+                f"how this client is doing, or any question that could apply to a specific client, "
+                f"answer specifically about {entity_name} only. "
+                f"Do not give firm-wide answers unless they explicitly ask about the full firm or all clients."
+            )
+        elif entity_type == "engagement" and entity_name:
+            context_line += (
+                f" When the firm owner asks what needs to happen next, what the status means, "
+                f"who is assigned, or anything about this engagement, "
+                f"answer specifically about the {entity_name} engagement. "
+                f"Do not reference other engagements unless explicitly asked."
+            )
+        elif page and "invoice" in page.lower():
+            context_line += (
+                " When the firm owner asks about overdue invoices, who owes money, "
+                "or what to follow up on, answer in the context of the invoices currently visible."
+            )
+        elif page and ("dashboard" in page.lower() or not entity_type):
+            context_line += (
+                " The firm owner is at the firm level. "
+                "Give firm-wide answers unless they specify a particular client or engagement."
+            )
+        elif page and "settings" in page.lower():
+            context_line += (
+                " Answer how-to questions in the context of the settings section currently open."
+            )
+
         prompt += f"\n\n---\n\nCURRENT PAGE CONTEXT\n\n{context_line}"
     if firm_context:
         formatted = _format_firm_context(firm_context)
