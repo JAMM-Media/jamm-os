@@ -770,16 +770,30 @@ Respond with exactly one word: SAFE or UNSAFE. Nothing else.""",
                     })
                     continue
 
-                # Final response -- stream as SSE
+                # Final response -- stream as SSE, chunked on word boundaries
+                # (never split a word mid-character, regardless of which model
+                # produced the response). The artificial chunking here exists
+                # purely to preserve the frontend's typing-effect animation --
+                # the full response is already available at this point since
+                # this fires after stream.get_final_message() has returned.
                 final_text = "".join(
                     block.text for block in response.content if hasattr(block, "text")
                 )
                 filtered_final = filter_output(final_text)
-                CHUNK_SIZE = 20
-                for i in range(0, len(filtered_final), CHUNK_SIZE):
-                    chunk = filtered_final[i:i + CHUNK_SIZE]
-                    data_lines = "\n".join(f"data: {line}" for line in chunk.split("\n"))
-                    yield f"{data_lines}\n\n"
+                for line in filtered_final.split("\n"):
+                    words = line.split(" ")
+                    buffer = ""
+                    for word in words:
+                        candidate = (buffer + " " + word) if buffer else word
+                        if len(candidate) > 40:
+                            if buffer:
+                                yield f"data: {buffer}\n\n"
+                            buffer = word
+                        else:
+                            buffer = candidate
+                    if buffer:
+                        yield f"data: {buffer}\n\n"
+                    yield "data: \n\n"
                 return
 
             # Loop exhausted -- fall through
