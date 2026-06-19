@@ -416,6 +416,13 @@ Respond with exactly one word: SAFE or UNSAFE. Nothing else.""",
         import json as _json
         import uuid as _uuid
         try:
+            # DIAGNOSTIC (temporary -- remove after client-scoping investigation
+            # concludes): log every tool call the model makes, with full input,
+            # so we can confirm whether get_client_full_snapshot is actually
+            # being invoked when a client entity is in view via page_context.
+            logger.info(
+                f"DIAGNOSTIC tool_call firm={current_firm.id} tool={tool_name} input={tool_input}"
+            )
             if tool_name == "get_daily_brief":
                 result = get_daily_brief(current_firm.id, db)
             elif tool_name == "get_stalled_engagements":
@@ -691,6 +698,9 @@ Respond with exactly one word: SAFE or UNSAFE. Nothing else.""",
     # ------------------------------------------------------------------
     if _last_user_msg and _last_user_msg != "__OPEN__" and _is_operational_question(_last_user_msg):
         fable_client = anthropic.Anthropic(api_key=api_key)
+        logger.info(
+            f"DIAGNOSTIC page_context firm={current_firm.id} page_context={body.page_context}"
+        )
         _system_prompt_text = get_system_prompt(
             firm_context=_firm_context,
             autopilot_enabled=body.autopilot_enabled,
