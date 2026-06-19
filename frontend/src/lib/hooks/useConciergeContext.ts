@@ -18,6 +18,7 @@ export interface ConciergeUIContext {
   entity_id: string | null
   entity_name: string | null
   summary: Record<string, unknown> | null
+  ready: boolean
 }
 
 const PAGE_LABELS: Record<string, string> = {
@@ -54,6 +55,7 @@ function parseEntityFromPath(pathname: string): { entity_type: string; entity_id
 export function useConciergeContext(): ConciergeUIContext {
   const pathname = usePathname()
   const [entityData, setEntityData] = useState<ConciergeEntitySummary | null>(null)
+  const [ready, setReady] = useState(true)
   const fetchingRef = useRef<string | null>(null)
 
   const page =
@@ -65,6 +67,7 @@ export function useConciergeContext(): ConciergeUIContext {
   useEffect(() => {
     if (!cacheKey || !parsed) {
       setEntityData(null)
+      setReady(true)
       return
     }
 
@@ -72,12 +75,14 @@ export function useConciergeContext(): ConciergeUIContext {
     const cached = _cache.get(cacheKey)
     if (cached && Date.now() - cached.ts < CACHE_TTL) {
       setEntityData(cached.data)
+      setReady(true)
       return
     }
 
     // Avoid duplicate in-flight requests
     if (fetchingRef.current === cacheKey) return
     fetchingRef.current = cacheKey
+    setReady(false)
 
     api
       .get<ConciergeEntitySummary>(
@@ -92,6 +97,7 @@ export function useConciergeContext(): ConciergeUIContext {
       })
       .finally(() => {
         if (fetchingRef.current === cacheKey) fetchingRef.current = null
+        setReady(true)
       })
   }, [cacheKey])
 
@@ -101,5 +107,6 @@ export function useConciergeContext(): ConciergeUIContext {
     entity_id: entityData?.entity_id ?? null,
     entity_name: entityData?.entity_name ?? null,
     summary: entityData?.summary ?? null,
+    ready,
   }
 }

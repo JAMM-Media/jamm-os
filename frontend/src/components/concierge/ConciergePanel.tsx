@@ -77,9 +77,11 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
     '/settings': 'Settings',
     '/firm-chat': 'Firm Chat',
   }
-  const currentPage = Object.entries(PAGE_LABELS).find(([k]) => pathname.startsWith(k))?.[1] ?? 'JAMM PX'
   const { user } = useAuth()
   const uiContext = useConciergeContext()
+  const currentPage = uiContext.entity_name
+    ? uiContext.entity_name
+    : Object.entries(PAGE_LABELS).find(([k]) => pathname.startsWith(k))?.[1] ?? 'JAMM PX'
   const logoUrl = user ? `/api/backend/firms/logo/${user.firm_id}` : null
   const initials =
     user?.full_name?.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase() ?? '?'
@@ -331,6 +333,13 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
       hasInitialized.current = true
       if (messages.length === 0) {
         const _open = async () => {
+          if (!uiContext.ready) {
+            let waited = 0
+            while (!uiContext.ready && waited < 1500) {
+              await new Promise((resolve) => setTimeout(resolve, 100))
+              waited += 100
+            }
+          }
           if (pathname.startsWith('/dashboard')) {
             setBriefingLoading(true)
             try {
@@ -382,6 +391,19 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
   async function handleSend(text?: string) {
     const msg = (text ?? input).trim()
     if (!msg || streaming) return
+
+    // If the user is on a route that resolves to an entity (client or engagement
+    // detail page) but the entity context has not finished loading yet, wait
+    // briefly so the question is answered with the correct scoped context rather
+    // than firing before entity_name is populated.
+    if (!uiContext.ready) {
+      let waited = 0
+      while (!uiContext.ready && waited < 1500) {
+        await new Promise((resolve) => setTimeout(resolve, 100))
+        waited += 100
+      }
+    }
+
     setInput('')
     setSuggestions([])
     const userMsg: Message = { role: 'user', content: msg }
