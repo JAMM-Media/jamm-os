@@ -13,6 +13,7 @@ import {
   emitConciergeAction,
   type ConciergeAction,
 } from '@/lib/events/conciergeEvents'
+import { assembleSSELines } from '@/lib/concierge/assembleSSEStream'
 
 interface Message {
   role: 'user' | 'concierge'
@@ -250,37 +251,22 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
         const reader = res.body.getReader()
         const decoder = new TextDecoder()
         let buffer = ''
+        const allRawLines: string[] = []
 
         while (true) {
           const { done, value } = await reader.read()
           if (done) {
             buffer += decoder.decode()
-            if (buffer.startsWith('data: ')) {
-              const chunk = buffer.slice(6)
-              if (chunk) {
-                assembled += chunk + '\n'
-              }
-            }
+            if (buffer) allRawLines.push(buffer)
             break
           }
           buffer += decoder.decode(value, { stream: true })
           const lines = buffer.split('\n')
           buffer = lines.pop() ?? ''
-          for (const line of lines) {
-            if (line.startsWith('data:')) {
-              const chunk = line.replace(/^data:\s*/, '')
-              assembled += chunk + '\n'
-            }
-          }
+          allRawLines.push(...lines)
         }
 
-        // The backend sends each original line as a separate SSE event and we
-        // append a newline after each one above to preserve line breaks. This
-        // produces one trailing newline too many overall (since the original
-        // text's own line breaks are now double-represented as the SSE event
-        // boundary newline). Collapse any 3+ consecutive newlines down to 2
-        // (paragraph break) and trim a single trailing newline if present.
-        assembled = assembled.replace(/\n{3,}/g, '\n\n').replace(/\n$/, '')
+        assembled = assembleSSELines(allRawLines)
 
         console.log('[CONCIERGE RAW]', assembled)
         const filteredAssembled = filterOutput(assembled)
