@@ -20,12 +20,16 @@ export function AppShell({ children }: AppShellProps) {
   const pathname = usePathname()
   const isSettingsRoute = pathname.startsWith('/settings')
   const mainRef = useRef<HTMLDivElement>(null)
-  const [conciergeOpen, setConciergeOpen] = useState(() => {
-    if (typeof window !== 'undefined') {
-      return sessionStorage.getItem('jamm_concierge_open') === 'true'
-    }
-    return false
-  })
+  // Always initialize to false so server and client render identically on
+  // first paint (avoids a hydration mismatch). Restore the persisted value
+  // from sessionStorage AFTER mount instead, inside an effect -- this is the
+  // standard SSR-safe pattern for state that depends on browser-only storage.
+  const [conciergeOpen, setConciergeOpen] = useState(false)
+
+  useEffect(() => {
+    const saved = sessionStorage.getItem('jamm_concierge_open') === 'true'
+    if (saved) setConciergeOpen(true)
+  }, [])
 
   useEffect(() => {
     const main = mainRef.current
