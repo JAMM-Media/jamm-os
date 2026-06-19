@@ -1212,11 +1212,18 @@ def get_system_prompt(firm_context: dict | None = None, autopilot_enabled: bool 
         # Behavioral instruction override based on current entity and page.
         # This is what converts a generic context note into a true co-pilot behavior change.
         if entity_type == "client" and entity_name:
+            entity_id = page_context.get("entity_id")
             context_line += (
                 f" When the firm owner asks what is overdue, what needs attention, "
                 f"how this client is doing, or any question that could apply to a specific client, "
                 f"answer specifically about {entity_name} only. "
-                f"Do not give firm-wide answers unless they explicitly ask about the full firm or all clients."
+                f"Do not give firm-wide answers unless they explicitly ask about the full firm or all clients. "
+                f"IMPORTANT TOOL SELECTION RULE: for any question about this client's status, overdue items, "
+                f"invoices, or documents that does not explicitly ask about the whole firm, call "
+                f"get_client_full_snapshot with client_id=\"{entity_id}\" instead of any firm-wide function "
+                f"like get_daily_brief, get_overdue_invoices, or get_deadline_calendar. "
+                f"Only call a firm-wide function if the firm owner explicitly asks about all clients, "
+                f"the whole firm, or something unrelated to {entity_name} specifically."
             )
         elif entity_type == "engagement" and entity_name:
             context_line += (

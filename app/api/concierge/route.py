@@ -106,7 +106,7 @@ _CONCIERGE_TOOLS = [
     },
     {
         "name": "get_client_full_snapshot",
-        "description": "Returns full data for a single client: active engagements, outstanding invoices, pending document requests, portal access status. Call this when the firm owner asks about a specific named client's status.",
+        "description": "Returns full data for a single client: active engagements, outstanding invoices, pending document requests, portal access status. Call this when the firm owner asks about a specific named client's status, OR whenever the CURRENT CONTEXT section identifies a client the firm owner is currently viewing -- in that case, use the client_id provided in CURRENT CONTEXT even if the question itself does not name the client (e.g. a bare 'what is overdue?' while viewing a client record means overdue for THAT client, not the whole firm).",
         "input_schema": {
             "type": "object",
             "properties": {
