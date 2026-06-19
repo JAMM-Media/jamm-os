@@ -258,7 +258,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
             if (buffer.startsWith('data: ')) {
               const chunk = buffer.slice(6)
               if (chunk) {
-                assembled += chunk
+                assembled += chunk + '\n'
               }
             }
             break
@@ -269,10 +269,18 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
           for (const line of lines) {
             if (line.startsWith('data:')) {
               const chunk = line.replace(/^data:\s*/, '')
-              assembled += chunk
+              assembled += chunk + '\n'
             }
           }
         }
+
+        // The backend sends each original line as a separate SSE event and we
+        // append a newline after each one above to preserve line breaks. This
+        // produces one trailing newline too many overall (since the original
+        // text's own line breaks are now double-represented as the SSE event
+        // boundary newline). Collapse any 3+ consecutive newlines down to 2
+        // (paragraph break) and trim a single trailing newline if present.
+        assembled = assembled.replace(/\n{3,}/g, '\n\n').replace(/\n$/, '')
 
         console.log('[CONCIERGE RAW]', assembled)
         const filteredAssembled = filterOutput(assembled)
