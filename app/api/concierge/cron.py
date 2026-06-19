@@ -57,10 +57,19 @@ def _generate_notification_draft(trigger_type: str) -> str | None:
             return None
 
         client = anthropic.Anthropic(api_key=api_key)
+        # TEMP: swapped from claude-fable-5 to claude-opus-4-8 and effort
+        # low -> medium on 2026-06-19, following the US export control
+        # directive suspending Fable 5 and Mythos 5 worldwide (June 12, 2026,
+        # no announced return date). Effort raised to medium to isolate
+        # whether reasoning depth affects tool-selection instruction-following
+        # during today's client-scoping investigation. Revisit both the model
+        # and effort level once Fable 5 access is restored, or once effort:low
+        # is confirmed to work reliably on Opus 4.8 for this use case.
+        # https://www.anthropic.com/news/fable-mythos-access
         response = client.messages.create(
-            model="claude-fable-5",
+            model="claude-opus-4-8",
             max_tokens=300,
-            output_config={"effort": "low"},
+            output_config={"effort": "medium"},
             messages=[{"role": "user", "content": prompt}],
         )
 

@@ -715,13 +715,22 @@ Respond with exactly one word: SAFE or UNSAFE. Nothing else.""",
             # Tool use loop -- max 5 iterations
             for _iteration in range(5):
                 try:
+                    # TEMP: swapped from claude-fable-5 to claude-opus-4-8 and effort
+                    # low -> medium on 2026-06-19, following the US export control
+                    # directive suspending Fable 5 and Mythos 5 worldwide (June 12, 2026,
+                    # no announced return date). Effort raised to medium to isolate
+                    # whether reasoning depth affects tool-selection instruction-following
+                    # during today's client-scoping investigation. Revisit both the model
+                    # and effort level once Fable 5 access is restored, or once effort:low
+                    # is confirmed to work reliably on Opus 4.8 for this use case.
+                    # https://www.anthropic.com/news/fable-mythos-access
                     with fable_client.messages.stream(
-                        model="claude-fable-5",
+                        model="claude-opus-4-8",
                         max_tokens=8000,
                         system=_system_blocks,
                         tools=_CONCIERGE_TOOLS,
                         messages=current_messages,
-                        output_config={"effort": "low"},
+                        output_config={"effort": "medium"},
                     ) as stream:
                         response = stream.get_final_message()
 
