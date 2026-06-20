@@ -468,6 +468,42 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
     if (route) setTimeout(() => router.push(route), 0)
   }
 
+  function getStarterPrompts(): string[] {
+    if (uiContext.entity_type === 'client' && uiContext.entity_name) {
+      return [
+        `What's the status of ${uiContext.entity_name}?`,
+        `What's overdue for ${uiContext.entity_name}?`,
+        `What documents are still missing?`,
+      ]
+    }
+    if (uiContext.entity_type === 'engagement' && uiContext.entity_name) {
+      return [
+        `What needs to happen next on this engagement?`,
+        `Who is assigned to this?`,
+        `What's the current status?`,
+      ]
+    }
+    if (currentPage === 'Billing') {
+      return [
+        `Which invoices are past due?`,
+        `What work haven't I invoiced yet?`,
+        `Draft a payment reminder for the oldest overdue invoice.`,
+      ]
+    }
+    if (currentPage === 'Dashboard') {
+      return [
+        `What needs my attention today?`,
+        `Who owes me money?`,
+        `What's overdue?`,
+      ]
+    }
+    return [
+      `What needs my attention today?`,
+      `What's overdue?`,
+      `Who owes me money?`,
+    ]
+  }
+
   function parseDraftFromResponse(text: string): {
     type: string
     content: string
@@ -840,6 +876,21 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
                 <div className="h-2 w-full bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
                 <div className="h-2 w-2/3 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
               </div>
+            </div>
+          )}
+
+          {messages.length === 0 && !briefingLoading && !streaming && (
+            <div className="flex flex-col gap-2 px-3 py-2">
+              <p className="text-[12px] text-[#6B7280] mb-1">Try asking:</p>
+              {getStarterPrompts().map((prompt) => (
+                <button
+                  key={prompt}
+                  onClick={() => handleSend(prompt)}
+                  className="text-left text-[12px] px-3 py-2 rounded-[8px] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] text-[#1F3148] dark:text-[#EDEEF0] bg-white dark:bg-[#2D2D2D] hover:border-[#4A7FA5] hover:text-[#4A7FA5] transition-colors"
+                >
+                  {prompt}
+                </button>
+              ))}
             </div>
           )}
 
