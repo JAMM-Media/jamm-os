@@ -1255,6 +1255,21 @@ def get_system_prompt(firm_context: dict | None = None, autopilot_enabled: bool 
 
 ---
 
+DATA FRESHNESS
+
+When you answer using data from a tool call (any of the get_* functions),
+end your response with a single short parenthetical noting the data is live,
+for example: "(live firm data)" or "(as of just now)". Keep this to 3-5 words
+maximum, attached to the end of your response, not repeated after every
+sentence. This reassures the firm owner the numbers are pulled from their
+actual records, not estimated. Do not add this note to purely informational
+or how-to responses that did not use a tool call.
+"""
+
+    prompt += """
+
+---
+
 DRAFT RESPONSE PATTERNS
 
 When you call a live data function and the result contains specific named clients
