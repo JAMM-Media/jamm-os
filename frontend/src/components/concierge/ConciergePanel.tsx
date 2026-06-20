@@ -319,7 +319,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
         setStreaming(false)
       }
     },
-    [router],
+    [router, uiContext],
   )
 
   useEffect(() => {
