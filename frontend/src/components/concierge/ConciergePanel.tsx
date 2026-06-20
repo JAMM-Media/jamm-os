@@ -273,7 +273,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
         assembled = assembleSSELines(allRawLines)
 
         console.log('[CONCIERGE RAW]', assembled)
-        const filteredAssembled = filterOutput(assembled)
+        const filteredAssembled = filterOutput(assembled.replace(/\[TOPIC:\w+\]\s*$/, '').trimEnd())
         const parsedDraft = parseDraftFromResponse(filteredAssembled)
         const textForAction = parsedDraft ? parsedDraft.cleanedResponse : filteredAssembled
         const cleanContent = handleConciergeAction(textForAction)
@@ -294,22 +294,26 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
           pendingActionRef.current = null
           void executeAction(action)
         }
-        const lower = assembled.toLowerCase()
-        const chips: string[] = []
-        if (lower.includes('client') || lower.includes('import')) {
-          chips.push('Go to Clients', 'Import clients')
-        } else if (lower.includes('engagement')) {
-          chips.push('Go to Engagements', 'New engagement')
-        } else if (lower.includes('settings') || lower.includes('team') || lower.includes('staff')) {
-          chips.push('Go to Settings')
-        } else if (lower.includes('billing') || lower.includes('invoice') || lower.includes('stripe')) {
-          chips.push('Go to Billing')
-        } else if (lower.includes('document')) {
-          chips.push('Go to Documents')
-        } else {
-          chips.push('Go to Dashboard')
+        const topicMatch = assembled.match(/\[TOPIC:(\w+)\]/)
+        const topic = topicMatch ? topicMatch[1] : 'general'
+
+        const TOPIC_CHIPS: Record<string, string[]> = {
+          clients: ['Go to Clients', 'Import clients'],
+          engagements: ['Go to Engagements', 'New engagement'],
+          tasks: ['Go to Tasks'],
+          document_requests: ['Go to Documents'],
+          portal: ['Go to Clients'],
+          billing: ['Go to Billing'],
+          time_tracking: ['Go to Billing'],
+          automations: ['Go to Settings'],
+          irs_authorizations: ['Go to Clients'],
+          staff: ['Go to Settings'],
+          settings: ['Go to Settings'],
+          operational_data: ['Go to Dashboard'],
+          general: [],
         }
-        setSuggestions(chips.slice(0, 3))
+
+        setSuggestions((TOPIC_CHIPS[topic] ?? []).slice(0, 3))
       } catch {
         setMessages((prev) => {
           const updated = [...prev]

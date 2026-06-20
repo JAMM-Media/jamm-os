@@ -631,6 +631,7 @@ Respond with exactly one word: SAFE or UNSAFE. Nothing else.""",
                 yield f"data: \n\n"
                 yield f"data: [FILTERED]\n\n"
                 yield f"data: {filtered}\n\n"
+            yield f"data: [TOPIC:{_classify_topic(_last_user_msg)}]\n\n"
 
     def generate_and_log():
         assembled_for_log = []
@@ -790,6 +791,13 @@ Respond with exactly one word: SAFE or UNSAFE. Nothing else.""",
                     # cannot be correctly reassembled by the markdown renderer
                     # even when the underlying characters are preserved.
                     yield f"data: {line}\n\n"
+                # Trailing marker so the frontend can render contextually
+                # relevant suggestion chips without re-guessing the topic
+                # from the response text. Classified from the user's actual
+                # question using the same classifier used for behavioral
+                # logging (Build 1) -- not from the response text.
+                _topic_for_chips = _classify_topic(_last_user_msg)
+                yield f"data: [TOPIC:{_topic_for_chips}]\n\n"
                 return
 
             # Loop exhausted -- fall through
