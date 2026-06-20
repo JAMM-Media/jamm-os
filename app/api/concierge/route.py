@@ -416,13 +416,6 @@ Respond with exactly one word: SAFE or UNSAFE. Nothing else.""",
         import json as _json
         import uuid as _uuid
         try:
-            # DIAGNOSTIC (temporary -- remove after client-scoping investigation
-            # concludes): log every tool call the model makes, with full input,
-            # so we can confirm whether get_client_full_snapshot is actually
-            # being invoked when a client entity is in view via page_context.
-            logger.info(
-                f"DIAGNOSTIC tool_call firm={current_firm.id} tool={tool_name} input={tool_input}"
-            )
             if tool_name == "get_daily_brief":
                 result = get_daily_brief(current_firm.id, db)
             elif tool_name == "get_stalled_engagements":
@@ -698,9 +691,6 @@ Respond with exactly one word: SAFE or UNSAFE. Nothing else.""",
     # ------------------------------------------------------------------
     if _last_user_msg and _last_user_msg != "__OPEN__" and _is_operational_question(_last_user_msg):
         fable_client = anthropic.Anthropic(api_key=api_key)
-        logger.info(
-            f"DIAGNOSTIC page_context firm={current_firm.id} page_context={body.page_context}"
-        )
         _system_prompt_text = get_system_prompt(
             firm_context=_firm_context,
             autopilot_enabled=body.autopilot_enabled,
@@ -770,9 +760,18 @@ Respond with exactly one word: SAFE or UNSAFE. Nothing else.""",
                                 "tool_use_id": block.id,
                                 "content": result_text,
                             })
+                    # Only forward the fields Anthropic's API accepts as input
+                    # for assistant content blocks. model_dump() can include
+                    # extra response-only fields (e.g. parsed_output on some
+                    # models) that the API rejects with a 400 error when sent
+                    # back as input on the next tool-use iteration.
+                    _ALLOWED_CONTENT_FIELDS = {"type", "text", "id", "name", "input"}
                     current_messages.append({
                         "role": "assistant",
-                        "content": [b.model_dump() for b in response.content],
+                        "content": [
+                            {k: v for k, v in b.model_dump().items() if k in _ALLOWED_CONTENT_FIELDS}
+                            for b in response.content
+                        ],
                     })
                     current_messages.append({
                         "role": "user",
@@ -780,30 +779,17 @@ Respond with exactly one word: SAFE or UNSAFE. Nothing else.""",
                     })
                     continue
 
-                # Final response -- stream as SSE, chunked on word boundaries
-                # (never split a word mid-character, regardless of which model
-                # produced the response). The artificial chunking here exists
-                # purely to preserve the frontend's typing-effect animation --
-                # the full response is already available at this point since
-                # this fires after stream.get_final_message() has returned.
                 final_text = "".join(
                     block.text for block in response.content if hasattr(block, "text")
                 )
                 filtered_final = filter_output(final_text)
                 for line in filtered_final.split("\n"):
-                    words = line.split(" ")
-                    buffer = ""
-                    for word in words:
-                        candidate = (buffer + " " + word) if buffer else word
-                        if len(candidate) > 40:
-                            if buffer:
-                                yield f"data: {buffer}\n\n"
-                            buffer = word
-                        else:
-                            buffer = candidate
-                    if buffer:
-                        yield f"data: {buffer}\n\n"
-                    yield "data: \n\n"
+                    # Send each full line as one SSE event. Markdown tokens
+                    # like **bold** or numbered list markers must never be
+                    # split across separate events, since a split token
+                    # cannot be correctly reassembled by the markdown renderer
+                    # even when the underlying characters are preserved.
+                    yield f"data: {line}\n\n"
                 return
 
             # Loop exhausted -- fall through
