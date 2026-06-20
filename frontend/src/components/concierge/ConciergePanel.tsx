@@ -714,6 +714,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
             {/* Autopilot toggle */}
             <div className="relative group">
               <button
+                title="When ON, I'll navigate the app and open forms for you automatically. When OFF, I'll just tell you where to go."
                 onClick={() => {
                   const next = !autopilotOn
                   setAutopilotOn(next)
@@ -729,6 +730,9 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
                 <Zap className={`h-3 w-3 transition-all ${autopilotOn ? 'fill-white stroke-white' : 'fill-none'}`} />
                 Autopilot
               </button>
+              <div className="absolute right-0 top-full mt-1 w-56 px-2.5 py-1.5 rounded-[6px] bg-[#1F3148] text-white text-[11px] leading-snug opacity-0 group-hover:opacity-100 transition-opacity duration-150 pointer-events-none z-50 shadow-lg">
+                When ON, I&apos;ll navigate the app and open forms for you automatically. When OFF, I&apos;ll just tell you where to go.
+              </div>
             </div>
 
             <button
@@ -750,12 +754,18 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
         {/* Notification cards */}
         {notifications.length > 0 && (
           <div className="flex flex-col gap-2 px-4 pt-3 flex-shrink-0">
+            <div className="flex items-center gap-1.5 px-0.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#D97706]" />
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-[#92400E] dark:text-[#D97706]">
+                {notifications.length} {notifications.length === 1 ? 'Alert' : 'Alerts'}
+              </span>
+            </div>
             {notifications.map((n) => {
               const draft = n.metadata?.draft as string | undefined
               return (
                 <div
                   key={n.id}
-                  className="flex flex-col gap-2 bg-white dark:bg-[#2D2D2D] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] rounded-[8px] px-3 py-2.5"
+                  className="flex flex-col gap-2 bg-white dark:bg-[#2D2D2D] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] border-l-[3px] border-l-[#D97706] rounded-[8px] px-3 py-2.5"
                 >
                   <div className="flex items-start gap-2">
                     <p
