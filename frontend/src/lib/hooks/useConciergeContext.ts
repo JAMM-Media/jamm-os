@@ -64,35 +64,45 @@ export function useConciergeContext(): ConciergeUIContext {
   const parsed = parseEntityFromPath(pathname)
   const cacheKey = parsed ? `${parsed.entity_type}:${parsed.entity_id}` : null
 
+  // DIAGNOSTIC (temporary -- remove after client-scoping investigation
+  // concludes): confirm what this hook actually computes at render time.
+  console.log('[CONCIERGE_CONTEXT_DIAGNOSTIC]', { pathname, parsed, cacheKey })
+
   useEffect(() => {
+    console.log('[CONCIERGE_CONTEXT_DIAGNOSTIC] effect fired', { cacheKey, parsed })
     if (!cacheKey || !parsed) {
+      console.log('[CONCIERGE_CONTEXT_DIAGNOSTIC] no cacheKey/parsed -- exiting early, no entity for this route')
       setEntityData(null)
       setReady(true)
       return
     }
-
     // Check cache first
     const cached = _cache.get(cacheKey)
     if (cached && Date.now() - cached.ts < CACHE_TTL) {
+      console.log('[CONCIERGE_CONTEXT_DIAGNOSTIC] cache hit', cached.data)
       setEntityData(cached.data)
       setReady(true)
       return
     }
-
     // Avoid duplicate in-flight requests
-    if (fetchingRef.current === cacheKey) return
+    if (fetchingRef.current === cacheKey) {
+      console.log('[CONCIERGE_CONTEXT_DIAGNOSTIC] already in-flight for this cacheKey, skipping duplicate fetch')
+      return
+    }
     fetchingRef.current = cacheKey
     setReady(false)
-
+    console.log('[CONCIERGE_CONTEXT_DIAGNOSTIC] firing fetch', `/concierge/entity-preview/${parsed.entity_type}/${parsed.entity_id}`)
     api
       .get<ConciergeEntitySummary>(
         `/concierge/entity-preview/${parsed.entity_type}/${parsed.entity_id}`
       )
       .then((res) => {
+        console.log('[CONCIERGE_CONTEXT_DIAGNOSTIC] fetch SUCCESS', res.data)
         _cache.set(cacheKey, { data: res.data, ts: Date.now() })
         setEntityData(res.data)
       })
-      .catch(() => {
+      .catch((err) => {
+        console.log('[CONCIERGE_CONTEXT_DIAGNOSTIC] fetch FAILED', err?.message, err?.response?.status, err?.response?.data)
         setEntityData(null)
       })
       .finally(() => {
