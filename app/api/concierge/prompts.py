@@ -1286,6 +1286,18 @@ Rules for drafts:
 - IRS_RENEWAL: 2-3 sentences requesting updated authorization. Use [Client Name].
   Reference the specific form type (2848 or 8821) if known.
 
+After the draft content, on its own final line inside the same draft block,
+add a one-line source citation in this exact format:
+SOURCE: [brief description of the specific record this draft is based on]
+
+Examples: "SOURCE: Invoice INV-002, $2,400, status Overdue" or "SOURCE: 3
+clients with no contact in 21+ days, per client communication gap check" or
+"SOURCE: IRS Form 2848 for [Client Name], expires in 12 days."
+
+This source line lets the firm owner verify the draft against real data
+before sending. Never omit it. Never fabricate a source -- only cite data
+you actually retrieved from a tool call in this conversation.
+
 Examples of when to draft:
 - get_client_communication_gap returns 3 clients with no contact in 21 days -> CLIENT_EMAIL
 - get_unbilled_completed_work returns completed work -> INVOICE_ITEMS

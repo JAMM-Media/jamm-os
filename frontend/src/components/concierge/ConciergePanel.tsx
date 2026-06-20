@@ -20,7 +20,7 @@ interface Message {
   content: string
   actionConfirm?: string
   isBriefing?: boolean
-  draft?: { type: string; content: string } | null
+  draft?: { type: string; content: string; source: string | null } | null
 }
 
 interface Notification {
@@ -118,6 +118,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
   const [briefingLoading, setBriefingLoading] = useState(false)
   const [isDownloading, setIsDownloading] = useState(false)
   const [copiedId, setCopiedId] = useState<string | null>(null)
+  const [editingDraftContent, setEditingDraftContent] = useState<Record<number, string>>({})
   const [detailBriefing, setDetailBriefing] = useState<string | null>(null)
   const [detailReady, setDetailReady] = useState(false)
   const [pasteForm, setPasteForm] = useState({
@@ -284,7 +285,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
             updated[updated.length - 1] = {
               role: 'concierge',
               content: cleanContent,
-              draft: parsedDraft ? { type: parsedDraft.type, content: parsedDraft.content } : null,
+              draft: parsedDraft ? { type: parsedDraft.type, content: parsedDraft.content, source: parsedDraft.source } : null,
             }
           }
           return updated
@@ -507,6 +508,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
   function parseDraftFromResponse(text: string): {
     type: string
     content: string
+    source: string | null
     cleanedResponse: string
   } | null {
     const startMarker = '---DRAFT:'
@@ -519,13 +521,19 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
     if (typeEnd === -1) return null
 
     const type = text.slice(startIdx + startMarker.length, typeEnd).trim()
-    const content = text.slice(typeEnd + 3, endIdx).trim()
+    let rawBlock = text.slice(typeEnd + 3, endIdx).trim()
 
-    // Remove the entire draft block from the response including surrounding whitespace
+    let source: string | null = null
+    const sourceMatch = rawBlock.match(/^SOURCE:\s*(.+)$/m)
+    if (sourceMatch) {
+      source = sourceMatch[1].trim()
+      rawBlock = rawBlock.replace(/^SOURCE:\s*.+$/m, '').trim()
+    }
+
     const cleanedResponse = text.slice(0, startIdx).trimEnd()
 
-    if (!type || !content) return null
-    return { type, content, cleanedResponse }
+    if (!type || !rawBlock) return null
+    return { type, content: rawBlock, source, cleanedResponse }
   }
 
   function filterOutput(text: string): string {
@@ -1146,13 +1154,22 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
                    msg.draft.type === 'IRS_RENEWAL' ? 'Draft renewal request' :
                    'Draft'}
                 </p>
-                <p className="text-[12px] leading-[1.5] text-[#374151] dark:text-[#D1D5DB] whitespace-pre-wrap">
-                  {msg.draft.content}
-                </p>
+                <textarea
+                  value={editingDraftContent[i] ?? msg.draft.content}
+                  onChange={(e) => setEditingDraftContent((prev) => ({ ...prev, [i]: e.target.value }))}
+                  rows={Math.min(8, Math.max(3, (editingDraftContent[i] ?? msg.draft.content).split('\n').length + 1))}
+                  className="w-full text-[12px] leading-[1.5] text-[#374151] dark:text-[#D1D5DB] bg-white dark:bg-[#2D2D2D] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] rounded-[6px] px-2 py-1.5 resize-none focus:outline-none focus:border-[#4A7FA5]"
+                />
+                {msg.draft.source && (
+                  <p className="text-[10px] text-[#9CA3AF] mt-1.5 italic">
+                    Based on: {msg.draft.source}
+                  </p>
+                )}
                 <div className="flex gap-2 mt-2">
                   <button
                     onClick={() => {
-                      navigator.clipboard.writeText(msg.draft!.content).then(() => {
+                      const currentContent = editingDraftContent[i] ?? msg.draft!.content
+                      navigator.clipboard.writeText(currentContent).then(() => {
                         setCopiedId(`msg-${i}`)
                         setTimeout(() => setCopiedId(null), 2000)
                       }).catch(() => {})
@@ -1163,20 +1180,23 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
                   </button>
                   <button
                     onClick={() => {
-                      const confirmed = window.confirm(
-                        msg.draft!.type === 'STAFF_REASSIGN'
-                          ? 'Open the engagement to apply this reassignment?'
-                          : msg.draft!.type === 'INVOICE_ITEMS'
-                          ? 'Open billing to create this invoice?'
-                          : 'Send this message to the client?'
-                      )
+                      const currentContent = editingDraftContent[i] ?? msg.draft!.content
+                      let confirmMessage = ''
+                      if (msg.draft!.type === 'STAFF_REASSIGN') {
+                        confirmMessage = 'Open the engagement to apply this reassignment?'
+                      } else if (msg.draft!.type === 'INVOICE_ITEMS') {
+                        confirmMessage = 'Open billing to create this invoice?'
+                      } else {
+                        confirmMessage = `Send this message?\n\nMessage:\n${currentContent}\n\nNote: confirm the recipient's email address is correct in the client record before sending.`
+                      }
+                      const confirmed = window.confirm(confirmMessage)
                       if (confirmed) {
                         if (msg.draft!.type === 'STAFF_REASSIGN') {
                           router.push('/engagements')
                         } else if (msg.draft!.type === 'INVOICE_ITEMS') {
                           router.push('/billing')
                         } else {
-                          handleSend(`Send this message: ${msg.draft!.content}`)
+                          handleSend(`Send this message: ${currentContent}`)
                         }
                       }
                     }}
