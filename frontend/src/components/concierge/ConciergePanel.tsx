@@ -101,6 +101,10 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [input, setInput] = useState('')
   const [streaming, setStreaming] = useState(false)
+  const [hasMounted, setHasMounted] = useState(false)
+  useEffect(() => {
+    setHasMounted(true)
+  }, [])
   const [autopilotOn, setAutopilotOn] = useState(() => {
     if (typeof window !== 'undefined') {
       return sessionStorage.getItem('jamm_concierge_autopilot') === 'true'
@@ -658,7 +662,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
 
   return (
     <>
-      {isOpen && (
+      {hasMounted && isOpen && (
         <div
           style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.25)', zIndex: 39 }}
         />
@@ -672,7 +676,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
           width: 400,
           height: '100vh',
           zIndex: 40,
-          transform: isOpen ? 'translateX(0)' : 'translateX(100%)',
+          transform: hasMounted && isOpen ? 'translateX(0)' : 'translateX(100%)',
           transition: 'transform 200ms ease-out',
           display: 'flex',
           flexDirection: 'column',
