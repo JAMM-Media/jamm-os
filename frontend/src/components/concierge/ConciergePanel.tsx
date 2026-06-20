@@ -880,17 +880,19 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
           )}
 
           {messages.length === 0 && !briefingLoading && !streaming && (
-            <div className="flex flex-col gap-2 px-3 py-2">
-              <p className="text-[12px] text-[#6B7280] mb-1">Try asking:</p>
-              {getStarterPrompts().map((prompt) => (
-                <button
-                  key={prompt}
-                  onClick={() => handleSend(prompt)}
-                  className="text-left text-[12px] px-3 py-2 rounded-[8px] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] text-[#1F3148] dark:text-[#EDEEF0] bg-white dark:bg-[#2D2D2D] hover:border-[#4A7FA5] hover:text-[#4A7FA5] transition-colors"
-                >
-                  {prompt}
-                </button>
-              ))}
+            <div className="flex flex-col gap-2 px-1 py-1">
+              <p className="text-[11px] text-[#9CA3AF] px-2">Try asking</p>
+              <div className="flex flex-wrap gap-1.5 px-1">
+                {getStarterPrompts().map((prompt) => (
+                  <button
+                    key={prompt}
+                    onClick={() => handleSend(prompt)}
+                    className="text-[11px] font-medium px-3 py-1.5 rounded-full border border-[#C8CDD6] dark:border-[#484848] text-[#1F3148] dark:text-[#EDEEF0] bg-white dark:bg-[#2D2D2D] hover:border-[#4A7FA5] hover:text-[#4A7FA5] transition-colors"
+                  >
+                    {prompt}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
 
