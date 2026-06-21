@@ -163,7 +163,20 @@ def run_trigger_check(firm_id: UUID, db: Session) -> int:
             is_read=False,
         )
         db.add(notification)
-        fired += 1
+        try:
+            db.flush()
+            fired += 1
+        except Exception as e:
+            # A concurrent request won the race and already inserted an
+            # unread notification of this trigger_type for this firm. The
+            # partial unique index correctly rejected this duplicate.
+            # Roll back just this notification and continue -- this is
+            # expected occasionally under concurrent polling, not an error.
+            db.rollback()
+            logger.info(
+                "trigger_check duplicate_prevented firm=%s trigger=%s (constraint rejected concurrent insert)",
+                firm_id, trigger_type,
+            )
 
     db.commit()
     logger.info("trigger_check firm=%s fired=%d evaluated=%d budget_today=%d", firm_id, fired, len(triggers), notifications_today)
