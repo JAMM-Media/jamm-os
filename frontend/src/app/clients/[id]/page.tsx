@@ -57,6 +57,12 @@ function ClientDetailContent() {
     const p = searchParams.get('tab')
     return p && CLIENT_TABS.some((t) => t.key === p) ? p : 'overview'
   })
+  useEffect(() => {
+    const p = searchParams.get('tab')
+    if (p && CLIENT_TABS.some((t) => t.key === p) && p !== activeTab) {
+      setActiveTab(p)
+    }
+  }, [searchParams])
   const [notesOpen, setNotesOpen] = useState(false)
   const [sendingPortalLink, setSendingPortalLink] = useState(false)
   const [viewingPortal, setViewingPortal] = useState(false)
