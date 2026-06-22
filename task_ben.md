@@ -49,126 +49,78 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-# Task: Fix Concierge message prefill not appearing when already on the target client's page
+# Task: Fix Concierge panel single shared scrollbar trapping the input bar off-screen
 
 USE: claude sonnet
 
 ## VERIFY BEFORE ACT
 
 ```bash
-grep -n "interface ConciergeAction" -A 15 /home/corby/jamm-os/frontend/src/lib/events/conciergeEvents.ts
+grep -n "flex-1 overflow-y-auto\|flex-shrink-0" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 ```
 
-Confirm the exact shape of the ConciergeAction type before adding a new action
-shape to it.
-
-```bash
-grep -n "Open to send" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
-```
-
-Confirm there are exactly two call sites (notification draft card, per-message
-draft card) and note their line numbers.
-
-```bash
-grep -n "onConciergeAction" -A 18 /home/corby/jamm-os/frontend/src/app/clients/\[id\]/page.tsx
-```
-
-Confirm the existing listener structure that already branches on action.modal
-for new-engagement and portal-magic-link.
+Confirm the notifications block uses flex-shrink-0 with no min-height or
+max-height constraint, and the message feed uses flex-1 overflow-y-auto with
+no min-h-0 or minHeight:0 set anywhere on it or its flex ancestors.
 
 ---
 
 ## WHAT IS WRONG
 
-When the user clicks "Open to send" on a draft while already viewing that
-exact client's page, the draft never appears in the Messages compose box,
-even though the URL correctly updates to ?tab=messages and the tab correctly
-activates.
+Confirmed via live testing: when notification cards stack up (2+ draft
+cards), the entire panel content, alert cards and chat messages together,
+scrolls as one single region instead of the alerts and chat feed scrolling
+independently. The scrollbar is contained to the panel, not the page, but
+the input bar at the bottom gets pushed out of view with no way to scroll
+it back into reach.
 
-Root cause: both "Open to send" handlers in ConciergePanel.tsx always write
-to sessionStorage under the key jamm_concierge_pending and then call
-router.push to the same client's route with ?tab=messages. The page.tsx
-effect that reads jamm_concierge_pending and calls setMessageCompose has a
-dependency array of [clientId]. Since the user is already on that client's
-page, clientId does not change, the component does not remount, and that
-effect never re-runs to pick up the value that was just written. The draft
-is written to sessionStorage one render too late to be read.
-
-This is the identical underlying disease as the tab-sync bug already fixed
-in commit f05c249, just living in a different effect with a different
-symptom. The codebase already has the correct pattern for this exact
-situation: the modal-action branch in executeAction() checks
-pathname.startsWith(normalizedRoute) (the alreadyOnRoute check) and calls
-emitConciergeAction() directly instead of sessionStorage when no navigation
-is actually required. The two "Open to send" handlers skip that check
-entirely and always go through sessionStorage, even in the same-page case.
+Root cause: the message feed div is flex-1 overflow-y-auto inside a flex
+column parent with a fixed height: 100vh, but no element in that flex chain
+sets min-height: 0. Flex items default to min-height: auto, meaning a flex
+child expands to its content's full natural height instead of being capped
+by the parent and scrolling internally. Without min-height: 0 somewhere in
+the chain, overflow-y-auto on the message feed never actually activates
+within its own bounded box, because the box itself just grows past 100vh
+along with everything else, and the closest actual scrollable boundary ends
+up being effectively the whole panel.
 
 ---
 
 ## ACTION
 
-File: `/home/corby/jamm-os/frontend/src/lib/events/conciergeEvents.ts`
-
-Extend the ConciergeAction type to allow an optional prefillMessage field and
-a type value of 'prefill-message', matching whatever pattern the existing
-type definition uses for its other optional fields (prefill, modal, route).
-Do not change any existing field.
-
 File: `/home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx`
 
-In both "Open to send" handlers (the notification draft card and the
-per-message draft card), after computing targetClientId and getting
-confirmation from window.confirm, branch on whether the user is already on
-that client's page before deciding how to deliver the draft:
+Find the message feed container:
 
 ```typescript
-const alreadyOnClientPage = pathname.startsWith(`/clients/${targetClientId}`)
-if (alreadyOnClientPage) {
-  emitConciergeAction({ type: 'prefill-message', prefillMessage: currentContent })
-} else {
-  sessionStorage.setItem(
-    'jamm_concierge_pending',
-    JSON.stringify({
-      clientId: targetClientId,
-      prefillMessage: currentContent,
-      _ts: Date.now(),
-    }),
-  )
-}
-router.push(`/clients/${targetClientId}?tab=messages`)
+<div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
 ```
 
-Adjust variable names (draft vs currentContent) to match each call site
-exactly as it already reads. Do not change the confirm dialog text, the
-dismissNotification call, or any other logic in either handler.
-
-File: `/home/corby/jamm-os/frontend/src/app/clients/[id]/page.tsx`
-
-In the existing onConciergeAction listener (the one already handling
-new-engagement and portal-magic-link), add a branch:
+Add min-h-0 to its className so it reads:
 
 ```typescript
-if (action.type === 'prefill-message' && action.prefillMessage) {
-  setActiveTab('messages')
-  setMessageCompose(action.prefillMessage)
-}
+<div className="flex-1 min-h-0 overflow-y-auto p-4 flex flex-col gap-3">
 ```
 
-Do not touch the existing branches in this listener. Do not touch the
-sessionStorage-based useEffect that handles the cross-page case, it remains
-correct and necessary for navigation to a different client.
+This is the standard fix for this exact flexbox behavior: min-h-0 overrides
+the default min-height: auto on a flex item, letting flex-1 actually shrink
+the box to the available space and overflow-y-auto take over scrolling
+within that bounded box, independent of the notifications block above it.
+
+Do not change the notifications block's flex-shrink-0. It is correct as is,
+it should not shrink, it should just stop being part of the same runaway
+growth. Do not change the outer panel container's height:100vh or display
+flex settings. Do not touch any other file.
 
 ---
 
 ## VERIFY AFTER ACT
 
 ```bash
-grep -n "prefill-message" /home/corby/jamm-os/frontend/src/lib/events/conciergeEvents.ts
-grep -n "prefill-message" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
-grep -n "prefill-message" /home/corby/jamm-os/frontend/src/app/clients/\[id\]/page.tsx
+grep -n "min-h-0" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 ```
 
-Expected: at least one occurrence in each file.
+Expected: present on the message feed div.
 
 ```bash
 cd /home/corby/jamm-os/frontend
@@ -181,19 +133,20 @@ Expected: zero TypeScript errors.
 
 ## MANUAL VERIFICATION (the actual test)
 
-1. Open a specific client's page directly (already on that client, not
-   navigating from the Clients list).
-2. Trigger a CLIENT_EMAIL draft for that same client and click "Open to
-   send," then OK on the confirm dialog.
-3. Confirm the Messages tab activates AND the compose box is pre-filled with
-   the draft text. This is the part that was broken.
-4. Regression check: from a different client's page, or from the firm-wide
-   Clients list with no client in context, trigger a draft for a specific
-   client and click "Open to send." Confirm it still navigates correctly
-   and the compose box is still pre-filled after the page loads (this is the
-   cross-page case using the existing sessionStorage path, must still work).
-5. Regression check: confirm clicking between Overview, Engagements,
-   Documents tabs manually still works exactly as before.
+1. Restart the frontend.
+2. Open a client page with 2+ active notification triggers, same scenario as
+   before, so 2 draft notification cards stack at the top.
+3. Confirm the input bar at the bottom of the panel is visible without any
+   scrolling.
+4. Confirm there are now two independently scrollable regions: scrolling
+   inside the notification cards area (if it overflows) does not move the
+   chat message feed, and scrolling the chat message feed does not move the
+   notification cards.
+5. Regression check: dismiss both notifications and confirm the chat feed
+   still scrolls normally with no notifications present.
+6. Regression check: with notifications present, type a message and send it,
+   confirm the new message appears in the chat feed and the feed
+   auto-scrolls to it without affecting the notification cards above.
 
 Report what you observe at step 3 specifically.
 
@@ -204,7 +157,7 @@ Report what you observe at step 3 specifically.
 ```bash
 cd /home/corby/jamm-os
 git add -A
-git commit -m "fix: Concierge draft prefill now reaches the Messages compose box when already on the target client's page, via live event instead of a sessionStorage read that never re-fires without a remount"
+git commit -m "fix: Concierge panel message feed now scrolls independently of stacked notification cards instead of one shared overflow region trapping the input bar off-screen, by adding min-h-0 to override default flex item min-height: auto"
 git pull --rebase origin main
 git push origin main
 ```
