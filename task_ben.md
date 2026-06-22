@@ -49,101 +49,115 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-# Task: Use real client name in Concierge drafts instead of [Client Name] placeholder
+# Task: Fix SOURCE line fragment leaking into draft email body on multi-line wrap
 
 USE: claude sonnet
 
 ## VERIFY BEFORE ACT
 
 ```bash
-sed -n '1185,1235p' /home/corby/jamm-os/app/api/concierge/prompts.py
+grep -n "sourceMatch\|SOURCE:" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 ```
 
-Confirm entity_name is already injected into context_line when
-entity_type == "client" and entity_name is known.
+Confirm the current regex is /^SOURCE:\s*(.+)$/m, which only matches a
+single line because . does not match newlines even with the m flag.
 
 ```bash
-sed -n '1293,1302p' /home/corby/jamm-os/app/api/concierge/prompts.py
+grep -n "add a one-line source citation\|Never omit it" /home/corby/jamm-os/app/api/concierge/prompts.py
 ```
 
-Confirm the CLIENT_EMAIL and IRS_RENEWAL rules currently say "Use [Client
-Name] as placeholder" with no condition based on whether the name is known.
+Confirm the current SOURCE instruction has no explicit rule against wrapping
+the line.
 
 ---
 
 ## WHAT IS WRONG
 
-Confirmed via live testing: a CLIENT_EMAIL draft generated while viewing
-Marcus & Diana Webb's own client page, with the agent's own preceding
-message correctly saying "Here is what I have for Marcus & Diana Webb,"
-still drafted the email body as "Hi [Client Name]," never substituting the
-real name.
+Confirmed via live testing: a draft's footnote showed a truncated "Based on:
+2025 Individual Tax Return (Marcus" and the email body itself ended with an
+orphaned fragment, "& Diana Webb), due 2026-04-15, 1 active engagement on
+file." This is one SOURCE sentence that the model wrapped across two lines
+in its raw output. The parser regex /^SOURCE:\s*(.+)$/m only captures and
+removes the first line. The second line is never recognized as part of the
+SOURCE line, so it stays behind in rawBlock and renders as part of the
+visible email body.
 
-Root cause: the DRAFT RESPONSE PATTERNS section unconditionally instructs
-the model to use [Client Name] as a literal placeholder for both
-CLIENT_EMAIL and IRS_RENEWAL drafts, with no branch for the case where
-entity_name is already known and injected into context. This is a real
-instruction gap, not a model failure. The model did exactly what it was
-told.
+This needs two fixes, addressing both sides: the parser must not depend on
+the model keeping SOURCE on one physical line, and the prompt should also
+ask the model not to wrap it, since a long source description is more
+readable on one line for the firm owner's own scanning anyway.
 
 ---
 
 ## ACTION
 
-File: `/home/corby/jamm-os/app/api/concierge/prompts.py`
+File 1: `/home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx`
 
-In the DRAFT RESPONSE PATTERNS section, update the CLIENT_EMAIL and
-IRS_RENEWAL rules to read:
+In parseDraftFromResponse, replace the SOURCE extraction so it captures
+through to the next blank line or the end of rawBlock, not just to the next
+single newline:
 
-CLIENT_EMAIL: 2-4 sentences. Professional, warm tone. No em dashes. No
+```typescript
+let source: string | null = null
+const sourceMatch = rawBlock.match(/SOURCE:\s*([\s\S]+?)(?:\n\s*\n|$)/)
+if (sourceMatch) {
+  source = sourceMatch[1].replace(/\s+/g, ' ').trim()
+  rawBlock = rawBlock.slice(0, sourceMatch.index).trim()
+}
+```
 
-filler phrases. If you are viewing a specific client record and know the
+This removes everything from the start of the SOURCE: marker onward,
+regardless of how many lines it spans, and collapses internal line breaks
+in the captured source text into single spaces for clean footnote display.
 
-client's real name from context, use their actual first name or full name
+File 2: `/home/corby/jamm-os/app/api/concierge/prompts.py`
 
-naturally in the greeting. Only use [Client Name] as a placeholder when no
+In the SOURCE line instruction, add one sentence:
+Keep the SOURCE line on a single line of text with no line break in it,
 
-specific client name is known from context. Keep it short enough to read
+even if it is long.
 
-in 10 seconds.
-IRS_RENEWAL: 2-3 sentences requesting updated authorization. Use the
-
-client's real name if known from context, otherwise [Client Name].
-
-Reference the specific form type (2848 or 8821) if known.
-
-
-Do not change anything else in this section. Do not change INVOICE_ITEMS or
-STAFF_REASSIGN rules. Do not touch any other file.
+Place this directly after the existing "Never omit it. Never fabricate a
+source" sentence. Do not change anything else in this section. Do not touch
+any other file.
 
 ---
 
 ## VERIFY AFTER ACT
 
 ```bash
-grep -n "use their actual first name\|use the client's real name" /home/corby/jamm-os/app/api/concierge/prompts.py
+grep -n "SOURCE:.*\[\\\\s\\\\S\]" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 ```
 
-Expected: both new instructions present.
+Expected: the new multi-line-safe regex is present.
 
 ```bash
-python3 -c "from app.api.concierge.route import router; print('OK')"
+grep -n "no line break in it" /home/corby/jamm-os/app/api/concierge/prompts.py
 ```
 
-Expected: OK, no import errors.
+Expected: present.
+
+```bash
+cd /home/corby/jamm-os/frontend
+npm run build
+```
+
+Expected: zero TypeScript errors.
 
 ---
 
 ## MANUAL VERIFICATION (the actual test)
 
-1. Restart the backend.
-2. While viewing a specific client's page (e.g. Marcus & Diana Webb), ask
-   the Concierge to draft a follow-up email to this client.
-3. Confirm the draft greeting uses the real client name, not [Client Name].
-4. Regression check: from the Clients list (no specific client in context),
-   ask a question that surfaces a CLIENT_EMAIL draft for one of several
-   matching clients and confirm it correctly falls back to [Client Name]
-   since no single client is in view.
+1. Restart both frontend and backend.
+2. Reproduce the original scenario: view Marcus & Diana Webb's page, ask
+   for a follow-up email draft.
+3. Confirm the email body ends cleanly with no trailing fragment after the
+   sign-off, and the "Based on:" footnote shows the complete source
+   description on one line with no truncation.
+4. If the model still happens to wrap the SOURCE line despite the new prompt
+   instruction, confirm the parser fix still produces a clean result anyway,
+   since the fix must not depend on the model fully obeying the new
+   instruction.
 
 Report what you observe at step 3 specifically.
 
@@ -154,7 +168,7 @@ Report what you observe at step 3 specifically.
 ```bash
 cd /home/corby/jamm-os
 git add -A
-git commit -m "fix: Concierge CLIENT_EMAIL and IRS_RENEWAL drafts use the real client name when known from page context instead of always defaulting to [Client Name] placeholder"
+git commit -m "fix: draft SOURCE line parsing no longer leaks a trailing fragment into the email body when the model wraps the source description across two lines; also instruct the model to keep it on one line"
 git pull --rebase origin main
 git push origin main
 ```

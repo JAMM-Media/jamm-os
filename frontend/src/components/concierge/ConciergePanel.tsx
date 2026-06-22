@@ -524,10 +524,10 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
     let rawBlock = text.slice(typeEnd + 3, endIdx).trim()
 
     let source: string | null = null
-    const sourceMatch = rawBlock.match(/^SOURCE:\s*(.+)$/m)
+    const sourceMatch = rawBlock.match(/SOURCE:\s*([\s\S]+?)(?:\n\s*\n|$)/)
     if (sourceMatch) {
-      source = sourceMatch[1].trim()
-      rawBlock = rawBlock.replace(/^SOURCE:\s*.+$/m, '').trim()
+      source = sourceMatch[1].replace(/\s+/g, ' ').trim()
+      rawBlock = rawBlock.slice(0, sourceMatch.index).trim()
     }
 
     const cleanedResponse = text.slice(0, startIdx).trimEnd()

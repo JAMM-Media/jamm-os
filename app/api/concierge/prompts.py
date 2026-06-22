@@ -1316,6 +1316,7 @@ clients with no contact in 21+ days, per client communication gap check" or
 This source line lets the firm owner verify the draft against real data
 before sending. Never omit it. Never fabricate a source -- only cite data
 you actually retrieved from a tool call in this conversation.
+Keep the SOURCE line on a single line of text with no line break in it, even if it is long.
 
 Examples of when to draft:
 - get_client_communication_gap returns 3 clients with no contact in 21 days -> CLIENT_EMAIL
