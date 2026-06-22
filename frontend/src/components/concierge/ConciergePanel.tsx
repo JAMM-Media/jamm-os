@@ -365,7 +365,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
           if (!user?.firm_type) {
             setMessages([{
               role: 'concierge',
-              content: 'Welcome to JAMM Concierge. Before we start -- what does your firm do most? This lets me point you to the right setup path.\n\n1. Tax prep and returns\n2. Bookkeeping and monthly close\n3. Advisory and planning',
+              content: 'Here for anything you need. Before we start, what does your firm do most? This lets me point you to the right setup path.\n\n1. Tax prep and returns\n2. Bookkeeping and monthly close\n3. Advisory and planning',
             }])
           } else {
             sendMessages([{ role: 'user', content: '__OPEN__' }])

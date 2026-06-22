@@ -49,117 +49,47 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-# Task: Fix Concierge panel single shared scrollbar trapping the input bar off-screen
+# Task: Update Concierge first-time welcome message copy
 
 USE: claude sonnet
 
 ## VERIFY BEFORE ACT
 
-```bash
-grep -n "flex-1 overflow-y-auto\|flex-shrink-0" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
-```
+grep -n "Welcome to JAMM Concierge" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-Confirm the notifications block uses flex-shrink-0 with no min-height or
-max-height constraint, and the message feed uses flex-1 overflow-y-auto with
-no min-h-0 or minHeight:0 set anywhere on it or its flex ancestors.
-
----
-
-## WHAT IS WRONG
-
-Confirmed via live testing: when notification cards stack up (2+ draft
-cards), the entire panel content, alert cards and chat messages together,
-scrolls as one single region instead of the alerts and chat feed scrolling
-independently. The scrollbar is contained to the panel, not the page, but
-the input bar at the bottom gets pushed out of view with no way to scroll
-it back into reach.
-
-Root cause: the message feed div is flex-1 overflow-y-auto inside a flex
-column parent with a fixed height: 100vh, but no element in that flex chain
-sets min-height: 0. Flex items default to min-height: auto, meaning a flex
-child expands to its content's full natural height instead of being capped
-by the parent and scrolling internally. Without min-height: 0 somewhere in
-the chain, overflow-y-auto on the message feed never actually activates
-within its own bounded box, because the box itself just grows past 100vh
-along with everything else, and the closest actual scrollable boundary ends
-up being effectively the whole panel.
-
----
+Confirm the exact current string and its line number.
 
 ## ACTION
 
-File: `/home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx`
+File: /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-Find the message feed container:
+Replace the current welcome message content:
 
-```typescript
-<div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
-```
+Welcome to JAMM Concierge. Before we start -- what does your firm do most? This lets me point you to the right setup path.
 
-Add min-h-0 to its className so it reads:
+with:
 
-```typescript
-<div className="flex-1 min-h-0 overflow-y-auto p-4 flex flex-col gap-3">
-```
+Here for anything you need. Before we start, what does your firm do most? This lets me point you to the right setup path.
 
-This is the standard fix for this exact flexbox behavior: min-h-0 overrides
-the default min-height: auto on a flex item, letting flex-1 actually shrink
-the box to the available space and overflow-y-auto take over scrolling
-within that bounded box, independent of the notifications block above it.
-
-Do not change the notifications block's flex-shrink-0. It is correct as is,
-it should not shrink, it should just stop being part of the same runaway
-growth. Do not change the outer panel container's height:100vh or display
-flex settings. Do not touch any other file.
-
----
+Keep the numbered list (Tax prep and returns / Bookkeeping and monthly close / Advisory and planning) exactly as is, no changes to that part. Do not touch any other message, prompt, or string in this file.
 
 ## VERIFY AFTER ACT
 
-```bash
-grep -n "min-h-0" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
-```
+grep -n "Here for anything you need" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-Expected: present on the message feed div.
+Expected: present.
 
-```bash
 cd /home/corby/jamm-os/frontend
 npm run build
-```
 
 Expected: zero TypeScript errors.
 
----
-
-## MANUAL VERIFICATION (the actual test)
-
-1. Restart the frontend.
-2. Open a client page with 2+ active notification triggers, same scenario as
-   before, so 2 draft notification cards stack at the top.
-3. Confirm the input bar at the bottom of the panel is visible without any
-   scrolling.
-4. Confirm there are now two independently scrollable regions: scrolling
-   inside the notification cards area (if it overflows) does not move the
-   chat message feed, and scrolling the chat message feed does not move the
-   notification cards.
-5. Regression check: dismiss both notifications and confirm the chat feed
-   still scrolls normally with no notifications present.
-6. Regression check: with notifications present, type a message and send it,
-   confirm the new message appears in the chat feed and the feed
-   auto-scrolls to it without affecting the notification cards above.
-
-Report what you observe at step 3 specifically.
-
----
-
 ## GIT
 
-```bash
 cd /home/corby/jamm-os
 git add -A
-git commit -m "fix: Concierge panel message feed now scrolls independently of stacked notification cards instead of one shared overflow region trapping the input bar off-screen, by adding min-h-0 to override default flex item min-height: auto"
+git commit -m "copy: warmer first-time welcome message in Concierge panel"
 git pull --rebase origin main
 git push origin main
-```
 
 If conflicts on task.md use --theirs. Conflicts on source files use --ours.
