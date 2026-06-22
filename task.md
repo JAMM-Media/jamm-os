@@ -49,335 +49,126 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-# Task: Build 4 — Draft-and-confirm in conversation responses
+# Task: Fix client page tab not switching on same-route query param navigation
 
 USE: claude sonnet
 
 ## VERIFY BEFORE ACT
 
 ```bash
-grep -n "DRAFT:\|parseDraft\|draft_block\|DRAFT_MARKER" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx | head -10
+sed -n '54,60p' /home/corby/jamm-os/frontend/src/app/clients/\[id\]/page.tsx
 ```
 
-Expected: no output. Draft parsing does not exist yet. If any of these strings are
-present, stop and report.
+Confirm activeTab is initialized via a lazy useState function that reads
+searchParams.get('tab') ONLY on first mount.
 
 ```bash
-grep -n "DRAFT RESPONSE PATTERNS\|draft_pattern\|propose.*confirm\|When you surface" /home/corby/jamm-os/app/api/concierge/prompts.py | head -5
+grep -n "router.push(\`/clients/\${targetClientId}?tab=messages\`)" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 ```
 
-Expected: no output. Draft instruction block does not exist yet in prompts.py.
-If present, stop and report.
-
-```bash
-grep -n "def get_system_prompt" /home/corby/jamm-os/app/api/concierge/prompts.py
-```
-
-Note the line number. You will add the draft instruction block inside this function.
+Confirm both Concierge Send buttons (chat draft and notification draft) call
+this same router.push pattern.
 
 ---
 
-## WHAT IS BEING BUILT
+## WHAT IS WRONG
 
-When the agent calls a live data function and returns specific named clients or
-engagements, it appends a short draft artifact at the end of its response.
-The frontend detects the draft marker, extracts the content, renders it in the
-same styled card as notification drafts, and removes it from the message bubble.
+Confirmed via live testing: clicking "Open to send" in the Concierge panel
+correctly shows the confirm dialog, correctly calls router.push to add
+?tab=messages to the URL, and the browser URL bar correctly updates -- but
+the Messages tab never visually activates. The user remains on whatever tab
+was already active (Overview).
 
-The agent only drafts when the situation is unambiguous and the action is high value.
-It never drafts on general how-to questions or when no specific client or engagement
-is named in the data returned.
+Root cause: activeTab is a useState with a lazy initializer function that
+reads the URL's tab param only once, on the component's first mount. When
+the user is already on this exact client's page and router.push only
+changes the query string on the same route, Next.js does not remount the
+page component, it just updates the URL. Since the component never
+remounts, the lazy useState initializer never re-runs, and activeTab never
+updates to reflect the new ?tab=messages value.
 
-The four draft types:
-- CLIENT_EMAIL: a short professional client communication
-- INVOICE_ITEMS: invoice line item suggestions
-- STAFF_REASSIGN: a redistribution recommendation
-- IRS_RENEWAL: a short renewal request communication
-
----
-
-## ACTION — Part 1: Add draft instruction block to prompts.py
-
-File: `/home/corby/jamm-os/app/api/concierge/prompts.py`
-
-Inside `get_system_prompt()`, find the line that appends the autopilot block:
-
-```python
-    if autopilot_enabled:
-        prompt += f"\n\n---\n\n{_AUTOPILOT_BLOCK.strip()}"
-    else:
-        prompt += "\n\n---\n\nAUTOPILOT MODE IS OFF..."
-```
-
-Add the following block BEFORE those two lines (before the autopilot check):
-
-```python
-    prompt += """
+This is a pre-existing gap in the page's own tab-sync logic, not something
+introduced by the Concierge fix. It would affect any same-page navigation
+that tries to switch tabs via the URL while already on that page. The
+Concierge fix simply was the first thing to expose it.
 
 ---
 
-DRAFT RESPONSE PATTERNS
+## ACTION
 
-When you call a live data function and the result contains specific named clients
-or engagements, you may append a short draft artifact at the end of your response.
-Only do this when all three conditions are true:
-1. You called a live data function (get_overdue_invoices, get_client_communication_gap,
-   get_unbilled_completed_work, get_stalled_engagements, get_irs_auth_expiring,
-   get_client_document_status, get_portal_inactive_clients).
-2. The result contains at least one specific named client or engagement.
-3. The natural next action is a communication or assignment, not just information.
+File: `/home/corby/jamm-os/frontend/src/app/clients/[id]/page.tsx`
 
-Do NOT append a draft on general how-to questions, greetings, or when no specific
-client or engagement is named.
-
-When all three conditions are met, append the draft using this exact format at the
-very end of your response, after all other content:
-
----DRAFT:TYPE---
-[2-4 sentence draft content here]
----END DRAFT---
-
-Replace TYPE with one of: CLIENT_EMAIL, INVOICE_ITEMS, STAFF_REASSIGN, IRS_RENEWAL
-
-Rules for drafts:
-- CLIENT_EMAIL: 2-4 sentences. Professional, warm tone. No em dashes. No filler phrases.
-  Use [Client Name] as placeholder. Keep it short enough to read in 10 seconds.
-- INVOICE_ITEMS: List the engagement name and suggested amount only. No prose.
-- STAFF_REASSIGN: Name the engagement and the suggested staff member. One sentence.
-- IRS_RENEWAL: 2-3 sentences requesting updated authorization. Use [Client Name].
-  Reference the specific form type (2848 or 8821) if known.
-
-Examples of when to draft:
-- get_client_communication_gap returns 3 clients with no contact in 21 days -> CLIENT_EMAIL
-- get_unbilled_completed_work returns completed work -> INVOICE_ITEMS
-- get_staff_capacity shows one person overloaded with named engagements -> STAFF_REASSIGN
-- get_irs_auth_expiring returns clients with expiring auths -> IRS_RENEWAL
-
-Examples of when NOT to draft:
-- User asks how to create an engagement (how-to question, no live data)
-- get_daily_brief is called (summary overview, no single action implied)
-- get_pipeline_bottleneck is called (diagnostic, no communication implied)
-- get_staff_capacity shows normal utilization (no redistribution needed)
-"""
-```
-
----
-
-## ACTION — Part 2: Add parseDraftFromResponse to ConciergePanel.tsx
-
-File: `/home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx`
-
-Add this function directly above the `filterOutput` function:
+Find the activeTab declaration:
 
 ```typescript
-  function parseDraftFromResponse(text: string): {
-    type: string
-    content: string
-    cleanedResponse: string
-  } | null {
-    const startMarker = '---DRAFT:'
-    const endMarker = '---END DRAFT---'
-    const startIdx = text.indexOf(startMarker)
-    const endIdx = text.indexOf(endMarker)
-    if (startIdx === -1 || endIdx === -1 || endIdx <= startIdx) return null
-
-    const typeEnd = text.indexOf('---', startIdx + startMarker.length)
-    if (typeEnd === -1) return null
-
-    const type = text.slice(startIdx + startMarker.length, typeEnd).trim()
-    const content = text.slice(typeEnd + 3, endIdx).trim()
-
-    // Remove the entire draft block from the response including surrounding whitespace
-    const cleanedResponse = text.slice(0, startIdx).trimEnd()
-
-    if (!type || !content) return null
-    return { type, content, cleanedResponse }
-  }
+  const [activeTab, setActiveTab] = useState(() => {
+    const p = searchParams.get('tab')
+    return p && CLIENT_TABS.some((t) => t.key === p) ? p : 'overview'
+  })
 ```
 
----
-
-## ACTION — Part 3: Wire parseDraftFromResponse into sendMessages
-
-File: `/home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx`
-
-Add a `draft` field to the `Message` interface at the top of the file:
-
-Find:
-```typescript
-interface Message {
-  role: 'user' | 'concierge'
-  content: string
-  actionConfirm?: string
-  isBriefing?: boolean
-}
-```
-
-Replace with:
-```typescript
-interface Message {
-  role: 'user' | 'concierge'
-  content: string
-  actionConfirm?: string
-  isBriefing?: boolean
-  draft?: { type: string; content: string } | null
-}
-```
-
-Inside `sendMessages`, find this block:
+Directly below it, add a useEffect that watches searchParams and updates
+activeTab whenever the URL's tab param changes, even if the component is
+already mounted:
 
 ```typescript
-        const filteredAssembled = filterOutput(assembled)
-        const cleanContent = handleConciergeAction(filteredAssembled)
-        setMessages((prev) => {
-          const updated = [...prev]
-          const last = updated[updated.length - 1]
-          if (last.role === 'concierge') {
-            updated[updated.length - 1] = {
-              role: 'concierge',
-              content: cleanContent,
-            }
-          }
-          return updated
-        })
+  useEffect(() => {
+    const p = searchParams.get('tab')
+    if (p && CLIENT_TABS.some((t) => t.key === p) && p !== activeTab) {
+      setActiveTab(p)
+    }
+  }, [searchParams])
 ```
 
-Replace with:
+This keeps the lazy initializer for correct first-load behavior, so a direct
+link with ?tab=messages still opens straight to that tab on first visit,
+while also reacting to query param changes that happen after the component
+has already mounted, which is exactly the case the Concierge Send button
+hits.
 
-```typescript
-        const filteredAssembled = filterOutput(assembled)
-        const parsedDraft = parseDraftFromResponse(filteredAssembled)
-        const textForAction = parsedDraft ? parsedDraft.cleanedResponse : filteredAssembled
-        const cleanContent = handleConciergeAction(textForAction)
-        setMessages((prev) => {
-          const updated = [...prev]
-          const last = updated[updated.length - 1]
-          if (last.role === 'concierge') {
-            updated[updated.length - 1] = {
-              role: 'concierge',
-              content: cleanContent,
-              draft: parsedDraft ? { type: parsedDraft.type, content: parsedDraft.content } : null,
-            }
-          }
-          return updated
-        })
-```
-
----
-
-## ACTION — Part 4: Render draft card in message feed
-
-File: `/home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx`
-
-Find the message rendering block. It starts with:
-```typescript
-          {messages.map((msg, i) => (
-            <div key={i}>
-            <div className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} items-start gap-2`}>
-```
-
-And ends with the suggestions chip block and closing `</div>`. Find the closing
-`</div>` that closes `<div key={i}>` and add the draft card BEFORE the suggestions
-chip block. The structure should be:
-
-After the main message bubble div closes (the one containing the ReactMarkdown
-and the isBriefing download button), add:
-
-```typescript
-              {msg.draft && (
-                <div className="ml-8 mt-2 rounded-[8px] bg-[#F0F4F8] dark:bg-[#1a2a3a] border border-[0.5px] border-[#C8CDD6] dark:border-[#3a4a5a] px-3 py-2.5">
-                  <p className="text-[10px] text-[#6B7280] dark:text-[#9CA3AF] mb-1.5 font-medium uppercase tracking-wide">
-                    {msg.draft.type === 'CLIENT_EMAIL' ? 'Draft email' :
-                     msg.draft.type === 'INVOICE_ITEMS' ? 'Draft invoice' :
-                     msg.draft.type === 'STAFF_REASSIGN' ? 'Suggested reassignment' :
-                     msg.draft.type === 'IRS_RENEWAL' ? 'Draft renewal request' :
-                     'Draft'}
-                  </p>
-                  <p className="text-[12px] leading-[1.5] text-[#374151] dark:text-[#D1D5DB] whitespace-pre-wrap">
-                    {msg.draft.content}
-                  </p>
-                  <div className="flex gap-2 mt-2">
-                    <button
-                      onClick={() => {
-                        navigator.clipboard.writeText(msg.draft!.content).then(() => {
-                          setCopiedId(`msg-${i}`)
-                          setTimeout(() => setCopiedId(null), 2000)
-                        }).catch(() => {})
-                      }}
-                      className="text-[11px] font-medium px-2.5 py-1 rounded-[4px] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] text-[#6B7280] dark:text-[#9CA3AF] hover:border-[#4A7FA5] hover:text-[#4A7FA5] transition-colors"
-                    >
-                      {copiedId === `msg-${i}` ? 'Copied' : 'Copy'}
-                    </button>
-                    <button
-                      onClick={() => {
-                        const confirmed = window.confirm(
-                          msg.draft!.type === 'STAFF_REASSIGN'
-                            ? 'Open the engagement to apply this reassignment?'
-                            : msg.draft!.type === 'INVOICE_ITEMS'
-                            ? 'Open billing to create this invoice?'
-                            : 'Send this message to the client?'
-                        )
-                        if (confirmed) {
-                          if (msg.draft!.type === 'STAFF_REASSIGN') {
-                            router.push('/engagements')
-                          } else if (msg.draft!.type === 'INVOICE_ITEMS') {
-                            router.push('/billing')
-                          } else {
-                            handleSend(`Send this message: ${msg.draft!.content}`)
-                          }
-                        }
-                      }}
-                      className="text-[11px] font-medium px-2.5 py-1 rounded-[4px] bg-[#1F3148] text-white hover:bg-[#2a4060] transition-colors"
-                    >
-                      {msg.draft.type === 'STAFF_REASSIGN' ? 'Open engagement' :
-                       msg.draft.type === 'INVOICE_ITEMS' ? 'Open billing' :
-                       'Send'}
-                    </button>
-                  </div>
-                </div>
-              )}
-```
-
-Place this block INSIDE the `<div key={i}>` wrapper, AFTER the main message bubble
-div closes but BEFORE the suggestions chip block.
+Do not touch the lazy initializer. Do not touch any other tab logic, the tab
+UI, props, or styling. Do not touch any other file.
 
 ---
 
 ## VERIFY AFTER ACT
 
 ```bash
-grep -n "parseDraftFromResponse\|---DRAFT:\|---END DRAFT---\|DRAFT RESPONSE PATTERNS" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx | head -10
+grep -n "searchParams.get('tab')" /home/corby/jamm-os/frontend/src/app/clients/\[id\]/page.tsx
 ```
 
-Expected: parseDraftFromResponse, ---DRAFT: marker reference, and ---END DRAFT---
-all present in the file.
-
-```bash
-grep -n "DRAFT RESPONSE PATTERNS\|---DRAFT:\|---END DRAFT---" /home/corby/jamm-os/app/api/concierge/prompts.py | head -5
-```
-
-Expected: all three strings present in prompts.py.
-
-```bash
-python3 -c "
-from app.api.concierge.prompts import get_system_prompt
-result = get_system_prompt()
-assert 'DRAFT RESPONSE PATTERNS' in result, 'FAIL: draft instruction block missing from system prompt'
-assert '---DRAFT:' in result, 'FAIL: draft marker format missing'
-assert '---END DRAFT---' in result, 'FAIL: end marker missing'
-print('PASS: draft instruction block present in system prompt')
-"
-```
-
-Expected: PASS.
+Expected: 2 occurrences now, the original lazy initializer and the new
+useEffect.
 
 ```bash
 cd /home/corby/jamm-os/frontend
 npm run build
 ```
 
-Expected: zero TypeScript errors. If errors appear, stop and report them. Do not
-self-correct silently.
+Expected: zero TypeScript errors.
+
+---
+
+## MANUAL VERIFICATION (the actual test)
+
+1. Restart the frontend.
+2. While already on a specific client's page (e.g. Overview tab active),
+   trigger a Concierge CLIENT_EMAIL draft and click "Open to send."
+3. Click OK on the confirm dialog.
+4. Confirm the Messages tab now visually activates, the tab underline moves
+   to Messages, the URL shows ?tab=messages, and the message compose box is
+   visible and pre-filled with the draft text.
+5. Regression check: manually click between other tabs (Overview,
+   Engagements, Documents) to confirm normal tab-clicking still works
+   exactly as before. This fix must not interfere with manual tab clicks
+   that don't go through the URL.
+6. Regression check: open a fresh browser tab directly to a URL like
+   /clients/{id}?tab=messages, typed directly, simulating a bookmark or
+   shared link, and confirm it still opens straight to the Messages tab on
+   first load. This confirms the original lazy initializer behavior is
+   unchanged.
+
+Report what you observe at step 4 specifically.
 
 ---
 
@@ -385,9 +176,8 @@ self-correct silently.
 
 ```bash
 cd /home/corby/jamm-os
-git add app/api/concierge/prompts.py
-git add frontend/src/components/concierge/ConciergePanel.tsx
-git commit -m "build4: draft-and-confirm in conversation -- CLIENT_EMAIL, INVOICE_ITEMS, STAFF_REASSIGN, IRS_RENEWAL"
+git add "frontend/src/app/clients/[id]/page.tsx"
+git commit -m "fix: client page tab now syncs with URL query param changes after mount, not just on first load -- fixes Concierge Open to send not switching to Messages tab"
 git pull --rebase origin main
 git push origin main
 ```
