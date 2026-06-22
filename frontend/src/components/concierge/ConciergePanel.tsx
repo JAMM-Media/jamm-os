@@ -844,15 +844,29 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
                         </button>
                         <button
                           onClick={() => {
-                            const confirmed = window.confirm('Send this message to the client?')
-                            if (confirmed) {
-                              dismissNotification(n.id)
-                              handleSend(`Send this message: ${draft}`)
+                            const targetClientId = uiContext.entity_type === 'client' ? uiContext.entity_id : null
+                            if (!targetClientId) {
+                              window.alert('Open the specific client record first, then I can pre-fill this message for you to send.')
+                              return
                             }
+                            const confirmed = window.confirm(
+                              `Open ${uiContext.entity_name ?? 'this client'}'s Messages tab with this draft ready to send?\n\nMessage:\n${draft}\n\nYou will have a final chance to review before sending.`
+                            )
+                            if (!confirmed) return
+                            dismissNotification(n.id)
+                            sessionStorage.setItem(
+                              'jamm_concierge_pending',
+                              JSON.stringify({
+                                clientId: targetClientId,
+                                prefillMessage: draft,
+                                _ts: Date.now(),
+                              }),
+                            )
+                            router.push(`/clients/${targetClientId}?tab=messages`)
                           }}
                           className="text-[11px] font-medium px-2.5 py-1 rounded-[4px] bg-[#1F3148] text-white hover:bg-[#2a4060] transition-colors"
                         >
-                          Send
+                          Open to send
                         </button>
                       </div>
                     </div>
@@ -1181,30 +1195,49 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
                   <button
                     onClick={() => {
                       const currentContent = editingDraftContent[i] ?? msg.draft!.content
-                      let confirmMessage = ''
+
                       if (msg.draft!.type === 'STAFF_REASSIGN') {
-                        confirmMessage = 'Open the engagement to apply this reassignment?'
-                      } else if (msg.draft!.type === 'INVOICE_ITEMS') {
-                        confirmMessage = 'Open billing to create this invoice?'
-                      } else {
-                        confirmMessage = `Send this message?\n\nMessage:\n${currentContent}\n\nNote: confirm the recipient's email address is correct in the client record before sending.`
+                        const confirmed = window.confirm('Open the engagement to apply this reassignment?')
+                        if (confirmed) router.push('/engagements')
+                        return
                       }
-                      const confirmed = window.confirm(confirmMessage)
-                      if (confirmed) {
-                        if (msg.draft!.type === 'STAFF_REASSIGN') {
-                          router.push('/engagements')
-                        } else if (msg.draft!.type === 'INVOICE_ITEMS') {
-                          router.push('/billing')
-                        } else {
-                          handleSend(`Send this message: ${currentContent}`)
-                        }
+
+                      if (msg.draft!.type === 'INVOICE_ITEMS') {
+                        const confirmed = window.confirm('Open billing to create this invoice?')
+                        if (confirmed) router.push('/billing')
+                        return
                       }
+
+                      // CLIENT_EMAIL and IRS_RENEWAL: there is no mechanism for
+                      // the AI to send a message directly. Navigate to the
+                      // client's real Messages tab with the draft pre-filled,
+                      // so the user sends it through the actual working send
+                      // feature, after one final look.
+                      const targetClientId = uiContext.entity_type === 'client' ? uiContext.entity_id : null
+                      if (!targetClientId) {
+                        window.alert('Open the specific client record first, then I can pre-fill this message for you to send.')
+                        return
+                      }
+                      const confirmed = window.confirm(
+                        `Open ${uiContext.entity_name ?? 'this client'}'s Messages tab with this draft ready to send?\n\nMessage:\n${currentContent}\n\nYou will have a final chance to review before sending.`
+                      )
+                      if (!confirmed) return
+
+                      sessionStorage.setItem(
+                        'jamm_concierge_pending',
+                        JSON.stringify({
+                          clientId: targetClientId,
+                          prefillMessage: currentContent,
+                          _ts: Date.now(),
+                        }),
+                      )
+                      router.push(`/clients/${targetClientId}?tab=messages`)
                     }}
                     className="text-[11px] font-medium px-2.5 py-1 rounded-[4px] bg-[#1F3148] text-white hover:bg-[#2a4060] transition-colors"
                   >
                     {msg.draft.type === 'STAFF_REASSIGN' ? 'Open engagement' :
                      msg.draft.type === 'INVOICE_ITEMS' ? 'Open billing' :
-                     'Send'}
+                     'Open to send'}
                   </button>
                 </div>
               </div>

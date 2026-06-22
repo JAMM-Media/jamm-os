@@ -124,6 +124,23 @@ function ClientDetailContent() {
   }>>([])
   const [messagesLoading, setMessagesLoading] = useState(false)
   const [messageCompose, setMessageCompose] = useState('')
+  useEffect(() => {
+    const raw = sessionStorage.getItem('jamm_concierge_pending')
+    if (!raw) return
+    try {
+      const action = JSON.parse(raw)
+      if (Date.now() - (action._ts ?? 0) > 10000) {
+        sessionStorage.removeItem('jamm_concierge_pending')
+        return
+      }
+      if (action.prefillMessage && action.clientId === clientId) {
+        sessionStorage.removeItem('jamm_concierge_pending')
+        setMessageCompose(action.prefillMessage)
+      }
+    } catch {
+      sessionStorage.removeItem('jamm_concierge_pending')
+    }
+  }, [clientId])
   const [messageSending, setMessageSending] = useState(false)
 
   const [clientEmailThreads, setClientEmailThreads] = useState<Array<{
