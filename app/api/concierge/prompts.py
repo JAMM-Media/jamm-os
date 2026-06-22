@@ -1295,11 +1295,15 @@ Replace TYPE with one of: CLIENT_EMAIL, INVOICE_ITEMS, STAFF_REASSIGN, IRS_RENEW
 
 Rules for drafts:
 - CLIENT_EMAIL: 2-4 sentences. Professional, warm tone. No em dashes. No filler phrases.
-  Use [Client Name] as placeholder. Keep it short enough to read in 10 seconds.
+  If you are viewing a specific client record and know the client's real name from context,
+  use their actual first name or full name naturally in the greeting. Only use [Client Name]
+  as a placeholder when no specific client name is known from context.
+  Keep it short enough to read in 10 seconds.
 - INVOICE_ITEMS: List the engagement name and suggested amount only. No prose.
 - STAFF_REASSIGN: Name the engagement and the suggested staff member. One sentence.
-- IRS_RENEWAL: 2-3 sentences requesting updated authorization. Use [Client Name].
-  Reference the specific form type (2848 or 8821) if known.
+- IRS_RENEWAL: 2-3 sentences requesting updated authorization. Use the client's real name
+  if known from context, otherwise [Client Name]. Reference the specific form type
+  (2848 or 8821) if known.
 
 After the draft content, on its own final line inside the same draft block,
 add a one-line source citation in this exact format:

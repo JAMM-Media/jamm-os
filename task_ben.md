@@ -49,47 +49,114 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-# Task: Update Concierge first-time welcome message copy
+# Task: Use real client name in Concierge drafts instead of [Client Name] placeholder
 
 USE: claude sonnet
 
 ## VERIFY BEFORE ACT
 
-grep -n "Welcome to JAMM Concierge" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+```bash
+sed -n '1185,1235p' /home/corby/jamm-os/app/api/concierge/prompts.py
+```
 
-Confirm the exact current string and its line number.
+Confirm entity_name is already injected into context_line when
+entity_type == "client" and entity_name is known.
+
+```bash
+sed -n '1293,1302p' /home/corby/jamm-os/app/api/concierge/prompts.py
+```
+
+Confirm the CLIENT_EMAIL and IRS_RENEWAL rules currently say "Use [Client
+Name] as placeholder" with no condition based on whether the name is known.
+
+---
+
+## WHAT IS WRONG
+
+Confirmed via live testing: a CLIENT_EMAIL draft generated while viewing
+Marcus & Diana Webb's own client page, with the agent's own preceding
+message correctly saying "Here is what I have for Marcus & Diana Webb,"
+still drafted the email body as "Hi [Client Name]," never substituting the
+real name.
+
+Root cause: the DRAFT RESPONSE PATTERNS section unconditionally instructs
+the model to use [Client Name] as a literal placeholder for both
+CLIENT_EMAIL and IRS_RENEWAL drafts, with no branch for the case where
+entity_name is already known and injected into context. This is a real
+instruction gap, not a model failure. The model did exactly what it was
+told.
+
+---
 
 ## ACTION
 
-File: /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+File: `/home/corby/jamm-os/app/api/concierge/prompts.py`
 
-Replace the current welcome message content:
+In the DRAFT RESPONSE PATTERNS section, update the CLIENT_EMAIL and
+IRS_RENEWAL rules to read:
 
-Welcome to JAMM Concierge. Before we start -- what does your firm do most? This lets me point you to the right setup path.
+CLIENT_EMAIL: 2-4 sentences. Professional, warm tone. No em dashes. No
 
-with:
+filler phrases. If you are viewing a specific client record and know the
 
-Here for anything you need. Before we start, what does your firm do most? This lets me point you to the right setup path.
+client's real name from context, use their actual first name or full name
 
-Keep the numbered list (Tax prep and returns / Bookkeeping and monthly close / Advisory and planning) exactly as is, no changes to that part. Do not touch any other message, prompt, or string in this file.
+naturally in the greeting. Only use [Client Name] as a placeholder when no
+
+specific client name is known from context. Keep it short enough to read
+
+in 10 seconds.
+IRS_RENEWAL: 2-3 sentences requesting updated authorization. Use the
+
+client's real name if known from context, otherwise [Client Name].
+
+Reference the specific form type (2848 or 8821) if known.
+
+
+Do not change anything else in this section. Do not change INVOICE_ITEMS or
+STAFF_REASSIGN rules. Do not touch any other file.
+
+---
 
 ## VERIFY AFTER ACT
 
-grep -n "Here for anything you need" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+```bash
+grep -n "use their actual first name\|use the client's real name" /home/corby/jamm-os/app/api/concierge/prompts.py
+```
 
-Expected: present.
+Expected: both new instructions present.
 
-cd /home/corby/jamm-os/frontend
-npm run build
+```bash
+python3 -c "from app.api.concierge.route import router; print('OK')"
+```
 
-Expected: zero TypeScript errors.
+Expected: OK, no import errors.
+
+---
+
+## MANUAL VERIFICATION (the actual test)
+
+1. Restart the backend.
+2. While viewing a specific client's page (e.g. Marcus & Diana Webb), ask
+   the Concierge to draft a follow-up email to this client.
+3. Confirm the draft greeting uses the real client name, not [Client Name].
+4. Regression check: from the Clients list (no specific client in context),
+   ask a question that surfaces a CLIENT_EMAIL draft for one of several
+   matching clients and confirm it correctly falls back to [Client Name]
+   since no single client is in view.
+
+Report what you observe at step 3 specifically.
+
+---
 
 ## GIT
 
+```bash
 cd /home/corby/jamm-os
 git add -A
-git commit -m "copy: warmer first-time welcome message in Concierge panel"
+git commit -m "fix: Concierge CLIENT_EMAIL and IRS_RENEWAL drafts use the real client name when known from page context instead of always defaulting to [Client Name] placeholder"
 git pull --rebase origin main
 git push origin main
+```
 
 If conflicts on task.md use --theirs. Conflicts on source files use --ours.
