@@ -114,6 +114,10 @@ function ClientDetailContent() {
         }, 100)
         setTimeout(() => setPortalLinkHighlight(false), 3000)
       }
+      if (action.type === 'prefill-message' && action.prefillMessage) {
+        setActiveTab('messages')
+        setMessageCompose(action.prefillMessage)
+      }
     })
   }, [])
 

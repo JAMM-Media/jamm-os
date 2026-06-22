@@ -49,39 +49,164 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
+# Task: Fix Concierge message prefill not appearing when already on the target client's page
+
 USE: claude sonnet
 
-STANDING VERIFICATION — RUN BEFORE TOUCHING ANYTHING
+## VERIFY BEFORE ACT
 
-git add -A
-git commit -m "checkpoint before fix tab navigation sync"
+```bash
+grep -n "interface ConciergeAction" -A 15 /home/corby/jamm-os/frontend/src/lib/events/conciergeEvents.ts
+```
 
-VERIFY BEFORE ACT
+Confirm the exact shape of the ConciergeAction type before adding a new action
+shape to it.
 
-grep -n "activeTab" /home/corby/jamm-os/frontend/src/app/clients/[id]/page.tsx
-grep -n "useState" /home/corby/jamm-os/frontend/src/app/clients/[id]/page.tsx
-grep -n "searchParams" /home/corby/jamm-os/frontend/src/app/clients/[id]/page.tsx
-grep -n "useSearchParams" /home/corby/jamm-os/frontend/src/app/clients/[id]/page.tsx
+```bash
+grep -n "Open to send" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+```
 
-Paste the actual output back before proceeding if the activeTab initializer or imports look different than expected. Do not guess at line numbers from memory.
+Confirm there are exactly two call sites (notification draft card, per-message
+draft card) and note their line numbers.
 
-TASK — EXACTLY THIS, NOTHING ELSE
+```bash
+grep -n "onConciergeAction" -A 18 /home/corby/jamm-os/frontend/src/app/clients/\[id\]/page.tsx
+```
 
-File: /home/corby/jamm-os/frontend/src/app/clients/[id]/page.tsx
+Confirm the existing listener structure that already branches on action.modal
+for new-engagement and portal-magic-link.
 
-The activeTab state is set once via a lazy useState initializer that reads the tab query param only on first mount. Navigating to the same route with a different ?tab= value does not remount the page, so activeTab never updates after the initial load.
+---
 
-Add a useEffect that watches the tab value from useSearchParams (next/navigation) and calls setActiveTab whenever that value changes. This keeps the existing lazy initializer exactly as is for first load, and adds the missing sync for subsequent navigations to the same route.
+## WHAT IS WRONG
 
-Do not touch the lazy initializer. Do not touch any other tab logic, the tab UI, props, or styling. Do not touch any other file. This is a one function, one effect change.
+When the user clicks "Open to send" on a draft while already viewing that
+exact client's page, the draft never appears in the Messages compose box,
+even though the URL correctly updates to ?tab=messages and the tab correctly
+activates.
 
-VERIFY AFTER ACT
+Root cause: both "Open to send" handlers in ConciergePanel.tsx always write
+to sessionStorage under the key jamm_concierge_pending and then call
+router.push to the same client's route with ?tab=messages. The page.tsx
+effect that reads jamm_concierge_pending and calls setMessageCompose has a
+dependency array of [clientId]. Since the user is already on that client's
+page, clientId does not change, the component does not remount, and that
+effect never re-runs to pick up the value that was just written. The draft
+is written to sessionStorage one render too late to be read.
 
-grep -n "useEffect" /home/corby/jamm-os/frontend/src/app/clients/[id]/page.tsx
-grep -n "useSearchParams" /home/corby/jamm-os/frontend/src/app/clients/[id]/page.tsx
-grep -n "setActiveTab" /home/corby/jamm-os/frontend/src/app/clients/[id]/page.tsx
+This is the identical underlying disease as the tab-sync bug already fixed
+in commit f05c249, just living in a different effect with a different
+symptom. The codebase already has the correct pattern for this exact
+situation: the modal-action branch in executeAction() checks
+pathname.startsWith(normalizedRoute) (the alreadyOnRoute check) and calls
+emitConciergeAction() directly instead of sessionStorage when no navigation
+is actually required. The two "Open to send" handlers skip that check
+entirely and always go through sessionStorage, even in the same-page case.
 
+---
+
+## ACTION
+
+File: `/home/corby/jamm-os/frontend/src/lib/events/conciergeEvents.ts`
+
+Extend the ConciergeAction type to allow an optional prefillMessage field and
+a type value of 'prefill-message', matching whatever pattern the existing
+type definition uses for its other optional fields (prefill, modal, route).
+Do not change any existing field.
+
+File: `/home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx`
+
+In both "Open to send" handlers (the notification draft card and the
+per-message draft card), after computing targetClientId and getting
+confirmation from window.confirm, branch on whether the user is already on
+that client's page before deciding how to deliver the draft:
+
+```typescript
+const alreadyOnClientPage = pathname.startsWith(`/clients/${targetClientId}`)
+if (alreadyOnClientPage) {
+  emitConciergeAction({ type: 'prefill-message', prefillMessage: currentContent })
+} else {
+  sessionStorage.setItem(
+    'jamm_concierge_pending',
+    JSON.stringify({
+      clientId: targetClientId,
+      prefillMessage: currentContent,
+      _ts: Date.now(),
+    }),
+  )
+}
+router.push(`/clients/${targetClientId}?tab=messages`)
+```
+
+Adjust variable names (draft vs currentContent) to match each call site
+exactly as it already reads. Do not change the confirm dialog text, the
+dismissNotification call, or any other logic in either handler.
+
+File: `/home/corby/jamm-os/frontend/src/app/clients/[id]/page.tsx`
+
+In the existing onConciergeAction listener (the one already handling
+new-engagement and portal-magic-link), add a branch:
+
+```typescript
+if (action.type === 'prefill-message' && action.prefillMessage) {
+  setActiveTab('messages')
+  setMessageCompose(action.prefillMessage)
+}
+```
+
+Do not touch the existing branches in this listener. Do not touch the
+sessionStorage-based useEffect that handles the cross-page case, it remains
+correct and necessary for navigation to a different client.
+
+---
+
+## VERIFY AFTER ACT
+
+```bash
+grep -n "prefill-message" /home/corby/jamm-os/frontend/src/lib/events/conciergeEvents.ts
+grep -n "prefill-message" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+grep -n "prefill-message" /home/corby/jamm-os/frontend/src/app/clients/\[id\]/page.tsx
+```
+
+Expected: at least one occurrence in each file.
+
+```bash
 cd /home/corby/jamm-os/frontend
 npm run build
+```
 
-Build must complete with zero TypeScript errors. Report the exact diff of the file, not a summary.
+Expected: zero TypeScript errors.
+
+---
+
+## MANUAL VERIFICATION (the actual test)
+
+1. Open a specific client's page directly (already on that client, not
+   navigating from the Clients list).
+2. Trigger a CLIENT_EMAIL draft for that same client and click "Open to
+   send," then OK on the confirm dialog.
+3. Confirm the Messages tab activates AND the compose box is pre-filled with
+   the draft text. This is the part that was broken.
+4. Regression check: from a different client's page, or from the firm-wide
+   Clients list with no client in context, trigger a draft for a specific
+   client and click "Open to send." Confirm it still navigates correctly
+   and the compose box is still pre-filled after the page loads (this is the
+   cross-page case using the existing sessionStorage path, must still work).
+5. Regression check: confirm clicking between Overview, Engagements,
+   Documents tabs manually still works exactly as before.
+
+Report what you observe at step 3 specifically.
+
+---
+
+## GIT
+
+```bash
+cd /home/corby/jamm-os
+git add -A
+git commit -m "fix: Concierge draft prefill now reaches the Messages compose box when already on the target client's page, via live event instead of a sessionStorage read that never re-fires without a remount"
+git pull --rebase origin main
+git push origin main
+```
+
+If conflicts on task.md use --theirs. Conflicts on source files use --ours.

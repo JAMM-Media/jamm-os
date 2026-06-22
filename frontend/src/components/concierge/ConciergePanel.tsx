@@ -854,14 +854,19 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
                             )
                             if (!confirmed) return
                             dismissNotification(n.id)
-                            sessionStorage.setItem(
-                              'jamm_concierge_pending',
-                              JSON.stringify({
-                                clientId: targetClientId,
-                                prefillMessage: draft,
-                                _ts: Date.now(),
-                              }),
-                            )
+                            const alreadyOnClientPage = pathname.startsWith(`/clients/${targetClientId}`)
+                            if (alreadyOnClientPage) {
+                              emitConciergeAction({ type: 'prefill-message', prefillMessage: draft })
+                            } else {
+                              sessionStorage.setItem(
+                                'jamm_concierge_pending',
+                                JSON.stringify({
+                                  clientId: targetClientId,
+                                  prefillMessage: draft,
+                                  _ts: Date.now(),
+                                }),
+                              )
+                            }
                             router.push(`/clients/${targetClientId}?tab=messages`)
                           }}
                           className="text-[11px] font-medium px-2.5 py-1 rounded-[4px] bg-[#1F3148] text-white hover:bg-[#2a4060] transition-colors"
@@ -1223,14 +1228,19 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
                       )
                       if (!confirmed) return
 
-                      sessionStorage.setItem(
-                        'jamm_concierge_pending',
-                        JSON.stringify({
-                          clientId: targetClientId,
-                          prefillMessage: currentContent,
-                          _ts: Date.now(),
-                        }),
-                      )
+                      const alreadyOnClientPage = pathname.startsWith(`/clients/${targetClientId}`)
+                      if (alreadyOnClientPage) {
+                        emitConciergeAction({ type: 'prefill-message', prefillMessage: currentContent })
+                      } else {
+                        sessionStorage.setItem(
+                          'jamm_concierge_pending',
+                          JSON.stringify({
+                            clientId: targetClientId,
+                            prefillMessage: currentContent,
+                            _ts: Date.now(),
+                          }),
+                        )
+                      }
                       router.push(`/clients/${targetClientId}?tab=messages`)
                     }}
                     className="text-[11px] font-medium px-2.5 py-1 rounded-[4px] bg-[#1F3148] text-white hover:bg-[#2a4060] transition-colors"
