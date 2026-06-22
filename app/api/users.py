@@ -71,8 +71,14 @@ def list_users(
 # MUST be defined before GET /users/{user_id}
 # -------------------------------------------------------------------
 @router.get("/me", response_model=UserOut)
-def read_users_me(current_user: User = Depends(get_current_user)):
-    return current_user
+def read_users_me(
+    current_user: User = Depends(get_current_user),
+    current_firm: Firm = Depends(get_current_firm),
+):
+    user_out = UserOut.model_validate(current_user)
+    user_out.firm_type = current_firm.firm_type
+    user_out.concierge_active = current_firm.concierge_active
+    return user_out
 
 
 # -------------------------------------------------------------------

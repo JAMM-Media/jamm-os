@@ -49,128 +49,106 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-# Task: Fix SOURCE line fragment leaking into draft email body on multi-line wrap
+# Task: Fix UserOut missing firm_type and concierge_active, sourced from Firm not User
 
 USE: claude sonnet
 
 ## VERIFY BEFORE ACT
 
-```bash
-grep -n "sourceMatch\|SOURCE:" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
-```
+cat /home/corby/jamm-os/app/schemas/user.py
 
-Confirm the current regex is /^SOURCE:\s*(.+)$/m, which only matches a
-single line because . does not match newlines even with the m flag.
+Confirm the exact current shape of UserOut and UserBase before adding fields.
 
-```bash
-grep -n "add a one-line source citation\|Never omit it" /home/corby/jamm-os/app/api/concierge/prompts.py
-```
+grep -n "def read_users_me" -A 10 /home/corby/jamm-os/app/api/users.py
 
-Confirm the current SOURCE instruction has no explicit rule against wrapping
-the line.
-
----
+Confirm the current handler just returns current_user directly with no firm join.
 
 ## WHAT IS WRONG
 
-Confirmed via live testing: a draft's footnote showed a truncated "Based on:
-2025 Individual Tax Return (Marcus" and the email body itself ended with an
-orphaned fragment, "& Diana Webb), due 2026-04-15, 1 active engagement on
-file." This is one SOURCE sentence that the model wrapped across two lines
-in its raw output. The parser regex /^SOURCE:\s*(.+)$/m only captures and
-removes the first line. The second line is never recognized as part of the
-SOURCE line, so it stays behind in rawBlock and renders as part of the
-visible email body.
+Confirmed via live testing and direct DB query: a firm with firm_type already
+set to 'tax_and_bookkeeping' in the database still triggered the
+pre-onboarding "what does your firm do most" gate in the Concierge panel on
+every single session, regardless of firm state.
 
-This needs two fixes, addressing both sides: the parser must not depend on
-the model keeping SOURCE on one physical line, and the prompt should also
-ask the model not to wrap it, since a long source description is more
-readable on one line for the firm owner's own scanning anyway.
-
----
+Root cause: AuthUser.firm_type and AuthUser.concierge_active on the frontend
+are read from whatever /users/me returns, serialized through UserOut.
+UserOut is built from_attributes directly off the User model only.
+firm_type and concierge_active are columns on the Firm model, not User, so
+they were never present on the User row UserOut maps from. The API was
+returning a user object where these fields are structurally always null,
+independent of the real firm_type or concierge_active values in the
+database. Every onboarding-state check on the frontend that reads
+user?.firm_type, including the Concierge panel's first-message gate, has
+been operating on missing data this entire time.
 
 ## ACTION
 
-File 1: `/home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx`
+File: /home/corby/jamm-os/app/schemas/user.py
 
-In parseDraftFromResponse, replace the SOURCE extraction so it captures
-through to the next blank line or the end of rawBlock, not just to the next
-single newline:
+Add firm_type: Optional[str] = None and concierge_active: bool = False as
+fields on UserOut (not UserBase, since these are firm-level, not intrinsic
+to the user identity itself).
 
-```typescript
-let source: string | null = null
-const sourceMatch = rawBlock.match(/SOURCE:\s*([\s\S]+?)(?:\n\s*\n|$)/)
-if (sourceMatch) {
-  source = sourceMatch[1].replace(/\s+/g, ' ').trim()
-  rawBlock = rawBlock.slice(0, sourceMatch.index).trim()
-}
-```
+File: /home/corby/jamm-os/app/api/users.py
 
-This removes everything from the start of the SOURCE: marker onward,
-regardless of how many lines it spans, and collapses internal line breaks
-in the captured source text into single spaces for clean footnote display.
+Update read_users_me to also load the current user's Firm and attach
+firm_type and concierge_active onto the response before returning. Use the
+existing get_current_firm dependency already used in get_my_firm a few
+lines below in this same file, add it as a dependency to read_users_me, and
+build the response explicitly:
 
-File 2: `/home/corby/jamm-os/app/api/concierge/prompts.py`
+def read_users_me(
+    current_user: User = Depends(get_current_user),
+    current_firm: Firm = Depends(get_current_firm),
+):
+    user_out = UserOut.model_validate(current_user)
+    user_out.firm_type = current_firm.firm_type
+    user_out.concierge_active = current_firm.concierge_active
+    return user_out
 
-In the SOURCE line instruction, add one sentence:
-Keep the SOURCE line on a single line of text with no line break in it,
-
-even if it is long.
-
-Place this directly after the existing "Never omit it. Never fabricate a
-source" sentence. Do not change anything else in this section. Do not touch
-any other file.
-
----
+Adjust import statements as needed for Firm and get_current_firm if not
+already imported in this file. Do not change get_my_firm or any other route
+in this file. Do not touch the Next.js proxy route, it already passes
+through whatever the backend returns correctly.
 
 ## VERIFY AFTER ACT
 
-```bash
-grep -n "SOURCE:.*\[\\\\s\\\\S\]" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
-```
+grep -n "firm_type\|concierge_active" /home/corby/jamm-os/app/schemas/user.py
 
-Expected: the new multi-line-safe regex is present.
+Expected: both fields present on UserOut.
 
-```bash
-grep -n "no line break in it" /home/corby/jamm-os/app/api/concierge/prompts.py
-```
+python3 -c "from app.api.users import router; print('OK')"
 
-Expected: present.
+Expected: OK, no import errors.
 
-```bash
 cd /home/corby/jamm-os/frontend
 npm run build
-```
 
 Expected: zero TypeScript errors.
 
----
-
 ## MANUAL VERIFICATION (the actual test)
 
-1. Restart both frontend and backend.
-2. Reproduce the original scenario: view Marcus & Diana Webb's page, ask
-   for a follow-up email draft.
-3. Confirm the email body ends cleanly with no trailing fragment after the
-   sign-off, and the "Based on:" footnote shows the complete source
-   description on one line with no truncation.
-4. If the model still happens to wrap the SOURCE line despite the new prompt
-   instruction, confirm the parser fix still produces a clean result anyway,
-   since the fix must not depend on the model fully obeying the new
-   instruction.
+1. Restart both backend and frontend.
+2. Log in as a user belonging to Riverside Tax & Advisory (firm_type already
+   set to tax_and_bookkeeping in the database).
+3. Open the Concierge panel from a fresh session (clear sessionStorage or
+   use a private browser window so jamm_concierge_messages does not mask
+   this test).
+4. Confirm the panel does NOT show the "what does your firm do most" gate
+   message. It should go straight to the __OPEN__ flow instead.
+5. Regression check: create or use a test firm where firm_type is genuinely
+   null in the database, confirm that firm still correctly sees the
+   onboarding gate message. This confirms the fix reads real data rather
+   than always suppressing the gate.
 
-Report what you observe at step 3 specifically.
-
----
+Report what you observe at step 4 specifically.
 
 ## GIT
 
-```bash
 cd /home/corby/jamm-os
 git add -A
-git commit -m "fix: draft SOURCE line parsing no longer leaks a trailing fragment into the email body when the model wraps the source description across two lines; also instruct the model to keep it on one line"
+git commit -m "fix: UserOut now includes firm_type and concierge_active sourced from the Firm row, not the User row, fixing the Concierge onboarding gate firing for every firm regardless of actual firm_type state"
 git pull --rebase origin main
 git push origin main
-```
 
 If conflicts on task.md use --theirs. Conflicts on source files use --ours.
