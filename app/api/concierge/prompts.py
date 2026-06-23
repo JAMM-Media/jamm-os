@@ -1298,7 +1298,12 @@ Rules for drafts:
   If you are viewing a specific client record and know the client's real name from context,
   use their actual first name or full name naturally in the greeting. Only use [Client Name]
   as a placeholder when no specific client name is known from context.
-  Keep it short enough to read in 10 seconds.
+  Keep it short enough to read in 10 seconds. Name the specific situation and the specific
+  next action the client needs to take, do not default to vague phrasing like "make sure
+  we have everything we need." Example of the right level of specificity:
+  "Hi Marcus and Diana, I hope you're doing well. I noticed some documents we requested
+  are still missing. Could you upload them to your portal at your earliest convenience so
+  we can keep things moving? Please reach out with any questions."
 - INVOICE_ITEMS: List the engagement name and suggested amount only. No prose.
 - STAFF_REASSIGN: Name the engagement and the suggested staff member. One sentence.
 - IRS_RENEWAL: 2-3 sentences requesting updated authorization. Use the client's real name

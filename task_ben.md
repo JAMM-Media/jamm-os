@@ -49,107 +49,80 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-# Task: Fix client Messages compose box stuck at one line, cannot preview multi-line drafts
+# Task: Add real example to CLIENT_EMAIL draft instructions to fix vague, generic phrasing
 
 USE: claude sonnet
 
 ## VERIFY BEFORE ACT
 
-grep -n "function handleInput" -A 6 /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+grep -n "CLIENT_EMAIL: 2-4 sentences" /home/corby/jamm-os/app/api/concierge/prompts.py
 
-Confirm the existing auto-grow pattern used by the Concierge panel's own input box, which correctly grows with content up to a max height.
-
-sed -n '976,988p' /home/corby/jamm-os/frontend/src/app/clients/\[id\]/page.tsx
-
-Confirm the Messages tab compose textarea currently has rows={1}, no onInput
-handler, and resize-none, with only a static minHeight/maxHeight in its style
-prop and nothing that actually grows it as the user types.
+Confirm the exact current line and its surrounding context before editing.
 
 ## WHAT IS WRONG
 
-Confirmed via live testing: when a Concierge draft is pre-filled into the
-Messages tab compose box, the user can only see one line of the message at
-a time. There is no way to preview a multi-line message before sending it,
-since the textarea never grows past its initial single row, and manual
-resize is disabled. This affects every message in this box, not just
-Concierge-prefilled ones, but it is most visible there since drafts are
-typically several sentences long.
+Confirmed via live testing and direct feedback: CLIENT_EMAIL drafts read as
+generic and vague rather than specific. Example produced: "make sure we have
+everything we need to get this filed" instead of naming the actual missing
+item and the actual next action. The current instruction only says
+"Professional, warm tone. No em dashes. No filler phrases," which gives the
+model no concrete anchor for what a specific, actionable email actually
+looks like, so it falls back to generic phrasing patterns.
 
-Root cause: the textarea has rows={1} and resize-none, with a maxHeight set
-in its style only as a ceiling, but nothing actually grows its height as
-content is typed or pre-filled in. The Concierge panel's own chat input box
-a few files over already solves this exact problem correctly with an
-onInput handler that sets the textarea's height to its scrollHeight, capped
-at a max. This compose box never got the same handler.
+A real example written by the firm owner does the opposite. It names the
+specific situation (missing documents) and the specific requested action
+(upload to portal), without extra hedging.
 
 ## ACTION
 
-File: /home/corby/jamm-os/frontend/src/app/clients/[id]/page.tsx
+File: /home/corby/jamm-os/app/api/concierge/prompts.py
 
-Add an onInput handler to the Messages compose textarea matching the
-existing working pattern from ConciergePanel.tsx's handleInput function:
+In the CLIENT_EMAIL rule inside DRAFT RESPONSE PATTERNS, add one real
+example directly after the existing rule text, so the rule reads:
 
-onInput={(e) => {
-  const el = e.currentTarget
-  el.style.height = 'auto'
-  el.style.height = Math.min(el.scrollHeight, 120) + 'px'
-}}
+- CLIENT_EMAIL: 2-4 sentences. Professional, warm tone. No em dashes. No
+  filler phrases. If you are viewing a specific client record and know the
+  client's real name from context, use their actual first name or full name
+  naturally in the greeting. Only use [Client Name] as a placeholder when no
+  specific client name is known from context. Keep it short enough to read
+  in 10 seconds. Name the specific situation and the specific next action
+  the client needs to take, do not default to vague phrasing like "make
+  sure we have everything we need." Example of the right level of
+  specificity:
+  "Hi Marcus and Diana, I hope you're doing well. I noticed some documents
+  we requested are still missing. Could you upload them to your portal at
+  your earliest convenience so we can keep things moving? Please reach out
+  with any questions."
 
-Add this alongside the existing onChange and onKeyDown props on the same
-textarea. Keep rows={1} as the initial collapsed state, that part is
-correct, it should start small and grow only when there is content.
-
-Also add a useEffect that runs this same height calculation whenever
-messageCompose changes via something other than direct typing, specifically
-when it gets set by the prefill-message live action or the sessionStorage
-prefillMessage path, since onInput only fires on user keystrokes, not on a
-value being set programmatically. A ref on the textarea will be needed for
-this; add one if one does not already exist for this element, and use it in
-a useEffect keyed on messageCompose:
-
-useEffect(() => {
-  if (messageComposeRef.current) {
-    messageComposeRef.current.style.height = 'auto'
-    messageComposeRef.current.style.height = Math.min(messageComposeRef.current.scrollHeight, 120) + 'px'
-  }
-}, [messageCompose])
-
-Do not change resize-none, the placeholder text, the send button, or any
-other logic in this section. Do not touch ConciergePanel.tsx or any other
-file.
+Do not change INVOICE_ITEMS, STAFF_REASSIGN, or IRS_RENEWAL rules. Do not
+touch any other file.
 
 ## VERIFY AFTER ACT
 
-grep -n "onInput\|messageComposeRef" /home/corby/jamm-os/frontend/src/app/clients/\[id\]/page.tsx
+grep -n "Name the specific situation" /home/corby/jamm-os/app/api/concierge/prompts.py
 
-Expected: both present on or near the compose textarea.
+Expected: present.
 
-cd /home/corby/jamm-os/frontend
-npm run build
+python3 -c "from app.api.concierge.route import router; print('OK')"
 
-Expected: zero TypeScript errors.
+Expected: OK, no import errors.
 
 ## MANUAL VERIFICATION (the actual test)
 
-1. Restart the frontend.
-2. Trigger a multi-sentence Concierge draft for a specific client and click
-   Open to send.
-3. Confirm the compose box on the Messages tab now visibly grows to show
-   multiple lines of the pre-filled draft, not just one line with the rest
-   hidden.
-4. Manually type a long multi-line message directly into the box (not via
-   Concierge) and confirm it also grows correctly as you type.
-5. Confirm the box stops growing at a reasonable max height and switches to
-   internal scrolling for very long messages, rather than growing
-   indefinitely.
+1. Restart the backend.
+2. While on a client's page with a known specific issue (missing documents,
+   overdue deadline), ask the Concierge to draft a follow-up email.
+3. Confirm the draft names the actual specific situation and a concrete next
+   action, rather than vague language like "everything we need" or
+   "anything holding things up."
 
-Report what you observe at step 3 specifically.
+Report the exact draft text produced at step 3.
 
 ## GIT
 
 cd /home/corby/jamm-os
 git add -A
-git commit -m "fix: client Messages compose box now auto-grows to show multi-line content instead of staying stuck at one visible line, matching the existing working pattern in ConciergePanel's own chat input"
+git commit -m "fix: CLIENT_EMAIL draft instructions now include a real example anchoring specific, actionable phrasing instead of generic vague language"
 git pull --rebase origin main
 git push origin main
 
