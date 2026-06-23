@@ -49,80 +49,105 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-# Task: Add real example to CLIENT_EMAIL draft instructions to fix vague, generic phrasing
+# Task: Fix hydration mismatch from messages state lazy-reading sessionStorage on initial render
 
 USE: claude sonnet
 
 ## VERIFY BEFORE ACT
 
-grep -n "CLIENT_EMAIL: 2-4 sentences" /home/corby/jamm-os/app/api/concierge/prompts.py
+grep -n "const \[messages, setMessages\] = useState" -A 10 /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-Confirm the exact current line and its surrounding context before editing.
+Confirm the current lazy initializer checks typeof window !== 'undefined' and
+reads sessionStorage directly inside useState, exactly as described below.
+
+grep -n "hasMounted" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+
+Confirm the existing hasMounted pattern already used elsewhere in this file
+for the same class of problem (panel open/close animation), so the new fix
+follows the same established pattern rather than inventing a new one.
 
 ## WHAT IS WRONG
 
-Confirmed via live testing and direct feedback: CLIENT_EMAIL drafts read as
-generic and vague rather than specific. Example produced: "make sure we have
-everything we need to get this filed" instead of naming the actual missing
-item and the actual next action. The current instruction only says
-"Professional, warm tone. No em dashes. No filler phrases," which gives the
-model no concrete anchor for what a specific, actionable email actually
-looks like, so it falls back to generic phrasing patterns.
+Confirmed via live testing: a hydration mismatch error fires when the
+Concierge panel renders with prior chat history in sessionStorage. React's
+own error output names the exact cause: a server/client branch using
+typeof window !== 'undefined' inside a useState lazy initializer.
 
-A real example written by the firm owner does the opposite. It names the
-specific situation (missing documents) and the specific requested action
-(upload to portal), without extra hedging.
+Root cause: messages is initialized via a lazy useState function that
+checks typeof window !== 'undefined' and reads sessionStorage directly. On
+the server, window does not exist, so this always evaluates to the empty
+array, and the server renders the empty starter-prompts state. On the
+client, window exists and sessionStorage already has saved messages from
+earlier in the session, so the client renders actual chat history instead.
+Server and client disagree on what the initial render should look like for
+the same component, which is the textbook cause of this exact React error.
+
+This is the same underlying disease as the original panel-open hydration fix
+from this codebase's history, just in a different piece of state that never
+received the same fix.
 
 ## ACTION
 
-File: /home/corby/jamm-os/app/api/concierge/prompts.py
+File: /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-In the CLIENT_EMAIL rule inside DRAFT RESPONSE PATTERNS, add one real
-example directly after the existing rule text, so the rule reads:
+Change the messages initializer to always start as an empty array on both
+server and client, with no window check:
 
-- CLIENT_EMAIL: 2-4 sentences. Professional, warm tone. No em dashes. No
-  filler phrases. If you are viewing a specific client record and know the
-  client's real name from context, use their actual first name or full name
-  naturally in the greeting. Only use [Client Name] as a placeholder when no
-  specific client name is known from context. Keep it short enough to read
-  in 10 seconds. Name the specific situation and the specific next action
-  the client needs to take, do not default to vague phrasing like "make
-  sure we have everything we need." Example of the right level of
-  specificity:
-  "Hi Marcus and Diana, I hope you're doing well. I noticed some documents
-  we requested are still missing. Could you upload them to your portal at
-  your earliest convenience so we can keep things moving? Please reach out
-  with any questions."
+const [messages, setMessages] = useState<Message[]>([])
 
-Do not change INVOICE_ITEMS, STAFF_REASSIGN, or IRS_RENEWAL rules. Do not
-touch any other file.
+Then add a useEffect that runs once after mount to hydrate from
+sessionStorage, matching the existing hasMounted-guarded pattern already
+used in this file for other post-mount-only logic:
+
+useEffect(() => {
+  try {
+    const stored = sessionStorage.getItem('jamm_concierge_messages')
+    if (stored) setMessages(JSON.parse(stored) as Message[])
+  } catch {
+    // ignore parse errors
+  }
+}, [])
+
+Place this useEffect near the existing useEffect that already writes
+messages to sessionStorage (the one with the matching
+sessionStorage.setItem('jamm_concierge_messages', ...) call), so the read
+and write logic for this key live close together. Do not change that
+existing write-effect. Do not change the hasMounted state or its existing
+uses elsewhere in the file. Do not touch any other file.
 
 ## VERIFY AFTER ACT
 
-grep -n "Name the specific situation" /home/corby/jamm-os/app/api/concierge/prompts.py
+grep -n "useState<Message\[\]>(\[\])" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-Expected: present.
+Expected: present, confirming the lazy initializer with the window check is
+gone.
 
-python3 -c "from app.api.concierge.route import router; print('OK')"
+cd /home/corby/jamm-os/frontend
+npm run build
 
-Expected: OK, no import errors.
+Expected: zero TypeScript errors.
 
 ## MANUAL VERIFICATION (the actual test)
 
-1. Restart the backend.
-2. While on a client's page with a known specific issue (missing documents,
-   overdue deadline), ask the Concierge to draft a follow-up email.
-3. Confirm the draft names the actual specific situation and a concrete next
-   action, rather than vague language like "everything we need" or
-   "anything holding things up."
+1. Restart the frontend.
+2. Open the Concierge panel and send a few messages so sessionStorage has
+   chat history saved.
+3. Navigate to a different page within the app (a same-session client-side
+   navigation, not a hard reload) and reopen the panel.
+4. Confirm no hydration error appears in the console, and the prior chat
+   history still correctly appears once the client mounts and the
+   useEffect runs.
+5. Regression check: with no prior chat history (fresh sessionStorage),
+   confirm the empty starter-prompts state still renders correctly with no
+   flash of mismatched content.
 
-Report the exact draft text produced at step 3.
+Report what you observe at step 4 specifically.
 
 ## GIT
 
 cd /home/corby/jamm-os
 git add -A
-git commit -m "fix: CLIENT_EMAIL draft instructions now include a real example anchoring specific, actionable phrasing instead of generic vague language"
+git commit -m "fix: Concierge messages state no longer reads sessionStorage inside a useState lazy initializer, eliminating a server/client hydration mismatch; history is now restored in a post-mount useEffect instead"
 git pull --rebase origin main
 git push origin main
 

@@ -87,17 +87,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
   const initials =
     user?.full_name?.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase() ?? '?'
 
-  const [messages, setMessages] = useState<Message[]>(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const stored = sessionStorage.getItem('jamm_concierge_messages')
-        if (stored) return JSON.parse(stored) as Message[]
-      } catch {
-        // ignore parse errors
-      }
-    }
-    return []
-  })
+  const [messages, setMessages] = useState<Message[]>([])
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [input, setInput] = useState('')
   const [streaming, setStreaming] = useState(false)
@@ -147,6 +137,14 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
+  useEffect(() => {
+    try {
+      const stored = sessionStorage.getItem('jamm_concierge_messages')
+      if (stored) setMessages(JSON.parse(stored) as Message[])
+    } catch {
+      // ignore parse errors
+    }
+  }, [])
   useEffect(() => {
     if (typeof window !== 'undefined') {
       try {
