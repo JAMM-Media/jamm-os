@@ -75,6 +75,7 @@ function ClientDetailContent() {
   const [initialEngagementType, setInitialEngagementType] = useState<string | undefined>()
   const [portalLinkHighlight, setPortalLinkHighlight] = useState(false)
   const portalLinkRef = useRef<HTMLButtonElement>(null)
+  const messageComposeRef = useRef<HTMLTextAreaElement>(null)
   const [qboEditMode, setQboEditMode] = useState(false)
   const [qboEditValue, setQboEditValue] = useState('')
   const [qboDeepLinkLoading, setQboDeepLinkLoading] = useState(false)
@@ -151,6 +152,12 @@ function ClientDetailContent() {
       sessionStorage.removeItem('jamm_concierge_pending')
     }
   }, [clientId])
+  useEffect(() => {
+    if (messageComposeRef.current) {
+      messageComposeRef.current.style.height = 'auto'
+      messageComposeRef.current.style.height = Math.min(messageComposeRef.current.scrollHeight, 120) + 'px'
+    }
+  }, [messageCompose])
   const [messageSending, setMessageSending] = useState(false)
 
   const [clientEmailThreads, setClientEmailThreads] = useState<Array<{
@@ -978,8 +985,14 @@ function ClientDetailContent() {
             <div className="flex-shrink-0 border-t border-[#C8CDD6] dark:border-[#484848] px-4 pt-2 pb-3 relative">
               <div className="flex gap-2 items-end">
                 <textarea
+                  ref={messageComposeRef}
                   value={messageCompose}
                   onChange={(e) => setMessageCompose(e.target.value)}
+                  onInput={(e) => {
+                    const el = e.currentTarget
+                    el.style.height = 'auto'
+                    el.style.height = Math.min(el.scrollHeight, 120) + 'px'
+                  }}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && !e.shiftKey) {
                       e.preventDefault()

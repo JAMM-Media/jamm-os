@@ -49,77 +49,80 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-# Task: Fix UserOut missing firm_type and concierge_active, sourced from Firm not User
+# Task: Fix client Messages compose box stuck at one line, cannot preview multi-line drafts
 
 USE: claude sonnet
 
 ## VERIFY BEFORE ACT
 
-cat /home/corby/jamm-os/app/schemas/user.py
+grep -n "function handleInput" -A 6 /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-Confirm the exact current shape of UserOut and UserBase before adding fields.
+Confirm the existing auto-grow pattern used by the Concierge panel's own input box, which correctly grows with content up to a max height.
 
-grep -n "def read_users_me" -A 10 /home/corby/jamm-os/app/api/users.py
+sed -n '976,988p' /home/corby/jamm-os/frontend/src/app/clients/\[id\]/page.tsx
 
-Confirm the current handler just returns current_user directly with no firm join.
+Confirm the Messages tab compose textarea currently has rows={1}, no onInput
+handler, and resize-none, with only a static minHeight/maxHeight in its style
+prop and nothing that actually grows it as the user types.
 
 ## WHAT IS WRONG
 
-Confirmed via live testing and direct DB query: a firm with firm_type already
-set to 'tax_and_bookkeeping' in the database still triggered the
-pre-onboarding "what does your firm do most" gate in the Concierge panel on
-every single session, regardless of firm state.
+Confirmed via live testing: when a Concierge draft is pre-filled into the
+Messages tab compose box, the user can only see one line of the message at
+a time. There is no way to preview a multi-line message before sending it,
+since the textarea never grows past its initial single row, and manual
+resize is disabled. This affects every message in this box, not just
+Concierge-prefilled ones, but it is most visible there since drafts are
+typically several sentences long.
 
-Root cause: AuthUser.firm_type and AuthUser.concierge_active on the frontend
-are read from whatever /users/me returns, serialized through UserOut.
-UserOut is built from_attributes directly off the User model only.
-firm_type and concierge_active are columns on the Firm model, not User, so
-they were never present on the User row UserOut maps from. The API was
-returning a user object where these fields are structurally always null,
-independent of the real firm_type or concierge_active values in the
-database. Every onboarding-state check on the frontend that reads
-user?.firm_type, including the Concierge panel's first-message gate, has
-been operating on missing data this entire time.
+Root cause: the textarea has rows={1} and resize-none, with a maxHeight set
+in its style only as a ceiling, but nothing actually grows its height as
+content is typed or pre-filled in. The Concierge panel's own chat input box
+a few files over already solves this exact problem correctly with an
+onInput handler that sets the textarea's height to its scrollHeight, capped
+at a max. This compose box never got the same handler.
 
 ## ACTION
 
-File: /home/corby/jamm-os/app/schemas/user.py
+File: /home/corby/jamm-os/frontend/src/app/clients/[id]/page.tsx
 
-Add firm_type: Optional[str] = None and concierge_active: bool = False as
-fields on UserOut (not UserBase, since these are firm-level, not intrinsic
-to the user identity itself).
+Add an onInput handler to the Messages compose textarea matching the
+existing working pattern from ConciergePanel.tsx's handleInput function:
 
-File: /home/corby/jamm-os/app/api/users.py
+onInput={(e) => {
+  const el = e.currentTarget
+  el.style.height = 'auto'
+  el.style.height = Math.min(el.scrollHeight, 120) + 'px'
+}}
 
-Update read_users_me to also load the current user's Firm and attach
-firm_type and concierge_active onto the response before returning. Use the
-existing get_current_firm dependency already used in get_my_firm a few
-lines below in this same file, add it as a dependency to read_users_me, and
-build the response explicitly:
+Add this alongside the existing onChange and onKeyDown props on the same
+textarea. Keep rows={1} as the initial collapsed state, that part is
+correct, it should start small and grow only when there is content.
 
-def read_users_me(
-    current_user: User = Depends(get_current_user),
-    current_firm: Firm = Depends(get_current_firm),
-):
-    user_out = UserOut.model_validate(current_user)
-    user_out.firm_type = current_firm.firm_type
-    user_out.concierge_active = current_firm.concierge_active
-    return user_out
+Also add a useEffect that runs this same height calculation whenever
+messageCompose changes via something other than direct typing, specifically
+when it gets set by the prefill-message live action or the sessionStorage
+prefillMessage path, since onInput only fires on user keystrokes, not on a
+value being set programmatically. A ref on the textarea will be needed for
+this; add one if one does not already exist for this element, and use it in
+a useEffect keyed on messageCompose:
 
-Adjust import statements as needed for Firm and get_current_firm if not
-already imported in this file. Do not change get_my_firm or any other route
-in this file. Do not touch the Next.js proxy route, it already passes
-through whatever the backend returns correctly.
+useEffect(() => {
+  if (messageComposeRef.current) {
+    messageComposeRef.current.style.height = 'auto'
+    messageComposeRef.current.style.height = Math.min(messageComposeRef.current.scrollHeight, 120) + 'px'
+  }
+}, [messageCompose])
+
+Do not change resize-none, the placeholder text, the send button, or any
+other logic in this section. Do not touch ConciergePanel.tsx or any other
+file.
 
 ## VERIFY AFTER ACT
 
-grep -n "firm_type\|concierge_active" /home/corby/jamm-os/app/schemas/user.py
+grep -n "onInput\|messageComposeRef" /home/corby/jamm-os/frontend/src/app/clients/\[id\]/page.tsx
 
-Expected: both fields present on UserOut.
-
-python3 -c "from app.api.users import router; print('OK')"
-
-Expected: OK, no import errors.
+Expected: both present on or near the compose textarea.
 
 cd /home/corby/jamm-os/frontend
 npm run build
@@ -128,26 +131,25 @@ Expected: zero TypeScript errors.
 
 ## MANUAL VERIFICATION (the actual test)
 
-1. Restart both backend and frontend.
-2. Log in as a user belonging to Riverside Tax & Advisory (firm_type already
-   set to tax_and_bookkeeping in the database).
-3. Open the Concierge panel from a fresh session (clear sessionStorage or
-   use a private browser window so jamm_concierge_messages does not mask
-   this test).
-4. Confirm the panel does NOT show the "what does your firm do most" gate
-   message. It should go straight to the __OPEN__ flow instead.
-5. Regression check: create or use a test firm where firm_type is genuinely
-   null in the database, confirm that firm still correctly sees the
-   onboarding gate message. This confirms the fix reads real data rather
-   than always suppressing the gate.
+1. Restart the frontend.
+2. Trigger a multi-sentence Concierge draft for a specific client and click
+   Open to send.
+3. Confirm the compose box on the Messages tab now visibly grows to show
+   multiple lines of the pre-filled draft, not just one line with the rest
+   hidden.
+4. Manually type a long multi-line message directly into the box (not via
+   Concierge) and confirm it also grows correctly as you type.
+5. Confirm the box stops growing at a reasonable max height and switches to
+   internal scrolling for very long messages, rather than growing
+   indefinitely.
 
-Report what you observe at step 4 specifically.
+Report what you observe at step 3 specifically.
 
 ## GIT
 
 cd /home/corby/jamm-os
 git add -A
-git commit -m "fix: UserOut now includes firm_type and concierge_active sourced from the Firm row, not the User row, fixing the Concierge onboarding gate firing for every firm regardless of actual firm_type state"
+git commit -m "fix: client Messages compose box now auto-grows to show multi-line content instead of staying stuck at one visible line, matching the existing working pattern in ConciergePanel's own chat input"
 git pull --rebase origin main
 git push origin main
 
