@@ -620,10 +620,15 @@ Respond with exactly one word: SAFE or UNSAFE. Nothing else.""",
             messages=sanitized_messages,
         ) as stream:
             assembled = ""
+            buffer = ""
             for text in stream.text_stream:
                 assembled += text
-            for line in assembled.split("\n"):
-                yield f"data: {line}\n\n"
+                buffer += text
+                while "\n" in buffer:
+                    line, buffer = buffer.split("\n", 1)
+                    yield f"data: {line}\n\n"
+            if buffer:
+                yield f"data: {buffer}\n\n"
             # Run output filter on fully assembled response
             filtered = filter_output(assembled)
             if filtered != assembled:
