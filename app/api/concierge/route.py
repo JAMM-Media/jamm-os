@@ -622,8 +622,8 @@ Respond with exactly one word: SAFE or UNSAFE. Nothing else.""",
             assembled = ""
             for text in stream.text_stream:
                 assembled += text
-                data_lines = "\n".join(f"data: {line}" for line in text.split("\n"))
-                yield f"{data_lines}\n\n"
+            for line in assembled.split("\n"):
+                yield f"data: {line}\n\n"
             # Run output filter on fully assembled response
             filtered = filter_output(assembled)
             if filtered != assembled:
