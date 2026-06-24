@@ -40,3 +40,5 @@ from app.models.qc_checklist import (
 from app.models.concierge_notification import ConciergeNotification
 from app.models.concierge_question_log import ConciergeQuestionLog
 from app.models.billing_detail_report import BillingDetailReport
+from app.models.staff_credential import StaffCredential
+from app.models.cpe_record import CPERecord

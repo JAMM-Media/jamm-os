@@ -206,6 +206,20 @@ class NotificationEventType(str, Enum):
     document_expiry_alert = "document_expiry_alert"
 
 
+class CredentialType(str, Enum):
+    cpa_license = "cpa_license"
+    ea_enrollment = "ea_enrollment"
+    ptin = "ptin"
+    state_license = "state_license"
+    other = "other"
+
+
+class CPEStatus(str, Enum):
+    in_progress = "in_progress"
+    complete = "complete"
+    overdue = "overdue"
+
+
 EFILEABLE_ENGAGEMENT_TYPES = {
     "tax_return_1040",
     "tax_return_1120",

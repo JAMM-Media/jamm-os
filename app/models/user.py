@@ -160,3 +160,17 @@ class User(Base):
         foreign_keys="[TimeEntry.user_id]",
         primaryjoin="User.id == TimeEntry.user_id",
     )
+
+    staff_credentials: Mapped[list["StaffCredential"]] = relationship(
+        "StaffCredential",
+        back_populates="user",
+        foreign_keys="[StaffCredential.user_id]",
+        cascade="all, delete-orphan",
+    )
+
+    cpe_records: Mapped[list["CPERecord"]] = relationship(
+        "CPERecord",
+        back_populates="user",
+        foreign_keys="[CPERecord.user_id]",
+        cascade="all, delete-orphan",
+    )

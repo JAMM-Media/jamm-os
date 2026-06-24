@@ -269,3 +269,15 @@ class Firm(Base):
         back_populates="firm",
         cascade="all, delete-orphan",
     )
+
+    staff_credentials: Mapped[list["StaffCredential"]] = relationship(
+        "StaffCredential",
+        back_populates="firm",
+        cascade="all, delete-orphan",
+    )
+
+    cpe_records: Mapped[list["CPERecord"]] = relationship(
+        "CPERecord",
+        back_populates="firm",
+        cascade="all, delete-orphan",
+    )

@@ -11,6 +11,7 @@ from app.models.engagement import Engagement
 from app.models.user import User
 from app.core.enums import UserRole, RecipientType, NotificationType
 from app.services.notification_service import NotificationService
+from app.services.behavioral_log import log_event
 
 logger = logging.getLogger(__name__)
 
@@ -138,5 +139,78 @@ def check_document_expiries() -> None:
         )
     except Exception as e:
         logger.error("Document expiry check failed: %s", str(e))
+    finally:
+        db.close()
+
+
+def check_credential_expiries() -> None:
+    from app.crud import staff_credential as crud_staff_credential
+    from app.models.notification import Notification
+
+    db = SessionLocal()
+    try:
+        expiring = crud_staff_credential.get_expiring_soon(db, days_ahead=60)
+        for credential in expiring:
+            week_ago = datetime.now(timezone.utc) - timedelta(days=7)
+            existing = db.execute(
+                select(Notification).where(
+                    Notification.related_entity_type == "staff_credential",
+                    Notification.related_entity_id == credential.id,
+                    Notification.created_at >= week_ago,
+                )
+            ).scalars().first()
+            if existing:
+                continue
+
+            staff_user = db.execute(
+                select(User).where(User.id == credential.user_id)
+            ).scalars().first()
+            user_name = staff_user.full_name if staff_user and staff_user.full_name else "Staff member"
+
+            days_until_expiry = (credential.expires_at - date.today()).days
+
+            managers = db.execute(
+                select(User).where(
+                    User.firm_id == credential.firm_id,
+                    User.role.in_([UserRole.firm_owner, UserRole.manager]),
+                    User.is_active == True,
+                )
+            ).scalars().all()
+
+            for manager in managers:
+                NotificationService.create_notification(
+                    db=db,
+                    firm_id=credential.firm_id,
+                    recipient_id=manager.id,
+                    recipient_type=RecipientType.staff,
+                    title="Credential Expiring Soon",
+                    body=(
+                        f"{user_name}'s {credential.credential_type.value} expires on {credential.expires_at}."
+                    ),
+                    notification_type=NotificationType.deadline_alert,
+                    related_entity_type="staff_credential",
+                    related_entity_id=credential.id,
+                )
+
+            log_event(
+                event_type="staff.credential_expiry_warning",
+                firm_id=credential.firm_id,
+                entity_type="staff_credential",
+                entity_id=credential.id,
+                metadata={
+                    "credential_type": credential.credential_type.value,
+                    "user_id": str(credential.user_id),
+                    "expires_at": credential.expires_at.isoformat(),
+                    "days_until_expiry": days_until_expiry,
+                },
+            )
+
+        logger.info(
+            "Credential expiry check complete: %d credentials expiring soon",
+            len(expiring),
+        )
+
+    except Exception as e:
+        logger.error("Credential expiry check failed: %s", str(e))
     finally:
         db.close()

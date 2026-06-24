@@ -4,11 +4,12 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from apscheduler.schedulers.background import BackgroundScheduler
-from app.services.anniversary_service import check_client_anniversaries, check_document_expiries
+from app.services.anniversary_service import check_client_anniversaries, check_document_expiries, check_credential_expiries
 from app.services.recurring_engagement_service import spawn_recurring_engagements
 from app.services.qbo_budget_service import run_budget_variance_checks
 from app.services.gmail_signals_service import run_gmail_signals_for_all_firms
 from app.services.outlook_signals_service import run_outlook_signals_for_all_firms
+from app.services.esign_reminder_service import run_esign_auto_reminders, run_esign_escalation_check
 from app.core.scheduler_lock import try_acquire_scheduler_lock, release_scheduler_lock
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
@@ -62,6 +63,8 @@ from app.api.portal_domain import router as portal_domain_router
 from app.api.inbox import router as inbox_router
 from app.api.calendar import router as calendar_router
 from app.api.morning_briefing import router as morning_briefing_router
+from app.api.staff_credentials import router as staff_credentials_router
+from app.api.cpe_records import router as cpe_records_router
 
 from app.db.base_class import Base
 from app.core.config import get_settings
@@ -124,6 +127,30 @@ async def lifespan(app: FastAPI):
             hour=6,
             minute=15,
             id="outlook_signals_daily",
+            replace_existing=True,
+        )
+        scheduler.add_job(
+            check_credential_expiries,
+            trigger="cron",
+            hour=8,
+            minute=35,
+            id="credential_expiry_check",
+            replace_existing=True,
+        )
+        scheduler.add_job(
+            run_esign_auto_reminders,
+            trigger="cron",
+            hour=8,
+            minute=45,
+            id="esign_auto_reminders",
+            replace_existing=True,
+        )
+        scheduler.add_job(
+            run_esign_escalation_check,
+            trigger="cron",
+            hour=9,
+            minute=15,
+            id="esign_escalation_check",
             replace_existing=True,
         )
         scheduler.start()
@@ -217,6 +244,8 @@ app.include_router(portal_domain_router, prefix="/api/v1")
 app.include_router(inbox_router, prefix="/api/v1")
 app.include_router(calendar_router, prefix="/api/v1")
 app.include_router(morning_briefing_router, prefix="/api/v1")
+app.include_router(staff_credentials_router)
+app.include_router(cpe_records_router)
 
 
 @app.get("/")

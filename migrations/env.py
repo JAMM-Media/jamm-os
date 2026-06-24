@@ -37,6 +37,8 @@ from app.models.recurring_engagement_log import RecurringEngagementLog
 from app.models.concierge_question_log import ConciergeQuestionLog
 from app.models.concierge_notification import ConciergeNotification
 from app.models.security_event import SecurityEvent
+from app.models.staff_credential import StaffCredential
+from app.models.cpe_record import CPERecord
 
 settings = get_settings()
 
