@@ -49,147 +49,335 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-# Task: Write /knowledge/13_reports_analytics.md
+# Task: Build 4 — Draft-and-confirm in conversation responses
+
+USE: claude sonnet
 
 ## VERIFY BEFORE ACT
 
 ```bash
-grep -r "13_reports" /home/corby/jamm-os/knowledge/
+grep -n "DRAFT:\|parseDraft\|draft_block\|DRAFT_MARKER" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx | head -10
 ```
 
-If the file exists, stop and report. Do not overwrite.
+Expected: no output. Draft parsing does not exist yet. If any of these strings are
+present, stop and report.
 
 ```bash
-ls /home/corby/jamm-os/knowledge/
+grep -n "DRAFT RESPONSE PATTERNS\|draft_pattern\|propose.*confirm\|When you surface" /home/corby/jamm-os/app/api/concierge/prompts.py | head -5
 ```
 
-Confirm the `/knowledge/` directory exists before proceeding.
+Expected: no output. Draft instruction block does not exist yet in prompts.py.
+If present, stop and report.
 
----
-
-## ACTION
-
-Create the file `/home/corby/jamm-os/knowledge/13_reports_analytics.md` with exactly the content below. No modifications. Copy verbatim.
-
-```markdown
-## Reports and Analytics > Overview > Where to Find Reports
-
-JAMM PX surfaces reporting data in two places. The Dashboard shows a live snapshot of firm-wide metrics each time it loads. The Billing section contains the WIP Report, which tracks unbilled time across active engagements.
-
-Navigate to Dashboard in the left sidebar for the firm overview. Navigate to Billing and select WIP Report for work-in-progress data.
-
----
-
-## Reports and Analytics > Dashboard > What the Dashboard Shows
-
-The Dashboard is the home screen of JAMM PX. It loads a set of firm-wide metrics automatically each time it is opened. The metrics are calculated fresh on each load and reflect the current state of the firm.
-
-The Dashboard is visible to all staff roles. Firm owners and managers see all firm-wide data. Staff members see data scoped to their assigned engagements and tasks.
-
----
-
-## Reports and Analytics > Dashboard > Metric Cards
-
-The Dashboard displays six metric cards at the top of the page.
-
-Monthly Recurring Revenue shows the total value of invoices marked as recurring for the current month and the count of invoices included.
-
-Outstanding AR shows the total dollar value of unpaid sent invoices and the number of those invoices. It also shows how many days the oldest overdue invoice has been unpaid.
-
-WIP Value shows the total dollar value of unbilled billable time across all active engagements and the total hours that value represents.
-
-Overdue Engagements shows the count of engagements whose deadline has passed and that are not yet completed.
-
-Unsigned Documents shows the count of signature envelopes that have been sent but not yet signed by the client.
-
-Total Clients, Active Engagements, Overdue, and Awaiting Docs are shown as a summary row below the metric cards.
-
----
-
-## Reports and Analytics > Dashboard > Upcoming Deadlines
-
-The Dashboard shows a list of engagements with deadlines in the next 14 days. Each row shows the client name, engagement type, deadline date, and a colored days-remaining badge.
-
-The badge is green for deadlines more than 6 days away, amber for deadlines 3 to 6 days away, and red for deadlines 2 days away or less.
-
-If no engagements have a deadline in the next 14 days, the section shows a clear runway message. Click View full calendar at the bottom of the list to open the calendar view.
-
----
-
-## Reports and Analytics > Dashboard > Overdue Engagements
-
-The Dashboard shows a list of engagements that have passed their deadline and are not yet completed. Each row shows the client name, engagement type, deadline date, how many days overdue the engagement is, and the assigned staff member.
-
-Review this list to identify engagements that need immediate attention. Click any engagement in the list to open it directly.
-
----
-
-## Reports and Analytics > Dashboard > Staff Utilization
-
-The Dashboard shows a staff utilization panel with each staff member's hours logged this week and their utilization percentage. The utilization bar is green when below 80%, amber between 80% and 99%, and red at 100% or above.
-
-Staff utilization data is visible to firm owners and managers only. Individual staff members do not see this panel.
-
-Use the staff utilization panel to identify team members who have capacity and those who are at or near their limit before assigning new work.
-
----
-
-## Reports and Analytics > Dashboard > Unsigned Documents
-
-The Dashboard shows a list of signature envelopes that have been sent but not yet signed. Each row shows the client name, document title, the date the envelope was sent, and how many days the client has had it without signing.
-
-Use this list to identify clients who need a follow-up on outstanding signature requests. The E-Signature Reminder automation preset sends reminders automatically, but this list gives a manual view of what is still outstanding.
-
----
-
-## Reports and Analytics > WIP Report > What the WIP Report Shows
-
-The WIP report shows all unbilled billable time entries across all active engagements. WIP stands for work in progress. The report shows each engagement with its client name, total hours logged, and the dollar value of those hours based on the billing rates on each time entry.
-
-The total WIP value and total hours are shown at the top of the report as summary figures.
-
-Navigate to Billing in the left sidebar and select WIP Report.
-
----
-
-## Reports and Analytics > WIP Report > Using the WIP Report for Month-End Billing
-
-Run the WIP report before each billing cycle to identify all work that has been done but not yet invoiced. The report shows only unbilled time. Once a time entry is added to an invoice it is marked as billed and removed from the WIP report.
-
-Review the top engagements by WIP value first. These are the highest-priority items to invoice before month-end close.
-
----
-
-## Reports and Analytics > WIP Report > Exporting the WIP Report
-
-Click Export CSV in the top right corner of the WIP Report page. The file downloads with columns for client, engagement, hours, and value.
-
-Use the export to review billing in a spreadsheet, share with a billing manager, or keep a record of unbilled work at a point in time.
+```bash
+grep -n "def get_system_prompt" /home/corby/jamm-os/app/api/concierge/prompts.py
 ```
+
+Note the line number. You will add the draft instruction block inside this function.
+
+---
+
+## WHAT IS BEING BUILT
+
+When the agent calls a live data function and returns specific named clients or
+engagements, it appends a short draft artifact at the end of its response.
+The frontend detects the draft marker, extracts the content, renders it in the
+same styled card as notification drafts, and removes it from the message bubble.
+
+The agent only drafts when the situation is unambiguous and the action is high value.
+It never drafts on general how-to questions or when no specific client or engagement
+is named in the data returned.
+
+The four draft types:
+- CLIENT_EMAIL: a short professional client communication
+- INVOICE_ITEMS: invoice line item suggestions
+- STAFF_REASSIGN: a redistribution recommendation
+- IRS_RENEWAL: a short renewal request communication
+
+---
+
+## ACTION — Part 1: Add draft instruction block to prompts.py
+
+File: `/home/corby/jamm-os/app/api/concierge/prompts.py`
+
+Inside `get_system_prompt()`, find the line that appends the autopilot block:
+
+```python
+    if autopilot_enabled:
+        prompt += f"\n\n---\n\n{_AUTOPILOT_BLOCK.strip()}"
+    else:
+        prompt += "\n\n---\n\nAUTOPILOT MODE IS OFF..."
+```
+
+Add the following block BEFORE those two lines (before the autopilot check):
+
+```python
+    prompt += """
+
+---
+
+DRAFT RESPONSE PATTERNS
+
+When you call a live data function and the result contains specific named clients
+or engagements, you may append a short draft artifact at the end of your response.
+Only do this when all three conditions are true:
+1. You called a live data function (get_overdue_invoices, get_client_communication_gap,
+   get_unbilled_completed_work, get_stalled_engagements, get_irs_auth_expiring,
+   get_client_document_status, get_portal_inactive_clients).
+2. The result contains at least one specific named client or engagement.
+3. The natural next action is a communication or assignment, not just information.
+
+Do NOT append a draft on general how-to questions, greetings, or when no specific
+client or engagement is named.
+
+When all three conditions are met, append the draft using this exact format at the
+very end of your response, after all other content:
+
+---DRAFT:TYPE---
+[2-4 sentence draft content here]
+---END DRAFT---
+
+Replace TYPE with one of: CLIENT_EMAIL, INVOICE_ITEMS, STAFF_REASSIGN, IRS_RENEWAL
+
+Rules for drafts:
+- CLIENT_EMAIL: 2-4 sentences. Professional, warm tone. No em dashes. No filler phrases.
+  Use [Client Name] as placeholder. Keep it short enough to read in 10 seconds.
+- INVOICE_ITEMS: List the engagement name and suggested amount only. No prose.
+- STAFF_REASSIGN: Name the engagement and the suggested staff member. One sentence.
+- IRS_RENEWAL: 2-3 sentences requesting updated authorization. Use [Client Name].
+  Reference the specific form type (2848 or 8821) if known.
+
+Examples of when to draft:
+- get_client_communication_gap returns 3 clients with no contact in 21 days -> CLIENT_EMAIL
+- get_unbilled_completed_work returns completed work -> INVOICE_ITEMS
+- get_staff_capacity shows one person overloaded with named engagements -> STAFF_REASSIGN
+- get_irs_auth_expiring returns clients with expiring auths -> IRS_RENEWAL
+
+Examples of when NOT to draft:
+- User asks how to create an engagement (how-to question, no live data)
+- get_daily_brief is called (summary overview, no single action implied)
+- get_pipeline_bottleneck is called (diagnostic, no communication implied)
+- get_staff_capacity shows normal utilization (no redistribution needed)
+"""
+```
+
+---
+
+## ACTION — Part 2: Add parseDraftFromResponse to ConciergePanel.tsx
+
+File: `/home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx`
+
+Add this function directly above the `filterOutput` function:
+
+```typescript
+  function parseDraftFromResponse(text: string): {
+    type: string
+    content: string
+    cleanedResponse: string
+  } | null {
+    const startMarker = '---DRAFT:'
+    const endMarker = '---END DRAFT---'
+    const startIdx = text.indexOf(startMarker)
+    const endIdx = text.indexOf(endMarker)
+    if (startIdx === -1 || endIdx === -1 || endIdx <= startIdx) return null
+
+    const typeEnd = text.indexOf('---', startIdx + startMarker.length)
+    if (typeEnd === -1) return null
+
+    const type = text.slice(startIdx + startMarker.length, typeEnd).trim()
+    const content = text.slice(typeEnd + 3, endIdx).trim()
+
+    // Remove the entire draft block from the response including surrounding whitespace
+    const cleanedResponse = text.slice(0, startIdx).trimEnd()
+
+    if (!type || !content) return null
+    return { type, content, cleanedResponse }
+  }
+```
+
+---
+
+## ACTION — Part 3: Wire parseDraftFromResponse into sendMessages
+
+File: `/home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx`
+
+Add a `draft` field to the `Message` interface at the top of the file:
+
+Find:
+```typescript
+interface Message {
+  role: 'user' | 'concierge'
+  content: string
+  actionConfirm?: string
+  isBriefing?: boolean
+}
+```
+
+Replace with:
+```typescript
+interface Message {
+  role: 'user' | 'concierge'
+  content: string
+  actionConfirm?: string
+  isBriefing?: boolean
+  draft?: { type: string; content: string } | null
+}
+```
+
+Inside `sendMessages`, find this block:
+
+```typescript
+        const filteredAssembled = filterOutput(assembled)
+        const cleanContent = handleConciergeAction(filteredAssembled)
+        setMessages((prev) => {
+          const updated = [...prev]
+          const last = updated[updated.length - 1]
+          if (last.role === 'concierge') {
+            updated[updated.length - 1] = {
+              role: 'concierge',
+              content: cleanContent,
+            }
+          }
+          return updated
+        })
+```
+
+Replace with:
+
+```typescript
+        const filteredAssembled = filterOutput(assembled)
+        const parsedDraft = parseDraftFromResponse(filteredAssembled)
+        const textForAction = parsedDraft ? parsedDraft.cleanedResponse : filteredAssembled
+        const cleanContent = handleConciergeAction(textForAction)
+        setMessages((prev) => {
+          const updated = [...prev]
+          const last = updated[updated.length - 1]
+          if (last.role === 'concierge') {
+            updated[updated.length - 1] = {
+              role: 'concierge',
+              content: cleanContent,
+              draft: parsedDraft ? { type: parsedDraft.type, content: parsedDraft.content } : null,
+            }
+          }
+          return updated
+        })
+```
+
+---
+
+## ACTION — Part 4: Render draft card in message feed
+
+File: `/home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx`
+
+Find the message rendering block. It starts with:
+```typescript
+          {messages.map((msg, i) => (
+            <div key={i}>
+            <div className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} items-start gap-2`}>
+```
+
+And ends with the suggestions chip block and closing `</div>`. Find the closing
+`</div>` that closes `<div key={i}>` and add the draft card BEFORE the suggestions
+chip block. The structure should be:
+
+After the main message bubble div closes (the one containing the ReactMarkdown
+and the isBriefing download button), add:
+
+```typescript
+              {msg.draft && (
+                <div className="ml-8 mt-2 rounded-[8px] bg-[#F0F4F8] dark:bg-[#1a2a3a] border border-[0.5px] border-[#C8CDD6] dark:border-[#3a4a5a] px-3 py-2.5">
+                  <p className="text-[10px] text-[#6B7280] dark:text-[#9CA3AF] mb-1.5 font-medium uppercase tracking-wide">
+                    {msg.draft.type === 'CLIENT_EMAIL' ? 'Draft email' :
+                     msg.draft.type === 'INVOICE_ITEMS' ? 'Draft invoice' :
+                     msg.draft.type === 'STAFF_REASSIGN' ? 'Suggested reassignment' :
+                     msg.draft.type === 'IRS_RENEWAL' ? 'Draft renewal request' :
+                     'Draft'}
+                  </p>
+                  <p className="text-[12px] leading-[1.5] text-[#374151] dark:text-[#D1D5DB] whitespace-pre-wrap">
+                    {msg.draft.content}
+                  </p>
+                  <div className="flex gap-2 mt-2">
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(msg.draft!.content).then(() => {
+                          setCopiedId(`msg-${i}`)
+                          setTimeout(() => setCopiedId(null), 2000)
+                        }).catch(() => {})
+                      }}
+                      className="text-[11px] font-medium px-2.5 py-1 rounded-[4px] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] text-[#6B7280] dark:text-[#9CA3AF] hover:border-[#4A7FA5] hover:text-[#4A7FA5] transition-colors"
+                    >
+                      {copiedId === `msg-${i}` ? 'Copied' : 'Copy'}
+                    </button>
+                    <button
+                      onClick={() => {
+                        const confirmed = window.confirm(
+                          msg.draft!.type === 'STAFF_REASSIGN'
+                            ? 'Open the engagement to apply this reassignment?'
+                            : msg.draft!.type === 'INVOICE_ITEMS'
+                            ? 'Open billing to create this invoice?'
+                            : 'Send this message to the client?'
+                        )
+                        if (confirmed) {
+                          if (msg.draft!.type === 'STAFF_REASSIGN') {
+                            router.push('/engagements')
+                          } else if (msg.draft!.type === 'INVOICE_ITEMS') {
+                            router.push('/billing')
+                          } else {
+                            handleSend(`Send this message: ${msg.draft!.content}`)
+                          }
+                        }
+                      }}
+                      className="text-[11px] font-medium px-2.5 py-1 rounded-[4px] bg-[#1F3148] text-white hover:bg-[#2a4060] transition-colors"
+                    >
+                      {msg.draft.type === 'STAFF_REASSIGN' ? 'Open engagement' :
+                       msg.draft.type === 'INVOICE_ITEMS' ? 'Open billing' :
+                       'Send'}
+                    </button>
+                  </div>
+                </div>
+              )}
+```
+
+Place this block INSIDE the `<div key={i}>` wrapper, AFTER the main message bubble
+div closes but BEFORE the suggestions chip block.
 
 ---
 
 ## VERIFY AFTER ACT
 
 ```bash
-wc -l /home/corby/jamm-os/knowledge/13_reports_analytics.md
+grep -n "parseDraftFromResponse\|---DRAFT:\|---END DRAFT---\|DRAFT RESPONSE PATTERNS" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx | head -10
 ```
 
-Expected: between 100 and 130 lines.
+Expected: parseDraftFromResponse, ---DRAFT: marker reference, and ---END DRAFT---
+all present in the file.
 
 ```bash
-grep -c "^##" /home/corby/jamm-os/knowledge/13_reports_analytics.md
+grep -n "DRAFT RESPONSE PATTERNS\|---DRAFT:\|---END DRAFT---" /home/corby/jamm-os/app/api/concierge/prompts.py | head -5
 ```
 
-Expected: 10 chunks (10 lines starting with ##).
+Expected: all three strings present in prompts.py.
 
 ```bash
-grep "^---$" /home/corby/jamm-os/knowledge/13_reports_analytics.md | wc -l
+python3 -c "
+from app.api.concierge.prompts import get_system_prompt
+result = get_system_prompt()
+assert 'DRAFT RESPONSE PATTERNS' in result, 'FAIL: draft instruction block missing from system prompt'
+assert '---DRAFT:' in result, 'FAIL: draft marker format missing'
+assert '---END DRAFT---' in result, 'FAIL: end marker missing'
+print('PASS: draft instruction block present in system prompt')
+"
 ```
 
-Expected: 9 separators.
+Expected: PASS.
 
-If any check fails, report what was found. Do not self-correct silently.
+```bash
+cd /home/corby/jamm-os/frontend
+npm run build
+```
+
+Expected: zero TypeScript errors. If errors appear, stop and report them. Do not
+self-correct silently.
 
 ---
 
@@ -197,8 +385,11 @@ If any check fails, report what was found. Do not self-correct silently.
 
 ```bash
 cd /home/corby/jamm-os
-git add knowledge/13_reports_analytics.md
-git commit -m "knowledge: add 13_reports_analytics.md - 10 chunks"
+git add app/api/concierge/prompts.py
+git add frontend/src/components/concierge/ConciergePanel.tsx
+git commit -m "build4: draft-and-confirm in conversation -- CLIENT_EMAIL, INVOICE_ITEMS, STAFF_REASSIGN, IRS_RENEWAL"
+git pull --rebase origin main
+git push origin main
 ```
 
-Note: push is blocked by GitHub account suspension. Commit locally only.
+If conflicts on task.md use --theirs. Conflicts on source files use --ours.

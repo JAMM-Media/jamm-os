@@ -20,6 +20,7 @@ from app.models.user import User
 from app.models.automation_rule import AutomationRule
 from app.models.behavioral_event import BehavioralEvent
 from app.models.document_request import DocumentRequest
+from app.models.irs_authorization import IrsAuthorization
 
 
 # ---------------------------------------------------------------------------
@@ -446,4 +447,343 @@ def get_client_full_snapshot(
             for r in invoices
         ],
         "pending_document_requests": overdue_docs,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Function 9: get_weekly_summary
+# Returns firm performance metrics for the past 7 days.
+# ---------------------------------------------------------------------------
+def get_weekly_summary(firm_id: uuid.UUID, db: Session) -> dict:
+    today = date.today()
+    week_ago = today - timedelta(days=7)
+
+    engagements_completed = db.execute(
+        select(func.count())
+        .select_from(Engagement)
+        .where(
+            Engagement.firm_id == firm_id,
+            Engagement.status == "completed",
+            Engagement.updated_at >= week_ago,
+        )
+    ).scalar() or 0
+
+    invoices_sent = db.execute(
+        select(func.count())
+        .select_from(Invoice)
+        .where(
+            Invoice.firm_id == firm_id,
+            Invoice.sent_at >= week_ago,
+        )
+    ).scalar() or 0
+
+    invoices_paid_row = db.execute(
+        select(func.count(), func.sum(Invoice.total_amount))
+        .select_from(Invoice)
+        .where(
+            Invoice.firm_id == firm_id,
+            Invoice.status == "paid",
+            Invoice.updated_at >= week_ago,
+        )
+    ).fetchone()
+    invoices_paid = invoices_paid_row[0] or 0
+    revenue_collected = float(invoices_paid_row[1] or 0)
+
+    doc_requests_completed = db.execute(
+        select(func.count())
+        .select_from(DocumentRequest)
+        .where(
+            DocumentRequest.firm_id == firm_id,
+            DocumentRequest.status == "completed",
+            DocumentRequest.updated_at >= week_ago,
+        )
+    ).scalar() or 0
+
+    automations_fired = db.execute(
+        select(func.count())
+        .select_from(BehavioralEvent)
+        .where(
+            BehavioralEvent.firm_id == firm_id,
+            BehavioralEvent.event_type == "automation.fired",
+            BehavioralEvent.occurred_at >= week_ago,
+        )
+    ).scalar() or 0
+
+    return {
+        "period": "last_7_days",
+        "week_start": week_ago.isoformat(),
+        "engagements_completed": engagements_completed,
+        "invoices_sent": invoices_sent,
+        "invoices_paid": invoices_paid,
+        "revenue_collected": revenue_collected,
+        "document_requests_completed": doc_requests_completed,
+        "automations_fired": automations_fired,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Function 10: get_deadline_calendar
+# Returns upcoming engagement deadlines within N days.
+# ---------------------------------------------------------------------------
+def get_deadline_calendar(firm_id: uuid.UUID, db: Session, days_ahead: int = 14) -> dict:
+    today = date.today()
+    cutoff = today + timedelta(days=days_ahead)
+
+    rows = db.execute(
+        select(
+            Engagement.id,
+            Engagement.name,
+            Engagement.status,
+            Engagement.filing_deadline,
+            Client.name.label("client_name"),
+            User.full_name.label("assigned_staff"),
+        )
+        .join(Client, Engagement.client_id == Client.id)
+        .outerjoin(User, Engagement.assigned_to == User.id)
+        .where(
+            Engagement.firm_id == firm_id,
+            Engagement.filing_deadline >= today,
+            Engagement.filing_deadline <= cutoff,
+            Engagement.status.notin_(["completed", "archived"]),
+        )
+        .order_by(Engagement.filing_deadline.asc())
+        .limit(30)
+    ).fetchall()
+
+    deadlines = [
+        {
+            "engagement_id": str(r.id),
+            "engagement_name": r.name,
+            "client_name": r.client_name,
+            "status": str(r.status),
+            "deadline": r.filing_deadline.isoformat() if r.filing_deadline else None,
+            "days_until": (r.filing_deadline - today).days if r.filing_deadline else None,
+            "assigned_to": r.assigned_staff,
+        }
+        for r in rows
+    ]
+
+    return {
+        "days_ahead": days_ahead,
+        "deadline_count": len(deadlines),
+        "deadlines": deadlines,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Function 11: get_automation_health
+# Returns enabled automation rules and their recent firing activity.
+# ---------------------------------------------------------------------------
+def get_automation_health(firm_id: uuid.UUID, db: Session) -> dict:
+    rules = db.execute(
+        select(AutomationRule.id, AutomationRule.name, AutomationRule.is_active)
+        .where(AutomationRule.firm_id == firm_id)
+        .order_by(AutomationRule.name.asc())
+    ).fetchall()
+
+    today = date.today()
+    month_start = today.replace(day=1)
+
+    results = []
+    for rule in rules:
+        fire_count = db.execute(
+            select(func.count())
+            .select_from(BehavioralEvent)
+            .where(
+                BehavioralEvent.firm_id == firm_id,
+                BehavioralEvent.event_type == "automation.fired",
+                BehavioralEvent.extra_metadata["rule_id"].astext == str(rule.id),
+                BehavioralEvent.occurred_at >= month_start,
+            )
+        ).scalar() or 0
+
+        last_fired = db.execute(
+            select(func.max(BehavioralEvent.occurred_at))
+            .where(
+                BehavioralEvent.firm_id == firm_id,
+                BehavioralEvent.event_type == "automation.fired",
+                BehavioralEvent.extra_metadata["rule_id"].astext == str(rule.id),
+            )
+        ).scalar()
+
+        results.append({
+            "rule_id": str(rule.id),
+            "rule_name": rule.name,
+            "is_active": rule.is_active,
+            "fires_this_month": fire_count,
+            "last_fired": last_fired.isoformat() if last_fired else None,
+            "status": "active_firing" if (rule.is_active and fire_count > 0)
+                      else "active_not_firing" if (rule.is_active and fire_count == 0)
+                      else "inactive",
+        })
+
+    enabled_count = sum(1 for r in results if r["is_active"])
+    firing_count = sum(1 for r in results if r["fires_this_month"] > 0)
+
+    return {
+        "total_rules": len(results),
+        "enabled_count": enabled_count,
+        "firing_this_month": firing_count,
+        "rules": results,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Function 12: get_portal_inactive_clients
+# Returns clients who have not logged into the portal in N days
+# and have active document requests outstanding.
+# ---------------------------------------------------------------------------
+def get_portal_inactive_clients(firm_id: uuid.UUID, db: Session, days: int = 14) -> dict:
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+
+    clients_with_pending_requests = db.execute(
+        select(func.distinct(DocumentRequest.client_id))
+        .where(
+            DocumentRequest.firm_id == firm_id,
+            DocumentRequest.status.in_(["pending", "partial"]),
+        )
+    ).scalars().all()
+
+    inactive = []
+    for client_id in clients_with_pending_requests:
+        last_login = db.execute(
+            select(func.max(BehavioralEvent.occurred_at))
+            .where(
+                BehavioralEvent.firm_id == firm_id,
+                BehavioralEvent.entity_id == client_id,
+                BehavioralEvent.event_type == "portal.login",
+            )
+        ).scalar()
+
+        if last_login is None or last_login < cutoff:
+            client = db.execute(
+                select(Client.name, Client.email)
+                .where(Client.id == client_id)
+            ).fetchone()
+
+            if not client:
+                continue
+
+            days_since = (datetime.now(timezone.utc) - last_login).days if last_login else None
+
+            inactive.append({
+                "client_id": str(client_id),
+                "client_name": client.name,
+                "email": client.email,
+                "last_portal_login": last_login.isoformat() if last_login else None,
+                "days_since_login": days_since,
+                "never_logged_in": last_login is None,
+            })
+
+    inactive.sort(
+        key=lambda x: x["days_since_login"] if x["days_since_login"] is not None else 9999,
+        reverse=True,
+    )
+
+    return {
+        "inactive_count": len(inactive),
+        "threshold_days": days,
+        "clients": inactive[:20],
+    }
+
+
+# ---------------------------------------------------------------------------
+# Function 13: get_irs_auth_expiring
+# Returns clients with IRS authorizations expiring within N days.
+# ---------------------------------------------------------------------------
+def get_irs_auth_expiring(firm_id: uuid.UUID, db: Session, days: int = 30) -> dict:
+    today = date.today()
+    cutoff = today + timedelta(days=days)
+
+    rows = db.execute(
+        select(
+            IrsAuthorization.id,
+            IrsAuthorization.form_type,
+            IrsAuthorization.expiration_date,
+            Client.id.label("client_id"),
+            Client.name.label("client_name"),
+        )
+        .join(Client, IrsAuthorization.client_id == Client.id)
+        .where(
+            IrsAuthorization.firm_id == firm_id,
+            IrsAuthorization.expiration_date >= today,
+            IrsAuthorization.expiration_date <= cutoff,
+        )
+        .order_by(IrsAuthorization.expiration_date.asc())
+        .limit(30)
+    ).fetchall()
+
+    items = [
+        {
+            "auth_id": str(r.id),
+            "client_id": str(r.client_id),
+            "client_name": r.client_name,
+            "form_type": str(r.form_type) if r.form_type else None,
+            "expiration_date": r.expiration_date.isoformat() if r.expiration_date else None,
+            "days_until_expiry": (r.expiration_date - today).days if r.expiration_date else None,
+        }
+        for r in rows
+    ]
+
+    return {
+        "expiring_count": len(items),
+        "threshold_days": days,
+        "authorizations": items,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Function 14: get_client_document_status
+# Returns document request status for a specific client and engagement.
+# ---------------------------------------------------------------------------
+def get_client_document_status(
+    firm_id: uuid.UUID, client_id: uuid.UUID, db: Session,
+    engagement_id: uuid.UUID | None = None,
+) -> dict:
+    query = select(DocumentRequest).where(
+        DocumentRequest.firm_id == firm_id,
+        DocumentRequest.client_id == client_id,
+        DocumentRequest.status.in_(["pending", "partial"]),
+    )
+    if engagement_id:
+        query = query.where(DocumentRequest.engagement_id == engagement_id)
+
+    requests = db.execute(query.order_by(DocumentRequest.created_at.desc()).limit(5)).scalars().all()
+
+    if not requests:
+        return {
+            "client_id": str(client_id),
+            "open_requests": 0,
+            "requests": [],
+        }
+
+    results = []
+    for req in requests:
+        items = req.checklist_items or []
+        total = len(items)
+        uploaded = sum(1 for i in items if i.get("status") in ("uploaded", "approved"))
+        pending = total - uploaded
+
+        last_upload = db.execute(
+            select(func.max(BehavioralEvent.occurred_at))
+            .where(
+                BehavioralEvent.firm_id == firm_id,
+                BehavioralEvent.event_type == "document.uploaded",
+                BehavioralEvent.entity_id == req.id,
+            )
+        ).scalar()
+
+        results.append({
+            "request_id": str(req.id),
+            "total_items": total,
+            "uploaded": uploaded,
+            "pending": pending,
+            "last_upload": last_upload.isoformat() if last_upload else None,
+            "days_since_upload": (datetime.now(timezone.utc) - last_upload).days if last_upload else None,
+        })
+
+    return {
+        "client_id": str(client_id),
+        "open_requests": len(results),
+        "requests": results,
     }

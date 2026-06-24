@@ -39,6 +39,12 @@ from app.api.concierge.functions import (
     get_client_communication_gap,
     get_pipeline_bottleneck,
     get_client_full_snapshot,
+    get_weekly_summary,
+    get_deadline_calendar,
+    get_automation_health,
+    get_portal_inactive_clients,
+    get_irs_auth_expiring,
+    get_client_document_status,
 )
 
 logger = logging.getLogger(__name__)
@@ -109,6 +115,61 @@ _CONCIERGE_TOOLS = [
             "required": ["client_id"],
         },
     },
+    {
+        "name": "get_weekly_summary",
+        "description": "Returns firm performance for the past 7 days: engagements completed, invoices sent, invoices paid, revenue collected, document requests completed, automations fired. Call this when the firm owner asks how their week went, what they accomplished, or for a weekly performance recap.",
+        "input_schema": {"type": "object", "properties": {}, "required": []},
+    },
+    {
+        "name": "get_deadline_calendar",
+        "description": "Returns all engagement deadlines in the next N days with client name, assigned staff, and current status. Call this when the firm owner asks what deadlines are coming up, what is due soon, or what they need to complete in the next few weeks.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "days_ahead": {"type": "integer", "description": "How many days ahead to look. Default 14.", "default": 14}
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "get_automation_health",
+        "description": "Returns all automation rules with enabled status, fires this month, and last fired date. Call this when the firm owner asks if their automations are working, which rules are firing, or why automations are not running.",
+        "input_schema": {"type": "object", "properties": {}, "required": []},
+    },
+    {
+        "name": "get_portal_inactive_clients",
+        "description": "Returns clients who have not logged into the portal in more than N days and have active document requests outstanding. Call this when the firm owner asks which clients are ignoring the portal or which clients have not uploaded their documents.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "days": {"type": "integer", "description": "Days since last portal login threshold. Default 14.", "default": 14}
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "get_irs_auth_expiring",
+        "description": "Returns clients with IRS authorizations expiring within N days. Call this when the firm owner asks which authorizations are expiring, which clients need renewal, or about upcoming Form 2848 or 8821 expirations.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "days": {"type": "integer", "description": "Days until expiry threshold. Default 30.", "default": 30}
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "get_client_document_status",
+        "description": "Returns document request status for a specific client: items requested, items uploaded, items pending, days since last upload. Call this when the firm owner asks about a specific client's document status or what a client is still missing.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "client_id": {"type": "string", "description": "UUID of the client."},
+                "engagement_id": {"type": "string", "description": "Optional UUID of a specific engagement to scope the lookup."}
+            },
+            "required": ["client_id"],
+        },
+    },
 ]
 
 _OPERATIONAL_KEYWORDS = {
@@ -119,11 +180,97 @@ _OPERATIONAL_KEYWORDS = {
     "snapshot", "what needs", "who owes", "what work", "who has",
     "what clients", "which clients", "how many clients", "how many engagements",
     "ar ", "receivable", "piling",
+    "deadline", "deadlines", "due", "coming up", "this week", "last week",
+    "weekly", "week", "automation", "automations", "firing", "portal login",
+    "portal inactive", "irs auth", "authorization expir", "expiring", "2848", "8821",
+    "document status", "uploaded", "missing documents",
 }
 
 def _is_operational_question(message: str) -> bool:
     lower = message.lower()
     return any(kw in lower for kw in _OPERATIONAL_KEYWORDS)
+
+
+_TOPIC_KEYWORDS: dict[str, set[str]] = {
+    "clients": {
+        "client", "clients", "customer", "contact", "entity type", "entity_type",
+        "new client", "add client", "create client", "client record", "client profile",
+        "client list", "client search", "archive client", "qbo sync", "quickbooks sync",
+        "health indicator", "client health", "client tag",
+    },
+    "engagements": {
+        "engagement", "engagements", "job", "jobs", "work item", "project",
+        "status", "statuses", "under review", "in progress", "planning", "draft",
+        "filing deadline", "deadline", "assign", "assigned", "template", "templates",
+        "recurring", "reopen", "archive engagement", "complete engagement", "wip",
+        "engagement type", "1040", "1120", "1065", "1120s", "990", "amended",
+    },
+    "tasks": {
+        "task", "tasks", "to-do", "todo", "checklist", "subtask",
+        "task deadline", "task assignment", "task status", "bulk task",
+    },
+    "document_requests": {
+        "document request", "document requests", "doc request", "upload",
+        "checklist item", "client upload", "waive", "waived", "reminder",
+        "document checklist", "request template", "missing documents",
+        "documents", "client hasn't uploaded", "not uploaded",
+    },
+    "portal": {
+        "portal", "magic link", "magic-link", "client portal", "portal invite",
+        "portal access", "revoke access", "portal login", "portal notification",
+        "portal setup", "client hasn't logged in", "portal adoption",
+    },
+    "billing": {
+        "invoice", "invoices", "billing", "payment", "stripe", "overdue invoice",
+        "ar", "accounts receivable", "send invoice", "invoice status",
+        "partial payment", "payment receipt", "invoice line", "bill",
+        "unbilled", "collect payment", "paid", "unpaid", "owes", "owe", "money",
+    },
+    "time_tracking": {
+        "time", "time entry", "time entries", "hours", "billable", "non-billable",
+        "time log", "log time", "wip report", "convert to invoice", "time report",
+        "hourly", "rate",
+    },
+    "automations": {
+        "automation", "automations", "preset", "presets", "rule", "rules",
+        "auto reminder", "automatic", "workflow rule", "not firing", "trigger",
+        "automation log", "enable automation", "disable automation",
+    },
+    "irs_authorizations": {
+        "irs", "authorization", "authorizations", "2848", "8821", "form 2848",
+        "form 8821", "auth expiry", "expiring", "poa", "power of attorney",
+        "caf", "irs auth", "renew authorization",
+    },
+    "staff": {
+        "staff", "team", "invite", "staff member", "role", "roles", "manager",
+        "permission", "permissions", "capacity", "overloaded", "bandwidth",
+        "staff invite", "team member", "assign staff",
+    },
+    "settings": {
+        "settings", "setting", "branding", "integration", "api key",
+        "firm settings", "notification preference", "data export", "account",
+        "subscription", "billing settings", "portal branding",
+    },
+    "operational_data": {
+        "attention", "urgent", "focus", "today", "stalled", "stuck", "idle",
+        "unbilled", "overdue", "owes", "outstanding", "capacity", "overloaded",
+        "pipeline", "bottleneck", "brief", "summary", "overview", "snapshot",
+        "weekly", "week", "deadline calendar", "automation health", "inactive",
+        "irs expiring", "document status", "outstanding",
+    },
+}
+
+
+def _classify_topic(message: str) -> str:
+    lower = message.lower()
+    scores: dict[str, int] = {}
+    for topic, keywords in _TOPIC_KEYWORDS.items():
+        score = sum(1 for kw in keywords if kw in lower)
+        if score > 0:
+            scores[topic] = score
+    if not scores:
+        return "general"
+    return max(scores, key=lambda t: scores[t])
 
 
 class MessageItem(BaseModel):
@@ -285,6 +432,20 @@ Respond with exactly one word: SAFE or UNSAFE. Nothing else.""",
                 result = get_pipeline_bottleneck(current_firm.id, db)
             elif tool_name == "get_client_full_snapshot":
                 result = get_client_full_snapshot(current_firm.id, _uuid.UUID(tool_input["client_id"]), db)
+            elif tool_name == "get_weekly_summary":
+                result = get_weekly_summary(current_firm.id, db)
+            elif tool_name == "get_deadline_calendar":
+                result = get_deadline_calendar(current_firm.id, db, days_ahead=int(tool_input.get("days_ahead", 14)))
+            elif tool_name == "get_automation_health":
+                result = get_automation_health(current_firm.id, db)
+            elif tool_name == "get_portal_inactive_clients":
+                result = get_portal_inactive_clients(current_firm.id, db, days=int(tool_input.get("days", 14)))
+            elif tool_name == "get_irs_auth_expiring":
+                result = get_irs_auth_expiring(current_firm.id, db, days=int(tool_input.get("days", 30)))
+            elif tool_name == "get_client_document_status":
+                _cid = _uuid.UUID(tool_input["client_id"])
+                _eid = _uuid.UUID(tool_input["engagement_id"]) if tool_input.get("engagement_id") else None
+                result = get_client_document_status(current_firm.id, _cid, db, engagement_id=_eid)
             else:
                 result = {"error": f"Unknown tool: {tool_name}"}
             return _json.dumps(result, default=str)
@@ -431,14 +592,103 @@ Respond with exactly one word: SAFE or UNSAFE. Nothing else.""",
 
         return text
 
-    # ------------------------------------------------------------------
-    # Fable 5 tool use path -- operational questions with live data
-    # ------------------------------------------------------------------
     _last_user_msg = next(
         (m.content for m in reversed(body.messages) if m.role == "user"),
         None,
     )
 
+    # ------------------------------------------------------------------
+    # Sonnet path -- standard streaming for non-operational questions
+    # ------------------------------------------------------------------
+    def generate():
+        _sonnet_system = get_system_prompt(
+            firm_context=_firm_context,
+            autopilot_enabled=body.autopilot_enabled,
+            page_context=body.page_context,
+            last_user_message=_last_user_msg,
+        )
+        with client.messages.stream(
+            model="claude-sonnet-4-6",
+            max_tokens=2000,
+            system=[
+                {
+                    "type": "text",
+                    "text": _sonnet_system,
+                    "cache_control": {"type": "ephemeral"},
+                }
+            ],
+            messages=sanitized_messages,
+        ) as stream:
+            assembled = ""
+            for text in stream.text_stream:
+                assembled += text
+                data_lines = "\n".join(f"data: {line}" for line in text.split("\n"))
+                yield f"{data_lines}\n\n"
+            # Run output filter on fully assembled response
+            filtered = filter_output(assembled)
+            if filtered != assembled:
+                # If filter changed the response, send a replacement sentinel
+                yield f"data: \n\n"
+                yield f"data: [FILTERED]\n\n"
+                yield f"data: {filtered}\n\n"
+
+    def generate_and_log():
+        assembled_for_log = []
+        for chunk in generate():
+            assembled_for_log.append(chunk)
+            yield chunk
+        try:
+            full_response = "".join(assembled_for_log)
+            # Extract plain text from SSE lines for logging
+            response_text = "\n".join(
+                line[6:] for line in full_response.split("\n")
+                if line.startswith("data:") and not line.startswith("data: [FILTERED]")
+            ).strip()
+            if response_text:
+                last_user_text = next(
+                    (m.content for m in reversed(body.messages) if m.role == "user"),
+                    "",
+                )
+                LOW_CONFIDENCE_PHRASES = [
+                    "i'm not sure",
+                    "i don't have information",
+                    "i don't know",
+                    "i cannot confirm",
+                    "i'm unable to",
+                    "i am not sure",
+                    "i am unable to",
+                    "i don't have access",
+                    "i cannot find",
+                    "not available in my",
+                ]
+                lower_response = response_text.lower()
+                is_low_confidence = any(p in lower_response for p in LOW_CONFIDENCE_PHRASES)
+                log_entry = ConciergeQuestionLog(
+                    firm_id=current_firm.id,
+                    question_text=last_user_text[:2000],
+                    response_summary=response_text[:500],
+                    low_confidence=is_low_confidence,
+                )
+                db.add(log_entry)
+                db.commit()
+                log_event(
+                    firm_id=current_firm.id,
+                    event_type="concierge.question_asked",
+                    actor_type="user",
+                    actor_id=current_user.id,
+                    entity_type=_classify_topic(last_user_text),
+                    metadata={
+                        "question": last_user_text[:500],
+                        "low_confidence": is_low_confidence,
+                        "response_length": len(response_text),
+                    },
+                )
+        except Exception:
+            pass  # non-fatal -- logging failure must never block the response
+
+    # ------------------------------------------------------------------
+    # Fable 5 tool use path -- operational questions with live data
+    # ------------------------------------------------------------------
     if _last_user_msg and _last_user_msg != "__OPEN__" and _is_operational_question(_last_user_msg):
         fable_client = anthropic.Anthropic(api_key=api_key)
         _system_prompt_text = get_system_prompt(
@@ -571,6 +821,7 @@ Respond with exactly one word: SAFE or UNSAFE. Nothing else.""",
                         event_type="concierge.question_asked",
                         actor_type="user",
                         actor_id=current_user.id,
+                        entity_type=_classify_topic(_last_user_msg),
                         metadata={
                             "question": _last_user_msg[:500],
                             "low_confidence": is_low_confidence,
@@ -582,94 +833,6 @@ Respond with exactly one word: SAFE or UNSAFE. Nothing else.""",
                 pass
 
         return StreamingResponse(generate_with_tools_and_log(), media_type="text/event-stream")
-
-    # ------------------------------------------------------------------
-    # Sonnet path -- standard streaming for non-operational questions
-    # ------------------------------------------------------------------
-    def generate():
-        _sonnet_system = get_system_prompt(
-            firm_context=_firm_context,
-            autopilot_enabled=body.autopilot_enabled,
-            page_context=body.page_context,
-            last_user_message=_last_user_msg,
-        )
-        with client.messages.stream(
-            model="claude-sonnet-4-6",
-            max_tokens=2000,
-            system=[
-                {
-                    "type": "text",
-                    "text": _sonnet_system,
-                    "cache_control": {"type": "ephemeral"},
-                }
-            ],
-            messages=sanitized_messages,
-        ) as stream:
-            assembled = ""
-            for text in stream.text_stream:
-                assembled += text
-                data_lines = "\n".join(f"data: {line}" for line in text.split("\n"))
-                yield f"{data_lines}\n\n"
-            # Run output filter on fully assembled response
-            filtered = filter_output(assembled)
-            if filtered != assembled:
-                # If filter changed the response, send a replacement sentinel
-                yield f"data: \n\n"
-                yield f"data: [FILTERED]\n\n"
-                yield f"data: {filtered}\n\n"
-
-    def generate_and_log():
-        assembled_for_log = []
-        for chunk in generate():
-            assembled_for_log.append(chunk)
-            yield chunk
-        try:
-            full_response = "".join(assembled_for_log)
-            # Extract plain text from SSE lines for logging
-            response_text = "\n".join(
-                line[6:] for line in full_response.split("\n")
-                if line.startswith("data:") and not line.startswith("data: [FILTERED]")
-            ).strip()
-            if response_text:
-                last_user_text = next(
-                    (m.content for m in reversed(body.messages) if m.role == "user"),
-                    "",
-                )
-                LOW_CONFIDENCE_PHRASES = [
-                    "i'm not sure",
-                    "i don't have information",
-                    "i don't know",
-                    "i cannot confirm",
-                    "i'm unable to",
-                    "i am not sure",
-                    "i am unable to",
-                    "i don't have access",
-                    "i cannot find",
-                    "not available in my",
-                ]
-                lower_response = response_text.lower()
-                is_low_confidence = any(p in lower_response for p in LOW_CONFIDENCE_PHRASES)
-                log_entry = ConciergeQuestionLog(
-                    firm_id=current_firm.id,
-                    question_text=last_user_text[:2000],
-                    response_summary=response_text[:500],
-                    low_confidence=is_low_confidence,
-                )
-                db.add(log_entry)
-                db.commit()
-                log_event(
-                    firm_id=current_firm.id,
-                    event_type="concierge.question_asked",
-                    actor_type="user",
-                    actor_id=current_user.id,
-                    metadata={
-                        "question": last_user_text[:500],
-                        "low_confidence": is_low_confidence,
-                        "response_length": len(response_text),
-                    },
-                )
-        except Exception:
-            pass  # non-fatal -- logging failure must never block the response
 
     return StreamingResponse(generate_and_log(), media_type="text/event-stream")
 

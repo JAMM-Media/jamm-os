@@ -1208,10 +1208,90 @@ def get_system_prompt(firm_context: dict | None = None, autopilot_enabled: bool 
                     summary_parts.append(f"deadline: {summary['deadline']}")
             if summary_parts:
                 context_line += " Summary: " + ", ".join(summary_parts) + "."
+
+        # Behavioral instruction override based on current entity and page.
+        # This is what converts a generic context note into a true co-pilot behavior change.
+        if entity_type == "client" and entity_name:
+            context_line += (
+                f" When the firm owner asks what is overdue, what needs attention, "
+                f"how this client is doing, or any question that could apply to a specific client, "
+                f"answer specifically about {entity_name} only. "
+                f"Do not give firm-wide answers unless they explicitly ask about the full firm or all clients."
+            )
+        elif entity_type == "engagement" and entity_name:
+            context_line += (
+                f" When the firm owner asks what needs to happen next, what the status means, "
+                f"who is assigned, or anything about this engagement, "
+                f"answer specifically about the {entity_name} engagement. "
+                f"Do not reference other engagements unless explicitly asked."
+            )
+        elif page and "invoice" in page.lower():
+            context_line += (
+                " When the firm owner asks about overdue invoices, who owes money, "
+                "or what to follow up on, answer in the context of the invoices currently visible."
+            )
+        elif page and ("dashboard" in page.lower() or not entity_type):
+            context_line += (
+                " The firm owner is at the firm level. "
+                "Give firm-wide answers unless they specify a particular client or engagement."
+            )
+        elif page and "settings" in page.lower():
+            context_line += (
+                " Answer how-to questions in the context of the settings section currently open."
+            )
+
         prompt += f"\n\n---\n\nCURRENT PAGE CONTEXT\n\n{context_line}"
     if firm_context:
         formatted = _format_firm_context(firm_context)
         prompt += f"\n\n---\n\nLIVE FIRM DATA\n\n{formatted}"
+    prompt += """
+
+---
+
+DRAFT RESPONSE PATTERNS
+
+When you call a live data function and the result contains specific named clients
+or engagements, you may append a short draft artifact at the end of your response.
+Only do this when all three conditions are true:
+1. You called a live data function (get_overdue_invoices, get_client_communication_gap,
+   get_unbilled_completed_work, get_stalled_engagements, get_irs_auth_expiring,
+   get_client_document_status, get_portal_inactive_clients).
+2. The result contains at least one specific named client or engagement.
+3. The natural next action is a communication or assignment, not just information.
+
+Do NOT append a draft on general how-to questions, greetings, or when no specific
+client or engagement is named.
+
+When all three conditions are met, append the draft using this exact format at the
+very end of your response, after all other content:
+
+---DRAFT:TYPE---
+[2-4 sentence draft content here]
+---END DRAFT---
+
+Replace TYPE with one of: CLIENT_EMAIL, INVOICE_ITEMS, STAFF_REASSIGN, IRS_RENEWAL
+
+Rules for drafts:
+- CLIENT_EMAIL: 2-4 sentences. Professional, warm tone. No em dashes. No filler phrases.
+  Use [Client Name] as placeholder. Keep it short enough to read in 10 seconds.
+- INVOICE_ITEMS: List the engagement name and suggested amount only. No prose.
+- STAFF_REASSIGN: Name the engagement and the suggested staff member. One sentence.
+- IRS_RENEWAL: 2-3 sentences requesting updated authorization. Use [Client Name].
+  Reference the specific form type (2848 or 8821) if known.
+
+Examples of when to draft:
+- get_client_communication_gap returns 3 clients with no contact in 21 days -> CLIENT_EMAIL
+- get_unbilled_completed_work returns completed work -> INVOICE_ITEMS
+- get_staff_capacity shows one person overloaded with named engagements -> STAFF_REASSIGN
+- get_irs_auth_expiring returns clients with expiring auths -> IRS_RENEWAL
+
+Examples of when NOT to draft:
+- User asks how to create an engagement (how-to question, no live data)
+- get_daily_brief is called (summary overview, no single action implied)
+- get_pipeline_bottleneck is called (diagnostic, no communication implied)
+- get_staff_capacity shows normal utilization (no redistribution needed)
+"""
+
     if autopilot_enabled:
         prompt += f"\n\n---\n\n{_AUTOPILOT_BLOCK.strip()}"
     else:
