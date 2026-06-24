@@ -113,4 +113,26 @@ export const staffApi = {
   deleteCPERecord: async (id: string): Promise<void> => {
     await api.delete(`/api/v1/cpe-records/${id}`)
   },
+
+  updateUser: async (
+    userId: string,
+    data: { role?: string; is_active?: boolean; full_name?: string }
+  ): Promise<StaffMember> => {
+    const { data: result } = await api.patch(`/users/${userId}`, data)
+    return result
+  },
+
+  deleteUser: async (userId: string): Promise<void> => {
+    await api.delete(`/users/${userId}`)
+  },
+
+  inviteStaff: async (data: {
+    email: string
+    full_name?: string
+    role: string
+    password: string
+  }): Promise<StaffMember> => {
+    const { data: result } = await api.post('/users/', data)
+    return result
+  },
 }
