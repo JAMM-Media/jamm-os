@@ -25,6 +25,7 @@ import {
   LayoutTemplate,
   BotMessageSquare,
   Mail,
+  UserCog,
 } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { cn } from '@/lib/utils'
@@ -35,6 +36,7 @@ import api from '@/lib/api'
 const navItems = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/clients', label: 'Clients', icon: Users },
+  { href: '/staff', label: 'Staff', icon: UserCog },
   { href: '/engagements', label: 'Engagements', icon: Briefcase },
   { href: '/templates', label: 'Templates', icon: LayoutTemplate },
   { href: '/tasks', label: 'Tasks', icon: CheckSquare },
@@ -109,6 +111,7 @@ export function Sidebar({ collapsed, onToggle, onConciergeOpen, locked }: Sideba
 
   const visibleNavItems = navItems.filter((item) => {
     if (item.href === '/dashboard' && user?.role === 'staff') return false
+    if (item.href === '/staff' && user?.role === 'staff') return false
     if (item.href === '/inbox') return emailSyncEnabled && !myEmailDisabledByFirm
     return true
   })
