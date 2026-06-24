@@ -267,6 +267,20 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
           const lines = buffer.split('\n')
           buffer = lines.pop() ?? ''
           allRawLines.push(...lines)
+
+          const partial = assembleSSELines(allRawLines)
+            .replace(/\[TOPIC:\w+\]\s*$/, '')
+            .trimEnd()
+          if (partial) {
+            setMessages((prev) => {
+              const updated = [...prev]
+              const last = updated[updated.length - 1]
+              if (last && last.role === 'concierge') {
+                updated[updated.length - 1] = { ...last, content: partial }
+              }
+              return updated
+            })
+          }
         }
 
         assembled = assembleSSELines(allRawLines)

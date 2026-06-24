@@ -49,113 +49,117 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-# Task: Apply line-buffering progressive streaming fix to the tool-calling generation path
+# Task: Render Concierge response progressively as SSE lines arrive, instead of only after the stream completes
 
 USE: claude sonnet
 
 ## VERIFY BEFORE ACT
 
-sed -n '780,800p' /home/corby/jamm-os/app/api/concierge/route.py
+grep -n "while (true)" -A 25 /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-Confirm generate_with_tools() currently builds the complete final_text, runs
-filter_output on it, then emits one data: event per line in a single tight
-loop after the text is already fully assembled, identical in spirit to the
-all-at-once pattern already fixed in generate() via f95abf8.
-
-sed -n '716,793p' /home/corby/jamm-os/app/api/concierge/route.py
-
-Read the full function to find exactly where final_text is fully assembled
-(likely after a tool-call loop completes) so the buffering fix is placed at
-the correct point and does not interfere with tool-call iteration logic that
-happens before final_text exists.
+Confirm the read loop pushes each decoded line into allRawLines as it
+arrives, but setMessages is only called once, after the loop's done branch
+breaks out, with the fully assembled text.
 
 ## WHAT IS WRONG
 
-Confirmed via live testing: plain conversational responses now stream
-progressively with no mid-sentence breaks (f95abf8 fixed generate()).
-Draft-producing responses (which always require a tool call first, e.g.
-get_overdue_invoices, to retrieve real client data) still render all at
-once with no progressive feel, because they are produced by a separate
-function, generate_with_tools(), which still uses the old pattern of
-assembling the complete final_text and only emitting data: events in one
-pass after assembly completes. The f95abf8 fix was only applied to
-generate(), not generate_with_tools(). These are two genuinely separate
-code paths and both need the same fix.
+Confirmed via live testing: even after fixing both backend generation paths
+to emit progressively with no mid-sentence breaks, responses still appear
+all at once in the UI. Root cause: the frontend's own read loop in
+sendMessages only updates React state once, after the entire stream
+finishes. Lines arrive from the network incrementally, but they are only
+buffered into a local array (allRawLines) and never rendered until the
+while loop's done condition is true and the loop breaks. No amount of
+backend streaming correctness can produce a progressive UI feel if the
+component that renders the text never updates mid-stream.
 
 ## ACTION
 
-File: /home/corby/jamm-os/app/api/concierge/route.py
+File: /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-In generate_with_tools(), find the block currently reading:
+Inside the while (true) read loop in sendMessages, after each chunk of new
+complete lines is extracted (the existing buffer.split('\n') / lines.pop()
+logic), call setMessages to update the last message's content with the
+text assembled so far, not just once at the end. Use the existing
+assembleSSELines function on the lines accumulated so far on each iteration,
+applying the same filterOutput and any other safe text transforms used at
+the end, and update the in-progress message content incrementally:
 
-                filtered_final = filter_output(final_text)
-                for line in filtered_final.split("\n"):
-                    # Send each full line as one SSE event. Markdown tokens
-                    # like **bold** or numbered list markers must never be
-                    # split across separate events, since a split token
-                    # cannot be correctly reassembled by the markdown renderer
-                    # even when the underlying characters are preserved.
-                    yield f"data: {line}\n\n"
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) {
+            buffer += decoder.decode()
+            if (buffer) allRawLines.push(buffer)
+            break
+          }
+          buffer += decoder.decode(value, { stream: true })
+          const lines = buffer.split('\n')
+          buffer = lines.pop() ?? ''
+          allRawLines.push(...lines)
 
-This specific block operates on text that is already fully assembled by the
-time it runs (the tool-call loop has already completed and produced
-final_text in full), so there is no live token stream to buffer here, this
-block is not the source of the all-at-once feel by itself.
+          const partial = assembleSSELines(allRawLines)
+            .replace(/\[TOPIC:\w+\]\s*$/, '')
+            .trimEnd()
+          if (partial) {
+            setMessages((prev) => {
+              const updated = [...prev]
+              const last = updated[updated.length - 1]
+              if (last && last.role === 'concierge') {
+                updated[updated.length - 1] = { ...last, content: partial }
+              }
+              return updated
+            })
+          }
+        }
 
-Instead, find where final_text itself gets built. If it is constructed from
-a second streaming call to the model after tool results are gathered (a
-stream.text_stream similar to the one in generate()), that streaming
-assembly point is where the real fix belongs: apply the same line-buffering
-pattern used in generate() there, so text streams progressively as it
-arrives from the model, with the existing filter_output and line-emission
-logic only running on the complete final_text afterward exactly as it does
-today for the FILTERED sentinel and TOPIC marker logic.
+Keep all the existing post-loop logic (filterOutput, parseDraftFromResponse,
+handleConciergeAction, the final setMessages call with the draft attached,
+the suggestion chips logic) exactly as is. The post-loop block still runs
+once at the end and produces the final, fully correct message with its
+draft parsed out, this change only adds incremental updates DURING the loop
+so the user sees text appear progressively, with the final post-loop
+setMessages call still being the authoritative final state.
 
-Do not change the existing filtered_final emission block itself if the real
-fix is applied earlier at the streaming-assembly point, since by the time
-execution reaches filtered_final the text is correctly complete and the
-existing one-event-per-line pattern is already correct for that stage,
-matching what generate() does after its own buffer is fully flushed.
-
-If instead final_text is NOT built from any live token stream, and is
-already non-streaming in nature for some other backend reason, stop and
-report this finding instead of guessing at a streaming fix, since this would
-mean the all-at-once feel here has a different cause than the one fixed in
-generate(), and a different fix is needed.
-
-Do not change generate() or the tool path's existing filter_output logic.
-Do not touch any other file.
+Do not strip the ---DRAFT:--- block during the incremental updates if doing
+so would require duplicating the full parseDraftFromResponse logic on every
+partial chunk -- it is acceptable for the raw draft markers to be briefly
+visible during streaming and then cleanly replaced by the final parsed
+version once the stream completes, since this matches how the rest of the
+app already treats streaming as progressively-rendered-then-finalized. Do
+not change generate() or generate_with_tools() in the backend, this is a
+frontend-only fix. Do not touch any other file.
 
 ## VERIFY AFTER ACT
 
-sed -n '716,800p' /home/corby/jamm-os/app/api/concierge/route.py
+grep -n "setMessages" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-Paste full output for review.
+Expected: at least one new setMessages call now exists inside the while loop,
+in addition to the existing post-loop call.
 
-python3 -c "from app.api.concierge.route import router; print('OK')"
+cd /home/corby/jamm-os/frontend
+npm run build
 
-Expected: OK, no import errors.
+Expected: zero TypeScript errors.
 
 ## MANUAL VERIFICATION (the actual test)
 
-1. Restart the backend.
-2. Ask the Concierge for a draft that requires a tool call (e.g. "draft a
-   follow-up email to this client" on a client page).
-3. Confirm the response now renders progressively rather than appearing all
-   at once.
-4. Confirm the draft text still has no mid-sentence line breaks.
-5. Regression check: ask a plain question with no draft, confirm generate()
-   path still streams progressively and cleanly as already confirmed.
+1. Restart the frontend.
+2. Ask a plain question with no draft involved, confirm text now visibly
+   appears progressively as it streams, not all at once.
+3. Ask for a draft requiring a tool call (e.g. follow-up email for a
+   specific client), confirm the lead-in text and the draft both appear
+   progressively rather than as one block, and the final rendered draft card
+   still looks correct once streaming finishes.
+4. Confirm no visual flicker or duplicate content appears as the in-progress
+   text is replaced by the final parsed message.
 
-Report what you observe at step 3, and report exactly what was found if the
-final_text turned out not to come from a live stream (the stop-and-report
-case above).
+Report what you observe at steps 2 and 3.
 
 ## GIT
 
 cd /home/corby/jamm-os
 git add -A
-git commit -m "fix: apply progressive line-buffered streaming to the tool-calling generation path, matching the fix already applied to the plain generation path, so draft responses stream progressively instead of appearing all at once"
+git commit -m "fix: Concierge chat now renders response text progressively as SSE lines arrive instead of only updating state once the entire stream completes, finally producing the visible progressive streaming effect the backend line-buffering fixes were intended to support"
 git pull --rebase origin main
 git push origin main
 
