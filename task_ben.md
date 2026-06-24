@@ -49,76 +49,88 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-# Task: Restore progressive streaming while keeping the mid-sentence-break fix, via line buffering
+# Task: Apply line-buffering progressive streaming fix to the tool-calling generation path
 
 USE: claude sonnet
 
 ## VERIFY BEFORE ACT
 
-sed -n '621,632p' /home/corby/jamm-os/app/api/concierge/route.py
+sed -n '780,800p' /home/corby/jamm-os/app/api/concierge/route.py
 
-Confirm the current streaming path (from commit c46ba79) accumulates the
-full text in 'assembled' and only emits data: events after the stream loop
-completes, one per real line. This produces clean output but kills
-progressive streaming.
+Confirm generate_with_tools() currently builds the complete final_text, runs
+filter_output on it, then emits one data: event per line in a single tight
+loop after the text is already fully assembled, identical in spirit to the
+all-at-once pattern already fixed in generate() via f95abf8.
+
+sed -n '716,793p' /home/corby/jamm-os/app/api/concierge/route.py
+
+Read the full function to find exactly where final_text is fully assembled
+(likely after a tool-call loop completes) so the buffering fix is placed at
+the correct point and does not interfere with tool-call iteration logic that
+happens before final_text exists.
 
 ## WHAT IS WRONG
 
-The previous fix (c46ba79) correctly eliminated mid-sentence line breaks but
-did so by waiting for the entire response before emitting anything, removing
-the progressive token-by-token streaming effect. With response latency
-already a concern, a multi-second blank wait followed by a sudden full
-response is a worse experience than progressive rendering.
-
-The goal is both properties at once: stream progressively AND never split a
-line mid-sentence. The way to get both is to buffer incoming token fragments
-and flush only complete lines as they finish, keeping any partial trailing
-line in the buffer until its newline arrives. A data: event then always
-represents a complete real line, which is what the frontend assembleSSELines
-correctly assumes, while lines still appear progressively as they complete
-rather than all at once at the end.
+Confirmed via live testing: plain conversational responses now stream
+progressively with no mid-sentence breaks (f95abf8 fixed generate()).
+Draft-producing responses (which always require a tool call first, e.g.
+get_overdue_invoices, to retrieve real client data) still render all at
+once with no progressive feel, because they are produced by a separate
+function, generate_with_tools(), which still uses the old pattern of
+assembling the complete final_text and only emitting data: events in one
+pass after assembly completes. The f95abf8 fix was only applied to
+generate(), not generate_with_tools(). These are two genuinely separate
+code paths and both need the same fix.
 
 ## ACTION
 
 File: /home/corby/jamm-os/app/api/concierge/route.py
 
-Replace the current accumulate-then-emit streaming block:
+In generate_with_tools(), find the block currently reading:
 
-            assembled = ""
-            for text in stream.text_stream:
-                assembled += text
-            for line in assembled.split("\n"):
-                yield f"data: {line}\n\n"
-
-with a line-buffering version that emits complete lines progressively:
-
-            assembled = ""
-            buffer = ""
-            for text in stream.text_stream:
-                assembled += text
-                buffer += text
-                while "\n" in buffer:
-                    line, buffer = buffer.split("\n", 1)
+                filtered_final = filter_output(final_text)
+                for line in filtered_final.split("\n"):
+                    # Send each full line as one SSE event. Markdown tokens
+                    # like **bold** or numbered list markers must never be
+                    # split across separate events, since a split token
+                    # cannot be correctly reassembled by the markdown renderer
+                    # even when the underlying characters are preserved.
                     yield f"data: {line}\n\n"
-            if buffer:
-                yield f"data: {buffer}\n\n"
 
-This streams each complete line the moment its newline arrives, while any
-in-progress partial line stays in the buffer until finished, so no line is
-ever emitted mid-sentence. assembled is still maintained in full for the
-filter_output and [TOPIC:] logic that follows, which is unchanged.
+This specific block operates on text that is already fully assembled by the
+time it runs (the tool-call loop has already completed and produced
+final_text in full), so there is no live token stream to buffer here, this
+block is not the source of the all-at-once feel by itself.
 
-Leave the filter_output block, the [FILTERED] sentinel logic, and the
-[TOPIC:...] trailing marker exactly as they are. Do not change the tool
-path. Do not change the frontend assembleSSELines. Do not touch any other
-file.
+Instead, find where final_text itself gets built. If it is constructed from
+a second streaming call to the model after tool results are gathered (a
+stream.text_stream similar to the one in generate()), that streaming
+assembly point is where the real fix belongs: apply the same line-buffering
+pattern used in generate() there, so text streams progressively as it
+arrives from the model, with the existing filter_output and line-emission
+logic only running on the complete final_text afterward exactly as it does
+today for the FILTERED sentinel and TOPIC marker logic.
+
+Do not change the existing filtered_final emission block itself if the real
+fix is applied earlier at the streaming-assembly point, since by the time
+execution reaches filtered_final the text is correctly complete and the
+existing one-event-per-line pattern is already correct for that stage,
+matching what generate() does after its own buffer is fully flushed.
+
+If instead final_text is NOT built from any live token stream, and is
+already non-streaming in nature for some other backend reason, stop and
+report this finding instead of guessing at a streaming fix, since this would
+mean the all-at-once feel here has a different cause than the one fixed in
+generate(), and a different fix is needed.
+
+Do not change generate() or the tool path's existing filter_output logic.
+Do not touch any other file.
 
 ## VERIFY AFTER ACT
 
-sed -n '621,635p' /home/corby/jamm-os/app/api/concierge/route.py
+sed -n '716,800p' /home/corby/jamm-os/app/api/concierge/route.py
 
-Expected: the line-buffering while-loop is present, assembled still
-accumulates the full text, and a final flush of any remaining buffer exists.
+Paste full output for review.
 
 python3 -c "from app.api.concierge.route import router; print('OK')"
 
@@ -127,25 +139,23 @@ Expected: OK, no import errors.
 ## MANUAL VERIFICATION (the actual test)
 
 1. Restart the backend.
-2. With DevTools Console open, ask the Concierge to draft a follow-up email
-   for a specific client.
-3. Confirm visually that the response now streams progressively again,
-   appearing line by line rather than all at once after a blank wait.
-4. Find the [CONCIERGE RAW] log line and confirm there are still NO
-   mid-sentence line breaks. Sentences whole, breaks only at real paragraph
-   boundaries.
-5. Regression check: ask a question returning a numbered list and bold text,
-   confirm both still render correctly and nothing splits mid-token while
-   streaming progressively.
+2. Ask the Concierge for a draft that requires a tool call (e.g. "draft a
+   follow-up email to this client" on a client page).
+3. Confirm the response now renders progressively rather than appearing all
+   at once.
+4. Confirm the draft text still has no mid-sentence line breaks.
+5. Regression check: ask a plain question with no draft, confirm generate()
+   path still streams progressively and cleanly as already confirmed.
 
-Report both whether streaming is progressive again (step 3) and what the
-[CONCIERGE RAW] log shows (step 4).
+Report what you observe at step 3, and report exactly what was found if the
+final_text turned out not to come from a live stream (the stop-and-report
+case above).
 
 ## GIT
 
 cd /home/corby/jamm-os
 git add -A
-git commit -m "perf: restore progressive Concierge streaming by buffering token fragments and flushing only complete lines, keeping the mid-sentence-break fix while bringing back line-by-line rendering instead of a single all-at-once response"
+git commit -m "fix: apply progressive line-buffered streaming to the tool-calling generation path, matching the fix already applied to the plain generation path, so draft responses stream progressively instead of appearing all at once"
 git pull --rebase origin main
 git push origin main
 

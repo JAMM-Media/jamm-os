@@ -738,6 +738,16 @@ Respond with exactly one word: SAFE or UNSAFE. Nothing else.""",
                         messages=current_messages,
                         output_config={"effort": "medium"},
                     ) as stream:
+                        accumulated_text = ""
+                        buffer = ""
+                        for text in stream.text_stream:
+                            accumulated_text += text
+                            buffer += text
+                            while "\n" in buffer:
+                                line, buffer = buffer.split("\n", 1)
+                                yield f"data: {line}\n\n"
+                        if buffer:
+                            yield f"data: {buffer}\n\n"
                         response = stream.get_final_message()
 
                 except Exception as e:
@@ -785,17 +795,13 @@ Respond with exactly one word: SAFE or UNSAFE. Nothing else.""",
                     })
                     continue
 
-                final_text = "".join(
-                    block.text for block in response.content if hasattr(block, "text")
-                )
+                final_text = accumulated_text
                 filtered_final = filter_output(final_text)
-                for line in filtered_final.split("\n"):
-                    # Send each full line as one SSE event. Markdown tokens
-                    # like **bold** or numbered list markers must never be
-                    # split across separate events, since a split token
-                    # cannot be correctly reassembled by the markdown renderer
-                    # even when the underlying characters are preserved.
-                    yield f"data: {line}\n\n"
+                if filtered_final != final_text:
+                    # Text already streamed progressively; send replacement sentinel.
+                    yield f"data: \n\n"
+                    yield f"data: [FILTERED]\n\n"
+                    yield f"data: {filtered_final}\n\n"
                 # Trailing marker so the frontend can render contextually
                 # relevant suggestion chips without re-guessing the topic
                 # from the response text. Classified from the user's actual
