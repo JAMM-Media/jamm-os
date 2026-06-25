@@ -49,104 +49,59 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-# Task: Collapse notification cards behind a toggle, collapsed by default, with a dismiss-all action
+# Task: Replace generic onboarding intro message with simple placeholder copy
 
 USE: claude sonnet
 
 ## VERIFY BEFORE ACT
 
-sed -n '795,820p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+grep -n "Got it. Here are three things to work on first" /home/corby/jamm-os/app/api/concierge/route.py
 
-Confirm the current notifications block structure: the {notifications.length > 0 && (...)} wrapper, the static "N Alerts" header span, and the notifications.map rendering each card in full, always visible, with no expand/collapse state anywhere.
+Confirm the exact current message text and its location before editing. If this string is not found in route.py, search prompts.py instead:
 
-grep -n "dismissNotification" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
-
-Confirm dismissNotification(id: string) already exists as a working per-notification dismiss function, so bulk-dismiss can reuse it rather than duplicating its logic.
+grep -n "Got it. Here are three things to work on first" /home/corby/jamm-os/app/api/concierge/prompts.py
 
 ## WHAT IS WRONG
 
-Confirmed via live testing: when multiple notification cards are present (commonly 2-3, each a full card with message text and sometimes a draft sub-card), they consume roughly half the visible panel height before any actual chat content is reachable. There is currently no way to collapse them, and no way to dismiss all of them at once -- only one at a time via each card's individual X button. This makes the panel feel cluttered and pushes the actual conversation, which is what someone opens the panel for, further down or off-screen.
+The current __OPEN__ response on first message after a firm has answered the onboarding firm_type question reads "Got it. Here are three things to work on first:" followed by three generic numbered suggestions. This framing line adds nothing the three suggestions don't already say, and the suggestions themselves are not personalized to the firm's actual data. This is intentionally being kept simple and honest for now, with real personalization (using get_firm_context data on bottlenecks and wins) deferred until that data pipeline is built out further, rather than faking personalization with generic phrasing now.
 
 ## ACTION
 
-File: /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+Locate the exact source of this message (wherever VERIFY BEFORE ACT found it) and replace the message text with:
 
-Add a new state variable near the other panel-level state (alongside notifications, autopilotOn, etc.):
+Let's get ready to work. I'm ready to help with anything you need.
 
-const [notificationsExpanded, setNotificationsExpanded] = useState(false)
-
-Change the "N Alerts" header to a clickable button that toggles this state, and only render the full notification cards when notificationsExpanded is true. When collapsed, show just the header row with a chevron indicating it can expand, plus a "Dismiss all" text action next to it.
-
-Replace the current header block:
-
-            <div className="flex items-center gap-1.5 px-0.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-[#D97706]" />
-              <span className="text-[10px] font-semibold uppercase tracking-wide text-[#92400E] dark:text-[#D97706]">
-                {notifications.length} {notifications.length === 1 ? 'Alert' : 'Alerts'}
-              </span>
-            </div>
-            {notifications.map((n) => {
-
-with:
-
-            <div className="flex items-center justify-between px-0.5">
-              <button
-                onClick={() => setNotificationsExpanded((prev) => !prev)}
-                className="flex items-center gap-1.5"
-              >
-                <span className="w-1.5 h-1.5 rounded-full bg-[#D97706]" />
-                <span className="text-[10px] font-semibold uppercase tracking-wide text-[#92400E] dark:text-[#D97706]">
-                  {notifications.length} {notifications.length === 1 ? 'Alert' : 'Alerts'}
-                </span>
-                <ChevronDown
-                  className={`h-3 w-3 text-[#92400E] dark:text-[#D97706] transition-transform ${notificationsExpanded ? 'rotate-180' : ''}`}
-                />
-              </button>
-              {notificationsExpanded && (
-                <button
-                  onClick={() => notifications.forEach((n) => dismissNotification(n.id))}
-                  className="text-[10px] font-medium text-[#6B7280] dark:text-[#9CA3AF] hover:text-[#1F3148] dark:hover:text-[#EDEEF0] transition-colors"
-                >
-                  Dismiss all
-                </button>
-              )}
-            </div>
-            {notificationsExpanded && notifications.map((n) => {
-
-Add ChevronDown to the existing lucide-react import at the top of the file (alongside X, Send, Zap, Download).
-
-The map's closing needs a matching change: find where the map block currently closes with just })} and confirm it still closes the conditional correctly once notificationsExpanded && notifications.map(...) wraps it -- the JSX structure should remain valid with this change applied only to the start of the map, not its internals.
-
-Do not change dismissNotification itself, the per-card rendering, the draft sub-card, or any other section of this file. Do not touch any other file.
+Remove the "Here are three things to work on first" framing and the three numbered suggestions entirely for this specific message. Do not change the firm_type onboarding question itself (the "what does your firm do most" message), only the message that follows it once firm_type is already known. Do not change any other message in this file.
 
 ## VERIFY AFTER ACT
 
-grep -n "notificationsExpanded\|ChevronDown\|Dismiss all" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+grep -n "Let's get ready to work" /home/corby/jamm-os/app/api/concierge/route.py /home/corby/jamm-os/app/api/concierge/prompts.py
 
-Expected: all three present.
+Expected: present in whichever file it was added to.
+
+python3 -c "from app.api.concierge.route import router; print('OK')"
+
+Expected: OK, no import errors.
 
 cd /home/corby/jamm-os/frontend
 npm run build
 
-Expected: zero TypeScript errors.
+Expected: zero TypeScript errors (only relevant if any frontend string also needed updating; if this was backend-only, confirm no frontend changes were made).
 
-## MANUAL VERIFICATION (the actual test)
+## MANUAL VERIFICATION
 
-1. Restart the frontend.
-2. Open the Concierge panel on a session with 2 or more notifications present.
-3. Confirm the panel now shows only the collapsed "N Alerts" header by default, with no full cards visible, and the chat content below is immediately reachable.
-4. Click the "N Alerts" header, confirm it expands to show all cards exactly as before, with the chevron now pointing up.
-5. Click "Dismiss all," confirm every notification disappears and the header section itself disappears entirely (since notifications.length is now 0).
-6. Regression check: with notifications expanded, click a single card's individual X button, confirm it still dismisses just that one card and the others remain, exactly as before.
-7. Regression check: click into a notification's draft card (Copy / Open to send), confirm that still works exactly as before while expanded.
+1. Restart the backend.
+2. Open a fresh Concierge session (clear sessionStorage or use a private window) for a firm with firm_type already set.
+3. Confirm the first message reads "Let's get ready to work. I'm ready to help with anything you need." with no numbered list following it.
+4. Regression check: confirm the firm_type onboarding question itself (for a firm with firm_type still null) is unchanged.
 
-Report what you observe at steps 3 and 5 specifically.
+Report what you observe at step 3.
 
 ## GIT
 
 cd /home/corby/jamm-os
 git add -A
-git commit -m "feat: Concierge notification cards now collapse behind a toggle (collapsed by default) with a dismiss-all action, instead of always rendering every card in full and consuming half the panel height"
+git commit -m "copy: simplify Concierge opening message to honest placeholder text, removing generic non-personalized suggestions until real firm-data-driven personalization is built"
 git pull --rebase origin main
 git push origin main
 
