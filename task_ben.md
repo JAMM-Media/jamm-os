@@ -49,73 +49,121 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-# Task: Reset hasInitialized ref on panel close so reopening correctly re-triggers the opening flow
+# Task: Combine cooldown messaging, clean re-request phrasing, and enable the download button when the briefing is shown again
 
 USE: claude sonnet
 
 ## VERIFY BEFORE ACT
 
-grep -n "hasInitialized" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+grep -n "Already checked in with your morning briefing" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-Confirm hasInitialized is a useRef(false), set to true at the start of the isOpen-driven _open effect, and never reset to false anywhere in the file, including the existing close-effect that already wipes messages back to an empty array.
+Confirm the exact current cooldown message line.
 
-grep -n "if (!isOpen)" -A 8 /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+sed -n '590,630p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-Confirm the existing close-effect: when isOpen becomes false, it resets autopilotOn, clears jamm_concierge_autopilot and jamm_concierge_messages from sessionStorage, and calls setMessages([]) -- but does not touch hasInitialized.
+Confirm the existing CONCIERGE_ACTION pattern: ACTION_MARKER parsing in handleConciergeAction, the special-cased set_firm_type type that routes through pendingActionRef and bypasses the normal autopilotRef.current gate (unlike other action types, which require Autopilot ON before they execute), and how executeAction dispatches on action.type.
+
+grep -n "isBriefing\|detailReady\|detailBriefing" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+
+Confirm how the original morning-briefing open flow sets isBriefing: true on a message and populates detailBriefing/detailReady to enable the Download briefing button, so the new action type can reproduce this exactly.
+
+grep -n "morning briefing\|briefing again" /home/corby/jamm-os/app/api/concierge/prompts.py -i
+
+Find any existing instruction governing how the model responds when a user asks to see the briefing again, to edit in place rather than duplicate.
 
 ## WHAT IS WRONG
 
-Confirmed via live testing: closing and reopening the Concierge panel within the same browser session produces a completely empty panel, no welcome message, no morning briefing, no onboarding question, nothing -- just the bare starter-prompt suggestion chips with no preceding message bubble at all.
+Three related, confirmed issues around re-requesting the morning briefing after it has already run today:
 
-Root cause: hasInitialized is a ref set to true the first time the panel ever opens in a session, and it is never reset. The opening effect's guard, if (isOpen && !hasInitialized.current), is permanently false after the very first open. Meanwhile, the existing close-effect already wipes messages back to an empty array when the panel closes. The combination means every reopen after the first close starts with messages.length === 0 (so the empty starter-prompts state renders) but the opening logic that would normally populate that first message never re-runs, because hasInitialized.current still reads true from the original open. This affects every code path inside _open: the morning briefing call, the cooldown message just added, the firm_type onboarding question, and the plain __OPEN__ sentinel message -- all of it silently skipped on every reopen, not just specific to today's testing.
+1. The cooldown fallback message does not tell the user they can ask to see the briefing again, so a user who dismissed it or missed it has no obvious path to retrieve it.
+2. When a user does ask, the model's response repeats itself awkwardly ("Here is your briefing again. Here is your morning briefing.").
+3. Critically, asking to see the briefing again returns a normal chat message with no Download briefing button, because that capability only exists on the message created by the original _open() flow, which sets isBriefing: true and populates detailBriefing/detailReady. A re-requested briefing goes through the generic /concierge/chat path instead, which never sets any of this, so the user cannot download a briefing they explicitly asked to see again.
 
 ## ACTION
 
-File: /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+File 1: /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-In the existing close-effect (the one already resetting autopilotOn and clearing messages when isOpen becomes false), add a reset of hasInitialized.current:
+Update the cooldown message:
 
-  useEffect(() => {
-    if (!isOpen) {
-      setAutopilotOn(false)
-      autopilotRef.current = false
-      sessionStorage.removeItem('jamm_concierge_autopilot')
-      sessionStorage.removeItem('jamm_concierge_messages')
-      setMessages([])
-      hasInitialized.current = false
+"Already checked in with your morning briefing earlier today. Ask me anytime if you'd like to see it again, or let me know if anything's changed or if you need help with something specific."
+
+In handleConciergeAction, add a new special-cased action type following the exact same pattern as set_firm_type (bypassing the autopilotRef.current gate, since this is a read action, not a navigation or automation action that should require Autopilot ON):
+
+      if (action.type === 'set_firm_type') {
+        pendingActionRef.current = action
+        return beforeAction || ''
+      }
+      if (action.type === 'show_briefing_again') {
+        pendingActionRef.current = action
+        return beforeAction || ''
+      }
+
+In executeAction, add a new branch handling this type, fetching the detail briefing and attaching it to the most recent concierge message exactly the way the original open flow does:
+
+    if (action.type === 'show_briefing_again') {
+      try {
+        const res = await api.post('/concierge/morning-briefing/detail')
+        if (res.status === 200 && res.data?.briefing) {
+          setDetailBriefing(res.data.briefing)
+          setDetailReady(true)
+          setMessages((prev) => {
+            const updated = [...prev]
+            const last = updated[updated.length - 1]
+            if (last && last.role === 'concierge') {
+              updated[updated.length - 1] = { ...last, isBriefing: true }
+            }
+            return updated
+          })
+        }
+      } catch {
+        // non-fatal -- message text already shown, download button simply will not appear
+      }
+      return
     }
-  }, [isOpen])
 
-This ensures that the next time the panel opens, the guard at if (isOpen && !hasInitialized.current) is true again, and the full opening flow (morning briefing check, cooldown message, onboarding question, or __OPEN__ sentinel) correctly re-runs, exactly as it does on a true first-ever open. Do not change the morning-briefing cooldown logic itself, the redundant hasInitialized.current = true assignments inside the briefing branches (they remain correct and harmless), or any other section of this file. Do not touch any other file.
+File 2: /home/corby/jamm-os/app/api/concierge/prompts.py
+
+Add or adjust an instruction covering this exact case, near the existing morning briefing or DRAFT RESPONSE PATTERNS section, in the same voice as the rest of the file:
+
+When a user asks to see the morning briefing again after it has already been shown today, respond with one clean lead-in sentence such as "Here's your briefing again:" followed by the briefing content. Do not repeat the phrase "morning briefing" or restate the lead-in a second time. After the briefing content, emit CONCIERGE_ACTION: {"type":"show_briefing_again"} on its own line so the download option becomes available again.
+
+Do not change the cooldown duration, the original _open() morning-briefing flow, or any other message or action type in either file.
 
 ## VERIFY AFTER ACT
 
-grep -n "hasInitialized.current = false" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+grep -n "show_briefing_again" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx /home/corby/jamm-os/app/api/concierge/prompts.py
 
-Expected: present, inside the close-effect.
+Expected: present in both files.
+
+grep -n "Ask me anytime if you'd like to see it again" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+
+Expected: present.
 
 cd /home/corby/jamm-os/frontend
 npm run build
 
 Expected: zero TypeScript errors.
 
+python3 -c "from app.api.concierge.route import router; print('OK')"
+
+Expected: OK, no import errors.
+
 ## MANUAL VERIFICATION (the actual test)
 
-1. Restart the frontend.
-2. Open the Concierge panel on the dashboard, confirm the opening message appears (either a real briefing, the cooldown message, or the plain opening message, depending on current cooldown state -- any of these is fine for this test, the point is that something appears, not which one).
-3. Close the panel.
-4. Reopen the panel again on the same dashboard page, in the same browser session, without reloading the page.
-5. Confirm an opening message appears again this time too, instead of the bare empty starter-prompts state with no message at all.
-6. Repeat close and reopen a third time to confirm this is reliably fixed, not a one-off.
-7. Regression check: send a few chat messages, close the panel, reopen it, and confirm the previous conversation does NOT incorrectly persist if that is not the intended behavior -- note this only if it behaves unexpectedly, since the existing close-effect already intentionally clears messages and sessionStorage on close, and that part is not being changed here.
+1. Restart both backend and frontend.
+2. Trigger the cooldown state (open the panel a second time today after a real briefing already ran) and confirm the message mentions it can be requested again.
+3. Ask "can I see the morning briefing again?" and confirm the response leads with one clean sentence, no repeated stutter phrasing.
+4. Confirm a Download briefing button now appears on this re-requested message, and clicking it successfully downloads a PDF, exactly as it does on the very first open of the day.
+5. Regression check: confirm the original first-open-of-the-day flow (real briefing, Download button, detail fetch) still works exactly as before, unaffected by this change.
+6. Regression check: confirm Autopilot does not need to be turned on for the download button to appear on a re-request, since this is a read action and should not require it, same as set_firm_type does not require it.
 
-Report what you observe at steps 5 and 6 specifically.
+Report what you observe at steps 3, 4, and 6 specifically.
 
 ## GIT
 
 cd /home/corby/jamm-os
 git add -A
-git commit -m "fix: Concierge panel hasInitialized ref now resets on close, so reopening the panel within the same session correctly re-triggers the opening flow (morning briefing, cooldown message, onboarding question, or plain opener) instead of silently showing an empty panel with no message at all"
+git commit -m "feat: re-requesting the morning briefing now produces clean non-repetitive phrasing and restores the Download briefing button, instead of returning plain chat text with no way to download a briefing the user explicitly asked to see again"
 git pull --rebase origin main
 git push origin main
 

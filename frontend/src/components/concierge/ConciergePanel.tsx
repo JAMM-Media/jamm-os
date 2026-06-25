@@ -371,7 +371,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
                 return
               }
               if (res.status === 200 && res.data?.cooldown) {
-                setMessages([{ role: 'concierge', content: "Already checked in with your morning briefing earlier today. Let me know if anything's changed or if you need help with something specific." }])
+                setMessages([{ role: 'concierge', content: "Already checked in with your morning briefing earlier today. Ask me anytime if you'd like to see it again, or let me know if anything's changed or if you need help with something specific." }])
                 hasInitialized.current = true
                 setBriefingLoading(false)
                 return
@@ -607,6 +607,10 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
         pendingActionRef.current = action
         return beforeAction || ''
       }
+      if (action.type === 'show_briefing_again') {
+        pendingActionRef.current = action
+        return beforeAction || ''
+      }
     } catch {}
 
     if (!autopilotRef.current) {
@@ -628,6 +632,26 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
         setStatusMessage('Practice type saved')
       } catch {
         // non-fatal -- firm_type will be set on next reload
+      }
+      return
+    }
+    if (action.type === 'show_briefing_again') {
+      try {
+        const res = await api.post('/concierge/morning-briefing/detail')
+        if (res.status === 200 && res.data?.briefing) {
+          setDetailBriefing(res.data.briefing)
+          setDetailReady(true)
+          setMessages((prev) => {
+            const updated = [...prev]
+            const last = updated[updated.length - 1]
+            if (last && last.role === 'concierge') {
+              updated[updated.length - 1] = { ...last, isBriefing: true }
+            }
+            return updated
+          })
+        }
+      } catch {
+        // non-fatal -- message text already shown, download button simply will not appear
       }
       return
     }
