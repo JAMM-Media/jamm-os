@@ -497,7 +497,7 @@ Step 1: Firm profile setup
 Complete the firm name, logo, and contact details under Settings. This information appears on engagement letters and client-facing documents.
 
 Step 2: Invite staff
-Navigate to Settings > Team. Add each staff member by email and assign their role (firm_owner, manager, or staff). Staff receive an email invitation with a magic-link to set their password.
+Navigate to Settings > Team. Select Invite Team Member. Enter the new staff member's full name, email address, and a temporary password, then assign their role from the dropdown: Partner, Staff, or Manager. They can change the temporary password after first login.
 
 Step 3: Connect QuickBooks (if applicable)
 Navigate to Settings > Integrations > QuickBooks. Complete the OAuth flow. After connecting, use the Import Preview to review which clients will come over before committing the import.

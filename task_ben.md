@@ -49,117 +49,57 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-# Task: Render Concierge response progressively as SSE lines arrive, instead of only after the stream completes
+# Task: Fix incorrect staff role values in Team invite instructions
 
 USE: claude sonnet
 
 ## VERIFY BEFORE ACT
 
-grep -n "while (true)" -A 25 /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+grep -n "assign their role (firm_owner, manager, or staff)" /home/corby/jamm-os/app/api/concierge/prompts.py
 
-Confirm the read loop pushes each decoded line into allRawLines as it
-arrives, but setMessages is only called once, after the loop's done branch
-breaks out, with the fully assembled text.
+Confirm the exact current line and its line number before editing.
 
 ## WHAT IS WRONG
 
-Confirmed via live testing: even after fixing both backend generation paths
-to emit progressively with no mid-sentence breaks, responses still appear
-all at once in the UI. Root cause: the frontend's own read loop in
-sendMessages only updates React state once, after the entire stream
-finishes. Lines arrive from the network incrementally, but they are only
-buffered into a local array (allRawLines) and never rendered until the
-while loop's done condition is true and the loop breaks. No amount of
-backend streaming correctness can produce a progressive UI feel if the
-component that renders the text never updates mid-stream.
+Confirmed via direct production verification: the Concierge's existing instructions for inviting staff say to "assign their role (firm_owner, manager, or staff)." This does not match the real Invite Team Member form, which has a Role dropdown with exactly three options: Partner, Staff, Manager. The internal database enum value for the firm owner's own row is firm_owner, but that is never an option a user selects from this dropdown when inviting someone, since the firm owner's own account is created at signup, not invited. Telling a user to "assign firm_owner" as a role choice during a staff invite describes a value that does not appear anywhere in the actual UI they are looking at.
 
 ## ACTION
 
-File: /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+File: /home/corby/jamm-os/app/api/concierge/prompts.py
 
-Inside the while (true) read loop in sendMessages, after each chunk of new
-complete lines is extracted (the existing buffer.split('\n') / lines.pop()
-logic), call setMessages to update the last message's content with the
-text assembled so far, not just once at the end. Use the existing
-assembleSSELines function on the lines accumulated so far on each iteration,
-applying the same filterOutput and any other safe text transforms used at
-the end, and update the in-progress message content incrementally:
+Replace:
 
-        while (true) {
-          const { done, value } = await reader.read()
-          if (done) {
-            buffer += decoder.decode()
-            if (buffer) allRawLines.push(buffer)
-            break
-          }
-          buffer += decoder.decode(value, { stream: true })
-          const lines = buffer.split('\n')
-          buffer = lines.pop() ?? ''
-          allRawLines.push(...lines)
+Navigate to Settings > Team. Add each staff member by email and assign their role (firm_owner, manager, or staff). Staff receive an email invitation with a magic-link to set their password.
 
-          const partial = assembleSSELines(allRawLines)
-            .replace(/\[TOPIC:\w+\]\s*$/, '')
-            .trimEnd()
-          if (partial) {
-            setMessages((prev) => {
-              const updated = [...prev]
-              const last = updated[updated.length - 1]
-              if (last && last.role === 'concierge') {
-                updated[updated.length - 1] = { ...last, content: partial }
-              }
-              return updated
-            })
-          }
-        }
+with:
 
-Keep all the existing post-loop logic (filterOutput, parseDraftFromResponse,
-handleConciergeAction, the final setMessages call with the draft attached,
-the suggestion chips logic) exactly as is. The post-loop block still runs
-once at the end and produces the final, fully correct message with its
-draft parsed out, this change only adds incremental updates DURING the loop
-so the user sees text appear progressively, with the final post-loop
-setMessages call still being the authoritative final state.
+Navigate to Settings > Team. Select Invite Team Member. Enter the new staff member's full name, email address, and a temporary password, then assign their role from the dropdown: Partner, Staff, or Manager. They can change the temporary password after first login.
 
-Do not strip the ---DRAFT:--- block during the incremental updates if doing
-so would require duplicating the full parseDraftFromResponse logic on every
-partial chunk -- it is acceptable for the raw draft markers to be briefly
-visible during streaming and then cleanly replaced by the final parsed
-version once the stream completes, since this matches how the rest of the
-app already treats streaming as progressively-rendered-then-finalized. Do
-not change generate() or generate_with_tools() in the backend, this is a
-frontend-only fix. Do not touch any other file.
+Do not change any other line in this section. Do not touch any other file.
 
 ## VERIFY AFTER ACT
 
-grep -n "setMessages" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+grep -n "Partner, Staff, or Manager" /home/corby/jamm-os/app/api/concierge/prompts.py
 
-Expected: at least one new setMessages call now exists inside the while loop,
-in addition to the existing post-loop call.
+Expected: present.
 
-cd /home/corby/jamm-os/frontend
-npm run build
+python3 -c "from app.api.concierge.route import router; print('OK')"
 
-Expected: zero TypeScript errors.
+Expected: OK, no import errors.
 
-## MANUAL VERIFICATION (the actual test)
+## MANUAL VERIFICATION
 
-1. Restart the frontend.
-2. Ask a plain question with no draft involved, confirm text now visibly
-   appears progressively as it streams, not all at once.
-3. Ask for a draft requiring a tool call (e.g. follow-up email for a
-   specific client), confirm the lead-in text and the draft both appear
-   progressively rather than as one block, and the final rendered draft card
-   still looks correct once streaming finishes.
-4. Confirm no visual flicker or duplicate content appears as the in-progress
-   text is replaced by the final parsed message.
+1. Restart the backend.
+2. Ask the Concierge how to invite a new staff member.
+3. Confirm the response describes the real form fields (full name, email, temporary password, role dropdown with Partner/Staff/Manager) rather than the old firm_owner/manager/staff wording.
 
-Report what you observe at steps 2 and 3.
+Report the exact response text at step 3.
 
 ## GIT
 
 cd /home/corby/jamm-os
 git add -A
-git commit -m "fix: Concierge chat now renders response text progressively as SSE lines arrive instead of only updating state once the entire stream completes, finally producing the visible progressive streaming effect the backend line-buffering fixes were intended to support"
+git commit -m "fix: Team invite instructions now describe the real Invite Team Member form fields and role options (Partner, Staff, Manager) instead of internal database enum values that never appear in the UI"
 git pull --rebase origin main
 git push origin main
 
