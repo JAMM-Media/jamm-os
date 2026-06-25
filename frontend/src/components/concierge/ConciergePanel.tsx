@@ -164,6 +164,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
       sessionStorage.removeItem('jamm_concierge_autopilot')
       sessionStorage.removeItem('jamm_concierge_messages')
       setMessages([])
+      hasInitialized.current = false
     }
   }, [isOpen])
 

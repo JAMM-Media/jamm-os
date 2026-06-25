@@ -49,69 +49,50 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-# Task: Distinguish morning briefing cooldown from a real failure, so the fallback message is honest about which happened
+# Task: Reset hasInitialized ref on panel close so reopening correctly re-triggers the opening flow
 
 USE: claude sonnet
 
 ## VERIFY BEFORE ACT
 
-sed -n '878,917p' /home/corby/jamm-os/app/api/concierge/route.py
+grep -n "hasInitialized" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-Confirm the current morning_briefing handler: the cooldown check returning Response(status_code=204) when briefing_sent_at is under 64800 seconds old, and the separate except block also returning Response(status_code=204) on a real failure. Both currently return the exact same response shape, so the frontend cannot tell them apart.
+Confirm hasInitialized is a useRef(false), set to true at the start of the isOpen-driven _open effect, and never reset to false anywhere in the file, including the existing close-effect that already wipes messages back to an empty array.
 
-grep -n "pathname.startsWith('/dashboard')" -A 20 /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+grep -n "if (!isOpen)" -A 8 /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-Confirm the current frontend _open logic: it calls /concierge/morning-briefing, checks for res.status === 200 && res.data?.briefing, and on anything else falls through silently to the firm_type check and then the generic __OPEN__ message, with no distinction made for why the briefing did not come back.
+Confirm the existing close-effect: when isOpen becomes false, it resets autopilotOn, clears jamm_concierge_autopilot and jamm_concierge_messages from sessionStorage, and calls setMessages([]) -- but does not touch hasInitialized.
 
 ## WHAT IS WRONG
 
-Confirmed via live testing and direct backend log inspection: the morning briefing endpoint has a deliberate 18-hour cooldown (64800 seconds) so it does not regenerate a new briefing every time the panel opens. This is correct, intentional behavior, not a bug. However, when the cooldown is active, the endpoint returns the exact same 204 No Content response as when a real failure occurs (an exception during the Anthropic call, caught and logged as a warning). The frontend cannot distinguish "intentionally skipped, already briefed today" from "something actually broke," so both cases produce the same generic fallback message with no acknowledgment that a real briefing already happened earlier.
+Confirmed via live testing: closing and reopening the Concierge panel within the same browser session produces a completely empty panel, no welcome message, no morning briefing, no onboarding question, nothing -- just the bare starter-prompt suggestion chips with no preceding message bubble at all.
+
+Root cause: hasInitialized is a ref set to true the first time the panel ever opens in a session, and it is never reset. The opening effect's guard, if (isOpen && !hasInitialized.current), is permanently false after the very first open. Meanwhile, the existing close-effect already wipes messages back to an empty array when the panel closes. The combination means every reopen after the first close starts with messages.length === 0 (so the empty starter-prompts state renders) but the opening logic that would normally populate that first message never re-runs, because hasInitialized.current still reads true from the original open. This affects every code path inside _open: the morning briefing call, the cooldown message just added, the firm_type onboarding question, and the plain __OPEN__ sentinel message -- all of it silently skipped on every reopen, not just specific to today's testing.
 
 ## ACTION
 
-File 1: /home/corby/jamm-os/app/api/concierge/route.py
+File: /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-In the cooldown branch, change the response to be distinguishable from the failure branch:
+In the existing close-effect (the one already resetting autopilotOn and clearing messages when isOpen becomes false), add a reset of hasInitialized.current:
 
-    if current_firm.briefing_sent_at is not None:
-        elapsed = (datetime.now(timezone.utc) - current_firm.briefing_sent_at).total_seconds()
-        if elapsed < 64800:
-            return JSONResponse({"cooldown": True}, status_code=200)
+  useEffect(() => {
+    if (!isOpen) {
+      setAutopilotOn(false)
+      autopilotRef.current = false
+      sessionStorage.removeItem('jamm_concierge_autopilot')
+      sessionStorage.removeItem('jamm_concierge_messages')
+      setMessages([])
+      hasInitialized.current = false
+    }
+  }, [isOpen])
 
-Leave the except block's return Response(status_code=204) for real failures exactly as is, so genuine errors remain distinguishable as a non-200 response. Do not change the cooldown duration, the AutomationRule check, or the try block's success path. Do not touch any other function in this file.
-
-File 2: /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
-
-In the _open function's dashboard branch, add a check for the cooldown signal before falling through to the firm_type check:
-
-              const res = await api.post('/concierge/morning-briefing')
-              if (res.status === 200 && res.data?.briefing) {
-                setMessages([{ role: 'concierge', content: res.data.briefing, isBriefing: true }])
-                api.post('/concierge/morning-briefing/detail')
-                  .then((r) => { if (r.data?.briefing) { setDetailBriefing(r.data.briefing); setDetailReady(true) } })
-                  .catch(() => {})
-                hasInitialized.current = true
-                setBriefingLoading(false)
-                return
-              }
-              if (res.status === 200 && res.data?.cooldown) {
-                setMessages([{ role: 'concierge', content: "Already checked in with your morning briefing earlier today. Let me know if anything's changed or if you need help with something specific." }])
-                hasInitialized.current = true
-                setBriefingLoading(false)
-                return
-              }
-
-Place this directly after the existing briefing success check, before the existing try block closes. Do not change the existing success branch. Do not change the catch block or the fallback to the firm_type check, which should still run for genuine failures (non-200, non-cooldown responses). Do not touch any other section of this file.
+This ensures that the next time the panel opens, the guard at if (isOpen && !hasInitialized.current) is true again, and the full opening flow (morning briefing check, cooldown message, onboarding question, or __OPEN__ sentinel) correctly re-runs, exactly as it does on a true first-ever open. Do not change the morning-briefing cooldown logic itself, the redundant hasInitialized.current = true assignments inside the briefing branches (they remain correct and harmless), or any other section of this file. Do not touch any other file.
 
 ## VERIFY AFTER ACT
 
-grep -n "cooldown" /home/corby/jamm-os/app/api/concierge/route.py /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+grep -n "hasInitialized.current = false" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-Expected: present in both files.
-
-python3 -c "from app.api.concierge.route import router; print('OK')"
-
-Expected: OK, no import errors.
+Expected: present, inside the close-effect.
 
 cd /home/corby/jamm-os/frontend
 npm run build
@@ -120,18 +101,21 @@ Expected: zero TypeScript errors.
 
 ## MANUAL VERIFICATION (the actual test)
 
-1. Restart both backend and frontend.
-2. Open the dashboard fresh (private window or cleared sessionStorage) and confirm a real morning briefing loads normally on the first open of the day, exactly as before.
-3. Close the panel, then reopen it again within the same day (a second fresh session, same firm) and confirm this time the message reads "Already checked in with your morning briefing earlier today..." instead of the generic "Let's get ready to work" fallback.
-4. Regression check: if possible, simulate a real failure (e.g. temporarily break the Anthropic API key, or note that this cannot be easily forced and just confirm via code review that the except block's 204 path is unchanged) and confirm that case still correctly falls through to the generic fallback message, not the cooldown message.
+1. Restart the frontend.
+2. Open the Concierge panel on the dashboard, confirm the opening message appears (either a real briefing, the cooldown message, or the plain opening message, depending on current cooldown state -- any of these is fine for this test, the point is that something appears, not which one).
+3. Close the panel.
+4. Reopen the panel again on the same dashboard page, in the same browser session, without reloading the page.
+5. Confirm an opening message appears again this time too, instead of the bare empty starter-prompts state with no message at all.
+6. Repeat close and reopen a third time to confirm this is reliably fixed, not a one-off.
+7. Regression check: send a few chat messages, close the panel, reopen it, and confirm the previous conversation does NOT incorrectly persist if that is not the intended behavior -- note this only if it behaves unexpectedly, since the existing close-effect already intentionally clears messages and sessionStorage on close, and that part is not being changed here.
 
-Report what you observe at step 3 specifically.
+Report what you observe at steps 5 and 6 specifically.
 
 ## GIT
 
 cd /home/corby/jamm-os
 git add -A
-git commit -m "fix: morning briefing cooldown now returns a distinguishable response from a real failure, so the Concierge shows an honest 'already checked in today' message instead of the same generic fallback used for actual errors"
+git commit -m "fix: Concierge panel hasInitialized ref now resets on close, so reopening the panel within the same session correctly re-triggers the opening flow (morning briefing, cooldown message, onboarding question, or plain opener) instead of silently showing an empty panel with no message at all"
 git pull --rebase origin main
 git push origin main
 
