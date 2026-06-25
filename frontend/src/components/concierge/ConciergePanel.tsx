@@ -369,6 +369,12 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
                 setBriefingLoading(false)
                 return
               }
+              if (res.status === 200 && res.data?.cooldown) {
+                setMessages([{ role: 'concierge', content: "Already checked in with your morning briefing earlier today. Let me know if anything's changed or if you need help with something specific." }])
+                hasInitialized.current = true
+                setBriefingLoading(false)
+                return
+              }
             } catch {
               // fall through to standard opening
             } finally {

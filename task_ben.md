@@ -49,48 +49,69 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-# Task: Make Concierge loading skeleton mirror the morning briefing's real layout
+# Task: Distinguish morning briefing cooldown from a real failure, so the fallback message is honest about which happened
 
 USE: claude sonnet
 
 ## VERIFY BEFORE ACT
 
-sed -n '918,936p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+sed -n '878,917p' /home/corby/jamm-os/app/api/concierge/route.py
 
-Confirm the current skeleton block: a fixed sequence of 9 generic bars of varying width simulating flowing paragraph text, with no visual distinction between what will become headers, bullet lists, or the stat/download-link footer once the real morning briefing content loads.
+Confirm the current morning_briefing handler: the cooldown check returning Response(status_code=204) when briefing_sent_at is under 64800 seconds old, and the separate except block also returning Response(status_code=204) on a real failure. Both currently return the exact same response shape, so the frontend cannot tell them apart.
+
+grep -n "pathname.startsWith('/dashboard')" -A 20 /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+
+Confirm the current frontend _open logic: it calls /concierge/morning-briefing, checks for res.status === 200 && res.data?.briefing, and on anything else falls through silently to the firm_type check and then the generic __OPEN__ message, with no distinction made for why the briefing did not come back.
 
 ## WHAT IS WRONG
 
-The morning briefing's real rendered content (confirmed via live testing) has a distinct structure: bold section headers (e.g. RECENT ACTIVITY with a pin icon), indented bullet list items beneath each header, a stat summary line near the bottom (e.g. "27 clients - 4 active engagements"), and a download link with an icon. The current skeleton is a flat sequence of paragraph-style bars with no indentation, no bullet shapes, and no footer-row shape, so there is a visible structural "snap" when the real content replaces it, since nothing about the skeleton's shape anticipated the list/header layout that was coming.
+Confirmed via live testing and direct backend log inspection: the morning briefing endpoint has a deliberate 18-hour cooldown (64800 seconds) so it does not regenerate a new briefing every time the panel opens. This is correct, intentional behavior, not a bug. However, when the cooldown is active, the endpoint returns the exact same 204 No Content response as when a real failure occurs (an exception during the Anthropic call, caught and logged as a warning). The frontend cannot distinguish "intentionally skipped, already briefed today" from "something actually broke," so both cases produce the same generic fallback message with no acknowledgment that a real briefing already happened earlier.
 
 ## ACTION
 
-File: /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+File 1: /home/corby/jamm-os/app/api/concierge/route.py
 
-Replace the existing skeleton content (the block of 9 divs between the avatar div and the closing tags, lines approximately 924-934) with a version that mirrors the real layout: a header-shaped bar, several indented bullet-shaped bars beneath it, a second header-shaped bar, more indented bullets, a short divider-shaped bar, a stat-line-shaped bar, and a short footer-link-shaped bar at the end:
+In the cooldown branch, change the response to be distinguishable from the failure branch:
 
-                <div className="h-3 w-32 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
-                <div className="flex flex-col gap-1.5 ml-3 mt-0.5">
-                  <div className="h-2 w-full bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
-                  <div className="h-2 w-4/5 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
-                </div>
-                <div className="h-3 w-28 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded mt-2" />
-                <div className="flex flex-col gap-1.5 ml-3 mt-0.5">
-                  <div className="h-2 w-full bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
-                  <div className="h-2 w-3/4 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
-                  <div className="h-2 w-2/3 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
-                </div>
-                <div className="h-px w-full bg-[#D5D8DE] dark:bg-[#444444] mt-2" />
-                <div className="h-2 w-36 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded mt-2" />
-                <div className="h-2 w-20 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded mt-1" />
+    if current_firm.briefing_sent_at is not None:
+        elapsed = (datetime.now(timezone.utc) - current_firm.briefing_sent_at).total_seconds()
+        if elapsed < 64800:
+            return JSONResponse({"cooldown": True}, status_code=200)
 
-This gives the skeleton two header-shaped bars (mimicking section headers like RECENT ACTIVITY), indented bullet-shaped lines beneath each, a thin divider, a stat-line-shaped bar, and a short final bar mimicking the download-briefing footer link. Do not change the outer wrapper div, the avatar circle, or the briefingLoading condition that controls when this renders. Do not touch any other file.
+Leave the except block's return Response(status_code=204) for real failures exactly as is, so genuine errors remain distinguishable as a non-200 response. Do not change the cooldown duration, the AutomationRule check, or the try block's success path. Do not touch any other function in this file.
+
+File 2: /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+
+In the _open function's dashboard branch, add a check for the cooldown signal before falling through to the firm_type check:
+
+              const res = await api.post('/concierge/morning-briefing')
+              if (res.status === 200 && res.data?.briefing) {
+                setMessages([{ role: 'concierge', content: res.data.briefing, isBriefing: true }])
+                api.post('/concierge/morning-briefing/detail')
+                  .then((r) => { if (r.data?.briefing) { setDetailBriefing(r.data.briefing); setDetailReady(true) } })
+                  .catch(() => {})
+                hasInitialized.current = true
+                setBriefingLoading(false)
+                return
+              }
+              if (res.status === 200 && res.data?.cooldown) {
+                setMessages([{ role: 'concierge', content: "Already checked in with your morning briefing earlier today. Let me know if anything's changed or if you need help with something specific." }])
+                hasInitialized.current = true
+                setBriefingLoading(false)
+                return
+              }
+
+Place this directly after the existing briefing success check, before the existing try block closes. Do not change the existing success branch. Do not change the catch block or the fallback to the firm_type check, which should still run for genuine failures (non-200, non-cooldown responses). Do not touch any other section of this file.
 
 ## VERIFY AFTER ACT
 
-sed -n '918,940p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+grep -n "cooldown" /home/corby/jamm-os/app/api/concierge/route.py /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-Confirm the new structure is present and properly nested.
+Expected: present in both files.
+
+python3 -c "from app.api.concierge.route import router; print('OK')"
+
+Expected: OK, no import errors.
 
 cd /home/corby/jamm-os/frontend
 npm run build
@@ -99,18 +120,18 @@ Expected: zero TypeScript errors.
 
 ## MANUAL VERIFICATION (the actual test)
 
-1. Restart the frontend.
-2. Open the Concierge panel on the dashboard for a firm where the morning briefing has not yet loaded (or clear sessionStorage to force a fresh load).
-3. Confirm the loading skeleton now shows a shape resembling headers with indented bullets beneath them, a divider, and a short stat/footer line, rather than a flat sequence of paragraph-style bars.
-4. Confirm the transition from skeleton to real content feels less jarring than before, with the real headers and bullets roughly landing where the skeleton's header and bullet shapes were.
+1. Restart both backend and frontend.
+2. Open the dashboard fresh (private window or cleared sessionStorage) and confirm a real morning briefing loads normally on the first open of the day, exactly as before.
+3. Close the panel, then reopen it again within the same day (a second fresh session, same firm) and confirm this time the message reads "Already checked in with your morning briefing earlier today..." instead of the generic "Let's get ready to work" fallback.
+4. Regression check: if possible, simulate a real failure (e.g. temporarily break the Anthropic API key, or note that this cannot be easily forced and just confirm via code review that the except block's 204 path is unchanged) and confirm that case still correctly falls through to the generic fallback message, not the cooldown message.
 
-Report what you observe at step 3.
+Report what you observe at step 3 specifically.
 
 ## GIT
 
 cd /home/corby/jamm-os
 git add -A
-git commit -m "polish: Concierge loading skeleton now mirrors the morning briefing's real header/bullet/stat-line layout instead of generic flowing-paragraph bars, reducing the visual snap when real content loads"
+git commit -m "fix: morning briefing cooldown now returns a distinguishable response from a real failure, so the Concierge shows an honest 'already checked in today' message instead of the same generic fallback used for actual errors"
 git pull --rebase origin main
 git push origin main
 

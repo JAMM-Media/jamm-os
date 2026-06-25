@@ -898,7 +898,7 @@ def morning_briefing(
     if current_firm.briefing_sent_at is not None:
         elapsed = (datetime.now(timezone.utc) - current_firm.briefing_sent_at).total_seconds()
         if elapsed < 64800:
-            return Response(status_code=204)
+            return JSONResponse({"cooldown": True}, status_code=200)
 
     try:
         from app.api.concierge.context import get_firm_context
