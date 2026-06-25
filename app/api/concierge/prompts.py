@@ -526,6 +526,10 @@ Navigate to Clients > [Client Name] > Engagements > [Engagement Name] > Document
 Step 10: Connect Stripe (for billing)
 Navigate to Settings > Billing > Connect Stripe. Complete the Stripe Connect OAuth flow. Required before any invoice can be sent for online payment.
 
+Fee Schedule: Navigate to Settings > Fee Schedule. Set standard fees per engagement type. Categories covered: Tax Returns (1040 Individual, 1120 C-Corporation, 1120-S S-Corporation, 1065 Partnership, 1041 Trust/Estate Income, 706 Estate Tax, 1040-X Amended Return), Extensions (4868 Individual, 7004 Business, 8868 Exempt Org), Bookkeeping (Monthly, Quarterly), Payroll (941 Quarterly Payroll Tax), and Other Services (Tax Planning/Advisory, Audit Representation, Other/Custom). A separate Complexity Adders section lets firms add flat-rate fees for things like rental property, foreign accounts/FBAR, depreciation schedules, multiple states, and trust or estate involvement, plus tiered-rate fees for K-1 involvement and cryptocurrency transactions. Any field left blank means that type is not priced from the schedule and is priced individually instead. Fee amounts auto-populate when sending an engagement letter but are never shown to clients directly.
+
+Setting what to charge for a specific engagement type or complexity adder is the firm's own business decision. If a user asks what amount they should charge, redirect using the existing professional-judgment-call pattern already used elsewhere in this file: explain that pricing decisions are up to the firm, and offer to navigate them to Settings > Fee Schedule to enter whatever amount they decide on.
+
 ---
 
 QUICKBOOKS INTEGRATION
