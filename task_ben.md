@@ -49,57 +49,104 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-# Task: Add Fee Schedule to Concierge knowledge base
+# Task: Collapse notification cards behind a toggle, collapsed by default, with a dismiss-all action
 
 USE: claude sonnet
 
 ## VERIFY BEFORE ACT
 
-grep -n "Navigate to Settings > Billing > Connect Stripe" /home/corby/jamm-os/app/api/concierge/prompts.py
+sed -n '795,820p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-Confirm this existing line and its surrounding section, so the new Fee Schedule entry can be added nearby in a way that matches the file's existing voice and structure for Settings-related how-to content.
+Confirm the current notifications block structure: the {notifications.length > 0 && (...)} wrapper, the static "N Alerts" header span, and the notifications.map rendering each card in full, always visible, with no expand/collapse state anywhere.
+
+grep -n "dismissNotification" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+
+Confirm dismissNotification(id: string) already exists as a working per-notification dismiss function, so bulk-dismiss can reuse it rather than duplicating its logic.
 
 ## WHAT IS WRONG
 
-Confirmed via direct production verification: a user asked where to set tax form prices and the Concierge responded that JAMM PX has no pricing or fee schedule feature anywhere in the app. This is false. Settings > Fee Schedule is a real, live feature with per-engagement-type base fees and complexity adders that pre-fill engagement letters. It is entirely absent from prompts.py, so the Concierge has no knowledge of it and denies it exists when asked directly.
+Confirmed via live testing: when multiple notification cards are present (commonly 2-3, each a full card with message text and sometimes a draft sub-card), they consume roughly half the visible panel height before any actual chat content is reachable. There is currently no way to collapse them, and no way to dismiss all of them at once -- only one at a time via each card's individual X button. This makes the panel feel cluttered and pushes the actual conversation, which is what someone opens the panel for, further down or off-screen.
 
 ## ACTION
 
-File: /home/corby/jamm-os/app/api/concierge/prompts.py
+File: /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-Add a new entry near the other Settings navigation references (the Settings > Billing > Connect Stripe line found in VERIFY BEFORE ACT), in the same style:
+Add a new state variable near the other panel-level state (alongside notifications, autopilotOn, etc.):
 
-Fee Schedule: Navigate to Settings > Fee Schedule. Set standard fees per engagement type. Categories covered: Tax Returns (1040 Individual, 1120 C-Corporation, 1120-S S-Corporation, 1065 Partnership, 1041 Trust/Estate Income, 706 Estate Tax, 1040-X Amended Return), Extensions (4868 Individual, 7004 Business, 8868 Exempt Org), Bookkeeping (Monthly, Quarterly), Payroll (941 Quarterly Payroll Tax), and Other Services (Tax Planning/Advisory, Audit Representation, Other/Custom). A separate Complexity Adders section lets firms add flat-rate fees for things like rental property, foreign accounts/FBAR, depreciation schedules, multiple states, and trust or estate involvement, plus tiered-rate fees for K-1 involvement and cryptocurrency transactions. Any field left blank means that type is not priced from the schedule and is priced individually instead. Fee amounts auto-populate when sending an engagement letter but are never shown to clients directly.
+const [notificationsExpanded, setNotificationsExpanded] = useState(false)
 
-Setting what to charge for a specific engagement type or complexity adder is the firm's own business decision. If a user asks what amount they should charge, redirect using the existing professional-judgment-call pattern already used elsewhere in this file: explain that pricing decisions are up to the firm, and offer to navigate them to Settings > Fee Schedule to enter whatever amount they decide on.
+Change the "N Alerts" header to a clickable button that toggles this state, and only render the full notification cards when notificationsExpanded is true. When collapsed, show just the header row with a chevron indicating it can expand, plus a "Dismiss all" text action next to it.
 
-Place this new entry as its own paragraph, do not merge it into the existing Stripe/Billing paragraph since they are different features. Do not change the existing Stripe/Billing line. Do not touch any other file.
+Replace the current header block:
+
+            <div className="flex items-center gap-1.5 px-0.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#D97706]" />
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-[#92400E] dark:text-[#D97706]">
+                {notifications.length} {notifications.length === 1 ? 'Alert' : 'Alerts'}
+              </span>
+            </div>
+            {notifications.map((n) => {
+
+with:
+
+            <div className="flex items-center justify-between px-0.5">
+              <button
+                onClick={() => setNotificationsExpanded((prev) => !prev)}
+                className="flex items-center gap-1.5"
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-[#D97706]" />
+                <span className="text-[10px] font-semibold uppercase tracking-wide text-[#92400E] dark:text-[#D97706]">
+                  {notifications.length} {notifications.length === 1 ? 'Alert' : 'Alerts'}
+                </span>
+                <ChevronDown
+                  className={`h-3 w-3 text-[#92400E] dark:text-[#D97706] transition-transform ${notificationsExpanded ? 'rotate-180' : ''}`}
+                />
+              </button>
+              {notificationsExpanded && (
+                <button
+                  onClick={() => notifications.forEach((n) => dismissNotification(n.id))}
+                  className="text-[10px] font-medium text-[#6B7280] dark:text-[#9CA3AF] hover:text-[#1F3148] dark:hover:text-[#EDEEF0] transition-colors"
+                >
+                  Dismiss all
+                </button>
+              )}
+            </div>
+            {notificationsExpanded && notifications.map((n) => {
+
+Add ChevronDown to the existing lucide-react import at the top of the file (alongside X, Send, Zap, Download).
+
+The map's closing needs a matching change: find where the map block currently closes with just })} and confirm it still closes the conditional correctly once notificationsExpanded && notifications.map(...) wraps it -- the JSX structure should remain valid with this change applied only to the start of the map, not its internals.
+
+Do not change dismissNotification itself, the per-card rendering, the draft sub-card, or any other section of this file. Do not touch any other file.
 
 ## VERIFY AFTER ACT
 
-grep -n "Fee Schedule: Navigate to Settings" /home/corby/jamm-os/app/api/concierge/prompts.py
+grep -n "notificationsExpanded\|ChevronDown\|Dismiss all" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-Expected: present.
+Expected: all three present.
 
-python3 -c "from app.api.concierge.route import router; print('OK')"
+cd /home/corby/jamm-os/frontend
+npm run build
 
-Expected: OK, no import errors.
+Expected: zero TypeScript errors.
 
-## MANUAL VERIFICATION
+## MANUAL VERIFICATION (the actual test)
 
-1. Restart the backend.
-2. Ask the Concierge: "where do I go to set my tax form prices?"
-3. Confirm the response correctly directs to Settings > Fee Schedule and does not deny the feature exists.
-4. Ask the Concierge: "what should I charge for a 1040?"
-5. Confirm the response redirects this as a professional/business judgment call rather than suggesting a dollar amount, while still being willing to navigate to Fee Schedule so the user can enter their own number.
+1. Restart the frontend.
+2. Open the Concierge panel on a session with 2 or more notifications present.
+3. Confirm the panel now shows only the collapsed "N Alerts" header by default, with no full cards visible, and the chat content below is immediately reachable.
+4. Click the "N Alerts" header, confirm it expands to show all cards exactly as before, with the chevron now pointing up.
+5. Click "Dismiss all," confirm every notification disappears and the header section itself disappears entirely (since notifications.length is now 0).
+6. Regression check: with notifications expanded, click a single card's individual X button, confirm it still dismisses just that one card and the others remain, exactly as before.
+7. Regression check: click into a notification's draft card (Copy / Open to send), confirm that still works exactly as before while expanded.
 
-Report the exact response text at steps 3 and 5.
+Report what you observe at steps 3 and 5 specifically.
 
 ## GIT
 
 cd /home/corby/jamm-os
 git add -A
-git commit -m "fix: add Fee Schedule feature to Concierge knowledge base, correcting a false denial that the feature exists, while keeping actual pricing decisions as a firm business judgment call the agent does not make for them"
+git commit -m "feat: Concierge notification cards now collapse behind a toggle (collapsed by default) with a dismiss-all action, instead of always rendering every card in full and consuming half the panel height"
 git pull --rebase origin main
 git push origin main
 

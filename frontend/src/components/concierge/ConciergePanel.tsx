@@ -3,7 +3,7 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
-import { X, Send, Zap, Download } from 'lucide-react'
+import { X, Send, Zap, Download, ChevronDown } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import jsPDF from 'jspdf'
 import { useAuth } from '@/lib/hooks/useAuth'
@@ -89,6 +89,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
 
   const [messages, setMessages] = useState<Message[]>([])
   const [notifications, setNotifications] = useState<Notification[]>([])
+  const [notificationsExpanded, setNotificationsExpanded] = useState(false)
   const [input, setInput] = useState('')
   const [streaming, setStreaming] = useState(false)
   const [hasMounted, setHasMounted] = useState(false)
@@ -810,13 +811,29 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
         {/* Notification cards */}
         {notifications.length > 0 && (
           <div className="flex flex-col gap-2 px-4 pt-3 flex-shrink-0">
-            <div className="flex items-center gap-1.5 px-0.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-[#D97706]" />
-              <span className="text-[10px] font-semibold uppercase tracking-wide text-[#92400E] dark:text-[#D97706]">
-                {notifications.length} {notifications.length === 1 ? 'Alert' : 'Alerts'}
-              </span>
+            <div className="flex items-center justify-between px-0.5">
+              <button
+                onClick={() => setNotificationsExpanded((prev) => !prev)}
+                className="flex items-center gap-1.5"
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-[#D97706]" />
+                <span className="text-[10px] font-semibold uppercase tracking-wide text-[#92400E] dark:text-[#D97706]">
+                  {notifications.length} {notifications.length === 1 ? 'Alert' : 'Alerts'}
+                </span>
+                <ChevronDown
+                  className={`h-3 w-3 text-[#92400E] dark:text-[#D97706] transition-transform ${notificationsExpanded ? 'rotate-180' : ''}`}
+                />
+              </button>
+              {notificationsExpanded && (
+                <button
+                  onClick={() => notifications.forEach((n) => dismissNotification(n.id))}
+                  className="text-[10px] font-medium text-[#6B7280] dark:text-[#9CA3AF] hover:text-[#1F3148] dark:hover:text-[#EDEEF0] transition-colors"
+                >
+                  Dismiss all
+                </button>
+              )}
             </div>
-            {notifications.map((n) => {
+            {notificationsExpanded && notifications.map((n) => {
               const draft = n.metadata?.draft as string | undefined
               return (
                 <div
