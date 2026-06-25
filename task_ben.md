@@ -49,51 +49,60 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-# Task: Replace generic onboarding intro message with simple placeholder copy
+# Task: Make Concierge loading skeleton mirror the morning briefing's real layout
 
 USE: claude sonnet
 
 ## VERIFY BEFORE ACT
 
-grep -n "Got it. Here are three things to work on first" /home/corby/jamm-os/app/api/concierge/route.py
+sed -n '918,936p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-Confirm the exact current message text and its location before editing. If this string is not found in route.py, search prompts.py instead:
-
-grep -n "Got it. Here are three things to work on first" /home/corby/jamm-os/app/api/concierge/prompts.py
+Confirm the current skeleton block: a fixed sequence of 9 generic bars of varying width simulating flowing paragraph text, with no visual distinction between what will become headers, bullet lists, or the stat/download-link footer once the real morning briefing content loads.
 
 ## WHAT IS WRONG
 
-The current __OPEN__ response on first message after a firm has answered the onboarding firm_type question reads "Got it. Here are three things to work on first:" followed by three generic numbered suggestions. This framing line adds nothing the three suggestions don't already say, and the suggestions themselves are not personalized to the firm's actual data. This is intentionally being kept simple and honest for now, with real personalization (using get_firm_context data on bottlenecks and wins) deferred until that data pipeline is built out further, rather than faking personalization with generic phrasing now.
+The morning briefing's real rendered content (confirmed via live testing) has a distinct structure: bold section headers (e.g. RECENT ACTIVITY with a pin icon), indented bullet list items beneath each header, a stat summary line near the bottom (e.g. "27 clients - 4 active engagements"), and a download link with an icon. The current skeleton is a flat sequence of paragraph-style bars with no indentation, no bullet shapes, and no footer-row shape, so there is a visible structural "snap" when the real content replaces it, since nothing about the skeleton's shape anticipated the list/header layout that was coming.
 
 ## ACTION
 
-Locate the exact source of this message (wherever VERIFY BEFORE ACT found it) and replace the message text with:
+File: /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-Let's get ready to work. I'm ready to help with anything you need.
+Replace the existing skeleton content (the block of 9 divs between the avatar div and the closing tags, lines approximately 924-934) with a version that mirrors the real layout: a header-shaped bar, several indented bullet-shaped bars beneath it, a second header-shaped bar, more indented bullets, a short divider-shaped bar, a stat-line-shaped bar, and a short footer-link-shaped bar at the end:
 
-Remove the "Here are three things to work on first" framing and the three numbered suggestions entirely for this specific message. Do not change the firm_type onboarding question itself (the "what does your firm do most" message), only the message that follows it once firm_type is already known. Do not change any other message in this file.
+                <div className="h-3 w-32 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+                <div className="flex flex-col gap-1.5 ml-3 mt-0.5">
+                  <div className="h-2 w-full bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+                  <div className="h-2 w-4/5 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+                </div>
+                <div className="h-3 w-28 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded mt-2" />
+                <div className="flex flex-col gap-1.5 ml-3 mt-0.5">
+                  <div className="h-2 w-full bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+                  <div className="h-2 w-3/4 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+                  <div className="h-2 w-2/3 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+                </div>
+                <div className="h-px w-full bg-[#D5D8DE] dark:bg-[#444444] mt-2" />
+                <div className="h-2 w-36 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded mt-2" />
+                <div className="h-2 w-20 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded mt-1" />
+
+This gives the skeleton two header-shaped bars (mimicking section headers like RECENT ACTIVITY), indented bullet-shaped lines beneath each, a thin divider, a stat-line-shaped bar, and a short final bar mimicking the download-briefing footer link. Do not change the outer wrapper div, the avatar circle, or the briefingLoading condition that controls when this renders. Do not touch any other file.
 
 ## VERIFY AFTER ACT
 
-grep -n "Let's get ready to work" /home/corby/jamm-os/app/api/concierge/route.py /home/corby/jamm-os/app/api/concierge/prompts.py
+sed -n '918,940p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-Expected: present in whichever file it was added to.
-
-python3 -c "from app.api.concierge.route import router; print('OK')"
-
-Expected: OK, no import errors.
+Confirm the new structure is present and properly nested.
 
 cd /home/corby/jamm-os/frontend
 npm run build
 
-Expected: zero TypeScript errors (only relevant if any frontend string also needed updating; if this was backend-only, confirm no frontend changes were made).
+Expected: zero TypeScript errors.
 
-## MANUAL VERIFICATION
+## MANUAL VERIFICATION (the actual test)
 
-1. Restart the backend.
-2. Open a fresh Concierge session (clear sessionStorage or use a private window) for a firm with firm_type already set.
-3. Confirm the first message reads "Let's get ready to work. I'm ready to help with anything you need." with no numbered list following it.
-4. Regression check: confirm the firm_type onboarding question itself (for a firm with firm_type still null) is unchanged.
+1. Restart the frontend.
+2. Open the Concierge panel on the dashboard for a firm where the morning briefing has not yet loaded (or clear sessionStorage to force a fresh load).
+3. Confirm the loading skeleton now shows a shape resembling headers with indented bullets beneath them, a divider, and a short stat/footer line, rather than a flat sequence of paragraph-style bars.
+4. Confirm the transition from skeleton to real content feels less jarring than before, with the real headers and bullets roughly landing where the skeleton's header and bullet shapes were.
 
 Report what you observe at step 3.
 
@@ -101,7 +110,7 @@ Report what you observe at step 3.
 
 cd /home/corby/jamm-os
 git add -A
-git commit -m "copy: simplify Concierge opening message to honest placeholder text, removing generic non-personalized suggestions until real firm-data-driven personalization is built"
+git commit -m "polish: Concierge loading skeleton now mirrors the morning briefing's real header/bullet/stat-line layout instead of generic flowing-paragraph bars, reducing the visual snap when real content loads"
 git pull --rebase origin main
 git push origin main
 

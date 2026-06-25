@@ -922,15 +922,20 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
                 <span className="text-white text-[10px] font-medium">JC</span>
               </div>
               <div className="flex flex-col gap-2 flex-1 pt-1">
-                <div className="h-3 w-24 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
-                <div className="h-2 w-full bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
-                <div className="h-2 w-4/5 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
-                <div className="h-2 w-16 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded mt-1" />
-                <div className="h-2 w-full bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
-                <div className="h-2 w-3/4 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
-                <div className="h-2 w-16 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded mt-1" />
-                <div className="h-2 w-full bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
-                <div className="h-2 w-2/3 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+                <div className="h-3 w-32 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+                <div className="flex flex-col gap-1.5 ml-3 mt-0.5">
+                  <div className="h-2 w-full bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+                  <div className="h-2 w-4/5 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+                </div>
+                <div className="h-3 w-28 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded mt-2" />
+                <div className="flex flex-col gap-1.5 ml-3 mt-0.5">
+                  <div className="h-2 w-full bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+                  <div className="h-2 w-3/4 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+                  <div className="h-2 w-2/3 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+                </div>
+                <div className="h-px w-full bg-[#D5D8DE] dark:bg-[#444444] mt-2" />
+                <div className="h-2 w-36 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded mt-2" />
+                <div className="h-2 w-20 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded mt-1" />
               </div>
             </div>
           )}
