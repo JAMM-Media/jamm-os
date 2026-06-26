@@ -1051,35 +1051,20 @@ export default function SettingsPage() {
 
         {/* Team tab */}
         {activeTab === 'team' && (
-          <>
-            {teamLoading ? (
-              <div className="rounded-modal border border-[0.5px] border-surface-border dark:border-dark-border overflow-hidden">
-                {Array.from({ length: 5 }).map((_, i) => (
-                  <div
-                    key={i}
-                    className="flex gap-2 px-4 py-3 border-b border-[0.5px] border-[#D5D8DE] dark:border-dark-card last:border-0"
-                  >
-                    <div className="h-2 w-[40%] bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
-                    <div className="h-2 w-[60%] bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
-                    <div className="h-2 w-[30%] bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
-                    <div className="h-4 w-[72px] bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded-full" />
-                  </div>
-                ))}
+          <div className="flex gap-6 items-start">
+
+            {/* Left: Staff table — always visible */}
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-[14px] font-medium text-brand dark:text-[#EDEEF0]">Team Members</span>
+                {!teamLoading && (
+                  <span className="text-[12px] text-[#6B7280] dark:text-[#9CA3AF]">
+                    {team.length} {team.length === 1 ? 'member' : 'members'}
+                  </span>
+                )}
               </div>
-            ) : team.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-24 gap-[10px]">
-                <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-surface-card dark:bg-dark-card border border-[0.5px] border-surface-border dark:border-dark-border">
-                  <span className="text-[18px]">👥</span>
-                </div>
-                <p className="text-[13px] font-medium text-brand dark:text-[#EDEEF0]">
-                  No team members yet
-                </p>
-                <p className="text-[12px] text-[#6B7280]">
-                  Invite staff to your firm to see them here.
-                </p>
-              </div>
-            ) : (
-              <div className="rounded-modal border border-[0.5px] border-surface-border dark:border-dark-border overflow-hidden">
+
+              <div className="rounded-[10px] border border-[0.5px] border-surface-border dark:border-dark-border overflow-hidden">
                 <table className="w-full border-collapse">
                   <thead>
                     <tr className="bg-surface-card dark:bg-[#252525]">
@@ -1094,97 +1079,109 @@ export default function SettingsPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {team.map((member, i) => (
-                      <tr
-                        key={member.id}
-                        className={cn(
-                          'bg-surface-page dark:bg-dark-page',
-                          i !== team.length - 1
-                            ? 'border-b border-[0.5px] border-[#D5D8DE] dark:border-dark-card'
-                            : '',
-                        )}
-                      >
-                        <td className="px-4 py-3">
-                          <span className="text-[12px] font-medium text-brand dark:text-[#EDEEF0]">
-                            {member.full_name ?? '—'}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className="text-[12px] text-[#374151] dark:text-[#9CA3AF]">
-                            {member.email}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3">
-                          <RoleBadge role={member.role} />
-                        </td>
-                        <td className="px-4 py-3">
-                          <span
-                            className={cn(
-                              'text-[11px] font-medium px-2 py-0.5 rounded-full',
-                              member.is_active !== false
-                                ? 'bg-[#D1FAE5] text-[#065F46]'
-                                : 'bg-[#E5E7EB] text-[#6B7280]',
-                            )}
-                          >
-                            {member.is_active !== false ? 'Active' : 'Inactive'}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-2">
-                            <button
-                              onClick={() => setEditingMember(member)}
-                              title="Edit"
-                              className="text-[#6B7280] hover:text-brand dark:hover:text-[#EDEEF0] transition-colors"
-                            >
-                              <Pencil className="h-[14px] w-[14px]" />
-                            </button>
-
-                            {member.id !== user?.id && (
-                              <button
-                                onClick={() => handleToggleActive(member)}
-                                title={member.is_active !== false ? 'Deactivate' : 'Reactivate'}
-                                className="text-[#6B7280] hover:text-[#92400E] transition-colors"
-                              >
-                                {member.is_active !== false ? (
-                                  <UserX className="h-[14px] w-[14px]" />
-                                ) : (
-                                  <UserCheck className="h-[14px] w-[14px]" />
-                                )}
-                              </button>
-                            )}
-
-                            {member.id !== user?.id && (
-                              <button
-                                onClick={() => setDeletingMember(member)}
-                                title="Delete"
-                                className="text-[#6B7280] hover:text-[#991B1B] transition-colors"
-                              >
-                                <Trash2 className="h-[14px] w-[14px]" />
-                              </button>
-                            )}
-                          </div>
+                    {teamLoading ? (
+                      Array.from({ length: 3 }).map((_, i) => (
+                        <tr key={i} className="bg-surface-page dark:bg-dark-page border-b border-[0.5px] border-[#D5D8DE] dark:border-dark-card last:border-0">
+                          {Array.from({ length: 5 }).map((_, j) => (
+                            <td key={j} className="px-4 py-3">
+                              <div className="h-2 w-[60%] bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+                            </td>
+                          ))}
+                        </tr>
+                      ))
+                    ) : team.length === 0 ? (
+                      <tr className="bg-surface-page dark:bg-dark-page">
+                        <td colSpan={5} className="px-4 py-10 text-center text-[12px] text-[#6B7280]">
+                          No team members yet. Use the form to add your first staff member.
                         </td>
                       </tr>
-                    ))}
+                    ) : (
+                      team.map((member, i) => (
+                        <tr
+                          key={member.id}
+                          className={cn(
+                            'bg-surface-page dark:bg-dark-page hover:bg-[#D5D8DE] dark:hover:bg-[#333333] transition-colors',
+                            i !== team.length - 1 ? 'border-b border-[0.5px] border-[#D5D8DE] dark:border-dark-card' : '',
+                          )}
+                        >
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[12px] font-medium text-brand dark:text-[#EDEEF0]">
+                                {member.full_name ?? '—'}
+                              </span>
+                              {member.id === user?.id && (
+                                <span className="text-[11px] text-[#6B7280] dark:text-[#9CA3AF]">(you)</span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className="text-[12px] text-[#374151] dark:text-[#9CA3AF]">{member.email}</span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <RoleBadge role={member.role} />
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className={cn(
+                              'text-[11px] font-medium px-2 py-0.5 rounded-full',
+                              member.is_active !== false ? 'bg-[#D1FAE5] text-[#065F46]' : 'bg-[#E5E7EB] text-[#6B7280]',
+                            )}>
+                              {member.is_active !== false ? 'Active' : 'Inactive'}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => setEditingMember(member)}
+                                title="Edit"
+                                className="text-[#6B7280] hover:text-brand dark:hover:text-[#EDEEF0] transition-colors"
+                              >
+                                <Pencil className="h-[14px] w-[14px]" />
+                              </button>
+                              {member.id !== user?.id && (
+                                <button
+                                  onClick={() => handleToggleActive(member)}
+                                  title={member.is_active !== false ? 'Deactivate' : 'Reactivate'}
+                                  className="text-[#6B7280] hover:text-[#92400E] transition-colors"
+                                >
+                                  {member.is_active !== false ? (
+                                    <UserX className="h-[14px] w-[14px]" />
+                                  ) : (
+                                    <UserCheck className="h-[14px] w-[14px]" />
+                                  )}
+                                </button>
+                              )}
+                              {member.id !== user?.id && (
+                                <button
+                                  onClick={() => setDeletingMember(member)}
+                                  title="Delete"
+                                  className="text-[#6B7280] hover:text-[#991B1B] transition-colors"
+                                >
+                                  <Trash2 className="h-[14px] w-[14px]" />
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ))
+                    )}
                   </tbody>
                 </table>
               </div>
-            )}
+            </div>
 
+            {/* Right: Invite form — firm owner only */}
             {isFirmOwner && (
               <div
                 ref={inviteFormRef}
-                className="bg-surface-card dark:bg-dark-card rounded-[10px] border border-surface-border dark:border-dark-border p-4 max-w-lg"
-                style={{ borderWidth: '0.5px', marginTop: '16px' }}
+                className="w-[340px] flex-shrink-0 bg-surface-card dark:bg-dark-card rounded-[10px] border border-[0.5px] border-surface-border dark:border-dark-border p-4"
               >
-                <p className="text-[13px] font-medium text-brand dark:text-[#EDEEF0]">
-                  Invite Team Member
+                <p className="text-[14px] font-medium text-brand dark:text-[#EDEEF0] mb-1">
+                  Invite Staff Member
                 </p>
-                <p className="text-[12px] text-[#6B7280] mt-1">
-                  Add a new staff member to your firm. They will be able to log in immediately
-                  with the credentials you set.
+                <p className="text-[12px] text-[#6B7280] dark:text-[#9CA3AF] mb-4">
+                  Add a new staff member to your firm. They can log in immediately with the credentials you set.
                 </p>
-                <form onSubmit={handleInvite} className="flex flex-col gap-3 mt-4">
+                <form onSubmit={handleInvite} className="flex flex-col gap-3">
                   <div className={fieldClass}>
                     <label className={labelClass}>Full name</label>
                     <input
@@ -1232,9 +1229,7 @@ export default function SettingsPage() {
                         )}
                       </button>
                     </div>
-                    <span className="text-[11px] text-[#6B7280]">
-                      They can change this after first login.
-                    </span>
+                    <span className="text-[11px] text-[#6B7280]">They can change this after first login.</span>
                   </div>
                   <div className={fieldClass}>
                     <label className={labelClass}>Role</label>
@@ -1260,7 +1255,8 @@ export default function SettingsPage() {
                 </form>
               </div>
             )}
-          </>
+
+          </div>
         )}
 
         {/* Security tab */}

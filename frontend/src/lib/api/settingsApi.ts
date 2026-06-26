@@ -32,10 +32,7 @@ export const settingsApi = {
     api.get('/users/firm'),
 
   listTeam: () =>
-    api.get(
-      '/users/',
-      { params: { limit: 100, offset: 0 } }
-    ),
+    api.get('/users', { params: { limit: 100, offset: 0 } }),
 
   updateStaffAuthPolicy: (policy: StaffAuthPolicy) =>
     api.patch('/settings/security/staff-auth-policy', { staff_auth_policy: policy }),

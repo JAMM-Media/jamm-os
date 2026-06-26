@@ -58,7 +58,7 @@ export interface PaginatedCPERecords {
 
 export const staffApi = {
   listStaff: async (): Promise<StaffMember[]> => {
-    const { data } = await api.get('/users/', { params: { limit: 100, offset: 0 } })
+    const { data } = await api.get('/users', { params: { limit: 100, offset: 0 } })
     return Array.isArray(data) ? data : (data.items ?? [])
   },
 
