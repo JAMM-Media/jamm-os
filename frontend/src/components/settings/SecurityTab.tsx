@@ -481,7 +481,7 @@ export default function SecurityTab() {
               Open your authenticator app (Google Authenticator, Authy, 1Password, or any TOTP app) and scan the QR code below.
             </p>
             <img
-              src={`data:image/png;base64,${setupData.qr_code_base64}`}
+              src={setupData.qr_code_base64.startsWith('data:') ? setupData.qr_code_base64 : `data:image/png;base64,${setupData.qr_code_base64}`}
               alt="2FA QR code"
               className="w-40 h-40 rounded-[6px] border border-[0.5px] border-[#C8CDD6]"
             />
