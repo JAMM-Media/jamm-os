@@ -141,25 +141,28 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
+  const targetWordCountRef = useRef(0)
+  useEffect(() => {
+    const lastMsg = messages[messages.length - 1]
+    if (lastMsg && lastMsg.role === 'concierge') {
+      targetWordCountRef.current = lastMsg.content.split(/\s+/).filter(Boolean).length
+    }
+  }, [messages])
+
   useEffect(() => {
     if (!streaming) return
-    const lastMsg = messages[messages.length - 1]
-    if (!lastMsg || lastMsg.role !== 'concierge') return
-    const targetWordCount = lastMsg.content.split(/\s+/).filter(Boolean).length
-
     function tick() {
       setRevealedWordCount((prev) => {
-        if (prev >= targetWordCount) return prev
+        if (prev >= targetWordCountRef.current) return prev
         return prev + 1
       })
       revealTimerRef.current = setTimeout(tick, 35)
     }
     revealTimerRef.current = setTimeout(tick, 35)
-
     return () => {
       if (revealTimerRef.current) clearTimeout(revealTimerRef.current)
     }
-  }, [streaming, messages])
+  }, [streaming])
   useEffect(() => {
     try {
       const stored = sessionStorage.getItem('jamm_concierge_messages')

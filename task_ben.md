@@ -49,86 +49,67 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-# Task: Add smooth word-by-word reveal animation to streaming Concierge responses
+# Task: Decouple word-reveal timer from messages array to fix choppy reveal during active line bursts
 
 USE: claude sonnet
 
 ## VERIFY BEFORE ACT
 
-grep -n "const \[streaming, setStreaming\]\|setMessages((prev) => \[...prev, { role: 'concierge'" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+sed -n '142,162p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-Confirm the streaming state declaration and the exact point where a new empty concierge message is pushed onto the messages array at the start of sendMessages, before any content streams in.
-
-grep -n "const partial = assembleSSELines" -A 12 /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
-
-Confirm the existing incremental setMessages call inside the while loop (added in commit f9f7def) that updates the last concierge message's content as each complete line arrives. This already correctly produces clean, complete lines with no mid-sentence corruption. This task only changes how that content is visually revealed, not how or when it arrives.
+Confirm the current reveal useEffect has dependency array [streaming, messages], and that the tick chain is fully torn down (clearTimeout) and rebuilt from scratch every time this effect re-runs.
 
 ## WHAT IS WRONG
 
-Confirmed via live testing: streaming responses currently update visually in large, instant jumps whenever a new complete line arrives from the backend, since each line can take a real, sometimes uneven amount of time to generate (especially for bullet-heavy content like the morning briefing, where each item is a separate line). The result feels staggered and unpolished, described as looking like "stepping stones" rather than a smooth, continuous reveal. The underlying text itself is correct and clean (already fixed in prior streaming work), this is purely a presentation-layer issue: content should appear to flow continuously even though it physically arrives from the network in irregular bursts.
+Confirmed via live testing and direct code inspection: the word-reveal effect depends on the full messages array. Since messages is a new array reference every time a backend line arrives (the existing incremental setMessages call from commit f9f7def), React tears down and restarts the entire reveal tick chain on every single line arrival, not just once per streaming session. Early in a response, lines often arrive in quick succession (e.g. several short headers or bullets close together), faster than the 35ms reveal tick. Each new arrival resets the countdown before the previous tick ever fires, so almost nothing gets visually revealed during these bursts. This produces a choppy, frozen-feeling first few seconds, followed by smooth reveal once line arrivals space out past 35ms apart and the tick chain can finally run uninterrupted.
 
 ## ACTION
 
 File: /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-Add new state to track how much of the streaming message's content has been visually revealed so far, separate from the actual backend-received content:
+Replace the reveal effect so the ticking timer is only created once when streaming starts, and reads the current target word count from a ref that updates separately, rather than tearing down the timer on every content change.
 
-  const [revealedWordCount, setRevealedWordCount] = useState(0)
-  const revealTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+Add a ref to hold the latest target word count:
 
-When a new concierge message is started at the beginning of sendMessages (the setMessages((prev) => [...prev, { role: 'concierge', content: '' }]) call), also reset the reveal state:
+  const targetWordCountRef = useRef(0)
 
-  setRevealedWordCount(0)
+Add a lightweight effect that only updates this ref when messages changes, with no timer logic in it at all:
 
-Add a useEffect that drives the reveal animation. It should watch the last message's content (the actual target text received so far) and animate revealedWordCount toward the target word count, one word at a time, on a short fixed interval, never exceeding the actual available word count, and stopping cleanly when streaming becomes false or the component unmounts:
+  useEffect(() => {
+    const lastMsg = messages[messages.length - 1]
+    if (lastMsg && lastMsg.role === 'concierge') {
+      targetWordCountRef.current = lastMsg.content.split(/\s+/).filter(Boolean).length
+    }
+  }, [messages])
+
+Replace the existing reveal effect so it depends only on streaming, starting the tick chain once and never tearing it down due to content changes:
 
   useEffect(() => {
     if (!streaming) return
-    const lastMsg = messages[messages.length - 1]
-    if (!lastMsg || lastMsg.role !== 'concierge') return
-    const targetWordCount = lastMsg.content.split(/\s+/).filter(Boolean).length
-
     function tick() {
       setRevealedWordCount((prev) => {
-        if (prev >= targetWordCount) return prev
+        if (prev >= targetWordCountRef.current) return prev
         return prev + 1
       })
       revealTimerRef.current = setTimeout(tick, 35)
     }
     revealTimerRef.current = setTimeout(tick, 35)
-
     return () => {
       if (revealTimerRef.current) clearTimeout(revealTimerRef.current)
     }
-  }, [streaming, messages])
+  }, [streaming])
 
-When streaming ends (the post-loop block runs and sets the final authoritative message), also snap revealedWordCount to the full final word count so the rest of the message appears immediately rather than continuing to trickle in after the response is actually complete:
-
-  setRevealedWordCount(Number.MAX_SAFE_INTEGER)
-
-Add this line in the same place the final setMessages call happens after the while loop, right after parsedDraft and cleanContent are computed.
-
-In the message rendering section (where ReactMarkdown currently renders msg.content directly), for the specific case of the last message while streaming is true, render only the revealed portion instead of the full content:
-
-  {msg.content ? (
-    <div className={...}>
-      <ReactMarkdown ...>
-        {streaming && i === messages.length - 1
-          ? msg.content.split(/\s+/).filter(Boolean).slice(0, revealedWordCount).join(' ')
-          : msg.content}
-      </ReactMarkdown>
-    </div>
-  ) : ...}
-
-This ensures only the currently-streaming message is affected by the word-level reveal, every other message (already complete, or from earlier in the conversation) renders its full content immediately and normally, with no animation delay.
-
-Do not change assembleSSELines, the backend line-buffering logic, or anything in route.py. This is a frontend-only presentation change on top of content that is already correct. Do not reveal character-by-character; word-level reveal is required specifically to avoid rendering broken markdown tokens like an unclosed ** bold marker mid-reveal.
+This means the tick chain starts exactly once per streaming response and runs continuously at a steady 35ms cadence regardless of how quickly or slowly lines arrive from the backend, always reading the most current target word count via the ref rather than a stale closure. Do not change the snap-to-end logic (setRevealedWordCount(Number.MAX_SAFE_INTEGER) after streaming completes), the word-reset on new message start, or the conditional render slice. Do not touch any other file.
 
 ## VERIFY AFTER ACT
 
-grep -n "revealedWordCount\|revealTimerRef" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+grep -n "targetWordCountRef" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-Expected: state, ref, the driving useEffect, the snap-to-end on stream completion, and the conditional slice in the render section are all present.
+Expected: the ref declaration, the lightweight update effect, and its use inside tick() are all present.
+
+grep -n "\[streaming, messages\]" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+
+Expected: no longer present -- the reveal effect's dependency array should now read [streaming] only.
 
 cd /home/corby/jamm-os/frontend
 npm run build
@@ -138,20 +119,18 @@ Expected: zero TypeScript errors.
 ## MANUAL VERIFICATION (the actual test)
 
 1. Restart the frontend.
-2. Ask a question that produces a bullet-heavy, multi-line response (e.g. the morning briefing, or any stalled-engagements-style list).
-3. Confirm the response now appears to flow word by word continuously, rather than snapping in whole lines with visible pauses between them.
-4. Confirm bold markdown (e.g. **Stalled engagements:**) never renders as literal broken asterisks mid-reveal, only ever appearing once the whole bolded phrase is revealed together.
-5. Confirm once streaming finishes, any remaining unrevealed words appear immediately rather than continuing to trickle in after the response is actually done.
-6. Regression check: scroll up to an earlier, already-completed message in the same conversation and confirm it renders fully and instantly, with no reveal animation applied to historical messages.
+2. Ask "can I see the morning briefing again?" again, the same test case that revealed the choppy start.
+3. Confirm the reveal now feels steady and consistent from the very first word, with no noticeably choppy or frozen period at the start before it smooths out.
+4. Confirm the rest of the behavior is unchanged: smooth reveal throughout, no broken markdown mid-reveal, and a clean snap to full content once streaming completes.
 
-Report what you observe at steps 3 and 4 specifically.
+Report what you observe at step 3 specifically.
 
 ## GIT
 
 cd /home/corby/jamm-os
 git add -A
-git commit -m "feat: streaming Concierge responses now reveal word by word with a smooth animated pace instead of snapping in whole lines as they arrive from the network, while keeping the underlying content delivery and markdown safety unchanged"
+git commit -m "fix: word-reveal timer no longer restarts on every backend line arrival, decoupling it from the messages array so the reveal cadence stays steady from the start instead of choppy during early bursts of fast-arriving lines"
 git pull --rebase origin main
 git push origin main
 
-If conflicts on task.md use --theirs. Conflicts on source files use --ours.s
+If conflicts on task.md use --theirs. Conflicts on source files use --ours.
