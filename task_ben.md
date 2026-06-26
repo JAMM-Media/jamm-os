@@ -49,58 +49,109 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-# Task: Strengthen morning briefing re-request instruction to reliably emit the action marker and avoid duplicate lead-ins
+# Task: Add smooth word-by-word reveal animation to streaming Concierge responses
 
 USE: claude sonnet
 
 ## VERIFY BEFORE ACT
 
-grep -n "show_briefing_again\|Here's your briefing again" /home/corby/jamm-os/app/api/concierge/prompts.py
+grep -n "const \[streaming, setStreaming\]\|setMessages((prev) => \[...prev, { role: 'concierge'" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-Confirm the exact current instruction text and its location.
+Confirm the streaming state declaration and the exact point where a new empty concierge message is pushed onto the messages array at the start of sendMessages, before any content streams in.
+
+grep -n "const partial = assembleSSELines" -A 12 /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+
+Confirm the existing incremental setMessages call inside the while loop (added in commit f9f7def) that updates the last concierge message's content as each complete line arrives. This already correctly produces clean, complete lines with no mid-sentence corruption. This task only changes how that content is visually revealed, not how or when it arrives.
 
 ## WHAT IS WRONG
 
-Confirmed via three separate live tests: the instruction to emit CONCIERGE_ACTION: {"type":"show_briefing_again"} after re-showing the briefing is being followed inconsistently. It fired correctly once, then was silently omitted twice in a row across follow-up tests with no other change to the request. Separately, the instruction to use a single clean lead-in sentence has also produced three different stutter variants across the same three tests: "Here's your briefing again: Here's where things stand:", and most recently "Here's your briefing again: Here is where things stand right now." This is model inconsistency on a soft instruction, not a deterministic code bug, so the fix is to make the instruction itself far more rigid and impossible to interpret loosely, rather than adjusting any frontend code (which has already been verified correct).
+Confirmed via live testing: streaming responses currently update visually in large, instant jumps whenever a new complete line arrives from the backend, since each line can take a real, sometimes uneven amount of time to generate (especially for bullet-heavy content like the morning briefing, where each item is a separate line). The result feels staggered and unpolished, described as looking like "stepping stones" rather than a smooth, continuous reveal. The underlying text itself is correct and clean (already fixed in prior streaming work), this is purely a presentation-layer issue: content should appear to flow continuously even though it physically arrives from the network in irregular bursts.
 
 ## ACTION
 
-File: /home/corby/jamm-os/app/api/concierge/prompts.py
+File: /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-Replace the existing instruction covering this case with stronger, more explicit language that leaves no room for an additional framing sentence and makes the marker mandatory rather than optional-sounding:
+Add new state to track how much of the streaming message's content has been visually revealed so far, separate from the actual backend-received content:
 
-When a user asks to see the morning briefing again after it has already been shown today, your entire response must follow this exact structure with nothing added before or between these parts:
-1. The single line "Here's your briefing again:" and nothing else on that line. Do not add any other introductory or transitional sentence anywhere in the response, including phrases like "here's where things stand" or "here is what's going on." The briefing content that follows already has its own structure and needs no additional framing.
-2. The full briefing content, in the same structure as the original morning briefing.
-3. On its own final line, exactly: CONCIERGE_ACTION: {"type":"show_briefing_again"}
-This marker is required every single time a briefing is re-shown, with no exceptions. Omitting it disables the user's ability to download the briefing, which is a real loss of functionality, not a cosmetic detail.
+  const [revealedWordCount, setRevealedWordCount] = useState(0)
+  const revealTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-Do not change any other instruction in this file.
+When a new concierge message is started at the beginning of sendMessages (the setMessages((prev) => [...prev, { role: 'concierge', content: '' }]) call), also reset the reveal state:
+
+  setRevealedWordCount(0)
+
+Add a useEffect that drives the reveal animation. It should watch the last message's content (the actual target text received so far) and animate revealedWordCount toward the target word count, one word at a time, on a short fixed interval, never exceeding the actual available word count, and stopping cleanly when streaming becomes false or the component unmounts:
+
+  useEffect(() => {
+    if (!streaming) return
+    const lastMsg = messages[messages.length - 1]
+    if (!lastMsg || lastMsg.role !== 'concierge') return
+    const targetWordCount = lastMsg.content.split(/\s+/).filter(Boolean).length
+
+    function tick() {
+      setRevealedWordCount((prev) => {
+        if (prev >= targetWordCount) return prev
+        return prev + 1
+      })
+      revealTimerRef.current = setTimeout(tick, 35)
+    }
+    revealTimerRef.current = setTimeout(tick, 35)
+
+    return () => {
+      if (revealTimerRef.current) clearTimeout(revealTimerRef.current)
+    }
+  }, [streaming, messages])
+
+When streaming ends (the post-loop block runs and sets the final authoritative message), also snap revealedWordCount to the full final word count so the rest of the message appears immediately rather than continuing to trickle in after the response is actually complete:
+
+  setRevealedWordCount(Number.MAX_SAFE_INTEGER)
+
+Add this line in the same place the final setMessages call happens after the while loop, right after parsedDraft and cleanContent are computed.
+
+In the message rendering section (where ReactMarkdown currently renders msg.content directly), for the specific case of the last message while streaming is true, render only the revealed portion instead of the full content:
+
+  {msg.content ? (
+    <div className={...}>
+      <ReactMarkdown ...>
+        {streaming && i === messages.length - 1
+          ? msg.content.split(/\s+/).filter(Boolean).slice(0, revealedWordCount).join(' ')
+          : msg.content}
+      </ReactMarkdown>
+    </div>
+  ) : ...}
+
+This ensures only the currently-streaming message is affected by the word-level reveal, every other message (already complete, or from earlier in the conversation) renders its full content immediately and normally, with no animation delay.
+
+Do not change assembleSSELines, the backend line-buffering logic, or anything in route.py. This is a frontend-only presentation change on top of content that is already correct. Do not reveal character-by-character; word-level reveal is required specifically to avoid rendering broken markdown tokens like an unclosed ** bold marker mid-reveal.
 
 ## VERIFY AFTER ACT
 
-grep -n "This marker is required every single time" /home/corby/jamm-os/app/api/concierge/prompts.py
+grep -n "revealedWordCount\|revealTimerRef" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-Expected: present.
+Expected: state, ref, the driving useEffect, the snap-to-end on stream completion, and the conditional slice in the render section are all present.
 
-python3 -c "from app.api.concierge.route import router; print('OK')"
+cd /home/corby/jamm-os/frontend
+npm run build
 
-Expected: OK, no import errors.
+Expected: zero TypeScript errors.
 
 ## MANUAL VERIFICATION (the actual test)
 
-Restart the backend. Ask "can I see the morning briefing again?" at least three separate times in three separate fresh requests (not the same cached response). For each one, check the DevTools Console [CONCIERGE RAW] output and confirm:
-1. Exactly one lead-in line, always "Here's your briefing again:" with nothing else added before the content.
-2. The CONCIERGE_ACTION marker present in all three responses, not just some of them.
+1. Restart the frontend.
+2. Ask a question that produces a bullet-heavy, multi-line response (e.g. the morning briefing, or any stalled-engagements-style list).
+3. Confirm the response now appears to flow word by word continuously, rather than snapping in whole lines with visible pauses between them.
+4. Confirm bold markdown (e.g. **Stalled engagements:**) never renders as literal broken asterisks mid-reveal, only ever appearing once the whole bolded phrase is revealed together.
+5. Confirm once streaming finishes, any remaining unrevealed words appear immediately rather than continuing to trickle in after the response is actually done.
+6. Regression check: scroll up to an earlier, already-completed message in the same conversation and confirm it renders fully and instantly, with no reveal animation applied to historical messages.
 
-Report the raw output for all three attempts, not just the first one, since the whole point of this fix is consistency across repeated requests, not a single lucky success.
+Report what you observe at steps 3 and 4 specifically.
 
 ## GIT
 
 cd /home/corby/jamm-os
 git add -A
-git commit -m "fix: strengthen morning briefing re-request instruction to make the action marker mandatory and the lead-in sentence rigid, addressing model inconsistency observed across repeated tests"
+git commit -m "feat: streaming Concierge responses now reveal word by word with a smooth animated pace instead of snapping in whole lines as they arrive from the network, while keeping the underlying content delivery and markdown safety unchanged"
 git pull --rebase origin main
 git push origin main
 
-If conflicts on task.md use --theirs. Conflicts on source files use --ours.
+If conflicts on task.md use --theirs. Conflicts on source files use --ours.s

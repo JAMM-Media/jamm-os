@@ -92,6 +92,8 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
   const [notificationsExpanded, setNotificationsExpanded] = useState(false)
   const [input, setInput] = useState('')
   const [streaming, setStreaming] = useState(false)
+  const [revealedWordCount, setRevealedWordCount] = useState(0)
+  const revealTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [hasMounted, setHasMounted] = useState(false)
   useEffect(() => {
     setHasMounted(true)
@@ -138,6 +140,26 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
+
+  useEffect(() => {
+    if (!streaming) return
+    const lastMsg = messages[messages.length - 1]
+    if (!lastMsg || lastMsg.role !== 'concierge') return
+    const targetWordCount = lastMsg.content.split(/\s+/).filter(Boolean).length
+
+    function tick() {
+      setRevealedWordCount((prev) => {
+        if (prev >= targetWordCount) return prev
+        return prev + 1
+      })
+      revealTimerRef.current = setTimeout(tick, 35)
+    }
+    revealTimerRef.current = setTimeout(tick, 35)
+
+    return () => {
+      if (revealTimerRef.current) clearTimeout(revealTimerRef.current)
+    }
+  }, [streaming, messages])
   useEffect(() => {
     try {
       const stored = sessionStorage.getItem('jamm_concierge_messages')
@@ -209,6 +231,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
   const sendMessages = useCallback(
     async (thread: Message[]) => {
       setStreaming(true)
+      setRevealedWordCount(0)
       setMessages((prev) => [...prev, { role: 'concierge', content: '' }])
 
       const token = localStorage.getItem('access_token')
@@ -304,6 +327,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
           }
           return updated
         })
+        setRevealedWordCount(Number.MAX_SAFE_INTEGER)
         if (pendingActionRef.current) {
           const action = pendingActionRef.current
           pendingActionRef.current = null
@@ -1019,7 +1043,9 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
                         em: ({node, ...props}) => <em className="not-italic text-[11px] text-[#6B7280]" {...props} />,
                       }}
                     >
-                      {msg.content}
+                      {streaming && i === messages.length - 1
+                        ? msg.content.split(/\s+/).filter(Boolean).slice(0, revealedWordCount).join(' ')
+                        : msg.content}
                     </ReactMarkdown>
                   </div>
                 ) : streaming && i === messages.length - 1 ? (
