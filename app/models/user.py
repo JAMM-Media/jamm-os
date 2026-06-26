@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import String, DateTime, Boolean, Text, Integer, ForeignKey
+from sqlalchemy import String, DateTime, Boolean, Text, Integer, ForeignKey, Numeric
 from sqlalchemy import Enum as PgEnum
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -57,6 +57,12 @@ class User(Base):
         PgEnum(UserRole, name="userrole"),
         default=UserRole.staff,
         nullable=False,
+    )
+
+    cost_rate: Mapped[Optional[float]] = mapped_column(
+        Numeric(10, 2),
+        nullable=True,
+        default=None,
     )
 
     # token_version is used for session invalidation.

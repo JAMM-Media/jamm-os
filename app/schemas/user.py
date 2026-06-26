@@ -27,10 +27,12 @@ class UserUpdate(BaseModel):
     password: Optional[str] = None
     is_active: Optional[bool] = None
     role: Optional[UserRole] = None
+    cost_rate: Optional[float] = None
 
 
 class UserOut(UserBase):
     id: UUID
     firm_id: UUID
+    cost_rate: Optional[float] = None
 
     model_config = ConfigDict(from_attributes=True)

@@ -65,6 +65,7 @@ from app.api.calendar import router as calendar_router
 from app.api.morning_briefing import router as morning_briefing_router
 from app.api.staff_credentials import router as staff_credentials_router
 from app.api.cpe_records import router as cpe_records_router
+from app.api.financial_intelligence import router as financial_intelligence_router
 
 from app.db.base_class import Base
 from app.core.config import get_settings
@@ -246,6 +247,7 @@ app.include_router(calendar_router, prefix="/api/v1")
 app.include_router(morning_briefing_router, prefix="/api/v1")
 app.include_router(staff_credentials_router)
 app.include_router(cpe_records_router)
+app.include_router(financial_intelligence_router)
 
 
 @app.get("/")

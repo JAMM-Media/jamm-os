@@ -1,7 +1,9 @@
 # app/api/users.py
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status, Query
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
+from typing import Optional
 from uuid import UUID
 
 from app.db.session import get_db
@@ -252,6 +254,43 @@ def update_user(
         )
 
     return updated
+
+
+class _CostRateBody(BaseModel):
+    cost_rate: Optional[float] = None
+
+
+# -------------------------------------------------------------------
+# PATCH /users/{user_id}/cost-rate — Set staff cost rate (firm_owner only)
+# -------------------------------------------------------------------
+@router.patch("/{user_id}/cost-rate", response_model=UserOut)
+def update_user_cost_rate(
+    user_id: UUID,
+    body: _CostRateBody,
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    _: object = Depends(require_firm_owner),
+):
+    from app.services.behavioral_log import log_event
+    user = db.query(User).filter(
+        User.id == user_id,
+        User.firm_id == current_firm.id,
+    ).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    user.cost_rate = body.cost_rate
+    db.commit()
+    db.refresh(user)
+    log_event(
+        firm_id=current_firm.id,
+        event_type="staff.cost_rate_set",
+        entity_type="user",
+        entity_id=user_id,
+        actor_type="staff",
+        actor_id=None,
+        metadata={"cost_rate": body.cost_rate, "user_id": str(user_id)},
+    )
+    return user
 
 
 # -------------------------------------------------------------------
