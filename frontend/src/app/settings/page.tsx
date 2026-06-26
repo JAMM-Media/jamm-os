@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation'
 import { AppShell } from '@/components/layout/AppShell'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { useFetch } from '@/lib/hooks/useFetch'
-import { Eye, EyeOff, Plug, CheckCircle2, ChevronLeft } from 'lucide-react'
+import { Eye, EyeOff, Plug, CheckCircle2, ChevronLeft, Pencil, UserX, UserCheck, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 import api from '@/lib/api'
@@ -20,6 +20,9 @@ import SendingDomainTab from '@/components/settings/SendingDomainTab'
 import PortalDomainTab from '@/components/settings/PortalDomainTab'
 import EmailCalendarTab from '@/components/settings/EmailCalendarTab'
 import { onConciergeAction, setFormDirty } from '@/lib/events/conciergeEvents'
+import { staffApi } from '@/lib/api/staffApi'
+import { EditStaffModal } from '@/components/settings/EditStaffModal'
+import { DeleteStaffModal } from '@/components/settings/DeleteStaffModal'
 
 interface Integration {
   id: string
@@ -445,6 +448,9 @@ export default function SettingsPage() {
   const [invitePasswordLocked, setInvitePasswordLocked] = useState(false)
   const inviteFormRef = useRef<HTMLDivElement>(null)
 
+  const [editingMember, setEditingMember] = useState<StaffMember | null>(null)
+  const [deletingMember, setDeletingMember] = useState<StaffMember | null>(null)
+
   useEffect(() => {
     const raw = sessionStorage.getItem('jamm_concierge_pending')
     if (!raw) return
@@ -497,6 +503,16 @@ export default function SettingsPage() {
       toast.error(detail ?? 'Something went wrong.')
     } finally {
       setInviteSubmitting(false)
+    }
+  }
+
+  async function handleToggleActive(member: StaffMember) {
+    try {
+      await staffApi.updateUser(member.id, { is_active: !member.is_active })
+      refetchTeam()
+      toast.success(member.is_active ? 'Staff member deactivated.' : 'Staff member reactivated.')
+    } catch {
+      toast.error('Failed to update status.')
     }
   }
 
@@ -1067,7 +1083,7 @@ export default function SettingsPage() {
                 <table className="w-full border-collapse">
                   <thead>
                     <tr className="bg-surface-card dark:bg-[#252525]">
-                      {['Name', 'Email', 'Role', 'Status'].map((col) => (
+                      {['Name', 'Email', 'Role', 'Status', 'Actions'].map((col) => (
                         <th
                           key={col}
                           className="px-4 py-2.5 text-left text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em] whitespace-nowrap"
@@ -1112,6 +1128,41 @@ export default function SettingsPage() {
                           >
                             {member.is_active !== false ? 'Active' : 'Inactive'}
                           </span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => setEditingMember(member)}
+                              title="Edit"
+                              className="text-[#6B7280] hover:text-brand dark:hover:text-[#EDEEF0] transition-colors"
+                            >
+                              <Pencil className="h-[14px] w-[14px]" />
+                            </button>
+
+                            {member.id !== user?.id && (
+                              <button
+                                onClick={() => handleToggleActive(member)}
+                                title={member.is_active !== false ? 'Deactivate' : 'Reactivate'}
+                                className="text-[#6B7280] hover:text-[#92400E] transition-colors"
+                              >
+                                {member.is_active !== false ? (
+                                  <UserX className="h-[14px] w-[14px]" />
+                                ) : (
+                                  <UserCheck className="h-[14px] w-[14px]" />
+                                )}
+                              </button>
+                            )}
+
+                            {member.id !== user?.id && (
+                              <button
+                                onClick={() => setDeletingMember(member)}
+                                title="Delete"
+                                className="text-[#6B7280] hover:text-[#991B1B] transition-colors"
+                              >
+                                <Trash2 className="h-[14px] w-[14px]" />
+                              </button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -1243,6 +1294,20 @@ export default function SettingsPage() {
 
         </div>
       </div>
+
+      <EditStaffModal
+        open={editingMember !== null}
+        onClose={() => setEditingMember(null)}
+        onSaved={() => { refetchTeam(); setEditingMember(null) }}
+        member={editingMember}
+      />
+
+      <DeleteStaffModal
+        open={deletingMember !== null}
+        onClose={() => setDeletingMember(null)}
+        onDeleted={() => { refetchTeam(); setDeletingMember(null) }}
+        member={deletingMember}
+      />
     </AppShell>
   )
 }

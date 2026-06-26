@@ -23,6 +23,8 @@ export interface StaffMember {
   role: string
   is_active: boolean
   firm_id: string
+  totp_enabled: boolean
+  created_at: string
 }
 
 export const settingsApi = {
