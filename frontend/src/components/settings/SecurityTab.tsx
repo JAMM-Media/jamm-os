@@ -2,10 +2,11 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Loader2 } from 'lucide-react'
+import { Loader2, CheckCircle2 } from 'lucide-react'
 import { settingsApi, type StaffAuthPolicy } from '@/lib/api/settingsApi'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+import api from '@/lib/api'
 
 interface PolicyOption {
   value: StaffAuthPolicy
@@ -68,8 +69,20 @@ export default function SecurityTab() {
   const [sessionTimeout, setSessionTimeout] = useState(480)
   const [savingTimeout, setSavingTimeout] = useState(false)
 
+  // 2FA
+  const [twoFAStatus, setTwoFAStatus] = useState<{ totp_enabled: boolean; is_required: boolean } | null>(null)
+  const [twoFAView, setTwoFAView] = useState<'idle' | 'setup' | 'verify' | 'enabled'>('idle')
+  const [setupData, setSetupData] = useState<{ secret: string; qr_code_base64: string; backup_codes: string[] } | null>(null)
+  const [verifyCode, setVerifyCode] = useState('')
+  const [verifyError, setVerifyError] = useState<string | null>(null)
+  const [backupCodes, setBackupCodes] = useState<string[] | null>(null)
+  const [disabling, setDisabling] = useState(false)
+  const [setupLoading, setSetupLoading] = useState(false)
+  const [verifying, setVerifying] = useState(false)
+  const [regenerating, setRegenerating] = useState(false)
+
   useEffect(() => {
-    settingsApi
+    const firmPromise = settingsApi
       .getMyFirm()
       .then((r) => {
         const data = r.data as {
@@ -87,7 +100,14 @@ export default function SecurityTab() {
         setMaxFailedAttempts((passwordPolicy.max_failed_attempts as number) ?? 5)
         setSessionTimeout((data.settings?.session_timeout_minutes as number) ?? 480)
       })
-      .finally(() => setLoading(false))
+
+    const twoFAPromise = api.get('/auth/2fa/status').then((r) => {
+      const status = r.data as { totp_enabled: boolean; is_required: boolean }
+      setTwoFAStatus(status)
+      setTwoFAView(status.totp_enabled ? 'enabled' : 'idle')
+    }).catch(() => {})
+
+    Promise.all([firmPromise, twoFAPromise]).finally(() => setLoading(false))
   }, [])
 
   async function handleSave(selected: StaffAuthPolicy) {
@@ -120,6 +140,68 @@ export default function SecurityTab() {
       toast.error('Could not save. Please try again.')
     } finally {
       setSavingPassword(false)
+    }
+  }
+
+  async function handleSetup2FA() {
+    setSetupLoading(true)
+    try {
+      const r = await api.post('/auth/2fa/setup')
+      setSetupData(r.data as { secret: string; qr_code_base64: string; backup_codes: string[] })
+      setVerifyCode('')
+      setVerifyError(null)
+      setTwoFAView('setup')
+    } catch {
+      toast.error('Could not start 2FA setup. Please try again.')
+    } finally {
+      setSetupLoading(false)
+    }
+  }
+
+  async function handleVerify2FA() {
+    if (!setupData) return
+    setVerifying(true)
+    setVerifyError(null)
+    const codes = setupData.backup_codes
+    try {
+      await api.post('/auth/2fa/verify', { code: verifyCode })
+      setTwoFAView('enabled')
+      setSetupData(null)
+      setBackupCodes(codes)
+      toast.success('2FA enabled.')
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } }).response?.data?.detail
+      setVerifyError(detail ?? 'Invalid code. Please try again.')
+    } finally {
+      setVerifying(false)
+    }
+  }
+
+  async function handleDisable2FA() {
+    setDisabling(true)
+    try {
+      await api.post('/auth/2fa/disable')
+      setTwoFAView('idle')
+      setBackupCodes(null)
+      toast.success('2FA disabled.')
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } }).response?.data?.detail
+      toast.error(detail ?? 'Could not disable 2FA. Please try again.')
+    } finally {
+      setDisabling(false)
+    }
+  }
+
+  async function handleRegenerate() {
+    setRegenerating(true)
+    try {
+      const r = await api.post('/auth/2fa/backup-codes/regenerate')
+      setBackupCodes((r.data as { backup_codes: string[] }).backup_codes)
+      toast.success('New backup codes generated. Save them now.')
+    } catch {
+      toast.error('Could not regenerate backup codes. Please try again.')
+    } finally {
+      setRegenerating(false)
     }
   }
 
@@ -363,6 +445,182 @@ export default function SecurityTab() {
         >
           Changes take effect on the next login. Active sessions are not affected.
         </div>
+      </div>
+
+      <div className="border-t border-[0.5px] border-[#C8CDD6] dark:border-[#484848] my-6" />
+
+      {/* Section 4: Two-factor authentication */}
+      <div>
+        {twoFAView === 'idle' && (
+          <>
+            <p className="text-[13px] font-[500] text-brand dark:text-[#EDEEF0] mb-1">
+              Two-factor authentication
+            </p>
+            <p className="text-[12px] text-[#6B7280] mb-4">
+              Add an extra layer of security to your account. Once enabled, you will need your authenticator app each time you sign in.
+            </p>
+            <button
+              type="button"
+              onClick={handleSetup2FA}
+              disabled={setupLoading}
+              className="flex items-center gap-2 h-8 px-4 rounded-[6px] text-[13px] font-[500] text-white disabled:opacity-70 cursor-pointer"
+              style={{ backgroundColor: '#1F3148' }}
+            >
+              {setupLoading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+              Set up 2FA
+            </button>
+          </>
+        )}
+
+        {twoFAView === 'setup' && setupData && (
+          <>
+            <p className="text-[13px] font-[500] text-brand dark:text-[#EDEEF0] mb-1">
+              Scan this QR code
+            </p>
+            <p className="text-[12px] text-[#6B7280] mb-4">
+              Open your authenticator app (Google Authenticator, Authy, 1Password, or any TOTP app) and scan the QR code below.
+            </p>
+            <img
+              src={`data:image/png;base64,${setupData.qr_code_base64}`}
+              alt="2FA QR code"
+              className="w-40 h-40 rounded-[6px] border border-[0.5px] border-[#C8CDD6]"
+            />
+            <p className="text-[11px] text-[#6B7280] mt-3">
+              Can not scan? Enter this code manually:
+            </p>
+            <span className="font-mono text-[11px] bg-[#EDEEF0] dark:bg-[#383838] px-2 py-1 rounded select-all break-all inline-block mt-1">
+              {setupData.secret}
+            </span>
+
+            <div className="border-t border-[0.5px] border-[#C8CDD6] dark:border-[#484848] my-4" />
+
+            <p className="text-[13px] font-[500] text-brand dark:text-[#EDEEF0] mb-1">
+              Enter the 6-digit code
+            </p>
+            <p className="text-[12px] text-[#6B7280] mb-3">
+              Type the code shown in your authenticator app to confirm setup.
+            </p>
+            <input
+              type="text"
+              value={verifyCode}
+              onChange={(e) => setVerifyCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+              maxLength={6}
+              inputMode="numeric"
+              autoComplete="off"
+              placeholder="000000"
+              className="w-36 h-10 text-center font-mono text-[18px] text-[#1F3148] rounded-[6px] border border-[#C8CDD6] bg-white px-2 outline-none focus:border-[#1F3148] block"
+            />
+            {verifyError && (
+              <p className="text-[12px] text-[#DC2626] mt-1">{verifyError}</p>
+            )}
+
+            <div className="mt-4">
+              <p className="text-[12px] font-[500] text-[#1F3148] mb-1">Save your backup codes</p>
+              <p className="text-[11px] text-[#6B7280] mb-2">
+                Store these somewhere safe. Each code can only be used once to sign in if you lose access to your authenticator app.
+              </p>
+              <div className="grid grid-cols-2 gap-1">
+                {setupData.backup_codes.map((code) => (
+                  <span
+                    key={code}
+                    className="font-mono text-[11px] bg-[#EDEEF0] dark:bg-[#383838] px-2 py-1 rounded"
+                  >
+                    {code}
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 mt-4">
+              <button
+                type="button"
+                onClick={() => { setTwoFAView('idle'); setSetupData(null); setVerifyCode(''); setVerifyError(null) }}
+                className="h-8 px-4 rounded-[6px] border border-[0.5px] border-[#C8CDD6] text-[13px] font-[500] text-[#6B7280] hover:bg-[#EDEEF0] dark:hover:bg-[#383838] transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleVerify2FA}
+                disabled={verifyCode.length !== 6 || verifying}
+                className="flex items-center gap-2 h-8 px-4 rounded-[6px] text-[13px] font-[500] text-white disabled:opacity-70 cursor-pointer"
+                style={{ backgroundColor: '#1F3148' }}
+              >
+                {verifying && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                Verify and enable
+              </button>
+            </div>
+          </>
+        )}
+
+        {twoFAView === 'enabled' && (
+          <>
+            <div className="flex items-center gap-2 mb-1">
+              <CheckCircle2 className="w-4 h-4 text-[#065F46]" />
+              <span className="text-[13px] font-[500] text-[#065F46]">
+                Two-factor authentication is enabled
+              </span>
+            </div>
+            <p className="text-[12px] text-[#6B7280] mb-4">
+              Your account is protected with an authenticator app. You will be prompted for a code each time you sign in.
+            </p>
+
+            {/* Row 1: Regenerate backup codes */}
+            <div className="flex items-start justify-between gap-4 py-3">
+              <div>
+                <p className="text-[12px] font-[500] text-[#1F3148]">Backup codes</p>
+                <p className="text-[11px] text-[#6B7280] mt-0.5">
+                  Generate a new set of backup codes. Your old codes will stop working immediately.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleRegenerate}
+                disabled={regenerating}
+                className="flex-shrink-0 flex items-center gap-1.5 h-8 px-3 rounded-[6px] border border-[0.5px] border-[#C8CDD6] text-[12px] text-[#6B7280] hover:bg-[#EDEEF0] dark:hover:bg-[#383838] transition-colors cursor-pointer disabled:opacity-70"
+              >
+                {regenerating && <Loader2 className="w-3 h-3 animate-spin" />}
+                Regenerate codes
+              </button>
+            </div>
+
+            {backupCodes && (
+              <div className="mb-3">
+                <div className="grid grid-cols-2 gap-1">
+                  {backupCodes.map((code) => (
+                    <span
+                      key={code}
+                      className="font-mono text-[11px] bg-[#EDEEF0] dark:bg-[#383838] px-2 py-1 rounded"
+                    >
+                      {code}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="border-t border-[0.5px] border-[#C8CDD6] dark:border-[#484848]" />
+
+            {/* Row 2: Disable 2FA */}
+            <div className="flex items-start justify-between gap-4 py-3">
+              <div>
+                <p className="text-[12px] font-[500] text-[#991B1B]">Disable two-factor authentication</p>
+                <p className="text-[11px] text-[#6B7280] mt-0.5">
+                  Removing 2FA makes your account less secure.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleDisable2FA}
+                disabled={disabling}
+                className="flex-shrink-0 flex items-center gap-1.5 h-8 px-3 text-[12px] rounded-[6px] border border-[#991B1B] text-[#991B1B] hover:bg-[#FEE2E2] transition-colors cursor-pointer disabled:opacity-70"
+              >
+                {disabling && <Loader2 className="w-3 h-3 animate-spin" />}
+                Disable 2FA
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   )
