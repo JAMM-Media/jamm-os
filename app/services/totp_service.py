@@ -3,12 +3,20 @@
 import base64
 import io
 import json
+import logging
 import random
 import string
 
 import bcrypt as _bcrypt_lib
 import pyotp
 import qrcode
+from sqlalchemy.orm import Session
+
+from app.models.user import User
+from app.services.audit_service import write_audit_log
+from app.services.behavioral_log import log_event
+
+logger = logging.getLogger(__name__)
 
 
 def generate_totp_secret() -> str:
@@ -58,3 +66,30 @@ def verify_backup_code(stored_hashes_json: str, code: str) -> tuple[bool, str]:
             hashes.pop(i)
             return True, json.dumps(hashes)
     return False, stored_hashes_json
+
+
+def enable_2fa_for_user(db: Session, user: User, ip_address: str | None = None, user_agent: str | None = None) -> None:
+    user.totp_enabled = True
+    db.commit()
+
+    write_audit_log(
+        db=db,
+        firm_id=user.firm_id,
+        action="user.2fa_enabled",
+        actor_id=user.id,
+        actor_type="staff",
+        entity_type="user",
+        entity_id=user.id,
+        ip_address=ip_address,
+        user_agent=user_agent,
+    )
+
+    log_event(
+        event_type="2fa.enabled",
+        firm_id=user.firm_id,
+        entity_type="user",
+        entity_id=user.id,
+        actor_type="staff",
+        actor_id=user.id,
+        metadata={"role": user.role.value if hasattr(user.role, "value") else str(user.role)},
+    )

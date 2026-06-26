@@ -2,7 +2,7 @@
 
 import json
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 
@@ -19,6 +19,7 @@ from app.services.totp_service import (
     generate_qr_code_base64,
     verify_totp_code,
     generate_backup_codes,
+    enable_2fa_for_user,
 )
 from app.services.audit_service import write_audit_log
 
@@ -67,6 +68,7 @@ def setup_2fa(
 
 @router.post("/2fa/verify")
 def verify_2fa(
+    request: Request,
     body: TOTPVerifyRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -77,17 +79,11 @@ def verify_2fa(
     if not verify_totp_code(current_user.totp_secret, body.code):
         raise HTTPException(status_code=400, detail="Invalid code")
 
-    current_user.totp_enabled = True
-    db.commit()
-
-    write_audit_log(
+    enable_2fa_for_user(
         db=db,
-        firm_id=current_user.firm_id,
-        action="user.2fa_enabled",
-        actor_id=current_user.id,
-        actor_type="staff",
-        entity_type="user",
-        entity_id=current_user.id,
+        user=current_user,
+        ip_address=request.headers.get("X-Forwarded-For", "").split(",")[0].strip() or (request.client.host if request.client else None),
+        user_agent=request.headers.get("user-agent"),
     )
 
     return {"message": "2FA enabled successfully"}
