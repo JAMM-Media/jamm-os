@@ -49,100 +49,39 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-# Task: Combine cooldown messaging, clean re-request phrasing, and enable the download button when the briefing is shown again
+# Task: Strengthen morning briefing re-request instruction to reliably emit the action marker and avoid duplicate lead-ins
 
 USE: claude sonnet
 
 ## VERIFY BEFORE ACT
 
-grep -n "Already checked in with your morning briefing" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+grep -n "show_briefing_again\|Here's your briefing again" /home/corby/jamm-os/app/api/concierge/prompts.py
 
-Confirm the exact current cooldown message line.
-
-sed -n '590,630p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
-
-Confirm the existing CONCIERGE_ACTION pattern: ACTION_MARKER parsing in handleConciergeAction, the special-cased set_firm_type type that routes through pendingActionRef and bypasses the normal autopilotRef.current gate (unlike other action types, which require Autopilot ON before they execute), and how executeAction dispatches on action.type.
-
-grep -n "isBriefing\|detailReady\|detailBriefing" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
-
-Confirm how the original morning-briefing open flow sets isBriefing: true on a message and populates detailBriefing/detailReady to enable the Download briefing button, so the new action type can reproduce this exactly.
-
-grep -n "morning briefing\|briefing again" /home/corby/jamm-os/app/api/concierge/prompts.py -i
-
-Find any existing instruction governing how the model responds when a user asks to see the briefing again, to edit in place rather than duplicate.
+Confirm the exact current instruction text and its location.
 
 ## WHAT IS WRONG
 
-Three related, confirmed issues around re-requesting the morning briefing after it has already run today:
-
-1. The cooldown fallback message does not tell the user they can ask to see the briefing again, so a user who dismissed it or missed it has no obvious path to retrieve it.
-2. When a user does ask, the model's response repeats itself awkwardly ("Here is your briefing again. Here is your morning briefing.").
-3. Critically, asking to see the briefing again returns a normal chat message with no Download briefing button, because that capability only exists on the message created by the original _open() flow, which sets isBriefing: true and populates detailBriefing/detailReady. A re-requested briefing goes through the generic /concierge/chat path instead, which never sets any of this, so the user cannot download a briefing they explicitly asked to see again.
+Confirmed via three separate live tests: the instruction to emit CONCIERGE_ACTION: {"type":"show_briefing_again"} after re-showing the briefing is being followed inconsistently. It fired correctly once, then was silently omitted twice in a row across follow-up tests with no other change to the request. Separately, the instruction to use a single clean lead-in sentence has also produced three different stutter variants across the same three tests: "Here's your briefing again: Here's where things stand:", and most recently "Here's your briefing again: Here is where things stand right now." This is model inconsistency on a soft instruction, not a deterministic code bug, so the fix is to make the instruction itself far more rigid and impossible to interpret loosely, rather than adjusting any frontend code (which has already been verified correct).
 
 ## ACTION
 
-File 1: /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+File: /home/corby/jamm-os/app/api/concierge/prompts.py
 
-Update the cooldown message:
+Replace the existing instruction covering this case with stronger, more explicit language that leaves no room for an additional framing sentence and makes the marker mandatory rather than optional-sounding:
 
-"Already checked in with your morning briefing earlier today. Ask me anytime if you'd like to see it again, or let me know if anything's changed or if you need help with something specific."
+When a user asks to see the morning briefing again after it has already been shown today, your entire response must follow this exact structure with nothing added before or between these parts:
+1. The single line "Here's your briefing again:" and nothing else on that line. Do not add any other introductory or transitional sentence anywhere in the response, including phrases like "here's where things stand" or "here is what's going on." The briefing content that follows already has its own structure and needs no additional framing.
+2. The full briefing content, in the same structure as the original morning briefing.
+3. On its own final line, exactly: CONCIERGE_ACTION: {"type":"show_briefing_again"}
+This marker is required every single time a briefing is re-shown, with no exceptions. Omitting it disables the user's ability to download the briefing, which is a real loss of functionality, not a cosmetic detail.
 
-In handleConciergeAction, add a new special-cased action type following the exact same pattern as set_firm_type (bypassing the autopilotRef.current gate, since this is a read action, not a navigation or automation action that should require Autopilot ON):
-
-      if (action.type === 'set_firm_type') {
-        pendingActionRef.current = action
-        return beforeAction || ''
-      }
-      if (action.type === 'show_briefing_again') {
-        pendingActionRef.current = action
-        return beforeAction || ''
-      }
-
-In executeAction, add a new branch handling this type, fetching the detail briefing and attaching it to the most recent concierge message exactly the way the original open flow does:
-
-    if (action.type === 'show_briefing_again') {
-      try {
-        const res = await api.post('/concierge/morning-briefing/detail')
-        if (res.status === 200 && res.data?.briefing) {
-          setDetailBriefing(res.data.briefing)
-          setDetailReady(true)
-          setMessages((prev) => {
-            const updated = [...prev]
-            const last = updated[updated.length - 1]
-            if (last && last.role === 'concierge') {
-              updated[updated.length - 1] = { ...last, isBriefing: true }
-            }
-            return updated
-          })
-        }
-      } catch {
-        // non-fatal -- message text already shown, download button simply will not appear
-      }
-      return
-    }
-
-File 2: /home/corby/jamm-os/app/api/concierge/prompts.py
-
-Add or adjust an instruction covering this exact case, near the existing morning briefing or DRAFT RESPONSE PATTERNS section, in the same voice as the rest of the file:
-
-When a user asks to see the morning briefing again after it has already been shown today, respond with one clean lead-in sentence such as "Here's your briefing again:" followed by the briefing content. Do not repeat the phrase "morning briefing" or restate the lead-in a second time. After the briefing content, emit CONCIERGE_ACTION: {"type":"show_briefing_again"} on its own line so the download option becomes available again.
-
-Do not change the cooldown duration, the original _open() morning-briefing flow, or any other message or action type in either file.
+Do not change any other instruction in this file.
 
 ## VERIFY AFTER ACT
 
-grep -n "show_briefing_again" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx /home/corby/jamm-os/app/api/concierge/prompts.py
-
-Expected: present in both files.
-
-grep -n "Ask me anytime if you'd like to see it again" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+grep -n "This marker is required every single time" /home/corby/jamm-os/app/api/concierge/prompts.py
 
 Expected: present.
-
-cd /home/corby/jamm-os/frontend
-npm run build
-
-Expected: zero TypeScript errors.
 
 python3 -c "from app.api.concierge.route import router; print('OK')"
 
@@ -150,20 +89,17 @@ Expected: OK, no import errors.
 
 ## MANUAL VERIFICATION (the actual test)
 
-1. Restart both backend and frontend.
-2. Trigger the cooldown state (open the panel a second time today after a real briefing already ran) and confirm the message mentions it can be requested again.
-3. Ask "can I see the morning briefing again?" and confirm the response leads with one clean sentence, no repeated stutter phrasing.
-4. Confirm a Download briefing button now appears on this re-requested message, and clicking it successfully downloads a PDF, exactly as it does on the very first open of the day.
-5. Regression check: confirm the original first-open-of-the-day flow (real briefing, Download button, detail fetch) still works exactly as before, unaffected by this change.
-6. Regression check: confirm Autopilot does not need to be turned on for the download button to appear on a re-request, since this is a read action and should not require it, same as set_firm_type does not require it.
+Restart the backend. Ask "can I see the morning briefing again?" at least three separate times in three separate fresh requests (not the same cached response). For each one, check the DevTools Console [CONCIERGE RAW] output and confirm:
+1. Exactly one lead-in line, always "Here's your briefing again:" with nothing else added before the content.
+2. The CONCIERGE_ACTION marker present in all three responses, not just some of them.
 
-Report what you observe at steps 3, 4, and 6 specifically.
+Report the raw output for all three attempts, not just the first one, since the whole point of this fix is consistency across repeated requests, not a single lucky success.
 
 ## GIT
 
 cd /home/corby/jamm-os
 git add -A
-git commit -m "feat: re-requesting the morning briefing now produces clean non-repetitive phrasing and restores the Download briefing button, instead of returning plain chat text with no way to download a briefing the user explicitly asked to see again"
+git commit -m "fix: strengthen morning briefing re-request instruction to make the action marker mandatory and the lead-in sentence rigid, addressing model inconsistency observed across repeated tests"
 git pull --rebase origin main
 git push origin main
 
