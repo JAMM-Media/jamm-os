@@ -1053,7 +1053,94 @@ export default function SettingsPage() {
         {activeTab === 'team' && (
           <div className="flex gap-6 items-start">
 
-            {/* Left: Staff table — always visible */}
+            {/* Left: Invite form — firm owner only */}
+            {isFirmOwner && (
+              <div
+                ref={inviteFormRef}
+                className="w-[340px] flex-shrink-0 bg-surface-card dark:bg-dark-card rounded-[10px] border border-[0.5px] border-surface-border dark:border-dark-border p-4"
+              >
+                <p className="text-[14px] font-medium text-brand dark:text-[#EDEEF0] mb-1">
+                  Invite Staff Member
+                </p>
+                <p className="text-[12px] text-[#6B7280] dark:text-[#9CA3AF] mb-4">
+                  Add a new staff member to your firm. They can log in immediately with the credentials you set.
+                </p>
+                <form onSubmit={handleInvite} className="flex flex-col gap-3">
+                  <div className={fieldClass}>
+                    <label className={labelClass}>Full name</label>
+                    <input
+                      type="text"
+                      required
+                      autoComplete="off"
+                      value={inviteFullName}
+                      onChange={(e) => { setFormDirty(true); setInviteFullName(e.target.value) }}
+                      className={inputClass}
+                    />
+                  </div>
+                  <div className={fieldClass}>
+                    <label className={labelClass}>Email address</label>
+                    <input
+                      type="email"
+                      required
+                      autoComplete="off"
+                      value={inviteEmail}
+                      onChange={(e) => { setFormDirty(true); setInviteEmail(e.target.value) }}
+                      className={inputClass}
+                    />
+                  </div>
+                  <div className={fieldClass}>
+                    <label className={labelClass}>Temporary password</label>
+                    <div className="relative">
+                      <input
+                        type={showInvitePassword || invitePasswordLocked ? 'text' : 'password'}
+                        required
+                        autoComplete="new-password"
+                        value={invitePassword}
+                        onChange={(e) => { setFormDirty(true); setInvitePassword(e.target.value) }}
+                        className={inputClass}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setInvitePasswordLocked((prev) => !prev)}
+                        onMouseEnter={() => setShowInvitePassword(true)}
+                        onMouseLeave={() => setShowInvitePassword(false)}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-[#6B7280] hover:text-brand transition-colors"
+                      >
+                        {invitePasswordLocked || showInvitePassword ? (
+                          <EyeOff style={{ width: 14, height: 14 }} />
+                        ) : (
+                          <Eye style={{ width: 14, height: 14 }} />
+                        )}
+                      </button>
+                    </div>
+                    <span className="text-[11px] text-[#6B7280]">They can change this after first login.</span>
+                  </div>
+                  <div className={fieldClass}>
+                    <label className={labelClass}>Role</label>
+                    <select
+                      value={inviteRole}
+                      onChange={(e) => setInviteRole(e.target.value as 'staff' | 'manager' | 'firm_owner')}
+                      className={inputClass}
+                    >
+                      <option value="firm_owner">Partner</option>
+                      <option value="staff">Staff</option>
+                      <option value="manager">Manager</option>
+                    </select>
+                  </div>
+                  <div className="flex justify-end">
+                    <button
+                      type="submit"
+                      disabled={inviteSubmitting}
+                      className="h-8 px-3 text-[13px] font-medium rounded-[6px] bg-brand text-white hover:bg-brand/90 transition-colors disabled:opacity-60"
+                    >
+                      {inviteSubmitting ? 'Adding...' : '+ Add Team Member'}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            )}
+
+            {/* Right: Staff table — always visible */}
             <div className="flex-1 min-w-0">
               <div className="flex items-center justify-between mb-3">
                 <span className="text-[14px] font-medium text-brand dark:text-[#EDEEF0]">Team Members</span>
@@ -1168,93 +1255,6 @@ export default function SettingsPage() {
                 </table>
               </div>
             </div>
-
-            {/* Right: Invite form — firm owner only */}
-            {isFirmOwner && (
-              <div
-                ref={inviteFormRef}
-                className="w-[340px] flex-shrink-0 bg-surface-card dark:bg-dark-card rounded-[10px] border border-[0.5px] border-surface-border dark:border-dark-border p-4"
-              >
-                <p className="text-[14px] font-medium text-brand dark:text-[#EDEEF0] mb-1">
-                  Invite Staff Member
-                </p>
-                <p className="text-[12px] text-[#6B7280] dark:text-[#9CA3AF] mb-4">
-                  Add a new staff member to your firm. They can log in immediately with the credentials you set.
-                </p>
-                <form onSubmit={handleInvite} className="flex flex-col gap-3">
-                  <div className={fieldClass}>
-                    <label className={labelClass}>Full name</label>
-                    <input
-                      type="text"
-                      required
-                      autoComplete="off"
-                      value={inviteFullName}
-                      onChange={(e) => { setFormDirty(true); setInviteFullName(e.target.value) }}
-                      className={inputClass}
-                    />
-                  </div>
-                  <div className={fieldClass}>
-                    <label className={labelClass}>Email address</label>
-                    <input
-                      type="email"
-                      required
-                      autoComplete="off"
-                      value={inviteEmail}
-                      onChange={(e) => { setFormDirty(true); setInviteEmail(e.target.value) }}
-                      className={inputClass}
-                    />
-                  </div>
-                  <div className={fieldClass}>
-                    <label className={labelClass}>Temporary password</label>
-                    <div className="relative">
-                      <input
-                        type={showInvitePassword || invitePasswordLocked ? 'text' : 'password'}
-                        required
-                        autoComplete="new-password"
-                        value={invitePassword}
-                        onChange={(e) => { setFormDirty(true); setInvitePassword(e.target.value) }}
-                        className={inputClass}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setInvitePasswordLocked((prev) => !prev)}
-                        onMouseEnter={() => setShowInvitePassword(true)}
-                        onMouseLeave={() => setShowInvitePassword(false)}
-                        className="absolute right-2 top-1/2 -translate-y-1/2 text-[#6B7280] hover:text-brand transition-colors"
-                      >
-                        {invitePasswordLocked || showInvitePassword ? (
-                          <EyeOff style={{ width: 14, height: 14 }} />
-                        ) : (
-                          <Eye style={{ width: 14, height: 14 }} />
-                        )}
-                      </button>
-                    </div>
-                    <span className="text-[11px] text-[#6B7280]">They can change this after first login.</span>
-                  </div>
-                  <div className={fieldClass}>
-                    <label className={labelClass}>Role</label>
-                    <select
-                      value={inviteRole}
-                      onChange={(e) => setInviteRole(e.target.value as 'staff' | 'manager' | 'firm_owner')}
-                      className={inputClass}
-                    >
-                      <option value="firm_owner">Partner</option>
-                      <option value="staff">Staff</option>
-                      <option value="manager">Manager</option>
-                    </select>
-                  </div>
-                  <div className="flex justify-end">
-                    <button
-                      type="submit"
-                      disabled={inviteSubmitting}
-                      className="h-8 px-3 text-[13px] font-medium rounded-[6px] bg-brand text-white hover:bg-brand/90 transition-colors disabled:opacity-60"
-                    >
-                      {inviteSubmitting ? 'Adding...' : '+ Add Team Member'}
-                    </button>
-                  </div>
-                </form>
-              </div>
-            )}
 
           </div>
         )}
