@@ -39,6 +39,12 @@ class UnsignedDocumentItem(BaseModel):
     document_title: str
     sent_at: datetime
     days_waiting: int
+    reminder_count: int
+    auto_reminder_sent_at: Optional[datetime] = None
+    last_reminder_sent_at: Optional[datetime] = None
+    escalated_at: Optional[datetime] = None
+    followup_task_id: Optional[UUID] = None
+    reminder_state: str
 
 
 class DashboardMetricsOut(BaseModel):

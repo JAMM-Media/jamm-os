@@ -33,6 +33,12 @@ export interface UnsignedDocumentItem {
   document_title: string
   sent_at: string
   days_waiting: number
+  reminder_count: number
+  auto_reminder_sent_at: string | null
+  last_reminder_sent_at: string | null
+  escalated_at: string | null
+  followup_task_id: string | null
+  reminder_state: 'ready_first' | 'ready_second' | 'escalated'
 }
 
 export interface DashboardMetrics {

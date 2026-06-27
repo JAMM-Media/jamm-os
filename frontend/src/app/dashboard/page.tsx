@@ -267,19 +267,86 @@ function OverdueEngagementsTable({
 // Unsigned Documents
 // ---------------------------------------------------------------------------
 
-function UnsignedDocumentsTable({ items }: { items: UnsignedDocumentItem[] }) {
-  const [sending, setSending] = useState<string | null>(null)
+function UnsignedDocumentsTable({
+  items,
+  onActionComplete,
+}: {
+  items: UnsignedDocumentItem[]
+  onActionComplete: () => void
+}) {
+  const [pending, setPending] = useState<string | null>(null)
 
   async function handleRemind(envelopeId: string) {
-    setSending(envelopeId)
+    setPending(envelopeId)
     try {
       await api.post(`/esign/envelopes/${envelopeId}/remind`)
       toast.success('Reminder sent')
+      onActionComplete()
     } catch {
       toast.error('Failed to send reminder')
     } finally {
-      setSending(null)
+      setPending(null)
     }
+  }
+
+  async function handleCreateFollowup(envelopeId: string) {
+    setPending(envelopeId)
+    try {
+      await api.post(`/esign/envelopes/${envelopeId}/create-followup-task`)
+      toast.success('Follow-up task created')
+      onActionComplete()
+    } catch {
+      toast.error('Failed to create task')
+    } finally {
+      setPending(null)
+    }
+  }
+
+  function renderStatusCell(item: UnsignedDocumentItem) {
+    if (item.reminder_state === 'ready_first') {
+      return <span className="text-[11px] text-[#6B7280]">Awaiting first follow-up</span>
+    }
+    if (item.reminder_state === 'ready_second') {
+      return <span className="text-[11px] text-[#92400E]">Needs second reminder</span>
+    }
+    return <span className="text-[11px] text-[#991B1B]">No response</span>
+  }
+
+  function renderActionCell(item: UnsignedDocumentItem) {
+    const isPending = pending === item.envelope_id
+    if (item.reminder_state === 'ready_first') {
+      return (
+        <button
+          onClick={() => handleRemind(item.envelope_id)}
+          disabled={isPending}
+          className="text-[11px] font-medium px-2.5 py-1 rounded border border-brand text-brand disabled:opacity-50 disabled:cursor-not-allowed transition-colors hover:bg-surface-card"
+        >
+          {isPending ? '...' : 'Send Reminder'}
+        </button>
+      )
+    }
+    if (item.reminder_state === 'ready_second') {
+      return (
+        <button
+          onClick={() => handleRemind(item.envelope_id)}
+          disabled={isPending}
+          style={{ borderColor: '#F59E0B', color: '#92400E' }}
+          className="text-[11px] font-medium px-2.5 py-1 rounded border disabled:opacity-50 disabled:cursor-not-allowed transition-colors hover:opacity-80"
+        >
+          {isPending ? '...' : 'Send Second Reminder'}
+        </button>
+      )
+    }
+    return (
+      <button
+        onClick={() => handleCreateFollowup(item.envelope_id)}
+        disabled={isPending}
+        style={{ borderColor: '#991B1B', color: '#991B1B' }}
+        className="text-[11px] font-medium px-2.5 py-1 rounded border disabled:opacity-50 disabled:cursor-not-allowed transition-colors hover:opacity-80"
+      >
+        {isPending ? '...' : 'Create Follow-Up Task'}
+      </button>
+    )
   }
 
   return (
@@ -305,25 +372,29 @@ function UnsignedDocumentsTable({ items }: { items: UnsignedDocumentItem[] }) {
                 <th className="px-4 py-2 text-left font-medium">Document</th>
                 <th className="px-4 py-2 text-left font-medium">Sent</th>
                 <th className="px-4 py-2 text-left font-medium">Days Waiting</th>
+                <th className="px-4 py-2 text-left font-medium">Status</th>
                 <th className="px-4 py-2 text-left font-medium">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-surface-border dark:divide-dark-border">
               {items.map((item) => (
                 <tr key={item.envelope_id}>
-                  <td className="px-4 py-2.5 font-medium text-[#111827] dark:text-[#EDEEF0]">{item.client_name}</td>
+                  <td className="px-4 py-2.5 font-medium text-[#111827] dark:text-[#EDEEF0]">
+                    <span>{item.client_name}</span>
+                    {item.reminder_state === 'escalated' && (
+                      <span
+                        className="ml-2 text-[11px] font-medium px-1.5 py-0.5 rounded-full"
+                        style={{ color: '#991B1B', backgroundColor: '#FEE2E2' }}
+                      >
+                        Unresponsive
+                      </span>
+                    )}
+                  </td>
                   <td className="px-4 py-2.5 text-[#6B7280]">{item.document_title || '—'}</td>
                   <td className="px-4 py-2.5 text-[#6B7280]">{new Date(item.sent_at).toLocaleDateString()}</td>
                   <td className="px-4 py-2.5 text-[#6B7280]">{item.days_waiting}d</td>
-                  <td className="px-4 py-2.5">
-                    <button
-                      onClick={() => handleRemind(item.envelope_id)}
-                      disabled={sending === item.envelope_id}
-                      className="text-[11px] font-medium px-2.5 py-1 rounded border border-surface-border dark:border-dark-border text-brand dark:text-[#EDEEF0] hover:bg-surface-card dark:hover:bg-dark-card disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                    >
-                      {sending === item.envelope_id ? 'Sending...' : 'Send Reminder'}
-                    </button>
-                  </td>
+                  <td className="px-4 py-2.5">{renderStatusCell(item)}</td>
+                  <td className="px-4 py-2.5">{renderActionCell(item)}</td>
                 </tr>
               ))}
             </tbody>
@@ -532,7 +603,10 @@ export default function DashboardPage() {
 
         {/* ROW 4 — Awaiting Signature */}
         {!isLoading && (
-          <UnsignedDocumentsTable items={metrics?.unsigned_documents} />
+          <UnsignedDocumentsTable
+            items={metrics?.unsigned_documents ?? []}
+            onActionComplete={() => refetch()}
+          />
         )}
 
       </div>

@@ -1,6 +1,7 @@
 # app/services/esign_service.py
 
 import io
+import threading
 import uuid as _uuid
 from datetime import date, datetime, timezone
 
@@ -20,6 +21,8 @@ from app.services import letter_renderer
 from app.services import s3 as s3_service
 from app.services.audit_service import write_audit_log
 from app.services.behavioral_log import log_event
+from app.services.automation_dispatcher import dispatch
+from app.core.enums import TriggerEvent
 
 
 class MissingContextFieldsError(Exception):
@@ -209,5 +212,25 @@ def send_envelope_to_dropbox(
             "provider": envelope.provider,
         }
     )
+
+    def _fire_esign_sent(firm_id, envelope_id, client_id, engagement_id):
+        try:
+            dispatch(
+                event=TriggerEvent.esign_sent,
+                payload={
+                    "firm_id": str(firm_id),
+                    "envelope_id": str(envelope_id),
+                    "client_id": str(client_id),
+                    "engagement_id": str(engagement_id) if engagement_id else None,
+                },
+            )
+        except Exception:
+            pass
+
+    threading.Thread(
+        target=_fire_esign_sent,
+        args=(firm.id, envelope.id, envelope.client_id, envelope.engagement_id),
+        daemon=True,
+    ).start()
 
     return updated

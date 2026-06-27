@@ -241,6 +241,27 @@ def send_envelope_reminder(
     if not envelope.provider_envelope_id:
         raise HTTPException(status_code=400, detail="Envelope has no provider ID")
 
+    if (envelope.reminder_count or 0) >= 2:
+        raise HTTPException(
+            status_code=400,
+            detail="Maximum reminders sent. Use the escalation path for unresponsive clients."
+        )
+    if envelope.escalated_at is not None:
+        raise HTTPException(status_code=400, detail="Envelope is already escalated")
+
+    if (envelope.reminder_count or 0) == 1 and envelope.last_reminder_sent_at is not None:
+        firm_settings = current_firm.settings or {}
+        second_days = int(firm_settings.get('esign_second_reminder_days', 4))
+        last = envelope.last_reminder_sent_at
+        if last.tzinfo is None:
+            last = last.replace(tzinfo=timezone.utc)
+        days_since_last = (datetime.now(timezone.utc) - last).days
+        if days_since_last < second_days:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Second reminder not available yet. Wait {second_days - days_since_last} more day(s)."
+            )
+
     dropbox_sign.send_reminder(
         signature_request_id=envelope.provider_envelope_id,
         signer_email=envelope.signers[0]["email"] if envelope.signers else None,
@@ -266,6 +287,93 @@ def send_envelope_reminder(
     )
 
     return {"sent": True, "reminder_count": (envelope.reminder_count or 0) + 1}
+
+
+# -----------------------------------------------------------------------
+# POST /esign/envelopes/{envelope_id}/create-followup-task
+# -----------------------------------------------------------------------
+class EsignFollowupTaskOut(BaseModel):
+    task_id: UUID
+    task_title: str
+
+
+@router.post("/envelopes/{envelope_id}/create-followup-task", response_model=EsignFollowupTaskOut)
+def create_followup_task(
+    envelope_id: UUID,
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    _: User = Depends(require_manager_or_above),
+):
+    from datetime import timedelta as _timedelta
+    from uuid import uuid4
+    from app.models.task import Task
+
+    envelope = crud_envelope.get_signature_envelope(db, envelope_id, current_firm.id)
+    if not envelope:
+        raise HTTPException(status_code=404, detail="Signature envelope not found")
+    if envelope.status != "sent":
+        raise HTTPException(status_code=400, detail="Envelope is not in sent status")
+    if envelope.escalated_at is None:
+        raise HTTPException(status_code=400, detail="Envelope has not been escalated")
+    if envelope.followup_task_id is not None:
+        raise HTTPException(status_code=400, detail="Follow-up task already exists for this envelope")
+    if envelope.engagement_id is None:
+        raise HTTPException(status_code=400, detail="Cannot create follow-up task: envelope has no linked engagement")
+
+    now = datetime.now(timezone.utc)
+    sent_at = envelope.sent_at
+    if sent_at is not None and sent_at.tzinfo is None:
+        sent_at = sent_at.replace(tzinfo=timezone.utc)
+    days_since_sent = (now - sent_at).days if sent_at else 0
+
+    task = Task(
+        id=uuid4(),
+        firm_id=current_firm.id,
+        client_id=envelope.client_id,
+        engagement_id=envelope.engagement_id,
+        title=f"Follow up with client - engagement letter unsigned ({days_since_sent} days)",
+        notes=(
+            f"Engagement letter '{envelope.subject or 'Untitled'}' was sent {days_since_sent} days ago "
+            f"and has received {envelope.reminder_count} reminder(s) with no response. "
+            f"Direct client contact required."
+        ),
+        status="todo",
+        due_date=(now + _timedelta(days=3)).date(),
+        created_at=now,
+        updated_at=now,
+    )
+    db.add(task)
+    db.flush()
+
+    crud_envelope.update_signature_envelope(
+        db,
+        envelope,
+        SignatureEnvelopeUpdate(followup_task_id=task.id),
+    )
+
+    write_audit_log(
+        db=db,
+        firm_id=current_firm.id,
+        action="esign.followup_task_created",
+        actor_type="staff",
+        entity_type="signature_envelope",
+        entity_id=envelope_id,
+    )
+    log_event(
+        firm_id=current_firm.id,
+        event_type="esign.followup_task_created",
+        entity_type="signature_envelope",
+        entity_id=envelope_id,
+        actor_type="staff",
+        actor_id=None,
+        metadata={
+            "task_id": str(task.id),
+            "client_id": str(envelope.client_id),
+            "days_since_sent": days_since_sent,
+        },
+    )
+
+    return EsignFollowupTaskOut(task_id=task.id, task_title=task.title)
 
 
 # -----------------------------------------------------------------------

@@ -182,6 +182,89 @@ function RuleCard({
   )
 }
 
+const ESIGN_RULE_NAME = "E-Signature Reminder (2-day)"
+
+function EsignTimingSettings() {
+  const [firstDays, setFirstDays] = useState<number>(2)
+  const [secondDays, setSecondDays] = useState<number>(4)
+  const [escalationDays, setEscalationDays] = useState<number>(3)
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    api.get('/users/firm').then((res) => {
+      const settings = res.data?.settings || {}
+      setFirstDays(Number(settings.esign_first_reminder_days ?? 2))
+      setSecondDays(Number(settings.esign_second_reminder_days ?? 4))
+      setEscalationDays(Number(settings.esign_escalation_days ?? 3))
+    }).catch(() => {})
+  }, [])
+
+  async function handleSave() {
+    setSaving(true)
+    try {
+      await api.patch('/users/firm/settings', {
+        esign_first_reminder_days: firstDays,
+        esign_second_reminder_days: secondDays,
+        esign_escalation_days: escalationDays,
+      })
+      toast.success('Reminder timing saved')
+    } catch {
+      toast.error('Failed to save')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="bg-surface-page rounded-md px-4 py-3 mb-2 -mt-1">
+      <div className="flex items-center gap-4 flex-wrap">
+        <div className="flex flex-col gap-1">
+          <label className="text-[12px] text-[#6B7280]">Days until first reminder</label>
+          <input
+            type="number"
+            min={1}
+            max={30}
+            value={firstDays}
+            onChange={(e) => setFirstDays(Number(e.target.value))}
+            className="h-8 w-20 rounded border border-surface-border px-2 text-[12px] text-[#111827] dark:bg-dark-card dark:border-dark-border dark:text-[#EDEEF0]"
+          />
+        </div>
+        <div className="flex flex-col gap-1">
+          <label className="text-[12px] text-[#6B7280]">Days before second reminder</label>
+          <input
+            type="number"
+            min={1}
+            max={30}
+            value={secondDays}
+            onChange={(e) => setSecondDays(Number(e.target.value))}
+            className="h-8 w-20 rounded border border-surface-border px-2 text-[12px] text-[#111827] dark:bg-dark-card dark:border-dark-border dark:text-[#EDEEF0]"
+          />
+        </div>
+        <div className="flex flex-col gap-1">
+          <label className="text-[12px] text-[#6B7280]">Days before escalation</label>
+          <input
+            type="number"
+            min={1}
+            max={14}
+            value={escalationDays}
+            onChange={(e) => setEscalationDays(Number(e.target.value))}
+            className="h-8 w-20 rounded border border-surface-border px-2 text-[12px] text-[#111827] dark:bg-dark-card dark:border-dark-border dark:text-[#EDEEF0]"
+          />
+        </div>
+        <div className="flex flex-col justify-end">
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="h-8 px-3 rounded text-[12px] font-medium bg-brand text-white hover:opacity-90 disabled:opacity-50 transition-opacity self-end mt-[18px]"
+          >
+            {saving ? 'Saving...' : 'Save Timing'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 const sectionLabelClass =
   'text-[12px] uppercase tracking-wide text-[#6B7280] mb-3 font-medium'
 const emptyStateClass = 'text-[12px] text-[#6B7280] text-center py-6'
@@ -283,17 +366,19 @@ export default function AutomationsTab() {
         </p>
       ) : (
         enabled.map((rule) => (
-          <RuleCard
-            key={rule.id}
-            rule={rule}
-            section="active"
-            isPending={pendingIds.has(rule.id)}
-            canEdit={canEdit}
-            onToggle={handleToggle}
-            onEdit={setEditingRule}
-            onSimulate={setSimulatingRule}
-            simulatingId={simulatingRule?.id ?? null}
-          />
+          <div key={rule.id}>
+            <RuleCard
+              rule={rule}
+              section="active"
+              isPending={pendingIds.has(rule.id)}
+              canEdit={canEdit}
+              onToggle={handleToggle}
+              onEdit={setEditingRule}
+              onSimulate={setSimulatingRule}
+              simulatingId={simulatingRule?.id ?? null}
+            />
+            {rule.name === ESIGN_RULE_NAME && <EsignTimingSettings />}
+          </div>
         ))
       )}
 

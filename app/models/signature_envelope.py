@@ -109,6 +109,17 @@ class SignatureEnvelope(Base):
         DateTime(timezone=True),
         nullable=True,
     )
+    auto_reminder_sent_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    escalated_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    followup_task_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        nullable=True,
+    )
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

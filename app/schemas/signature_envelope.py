@@ -53,6 +53,9 @@ class SignatureEnvelopeUpdate(BaseModel):
     reminder_count: Optional[int] = None
     last_reminder_sent_at: Optional[datetime] = None
     signed_document_id: Optional[UUID] = None
+    auto_reminder_sent_at: Optional[datetime] = None
+    escalated_at: Optional[datetime] = None
+    followup_task_id: Optional[UUID] = None
 
     @field_validator("status")
     @classmethod
@@ -74,6 +77,9 @@ class SignatureEnvelopeOut(SignatureEnvelopeBase):
     completed_at: Optional[datetime] = None
     reminder_count: int = 0
     last_reminder_sent_at: Optional[datetime] = None
+    auto_reminder_sent_at: Optional[datetime] = None
+    escalated_at: Optional[datetime] = None
+    followup_task_id: Optional[UUID] = None
     created_at: datetime
     updated_at: datetime
 

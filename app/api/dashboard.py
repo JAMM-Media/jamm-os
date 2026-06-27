@@ -194,20 +194,59 @@ def get_dashboard_metrics(
         for r in util_rows
     ]
 
-    # --- Unsigned Documents (awaiting signature > 2 days) ---
-    two_days_ago = now - timedelta(days=2)
+    # --- Unsigned Documents — reminder state machine ---
+    firm_settings = current_firm.settings or {}
+    first_days = int(firm_settings.get('esign_first_reminder_days', 2))
+    second_days = int(firm_settings.get('esign_second_reminder_days', 4))
+    escalation_days = int(firm_settings.get('esign_escalation_days', 3))
+
+    def compute_reminder_state(row, _now, _first_days, _second_days, _escalation_days):
+        if row.followup_task_id is not None:
+            return 'followup_created'
+        if row.escalated_at is not None:
+            return 'escalated'
+        sent_at = row.sent_at
+        if sent_at is not None and sent_at.tzinfo is None:
+            sent_at = sent_at.replace(tzinfo=timezone.utc)
+        days_since_sent = (_now - sent_at).days if sent_at else 0
+        if row.reminder_count == 0 and row.auto_reminder_sent_at is None:
+            if days_since_sent < _first_days:
+                return 'too_new'
+            return 'ready_first'
+        if row.reminder_count == 1:
+            last = row.last_reminder_sent_at
+            if last is not None and last.tzinfo is None:
+                last = last.replace(tzinfo=timezone.utc)
+            days_since_last = (_now - last).days if last else 0
+            if days_since_last < _second_days:
+                return 'cooldown'
+            return 'ready_second'
+        if row.reminder_count >= 2:
+            last = row.last_reminder_sent_at
+            if last is not None and last.tzinfo is None:
+                last = last.replace(tzinfo=timezone.utc)
+            days_since_last = (_now - last).days if last else 0
+            if days_since_last < _escalation_days:
+                return 'cooldown'
+            return 'escalated'
+        return 'too_new'
+
     unsigned_stmt = (
         select(
             SignatureEnvelope.id,
             Client.name.label("client_name"),
             SignatureEnvelope.subject.label("document_title"),
             SignatureEnvelope.sent_at,
+            SignatureEnvelope.reminder_count,
+            SignatureEnvelope.auto_reminder_sent_at,
+            SignatureEnvelope.last_reminder_sent_at,
+            SignatureEnvelope.escalated_at,
+            SignatureEnvelope.followup_task_id,
         )
         .join(Client, SignatureEnvelope.client_id == Client.id)
         .where(
             SignatureEnvelope.firm_id == current_firm.id,
             SignatureEnvelope.status == "sent",
-            SignatureEnvelope.sent_at < two_days_ago,
         )
         .order_by(SignatureEnvelope.sent_at.asc())
         .limit(20)
@@ -215,6 +254,11 @@ def get_dashboard_metrics(
     unsigned_rows = db.execute(unsigned_stmt).all()
     unsigned_documents = []
     for r in unsigned_rows:
+        reminder_state = compute_reminder_state(
+            r, now, first_days, second_days, escalation_days
+        )
+        if reminder_state in ('too_new', 'cooldown', 'followup_created'):
+            continue
         sent_at = r.sent_at
         if sent_at is not None and sent_at.tzinfo is None:
             sent_at = sent_at.replace(tzinfo=timezone.utc)
@@ -226,6 +270,12 @@ def get_dashboard_metrics(
                 document_title=r.document_title or "",
                 sent_at=r.sent_at,
                 days_waiting=days_waiting,
+                reminder_count=r.reminder_count or 0,
+                auto_reminder_sent_at=r.auto_reminder_sent_at,
+                last_reminder_sent_at=r.last_reminder_sent_at,
+                escalated_at=r.escalated_at,
+                followup_task_id=r.followup_task_id,
+                reminder_state=reminder_state,
             )
         )
 
