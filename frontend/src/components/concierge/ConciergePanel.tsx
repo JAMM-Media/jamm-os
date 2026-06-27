@@ -3,7 +3,7 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
-import { X, Send, Zap, Download } from 'lucide-react'
+import { X, Send, Zap, Download, ChevronDown } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import jsPDF from 'jspdf'
 import { useAuth } from '@/lib/hooks/useAuth'
@@ -13,13 +13,14 @@ import {
   emitConciergeAction,
   type ConciergeAction,
 } from '@/lib/events/conciergeEvents'
+import { assembleSSELines } from '@/lib/concierge/assembleSSEStream'
 
 interface Message {
   role: 'user' | 'concierge'
   content: string
   actionConfirm?: string
   isBriefing?: boolean
-  draft?: { type: string; content: string } | null
+  draft?: { type: string; content: string; source: string | null } | null
 }
 
 interface Notification {
@@ -77,27 +78,26 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
     '/settings': 'Settings',
     '/firm-chat': 'Firm Chat',
   }
-  const currentPage = Object.entries(PAGE_LABELS).find(([k]) => pathname.startsWith(k))?.[1] ?? 'JAMM PX'
   const { user } = useAuth()
   const uiContext = useConciergeContext()
+  const currentPage = uiContext.entity_name
+    ? uiContext.entity_name
+    : Object.entries(PAGE_LABELS).find(([k]) => pathname.startsWith(k))?.[1] ?? 'JAMM PX'
   const logoUrl = user ? `/api/backend/firms/logo/${user.firm_id}` : null
   const initials =
     user?.full_name?.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase() ?? '?'
 
-  const [messages, setMessages] = useState<Message[]>(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const stored = sessionStorage.getItem('jamm_concierge_messages')
-        if (stored) return JSON.parse(stored) as Message[]
-      } catch {
-        // ignore parse errors
-      }
-    }
-    return []
-  })
+  const [messages, setMessages] = useState<Message[]>([])
   const [notifications, setNotifications] = useState<Notification[]>([])
+  const [notificationsExpanded, setNotificationsExpanded] = useState(false)
   const [input, setInput] = useState('')
   const [streaming, setStreaming] = useState(false)
+  const [revealedWordCount, setRevealedWordCount] = useState(0)
+  const revealTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [hasMounted, setHasMounted] = useState(false)
+  useEffect(() => {
+    setHasMounted(true)
+  }, [])
   const [autopilotOn, setAutopilotOn] = useState(() => {
     if (typeof window !== 'undefined') {
       return sessionStorage.getItem('jamm_concierge_autopilot') === 'true'
@@ -111,6 +111,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
   const [briefingLoading, setBriefingLoading] = useState(false)
   const [isDownloading, setIsDownloading] = useState(false)
   const [copiedId, setCopiedId] = useState<string | null>(null)
+  const [editingDraftContent, setEditingDraftContent] = useState<Record<number, string>>({})
   const [detailBriefing, setDetailBriefing] = useState<string | null>(null)
   const [detailReady, setDetailReady] = useState(false)
   const [pasteForm, setPasteForm] = useState({
@@ -139,6 +140,37 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
+
+  const targetWordCountRef = useRef(0)
+  useEffect(() => {
+    const lastMsg = messages[messages.length - 1]
+    if (lastMsg && lastMsg.role === 'concierge') {
+      targetWordCountRef.current = lastMsg.content.split(/\s+/).filter(Boolean).length
+    }
+  }, [messages])
+
+  useEffect(() => {
+    if (!streaming) return
+    function tick() {
+      setRevealedWordCount((prev) => {
+        if (prev >= targetWordCountRef.current) return prev
+        return prev + 1
+      })
+      revealTimerRef.current = setTimeout(tick, 35)
+    }
+    revealTimerRef.current = setTimeout(tick, 35)
+    return () => {
+      if (revealTimerRef.current) clearTimeout(revealTimerRef.current)
+    }
+  }, [streaming])
+  useEffect(() => {
+    try {
+      const stored = sessionStorage.getItem('jamm_concierge_messages')
+      if (stored) setMessages(JSON.parse(stored) as Message[])
+    } catch {
+      // ignore parse errors
+    }
+  }, [])
   useEffect(() => {
     if (typeof window !== 'undefined') {
       try {
@@ -157,6 +189,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
       sessionStorage.removeItem('jamm_concierge_autopilot')
       sessionStorage.removeItem('jamm_concierge_messages')
       setMessages([])
+      hasInitialized.current = false
     }
   }, [isOpen])
 
@@ -201,6 +234,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
   const sendMessages = useCallback(
     async (thread: Message[]) => {
       setStreaming(true)
+      setRevealedWordCount(0)
       setMessages((prev) => [...prev, { role: 'concierge', content: '' }])
 
       const token = localStorage.getItem('access_token')
@@ -248,32 +282,39 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
         const reader = res.body.getReader()
         const decoder = new TextDecoder()
         let buffer = ''
+        const allRawLines: string[] = []
 
         while (true) {
           const { done, value } = await reader.read()
           if (done) {
             buffer += decoder.decode()
-            if (buffer.startsWith('data: ')) {
-              const chunk = buffer.slice(6)
-              if (chunk) {
-                assembled += chunk
-              }
-            }
+            if (buffer) allRawLines.push(buffer)
             break
           }
           buffer += decoder.decode(value, { stream: true })
           const lines = buffer.split('\n')
           buffer = lines.pop() ?? ''
-          for (const line of lines) {
-            if (line.startsWith('data:')) {
-              const chunk = line.replace(/^data:\s*/, '')
-              assembled += chunk
-            }
+          allRawLines.push(...lines)
+
+          const partial = assembleSSELines(allRawLines)
+            .replace(/\[TOPIC:\w+\]\s*$/, '')
+            .trimEnd()
+          if (partial) {
+            setMessages((prev) => {
+              const updated = [...prev]
+              const last = updated[updated.length - 1]
+              if (last && last.role === 'concierge') {
+                updated[updated.length - 1] = { ...last, content: partial }
+              }
+              return updated
+            })
           }
         }
 
+        assembled = assembleSSELines(allRawLines)
+
         console.log('[CONCIERGE RAW]', assembled)
-        const filteredAssembled = filterOutput(assembled)
+        const filteredAssembled = filterOutput(assembled.replace(/\[TOPIC:\w+\]\s*$/, '').trimEnd())
         const parsedDraft = parseDraftFromResponse(filteredAssembled)
         const textForAction = parsedDraft ? parsedDraft.cleanedResponse : filteredAssembled
         const cleanContent = handleConciergeAction(textForAction)
@@ -284,32 +325,37 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
             updated[updated.length - 1] = {
               role: 'concierge',
               content: cleanContent,
-              draft: parsedDraft ? { type: parsedDraft.type, content: parsedDraft.content } : null,
+              draft: parsedDraft ? { type: parsedDraft.type, content: parsedDraft.content, source: parsedDraft.source } : null,
             }
           }
           return updated
         })
+        setRevealedWordCount(Number.MAX_SAFE_INTEGER)
         if (pendingActionRef.current) {
           const action = pendingActionRef.current
           pendingActionRef.current = null
           void executeAction(action)
         }
-        const lower = assembled.toLowerCase()
-        const chips: string[] = []
-        if (lower.includes('client') || lower.includes('import')) {
-          chips.push('Go to Clients', 'Import clients')
-        } else if (lower.includes('engagement')) {
-          chips.push('Go to Engagements', 'New engagement')
-        } else if (lower.includes('settings') || lower.includes('team') || lower.includes('staff')) {
-          chips.push('Go to Settings')
-        } else if (lower.includes('billing') || lower.includes('invoice') || lower.includes('stripe')) {
-          chips.push('Go to Billing')
-        } else if (lower.includes('document')) {
-          chips.push('Go to Documents')
-        } else {
-          chips.push('Go to Dashboard')
+        const topicMatch = assembled.match(/\[TOPIC:(\w+)\]/)
+        const topic = topicMatch ? topicMatch[1] : 'general'
+
+        const TOPIC_CHIPS: Record<string, string[]> = {
+          clients: ['Go to Clients', 'Import clients'],
+          engagements: ['Go to Engagements', 'New engagement'],
+          tasks: ['Go to Tasks'],
+          document_requests: ['Go to Documents'],
+          portal: ['Go to Clients'],
+          billing: ['Go to Billing'],
+          time_tracking: ['Go to Billing'],
+          automations: ['Go to Settings'],
+          irs_authorizations: ['Go to Clients'],
+          staff: ['Go to Settings'],
+          settings: ['Go to Settings'],
+          operational_data: ['Go to Dashboard'],
+          general: [],
         }
-        setSuggestions(chips.slice(0, 3))
+
+        setSuggestions((TOPIC_CHIPS[topic] ?? []).slice(0, 3))
       } catch {
         setMessages((prev) => {
           const updated = [...prev]
@@ -323,7 +369,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
         setStreaming(false)
       }
     },
-    [router],
+    [router, uiContext],
   )
 
   useEffect(() => {
@@ -331,6 +377,13 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
       hasInitialized.current = true
       if (messages.length === 0) {
         const _open = async () => {
+          if (!uiContext.ready) {
+            let waited = 0
+            while (!uiContext.ready && waited < 1500) {
+              await new Promise((resolve) => setTimeout(resolve, 100))
+              waited += 100
+            }
+          }
           if (pathname.startsWith('/dashboard')) {
             setBriefingLoading(true)
             try {
@@ -344,6 +397,12 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
                 setBriefingLoading(false)
                 return
               }
+              if (res.status === 200 && res.data?.cooldown) {
+                setMessages([{ role: 'concierge', content: "Already checked in with your morning briefing earlier today. Ask me anytime if you'd like to see it again, or let me know if anything's changed or if you need help with something specific." }])
+                hasInitialized.current = true
+                setBriefingLoading(false)
+                return
+              }
             } catch {
               // fall through to standard opening
             } finally {
@@ -353,7 +412,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
           if (!user?.firm_type) {
             setMessages([{
               role: 'concierge',
-              content: 'Welcome to JAMM Concierge. Before we start -- what does your firm do most? This lets me point you to the right setup path.\n\n1. Tax prep and returns\n2. Bookkeeping and monthly close\n3. Advisory and planning',
+              content: 'Here for anything you need. Before we start, what does your firm do most? This lets me point you to the right setup path.\n\n1. Tax prep and returns\n2. Bookkeeping and monthly close\n3. Advisory and planning',
             }])
           } else {
             sendMessages([{ role: 'user', content: '__OPEN__' }])
@@ -382,6 +441,19 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
   async function handleSend(text?: string) {
     const msg = (text ?? input).trim()
     if (!msg || streaming) return
+
+    // If the user is on a route that resolves to an entity (client or engagement
+    // detail page) but the entity context has not finished loading yet, wait
+    // briefly so the question is answered with the correct scoped context rather
+    // than firing before entity_name is populated.
+    if (!uiContext.ready) {
+      let waited = 0
+      while (!uiContext.ready && waited < 1500) {
+        await new Promise((resolve) => setTimeout(resolve, 100))
+        waited += 100
+      }
+    }
+
     setInput('')
     setSuggestions([])
     const userMsg: Message = { role: 'user', content: msg }
@@ -444,9 +516,46 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
     if (route) setTimeout(() => router.push(route), 0)
   }
 
+  function getStarterPrompts(): string[] {
+    if (uiContext.entity_type === 'client' && uiContext.entity_name) {
+      return [
+        `What's the status of ${uiContext.entity_name}?`,
+        `What's overdue for ${uiContext.entity_name}?`,
+        `What documents are still missing?`,
+      ]
+    }
+    if (uiContext.entity_type === 'engagement' && uiContext.entity_name) {
+      return [
+        `What needs to happen next on this engagement?`,
+        `Who is assigned to this?`,
+        `What's the current status?`,
+      ]
+    }
+    if (currentPage === 'Billing') {
+      return [
+        `Which invoices are past due?`,
+        `What work haven't I invoiced yet?`,
+        `Draft a payment reminder for the oldest overdue invoice.`,
+      ]
+    }
+    if (currentPage === 'Dashboard') {
+      return [
+        `What needs my attention today?`,
+        `Who owes me money?`,
+        `What's overdue?`,
+      ]
+    }
+    return [
+      `What needs my attention today?`,
+      `What's overdue?`,
+      `Who owes me money?`,
+    ]
+  }
+
   function parseDraftFromResponse(text: string): {
     type: string
     content: string
+    source: string | null
     cleanedResponse: string
   } | null {
     const startMarker = '---DRAFT:'
@@ -459,13 +568,19 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
     if (typeEnd === -1) return null
 
     const type = text.slice(startIdx + startMarker.length, typeEnd).trim()
-    const content = text.slice(typeEnd + 3, endIdx).trim()
+    let rawBlock = text.slice(typeEnd + 3, endIdx).trim()
 
-    // Remove the entire draft block from the response including surrounding whitespace
+    let source: string | null = null
+    const sourceMatch = rawBlock.match(/SOURCE:\s*([\s\S]+?)(?:\n\s*\n|$)/)
+    if (sourceMatch) {
+      source = sourceMatch[1].replace(/\s+/g, ' ').trim()
+      rawBlock = rawBlock.slice(0, sourceMatch.index).trim()
+    }
+
     const cleanedResponse = text.slice(0, startIdx).trimEnd()
 
-    if (!type || !content) return null
-    return { type, content, cleanedResponse }
+    if (!type || !rawBlock) return null
+    return { type, content: rawBlock, source, cleanedResponse }
   }
 
   function filterOutput(text: string): string {
@@ -519,6 +634,10 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
         pendingActionRef.current = action
         return beforeAction || ''
       }
+      if (action.type === 'show_briefing_again') {
+        pendingActionRef.current = action
+        return beforeAction || ''
+      }
     } catch {}
 
     if (!autopilotRef.current) {
@@ -540,6 +659,26 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
         setStatusMessage('Practice type saved')
       } catch {
         // non-fatal -- firm_type will be set on next reload
+      }
+      return
+    }
+    if (action.type === 'show_briefing_again') {
+      try {
+        const res = await api.post('/concierge/morning-briefing/detail')
+        if (res.status === 200 && res.data?.briefing) {
+          setDetailBriefing(res.data.briefing)
+          setDetailReady(true)
+          setMessages((prev) => {
+            const updated = [...prev]
+            const last = updated[updated.length - 1]
+            if (last && last.role === 'concierge') {
+              updated[updated.length - 1] = { ...last, isBriefing: true }
+            }
+            return updated
+          })
+        }
+      } catch {
+        // non-fatal -- message text already shown, download button simply will not appear
       }
       return
     }
@@ -642,7 +781,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
 
   return (
     <>
-      {isOpen && (
+      {hasMounted && isOpen && (
         <div
           style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.25)', zIndex: 39 }}
         />
@@ -656,7 +795,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
           width: 400,
           height: '100vh',
           zIndex: 40,
-          transform: isOpen ? 'translateX(0)' : 'translateX(100%)',
+          transform: hasMounted && isOpen ? 'translateX(0)' : 'translateX(100%)',
           transition: 'transform 200ms ease-out',
           display: 'flex',
           flexDirection: 'column',
@@ -690,6 +829,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
             {/* Autopilot toggle */}
             <div className="relative group">
               <button
+                title="When ON, I'll navigate the app and open forms for you automatically. When OFF, I'll just tell you where to go."
                 onClick={() => {
                   const next = !autopilotOn
                   setAutopilotOn(next)
@@ -705,6 +845,9 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
                 <Zap className={`h-3 w-3 transition-all ${autopilotOn ? 'fill-white stroke-white' : 'fill-none'}`} />
                 Autopilot
               </button>
+              <div className="absolute right-0 top-full mt-1 w-56 px-2.5 py-1.5 rounded-[6px] bg-[#1F3148] text-white text-[11px] leading-snug opacity-0 group-hover:opacity-100 transition-opacity duration-150 pointer-events-none z-50 shadow-lg">
+                When ON, I&apos;ll navigate the app and open forms for you automatically. When OFF, I&apos;ll just tell you where to go.
+              </div>
             </div>
 
             <button
@@ -726,12 +869,34 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
         {/* Notification cards */}
         {notifications.length > 0 && (
           <div className="flex flex-col gap-2 px-4 pt-3 flex-shrink-0">
-            {notifications.map((n) => {
+            <div className="flex items-center justify-between px-0.5">
+              <button
+                onClick={() => setNotificationsExpanded((prev) => !prev)}
+                className="flex items-center gap-1.5"
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-[#D97706]" />
+                <span className="text-[10px] font-semibold uppercase tracking-wide text-[#92400E] dark:text-[#D97706]">
+                  {notifications.length} {notifications.length === 1 ? 'Alert' : 'Alerts'}
+                </span>
+                <ChevronDown
+                  className={`h-3 w-3 text-[#92400E] dark:text-[#D97706] transition-transform ${notificationsExpanded ? 'rotate-180' : ''}`}
+                />
+              </button>
+              {notificationsExpanded && (
+                <button
+                  onClick={() => notifications.forEach((n) => dismissNotification(n.id))}
+                  className="text-[10px] font-medium text-[#6B7280] dark:text-[#9CA3AF] hover:text-[#1F3148] dark:hover:text-[#EDEEF0] transition-colors"
+                >
+                  Dismiss all
+                </button>
+              )}
+            </div>
+            {notificationsExpanded && notifications.map((n) => {
               const draft = n.metadata?.draft as string | undefined
               return (
                 <div
                   key={n.id}
-                  className="flex flex-col gap-2 bg-white dark:bg-[#2D2D2D] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] rounded-[8px] px-3 py-2.5"
+                  className="flex flex-col gap-2 bg-white dark:bg-[#2D2D2D] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] border-l-[3px] border-l-[#D97706] rounded-[8px] px-3 py-2.5"
                 >
                   <div className="flex items-start gap-2">
                     <p
@@ -766,15 +931,34 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
                         </button>
                         <button
                           onClick={() => {
-                            const confirmed = window.confirm('Send this message to the client?')
-                            if (confirmed) {
-                              dismissNotification(n.id)
-                              handleSend(`Send this message: ${draft}`)
+                            const targetClientId = uiContext.entity_type === 'client' ? uiContext.entity_id : null
+                            if (!targetClientId) {
+                              window.alert('Open the specific client record first, then I can pre-fill this message for you to send.')
+                              return
                             }
+                            const confirmed = window.confirm(
+                              `Open ${uiContext.entity_name ?? 'this client'}'s Messages tab with this draft ready to send?\n\nMessage:\n${draft}\n\nYou will have a final chance to review before sending.`
+                            )
+                            if (!confirmed) return
+                            dismissNotification(n.id)
+                            const alreadyOnClientPage = pathname.startsWith(`/clients/${targetClientId}`)
+                            if (alreadyOnClientPage) {
+                              emitConciergeAction({ type: 'prefill-message', prefillMessage: draft })
+                            } else {
+                              sessionStorage.setItem(
+                                'jamm_concierge_pending',
+                                JSON.stringify({
+                                  clientId: targetClientId,
+                                  prefillMessage: draft,
+                                  _ts: Date.now(),
+                                }),
+                              )
+                            }
+                            router.push(`/clients/${targetClientId}?tab=messages`)
                           }}
                           className="text-[11px] font-medium px-2.5 py-1 rounded-[4px] bg-[#1F3148] text-white hover:bg-[#2a4060] transition-colors"
                         >
-                          Send
+                          Open to send
                         </button>
                       </div>
                     </div>
@@ -786,7 +970,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
         )}
 
         {/* Message feed */}
-        <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
+        <div className="flex-1 min-h-0 overflow-y-auto p-4 flex flex-col gap-3">
 
           {/* Opening message fires automatically via __OPEN__ sentinel on first open */}
 
@@ -796,15 +980,37 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
                 <span className="text-white text-[10px] font-medium">JC</span>
               </div>
               <div className="flex flex-col gap-2 flex-1 pt-1">
-                <div className="h-3 w-24 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
-                <div className="h-2 w-full bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
-                <div className="h-2 w-4/5 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
-                <div className="h-2 w-16 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded mt-1" />
-                <div className="h-2 w-full bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
-                <div className="h-2 w-3/4 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
-                <div className="h-2 w-16 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded mt-1" />
-                <div className="h-2 w-full bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
-                <div className="h-2 w-2/3 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+                <div className="h-3 w-32 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+                <div className="flex flex-col gap-1.5 ml-3 mt-0.5">
+                  <div className="h-2 w-full bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+                  <div className="h-2 w-4/5 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+                </div>
+                <div className="h-3 w-28 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded mt-2" />
+                <div className="flex flex-col gap-1.5 ml-3 mt-0.5">
+                  <div className="h-2 w-full bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+                  <div className="h-2 w-3/4 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+                  <div className="h-2 w-2/3 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+                </div>
+                <div className="h-px w-full bg-[#D5D8DE] dark:bg-[#444444] mt-2" />
+                <div className="h-2 w-36 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded mt-2" />
+                <div className="h-2 w-20 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded mt-1" />
+              </div>
+            </div>
+          )}
+
+          {messages.length === 0 && !briefingLoading && !streaming && (
+            <div className="flex flex-col gap-2 px-1 py-1">
+              <p className="text-[11px] text-[#9CA3AF] px-2">Try asking</p>
+              <div className="flex flex-wrap gap-1.5 px-1">
+                {getStarterPrompts().map((prompt) => (
+                  <button
+                    key={prompt}
+                    onClick={() => handleSend(prompt)}
+                    className="text-[11px] font-medium px-3 py-1.5 rounded-full border border-[#C8CDD6] dark:border-[#484848] text-[#1F3148] dark:text-[#EDEEF0] bg-white dark:bg-[#2D2D2D] hover:border-[#4A7FA5] hover:text-[#4A7FA5] transition-colors"
+                  >
+                    {prompt}
+                  </button>
+                ))}
               </div>
             </div>
           )}
@@ -840,7 +1046,9 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
                         em: ({node, ...props}) => <em className="not-italic text-[11px] text-[#6B7280]" {...props} />,
                       }}
                     >
-                      {msg.content}
+                      {streaming && i === messages.length - 1
+                        ? msg.content.split(/\s+/).filter(Boolean).slice(0, revealedWordCount).join(' ')
+                        : msg.content}
                     </ReactMarkdown>
                   </div>
                 ) : streaming && i === messages.length - 1 ? (
@@ -1059,13 +1267,22 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
                    msg.draft.type === 'IRS_RENEWAL' ? 'Draft renewal request' :
                    'Draft'}
                 </p>
-                <p className="text-[12px] leading-[1.5] text-[#374151] dark:text-[#D1D5DB] whitespace-pre-wrap">
-                  {msg.draft.content}
-                </p>
+                <textarea
+                  value={editingDraftContent[i] ?? msg.draft.content}
+                  onChange={(e) => setEditingDraftContent((prev) => ({ ...prev, [i]: e.target.value }))}
+                  rows={Math.min(8, Math.max(3, (editingDraftContent[i] ?? msg.draft.content).split('\n').length + 1))}
+                  className="w-full text-[12px] leading-[1.5] text-[#374151] dark:text-[#D1D5DB] bg-white dark:bg-[#2D2D2D] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] rounded-[6px] px-2 py-1.5 resize-none focus:outline-none focus:border-[#4A7FA5]"
+                />
+                {msg.draft.source && (
+                  <p className="text-[10px] text-[#9CA3AF] mt-1.5 italic">
+                    Based on: {msg.draft.source}
+                  </p>
+                )}
                 <div className="flex gap-2 mt-2">
                   <button
                     onClick={() => {
-                      navigator.clipboard.writeText(msg.draft!.content).then(() => {
+                      const currentContent = editingDraftContent[i] ?? msg.draft!.content
+                      navigator.clipboard.writeText(currentContent).then(() => {
                         setCopiedId(`msg-${i}`)
                         setTimeout(() => setCopiedId(null), 2000)
                       }).catch(() => {})
@@ -1076,28 +1293,55 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
                   </button>
                   <button
                     onClick={() => {
-                      const confirmed = window.confirm(
-                        msg.draft!.type === 'STAFF_REASSIGN'
-                          ? 'Open the engagement to apply this reassignment?'
-                          : msg.draft!.type === 'INVOICE_ITEMS'
-                          ? 'Open billing to create this invoice?'
-                          : 'Send this message to the client?'
-                      )
-                      if (confirmed) {
-                        if (msg.draft!.type === 'STAFF_REASSIGN') {
-                          router.push('/engagements')
-                        } else if (msg.draft!.type === 'INVOICE_ITEMS') {
-                          router.push('/billing')
-                        } else {
-                          handleSend(`Send this message: ${msg.draft!.content}`)
-                        }
+                      const currentContent = editingDraftContent[i] ?? msg.draft!.content
+
+                      if (msg.draft!.type === 'STAFF_REASSIGN') {
+                        const confirmed = window.confirm('Open the engagement to apply this reassignment?')
+                        if (confirmed) router.push('/engagements')
+                        return
                       }
+
+                      if (msg.draft!.type === 'INVOICE_ITEMS') {
+                        const confirmed = window.confirm('Open billing to create this invoice?')
+                        if (confirmed) router.push('/billing')
+                        return
+                      }
+
+                      // CLIENT_EMAIL and IRS_RENEWAL: there is no mechanism for
+                      // the AI to send a message directly. Navigate to the
+                      // client's real Messages tab with the draft pre-filled,
+                      // so the user sends it through the actual working send
+                      // feature, after one final look.
+                      const targetClientId = uiContext.entity_type === 'client' ? uiContext.entity_id : null
+                      if (!targetClientId) {
+                        window.alert('Open the specific client record first, then I can pre-fill this message for you to send.')
+                        return
+                      }
+                      const confirmed = window.confirm(
+                        `Open ${uiContext.entity_name ?? 'this client'}'s Messages tab with this draft ready to send?\n\nMessage:\n${currentContent}\n\nYou will have a final chance to review before sending.`
+                      )
+                      if (!confirmed) return
+
+                      const alreadyOnClientPage = pathname.startsWith(`/clients/${targetClientId}`)
+                      if (alreadyOnClientPage) {
+                        emitConciergeAction({ type: 'prefill-message', prefillMessage: currentContent })
+                      } else {
+                        sessionStorage.setItem(
+                          'jamm_concierge_pending',
+                          JSON.stringify({
+                            clientId: targetClientId,
+                            prefillMessage: currentContent,
+                            _ts: Date.now(),
+                          }),
+                        )
+                      }
+                      router.push(`/clients/${targetClientId}?tab=messages`)
                     }}
                     className="text-[11px] font-medium px-2.5 py-1 rounded-[4px] bg-[#1F3148] text-white hover:bg-[#2a4060] transition-colors"
                   >
                     {msg.draft.type === 'STAFF_REASSIGN' ? 'Open engagement' :
                      msg.draft.type === 'INVOICE_ITEMS' ? 'Open billing' :
-                     'Send'}
+                     'Open to send'}
                   </button>
                 </div>
               </div>

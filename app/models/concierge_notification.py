@@ -31,4 +31,11 @@ class ConciergeNotification(Base):
 
     __table_args__ = (
         Index("ix_concierge_notification_firm_is_read", "firm_id", "is_read"),
+        Index(
+            "ux_concierge_notification_firm_trigger_unread",
+            "firm_id",
+            "trigger_type",
+            unique=True,
+            postgresql_where="is_read = false",
+        ),
     )

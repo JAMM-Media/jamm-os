@@ -106,7 +106,7 @@ _CONCIERGE_TOOLS = [
     },
     {
         "name": "get_client_full_snapshot",
-        "description": "Returns full data for a single client: active engagements, outstanding invoices, pending document requests, portal access status. Call this when the firm owner asks about a specific named client's status.",
+        "description": "Returns full data for a single client: active engagements, outstanding invoices, pending document requests, portal access status. Call this when the firm owner asks about a specific named client's status, OR whenever the CURRENT CONTEXT section identifies a client the firm owner is currently viewing -- in that case, use the client_id provided in CURRENT CONTEXT even if the question itself does not name the client (e.g. a bare 'what is overdue?' while viewing a client record means overdue for THAT client, not the whole firm).",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -620,10 +620,15 @@ Respond with exactly one word: SAFE or UNSAFE. Nothing else.""",
             messages=sanitized_messages,
         ) as stream:
             assembled = ""
+            buffer = ""
             for text in stream.text_stream:
                 assembled += text
-                data_lines = "\n".join(f"data: {line}" for line in text.split("\n"))
-                yield f"{data_lines}\n\n"
+                buffer += text
+                while "\n" in buffer:
+                    line, buffer = buffer.split("\n", 1)
+                    yield f"data: {line}\n\n"
+            if buffer:
+                yield f"data: {buffer}\n\n"
             # Run output filter on fully assembled response
             filtered = filter_output(assembled)
             if filtered != assembled:
@@ -631,6 +636,7 @@ Respond with exactly one word: SAFE or UNSAFE. Nothing else.""",
                 yield f"data: \n\n"
                 yield f"data: [FILTERED]\n\n"
                 yield f"data: {filtered}\n\n"
+            yield f"data: [TOPIC:{_classify_topic(_last_user_msg)}]\n\n"
 
     def generate_and_log():
         assembled_for_log = []
@@ -715,14 +721,33 @@ Respond with exactly one word: SAFE or UNSAFE. Nothing else.""",
             # Tool use loop -- max 5 iterations
             for _iteration in range(5):
                 try:
+                    # TEMP: swapped from claude-fable-5 to claude-opus-4-8 and effort
+                    # low -> medium on 2026-06-19, following the US export control
+                    # directive suspending Fable 5 and Mythos 5 worldwide (June 12, 2026,
+                    # no announced return date). Effort raised to medium to isolate
+                    # whether reasoning depth affects tool-selection instruction-following
+                    # during today's client-scoping investigation. Revisit both the model
+                    # and effort level once Fable 5 access is restored, or once effort:low
+                    # is confirmed to work reliably on Opus 4.8 for this use case.
+                    # https://www.anthropic.com/news/fable-mythos-access
                     with fable_client.messages.stream(
-                        model="claude-fable-5",
+                        model="claude-opus-4-8",
                         max_tokens=8000,
                         system=_system_blocks,
                         tools=_CONCIERGE_TOOLS,
                         messages=current_messages,
-                        output_config={"effort": "low"},
+                        output_config={"effort": "medium"},
                     ) as stream:
+                        accumulated_text = ""
+                        buffer = ""
+                        for text in stream.text_stream:
+                            accumulated_text += text
+                            buffer += text
+                            while "\n" in buffer:
+                                line, buffer = buffer.split("\n", 1)
+                                yield f"data: {line}\n\n"
+                        if buffer:
+                            yield f"data: {buffer}\n\n"
                         response = stream.get_final_message()
 
                 except Exception as e:
@@ -751,9 +776,18 @@ Respond with exactly one word: SAFE or UNSAFE. Nothing else.""",
                                 "tool_use_id": block.id,
                                 "content": result_text,
                             })
+                    # Only forward the fields Anthropic's API accepts as input
+                    # for assistant content blocks. model_dump() can include
+                    # extra response-only fields (e.g. parsed_output on some
+                    # models) that the API rejects with a 400 error when sent
+                    # back as input on the next tool-use iteration.
+                    _ALLOWED_CONTENT_FIELDS = {"type", "text", "id", "name", "input"}
                     current_messages.append({
                         "role": "assistant",
-                        "content": [b.model_dump() for b in response.content],
+                        "content": [
+                            {k: v for k, v in b.model_dump().items() if k in _ALLOWED_CONTENT_FIELDS}
+                            for b in response.content
+                        ],
                     })
                     current_messages.append({
                         "role": "user",
@@ -761,16 +795,20 @@ Respond with exactly one word: SAFE or UNSAFE. Nothing else.""",
                     })
                     continue
 
-                # Final response -- stream as SSE
-                final_text = "".join(
-                    block.text for block in response.content if hasattr(block, "text")
-                )
+                final_text = accumulated_text
                 filtered_final = filter_output(final_text)
-                CHUNK_SIZE = 20
-                for i in range(0, len(filtered_final), CHUNK_SIZE):
-                    chunk = filtered_final[i:i + CHUNK_SIZE]
-                    data_lines = "\n".join(f"data: {line}" for line in chunk.split("\n"))
-                    yield f"{data_lines}\n\n"
+                if filtered_final != final_text:
+                    # Text already streamed progressively; send replacement sentinel.
+                    yield f"data: \n\n"
+                    yield f"data: [FILTERED]\n\n"
+                    yield f"data: {filtered_final}\n\n"
+                # Trailing marker so the frontend can render contextually
+                # relevant suggestion chips without re-guessing the topic
+                # from the response text. Classified from the user's actual
+                # question using the same classifier used for behavioral
+                # logging (Build 1) -- not from the response text.
+                _topic_for_chips = _classify_topic(_last_user_msg)
+                yield f"data: [TOPIC:{_topic_for_chips}]\n\n"
                 return
 
             # Loop exhausted -- fall through
@@ -860,7 +898,7 @@ def morning_briefing(
     if current_firm.briefing_sent_at is not None:
         elapsed = (datetime.now(timezone.utc) - current_firm.briefing_sent_at).total_seconds()
         if elapsed < 64800:
-            return Response(status_code=204)
+            return JSONResponse({"cooldown": True}, status_code=200)
 
     try:
         from app.api.concierge.context import get_firm_context

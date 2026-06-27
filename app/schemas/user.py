@@ -34,5 +34,7 @@ class UserOut(UserBase):
     id: UUID
     firm_id: UUID
     cost_rate: Optional[float] = None
+    firm_type: Optional[str] = None
+    concierge_active: bool = False
 
     model_config = ConfigDict(from_attributes=True)

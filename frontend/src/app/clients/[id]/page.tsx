@@ -57,6 +57,12 @@ function ClientDetailContent() {
     const p = searchParams.get('tab')
     return p && CLIENT_TABS.some((t) => t.key === p) ? p : 'overview'
   })
+  useEffect(() => {
+    const p = searchParams.get('tab')
+    if (p && CLIENT_TABS.some((t) => t.key === p) && p !== activeTab) {
+      setActiveTab(p)
+    }
+  }, [searchParams])
   const [notesOpen, setNotesOpen] = useState(false)
   const [sendingPortalLink, setSendingPortalLink] = useState(false)
   const [viewingPortal, setViewingPortal] = useState(false)
@@ -69,6 +75,7 @@ function ClientDetailContent() {
   const [initialEngagementType, setInitialEngagementType] = useState<string | undefined>()
   const [portalLinkHighlight, setPortalLinkHighlight] = useState(false)
   const portalLinkRef = useRef<HTMLButtonElement>(null)
+  const messageComposeRef = useRef<HTMLTextAreaElement>(null)
   const [qboEditMode, setQboEditMode] = useState(false)
   const [qboEditValue, setQboEditValue] = useState('')
   const [qboDeepLinkLoading, setQboDeepLinkLoading] = useState(false)
@@ -108,6 +115,10 @@ function ClientDetailContent() {
         }, 100)
         setTimeout(() => setPortalLinkHighlight(false), 3000)
       }
+      if (action.type === 'prefill-message' && action.prefillMessage) {
+        setActiveTab('messages')
+        setMessageCompose(action.prefillMessage)
+      }
     })
   }, [])
 
@@ -124,6 +135,29 @@ function ClientDetailContent() {
   }>>([])
   const [messagesLoading, setMessagesLoading] = useState(false)
   const [messageCompose, setMessageCompose] = useState('')
+  useEffect(() => {
+    const raw = sessionStorage.getItem('jamm_concierge_pending')
+    if (!raw) return
+    try {
+      const action = JSON.parse(raw)
+      if (Date.now() - (action._ts ?? 0) > 10000) {
+        sessionStorage.removeItem('jamm_concierge_pending')
+        return
+      }
+      if (action.prefillMessage && action.clientId === clientId) {
+        sessionStorage.removeItem('jamm_concierge_pending')
+        setMessageCompose(action.prefillMessage)
+      }
+    } catch {
+      sessionStorage.removeItem('jamm_concierge_pending')
+    }
+  }, [clientId])
+  useEffect(() => {
+    if (messageComposeRef.current) {
+      messageComposeRef.current.style.height = 'auto'
+      messageComposeRef.current.style.height = Math.min(messageComposeRef.current.scrollHeight, 120) + 'px'
+    }
+  }, [messageCompose])
   const [messageSending, setMessageSending] = useState(false)
 
   const [clientEmailThreads, setClientEmailThreads] = useState<Array<{
@@ -951,8 +985,14 @@ function ClientDetailContent() {
             <div className="flex-shrink-0 border-t border-[#C8CDD6] dark:border-[#484848] px-4 pt-2 pb-3 relative">
               <div className="flex gap-2 items-end">
                 <textarea
+                  ref={messageComposeRef}
                   value={messageCompose}
                   onChange={(e) => setMessageCompose(e.target.value)}
+                  onInput={(e) => {
+                    const el = e.currentTarget
+                    el.style.height = 'auto'
+                    el.style.height = Math.min(el.scrollHeight, 120) + 'px'
+                  }}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && !e.shiftKey) {
                       e.preventDefault()
