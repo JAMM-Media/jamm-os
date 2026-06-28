@@ -22,8 +22,9 @@ interface AuthContextType {
   login: (
     email: string,
     password: string,
-    totp_code?: string
-  ) => Promise<{ success: boolean; message?: string }>
+    totp_code?: string,
+    backup_code?: string
+  ) => Promise<{ success: boolean; requires_2fa?: boolean; message?: string }>
   logout: () => Promise<void>
 }
 
@@ -50,14 +51,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     async (
       email: string,
       password: string,
-      totp_code?: string
-    ): Promise<{ success: boolean; message?: string }> => {
+      totp_code?: string,
+      backup_code?: string
+    ): Promise<{ success: boolean; requires_2fa?: boolean; message?: string }> => {
       const res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password, totp_code }),
+        body: JSON.stringify({ email, password, totp_code, backup_code }),
       })
       const data = await res.json()
+      if (data.requires_2fa) {
+        return { success: false, requires_2fa: true }
+      }
       if (data.success) {
         if (data.access_token) localStorage.setItem('access_token', data.access_token)
         const meRes = await fetch('/api/auth/me')
