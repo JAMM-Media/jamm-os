@@ -69,6 +69,22 @@ async def create_engagement(
         }
     )
 
+    if engagement.filing_deadline:
+        log_event(
+            firm_id=engagement.firm_id,
+            event_type="engagement.deadline_set",
+            entity_type="engagement",
+            entity_id=engagement.id,
+            actor_type="staff",
+            actor_id=current_user_id,
+            metadata={
+                "deadline_type": "filing_deadline",
+                "deadline_date": engagement.filing_deadline.isoformat(),
+                "days_until_deadline": (engagement.filing_deadline - datetime.now(timezone.utc).date()).days,
+                "form_type": str(engagement.engagement_type) if engagement.engagement_type else None,
+            }
+        )
+
     if engagement_count == 1:
         log_event(
             firm_id=engagement.firm_id,
@@ -139,6 +155,20 @@ async def update_engagement(
                     if updated.created_at else None,
             }
         )
+
+        if old_status == "completed" and new_status not in ("archived", "completed"):
+            log_event(
+                firm_id=updated.firm_id,
+                event_type="engagement.reopened",
+                entity_type="engagement",
+                entity_id=updated.id,
+                actor_type="staff",
+                actor_id=current_user_id,
+                metadata={
+                    "reopened_to_status": new_status,
+                    "form_type": str(updated.engagement_type) if updated.engagement_type else None,
+                }
+            )
 
         if new_status == "completed":
             try:

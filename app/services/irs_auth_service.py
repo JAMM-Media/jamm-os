@@ -286,8 +286,58 @@ def check_expiring_authorizations() -> dict:
                     "warning_tier": None,
                 }
             )
+            if auth.valid_until is not None and auth.valid_until < date.today():
+                mark_authorization_expired(
+                    db=db,
+                    authorization=auth,
+                    firm_id=auth.firm_id,
+                )
             alerts_emitted += 1
 
         return {"checked": len(expiring), "alerts_emitted": alerts_emitted}
     finally:
         db.close()
+
+
+def mark_authorization_renewed(
+    *,
+    db: Session,
+    authorization,
+    firm_id,
+    actor_id=None,
+) -> None:
+    log_event(
+        firm_id=firm_id,
+        event_type="irs_authorization.renewed",
+        entity_type="irs_authorization",
+        entity_id=authorization.id,
+        actor_type="system",
+        actor_id=actor_id,
+        metadata={
+            "form_type": str(authorization.form_type) if hasattr(authorization, "form_type") and authorization.form_type else None,
+            "new_expiry_date": authorization.valid_until.isoformat() if hasattr(authorization, "valid_until") and authorization.valid_until else None,
+            "client_id": str(authorization.client_id) if hasattr(authorization, "client_id") else None,
+        }
+    )
+
+
+def mark_authorization_expired(
+    *,
+    db: Session,
+    authorization,
+    firm_id,
+) -> None:
+    log_event(
+        firm_id=firm_id,
+        event_type="irs_authorization.expired",
+        entity_type="irs_authorization",
+        entity_id=authorization.id,
+        actor_type="system",
+        actor_id=None,
+        metadata={
+            "form_type": str(authorization.form_type) if hasattr(authorization, "form_type") and authorization.form_type else None,
+            "expired_date": authorization.valid_until.isoformat() if hasattr(authorization, "valid_until") and authorization.valid_until else None,
+            "client_id": str(authorization.client_id) if hasattr(authorization, "client_id") else None,
+            "days_since_expiry_warning": None,
+        }
+    )
