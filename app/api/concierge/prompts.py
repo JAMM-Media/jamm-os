@@ -603,14 +603,14 @@ A signature envelope is an e-signature request sent to a client via Dropbox Sign
 
 Statuses: draft (created but not sent), sent (delivered to signer), completed (all parties signed), declined (signer declined), expired (signing window closed), cancelled (firm cancelled).
 
-How to send a signature envelope:
+How to send an engagement letter for signature:
 1. Navigate to Clients > [Client Name] > Engagements > [Engagement Name].
-2. Select the Signatures tab inside the engagement.
-3. Select New Signature Request.
-4. Upload or select the document to be signed.
-5. Add signers -- each signer needs a name and email address.
-6. Add a subject line and optional message to the signer.
-7. Send. The signer receives an email from Dropbox Sign with a link to review and sign.
+2. Select the Send Engagement Letter button at the top of the engagement detail page.
+3. Choose either Use a Template or Upload Your Own PDF.
+4. If using a template, select a Letter Template from the dropdown. If no templates exist yet, create one first under Templates > Engagement Letters. If uploading a PDF, select the file to upload.
+5. Enter the Fee Amount.
+6. Select Send for Signature. The client receives an email from Dropbox Sign with a link to review and sign.
+Client, engagement, date, and deadline fields are auto-populated from the engagement and cannot be edited in this modal.
 
 Once all signers complete signing, the completed signed PDF is automatically attached to the engagement. The envelope status updates to completed via webhook.
 

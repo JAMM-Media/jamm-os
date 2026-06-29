@@ -49,87 +49,70 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-# Task: Decouple word-reveal timer from messages array to fix choppy reveal during active line bursts
+# Task: Correct stale Signature Envelope navigation instructions that describe a non-existent Signatures tab
 
 USE: claude sonnet
 
 ## VERIFY BEFORE ACT
 
-sed -n '142,162p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+sed -n '599,613p' /home/corby/jamm-os/app/api/concierge/prompts.py
 
-Confirm the current reveal useEffect has dependency array [streaming, messages], and that the tick chain is fully torn down (clearTimeout) and rebuilt from scratch every time this effect re-runs.
+Confirm the current 7-step "How to send a signature envelope" instructions, which describe navigating to Clients > [Client Name] > Engagements > [Engagement Name] > Signatures tab > New Signature Request, with manual signer name/email entry, a subject line, and an optional message.
 
 ## WHAT IS WRONG
 
-Confirmed via live testing and direct code inspection: the word-reveal effect depends on the full messages array. Since messages is a new array reference every time a backend line arrives (the existing incremental setMessages call from commit f9f7def), React tears down and restarts the entire reveal tick chain on every single line arrival, not just once per streaming session. Early in a response, lines often arrive in quick succession (e.g. several short headers or bullets close together), faster than the 35ms reveal tick. Each new arrival resets the countdown before the previous tick ever fires, so almost nothing gets visually revealed during these bursts. This produces a choppy, frozen-feeling first few seconds, followed by smooth reveal once line arrivals space out past 35ms apart and the tick chain can finally run uninterrupted.
+Confirmed via direct live verification: there is no Signatures tab anywhere on an engagement detail page. The actual engagement tabs are Overview, Tasks, QC Checklist, and Documents only. The real signature-sending mechanism is the "Send Engagement Letter" button on the engagement detail page, which opens a modal with two tabs (Use a Template, Upload Your Own PDF), auto-populated client/engagement/date/deadline fields, a required Letter Template or PDF upload, a required Fee Amount, and a "Send for Signature" button. There is no manual signer name/email entry step, no subject line field, and no separate message field in the real flow -- the signer is implicitly the client on the engagement.
+
+This is not a missing feature, it is incorrect existing documentation describing a flow that does not exist in the app, likely written in anticipation of a more generic feature that was replaced by the simpler engagement-letter-specific flow that was actually built. Giving the agent this wrong navigation path would send a firm owner looking for a tab that does not exist.
 
 ## ACTION
 
-File: /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+File: /home/corby/jamm-os/app/api/concierge/prompts.py
 
-Replace the reveal effect so the ticking timer is only created once when streaming starts, and reads the current target word count from a ref that updates separately, rather than tearing down the timer on every content change.
+Replace the "How to send a signature envelope" section (the 7 numbered steps) with the real flow:
 
-Add a ref to hold the latest target word count:
+How to send an engagement letter for signature:
+1. Navigate to Clients > [Client Name] > Engagements > [Engagement Name].
+2. Select the Send Engagement Letter button at the top of the engagement detail page.
+3. Choose either Use a Template or Upload Your Own PDF.
+4. If using a template, select a Letter Template from the dropdown. If no templates exist yet, create one first under Templates > Engagement Letters. If uploading a PDF, select the file to upload.
+5. Enter the Fee Amount.
+6. Select Send for Signature. The client receives an email from Dropbox Sign with a link to review and sign.
+Client, engagement, date, and deadline fields are auto-populated from the engagement and cannot be edited in this modal.
 
-  const targetWordCountRef = useRef(0)
+Keep the existing Statuses line, the Reminders line, the Dropbox Sign connection requirement line, and the entire signature_envelope_qa block exactly as they are, since those describe lifecycle concepts that remain accurate regardless of the specific UI path used to create one. Only the 7-step navigation instructions are being replaced.
 
-Add a lightweight effect that only updates this ref when messages changes, with no timer logic in it at all:
+Also check whether the existing signature_envelope_qa entries reference "the envelope detail view" for resending or cancelling -- if there is no separate envelope detail view in the real app (only the Dashboard Awaiting Signature panel and the engagement detail page itself), note this in your verify-after output rather than silently leaving those Q&A answers referencing a view that may not exist. Do not change those Q&A entries without first confirming whether a detail view genuinely exists; report this as a finding if you cannot confirm it from the codebase alone.
 
-  useEffect(() => {
-    const lastMsg = messages[messages.length - 1]
-    if (lastMsg && lastMsg.role === 'concierge') {
-      targetWordCountRef.current = lastMsg.content.split(/\s+/).filter(Boolean).length
-    }
-  }, [messages])
-
-Replace the existing reveal effect so it depends only on streaming, starting the tick chain once and never tearing it down due to content changes:
-
-  useEffect(() => {
-    if (!streaming) return
-    function tick() {
-      setRevealedWordCount((prev) => {
-        if (prev >= targetWordCountRef.current) return prev
-        return prev + 1
-      })
-      revealTimerRef.current = setTimeout(tick, 35)
-    }
-    revealTimerRef.current = setTimeout(tick, 35)
-    return () => {
-      if (revealTimerRef.current) clearTimeout(revealTimerRef.current)
-    }
-  }, [streaming])
-
-This means the tick chain starts exactly once per streaming response and runs continuously at a steady 35ms cadence regardless of how quickly or slowly lines arrive from the backend, always reading the most current target word count via the ref rather than a stale closure. Do not change the snap-to-end logic (setRevealedWordCount(Number.MAX_SAFE_INTEGER) after streaming completes), the word-reset on new message start, or the conditional render slice. Do not touch any other file.
+Do not change anything else in this file.
 
 ## VERIFY AFTER ACT
 
-grep -n "targetWordCountRef" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+grep -n "Send Engagement Letter button" /home/corby/jamm-os/app/api/concierge/prompts.py
 
-Expected: the ref declaration, the lightweight update effect, and its use inside tick() are all present.
+Expected: present.
 
-grep -n "\[streaming, messages\]" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+grep -n "Signatures tab" /home/corby/jamm-os/app/api/concierge/prompts.py
 
-Expected: no longer present -- the reveal effect's dependency array should now read [streaming] only.
+Expected: no longer present.
 
-cd /home/corby/jamm-os/frontend
-npm run build
+python3 -c "from app.api.concierge.route import router; print('OK')"
 
-Expected: zero TypeScript errors.
+Expected: OK, no import errors.
 
-## MANUAL VERIFICATION (the actual test)
+## MANUAL VERIFICATION
 
-1. Restart the frontend.
-2. Ask "can I see the morning briefing again?" again, the same test case that revealed the choppy start.
-3. Confirm the reveal now feels steady and consistent from the very first word, with no noticeably choppy or frozen period at the start before it smooths out.
-4. Confirm the rest of the behavior is unchanged: smooth reveal throughout, no broken markdown mid-reveal, and a clean snap to full content once streaming completes.
+1. Restart the backend.
+2. Ask the Concierge: "how do I send this engagement letter for signature?" while viewing an engagement.
+3. Confirm the response describes the real Send Engagement Letter button and modal flow, not a Signatures tab.
 
-Report what you observe at step 3 specifically.
+Report the exact response text at step 3, and report explicitly what was found regarding the "envelope detail view" question above.
 
 ## GIT
 
 cd /home/corby/jamm-os
 git add -A
-git commit -m "fix: word-reveal timer no longer restarts on every backend line arrival, decoupling it from the messages array so the reveal cadence stays steady from the start instead of choppy during early bursts of fast-arriving lines"
+git commit -m "fix: correct stale signature envelope navigation instructions describing a non-existent Signatures tab, replaced with the real Send Engagement Letter button and modal flow"
 git pull --rebase origin main
 git push origin main
 
