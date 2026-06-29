@@ -233,7 +233,8 @@ export function SendEngagementLetterModal({
 
         const uploadRes = await api.post(
           `/esign/upload-and-prepare?engagement_id=${engagementId}`,
-          formData
+          formData,
+          { headers: { 'Content-Type': undefined } }
         )
         const envelopeId = uploadRes.data?.id
         if (!envelopeId) throw new Error('No envelope ID returned')

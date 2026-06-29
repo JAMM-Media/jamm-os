@@ -49,63 +49,47 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-# Task: Fix engagement letter PDF upload failing due to malformed multipart header, and fix the crash when displaying validation errors
+# Task: Fix engagement letter PDF upload still failing due to axios client's default JSON Content-Type overriding multipart auto-detection
 
 USE: claude sonnet
 
 ## VERIFY BEFORE ACT
 
-sed -n '195,235p' /home/corby/jamm-os/frontend/src/components/engagements/SendEngagementLetterModal.tsx
+grep -n "Content-Type" /home/corby/jamm-os/frontend/src/lib/api.ts
 
-Confirm the current upload-and-prepare call sets headers: { 'Content-Type': 'multipart/form-data' } manually with no boundary parameter, and confirm the catch block's msg extraction assumes err.response.data.detail is always a string.
+Confirm the shared axios instance sets headers: { 'Content-Type': 'application/json' } as a default applied to all requests through this client.
+
+sed -n '218,226p' /home/corby/jamm-os/frontend/src/components/engagements/SendEngagementLetterModal.tsx
+
+Confirm the upload-and-prepare call currently passes no per-request headers override at all (the previous fix removed the incorrect manual multipart header but did not account for the client's own default JSON header still applying).
 
 ## WHAT IS WRONG
 
-Confirmed via live testing and direct backend response inspection: uploading a PDF for engagement letter signature fails with a 422 error, "loc": ["body", "file"], "msg": "Field required", even though the frontend correctly builds a FormData with a file field attached under the exact name the backend expects.
+Confirmed via live testing, repeated after a clean dev server restart and hard refresh, ruling out stale cache: the engagement letter PDF upload still fails with the identical 422 "file field required" error even after removing the manual Content-Type: multipart/form-data header in a previous fix.
 
-Root cause: the request explicitly sets Content-Type: multipart/form-data with no boundary string. When this header is left unset, the browser's FormData handling sets it automatically with the required boundary delimiter, which the server needs to split the multipart body into individual fields. Manually overriding it without a boundary produces a body the server cannot parse into any fields at all, so FastAPI reports the file field as entirely missing rather than malformed.
-
-Separately, when this (or any) validation error occurs, the catch block's error message extraction assumes response.data.detail is always a string. FastAPI validation errors return detail as an array of objects (each with type, loc, msg, input keys), not a string. Since the array is not undefined, the existing ?? 'Failed to send engagement letter' fallback never triggers, and the raw array of objects gets passed directly to toast.error(), which cannot render an object as text and crashes the entire app with "Objects are not valid as a React child."
+Root cause: the shared axios client in lib/api.ts sets Content-Type: application/json as a default header applied to every request. Removing the per-call header override was not sufficient, because axios still applies the client's own default header when no override is present. The browser only auto-generates the correct multipart boundary header when no Content-Type is set at all for that specific request. Since the default JSON header was still being applied, the request left the browser as Content-Type: application/json with a FormData body attached, which the server cannot parse into any fields, producing the same missing-file error as before.
 
 ## ACTION
 
 File: /home/corby/jamm-os/frontend/src/components/engagements/SendEngagementLetterModal.tsx
 
-Fix 1: Remove the manually-set Content-Type header on the upload-and-prepare call entirely, letting the client set it automatically with the correct boundary:
+Update the upload-and-prepare call to explicitly clear the Content-Type header for this one request, overriding the client's default so the browser can set the correct multipart boundary automatically:
 
         const uploadRes = await api.post(
           `/esign/upload-and-prepare?engagement_id=${engagementId}`,
-          formData
+          formData,
+          { headers: { 'Content-Type': undefined } }
         )
 
-Fix 2: Add a helper function near the top of this component (or inline in both catch blocks, since there are two upload paths -- template and PDF -- that each have their own catch block with the same fragile pattern) that safely extracts a displayable string from any error shape:
+Setting the header value to undefined (not omitting the headers option entirely) is required here, since omitting it lets the client's own default still apply. Explicitly setting it to undefined tells axios to skip sending that header for this request, allowing the browser's own multipart handling to take over.
 
-function extractErrorMessage(err: unknown): string {
-  const detail = (err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail
-  if (typeof detail === 'string') return detail
-  if (Array.isArray(detail)) {
-    return detail
-      .map((d) => (typeof d === 'object' && d !== null && 'msg' in d ? String((d as { msg: unknown }).msg) : String(d)))
-      .join(', ')
-  }
-  return 'Failed to send engagement letter'
-}
-
-Replace both catch blocks' message extraction (the template-based send path's catch block, and the PDF upload path's catch block) to use this helper:
-
-      } catch (err: unknown) {
-        toast.error(extractErrorMessage(err))
-      }
-
-This ensures any future validation error, not just this specific missing-file case, displays as readable text (e.g. "Field required") instead of crashing the app.
-
-Do not change the FormData construction, the file field name, the engagement_id query parameter, or any other part of either submit path. Do not touch the backend.
+Do not change the shared api client's default headers in lib/api.ts itself, since that default is correct and desired for the rest of the app's JSON-based requests. Do not change the FormData construction, the file field name, or any other part of this component.
 
 ## VERIFY AFTER ACT
 
-grep -n "extractErrorMessage\|Content-Type.*multipart" /home/corby/jamm-os/frontend/src/components/engagements/SendEngagementLetterModal.tsx
+grep -n "Content-Type.*undefined" /home/corby/jamm-os/frontend/src/components/engagements/SendEngagementLetterModal.tsx
 
-Expected: extractErrorMessage present and used in both catch blocks; the manual multipart Content-Type header line is gone.
+Expected: present on the upload-and-prepare call.
 
 cd /home/corby/jamm-os/frontend
 npm run build
@@ -114,19 +98,20 @@ Expected: zero TypeScript errors.
 
 ## MANUAL VERIFICATION (the actual test)
 
-1. Restart the frontend.
+1. Restart the frontend (kill and restart, do not rely on hot reload given today's history).
 2. Open an engagement, click Send Engagement Letter, switch to Upload Your Own PDF.
 3. Upload a real PDF, enter a fee amount, click Send for Signature.
-4. Confirm the upload now succeeds (no 422, no React crash) and the success toast appears.
-5. Regression check: trigger a different validation error on purpose (e.g. submit with no fee amount entered) and confirm the error now displays as readable text in a toast instead of crashing the app.
+4. Open DevTools Network tab before submitting, so the actual request can be inspected if it fails again.
+5. If it still fails, report the exact Content-Type header shown on the outgoing request in the Network tab's request headers (not response), so we can see definitively whether it is still application/json, multipart with no boundary, or correctly multipart with a boundary string this time.
+6. If it succeeds, confirm the success toast appears and the dashboard's Awaiting Signature section now shows this real document.
 
-Report what you observe at steps 4 and 5 specifically.
+Report what you observe at step 6, or the exact request Content-Type header from step 5 if it still fails.
 
 ## GIT
 
 cd /home/corby/jamm-os
 git add -A
-git commit -m "fix: engagement letter PDF upload was failing because a manually-set multipart Content-Type header lacked the required boundary string, causing the server to receive an unparseable body; also fixed validation error display crashing the app when FastAPI returns a structured error array instead of a string"
+git commit -m "fix: engagement letter PDF upload still failed after the previous header fix because the shared axios client's default Content-Type: application/json was still being applied; explicitly clearing the header for this one request lets the browser set the correct multipart boundary"
 git pull --rebase origin main
 git push origin main
 
