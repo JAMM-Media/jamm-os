@@ -14,12 +14,13 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, status, UploadFile
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.rate_limit import limiter, check_email_rate_limit
+from app.crud import document_request as crud_dr
 from app.crud import portal_notification as crud_notification
 from app.crud import portal_session as crud_portal_session
 from app.crud import tax_organizer as crud_organizer
@@ -61,8 +62,10 @@ from app.services.portal_auth import (
 )
 from app.core.config import get_settings
 from app.schemas.portal import MagicLinkRequest, MagicLinkResponse, ClientMagicLinkRequest
+from app.services import document_request_service as dr_service
 from app.services import portal_magic_link
 from app.services.behavioral_log import log_event
+from app.services.document_service import upload_document
 
 settings = get_settings()
 
@@ -243,6 +246,30 @@ def portal_logout(
     firm_id = UUID(payload.get("firm_id"))
 
     session = crud_portal_session.get_session_by_jti(db, jti, firm_id)
+
+    try:
+        duration_minutes = None
+        if session:
+            created = getattr(session, "created_at", None)
+            last_active = getattr(session, "last_active_at", None)
+            if created and last_active:
+                duration_minutes = int((last_active - created).total_seconds() / 60)
+        log_event(
+            firm_id=current_client.firm_id,
+            event_type="portal.session_ended",
+            entity_type="client",
+            entity_id=current_client.id,
+            actor_type="client",
+            actor_id=None,
+            metadata={
+                "session_duration_minutes": duration_minutes,
+                "time_of_day": datetime.now(timezone.utc).hour,
+            },
+        )
+    except Exception as _exc:
+        import logging as _logging
+        _logging.getLogger(__name__).warning("portal.session_ended log_event failed: %s", _exc)
+
     if session and not session.is_revoked:
         crud_portal_session.revoke_session(db, session, revoked_by="client")
 
@@ -649,6 +676,63 @@ def portal_get_engagement(
     }
 
 
+@router.post("/documents/upload")
+def portal_upload_document(
+    file: UploadFile = File(...),
+    engagement_id: Optional[UUID] = Query(None),
+    current_client: Client = Depends(get_current_portal_client),
+    db: Session = Depends(get_db),
+):
+    if engagement_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="engagement_id is required for portal document uploads",
+        )
+
+    try:
+        doc = upload_document(
+            db=db,
+            file=file,
+            client_id=current_client.id,
+            engagement_id=engagement_id,
+            firm_id=current_client.firm_id,
+            current_user_id=current_client.id,
+        )
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Upload failed",
+        )
+
+    try:
+        log_event(
+            firm_id=current_client.firm_id,
+            event_type="portal.document_uploaded",
+            entity_type="document",
+            entity_id=doc.id,
+            actor_type="client",
+            actor_id=None,
+            metadata={
+                "file_size": doc.size_bytes,
+                "content_type": file.content_type,
+                "engagement_id": str(engagement_id),
+                "time_of_day": datetime.now(timezone.utc).hour,
+                "associated_request": False,
+            },
+        )
+    except Exception as _exc:
+        import logging as _logging
+        _logging.getLogger(__name__).warning("portal.document_uploaded log_event failed: %s", _exc)
+
+    return {
+        "id": str(doc.id),
+        "filename": doc.filename,
+        "uploaded_at": doc.created_at.isoformat(),
+    }
+
+
 @router.get("/documents")
 def portal_list_documents(
     skip: int = Query(0, ge=0),
@@ -681,6 +765,60 @@ def portal_list_documents(
         }
         for d in docs
     ]
+
+
+@router.post("/document-requests/{request_id}/items/{item_id}/complete")
+def portal_complete_checklist_item(
+    request_id: UUID,
+    item_id: str,
+    current_client: Client = Depends(get_current_portal_client),
+    db: Session = Depends(get_db),
+):
+    doc_request = crud_dr.get_document_request(db, request_id, firm_id=current_client.firm_id)
+    if doc_request is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document request not found")
+
+    if doc_request.client_id != current_client.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+
+    updated_request, error = dr_service.update_checklist_item_status(
+        db=db,
+        request_id=request_id,
+        item_id=item_id,
+        new_status="uploaded",
+        firm_id=current_client.firm_id,
+        current_user_id=current_client.id,
+    )
+
+    if error == "item_not_found":
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found in checklist")
+
+    try:
+        days_since_created = None
+        if doc_request.created_at:
+            days_since_created = (datetime.now(timezone.utc) - doc_request.created_at).days
+        log_event(
+            firm_id=current_client.firm_id,
+            event_type="portal.todo_completed",
+            entity_type="document_request",
+            entity_id=request_id,
+            actor_type="client",
+            actor_id=None,
+            metadata={
+                "item_id": str(item_id),
+                "time_of_day": datetime.now(timezone.utc).hour,
+                "days_since_request_created": days_since_created,
+            },
+        )
+    except Exception as _exc:
+        import logging as _logging
+        _logging.getLogger(__name__).warning("portal.todo_completed log_event failed: %s", _exc)
+
+    return {
+        "request_id": str(request_id),
+        "item_id": str(item_id),
+        "status": "uploaded",
+    }
 
 
 @router.get("/notifications", response_model=list[PortalNotificationOut])
