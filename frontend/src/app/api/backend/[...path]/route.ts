@@ -44,8 +44,14 @@ async function proxyRequest(
   const search = request.nextUrl.search ?? ''
   const targetUrl = `${BACKEND_URL}/${path}${search}`
 
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
+  const incomingContentType = request.headers.get('Content-Type') ?? ''
+  const isMultipart = incomingContentType.startsWith('multipart/form-data')
+
+  const headers: Record<string, string> = isMultipart
+    ? {}
+    : { 'Content-Type': 'application/json' }
+  if (isMultipart) {
+    headers['Content-Type'] = incomingContentType
   }
   // Portal routes send their own JWT via Authorization header.
   // Always prefer the incoming Authorization header when present.
@@ -62,8 +68,13 @@ async function proxyRequest(
   }
 
   if (!['GET', 'HEAD'].includes(request.method)) {
-    const body = await request.text()
-    if (body) init.body = body
+    if (isMultipart) {
+      const arrayBuffer = await request.arrayBuffer()
+      if (arrayBuffer.byteLength > 0) init.body = arrayBuffer
+    } else {
+      const body = await request.text()
+      if (body) init.body = body
+    }
   }
 
   try {
