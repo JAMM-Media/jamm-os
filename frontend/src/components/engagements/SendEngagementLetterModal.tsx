@@ -46,6 +46,17 @@ interface SendEngagementLetterModalProps {
   endDate: string | null
 }
 
+function extractErrorMessage(err: unknown): string {
+  const detail = (err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail
+  if (typeof detail === 'string') return detail
+  if (Array.isArray(detail)) {
+    return detail
+      .map((d) => (typeof d === 'object' && d !== null && 'msg' in d ? String((d as { msg: unknown }).msg) : String(d)))
+      .join(', ')
+  }
+  return 'Failed to send engagement letter'
+}
+
 export function SendEngagementLetterModal({
   open,
   onClose,
@@ -206,8 +217,7 @@ export function SendEngagementLetterModal({
         onSent()
         handleClose()
       } catch (err: unknown) {
-        const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Failed to send engagement letter'
-        toast.error(msg)
+        toast.error(extractErrorMessage(err))
       } finally {
         setLoading(false)
       }
@@ -223,8 +233,7 @@ export function SendEngagementLetterModal({
 
         const uploadRes = await api.post(
           `/esign/upload-and-prepare?engagement_id=${engagementId}`,
-          formData,
-          { headers: { 'Content-Type': 'multipart/form-data' } }
+          formData
         )
         const envelopeId = uploadRes.data?.id
         if (!envelopeId) throw new Error('No envelope ID returned')
@@ -233,8 +242,7 @@ export function SendEngagementLetterModal({
         onSent()
         handleClose()
       } catch (err: unknown) {
-        const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Failed to send engagement letter'
-        toast.error(msg)
+        toast.error(extractErrorMessage(err))
       } finally {
         setLoading(false)
       }

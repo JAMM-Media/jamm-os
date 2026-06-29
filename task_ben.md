@@ -49,70 +49,84 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-# Task: Correct stale Signature Envelope navigation instructions that describe a non-existent Signatures tab
+# Task: Fix engagement letter PDF upload failing due to malformed multipart header, and fix the crash when displaying validation errors
 
 USE: claude sonnet
 
 ## VERIFY BEFORE ACT
 
-sed -n '599,613p' /home/corby/jamm-os/app/api/concierge/prompts.py
+sed -n '195,235p' /home/corby/jamm-os/frontend/src/components/engagements/SendEngagementLetterModal.tsx
 
-Confirm the current 7-step "How to send a signature envelope" instructions, which describe navigating to Clients > [Client Name] > Engagements > [Engagement Name] > Signatures tab > New Signature Request, with manual signer name/email entry, a subject line, and an optional message.
+Confirm the current upload-and-prepare call sets headers: { 'Content-Type': 'multipart/form-data' } manually with no boundary parameter, and confirm the catch block's msg extraction assumes err.response.data.detail is always a string.
 
 ## WHAT IS WRONG
 
-Confirmed via direct live verification: there is no Signatures tab anywhere on an engagement detail page. The actual engagement tabs are Overview, Tasks, QC Checklist, and Documents only. The real signature-sending mechanism is the "Send Engagement Letter" button on the engagement detail page, which opens a modal with two tabs (Use a Template, Upload Your Own PDF), auto-populated client/engagement/date/deadline fields, a required Letter Template or PDF upload, a required Fee Amount, and a "Send for Signature" button. There is no manual signer name/email entry step, no subject line field, and no separate message field in the real flow -- the signer is implicitly the client on the engagement.
+Confirmed via live testing and direct backend response inspection: uploading a PDF for engagement letter signature fails with a 422 error, "loc": ["body", "file"], "msg": "Field required", even though the frontend correctly builds a FormData with a file field attached under the exact name the backend expects.
 
-This is not a missing feature, it is incorrect existing documentation describing a flow that does not exist in the app, likely written in anticipation of a more generic feature that was replaced by the simpler engagement-letter-specific flow that was actually built. Giving the agent this wrong navigation path would send a firm owner looking for a tab that does not exist.
+Root cause: the request explicitly sets Content-Type: multipart/form-data with no boundary string. When this header is left unset, the browser's FormData handling sets it automatically with the required boundary delimiter, which the server needs to split the multipart body into individual fields. Manually overriding it without a boundary produces a body the server cannot parse into any fields at all, so FastAPI reports the file field as entirely missing rather than malformed.
+
+Separately, when this (or any) validation error occurs, the catch block's error message extraction assumes response.data.detail is always a string. FastAPI validation errors return detail as an array of objects (each with type, loc, msg, input keys), not a string. Since the array is not undefined, the existing ?? 'Failed to send engagement letter' fallback never triggers, and the raw array of objects gets passed directly to toast.error(), which cannot render an object as text and crashes the entire app with "Objects are not valid as a React child."
 
 ## ACTION
 
-File: /home/corby/jamm-os/app/api/concierge/prompts.py
+File: /home/corby/jamm-os/frontend/src/components/engagements/SendEngagementLetterModal.tsx
 
-Replace the "How to send a signature envelope" section (the 7 numbered steps) with the real flow:
+Fix 1: Remove the manually-set Content-Type header on the upload-and-prepare call entirely, letting the client set it automatically with the correct boundary:
 
-How to send an engagement letter for signature:
-1. Navigate to Clients > [Client Name] > Engagements > [Engagement Name].
-2. Select the Send Engagement Letter button at the top of the engagement detail page.
-3. Choose either Use a Template or Upload Your Own PDF.
-4. If using a template, select a Letter Template from the dropdown. If no templates exist yet, create one first under Templates > Engagement Letters. If uploading a PDF, select the file to upload.
-5. Enter the Fee Amount.
-6. Select Send for Signature. The client receives an email from Dropbox Sign with a link to review and sign.
-Client, engagement, date, and deadline fields are auto-populated from the engagement and cannot be edited in this modal.
+        const uploadRes = await api.post(
+          `/esign/upload-and-prepare?engagement_id=${engagementId}`,
+          formData
+        )
 
-Keep the existing Statuses line, the Reminders line, the Dropbox Sign connection requirement line, and the entire signature_envelope_qa block exactly as they are, since those describe lifecycle concepts that remain accurate regardless of the specific UI path used to create one. Only the 7-step navigation instructions are being replaced.
+Fix 2: Add a helper function near the top of this component (or inline in both catch blocks, since there are two upload paths -- template and PDF -- that each have their own catch block with the same fragile pattern) that safely extracts a displayable string from any error shape:
 
-Also check whether the existing signature_envelope_qa entries reference "the envelope detail view" for resending or cancelling -- if there is no separate envelope detail view in the real app (only the Dashboard Awaiting Signature panel and the engagement detail page itself), note this in your verify-after output rather than silently leaving those Q&A answers referencing a view that may not exist. Do not change those Q&A entries without first confirming whether a detail view genuinely exists; report this as a finding if you cannot confirm it from the codebase alone.
+function extractErrorMessage(err: unknown): string {
+  const detail = (err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail
+  if (typeof detail === 'string') return detail
+  if (Array.isArray(detail)) {
+    return detail
+      .map((d) => (typeof d === 'object' && d !== null && 'msg' in d ? String((d as { msg: unknown }).msg) : String(d)))
+      .join(', ')
+  }
+  return 'Failed to send engagement letter'
+}
 
-Do not change anything else in this file.
+Replace both catch blocks' message extraction (the template-based send path's catch block, and the PDF upload path's catch block) to use this helper:
+
+      } catch (err: unknown) {
+        toast.error(extractErrorMessage(err))
+      }
+
+This ensures any future validation error, not just this specific missing-file case, displays as readable text (e.g. "Field required") instead of crashing the app.
+
+Do not change the FormData construction, the file field name, the engagement_id query parameter, or any other part of either submit path. Do not touch the backend.
 
 ## VERIFY AFTER ACT
 
-grep -n "Send Engagement Letter button" /home/corby/jamm-os/app/api/concierge/prompts.py
+grep -n "extractErrorMessage\|Content-Type.*multipart" /home/corby/jamm-os/frontend/src/components/engagements/SendEngagementLetterModal.tsx
 
-Expected: present.
+Expected: extractErrorMessage present and used in both catch blocks; the manual multipart Content-Type header line is gone.
 
-grep -n "Signatures tab" /home/corby/jamm-os/app/api/concierge/prompts.py
+cd /home/corby/jamm-os/frontend
+npm run build
 
-Expected: no longer present.
+Expected: zero TypeScript errors.
 
-python3 -c "from app.api.concierge.route import router; print('OK')"
+## MANUAL VERIFICATION (the actual test)
 
-Expected: OK, no import errors.
+1. Restart the frontend.
+2. Open an engagement, click Send Engagement Letter, switch to Upload Your Own PDF.
+3. Upload a real PDF, enter a fee amount, click Send for Signature.
+4. Confirm the upload now succeeds (no 422, no React crash) and the success toast appears.
+5. Regression check: trigger a different validation error on purpose (e.g. submit with no fee amount entered) and confirm the error now displays as readable text in a toast instead of crashing the app.
 
-## MANUAL VERIFICATION
-
-1. Restart the backend.
-2. Ask the Concierge: "how do I send this engagement letter for signature?" while viewing an engagement.
-3. Confirm the response describes the real Send Engagement Letter button and modal flow, not a Signatures tab.
-
-Report the exact response text at step 3, and report explicitly what was found regarding the "envelope detail view" question above.
+Report what you observe at steps 4 and 5 specifically.
 
 ## GIT
 
 cd /home/corby/jamm-os
 git add -A
-git commit -m "fix: correct stale signature envelope navigation instructions describing a non-existent Signatures tab, replaced with the real Send Engagement Letter button and modal flow"
+git commit -m "fix: engagement letter PDF upload was failing because a manually-set multipart Content-Type header lacked the required boundary string, causing the server to receive an unparseable body; also fixed validation error display crashing the app when FastAPI returns a structured error array instead of a string"
 git pull --rebase origin main
 git push origin main
 
