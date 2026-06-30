@@ -13,7 +13,9 @@ import uuid
 from datetime import date, datetime, timezone
 from typing import Optional
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
+from uuid import UUID
 
 from app.crud import irs_authorization as crud_auth
 from app.crud import signature_envelope as crud_envelope
@@ -339,5 +341,56 @@ def mark_authorization_expired(
             "expired_date": authorization.valid_until.isoformat() if hasattr(authorization, "valid_until") and authorization.valid_until else None,
             "client_id": str(authorization.client_id) if hasattr(authorization, "client_id") else None,
             "days_since_expiry_warning": None,
+        }
+    )
+
+
+def activate_authorization_for_envelope(
+    *,
+    db: Session,
+    envelope_id: UUID,
+    firm_id: UUID,
+) -> None:
+    """
+    Called when a signature envelope is signed. If that envelope is an IRS
+    authorization form, flip the linked IrsAuthorization from
+    pending_signature to active and fire the behavioral event. No-op if the
+    envelope is not linked to an authorization (the common case for plain
+    engagement letters).
+    """
+    from app.models.irs_authorization import IrsAuthorization
+
+    auth = db.execute(
+        select(IrsAuthorization).where(
+            IrsAuthorization.signature_envelope_id == envelope_id,
+            IrsAuthorization.firm_id == firm_id,
+        )
+    ).scalar_one_or_none()
+
+    if auth is None:
+        return
+
+    old_status = auth.status
+    if old_status != "pending_signature":
+        return
+
+    auth.status = "active"
+    if auth.valid_from is None:
+        auth.valid_from = date.today()
+    db.commit()
+
+    log_event(
+        firm_id=firm_id,
+        event_type="irs_authorization.activated",
+        entity_type="irs_authorization",
+        entity_id=auth.id,
+        actor_type="client",
+        actor_id=None,
+        metadata={
+            "from_status": old_status,
+            "to_status": "active",
+            "form_type": str(auth.form_type) if auth.form_type else None,
+            "client_id": str(auth.client_id),
+            "valid_until": auth.valid_until.isoformat() if auth.valid_until else None,
         }
     )

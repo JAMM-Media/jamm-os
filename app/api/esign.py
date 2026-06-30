@@ -923,6 +923,19 @@ def store_signed_document(
             ),
         )
         db.commit()
+
+        try:
+            from app.services.irs_auth_service import activate_authorization_for_envelope
+            activate_authorization_for_envelope(
+                db=db,
+                envelope_id=envelope.id,
+                firm_id=uuid.UUID(firm_id) if isinstance(firm_id, str) else firm_id,
+            )
+        except Exception as _auth_exc:
+            import logging as _log
+            _log.getLogger(__name__).error(
+                "IRS auth activation on signing failed: %s", _auth_exc, exc_info=True
+            )
     except Exception as exc:
         import logging as _log
         _log.getLogger(__name__).error("store_signed_document failed: %s", exc, exc_info=True)
