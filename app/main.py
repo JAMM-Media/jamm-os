@@ -77,6 +77,7 @@ from app.api.financial_intelligence import router as financial_intelligence_rout
 from app.db.base_class import Base
 from app.core.config import get_settings
 from app.core.middleware import SecurityHeadersMiddleware
+from app.core.context_middleware import RequestContextMiddleware
 from app.core.rate_limit import limiter
 
 settings = get_settings()
@@ -203,6 +204,8 @@ app.add_middleware(
 
 if settings.env == "production":
     app.add_middleware(SecurityHeadersMiddleware)
+
+app.add_middleware(RequestContextMiddleware)
 
 app.include_router(auth_router, prefix="/auth", tags=["auth"])
 app.include_router(firms_router)
