@@ -891,7 +891,9 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
                 </button>
               )}
             </div>
-            {notificationsExpanded && notifications.map((n) => {
+            {notificationsExpanded && (
+              <div className="flex flex-col gap-2 overflow-y-auto max-h-64">
+                {notifications.map((n) => {
               const draft = n.metadata?.draft as string | undefined
               return (
                 <div
@@ -965,7 +967,9 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
                   )}
                 </div>
               )
-            })}
+                })}
+              </div>
+            )}
           </div>
         )}
 

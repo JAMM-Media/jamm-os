@@ -49,66 +49,49 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-# Task: Fix Next.js proxy route destroying multipart file uploads via hardcoded JSON Content-Type and text-based body reading
+# Task: Make expanded notification list scrollable when it exceeds available space
 
 USE: claude sonnet
 
 ## VERIFY BEFORE ACT
 
-cat "/home/corby/jamm-os/frontend/src/app/api/backend/[...path]/route.ts"
+sed -n '870,900p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-Confirm the current proxyRequest function: headers is built with a hardcoded 'Content-Type': 'application/json' with no read of the incoming request's actual Content-Type, and the body is read with await request.text() for any non-GET/HEAD method, with no special handling for multipart content.
+Confirm the current structure: the outer div is flex-col gap-2 px-4 pt-3 flex-shrink-0, containing a header row div (toggle button + Dismiss all) followed immediately by the notificationsExpanded && notifications.map(...) rendering each card directly as children of the outer div, with no scroll boundary or max-height anywhere in this section.
 
 ## WHAT IS WRONG
 
-Confirmed via extensive live testing: engagement letter PDF uploads fail with a 422 "file field required" error no matter what is fixed on the frontend component or the shared axios client, because every request in the app passes through this single proxy route on its way to the real backend, and this route unconditionally overwrites Content-Type with application/json and reads the body as text.
-
-For a multipart/form-data request (a file upload), this is doubly destructive: the boundary-bearing Content-Type header the browser correctly generated is discarded and replaced with application/json, and the binary file bytes inside the body are corrupted by being decoded as UTF-8 text via request.text(). The backend therefore receives a body it cannot parse as multipart at all, reporting the file field as entirely missing, regardless of what the frontend actually sent.
-
-This proxy is shared by every request type in the app (JSON bodies, SSE streaming, PDF responses already have special-cased handling further down in this same file), so the fix must add a new branch specifically for multipart requests without altering the existing JSON, streaming, or PDF-response handling that the rest of the app correctly depends on.
+Confirmed via live testing with 5 active notification cards: when the notification section is expanded, the card list grows taller than the available panel space and clips instead of scrolling. The header row (N Alerts toggle + Dismiss all) stays visible but the card list itself has no scroll boundary, so cards beyond what fits on screen are simply unreachable. The panel's existing min-h-0 fix on the message feed below only constrains that section -- the notification section is flex-shrink-0 with no internal scroll, so it can grow tall enough to push everything below it out of view.
 
 ## ACTION
 
-File: /home/corby/jamm-os/frontend/src/app/api/backend/[...path]/route.ts
+File: /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-In proxyRequest, after the existing cookieToken/incomingAuth header logic and before the body-reading block, detect the incoming request's actual Content-Type and branch on whether it is multipart:
+Wrap the notifications.map(...) output in a scrollable container div placed between the header row and the map itself:
 
-  const incomingContentType = request.headers.get('Content-Type') ?? ''
-  const isMultipart = incomingContentType.startsWith('multipart/form-data')
+Change:
 
-  const headers: Record<string, string> = isMultipart
-    ? {}
-    : { 'Content-Type': 'application/json' }
-  if (isMultipart) {
-    headers['Content-Type'] = incomingContentType
-  }
-  if (incomingAuth) {
-    headers['Authorization'] = incomingAuth
-  } else if (cookieToken) {
-    headers['Authorization'] = `Bearer ${cookieToken}`
-  }
+            {notificationsExpanded && notifications.map((n) => {
 
-This preserves the existing JSON default for every other request type, while forwarding the exact original Content-Type (boundary included) unchanged for multipart requests.
+To:
 
-Then update the body-reading block to read multipart bodies as raw binary instead of text, since request.text() corrupts binary file content:
+            {notificationsExpanded && (
+              <div className="flex flex-col gap-2 overflow-y-auto max-h-64">
+                {notifications.map((n) => {
 
-  if (!['GET', 'HEAD'].includes(request.method)) {
-    if (isMultipart) {
-      const arrayBuffer = await request.arrayBuffer()
-      if (arrayBuffer.byteLength > 0) init.body = arrayBuffer
-    } else {
-      const body = await request.text()
-      if (body) init.body = body
-    }
-  }
+And close the new wrapper div after the existing map's closing })} :
 
-Do not change the streaming (SSE) response handling, the PDF response handling, the 401 refresh-and-retry logic, or any other part of this file. This task only changes how the incoming request's Content-Type and body are read and forwarded, specifically adding a multipart-aware branch alongside the existing JSON behavior, which must remain unchanged for every non-multipart request.
+                })}
+              </div>
+            )}
+
+max-h-64 (16rem, 256px) gives enough room for roughly two full draft-card notifications before scrolling activates, keeping the panel usable while preventing the list from consuming the entire panel height. The header row (toggle button + Dismiss all button) sits above this container and is always visible regardless of scroll position. Do not change the outer flex-shrink-0 wrapper, the header row, or any card rendering logic inside the map. Do not touch any other file.
 
 ## VERIFY AFTER ACT
 
-grep -n "isMultipart\|incomingContentType" "/home/corby/jamm-os/frontend/src/app/api/backend/[...path]/route.ts"
+grep -n "max-h-64\|overflow-y-auto" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-Expected: present, with both the header-branching and body-reading logic using it.
+Expected: present on the new wrapper div inside the notifications section.
 
 cd /home/corby/jamm-os/frontend
 npm run build
@@ -117,22 +100,20 @@ Expected: zero TypeScript errors.
 
 ## MANUAL VERIFICATION (the actual test)
 
-1. Restart the frontend (full kill and restart).
-2. Open DevTools Network tab.
-3. Upload the same PDF for engagement letter signature, click Send for Signature.
-4. Confirm the request now succeeds with no 422 error.
-5. Check the Network tab's request headers for this upload request specifically, confirm Content-Type now shows multipart/form-data with an actual boundary string, not application/json.
-6. Regression check: ask the Concierge a normal question and confirm streaming responses still work exactly as before, unaffected by this change.
-7. Regression check: download a morning briefing PDF (the existing Download briefing button) and confirm PDF responses still work exactly as before.
-8. Regression check: perform any normal JSON-based action (e.g. creating a client, editing an engagement) and confirm those still work exactly as before.
+1. Restart the frontend.
+2. Open the Concierge panel with 4 or more notification cards present (trigger conditions already met in the test environment from earlier testing).
+3. Click the N Alerts header to expand the list.
+4. Confirm the notification cards now scroll independently within the expanded section, with the N Alerts header and Dismiss all button remaining fixed above the scroll area.
+5. Confirm the chat message feed and input bar below are still fully visible and reachable while notifications are expanded.
+6. Regression check: with 1-2 notifications (fewer than fill the max-h-64), confirm no unnecessary scrollbar appears and cards render normally without extra padding or clipping.
 
-Report what you observe at steps 4, 6, 7, and 8 specifically, since this file is shared by the entire app and a regression here would be far more damaging than the original bug.
+Report what you observe at steps 4 and 5 specifically.
 
 ## GIT
 
 cd /home/corby/jamm-os
 git add -A
-git commit -m "fix: Next.js API proxy route was unconditionally overwriting every request's Content-Type with application/json and reading bodies as text, which silently destroyed multipart file uploads by stripping the boundary header and corrupting binary content; added a multipart-aware branch that forwards the original Content-Type and reads the body as raw binary for file uploads specifically, leaving JSON, streaming, and PDF-response handling unchanged"
+git commit -m "fix: expanded notification card list now scrolls independently within a max-height container instead of growing unbounded and pushing the chat feed and input bar out of view"
 git pull --rebase origin main
 git push origin main
 
