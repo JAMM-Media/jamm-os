@@ -1,6 +1,7 @@
 # app/services/auth_service.py
 
 import threading
+import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 from sqlalchemy.orm import Session
@@ -150,12 +151,17 @@ def authenticate_staff(
         user.locked_until = None
         db.commit()
 
+    session_jti = str(uuid.uuid4())
+    user.current_session_jti = session_jti
+    db.commit()
+
     session_timeout = int(firm_settings.get("session_timeout_minutes", settings.ACCESS_TOKEN_EXPIRE_MINUTES))
     access_token = create_access_token(
         data={
             "sub": str(user.id),
             "firm_id": str(user.firm_id),
             "token_version": user.token_version,
+            "jti": session_jti,
         },
         expires_delta=timedelta(minutes=session_timeout),
     )

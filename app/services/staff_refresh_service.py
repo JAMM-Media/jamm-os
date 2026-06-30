@@ -1,6 +1,7 @@
 # app/services/staff_refresh_service.py
 
 import logging
+import uuid
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
@@ -64,6 +65,12 @@ def refresh_staff_access_token(raw_token: str, db: Session) -> dict | None:
     if user is None:
         return None
 
+    # Carry forward the session jti; heal legacy sessions that lack one
+    jti = user.current_session_jti
+    if jti is None:
+        jti = str(uuid.uuid4())
+        user.current_session_jti = jti
+
     # Issue new access token
     access_token = create_access_token(
         data={
@@ -71,6 +78,7 @@ def refresh_staff_access_token(raw_token: str, db: Session) -> dict | None:
             "firm_id": str(user.firm_id),
             "role": user.role,
             "token_version": user.token_version,
+            "jti": jti,
         }
     )
 

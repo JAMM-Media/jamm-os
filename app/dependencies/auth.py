@@ -1,5 +1,6 @@
 # app/dependencies/auth.py
 
+from typing import Optional
 from fastapi import Depends, HTTPException, status
 from jose import JWTError, jwt
 from sqlalchemy.orm import Session
@@ -57,3 +58,11 @@ def get_current_user(
         )
 
     return user
+
+
+def get_current_session_jti(token: str = Depends(oauth2_scheme)) -> Optional[str]:
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        return payload.get("jti")
+    except Exception:
+        return None

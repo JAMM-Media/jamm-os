@@ -140,6 +140,8 @@ class User(Base):
         DateTime(timezone=True), nullable=True
     )
 
+    current_session_jti: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
     calendar_settings: Mapped[Optional[dict]] = mapped_column(
         JSONB, nullable=True
     )

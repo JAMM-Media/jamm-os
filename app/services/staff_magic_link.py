@@ -3,6 +3,7 @@
 import hashlib
 import logging
 import secrets
+import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Tuple
 
@@ -87,14 +88,17 @@ def verify_staff_magic_link(token: str, db: Session) -> Tuple[Optional[dict], Op
     if user is None:
         return None, "This link is invalid or has expired. Please request a new one."
 
+    session_jti = str(uuid.uuid4())
     user.magic_link_token_hash = None
     user.magic_link_expires_at = None
+    user.current_session_jti = session_jti
     db.commit()
 
     access_token = create_access_token(data={
         "sub": str(user.id),
         "firm_id": str(user.firm_id),
         "token_version": user.token_version,
+        "jti": session_jti,
     })
 
     return {"access_token": access_token, "token_type": "bearer"}, None
