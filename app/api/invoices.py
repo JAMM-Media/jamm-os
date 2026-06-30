@@ -108,23 +108,16 @@ def bulk_update_invoices(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_manager_or_above),
 ):
-    if payload.action not in ("send", "void"):
-        raise HTTPException(status_code=400, detail="action must be 'send' or 'void'")
-    stmt = select(Invoice).where(
-        Invoice.id.in_(payload.ids),
-        Invoice.firm_id == current_user.firm_id,
-        Invoice.is_deleted == False,  # noqa: E712
+    count, error = invoice_service.bulk_update_invoices_tracked(
+        db=db,
+        ids=payload.ids,
+        action=payload.action,
+        firm_id=current_user.firm_id,
+        current_user_id=current_user.id,
     )
-    invoices = db.execute(stmt).scalars().all()
-    now = datetime.now(timezone.utc)
-    for inv in invoices:
-        if payload.action == "send":
-            inv.status = InvoiceStatus.sent
-            inv.sent_at = now
-        else:
-            inv.status = InvoiceStatus.void
-    db.commit()
-    return {"updated": len(invoices)}
+    if error == "bad_action":
+        raise HTTPException(status_code=400, detail="action must be 'send' or 'void'")
+    return {"updated": count}
 
 
 # ---------------------------------------------------------
@@ -152,12 +145,18 @@ def update_invoice(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_manager_or_above),
 ):
-    invoice = crud_invoice.get_invoice(db, invoice_id, firm_id=current_user.firm_id)
-    if not invoice:
+    result, error = invoice_service.update_invoice_tracked(
+        db=db,
+        invoice_id=invoice_id,
+        payload=payload,
+        firm_id=current_user.firm_id,
+        current_user_id=current_user.id,
+    )
+    if error == "not_found":
         raise HTTPException(status_code=404, detail="Invoice not found")
-    if invoice.status in (InvoiceStatus.paid, InvoiceStatus.void):
+    if error == "locked":
         raise HTTPException(status_code=400, detail="Cannot modify a paid or void invoice")
-    return crud_invoice.update_invoice(db, invoice, payload)
+    return result
 
 
 # ---------------------------------------------------------
@@ -246,6 +245,34 @@ def get_invoice_pdf(
             "Content-Disposition": f"attachment; filename=invoice-{invoice.invoice_number}.pdf"
         },
     )
+
+
+# ---------------------------------------------------------
+# REMIND
+# ---------------------------------------------------------
+@router.post("/{invoice_id}/remind", response_model=InvoiceOut)
+def send_invoice_reminder(
+    invoice_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_manager_or_above),
+):
+    result, error = invoice_service.send_invoice_reminder(
+        db=db,
+        invoice_id=invoice_id,
+        firm_id=current_user.firm_id,
+        current_user_id=current_user.id,
+    )
+    if error == "not_found":
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    if error == "already_paid":
+        raise HTTPException(status_code=400, detail="Cannot send a reminder on a paid invoice")
+    if error == "void":
+        raise HTTPException(status_code=400, detail="Cannot send a reminder on a void invoice")
+    if error == "not_sent_yet":
+        raise HTTPException(status_code=400, detail="Invoice must be sent before sending a reminder")
+    if error == "no_client_email":
+        raise HTTPException(status_code=400, detail="Client has no email address on file")
+    return result
 
 
 # ---------------------------------------------------------

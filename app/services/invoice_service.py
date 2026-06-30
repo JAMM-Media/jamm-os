@@ -329,3 +329,238 @@ async def create_invoice_from_time_entries(
     )
 
     return invoice, None
+
+
+def send_invoice_reminder(
+    db: Session,
+    invoice_id: UUID,
+    firm_id: UUID,
+    current_user_id: UUID,
+):
+    invoice = crud_invoice.get_invoice(db, invoice_id, firm_id=firm_id)
+    if not invoice:
+        return None, "not_found"
+
+    if invoice.status == InvoiceStatus.paid:
+        return None, "already_paid"
+    if invoice.status == InvoiceStatus.void:
+        return None, "void"
+    if invoice.status == InvoiceStatus.draft:
+        return None, "not_sent_yet"
+
+    client = db.execute(select(Client).where(Client.id == invoice.client_id)).scalar_one_or_none()
+    firm = db.execute(select(Firm).where(Firm.id == firm_id)).scalar_one_or_none()
+
+    if not client or not client.email:
+        return None, "no_client_email"
+
+    invoice.reminder_count += 1
+    invoice.last_reminder_sent_at = datetime.now(timezone.utc)
+    db.commit()
+
+    try:
+        from app.services.email_service import EmailService
+        from app.core.config import get_settings as _get_settings
+        _settings = _get_settings()
+        email_settings = EmailService.get_firm_email_settings(firm)
+        amount_due = f"${float(invoice.total_amount):,.2f}" if invoice.total_amount else "N/A"
+        due_date_str = invoice.due_date.strftime("%B %d, %Y") if invoice.due_date else "N/A"
+        EmailService.send_invoice_email(
+            to_email=client.email,
+            firm_name=firm.name,
+            recipient_name=client.name,
+            invoice_number=invoice.invoice_number,
+            amount_due=amount_due,
+            due_date=due_date_str,
+            payment_url=f"{_settings.FRONTEND_URL}/portal",
+            reply_to=email_settings["reply_to"],
+            display_name=email_settings["display_name"],
+            sending_domain=email_settings.get("sending_domain"),
+        )
+    except Exception as _e:
+        import logging as _logging
+        _logging.getLogger(__name__).error("Invoice reminder email failed: %s", str(_e))
+
+    log_event(
+        firm_id=firm_id,
+        event_type="invoice.reminder_sent",
+        entity_type="invoice",
+        entity_id=invoice_id,
+        actor_type="staff",
+        actor_id=current_user_id,
+        metadata={
+            "reminder_number": invoice.reminder_count,
+            "amount": float(invoice.total_amount) if invoice.total_amount else None,
+            "days_since_sent": (datetime.now(timezone.utc) - invoice.sent_at).days
+                if invoice.sent_at else None,
+            "days_overdue": (datetime.now(timezone.utc).date() - invoice.due_date).days
+                if invoice.due_date and invoice.due_date < datetime.now(timezone.utc).date() else None,
+            "client_id": str(invoice.client_id),
+        }
+    )
+
+    return invoice, None
+
+
+def update_invoice_tracked(
+    *,
+    db: Session,
+    invoice_id: UUID,
+    payload: InvoiceUpdate,
+    firm_id: UUID,
+    current_user_id: UUID,
+):
+    invoice = crud_invoice.get_invoice(db, invoice_id, firm_id=firm_id)
+    if not invoice:
+        return None, "not_found"
+    if invoice.status in (InvoiceStatus.paid, InvoiceStatus.void):
+        return None, "locked"
+
+    # Capture before-values for meaningful fields
+    old_status = invoice.status
+    old_total = float(invoice.total_amount) if invoice.total_amount is not None else None
+    old_due_date = invoice.due_date
+
+    updated = crud_invoice.update_invoice(db, invoice, payload)
+
+    # Fire events only for meaningful state changes, with before/after
+    new_status = updated.status
+    if new_status != old_status:
+        log_event(
+            firm_id=firm_id,
+            event_type="invoice.status_changed",
+            entity_type="invoice",
+            entity_id=updated.id,
+            actor_type="staff",
+            actor_id=current_user_id,
+            metadata={
+                "from_status": str(old_status),
+                "to_status": str(new_status),
+                "client_id": str(updated.client_id),
+            }
+        )
+
+    new_total = float(updated.total_amount) if updated.total_amount is not None else None
+    if new_total != old_total:
+        log_event(
+            firm_id=firm_id,
+            event_type="invoice.amount_changed",
+            entity_type="invoice",
+            entity_id=updated.id,
+            actor_type="staff",
+            actor_id=current_user_id,
+            metadata={
+                "from_amount": old_total,
+                "to_amount": new_total,
+                "client_id": str(updated.client_id),
+            }
+        )
+
+    if updated.due_date != old_due_date:
+        log_event(
+            firm_id=firm_id,
+            event_type="invoice.due_date_changed",
+            entity_type="invoice",
+            entity_id=updated.id,
+            actor_type="staff",
+            actor_id=current_user_id,
+            metadata={
+                "from_due_date": old_due_date.isoformat() if old_due_date else None,
+                "to_due_date": updated.due_date.isoformat() if updated.due_date else None,
+                "client_id": str(updated.client_id),
+            }
+        )
+
+    return updated, None
+
+
+def bulk_update_invoices_tracked(
+    *,
+    db: Session,
+    ids: list,
+    action: str,
+    firm_id: UUID,
+    current_user_id: UUID,
+):
+    from app.models.invoice import Invoice
+    from datetime import datetime, timezone
+    if action not in ("send", "void"):
+        return None, "bad_action"
+
+    stmt = select(Invoice).where(
+        Invoice.id.in_(ids),
+        Invoice.firm_id == firm_id,
+        Invoice.is_deleted == False,  # noqa: E712
+    )
+    invoices = db.execute(stmt).scalars().all()
+    now = datetime.now(timezone.utc)
+
+    transitioned = []
+    for inv in invoices:
+        old_status = inv.status
+        if action == "send":
+            inv.status = InvoiceStatus.sent
+            inv.sent_at = now
+        else:
+            inv.status = InvoiceStatus.void
+        transitioned.append((inv, old_status))
+
+    db.commit()
+
+    for inv, old_status in transitioned:
+        log_event(
+            firm_id=firm_id,
+            event_type="invoice.status_changed",
+            entity_type="invoice",
+            entity_id=inv.id,
+            actor_type="staff",
+            actor_id=current_user_id,
+            metadata={
+                "from_status": str(old_status),
+                "to_status": str(inv.status),
+                "client_id": str(inv.client_id),
+                "via": "bulk",
+                "bulk_action": action,
+            }
+        )
+
+    return len(transitioned), None
+
+
+# ------------------------------------------------------------
+# STRIPE-DEPENDENT STUBS
+# These functions are called by the Stripe webhook handler once
+# Stripe Connect is fully wired. Do not remove or implement
+# until the webhook handler in app/api/stripe_webhook.py is
+# complete. See invoice tracking gap notes from July 2026.
+# ------------------------------------------------------------
+
+def mark_invoice_partial_payment(
+    *,
+    db: Session,
+    invoice: Invoice,
+    firm_id: UUID,
+    amount_paid: float,
+    remaining_balance: float,
+    payment_method: str = "stripe",
+) -> None:
+    # TODO: called from Stripe webhook on payment_intent.succeeded
+    # with amount less than total_amount. Wire log_event here.
+    # Metadata to capture: amount_paid, remaining_balance,
+    # payment_method, days_since_sent, client_id.
+    pass
+
+
+def mark_invoice_refunded(
+    *,
+    db: Session,
+    invoice: Invoice,
+    firm_id: UUID,
+    amount_refunded: float,
+    reason: Optional[str] = None,
+) -> None:
+    # TODO: called from Stripe webhook on charge.refunded.
+    # Wire log_event here.
+    # Metadata to capture: amount_refunded, reason,
+    # days_since_payment, client_id.
+    pass
