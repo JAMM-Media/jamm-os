@@ -166,6 +166,14 @@ def update_my_firm_settings(
                 ],
             }
         )
+
+    from app.services.behavioral_log import log_setting_changes
+    log_setting_changes(
+        firm_id=current_firm.id,
+        actor_id=None,
+        old_values={k: current_settings.get(k) for k in payload.keys()},
+        new_values={k: merged.get(k) for k in payload.keys()},
+    )
     return updated
 
 

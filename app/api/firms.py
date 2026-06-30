@@ -66,7 +66,34 @@ def update_my_firm(
     firm = crud_firm.get_firm(db, current_user.firm_id)
     if not firm:
         raise HTTPException(status_code=404, detail="Firm not found")
-    return crud_firm.update_firm(db, firm, payload)
+
+    before = {
+        "name": firm.name,
+        "staff_auth_policy": firm.staff_auth_policy,
+        "subscription_tier": firm.subscription_tier,
+        "timesheet_approval_required": firm.timesheet_approval_required,
+        "is_active": firm.is_active,
+        "firm_type": firm.firm_type,
+        "feature_flags": firm.feature_flags,
+    }
+    updated = crud_firm.update_firm(db, firm, payload)
+    after = {
+        "name": updated.name,
+        "staff_auth_policy": updated.staff_auth_policy,
+        "subscription_tier": updated.subscription_tier,
+        "timesheet_approval_required": updated.timesheet_approval_required,
+        "is_active": updated.is_active,
+        "firm_type": updated.firm_type,
+        "feature_flags": updated.feature_flags,
+    }
+    from app.services.behavioral_log import log_setting_changes
+    log_setting_changes(
+        firm_id=firm.id,
+        actor_id=current_user.id,
+        old_values=before,
+        new_values=after,
+    )
+    return updated
 
 
 _ALLOWED_FIRM_TYPES = {"tax_prep", "bookkeeping", "advisory"}
@@ -92,10 +119,19 @@ def update_concierge_settings(
     firm = crud_firm.get_firm(db, current_user.firm_id)
     if not firm:
         raise HTTPException(status_code=404, detail="Firm not found")
+    old_firm_type = firm.firm_type
     if payload.firm_type is not None:
         firm.firm_type = payload.firm_type
     db.commit()
     db.refresh(firm)
+
+    from app.services.behavioral_log import log_setting_changes
+    log_setting_changes(
+        firm_id=firm.id,
+        actor_id=current_user.id,
+        old_values={"firm_type": old_firm_type},
+        new_values={"firm_type": firm.firm_type},
+    )
     return firm
 
 

@@ -65,3 +65,40 @@ def log_event(
     finally:
         if db is not None:
             db.close()
+
+
+def log_setting_changes(
+    *,
+    firm_id,
+    actor_id,
+    old_values: dict,
+    new_values: dict,
+) -> None:
+    """
+    Fire one firm.setting_changed event per key whose value changed.
+    Simple scalars are captured directly; complex values (dict/list)
+    are recorded as changed-with-type only, never dumped in full.
+    """
+    def _safe(v):
+        if v is None or isinstance(v, (str, int, float, bool)):
+            return v
+        return {"_type": type(v).__name__, "_changed": True}
+
+    for key in set(old_values) | set(new_values):
+        old_v = old_values.get(key)
+        new_v = new_values.get(key)
+        if old_v == new_v:
+            continue
+        log_event(
+            firm_id=firm_id,
+            event_type="firm.setting_changed",
+            entity_type="firm",
+            entity_id=firm_id,
+            actor_type="staff",
+            actor_id=actor_id,
+            metadata={
+                "setting_key": str(key),
+                "from_value": _safe(old_v),
+                "to_value": _safe(new_v),
+            },
+        )
