@@ -302,6 +302,8 @@ def update_complexity_flags(
     if not engagement:
         return None
 
+    old_flags = engagement.complexity_flags
+
     engagement.complexity_flags = flags
     db.commit()
     db.refresh(engagement)
@@ -318,6 +320,8 @@ def update_complexity_flags(
             "engagement_type": engagement.engagement_type,
             "flags": flags,
             "actor_id": str(current_user_id),
+            "from_flags": old_flags,
+            "to_flags": flags,
         },
     )
 
