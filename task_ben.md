@@ -49,71 +49,76 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-# Task: Make expanded notification list scrollable when it exceeds available space
+# Task: Strengthen morning briefing prompt to reliably prevent urgency/advice language leaking into output
 
 USE: claude sonnet
 
 ## VERIFY BEFORE ACT
 
-sed -n '870,900p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+grep -n "MORNING_BRIEFING_PROMPT" -A 40 /home/corby/jamm-os/app/api/concierge/prompts.py
 
-Confirm the current structure: the outer div is flex-col gap-2 px-4 pt-3 flex-shrink-0, containing a header row div (toggle button + Dismiss all) followed immediately by the notificationsExpanded && notifications.map(...) rendering each card directly as children of the outer div, with no scroll boundary or max-height anywhere in this section.
+Confirm the current prompt text exactly as it stands, including the existing "Never use: urgent, immediate, critical, must, should, action required, needs attention" line and the "### \u26a0\ufe0f Needs Attention" section header.
 
 ## WHAT IS WRONG
 
-Confirmed via live testing with 5 active notification cards: when the notification section is expanded, the card list grows taller than the available panel space and clips instead of scrolling. The header row (N Alerts toggle + Dismiss all) stays visible but the card list itself has no scroll boundary, so cards beyond what fits on screen are simply unreachable. The panel's existing min-h-0 fix on the message feed below only constrains that section -- the notification section is flex-shrink-0 with no internal scroll, so it can grow tall enough to push everything below it out of view.
+Confirmed via live testing: a real morning briefing rendered the line "Four tax returns past their April 15 deadline need immediate client follow-up." The word "immediate" appears explicitly on this prompt's own banned-word list, yet it rendered anyway. This is the same class of soft-instruction inconsistency seen elsewhere in this session (the morning briefing re-request stutter), where a single inline rule is followed most of the time but not reliably enough for content with real legal/compliance sensitivity, per the Phase 5A spec's explicit prohibition on urgency framing and action directives in this specific feature.
+
+Separately, the section header itself is literally "Needs Attention," which is the same phrase the rule tells the model never to use. This is not a contradiction in effect, since a section label and prose text are different things, but it likely makes the banned phrase feel "already in use" to the model, weakening adherence to avoiding it elsewhere in the same response.
 
 ## ACTION
 
-File: /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+File: /home/corby/jamm-os/app/api/concierge/prompts.py
 
-Wrap the notifications.map(...) output in a scrollable container div placed between the header row and the map itself:
+In MORNING_BRIEFING_PROMPT, strengthen the banned-language rule from a single inline list into an explicit, absolute instruction with a stated consequence, matching the pattern already proven effective elsewhere in this file for soft-instruction reliability problems:
 
-Change:
+Replace:
 
-            {notificationsExpanded && notifications.map((n) => {
+- Never use: urgent, immediate, critical, must, should, action required, needs attention
 
-To:
+With:
 
-            {notificationsExpanded && (
-              <div className="flex flex-col gap-2 overflow-y-auto max-h-64">
-                {notifications.map((n) => {
+- Absolutely never use these words or any close variant, anywhere in the response, including inside bullet text: urgent, immediate, critical, must, should, action required, needs attention, important, priority, asap, right away, as soon as possible. Before finalizing your response, check every sentence against this list. If any of these words appear, rewrite that sentence to state only the fact, with no urgency framing. This is a firm legal requirement, not a style preference -- the briefing reports facts only, it never tells the firm owner what to prioritize or how quickly to act.
 
-And close the new wrapper div after the existing map's closing })} :
+Also rename the section header from "Needs Attention" to a more neutral, purely descriptive label that does not itself sound like a directive, to reduce the chance the model treats the banned phrase as already acceptable in context:
 
-                })}
-              </div>
-            )}
+Replace:
 
-max-h-64 (16rem, 256px) gives enough room for roughly two full draft-card notifications before scrolling activates, keeping the panel usable while preventing the list from consuming the entire panel height. The header row (toggle button + Dismiss all button) sits above this container and is always visible regardless of scroll position. Do not change the outer flex-shrink-0 wrapper, the header row, or any card rendering logic inside the map. Do not touch any other file.
+### \u26a0\ufe0f Needs Attention
+
+With:
+
+### \u26a0\ufe0f Open Items
+
+Update the corresponding reference to "Needs Attention" later in the rules block (the line "Needs Attention must only list items..." and "Never include in Needs Attention...") to say "Open Items" instead, keeping the underlying logic of those rules completely unchanged, only the label.
+
+Do not change MORNING_BRIEFING_DETAIL_PROMPT or any other prompt in this file. Do not change the overall format, the This Week or Recent Activity sections, or the client_count/engagement_count footer line.
 
 ## VERIFY AFTER ACT
 
-grep -n "max-h-64\|overflow-y-auto" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+grep -n "Open Items\|Absolutely never use these words" /home/corby/jamm-os/app/api/concierge/prompts.py
 
-Expected: present on the new wrapper div inside the notifications section.
+Expected: both present, and "Needs Attention" no longer appears anywhere in MORNING_BRIEFING_PROMPT.
 
-cd /home/corby/jamm-os/frontend
-npm run build
+python3 -c "from app.api.concierge.route import router; print('OK')"
 
-Expected: zero TypeScript errors.
+Expected: OK, no import errors.
 
 ## MANUAL VERIFICATION (the actual test)
 
-1. Restart the frontend.
-2. Open the Concierge panel with 4 or more notification cards present (trigger conditions already met in the test environment from earlier testing).
-3. Click the N Alerts header to expand the list.
-4. Confirm the notification cards now scroll independently within the expanded section, with the N Alerts header and Dismiss all button remaining fixed above the scroll area.
-5. Confirm the chat message feed and input bar below are still fully visible and reachable while notifications are expanded.
-6. Regression check: with 1-2 notifications (fewer than fill the max-h-64), confirm no unnecessary scrollbar appears and cards render normally without extra padding or clipping.
+1. Restart the backend.
+2. Clear the briefing_sent_at cooldown for the test firm in the database so a fresh briefing generates: 
+   psql "postgresql://postgres:postgres@localhost:5432/jammpx_dev" -c "UPDATE firms SET briefing_sent_at = NULL WHERE id = '185314c9-e702-4eab-8600-249848022206';"
+3. Open a fresh dashboard session and trigger a real morning briefing.
+4. Read the full output carefully and confirm none of the banned words or close variants appear anywhere, including inside bullet text.
+5. Repeat steps 2-4 two more times (clearing the cooldown each time) to confirm this holds consistently across multiple generations, not just once, since the original bug was intermittent rather than constant.
 
-Report what you observe at steps 4 and 5 specifically.
+Report the full text of all three briefing generations.
 
 ## GIT
 
 cd /home/corby/jamm-os
 git add -A
-git commit -m "fix: expanded notification card list now scrolls independently within a max-height container instead of growing unbounded and pushing the chat feed and input bar out of view"
+git commit -m "fix: strengthen morning briefing prompt's urgency-language ban from a simple word list to an absolute, explicitly-enforced rule, and rename the Needs Attention section header to Open Items to remove the banned phrase from the prompt's own structure"
 git pull --rebase origin main
 git push origin main
 

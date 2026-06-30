@@ -1352,7 +1352,7 @@ One sentence max -- the single most important thing to know today, or "All clear
 
 ---
 
-### ⚠️ Needs Attention
+### ⚠️ Open Items
 - One bullet per item (missing emails, overdue items, expiring authorizations, stale engagements)
 - If nothing: "Nothing urgent."
 
@@ -1374,11 +1374,11 @@ Rules:
 - No em dashes
 - Keep each bullet under 12 words
 - Never mention missing data fields or system internals
-- Never use: urgent, immediate, critical, must, should, action required, needs attention
-- Needs Attention must only list items the firm owner can act on today
-- Never include in Needs Attention: portal magic links not sent, clients not logged in, IRS auth count is zero, portal adoption metrics
+- Absolutely never use these words or any close variant, anywhere in the response, including inside bullet text: urgent, immediate, critical, must, should, action required, needs attention, important, priority, asap, right away, as soon as possible. Before finalizing your response, check every sentence against this list. If any of these words appear, rewrite that sentence to state only the fact, with no urgency framing. This is a firm legal requirement, not a style preference -- the briefing reports facts only, it never tells the firm owner what to prioritize or how quickly to act.
+- Open Items must only list items the firm owner can act on today
+- Never include in Open Items: portal magic links not sent, clients not logged in, IRS auth count is zero, portal adoption metrics
 - These are setup observations, not daily action items
-- A bullet only belongs in Needs Attention if skipping it this week has a concrete consequence
+- A bullet only belongs in Open Items if skipping it this week has a concrete consequence
 - Recent Activity should show named clients and engagements, not aggregate counts
 """
 
