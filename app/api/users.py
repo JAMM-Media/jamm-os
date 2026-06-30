@@ -240,6 +240,8 @@ def update_user(
         raise HTTPException(status_code=404, detail="User not found")
 
     old_role = user.role
+    old_is_active = user.is_active
+    old_totp_enabled = user.totp_enabled
     updated = crud_user.update_user(db, user, user_in)
 
     if user_in.role is not None and user_in.role != old_role:
@@ -257,6 +259,50 @@ def update_user(
             ip_address=ip,
             user_agent=request.headers.get("user-agent"),
             metadata={"old_role": str(old_role), "new_role": str(user_in.role)},
+        )
+
+    from app.services.behavioral_log import log_event
+
+    if user_in.role is not None and updated.role != old_role:
+        log_event(
+            firm_id=current_firm.id,
+            event_type="user.role_changed",
+            entity_type="user",
+            entity_id=user_id,
+            actor_type="staff",
+            actor_id=current_user.id,
+            metadata={
+                "from_role": str(old_role),
+                "to_role": str(updated.role),
+            }
+        )
+
+    if updated.is_active != old_is_active:
+        log_event(
+            firm_id=current_firm.id,
+            event_type="user.active_changed",
+            entity_type="user",
+            entity_id=user_id,
+            actor_type="staff",
+            actor_id=current_user.id,
+            metadata={
+                "from_active": old_is_active,
+                "to_active": updated.is_active,
+            }
+        )
+
+    if updated.totp_enabled != old_totp_enabled:
+        log_event(
+            firm_id=current_firm.id,
+            event_type="user.totp_changed",
+            entity_type="user",
+            entity_id=user_id,
+            actor_type="staff",
+            actor_id=current_user.id,
+            metadata={
+                "from_enabled": old_totp_enabled,
+                "to_enabled": updated.totp_enabled,
+            }
         )
 
     return updated
@@ -284,6 +330,7 @@ def update_user_cost_rate(
     ).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+    old_cost_rate = user.cost_rate
     user.cost_rate = body.cost_rate
     db.commit()
     db.refresh(user)
@@ -294,7 +341,12 @@ def update_user_cost_rate(
         entity_id=user_id,
         actor_type="staff",
         actor_id=None,
-        metadata={"cost_rate": body.cost_rate, "user_id": str(user_id)},
+        metadata={
+            "cost_rate": body.cost_rate,
+            "user_id": str(user_id),
+            "from_cost_rate": old_cost_rate,
+            "to_cost_rate": body.cost_rate,
+        },
     )
     return user
 

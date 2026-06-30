@@ -485,6 +485,10 @@ def update_client(
     client = crud_client.get_client_for_firm(db, client_id, current_firm.id)
     if not client:
         raise HTTPException(status_code=404, detail="Client not found")
+    old_entity_type = client.entity_type
+    old_entity_subtype = client.entity_subtype
+    old_is_active = client.is_active
+    old_portal_access = client.portal_access_enabled
     updated = crud_client.update_client(db, client, payload)
     write_audit_log(
         db=db,
@@ -495,6 +499,53 @@ def update_client(
         entity_type='client',
         entity_id=client.id,
     )
+
+    from app.services.behavioral_log import log_event
+
+    if updated.entity_type != old_entity_type or updated.entity_subtype != old_entity_subtype:
+        log_event(
+            firm_id=current_firm.id,
+            event_type="client.entity_changed",
+            entity_type="client",
+            entity_id=client.id,
+            actor_type="staff",
+            actor_id=current_user.id,
+            metadata={
+                "from_entity_type": str(old_entity_type) if old_entity_type else None,
+                "to_entity_type": str(updated.entity_type) if updated.entity_type else None,
+                "from_entity_subtype": str(old_entity_subtype) if old_entity_subtype else None,
+                "to_entity_subtype": str(updated.entity_subtype) if updated.entity_subtype else None,
+            }
+        )
+
+    if updated.is_active != old_is_active:
+        log_event(
+            firm_id=current_firm.id,
+            event_type="client.active_changed",
+            entity_type="client",
+            entity_id=client.id,
+            actor_type="staff",
+            actor_id=current_user.id,
+            metadata={
+                "from_active": old_is_active,
+                "to_active": updated.is_active,
+            }
+        )
+
+    if updated.portal_access_enabled != old_portal_access:
+        log_event(
+            firm_id=current_firm.id,
+            event_type="client.portal_access_changed",
+            entity_type="client",
+            entity_id=client.id,
+            actor_type="staff",
+            actor_id=current_user.id,
+            metadata={
+                "from_enabled": old_portal_access,
+                "to_enabled": updated.portal_access_enabled,
+            }
+        )
+
     return updated
 
 
