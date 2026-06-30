@@ -1,6 +1,7 @@
 # app/services/behavioral_log.py
 
 import logging
+import threading
 import uuid
 from typing import Optional
 
@@ -43,28 +44,41 @@ def log_event(
     session_id = _coerce_uuid(session_id)
     request_id = _coerce_uuid(request_id)
 
-    db = None
-    try:
-        db = SessionLocal()
+    def _write(
+        event_type=event_type,
+        firm_id=firm_id,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        actor_type=actor_type,
+        actor_id=actor_id,
+        metadata=metadata,
+        session_id=session_id,
+        request_id=request_id,
+    ) -> None:
+        db = None
+        try:
+            db = SessionLocal()
 
-        event = BehavioralEvent(
-            firm_id=firm_id,
-            event_type=event_type,
-            entity_type=entity_type,
-            entity_id=entity_id,
-            actor_type=actor_type,
-            actor_id=actor_id,
-            extra_metadata=metadata,
-            session_id=session_id,
-            request_id=request_id,
-        )
-        db.add(event)
-        db.commit()
-    except Exception as exc:
-        log.warning("behavioral_log.log_event failed: %s", exc)
-    finally:
-        if db is not None:
-            db.close()
+            event = BehavioralEvent(
+                firm_id=firm_id,
+                event_type=event_type,
+                entity_type=entity_type,
+                entity_id=entity_id,
+                actor_type=actor_type,
+                actor_id=actor_id,
+                extra_metadata=metadata,
+                session_id=session_id,
+                request_id=request_id,
+            )
+            db.add(event)
+            db.commit()
+        except Exception as exc:
+            log.warning("behavioral_log.log_event failed: %s", exc)
+        finally:
+            if db is not None:
+                db.close()
+
+    threading.Thread(target=_write, daemon=True).start()
 
 
 def log_setting_changes(
