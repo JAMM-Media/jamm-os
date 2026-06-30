@@ -10,6 +10,17 @@ from app.models.behavioral_event import BehavioralEvent
 log = logging.getLogger(__name__)
 
 
+def _coerce_uuid(value) -> Optional[uuid.UUID]:
+    if value is None:
+        return None
+    if isinstance(value, uuid.UUID):
+        return value
+    try:
+        return uuid.UUID(str(value))
+    except (ValueError, TypeError, AttributeError):
+        return None
+
+
 def log_event(
     *,
     event_type: str,
@@ -20,7 +31,18 @@ def log_event(
     actor_id: Optional[uuid.UUID] = None,
     metadata: Optional[dict] = None,
     session_id: Optional[uuid.UUID] = None,
+    request_id: Optional[uuid.UUID] = None,
 ) -> None:
+    from app.core.request_context import get_request_id, get_session_id
+
+    if session_id is None:
+        session_id = get_session_id()
+    if request_id is None:
+        request_id = get_request_id()
+
+    session_id = _coerce_uuid(session_id)
+    request_id = _coerce_uuid(request_id)
+
     db = None
     try:
         db = SessionLocal()
@@ -34,6 +56,7 @@ def log_event(
             actor_id=actor_id,
             extra_metadata=metadata,
             session_id=session_id,
+            request_id=request_id,
         )
         db.add(event)
         db.commit()

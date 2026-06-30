@@ -67,6 +67,11 @@ class BehavioralEvent(Base):
         nullable=True,
     )
 
+    request_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        nullable=True,
+        index=True,
+    )
+
     __table_args__ = (
         Index(
             "ix_behavioral_events_firm_type_time",
