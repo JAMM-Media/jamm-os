@@ -49,79 +49,98 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-# Task: Fix reveal stutter by preventing ReactMarkdown from parsing malformed mid-token markdown during word-by-word reveal
+# Task: Switch Concierge model from claude-opus-4-8 to claude-sonnet-5, with controlled before/after quality verification
 
 USE: claude sonnet
 
 ## VERIFY BEFORE ACT
 
-sed -n '1038,1058p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+sed -n '55,75p' /home/corby/jamm-os/app/api/concierge/cron.py
 
-Confirm the current reveal slice: msg.content.split(/\s+/).filter(Boolean).slice(0, revealedWordCount).join(' ') is passed directly into ReactMarkdown with no sanitization, meaning a bold span like **Portal Branding** can be sliced mid-phrase (e.g. after "Portal" but before the closing **), producing an unclosed markdown token that ReactMarkdown attempts to parse on every reveal frame.
+Confirm the TEMP comment and model="claude-opus-4-8" call at line 70.
+
+sed -n '715,740p' /home/corby/jamm-os/app/api/concierge/route.py
+
+Confirm the TEMP comment and model="claude-opus-4-8" call at line 734.
 
 ## WHAT IS WRONG
 
-Confirmed via live testing: the reveal stutter got measurably worse after adding markdown formatting instructions to the system prompt. Root cause: the word-slicing logic used for the reveal animation operates on raw markdown source text with no awareness of markdown syntax. When the revealed word count lands inside a bold span (e.g. **Portal Branding** where "Portal" is one word and "Branding**" is the next), the sliced string contains an unclosed emphasis marker like "...Navigate to **Portal". ReactMarkdown must attempt to parse this malformed inline markdown on every single animation frame during the reveal, which is measurably more expensive than parsing clean, syntactically valid text, and is a plausible primary contributor to the observed freeze -- more so than raw render frequency alone.
+Nothing is wrong -- this is a deliberate model upgrade test, not a bug fix. Claude Sonnet 5 was released today (June 30, 2026), with performance close to Opus 4.8 on most benchmarks and reportedly matching or slightly exceeding it on knowledge-work tasks specifically, at roughly 40-60% lower per-token cost during the introductory pricing period. The Concierge's workload (structured Q&A grounded in retrieved firm data, tool-calling for live data lookups, morning briefing generation) is closely aligned with the knowledge-work category where Sonnet 5 is reported to perform particularly well. Anthropic's own prompting guidance also notes Sonnet 5 interprets instructions more literally and explicitly than prior models, which is directly relevant given several bugs this session traced back to soft-instruction inconsistency (banned words occasionally slipping through, the CONCIERGE_ACTION marker not always firing).
+
+This is currently a temporary swap already in place (claude-opus-4-8 substituting for claude-fable-5, which remains suspended under an export control directive with no announced return date). This task tests claude-sonnet-5 as a possible replacement for the temporary claude-opus-4-8 swap, not as a replacement for whatever the eventual long-term model choice will be once Fable 5 access is restored.
+
+Confirmed via documentation: claude-sonnet-5 supports the output_config.effort parameter already in use (low/medium/high/xhigh/max), so the existing effort: "medium" setting on both calls will continue to work without modification.
 
 ## ACTION
 
-File: /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+File 1: /home/corby/jamm-os/app/api/concierge/cron.py
 
-Add a helper function near the top of the component (or as a module-level function above the component) that sanitizes a word-sliced string by removing any trailing unclosed bold marker:
+Change line 70 from:
 
-function sanitizeRevealSlice(text: string): string {
-  const asteriskCount = (text.match(/\*\*/g) || []).length
-  if (asteriskCount % 2 !== 0) {
-    const lastIndex = text.lastIndexOf('**')
-    return text.slice(0, lastIndex)
-  }
-  return text
-}
-
-This counts occurrences of ** in the sliced text. An odd count means the last ** opened a bold span that has not been closed yet within the current reveal window. In that case, truncate the string at the position of that unclosed marker, so the bold span simply has not started yet from the renderer's perspective, rather than being left half-open. Once enough words have revealed to include the closing **, the count becomes even again and the full bold span renders normally.
-
-Apply this function to the existing reveal slice:
-
-Change:
-
-                      {streaming && i === messages.length - 1
-                        ? msg.content.split(/\s+/).filter(Boolean).slice(0, revealedWordCount).join(' ')
-                        : msg.content}
+            model="claude-opus-4-8",
 
 To:
 
-                      {streaming && i === messages.length - 1
-                        ? sanitizeRevealSlice(msg.content.split(/\s+/).filter(Boolean).slice(0, revealedWordCount).join(' '))
-                        : msg.content}
+            model="claude-sonnet-5",
 
-Do not change the reveal timing logic, the requestAnimationFrame effect, or any other part of the streaming or reveal mechanism. Do not change the ReactMarkdown components configuration. Do not touch any other file.
+Update the TEMP comment above it:
+
+        # TEMP: testing claude-sonnet-5 (released 2026-06-30) as a possible
+        # replacement for the claude-opus-4-8 swap, itself a temporary
+        # substitute for claude-fable-5 which remains suspended under an
+        # export control directive with no announced return date. Sonnet 5
+        # is reported to match or slightly exceed Opus 4.8 on knowledge-work
+        # tasks at significantly lower cost, and to follow explicit
+        # instructions more literally, which may improve reliability on
+        # the banned-word and action-marker rules tuned for this prompt.
+        # Revisit once Fable 5 access is restored.
+        # https://www.anthropic.com/news/claude-sonnet-5
+
+File 2: /home/corby/jamm-os/app/api/concierge/route.py
+
+Change line 734 from:
+
+                        model="claude-opus-4-8",
+
+To:
+
+                        model="claude-sonnet-5",
+
+Update the TEMP comment above it the same way as in cron.py.
+
+Do not change any of the claude-haiku-4-5-20251001 calls (route.py lines 329, 911, 942, 981) -- those are unrelated to this test. Do not change the effort: "medium" setting on either call. Do not touch any other file.
 
 ## VERIFY AFTER ACT
 
-grep -n "sanitizeRevealSlice" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+grep -rn "claude-sonnet-5\|claude-opus-4-8" /home/corby/jamm-os/app --include="*.py"
 
-Expected: the function definition and its use in the reveal slice, both present.
+Expected: claude-sonnet-5 present at both former claude-opus-4-8 locations (cron.py and route.py), zero remaining claude-opus-4-8 references anywhere. claude-haiku-4-5-20251001 calls unchanged.
 
-cd /home/corby/jamm-os/frontend
-npm run build
+python3 -c "from app.api.concierge.route import router; print('OK')"
 
-Expected: zero TypeScript errors.
+Expected: OK, no import errors.
 
-## MANUAL VERIFICATION (the actual test)
+## MANUAL VERIFICATION (the actual test -- this is the important part)
 
-1. Restart the frontend.
-2. Ask "how do I customize my client portal colors?" again -- the response with heavy bold usage that showed the worst stutter.
-3. Confirm the reveal is now smooth with no visible freeze, even through the bold phrases like "Portal Branding", "Set as active", "Save branding", "Reset to defaults".
-4. Confirm bold text still renders correctly once each phrase fully reveals -- no missing or stuck-unbolded text in the final rendered message.
-5. Ask "where are my clients?" again -- confirm short responses still reveal smoothly.
+Restart the backend. Re-run every test this session has a documented baseline for, and compare quality against the known-good Opus results from earlier tonight:
 
-Report what you observe at steps 3 and 4 specifically.
+1. Ask the Concierge how to invite a new staff member -- confirm it still correctly describes Partner/Staff/Manager roles.
+2. Ask "where do I go to set my tax form prices?" then "what should I charge for a 1040?" -- confirm Fee Schedule navigation is correct and the pricing-judgment-call redirect still holds.
+3. Ask "how do I customize my client portal colors?" -- confirm bold formatting on UI terms and a clean list for the 9 color slots, matching tonight's Opus baseline.
+4. Ask "where are my clients?" -- confirm this stays as clean, appropriately brief plain prose, not over-formatted.
+5. Trigger a fresh morning briefing (clear briefing_sent_at for the test firm first) three separate times, same as the earlier 3-generation banned-language test:
+   psql "postgresql://postgres:postgres@localhost:5432/jammpx_dev" -c "UPDATE firms SET briefing_sent_at = NULL WHERE id = '185314c9-e702-4eab-8600-249848022206';"
+   Confirm the opening line stays fact-only with no urgency language across all three generations, matching tonight's verified Opus baseline.
+6. Ask "can I see the morning briefing again?" -- confirm the CONCIERGE_ACTION marker still reliably fires and the Download briefing button appears, matching tonight's fix.
+7. Note the response speed subjectively for each of the above compared to how Opus felt tonight -- faster, the same, or slower.
+
+Report the exact response text for tests 1-6, and your subjective speed impression for test 7. This is the evidence that determines whether Sonnet 5 is a genuine upgrade for this workload or whether it should be reverted back to claude-opus-4-8.
 
 ## GIT
 
 cd /home/corby/jamm-os
 git add -A
-git commit -m "fix: reveal animation now sanitizes word-sliced content to avoid feeding ReactMarkdown unclosed bold markers mid-reveal, which was forcing expensive malformed-markdown parsing on every animation frame and was the likely primary cause of the stutter on bold-heavy responses"
+git commit -m "test: swap Concierge model from claude-opus-4-8 to claude-sonnet-5 (released today) to evaluate quality and latency for this app's knowledge-work-heavy workload, updating TEMP comments to reflect this is testing a possible replacement for the temporary Opus swap"
 git pull --rebase origin main
 git push origin main
 

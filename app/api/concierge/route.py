@@ -721,17 +721,18 @@ Respond with exactly one word: SAFE or UNSAFE. Nothing else.""",
             # Tool use loop -- max 5 iterations
             for _iteration in range(5):
                 try:
-                    # TEMP: swapped from claude-fable-5 to claude-opus-4-8 and effort
-                    # low -> medium on 2026-06-19, following the US export control
-                    # directive suspending Fable 5 and Mythos 5 worldwide (June 12, 2026,
-                    # no announced return date). Effort raised to medium to isolate
-                    # whether reasoning depth affects tool-selection instruction-following
-                    # during today's client-scoping investigation. Revisit both the model
-                    # and effort level once Fable 5 access is restored, or once effort:low
-                    # is confirmed to work reliably on Opus 4.8 for this use case.
-                    # https://www.anthropic.com/news/fable-mythos-access
+                    # TEMP: testing claude-sonnet-5 (released 2026-06-30) as a possible
+                    # replacement for the claude-opus-4-8 swap, itself a temporary
+                    # substitute for claude-fable-5 which remains suspended under an
+                    # export control directive with no announced return date. Sonnet 5
+                    # is reported to match or slightly exceed Opus 4.8 on knowledge-work
+                    # tasks at significantly lower cost, and to follow explicit
+                    # instructions more literally, which may improve reliability on
+                    # the banned-word and action-marker rules tuned for this prompt.
+                    # Revisit once Fable 5 access is restored.
+                    # https://www.anthropic.com/news/claude-sonnet-5
                     with fable_client.messages.stream(
-                        model="claude-opus-4-8",
+                        model="claude-sonnet-5",
                         max_tokens=8000,
                         system=_system_blocks,
                         tools=_CONCIERGE_TOOLS,
