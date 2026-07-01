@@ -49,55 +49,63 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-# Task: Strengthen morning briefing prompt to reliably prevent urgency/advice language leaking into output
+# Task: Fix morning briefing opening line still generating urgency language, and rename NEEDS ATTENTION to OPEN ITEMS in the detail prompt
 
 USE: claude sonnet
 
 ## VERIFY BEFORE ACT
 
-grep -n "MORNING_BRIEFING_PROMPT" -A 40 /home/corby/jamm-os/app/api/concierge/prompts.py
+sed -n '1350,1353p' /home/corby/jamm-os/app/api/concierge/prompts.py
 
-Confirm the current prompt text exactly as it stands, including the existing "Never use: urgent, immediate, critical, must, should, action required, needs attention" line and the "### \u26a0\ufe0f Needs Attention" section header.
+Confirm the current opening-line instruction reads: "One sentence max -- the single most important thing to know today, or 'All clear.' if nothing stands out."
+
+grep -n "NEEDS ATTENTION" /home/corby/jamm-os/app/api/concierge/prompts.py
+
+Confirm exactly which lines contain "NEEDS ATTENTION" in the detail prompt, so every occurrence is updated.
 
 ## WHAT IS WRONG
 
-Confirmed via live testing: a real morning briefing rendered the line "Four tax returns past their April 15 deadline need immediate client follow-up." The word "immediate" appears explicitly on this prompt's own banned-word list, yet it rendered anyway. This is the same class of soft-instruction inconsistency seen elsewhere in this session (the morning briefing re-request stutter), where a single inline rule is followed most of the time but not reliably enough for content with real legal/compliance sensitivity, per the Phase 5A spec's explicit prohibition on urgency framing and action directives in this specific feature.
+Confirmed via three-generation live test: MORNING_BRIEFING_PROMPT's opening line still produced "Four tax returns past their filing deadlines need immediate work" in 1 of 3 generations despite the expanded banned-word rule added in the previous task. The model treats the one-sentence opening as a headline context and instinctively reaches for urgency framing before the rules have anchored the response. A concrete example of what the opening line must and must not look like is more reliable than additional rule text, per observed behavior this session.
 
-Separately, the section header itself is literally "Needs Attention," which is the same phrase the rule tells the model never to use. This is not a contradiction in effect, since a section label and prose text are different things, but it likely makes the banned phrase feel "already in use" to the model, weakening adherence to avoiding it elsewhere in the same response.
+Separately, MORNING_BRIEFING_DETAIL_PROMPT still uses "NEEDS ATTENTION" as a section header in two places: the section content instruction and the rules block. This generates PDFs with "NEEDS ATTENTION" in all-caps bold, using the same phrase we renamed to "Open Items" in the conversational briefing prompt, creating an inconsistency between the two outputs that both represent the same JAMM PX feature.
 
 ## ACTION
 
 File: /home/corby/jamm-os/app/api/concierge/prompts.py
 
-In MORNING_BRIEFING_PROMPT, strengthen the banned-language rule from a single inline list into an explicit, absolute instruction with a stated consequence, matching the pattern already proven effective elsewhere in this file for soft-instruction reliability problems:
+Fix 1 -- MORNING_BRIEFING_PROMPT opening line instruction:
 
 Replace:
 
-- Never use: urgent, immediate, critical, must, should, action required, needs attention
+One sentence max -- the single most important thing to know today, or "All clear." if nothing stands out.
 
 With:
 
-- Absolutely never use these words or any close variant, anywhere in the response, including inside bullet text: urgent, immediate, critical, must, should, action required, needs attention, important, priority, asap, right away, as soon as possible. Before finalizing your response, check every sentence against this list. If any of these words appear, rewrite that sentence to state only the fact, with no urgency framing. This is a firm legal requirement, not a style preference -- the briefing reports facts only, it never tells the firm owner what to prioritize or how quickly to act.
+One sentence max stating only a count and a status fact. No urgency framing, no directives, no advice.
+Correct: "Four tax returns are past their filing deadline."
+Correct: "Seven engagements have not been updated in over two weeks."
+Correct: "All clear."
+Never: "Four tax returns need immediate attention." (urgency framing -- banned)
+Never: "You should follow up on four overdue returns." (directive -- banned)
+Never: "Four returns are at risk." (risk framing -- banned)
 
-Also rename the section header from "Needs Attention" to a more neutral, purely descriptive label that does not itself sound like a directive, to reduce the chance the model treats the banned phrase as already acceptable in context:
+Fix 2 -- MORNING_BRIEFING_DETAIL_PROMPT section header and rules:
 
-Replace:
+Replace every occurrence of "NEEDS ATTENTION" with "OPEN ITEMS" in this prompt only. There are two occurrences:
+1. The section header instruction line that begins "NEEDS ATTENTION"
+2. The rules block line that reads "NEEDS ATTENTION, THIS WEEK, and RECENT ACTIVITY must always appear..."
 
-### \u26a0\ufe0f Needs Attention
-
-With:
-
-### \u26a0\ufe0f Open Items
-
-Update the corresponding reference to "Needs Attention" later in the rules block (the line "Needs Attention must only list items..." and "Never include in Needs Attention...") to say "Open Items" instead, keeping the underlying logic of those rules completely unchanged, only the label.
-
-Do not change MORNING_BRIEFING_DETAIL_PROMPT or any other prompt in this file. Do not change the overall format, the This Week or Recent Activity sections, or the client_count/engagement_count footer line.
+Do not change any other text in either prompt. Do not change any other file.
 
 ## VERIFY AFTER ACT
 
-grep -n "Open Items\|Absolutely never use these words" /home/corby/jamm-os/app/api/concierge/prompts.py
+grep -n "NEEDS ATTENTION" /home/corby/jamm-os/app/api/concierge/prompts.py
 
-Expected: both present, and "Needs Attention" no longer appears anywhere in MORNING_BRIEFING_PROMPT.
+Expected: zero matches anywhere in the file.
+
+grep -n "OPEN ITEMS\|Correct:\|Never:" /home/corby/jamm-os/app/api/concierge/prompts.py
+
+Expected: all present -- two OPEN ITEMS occurrences in the detail prompt, and the Correct/Never examples in the opening-line instruction of the main briefing prompt.
 
 python3 -c "from app.api.concierge.route import router; print('OK')"
 
@@ -106,19 +114,19 @@ Expected: OK, no import errors.
 ## MANUAL VERIFICATION (the actual test)
 
 1. Restart the backend.
-2. Clear the briefing_sent_at cooldown for the test firm in the database so a fresh briefing generates: 
+2. Clear briefing_sent_at for the test firm three times in sequence, triggering three separate fresh briefings:
    psql "postgresql://postgres:postgres@localhost:5432/jammpx_dev" -c "UPDATE firms SET briefing_sent_at = NULL WHERE id = '185314c9-e702-4eab-8600-249848022206';"
-3. Open a fresh dashboard session and trigger a real morning briefing.
-4. Read the full output carefully and confirm none of the banned words or close variants appear anywhere, including inside bullet text.
-5. Repeat steps 2-4 two more times (clearing the cooldown each time) to confirm this holds consistently across multiple generations, not just once, since the original bug was intermittent rather than constant.
+3. For each generation, read the opening line specifically. Confirm it states only a count and a status fact with no urgency framing, no directives, no banned words.
+4. Download the detail briefing PDF from one of the three generations and confirm the section header now reads "OPEN ITEMS" instead of "NEEDS ATTENTION."
+5. Confirm both the conversational briefing and the PDF use "Open Items" / "OPEN ITEMS" consistently, with no remaining "Needs Attention" anywhere.
 
-Report the full text of all three briefing generations.
+Report the opening line text from all three generations, and the section header text from the downloaded PDF.
 
 ## GIT
 
 cd /home/corby/jamm-os
 git add -A
-git commit -m "fix: strengthen morning briefing prompt's urgency-language ban from a simple word list to an absolute, explicitly-enforced rule, and rename the Needs Attention section header to Open Items to remove the banned phrase from the prompt's own structure"
+git commit -m "fix: morning briefing opening line now has concrete correct/wrong examples to prevent urgency framing, and NEEDS ATTENTION renamed to OPEN ITEMS in the detail prompt for consistency with the conversational briefing"
 git pull --rebase origin main
 git push origin main
 

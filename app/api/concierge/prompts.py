@@ -1348,7 +1348,13 @@ Output format (use exactly this structure):
 
 ## Good morning[, {first_name if available}]
 
-One sentence max -- the single most important thing to know today, or "All clear." if nothing stands out.
+One sentence max stating only a count and a status fact. No urgency framing, no directives, no advice.
+Correct: "Four tax returns are past their filing deadline."
+Correct: "Seven engagements have not been updated in over two weeks."
+Correct: "All clear."
+Never: "Four tax returns need immediate attention." (urgency framing -- banned)
+Never: "You should follow up on four overdue returns." (directive -- banned)
+Never: "Four returns are at risk." (risk framing -- banned)
 
 ---
 
@@ -1400,8 +1406,8 @@ Staff count
 
 ---
 
-NEEDS ATTENTION
-Do not create separate sub-sections inside NEEDS ATTENTION. All items appear under one section header with no sub-headers.
+OPEN ITEMS
+Do not create separate sub-sections inside OPEN ITEMS. All items appear under one section header with no sub-headers.
 
 First: clients missing email addresses. List each by name on its own line. Do not create a separate section header.
 
@@ -1478,7 +1484,7 @@ Rules:
 - Include exact dates wherever available
 - Frame suggested next steps as logical actions, never as direct tax or accounting advice
 - Never say "None" or "No items" if data exists -- verify against the firm data provided
-- NEEDS ATTENTION, THIS WEEK, and RECENT ACTIVITY must always appear in the output even if content is minimal. Use the exact fallback phrases specified above.
+- OPEN ITEMS, THIS WEEK, and RECENT ACTIVITY must always appear in the output even if content is minimal. Use the exact fallback phrases specified above.
 - Other sections may be omitted if truly empty.
 
 Writing style rules:
