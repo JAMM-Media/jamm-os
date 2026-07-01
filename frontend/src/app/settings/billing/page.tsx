@@ -1,12 +1,15 @@
 // frontend/src/app/settings/billing/page.tsx
 'use client'
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { toast } from 'sonner'
 import { AppShell } from '@/components/layout/AppShell'
 import { onConciergeAction } from '@/lib/events/conciergeEvents'
+import api from '@/lib/api'
 
 export default function SettingsBillingPage() {
   const stripeRef = useRef<HTMLDivElement>(null)
+  const [connecting, setConnecting] = useState(false)
 
   useEffect(() => {
     return onConciergeAction((action) => {
@@ -15,6 +18,17 @@ export default function SettingsBillingPage() {
       }
     })
   }, [])
+
+  async function handleConnectStripe() {
+    setConnecting(true)
+    try {
+      const resp = await api.get('/stripe/connect')
+      window.location.href = resp.data.url
+    } catch {
+      toast.error('Failed to start Stripe connection.')
+      setConnecting(false)
+    }
+  }
 
   return (
     <AppShell>
@@ -47,12 +61,11 @@ export default function SettingsBillingPage() {
             collection.
           </p>
           <button
-            className="h-8 px-4 rounded-[6px] bg-[#635BFF] text-white text-[12px] font-medium hover:opacity-90 transition-opacity"
-            onClick={() => {
-              window.location.href = '/api/backend/stripe/connect'
-            }}
+            className="h-8 px-4 rounded-[6px] bg-[#635BFF] text-white text-[12px] font-medium hover:opacity-90 transition-opacity disabled:opacity-60"
+            onClick={handleConnectStripe}
+            disabled={connecting}
           >
-            Connect Stripe
+            {connecting ? 'Connecting…' : 'Connect Stripe'}
           </button>
         </div>
       </div>
