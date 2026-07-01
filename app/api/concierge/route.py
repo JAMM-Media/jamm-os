@@ -307,6 +307,31 @@ def concierge_chat(
             detail="Concierge not activated for this firm",
         )
 
+
+    # __OPEN__ is a deterministic sentinel -- bypass the LLM entirely and return
+    # the fixed opening string directly; no log entry since this is not a real question.
+    last_user_msg_for_open_check = next(
+        (m.content for m in reversed(body.messages) if m.role == "user"),
+        None,
+    )
+    if last_user_msg_for_open_check == "__OPEN__" and len(body.messages) == 1:
+        if not current_firm.firm_type:
+            open_text = (
+                "Welcome to JAMM Concierge. Before we start -- what does your firm do most? "
+                "This lets me point you to the right setup path.\n"
+                "1. Tax prep and returns\n"
+                "2. Bookkeeping and monthly close\n"
+                "3. Advisory and planning"
+            )
+        else:
+            open_text = "Let's get ready to work. I'm ready to help with anything you need."
+
+        def generate_open_bypass():
+            for line in open_text.split("\n"):
+                yield f"data: {line}\n\n"
+
+        return StreamingResponse(generate_open_bypass(), media_type="text/event-stream")
+
     settings = get_settings()
     api_key = settings.ANTHROPIC_CONCIERGE_KEY
     if not api_key:
