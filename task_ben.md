@@ -49,50 +49,65 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-# Task: Fix word-reveal animation disappearing on responses that complete quickly
+# Task: Fix word-reveal not animating on short responses by firing the first tick immediately and reducing the interval
 
 USE: claude sonnet
 
 ## VERIFY BEFORE ACT
 
-sed -n '328,340p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+sed -n '150,163p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-Confirm setRevealedWordCount(Number.MAX_SAFE_INTEGER) is called at line 333 inside the try block, before setStreaming(false) fires in the finally block.
-
-grep -n "streaming && i === messages.length - 1" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
-
-Confirm the render condition that switches between the word-sliced reveal and full content rendering.
+Confirm the current reveal useEffect: streaming guard, tick function incrementing revealedWordCount, and the initial setTimeout(tick, 35) that delays the very first tick by 35ms.
 
 ## WHAT IS WRONG
 
-Confirmed via live testing: the word-reveal animation works on longer responses but disappears entirely on shorter ones, making the behavior inconsistent. Root cause: setRevealedWordCount(Number.MAX_SAFE_INTEGER) fires inside the try block synchronously before setStreaming(false) fires in the finally block. React batches both state updates together into a single render flush. The render condition streaming && i === messages.length - 1 becomes false the instant streaming goes false, so the word-sliced reveal path is never evaluated -- full content renders immediately, bypassing the reveal entirely. The snap-to-end was added to ensure any remaining unrevealed words appear after streaming ends, but this purpose is already served by the render condition switching to full-content display when streaming becomes false. The snap is therefore redundant in its intended effect but actively harmful to the reveal animation by racing with setStreaming(false).
+Confirmed via live testing: the word-reveal animation works on longer responses but not on short ones (1-2 sentences). Root cause: the tick chain starts with a 35ms delay before the first word is revealed. For short responses that complete streaming in under 35ms, setStreaming(false) fires in the finally block before the first tick ever runs. The useEffect cleanup cancels the pending timer, and the render condition streaming && i === messages.length - 1 is already false when React next renders, so full content appears with no reveal at all. The fix is to fire the first tick with no delay (using setTimeout(tick, 0) or calling tick() directly), and reduce subsequent ticks from 35ms to 15ms so more words reveal during the brief streaming window of even the shortest response.
 
 ## ACTION
 
 File: /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-Remove the setRevealedWordCount(Number.MAX_SAFE_INTEGER) call entirely from the try block. Do not replace it with anything. The render condition already handles showing full content once streaming is false, so no snap-to-end mechanism is needed.
+Replace the reveal useEffect body:
 
-Also reset revealedWordCount back to 0 in the finally block alongside setStreaming(false), so the state is clean for the next message:
+  useEffect(() => {
+    if (!streaming) return
+    function tick() {
+      setRevealedWordCount((prev) => {
+        if (prev >= targetWordCountRef.current) return prev
+        return prev + 1
+      })
+      revealTimerRef.current = setTimeout(tick, 35)
+    }
+    revealTimerRef.current = setTimeout(tick, 35)
+    return () => {
+      if (revealTimerRef.current) clearTimeout(revealTimerRef.current)
+    }
+  }, [streaming])
 
-      } finally {
-        setStreaming(false)
-        setRevealedWordCount(0)
-      }
+With:
 
-This ensures the reveal counter does not carry over from one response to the next, which could cause the next response to start mid-reveal if the previous one ended with a high word count.
+  useEffect(() => {
+    if (!streaming) return
+    function tick() {
+      setRevealedWordCount((prev) => {
+        if (prev >= targetWordCountRef.current) return prev
+        return prev + 1
+      })
+      revealTimerRef.current = setTimeout(tick, 15)
+    }
+    tick()
+    return () => {
+      if (revealTimerRef.current) clearTimeout(revealTimerRef.current)
+    }
+  }, [streaming])
 
-Do not change the reveal useEffect, the targetWordCountRef update effect, the render condition, or any other part of the streaming or reveal logic.
+tick() is called directly (no initial setTimeout) so the first word reveals in the same frame streaming becomes true, not 35ms later. Subsequent ticks use 15ms instead of 35ms so more words reveal per second. Do not change the targetWordCountRef update effect, the render condition, the finally block reset, or any other part of the streaming or reveal logic. Do not touch any other file.
 
 ## VERIFY AFTER ACT
 
-grep -n "MAX_SAFE_INTEGER" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+sed -n '150,163p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-Expected: no matches -- the snap-to-end call is gone.
-
-grep -n "setRevealedWordCount(0)" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
-
-Expected: present in the finally block.
+Expected: tick() called directly with no initial delay, subsequent setTimeout uses 15ms.
 
 cd /home/corby/jamm-os/frontend
 npm run build
@@ -102,19 +117,19 @@ Expected: zero TypeScript errors.
 ## MANUAL VERIFICATION (the actual test)
 
 1. Restart the frontend.
-2. Ask a short question that produces a 1-2 sentence response (e.g. "where are my clients?").
-3. Confirm the response now reveals word by word even on short responses, not all at once.
-4. Ask a longer question that produces a multi-line bulleted response.
-5. Confirm the reveal is smooth and consistent on longer responses too.
-6. Ask two questions back to back and confirm the reveal resets cleanly between them with no carry-over from the first response.
+2. Ask "where are my clients?" -- a short 1-2 sentence response.
+3. Confirm the response now reveals word by word even on this short response.
+4. Ask "how do I customize my client portal colors?" -- a longer bulleted response.
+5. Confirm the reveal is still smooth on longer responses too, not too fast.
+6. Ask both back to back and confirm clean reset between them.
 
-Report what you observe at steps 3 and 5.
+Report what you observe at steps 3 and 5 specifically.
 
 ## GIT
 
 cd /home/corby/jamm-os
 git add -A
-git commit -m "fix: word-reveal animation now works consistently on all response lengths by removing the snap-to-end call that was racing with setStreaming(false) and preventing the reveal from running on short responses"
+git commit -m "fix: word-reveal now fires immediately on streaming start with no initial delay, and ticks every 15ms instead of 35ms, so even short responses that complete quickly get a visible word-by-word reveal instead of appearing all at once"
 git pull --rebase origin main
 git push origin main
 

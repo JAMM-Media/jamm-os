@@ -156,9 +156,9 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
         if (prev >= targetWordCountRef.current) return prev
         return prev + 1
       })
-      revealTimerRef.current = setTimeout(tick, 35)
+      revealTimerRef.current = setTimeout(tick, 15)
     }
-    revealTimerRef.current = setTimeout(tick, 35)
+    tick()
     return () => {
       if (revealTimerRef.current) clearTimeout(revealTimerRef.current)
     }
