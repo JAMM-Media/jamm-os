@@ -93,7 +93,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
   const [input, setInput] = useState('')
   const [streaming, setStreaming] = useState(false)
   const [revealedWordCount, setRevealedWordCount] = useState(0)
-  const revealTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const revealTimerRef = useRef<number | null>(null)
   const [hasMounted, setHasMounted] = useState(false)
   useEffect(() => {
     setHasMounted(true)
@@ -156,11 +156,11 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
         if (prev >= targetWordCountRef.current) return prev
         return prev + 1
       })
-      revealTimerRef.current = setTimeout(tick, 15)
+      revealTimerRef.current = requestAnimationFrame(tick)
     }
-    tick()
+    revealTimerRef.current = requestAnimationFrame(tick)
     return () => {
-      if (revealTimerRef.current) clearTimeout(revealTimerRef.current)
+      if (revealTimerRef.current) cancelAnimationFrame(revealTimerRef.current)
     }
   }, [streaming])
   useEffect(() => {

@@ -49,7 +49,7 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-# Task: Fix word-reveal not animating on short responses by firing the first tick immediately and reducing the interval
+# Task 1: Fix glitchy word-reveal on longer responses by switching from setTimeout to requestAnimationFrame
 
 USE: claude sonnet
 
@@ -57,17 +57,21 @@ USE: claude sonnet
 
 sed -n '150,163p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-Confirm the current reveal useEffect: streaming guard, tick function incrementing revealedWordCount, and the initial setTimeout(tick, 35) that delays the very first tick by 35ms.
+Confirm the current reveal useEffect uses setTimeout(tick, 15) for the recursive interval with tick() called directly for the first tick.
 
 ## WHAT IS WRONG
 
-Confirmed via live testing: the word-reveal animation works on longer responses but not on short ones (1-2 sentences). Root cause: the tick chain starts with a 35ms delay before the first word is revealed. For short responses that complete streaming in under 35ms, setStreaming(false) fires in the finally block before the first tick ever runs. The useEffect cleanup cancels the pending timer, and the render condition streaming && i === messages.length - 1 is already false when React next renders, so full content appears with no reveal at all. The fix is to fire the first tick with no delay (using setTimeout(tick, 0) or calling tick() directly), and reduce subsequent ticks from 35ms to 15ms so more words reveal during the brief streaming window of even the shortest response.
+Confirmed via live testing: short responses now reveal correctly word by word, but longer responses (multi-line, bulleted) show a glitchy freeze mid-reveal. Root cause: setRevealedWordCount fires via setTimeout every 15ms, independent of the browser's render cycle. At this rate (~67 state updates per second), React re-renders the message bubble on every tick, which includes re-parsing the growing word-sliced string through ReactMarkdown on every single update. ReactMarkdown is not cheap -- it parses markdown syntax on every render -- and at 67 renders per second during a long response it causes the observable freeze/stutter. requestAnimationFrame syncs state updates to the browser's natural 60fps paint cycle (~16ms), coordinates with React's own scheduler, and prevents intermediate renders that never appear on screen, eliminating the stutter without changing the visual feel.
 
 ## ACTION
 
 File: /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-Replace the reveal useEffect body:
+Change revealTimerRef from ReturnType<typeof setTimeout> to number to match requestAnimationFrame's return type:
+
+  const revealTimerRef = useRef<number | null>(null)
+
+Replace the reveal useEffect body to use requestAnimationFrame instead of setTimeout:
 
   useEffect(() => {
     if (!streaming) return
@@ -76,38 +80,25 @@ Replace the reveal useEffect body:
         if (prev >= targetWordCountRef.current) return prev
         return prev + 1
       })
-      revealTimerRef.current = setTimeout(tick, 35)
+      revealTimerRef.current = requestAnimationFrame(tick)
     }
-    revealTimerRef.current = setTimeout(tick, 35)
+    revealTimerRef.current = requestAnimationFrame(tick)
     return () => {
-      if (revealTimerRef.current) clearTimeout(revealTimerRef.current)
+      if (revealTimerRef.current) cancelAnimationFrame(revealTimerRef.current)
     }
   }, [streaming])
 
-With:
-
-  useEffect(() => {
-    if (!streaming) return
-    function tick() {
-      setRevealedWordCount((prev) => {
-        if (prev >= targetWordCountRef.current) return prev
-        return prev + 1
-      })
-      revealTimerRef.current = setTimeout(tick, 15)
-    }
-    tick()
-    return () => {
-      if (revealTimerRef.current) clearTimeout(revealTimerRef.current)
-    }
-  }, [streaming])
-
-tick() is called directly (no initial setTimeout) so the first word reveals in the same frame streaming becomes true, not 35ms later. Subsequent ticks use 15ms instead of 35ms so more words reveal per second. Do not change the targetWordCountRef update effect, the render condition, the finally block reset, or any other part of the streaming or reveal logic. Do not touch any other file.
+Note: tick() is now called via requestAnimationFrame(tick) for the first frame rather than directly, since requestAnimationFrame already fires on the next paint which is effectively immediate. The cleanup uses cancelAnimationFrame instead of clearTimeout. Do not change the targetWordCountRef update effect, the render condition, the finally block reset, or any other part of the streaming or reveal logic. Do not touch any other file.
 
 ## VERIFY AFTER ACT
 
-sed -n '150,163p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+grep -n "requestAnimationFrame\|cancelAnimationFrame" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-Expected: tick() called directly with no initial delay, subsequent setTimeout uses 15ms.
+Expected: requestAnimationFrame used for both the recursive call and the initial call, cancelAnimationFrame used in cleanup.
+
+grep -n "setTimeout.*tick\|clearTimeout.*reveal" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+
+Expected: no matches -- setTimeout is completely replaced.
 
 cd /home/corby/jamm-os/frontend
 npm run build
@@ -117,19 +108,18 @@ Expected: zero TypeScript errors.
 ## MANUAL VERIFICATION (the actual test)
 
 1. Restart the frontend.
-2. Ask "where are my clients?" -- a short 1-2 sentence response.
-3. Confirm the response now reveals word by word even on this short response.
-4. Ask "how do I customize my client portal colors?" -- a longer bulleted response.
-5. Confirm the reveal is still smooth on longer responses too, not too fast.
-6. Ask both back to back and confirm clean reset between them.
+2. Ask "how do I customize my client portal colors?" -- the longer bulleted response that showed the freeze.
+3. Confirm the reveal is now smooth with no visible freeze or stutter mid-response.
+4. Ask "where are my clients?" -- confirm short responses still reveal word by word.
+5. Ask both back to back -- confirm clean reset between them.
 
-Report what you observe at steps 3 and 5 specifically.
+Report what you observe at steps 3 and 4 specifically.
 
 ## GIT
 
 cd /home/corby/jamm-os
 git add -A
-git commit -m "fix: word-reveal now fires immediately on streaming start with no initial delay, and ticks every 15ms instead of 35ms, so even short responses that complete quickly get a visible word-by-word reveal instead of appearing all at once"
+git commit -m "fix: word-reveal now uses requestAnimationFrame instead of setTimeout to sync with the browser paint cycle and eliminate the glitchy freeze on longer responses caused by too many ReactMarkdown re-renders per second"
 git pull --rebase origin main
 git push origin main
 
