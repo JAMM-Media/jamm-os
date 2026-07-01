@@ -26,7 +26,7 @@ def get_connect_url(firm_id: UUID, state: str) -> str:
         f"&client_id={settings.stripe_connect_client_id}"
         "&scope=read_write"
         f"&state={state}"
-        "&redirect_uri=https://app.jammos.com/stripe/callback"
+        f"&redirect_uri={settings.stripe_connect_redirect_uri}"
     )
 
 
