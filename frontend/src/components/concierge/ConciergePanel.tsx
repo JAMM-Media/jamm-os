@@ -330,7 +330,6 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
           }
           return updated
         })
-        setRevealedWordCount(Number.MAX_SAFE_INTEGER)
         if (pendingActionRef.current) {
           const action = pendingActionRef.current
           pendingActionRef.current = null
@@ -367,6 +366,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
         })
       } finally {
         setStreaming(false)
+        setRevealedWordCount(0)
       }
     },
     [router, uiContext],
