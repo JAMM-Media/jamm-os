@@ -49,77 +49,79 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-# Task 2: Add markdown formatting instruction to Concierge system prompt so responses use bold and structure where it helps
+# Task: Fix reveal stutter by preventing ReactMarkdown from parsing malformed mid-token markdown during word-by-word reveal
 
 USE: claude sonnet
 
 ## VERIFY BEFORE ACT
 
-sed -n '1,15p' /home/corby/jamm-os/app/api/concierge/prompts.py
+sed -n '1038,1058p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-Confirm the opening of PHASE_1_SYSTEM_PROMPT and the location of the first --- divider after the identity paragraph, where the new formatting instruction will be inserted.
-
-grep -n "markdown\|bold\|\*\*\|formatting" /home/corby/jamm-os/app/api/concierge/prompts.py -i | grep -v "MORNING_BRIEFING\|DETAIL_PROMPT\|format_for_prompt\|_format_firm\|Critical formatting\|backtick\|CONCIERGE_ACTION"
-
-Confirm zero existing formatting instructions in the main conversational prompt body.
+Confirm the current reveal slice: msg.content.split(/\s+/).filter(Boolean).slice(0, revealedWordCount).join(' ') is passed directly into ReactMarkdown with no sanitization, meaning a bold span like **Portal Branding** can be sliced mid-phrase (e.g. after "Portal" but before the closing **), producing an unclosed markdown token that ReactMarkdown attempts to parse on every reveal frame.
 
 ## WHAT IS WRONG
 
-Confirmed via live testing: the Concierge renders responses as plain prose with no markdown formatting even on complex multi-step how-to answers (e.g. portal color customization with 9 named slots, migration paths with multiple steps). The ReactMarkdown renderer in ConciergePanel.tsx is fully configured with custom components for bold (font-medium, proper dark mode color), headers (h2, h3), lists (ul, ol, li), and horizontal rules -- it is ready to render rich markdown. But the agent never generates markdown formatting because no instruction tells it to. This makes longer responses harder to scan than they need to be, with key UI terms like "Save branding" and "Set as active" buried in dense paragraphs at the same visual weight as surrounding text.
+Confirmed via live testing: the reveal stutter got measurably worse after adding markdown formatting instructions to the system prompt. Root cause: the word-slicing logic used for the reveal animation operates on raw markdown source text with no awareness of markdown syntax. When the revealed word count lands inside a bold span (e.g. **Portal Branding** where "Portal" is one word and "Branding**" is the next), the sliced string contains an unclosed emphasis marker like "...Navigate to **Portal". ReactMarkdown must attempt to parse this malformed inline markdown on every single animation frame during the reveal, which is measurably more expensive than parsing clean, syntactically valid text, and is a plausible primary contributor to the observed freeze -- more so than raw render frequency alone.
 
 ## ACTION
 
-File: /home/corby/jamm-os/app/api/concierge/prompts.py
+File: /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-Add a new RESPONSE FORMAT section immediately after the first --- divider in PHASE_1_SYSTEM_PROMPT (after the identity/scope paragraph, before the IDENTITY AND SCOPE heading or the SECURITY AND PRIVACY section, wherever the first --- divider currently sits). Insert:
+Add a helper function near the top of the component (or as a module-level function above the component) that sanitizes a word-sliced string by removing any trailing unclosed bold marker:
 
----
+function sanitizeRevealSlice(text: string): string {
+  const asteriskCount = (text.match(/\*\*/g) || []).length
+  if (asteriskCount % 2 !== 0) {
+    const lastIndex = text.lastIndexOf('**')
+    return text.slice(0, lastIndex)
+  }
+  return text
+}
 
-RESPONSE FORMAT
+This counts occurrences of ** in the sliced text. An odd count means the last ** opened a bold span that has not been closed yet within the current reveal window. In that case, truncate the string at the position of that unclosed marker, so the bold span simply has not started yet from the renderer's perspective, rather than being left half-open. Once enough words have revealed to include the closing **, the count becomes even again and the full bold span renders normally.
 
-The chat renderer supports markdown. Use it selectively to improve scannability -- not on every response, only where it genuinely helps.
+Apply this function to the existing reveal slice:
 
-Use **bold** for: specific UI element names the user needs to find or click (button labels, tab names, field names, section headings). Example: Navigate to **Settings** and select **Fee Schedule**.
+Change:
 
-Use numbered lists for: sequential steps where order matters (how-to instructions with 3 or more steps).
+                      {streaming && i === messages.length - 1
+                        ? msg.content.split(/\s+/).filter(Boolean).slice(0, revealedWordCount).join(' ')
+                        : msg.content}
 
-Use bullet lists for: parallel items with no meaningful order (lists of options, feature sets, status values).
+To:
 
-Use plain prose for: short factual answers (1-3 sentences), yes/no questions, clarifying questions back to the user, and any response where adding structure would feel over-formatted relative to the question asked.
+                      {streaming && i === messages.length - 1
+                        ? sanitizeRevealSlice(msg.content.split(/\s+/).filter(Boolean).slice(0, revealedWordCount).join(' '))
+                        : msg.content}
 
-Never use headers (##, ###) in conversational responses. Headers are only used in the morning briefing format.
-
-Never use horizontal rules (---) in conversational responses.
-
-Keep responses concise. A complete answer to a specific question should rarely exceed 150 words. If a how-to answer needs more than 5 steps, consider whether the question can be broken into two separate answers.
-
-Do not change any existing text in this file. Only insert the new block at the specified location.
+Do not change the reveal timing logic, the requestAnimationFrame effect, or any other part of the streaming or reveal mechanism. Do not change the ReactMarkdown components configuration. Do not touch any other file.
 
 ## VERIFY AFTER ACT
 
-grep -n "RESPONSE FORMAT\|Use \*\*bold\*\*\|plain prose" /home/corby/jamm-os/app/api/concierge/prompts.py
+grep -n "sanitizeRevealSlice" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-Expected: all three present in the main prompt body.
+Expected: the function definition and its use in the reveal slice, both present.
 
-python3 -c "from app.api.concierge.route import router; print('OK')"
+cd /home/corby/jamm-os/frontend
+npm run build
 
-Expected: OK, no import errors.
+Expected: zero TypeScript errors.
 
 ## MANUAL VERIFICATION (the actual test)
 
-1. Restart the backend.
-2. Ask "how do I customize my client portal colors?" -- the same question that previously returned dense plain prose.
-3. Confirm the response now uses bold for key UI terms (Portal, Portal Branding, Set as active, Save branding) and a numbered or bulleted list for the 9 color slots or the steps involved.
-4. Ask "where are my clients?" -- confirm this short factual answer stays as clean plain prose with no over-formatting.
-5. Ask "what are the session timeout options?" -- confirm this returns a clean list of the 6 options rather than a dense paragraph.
+1. Restart the frontend.
+2. Ask "how do I customize my client portal colors?" again -- the response with heavy bold usage that showed the worst stutter.
+3. Confirm the reveal is now smooth with no visible freeze, even through the bold phrases like "Portal Branding", "Set as active", "Save branding", "Reset to defaults".
+4. Confirm bold text still renders correctly once each phrase fully reveals -- no missing or stuck-unbolded text in the final rendered message.
+5. Ask "where are my clients?" again -- confirm short responses still reveal smoothly.
 
-Report the exact response text for all three questions.
+Report what you observe at steps 3 and 4 specifically.
 
 ## GIT
 
 cd /home/corby/jamm-os
 git add -A
-git commit -m "feat: add RESPONSE FORMAT section to Concierge system prompt instructing the agent to use bold for UI element names and lists for sequential steps, while keeping short factual answers as plain prose, matching the markdown renderer already configured in ConciergePanel.tsx"
+git commit -m "fix: reveal animation now sanitizes word-sliced content to avoid feeding ReactMarkdown unclosed bold markers mid-reveal, which was forcing expensive malformed-markdown parsing on every animation frame and was the likely primary cause of the stutter on bold-heavy responses"
 git pull --rebase origin main
 git push origin main
 

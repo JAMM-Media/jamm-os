@@ -65,6 +65,15 @@ function buildActionConfirm(action: ConciergeAction): string {
   return ''
 }
 
+function sanitizeRevealSlice(text: string): string {
+  const asteriskCount = (text.match(/\*\*/g) || []).length
+  if (asteriskCount % 2 !== 0) {
+    const lastIndex = text.lastIndexOf('**')
+    return text.slice(0, lastIndex)
+  }
+  return text
+}
+
 export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
   const router = useRouter()
   const pathname = usePathname()
@@ -1051,7 +1060,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
                       }}
                     >
                       {streaming && i === messages.length - 1
-                        ? msg.content.split(/\s+/).filter(Boolean).slice(0, revealedWordCount).join(' ')
+                        ? sanitizeRevealSlice(msg.content.split(/\s+/).filter(Boolean).slice(0, revealedWordCount).join(' '))
                         : msg.content}
                     </ReactMarkdown>
                   </div>
