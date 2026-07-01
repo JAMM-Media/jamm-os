@@ -278,6 +278,7 @@ const TABS = [
   { key: 'security', label: 'Security' },
   { key: 'automations', label: 'Automations' },
   { key: 'fee_schedule', label: 'Fee Schedule' },
+  { key: 'billing', label: 'Billing' },
   { key: 'portal_branding', label: 'Portal' },
   { key: 'sending_domain', label: 'Email Domain' },
   { key: 'portal_domain', label: 'Portal Domain' },
@@ -287,7 +288,7 @@ const TABS = [
 
 const SECTIONS = [
   { label: 'Account', keys: ['my_integrations', 'profile', 'security'] },
-  { label: 'Firm Settings', keys: ['firm', 'team', 'automations', 'fee_schedule'] },
+  { label: 'Firm Settings', keys: ['firm', 'team', 'automations', 'fee_schedule', 'billing'] },
   { label: 'Portal', keys: ['portal_branding', 'portal_domain'] },
   { label: 'Email', keys: ['sending_domain', 'email_calendar'] },
   { label: 'Data', keys: ['migration'] },
@@ -613,6 +614,7 @@ export default function SettingsPage() {
     if (key === 'automations') return canSeeAutomations
     if (key === 'security') return canSeeSecurity
     if (key === 'fee_schedule') return isFirmOwner
+    if (key === 'billing') return isFirmOwner
     if (key === 'portal_branding') return isFirmOwner
     if (key === 'sending_domain') return canSeeSendingDomain
     if (key === 'portal_domain') return canSeePortalDomain
@@ -661,7 +663,13 @@ export default function SettingsPage() {
                   {visibleTabs.map((tab) => (
                     <button
                       key={tab.key}
-                      onClick={() => setActiveTab(tab.key)}
+                      onClick={() => {
+                        if (tab.key === 'billing') {
+                          router.push('/settings/billing')
+                        } else {
+                          setActiveTab(tab.key)
+                        }
+                      }}
                       className={cn(
                         'w-full text-left h-9 px-4 text-[13px] transition-colors',
                         activeTab === tab.key
