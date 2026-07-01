@@ -49,77 +49,77 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-# Task 1: Fix glitchy word-reveal on longer responses by switching from setTimeout to requestAnimationFrame
+# Task 2: Add markdown formatting instruction to Concierge system prompt so responses use bold and structure where it helps
 
 USE: claude sonnet
 
 ## VERIFY BEFORE ACT
 
-sed -n '150,163p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+sed -n '1,15p' /home/corby/jamm-os/app/api/concierge/prompts.py
 
-Confirm the current reveal useEffect uses setTimeout(tick, 15) for the recursive interval with tick() called directly for the first tick.
+Confirm the opening of PHASE_1_SYSTEM_PROMPT and the location of the first --- divider after the identity paragraph, where the new formatting instruction will be inserted.
+
+grep -n "markdown\|bold\|\*\*\|formatting" /home/corby/jamm-os/app/api/concierge/prompts.py -i | grep -v "MORNING_BRIEFING\|DETAIL_PROMPT\|format_for_prompt\|_format_firm\|Critical formatting\|backtick\|CONCIERGE_ACTION"
+
+Confirm zero existing formatting instructions in the main conversational prompt body.
 
 ## WHAT IS WRONG
 
-Confirmed via live testing: short responses now reveal correctly word by word, but longer responses (multi-line, bulleted) show a glitchy freeze mid-reveal. Root cause: setRevealedWordCount fires via setTimeout every 15ms, independent of the browser's render cycle. At this rate (~67 state updates per second), React re-renders the message bubble on every tick, which includes re-parsing the growing word-sliced string through ReactMarkdown on every single update. ReactMarkdown is not cheap -- it parses markdown syntax on every render -- and at 67 renders per second during a long response it causes the observable freeze/stutter. requestAnimationFrame syncs state updates to the browser's natural 60fps paint cycle (~16ms), coordinates with React's own scheduler, and prevents intermediate renders that never appear on screen, eliminating the stutter without changing the visual feel.
+Confirmed via live testing: the Concierge renders responses as plain prose with no markdown formatting even on complex multi-step how-to answers (e.g. portal color customization with 9 named slots, migration paths with multiple steps). The ReactMarkdown renderer in ConciergePanel.tsx is fully configured with custom components for bold (font-medium, proper dark mode color), headers (h2, h3), lists (ul, ol, li), and horizontal rules -- it is ready to render rich markdown. But the agent never generates markdown formatting because no instruction tells it to. This makes longer responses harder to scan than they need to be, with key UI terms like "Save branding" and "Set as active" buried in dense paragraphs at the same visual weight as surrounding text.
 
 ## ACTION
 
-File: /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+File: /home/corby/jamm-os/app/api/concierge/prompts.py
 
-Change revealTimerRef from ReturnType<typeof setTimeout> to number to match requestAnimationFrame's return type:
+Add a new RESPONSE FORMAT section immediately after the first --- divider in PHASE_1_SYSTEM_PROMPT (after the identity/scope paragraph, before the IDENTITY AND SCOPE heading or the SECURITY AND PRIVACY section, wherever the first --- divider currently sits). Insert:
 
-  const revealTimerRef = useRef<number | null>(null)
+---
 
-Replace the reveal useEffect body to use requestAnimationFrame instead of setTimeout:
+RESPONSE FORMAT
 
-  useEffect(() => {
-    if (!streaming) return
-    function tick() {
-      setRevealedWordCount((prev) => {
-        if (prev >= targetWordCountRef.current) return prev
-        return prev + 1
-      })
-      revealTimerRef.current = requestAnimationFrame(tick)
-    }
-    revealTimerRef.current = requestAnimationFrame(tick)
-    return () => {
-      if (revealTimerRef.current) cancelAnimationFrame(revealTimerRef.current)
-    }
-  }, [streaming])
+The chat renderer supports markdown. Use it selectively to improve scannability -- not on every response, only where it genuinely helps.
 
-Note: tick() is now called via requestAnimationFrame(tick) for the first frame rather than directly, since requestAnimationFrame already fires on the next paint which is effectively immediate. The cleanup uses cancelAnimationFrame instead of clearTimeout. Do not change the targetWordCountRef update effect, the render condition, the finally block reset, or any other part of the streaming or reveal logic. Do not touch any other file.
+Use **bold** for: specific UI element names the user needs to find or click (button labels, tab names, field names, section headings). Example: Navigate to **Settings** and select **Fee Schedule**.
+
+Use numbered lists for: sequential steps where order matters (how-to instructions with 3 or more steps).
+
+Use bullet lists for: parallel items with no meaningful order (lists of options, feature sets, status values).
+
+Use plain prose for: short factual answers (1-3 sentences), yes/no questions, clarifying questions back to the user, and any response where adding structure would feel over-formatted relative to the question asked.
+
+Never use headers (##, ###) in conversational responses. Headers are only used in the morning briefing format.
+
+Never use horizontal rules (---) in conversational responses.
+
+Keep responses concise. A complete answer to a specific question should rarely exceed 150 words. If a how-to answer needs more than 5 steps, consider whether the question can be broken into two separate answers.
+
+Do not change any existing text in this file. Only insert the new block at the specified location.
 
 ## VERIFY AFTER ACT
 
-grep -n "requestAnimationFrame\|cancelAnimationFrame" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+grep -n "RESPONSE FORMAT\|Use \*\*bold\*\*\|plain prose" /home/corby/jamm-os/app/api/concierge/prompts.py
 
-Expected: requestAnimationFrame used for both the recursive call and the initial call, cancelAnimationFrame used in cleanup.
+Expected: all three present in the main prompt body.
 
-grep -n "setTimeout.*tick\|clearTimeout.*reveal" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+python3 -c "from app.api.concierge.route import router; print('OK')"
 
-Expected: no matches -- setTimeout is completely replaced.
-
-cd /home/corby/jamm-os/frontend
-npm run build
-
-Expected: zero TypeScript errors.
+Expected: OK, no import errors.
 
 ## MANUAL VERIFICATION (the actual test)
 
-1. Restart the frontend.
-2. Ask "how do I customize my client portal colors?" -- the longer bulleted response that showed the freeze.
-3. Confirm the reveal is now smooth with no visible freeze or stutter mid-response.
-4. Ask "where are my clients?" -- confirm short responses still reveal word by word.
-5. Ask both back to back -- confirm clean reset between them.
+1. Restart the backend.
+2. Ask "how do I customize my client portal colors?" -- the same question that previously returned dense plain prose.
+3. Confirm the response now uses bold for key UI terms (Portal, Portal Branding, Set as active, Save branding) and a numbered or bulleted list for the 9 color slots or the steps involved.
+4. Ask "where are my clients?" -- confirm this short factual answer stays as clean plain prose with no over-formatting.
+5. Ask "what are the session timeout options?" -- confirm this returns a clean list of the 6 options rather than a dense paragraph.
 
-Report what you observe at steps 3 and 4 specifically.
+Report the exact response text for all three questions.
 
 ## GIT
 
 cd /home/corby/jamm-os
 git add -A
-git commit -m "fix: word-reveal now uses requestAnimationFrame instead of setTimeout to sync with the browser paint cycle and eliminate the glitchy freeze on longer responses caused by too many ReactMarkdown re-renders per second"
+git commit -m "feat: add RESPONSE FORMAT section to Concierge system prompt instructing the agent to use bold for UI element names and lists for sequential steps, while keeping short factual answers as plain prose, matching the markdown renderer already configured in ConciergePanel.tsx"
 git pull --rebase origin main
 git push origin main
 
