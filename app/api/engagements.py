@@ -470,6 +470,38 @@ def bulk_create_engagements(
             entity_type="engagement",
             entity_id=engagement.id,
         )
+
+        from app.services.behavioral_log import log_event
+        log_event(
+            firm_id=current_firm.id,
+            event_type="engagement.created",
+            entity_type="engagement",
+            entity_id=engagement.id,
+            actor_type="staff",
+            actor_id=current_user.id,
+            metadata={
+                "form_type": str(engagement.engagement_type) if engagement.engagement_type else None,
+                "client_id": str(engagement.client_id),
+                "filing_deadline": engagement.filing_deadline.isoformat() if engagement.filing_deadline else None,
+                "via": "bulk_create",
+            }
+        )
+        if engagement.filing_deadline:
+            log_event(
+                firm_id=current_firm.id,
+                event_type="engagement.deadline_set",
+                entity_type="engagement",
+                entity_id=engagement.id,
+                actor_type="staff",
+                actor_id=current_user.id,
+                metadata={
+                    "deadline_type": "filing_deadline",
+                    "deadline_date": engagement.filing_deadline.isoformat(),
+                    "via": "bulk_create",
+                    "engagement_type": str(engagement.engagement_type) if engagement.engagement_type else None,
+                }
+            )
+
         created_ids.append(engagement.id)
 
     return BulkEngagementCreateResult(

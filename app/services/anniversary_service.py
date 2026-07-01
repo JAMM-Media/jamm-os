@@ -78,6 +78,20 @@ def check_client_anniversaries() -> None:
                     related_entity_id=client.id,
                 )
 
+            log_event(
+                firm_id=client.firm_id,
+                event_type="client.dormancy_alerted",
+                entity_type="client",
+                entity_id=client.id,
+                actor_type="system",
+                actor_id=None,
+                metadata={
+                    "last_engagement_date": last_engagement.isoformat() if last_engagement else None,
+                    "current_year": current_year,
+                    "recipient_count": len(recipients),
+                }
+            )
+
         logger.info(
             "Anniversary check complete: %d clients flagged across all firms",
             len(flagged),
@@ -133,6 +147,21 @@ def check_document_expiries() -> None:
                 )
             expiry.expiry_notification_sent = True
             db.commit()
+
+            log_event(
+                firm_id=expiry.firm_id,
+                event_type="document_expiry.alerted",
+                entity_type="client",
+                entity_id=expiry.client_id,
+                actor_type="system",
+                actor_id=None,
+                metadata={
+                    "document_type": str(expiry.document_type) if getattr(expiry, "document_type", None) else None,
+                    "days_until_expiry": days_left,
+                    "expires_on": expiry.expires_on.isoformat() if expiry.expires_on else None,
+                    "recipient_count": len(recipients),
+                }
+            )
         logger.info(
             "Document expiry check complete: %d expiring soon",
             len(expiring),
