@@ -200,7 +200,11 @@ def bulk_update_engagements(
         Engagement.firm_id == current_firm.id,
     )
     engagements = db.execute(stmt).scalars().all()
+    changed = []
     for eng in engagements:
+        old_status = eng.status
+        old_filing = eng.filing_deadline
+        old_extended = eng.extended_deadline
         if payload.update.status is not None:
             eng.status = payload.update.status
         if payload.update.deadline_push_days is not None:
@@ -209,7 +213,43 @@ def bulk_update_engagements(
                 eng.extended_deadline = eng.extended_deadline + delta
             elif eng.filing_deadline is not None:
                 eng.filing_deadline = eng.filing_deadline + delta
+        changed.append((eng, old_status, old_filing, old_extended))
     db.commit()
+
+    from app.services.behavioral_log import log_event
+    for eng, old_status, old_filing, old_extended in changed:
+        if payload.update.status is not None and eng.status != old_status:
+            log_event(
+                firm_id=current_firm.id,
+                event_type="engagement.status_changed",
+                entity_type="engagement",
+                entity_id=eng.id,
+                actor_type="staff",
+                actor_id=None,
+                metadata={
+                    "from_status": str(old_status),
+                    "to_status": str(eng.status),
+                    "via": "bulk",
+                }
+            )
+        if eng.filing_deadline != old_filing or eng.extended_deadline != old_extended:
+            log_event(
+                firm_id=current_firm.id,
+                event_type="engagement.deadline_changed",
+                entity_type="engagement",
+                entity_id=eng.id,
+                actor_type="staff",
+                actor_id=None,
+                metadata={
+                    "from_filing_deadline": old_filing.isoformat() if old_filing else None,
+                    "to_filing_deadline": eng.filing_deadline.isoformat() if eng.filing_deadline else None,
+                    "from_extended_deadline": old_extended.isoformat() if old_extended else None,
+                    "to_extended_deadline": eng.extended_deadline.isoformat() if eng.extended_deadline else None,
+                    "via": "bulk",
+                    "push_days": payload.update.deadline_push_days,
+                }
+            )
+
     return {"updated": len(engagements)}
 
 

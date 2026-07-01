@@ -177,7 +177,25 @@ def update_extension(
             )
         ).scalars().first()
         if engagement:
+            old_extended = engagement.extended_deadline
             engagement.extended_deadline = payload.extended_deadline
             db.commit()
+
+            from app.services.behavioral_log import log_event
+            if engagement.extended_deadline != old_extended:
+                log_event(
+                    firm_id=current_firm.id,
+                    event_type="engagement.deadline_changed",
+                    entity_type="engagement",
+                    entity_id=engagement.id,
+                    actor_type="staff",
+                    actor_id=None,
+                    metadata={
+                        "from_extended_deadline": old_extended.isoformat() if old_extended else None,
+                        "to_extended_deadline": engagement.extended_deadline.isoformat() if engagement.extended_deadline else None,
+                        "via": "extension_update",
+                        "extension_id": str(ext.id),
+                    }
+                )
 
     return updated

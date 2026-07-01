@@ -182,6 +182,22 @@ def spawn_recurring_engagements() -> None:
                         }
                     )
 
+                    if engagement.filing_deadline:
+                        log_event(
+                            firm_id=template.firm_id,
+                            event_type="engagement.deadline_set",
+                            entity_type="engagement",
+                            entity_id=engagement.id,
+                            actor_type="system",
+                            actor_id=None,
+                            metadata={
+                                "deadline_type": "filing_deadline",
+                                "deadline_date": engagement.filing_deadline.isoformat(),
+                                "via": "recurring_spawn",
+                                "engagement_type": str(engagement.engagement_type) if engagement.engagement_type else None,
+                            }
+                        )
+
                     spawned_count += 1
 
                 except Exception as exc:
