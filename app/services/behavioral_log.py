@@ -1,17 +1,47 @@
 # app/services/behavioral_log.py
 
 import logging
+import os
 import threading
 import uuid
-from typing import Optional
 from datetime import date, datetime
 from decimal import Decimal
 from enum import Enum
+from typing import Optional
 
-from app.db.session import SessionLocal
+from sqlalchemy import create_engine
+from sqlalchemy.exc import OperationalError
+from sqlalchemy.orm import sessionmaker
+
+from app.core.config import get_settings
 from app.models.behavioral_event import BehavioralEvent
 
 log = logging.getLogger(__name__)
+
+# Same markers conftest.py uses to refuse running tests against production.
+# Here they gate a defense-in-depth check: if JAMM_TESTING=1 but the resolved
+# DATABASE_URL still looks like production (e.g. import-order regression),
+# refuse the connection instead of writing test noise into prod.
+_PRODUCTION_MARKERS = ("ondigitalocean.com", ":25060")
+
+# Dedicated engine, separate from app.db.session's shared engine, so a
+# hung/unreachable database only ever stalls (and times out) the fire-and-forget
+# logging thread and never touches the connect behavior of normal requests.
+CONNECT_TIMEOUT_SECONDS = 3
+
+_engine = create_engine(
+    get_settings().DATABASE_URL,
+    pool_pre_ping=True,
+    future=True,
+    connect_args={"connect_timeout": CONNECT_TIMEOUT_SECONDS},
+)
+
+SessionLocal = sessionmaker(
+    bind=_engine,
+    autoflush=False,
+    autocommit=False,
+    future=True,
+)
 
 
 def _coerce_uuid(value) -> Optional[uuid.UUID]:
@@ -60,6 +90,15 @@ def log_event(
     ) -> None:
         db = None
         try:
+            if os.environ.get("JAMM_TESTING") == "1":
+                db_url = get_settings().DATABASE_URL
+                if any(marker in db_url for marker in _PRODUCTION_MARKERS):
+                    log.warning(
+                        "behavioral_log.log_event skipped: JAMM_TESTING=1 but "
+                        "DATABASE_URL looks like production; refusing to connect"
+                    )
+                    return
+
             db = SessionLocal()
 
             event = BehavioralEvent(
@@ -75,6 +114,15 @@ def log_event(
             )
             db.add(event)
             db.commit()
+        except OperationalError as exc:
+            orig = str(getattr(exc, "orig", exc)).lower()
+            if "timeout" in orig:
+                log.warning(
+                    "behavioral_log.log_event: connection timed out after %ss",
+                    CONNECT_TIMEOUT_SECONDS,
+                )
+            else:
+                log.warning("behavioral_log.log_event failed: %s", exc)
         except Exception as exc:
             log.warning("behavioral_log.log_event failed: %s", exc)
         finally:

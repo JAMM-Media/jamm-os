@@ -17,8 +17,29 @@ The SQLite approach was removed because:
 """
 
 import os
+from dotenv import load_dotenv
+
+# Must run before any `app` import: app.db.session builds its module-level
+# SessionLocal from DATABASE_URL at import time, so the test override has to
+# land first or that engine permanently binds to whatever DATABASE_URL was
+# already ambient (e.g. production).
+load_dotenv(".env.test", override=True)
+
 # Must be set before any app imports so rate_limit.py picks it up
 os.environ["RATE_LIMIT_ENABLED"] = "false"
+
+# Lets any module detect test context, independent of DATABASE_URL parsing.
+os.environ["JAMM_TESTING"] = "1"
+
+DATABASE_URL = os.environ["DATABASE_URL"]
+
+_PRODUCTION_MARKERS = ("ondigitalocean.com", ":25060")
+if any(marker in DATABASE_URL for marker in _PRODUCTION_MARKERS):
+    raise RuntimeError(
+        "REFUSING TO RUN TESTS: DATABASE_URL resolves to what looks like the "
+        "production database. Tests would DROP and TRUNCATE tables. "
+        "Fix .env.test or your environment before proceeding."
+    )
 
 import pytest
 from fastapi.testclient import TestClient
@@ -30,12 +51,6 @@ from app.main import app
 from app.db.base_class import Base
 from app.dependencies.db import get_db
 from app import models  # Ensures all models register with Base.metadata
-
-
-DATABASE_URL = os.environ.get(
-    "DATABASE_URL",
-    "postgresql://postgres:postgres123@localhost:5432/accounting_test"
-)
 
 engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
