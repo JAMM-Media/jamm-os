@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime, date
 from typing import Optional
 
-from sqlalchemy import String, Boolean, DateTime, Date, ForeignKey, Text, Numeric, JSON, func
+from sqlalchemy import String, Boolean, DateTime, Date, ForeignKey, Text, Numeric, JSON, Integer, func
 from sqlalchemy import Enum as PgEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -53,6 +53,17 @@ class Invoice(Base):
     due_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     paid_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     sent_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    reminder_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+    )
+
+    last_reminder_sent_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
 
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     notes_client_visible: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
