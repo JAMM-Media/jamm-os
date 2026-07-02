@@ -798,3 +798,35 @@ def test_portal_pdf_download(client):
     r = client.get(f"/portal/invoices/{invoice_id}/pdf", headers=_portal_headers(token))
     assert r.status_code == 200
     assert "application/pdf" in r.headers["content-type"]
+
+
+# ===========================================================================
+# GROUP 7 — Stripe Connect redirect URI (settings-driven)
+# ===========================================================================
+
+def test_get_connect_url_uses_configured_domain(monkeypatch):
+    from app.core.config import get_settings
+    from app.services import stripe_service
+
+    settings = get_settings()
+    monkeypatch.setattr(settings, "stripe_connect_client_id", "ca_test_123")
+
+    url = stripe_service.get_connect_url(uuid.uuid4(), "state123")
+
+    assert "api.jammpx.com" in url
+    assert "jammos" not in url
+
+
+def test_get_connect_url_respects_settings_override(monkeypatch):
+    from app.core.config import get_settings
+    from app.services import stripe_service
+
+    settings = get_settings()
+    monkeypatch.setattr(settings, "stripe_connect_client_id", "ca_test_123")
+    monkeypatch.setattr(
+        settings, "stripe_connect_redirect_uri", "https://staging.jammpx.com/stripe/callback"
+    )
+
+    url = stripe_service.get_connect_url(uuid.uuid4(), "state123")
+
+    assert "redirect_uri=https://staging.jammpx.com/stripe/callback" in url

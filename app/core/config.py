@@ -80,7 +80,7 @@ class Settings(BaseSettings):
     stripe_publishable_key: str | None = None
     stripe_webhook_secret: str | None = None
     stripe_connect_client_id: str | None = None
-    stripe_connect_redirect_uri: str = "https://app.jammpx.com/stripe/callback"
+    stripe_connect_redirect_uri: str = "https://api.jammpx.com/stripe/callback"
 
     # CORS
     BACKEND_CORS_ORIGINS: list[str] = [
