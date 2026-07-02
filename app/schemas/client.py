@@ -3,6 +3,8 @@ from datetime import datetime, date
 from pydantic import BaseModel, EmailStr, field_validator, ConfigDict
 from uuid import UUID
 
+from app.core.enums import ReferralSource
+
 
 def _normalize_tags(value: Optional[List[str] | str]) -> Optional[List[str]]:
     if value is None:
@@ -30,6 +32,8 @@ class ClientBase(BaseModel):
     is_active: Optional[bool] = True
     entity_type: Optional[str] = None
     entity_subtype: Optional[str] = None
+    referral_source: Optional[ReferralSource] = None
+    referring_client_id: Optional[UUID] = None
 
     @field_validator("tags", mode="before")
     @classmethod
@@ -82,6 +86,8 @@ class ClientUpdate(BaseModel):
     is_active: Optional[bool] = None
     entity_type: Optional[str] = None
     entity_subtype: Optional[str] = None
+    referral_source: Optional[ReferralSource] = None
+    referring_client_id: Optional[UUID] = None
 
     @field_validator("tags", mode="before")
     @classmethod

@@ -3,10 +3,12 @@
 import uuid
 from datetime import datetime, timezone
 from typing import Optional
+import sqlalchemy as sa
 from sqlalchemy import String, Boolean, DateTime, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base_class import Base
+from app.core.enums import ReferralSource
 
 
 class Client(Base):
@@ -40,6 +42,22 @@ class Client(Base):
     country: Mapped[str | None] = mapped_column(String(100))
 
     quickbooks_customer_id: Mapped[Optional[str]] = mapped_column(String, nullable=True, index=True)
+
+    # How this client found the firm. Nullable -- required-ness is enforced in the
+    # UI later, not the API, so manual create, CSV import, and Concierge paths
+    # keep working without it.
+    referral_source: Mapped[Optional[ReferralSource]] = mapped_column(
+        sa.Enum(ReferralSource, name="referralsource", native_enum=False),
+        nullable=True,
+    )
+
+    # Self-referential FK: the existing client who referred this one, when
+    # referral_source is client_referral. Bare FK only -- no relationship(),
+    # since nothing needs to traverse it yet.
+    referring_client_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("clients.id", ondelete="SET NULL"),
+        nullable=True,
+    )
 
     # entity_type classifies the client for tax purposes.
     # individual = personal 1040 filer

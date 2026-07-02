@@ -75,6 +75,10 @@ class Firm(Base):
         default="trial",
     )
 
+    # Free-text capture of how this firm found JAMM PX (e.g. "referral", "google
+    # ads", "conference"). Nullable -- optional at signup.
+    signup_source: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+
     is_active: Mapped[bool] = mapped_column(
         Boolean,
         default=True,

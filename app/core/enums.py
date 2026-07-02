@@ -220,6 +220,18 @@ class CPEStatus(str, Enum):
     overdue = "overdue"
 
 
+class ReferralSource(str, Enum):
+    """How a client found the firm. Captured at intake for acquisition reporting."""
+    client_referral = "client_referral"
+    professional_referral = "professional_referral"
+    google_search = "google_search"
+    social_media = "social_media"
+    website = "website"
+    association_or_community = "association_or_community"
+    walk_in = "walk_in"
+    other = "other"
+
+
 EFILEABLE_ENGAGEMENT_TYPES = {
     "tax_return_1040",
     "tax_return_1120",

@@ -37,6 +37,7 @@ class FirmBase(BaseModel):
     sending_domain_return_path_value: Optional[str] = None
     portal_domain: Optional[str] = None
     portal_domain_verified: bool = False
+    signup_source: Optional[str] = None
 
     @field_validator("slug", mode="before")
     @classmethod
@@ -70,6 +71,7 @@ class FirmUpdate(BaseModel):
     settings: Optional[dict] = None
     feature_flags: Optional[dict] = None
     timesheet_approval_required: Optional[bool] = None
+    signup_source: Optional[str] = None
 
 
 class FirmOut(FirmBase):
