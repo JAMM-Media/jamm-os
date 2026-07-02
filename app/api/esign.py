@@ -532,6 +532,118 @@ async def handle_webhook(
             }
         )
 
+    elif event_type == "signature_request_viewed":
+        # SignatureEnvelope does not track a "first viewed" state, so this
+        # fires on every viewed webhook, not just the first one.
+        write_audit_log(
+            db=db,
+            firm_id=envelope.firm_id,
+            action="esign.viewed",
+            actor_type="client",
+            entity_type="signature_envelope",
+            entity_id=envelope.id,
+        )
+        log_event(
+            firm_id=envelope.firm_id,
+            event_type="engagement_letter.viewed",
+            entity_type="signature_envelope",
+            entity_id=envelope.id,
+            actor_type="client",
+            actor_id=None,
+            metadata={
+                "client_id": str(envelope.client_id),
+                "engagement_id": str(envelope.engagement_id) if envelope.engagement_id else None,
+                "days_since_sent": (
+                    (datetime.now(timezone.utc) - envelope.sent_at).days
+                    if hasattr(envelope, 'sent_at') and envelope.sent_at
+                    else None
+                ),
+            }
+        )
+
+    elif event_type == "signature_request_declined":
+        write_audit_log(
+            db=db,
+            firm_id=envelope.firm_id,
+            action="esign.declined",
+            actor_type="client",
+            entity_type="signature_envelope",
+            entity_id=envelope.id,
+        )
+        log_event(
+            firm_id=envelope.firm_id,
+            event_type="engagement_letter.declined",
+            entity_type="signature_envelope",
+            entity_id=envelope.id,
+            actor_type="client",
+            actor_id=None,
+            metadata={
+                "client_id": str(envelope.client_id),
+                "engagement_id": str(envelope.engagement_id) if envelope.engagement_id else None,
+                "days_since_sent": (
+                    (datetime.now(timezone.utc) - envelope.sent_at).days
+                    if hasattr(envelope, 'sent_at') and envelope.sent_at
+                    else None
+                ),
+            }
+        )
+
+    elif event_type == "signature_request_canceled":
+        # The webhook payload carries no signer/staff identity for who
+        # canceled, so this is recorded as a system action.
+        write_audit_log(
+            db=db,
+            firm_id=envelope.firm_id,
+            action="esign.voided",
+            actor_type="system",
+            entity_type="signature_envelope",
+            entity_id=envelope.id,
+        )
+        log_event(
+            firm_id=envelope.firm_id,
+            event_type="engagement_letter.voided",
+            entity_type="signature_envelope",
+            entity_id=envelope.id,
+            actor_type="system",
+            actor_id=None,
+            metadata={
+                "client_id": str(envelope.client_id),
+                "engagement_id": str(envelope.engagement_id) if envelope.engagement_id else None,
+                "days_since_sent": (
+                    (datetime.now(timezone.utc) - envelope.sent_at).days
+                    if hasattr(envelope, 'sent_at') and envelope.sent_at
+                    else None
+                ),
+            }
+        )
+
+    elif event_type == "signature_request_expired":
+        write_audit_log(
+            db=db,
+            firm_id=envelope.firm_id,
+            action="esign.expired",
+            actor_type="system",
+            entity_type="signature_envelope",
+            entity_id=envelope.id,
+        )
+        log_event(
+            firm_id=envelope.firm_id,
+            event_type="engagement_letter.expired",
+            entity_type="signature_envelope",
+            entity_id=envelope.id,
+            actor_type="system",
+            actor_id=None,
+            metadata={
+                "client_id": str(envelope.client_id),
+                "engagement_id": str(envelope.engagement_id) if envelope.engagement_id else None,
+                "days_since_sent": (
+                    (datetime.now(timezone.utc) - envelope.sent_at).days
+                    if hasattr(envelope, 'sent_at') and envelope.sent_at
+                    else None
+                ),
+            }
+        )
+
     from fastapi.responses import PlainTextResponse
     return PlainTextResponse("Hello API Event Received")
 
