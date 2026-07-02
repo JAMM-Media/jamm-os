@@ -21,6 +21,7 @@ from app.schemas.transcript_request import (
     TranscriptRequestUpdate,
 )
 from app.services.transcript_service import request_transcript
+from app.services import transcript_request_service
 
 router = APIRouter(prefix="/transcript-requests", tags=["Transcript Requests"])
 
@@ -165,4 +166,4 @@ def update_transcript_request(
     request = crud_transcript.get_transcript_request(db, request_id, current_firm.id)
     if not request:
         raise HTTPException(status_code=404, detail="Transcript request not found")
-    return crud_transcript.update_transcript_request(db, request, payload)
+    return transcript_request_service.update_transcript_request(db, request, payload)

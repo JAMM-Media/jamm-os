@@ -12,6 +12,7 @@ from app.core.config import get_settings
 from app.crud import integration as crud_integration
 from app.models.integration import Integration
 from app.models.client import Client
+from app.services.behavioral_log import log_event
 from app.services.token_encryption import decrypt_token
 
 logger = logging.getLogger(__name__)
@@ -222,6 +223,19 @@ class QuickBooksService:
                     existing.quickbooks_customer_id = qb_id
                     db.commit()
                     updated += 1
+                    log_event(
+                        firm_id=firm_id,
+                        event_type="client.qbo_synced",
+                        entity_type="client",
+                        entity_id=existing.id,
+                        actor_type="system",
+                        actor_id=None,
+                        metadata={
+                            "sync_direction": "import",
+                            "fields_updated": ["quickbooks_customer_id"],
+                            "conflicts_resolved": 0,
+                        }
+                    )
                 else:
                     skipped += 1
             else:
@@ -235,6 +249,19 @@ class QuickBooksService:
                 db.add(new_client)
                 db.commit()
                 imported += 1
+                log_event(
+                    firm_id=firm_id,
+                    event_type="client.qbo_synced",
+                    entity_type="client",
+                    entity_id=new_client.id,
+                    actor_type="system",
+                    actor_id=None,
+                    metadata={
+                        "sync_direction": "import",
+                        "fields_updated": ["name", "email", "quickbooks_customer_id", "is_active"],
+                        "conflicts_resolved": 0,
+                    }
+                )
 
         integration.last_synced_at = datetime.now(timezone.utc)
         db.commit()
@@ -444,6 +471,19 @@ class QuickBooksService:
         for client in unlinked_clients:
             self.export_client_to_quickbooks(integration, db, client)
             exported += 1
+            log_event(
+                firm_id=firm_id,
+                event_type="client.qbo_synced",
+                entity_type="client",
+                entity_id=client.id,
+                actor_type="system",
+                actor_id=None,
+                metadata={
+                    "sync_direction": "export",
+                    "fields_updated": ["quickbooks_customer_id"],
+                    "conflicts_resolved": 0,
+                }
+            )
 
         result["exported"] = exported
         return result

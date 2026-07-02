@@ -13,6 +13,7 @@ from app.dependencies.tenant import get_current_firm
 from app.models.firm import Firm
 from app.models.user import User
 from app.crud import automation_rule as crud_rule
+from app.services import automation_rule_service
 from app.schemas.automation_rule import (
     AutomationExecutionLogOut,
     AutomationRuleCreate,
@@ -93,12 +94,15 @@ def update_rule(
     payload: AutomationRuleUpdate,
     db: Session = Depends(get_db),
     current_firm: Firm = Depends(get_current_firm),
-    _: User = Depends(require_manager_or_above),
+    current_user: User = Depends(require_manager_or_above),
 ):
     rule = crud_rule.get_rule(db, rule_id=rule_id, firm_id=current_firm.id)
     if not rule:
         raise HTTPException(status_code=404, detail="Automation rule not found")
-    return crud_rule.update_rule(db, rule=rule, payload=payload)
+    return automation_rule_service.update_automation_rule(
+        db, rule=rule, payload=payload,
+        firm_id=current_firm.id, current_user_id=current_user.id,
+    )
 
 
 # --- DELETE /{rule_id} ---
