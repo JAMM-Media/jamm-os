@@ -49,111 +49,99 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-# Task: Phase 1 -- Create shared (app) route group layout and migrate dashboard, engagements, clients pages to eliminate AppShell/ConciergePanel remounting on navigation
+# Task: Fix onboarding message race condition and correct the "New engagement" chip to open the actual new-engagement form
 
-USE: claude fable-5
+USE: claude sonnet
 
 ## VERIFY BEFORE ACT
 
-cat /home/corby/jamm-os/frontend/src/app/layout.tsx
+sed -n '383,420p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-Confirm the true root layout only wraps QueryProvider, AuthProvider, ThemeProvider, and Toaster -- no AppShell, no Sidebar, no ConciergePanel.
+Confirm the current _open() effect: it checks !user?.firm_type to decide whether to show the onboarding question, with no check on isLoading from useAuth() beforehand, meaning if user is still null/loading at the moment this effect runs, firm_type will incorrectly appear unset even for a firm that already has it configured.
 
-cat /home/corby/jamm-os/frontend/src/components/layout/AppShell.tsx | head -15
+grep -n "isLoading" /home/corby/jamm-os/frontend/src/lib/hooks/useAuth.tsx
 
-Confirm AppShell's props interface is exactly { children: React.ReactNode }, with no page-specific props required, and pathname is read internally via usePathname(), not passed in.
+Confirm isLoading is exposed on the AuthContextType and set to false only after the initial /api/auth/me fetch completes.
 
-grep -c "<AppShell" /home/corby/jamm-os/frontend/src/app/dashboard/page.tsx /home/corby/jamm-os/frontend/src/app/engagements/page.tsx /home/corby/jamm-os/frontend/src/app/clients/page.tsx "/home/corby/jamm-os/frontend/src/app/clients/[id]/page.tsx"
+grep -n "'New engagement'\|'new-engagement'" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-Confirm counts match what was previously verified: dashboard 2, engagements 2, clients 2, clients/[id] 3, all with matching closing </AppShell> counts.
+Confirm the current handleSuggestion routes map sends 'New engagement' to the plain route '/engagements', identical to 'Go to Engagements', and confirm the existing 'new-engagement' modal action (already used successfully elsewhere, per modalLabel map showing 'Opened New Engagement drawer') that this chip should trigger instead.
 
 ## WHAT IS WRONG
 
-Confirmed via live testing and code tracing: AppShell (which renders Sidebar and ConciergePanel) is individually imported and rendered inside 23 separate page.tsx files across the app, rather than once in a shared Next.js layout. This means every client-side navigation between pages fully unmounts and remounts the entire AppShell tree, including ConciergePanel, destroying all local component state (the messages array holding the active conversation, and the hasInitialized ref meant to prevent the opening flow from re-triggering). This is the root cause of a bug where an active Concierge conversation completely disappears and gets replaced with a fresh opening message whenever the user clicks a "Go to X" suggestion chip or otherwise navigates between pages while the panel is open. Every prior fix to hasInitialized or messages state was addressing symptoms of this deeper structural issue, not the actual cause, since the whole component was being destroyed and recreated on every navigation regardless of any state-management logic inside it.
+Confirmed via live testing: two separate, small bugs.
 
-The correct fix is the standard Next.js pattern: move AppShell into a shared layout.tsx so React treats it as a stable, persistent part of the tree across route changes within that layout's scope, instead of tearing it down and rebuilding it per page. A plain root-level layout.tsx cannot be used directly, since /portal has its own separate layout.tsx for the unauthenticated client-facing portal and must never receive the authenticated AppShell. The correct mechanism is a Next.js route group -- a folder named (app) that does not affect the URL structure -- containing its own layout.tsx that wraps AppShell around children, with the authenticated pages physically moved inside that folder.
+1. The onboarding "what does your firm do most" question sometimes reappears for firms that already have firm_type set, immediately after the Phase 1 route-group migration. Root cause: the _open() effect checks !user?.firm_type without first confirming useAuth()'s isLoading has finished. If the panel's opening logic runs before the async /api/auth/me fetch resolves, user is still null and the check incorrectly treats firm_type as unset, showing the onboarding question to a firm that has already completed it.
 
-This task is Phase 1 of two: migrate only dashboard, engagements, and clients (both the list page and the [id] detail page) as a proof of concept, verify cross-page conversation persistence actually works end to end, before rolling the same pattern out to the remaining 20 pages in a follow-up task.
-
-This is the highest-risk structural change made to this codebase this session -- it touches file locations, not just file contents, across the app's most-used pages. Move slowly, verify every step before proceeding to the next, and stop to report rather than guess if anything about the file structure does not match what is described below.
+2. The "New engagement" suggestion chip is functionally identical to "Go to Engagements" -- both just navigate to /engagements with no distinction, even though a working "open the new engagement form directly" action (new-engagement) already exists and is used successfully elsewhere in this file.
 
 ## ACTION
 
-Step 1: Create the route group layout.
+File: /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-Create /home/corby/jamm-os/frontend/src/app/(app)/layout.tsx:
+Fix 1 -- import useAuth's isLoading and wait for it before evaluating firm_type in the _open() effect. Find where user is currently obtained via useAuth() in this file (likely already destructured near the top of the component) and confirm isLoading is also destructured from the same call. Then, inside the _open async function, before the existing "if (!user?.firm_type)" check, add a wait similar to the existing uiContext.ready wait pattern:
 
-// path: frontend/src/app/(app)/layout.tsx
-import { AppShell } from '@/components/layout/AppShell'
+          if (isLoadingAuth) {
+            let waited = 0
+            while (isLoadingAuth && waited < 1500) {
+              await new Promise((resolve) => setTimeout(resolve, 100))
+              waited += 100
+            }
+          }
 
-export default function AppGroupLayout({
-  children,
-}: {
-  children: React.ReactNode
-}) {
-  return <AppShell>{children}</AppShell>
-}
+Note: since isLoading is a value from a hook, not a ref, a simple closure-captured while loop like this will not see updates to it across renders. Instead, use a ref that mirrors isLoading's current value, updated via a separate small effect:
 
-Step 2: Move the four page files into the new route group, preserving their exact relative paths and all dynamic segment folder names.
+  const isLoadingAuthRef = useRef(true)
+  useEffect(() => {
+    isLoadingAuthRef.current = isLoading
+  }, [isLoading])
 
-Move (using git mv to preserve history, not delete-and-recreate):
+Then inside _open, wait on the ref instead:
 
-git mv frontend/src/app/dashboard frontend/src/app/(app)/dashboard
-git mv frontend/src/app/engagements frontend/src/app/(app)/engagements
-git mv frontend/src/app/clients frontend/src/app/(app)/clients
+          if (isLoadingAuthRef.current) {
+            let waited = 0
+            while (isLoadingAuthRef.current && waited < 1500) {
+              await new Promise((resolve) => setTimeout(resolve, 100))
+              waited += 100
+            }
+          }
 
-Note: engagements and clients folders each already contain their own [id] subfolder or similar nested routes -- moving the parent folder moves all nested routes automatically. Confirm after each git mv that the nested dynamic route folders moved correctly by listing the new directory contents before proceeding to the next git mv.
+Place this new wait block right after the existing uiContext.ready wait block, before the pathname.startsWith('/dashboard') check, so both readiness conditions (page context and auth) are satisfied before any firm_type-dependent branching happens.
 
-Step 3: In each of the four now-moved page.tsx files (dashboard/page.tsx, engagements/page.tsx, clients/page.tsx, clients/[id]/page.tsx), remove every <AppShell> opening tag and its matching </AppShell> closing tag, while preserving everything between them exactly as-is (the actual page content, loading states, and error states must remain completely unchanged, only the wrapper tags are removed). Also remove the now-unused AppShell import line from each file's import block.
+Fix 2 -- change the 'New engagement' chip to trigger the existing new-engagement modal action instead of a plain route navigation. In the handleSuggestion function, the routes map currently includes 'New engagement': '/engagements'. Remove this specific entry from the plain routes map, and add a special case before or after the existing route lookup that handles 'New engagement' by calling executeAction directly with the modal action shape already used successfully elsewhere in this file for new-engagement (matching whatever exact action.type and structure the existing working new-engagement modal action uses, found via the modalLabel map reference at VERIFY BEFORE ACT).
 
-For dashboard/page.tsx: 2 <AppShell> instances to unwrap (a loading/error state and the main success state).
-For engagements/page.tsx: 2 instances.
-For clients/page.tsx: 2 instances.
-For clients/[id]/page.tsx: 3 instances (a loading state, a not-found state, and the main state).
-
-Each unwrap means deleting just the <AppShell> and </AppShell> lines themselves and dedenting the content between them if needed for readability, not deleting or altering the JSX content itself. Do this one file at a time, verifying the AppShell count drops to zero in that specific file before moving to the next file.
-
-Do not modify AppShell.tsx itself. Do not touch any of the other 19 pages that still individually import AppShell -- those remain unchanged in this phase and will continue to work exactly as before, just without the persistence fix yet. Do not modify ConciergePanel.tsx in this task.
+Do not change any other suggestion chip mapping. Do not change the show_briefing_again, set_firm_type, or any other action handling. Do not touch any other file.
 
 ## VERIFY AFTER ACT
 
-find /home/corby/jamm-os/frontend/src/app/\(app\) -type f -name "*.tsx"
+grep -n "isLoadingAuthRef" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-Expected: dashboard/page.tsx, engagements/page.tsx, clients/page.tsx, clients/[id]/page.tsx (and any other files that were nested inside the original engagements/ or clients/ folders, such as loading.tsx or additional dynamic routes) all present under the new (app) route group.
+Expected: the ref declaration, its update effect, and its use inside the _open wait block, all present.
 
-grep -c "<AppShell" "/home/corby/jamm-os/frontend/src/app/(app)/dashboard/page.tsx" "/home/corby/jamm-os/frontend/src/app/(app)/engagements/page.tsx" "/home/corby/jamm-os/frontend/src/app/(app)/clients/page.tsx" "/home/corby/jamm-os/frontend/src/app/(app)/clients/[id]/page.tsx"
+grep -n "'New engagement'" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-Expected: 0 for all four files -- every AppShell wrapper tag removed.
-
-grep -n "import.*AppShell" "/home/corby/jamm-os/frontend/src/app/(app)/dashboard/page.tsx" "/home/corby/jamm-os/frontend/src/app/(app)/engagements/page.tsx" "/home/corby/jamm-os/frontend/src/app/(app)/clients/page.tsx" "/home/corby/jamm-os/frontend/src/app/(app)/clients/[id]/page.tsx"
-
-Expected: no matches -- unused import removed from all four.
+Expected: no longer present in the plain routes map; present instead wherever the new special-case handling for this chip was added.
 
 cd /home/corby/jamm-os/frontend
-rm -rf .next
 npm run build
 
-Expected: zero errors, and the build output's route list still shows /dashboard, /engagements, /clients, and /clients/[id] as valid routes (route groups do not appear in the URL, Next.js resolves them transparently).
+Expected: zero TypeScript errors.
 
-## MANUAL VERIFICATION (the actual test -- this is what actually proves the fix)
+## MANUAL VERIFICATION (the actual test)
 
-1. Restart the frontend with a clean build (the rm -rf .next above already forces this).
-2. Log in, navigate to Dashboard, open the Concierge panel, ask a real question (e.g. "how do I add a new engagement") and get a real answer.
-3. Click the "Go to Engagements" suggestion chip that appears below the answer.
-4. Confirm you land on the Engagements page AND the panel still shows the full prior conversation (the question and answer from step 2), not a fresh "Let's get ready to work" message.
-5. Ask a follow-up question on the Engagements page and confirm it works normally, continuing the same conversation.
-6. Navigate to Clients using the sidebar (not a chip) and confirm the conversation still persists.
-7. Open a specific client's detail page and confirm the conversation still persists there too.
-8. Regression check: navigate to a page NOT in this phase's migration (e.g. Staff, Billing, Settings) and confirm the conversation DOES still reset there for now, since those 19 pages have not been migrated yet -- this is expected and will be fixed in Phase 2, not a failure of this task.
-9. Regression check: confirm the /portal client-facing login page is completely unaffected and still has no sidebar or Concierge panel.
+1. Restart the frontend with a clean build.
+2. Log in as a firm with firm_type already set (Riverside). Navigate directly to Dashboard as the very first page load of a fresh browser session (private window), open the Concierge panel immediately.
+3. Confirm the onboarding "what does your firm do most" question does NOT appear -- confirm either the morning briefing or the plain "Let's get ready to work" message appears instead, matching a firm with firm_type already configured.
+4. Repeat step 2-3 three times with fresh private windows to confirm this holds consistently, not just once, since race conditions can be intermittent.
+5. Ask the Concierge a question that produces a "New engagement" suggestion chip (e.g. ask about creating an engagement), click the chip, and confirm it opens the New Engagement drawer/modal directly rather than just navigating to the plain Engagements list page.
 
-Report what you observe at steps 4 through 7 specifically, since that is the actual proof this phase worked.
+Report what you observe at steps 3 (across all three attempts) and 5.
 
 ## GIT
 
 cd /home/corby/jamm-os
 git add -A
-git commit -m "fix: Phase 1 -- move AppShell into a shared (app) route group layout for dashboard, engagements, and clients pages, so the Concierge panel and its conversation state persist across navigation between these pages instead of fully remounting and losing all state on every route change. Phase 2 will roll this pattern out to the remaining pages."
+git commit -m "fix: Concierge panel now waits for useAuth's isLoading to resolve before evaluating firm_type, preventing the onboarding question from incorrectly reappearing for firms that already have firm_type set; also fixed the New engagement suggestion chip to open the new-engagement form directly instead of just navigating to the plain Engagements list, matching what Go to Engagements already does"
 git pull --rebase origin main
 git push origin main
 

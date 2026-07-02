@@ -87,7 +87,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
     '/settings': 'Settings',
     '/firm-chat': 'Firm Chat',
   }
-  const { user } = useAuth()
+  const { user, isLoading } = useAuth()
   const uiContext = useConciergeContext()
   const currentPage = uiContext.entity_name
     ? uiContext.entity_name
@@ -145,6 +145,10 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const hasInitialized = useRef(false)
+  const isLoadingAuthRef = useRef(true)
+  useEffect(() => {
+    isLoadingAuthRef.current = isLoading
+  }, [isLoading])
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -393,6 +397,13 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
               waited += 100
             }
           }
+          if (isLoadingAuthRef.current) {
+            let waited = 0
+            while (isLoadingAuthRef.current && waited < 1500) {
+              await new Promise((resolve) => setTimeout(resolve, 100))
+              waited += 100
+            }
+          }
           if (pathname.startsWith('/dashboard')) {
             setBriefingLoading(true)
             try {
@@ -519,7 +530,10 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
       'Go to Documents': '/documents',
       'Go to Dashboard': '/dashboard',
       'Import clients': '/clients',
-      'New engagement': '/engagements',
+    }
+    if (label === 'New engagement') {
+      void executeAction({ type: 'navigate-and-open', route: '/engagements', modal: 'new-engagement' })
+      return
     }
     const route = routes[label]
     if (route) setTimeout(() => router.push(route), 0)
