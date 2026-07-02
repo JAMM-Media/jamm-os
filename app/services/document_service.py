@@ -135,6 +135,48 @@ def download_document(
 
     log_event(
         firm_id=firm_id,
+        event_type="document.downloaded",
+        entity_type="document",
+        entity_id=doc.id,
+        actor_type="staff",
+        actor_id=current_user_id,
+        metadata={
+            "days_since_upload": (datetime.now(timezone.utc) - doc.created_at).days
+                if doc.created_at else None,
+            "filename": doc.filename if hasattr(doc, 'filename') else None,
+            "action": "presigned_url_generated",
+        }
+    )
+
+    return doc, url
+
+
+def view_document(
+    *,
+    db: Session,
+    document_id: UUID,
+    firm_id: UUID,
+    current_user_id: UUID,
+    ip_address: Optional[str] = None,
+    user_agent: Optional[str] = None,
+):
+    doc = crud_document.get_document(db, document_id=document_id, firm_id=firm_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    crud_document.write_audit_log(
+        db=db, firm_id=firm_id, action="view",
+        document_id=doc.id, user_id=current_user_id, ip_address=ip_address,
+    )
+    write_audit_log(
+        db=db, firm_id=firm_id, action="document.accessed",
+        actor_id=current_user_id, actor_type="staff",
+        entity_type="document", entity_id=doc.id,
+        ip_address=ip_address, user_agent=user_agent,
+    )
+
+    log_event(
+        firm_id=firm_id,
         event_type="document.viewed",
         entity_type="document",
         entity_id=doc.id,
@@ -147,7 +189,7 @@ def download_document(
         }
     )
 
-    return doc, url
+    return doc
 
 
 def delete_document(

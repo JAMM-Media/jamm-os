@@ -163,3 +163,27 @@ def update_checklist_item_status(
     if error == "item_not_found":
         raise HTTPException(status_code=400, detail=f"Item '{item_id}' not found in checklist")
     return updated
+
+
+# ---------------------------------------------------------
+# SEND REMINDER
+# ---------------------------------------------------------
+@router.post("/{request_id}/remind", response_model=DocumentRequestOut)
+def send_document_request_reminder(
+    request_id: UUID,
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    current_user: User = Depends(get_current_user),
+    _: object = Depends(require_manager_or_above),
+):
+    doc_request, error = dr_service.send_document_request_reminder(
+        db=db, request_id=request_id, firm_id=current_firm.id,
+        current_user_id=current_user.id,
+    )
+    if error == "request_not_found":
+        raise HTTPException(status_code=404, detail="Document request not found")
+    if error == "already_completed":
+        raise HTTPException(status_code=400, detail="Document request is already completed")
+    if error == "no_client_email":
+        raise HTTPException(status_code=400, detail="Client has no email address on file")
+    return doc_request
