@@ -38,6 +38,24 @@ export default function EngagementsPage() {
   const [saveAsTemplateEngagement, setSaveAsTemplateEngagement] = useState<Engagement | null>(null)
   const [ackUploaderOpen, setAckUploaderOpen] = useState(false)
 
+  useEffect(() => {
+    const raw = sessionStorage.getItem('jamm_concierge_pending')
+    if (!raw) return
+    try {
+      const action = JSON.parse(raw)
+      if (Date.now() - (action._ts ?? 0) > 10000) {
+        sessionStorage.removeItem('jamm_concierge_pending')
+        return
+      }
+      if (action.modal === 'new-engagement') {
+        sessionStorage.removeItem('jamm_concierge_pending')
+        setModalOpen(true)
+      }
+    } catch {
+      sessionStorage.removeItem('jamm_concierge_pending')
+    }
+  }, [])
+
   const { data, isLoading, error } = useFetch(() => engagementsApi.list(0, 100), [])
   const { data: clientsData, isLoading: clientsLoading } = useFetch(() => clientsApi.list(0, 100), [])
   const serverEngagements = data?.items ?? []

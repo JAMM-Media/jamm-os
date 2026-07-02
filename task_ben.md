@@ -49,78 +49,57 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-# Task: Fix onboarding message race condition and correct the "New engagement" chip to open the actual new-engagement form
+# Task: Add missing jamm_concierge_pending consumption to Engagements page so the New Engagement chip actually opens the modal
 
 USE: claude sonnet
 
 ## VERIFY BEFORE ACT
 
-sed -n '383,420p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+sed -n '1,40p' "/home/corby/jamm-os/frontend/src/app/(app)/engagements/page.tsx"
 
-Confirm the current _open() effect: it checks !user?.firm_type to decide whether to show the onboarding question, with no check on isLoading from useAuth() beforehand, meaning if user is still null/loading at the moment this effect runs, firm_type will incorrectly appear unset even for a firm that already has it configured.
+Confirm modalOpen (useState(false)) is the existing state variable controlling the New Engagement modal's visibility, already wired to the "+ New Engagement" button via setModalOpen(true), and confirm useEffect is already imported.
 
-grep -n "isLoading" /home/corby/jamm-os/frontend/src/lib/hooks/useAuth.tsx
+sed -n '25,50p' "/home/corby/jamm-os/frontend/src/app/(app)/clients/page.tsx"
 
-Confirm isLoading is exposed on the AuthContextType and set to false only after the initial /api/auth/me fetch completes.
-
-grep -n "'New engagement'\|'new-engagement'" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
-
-Confirm the current handleSuggestion routes map sends 'New engagement' to the plain route '/engagements', identical to 'Go to Engagements', and confirm the existing 'new-engagement' modal action (already used successfully elsewhere, per modalLabel map showing 'Opened New Engagement drawer') that this chip should trigger instead.
+Confirm the exact working reference pattern already used on the Clients page: an on-mount useEffect reading jamm_concierge_pending from sessionStorage, checking the action is less than 10 seconds old (via _ts), matching on action.modal, and calling the local modal-open setter.
 
 ## WHAT IS WRONG
 
-Confirmed via live testing: two separate, small bugs.
-
-1. The onboarding "what does your firm do most" question sometimes reappears for firms that already have firm_type set, immediately after the Phase 1 route-group migration. Root cause: the _open() effect checks !user?.firm_type without first confirming useAuth()'s isLoading has finished. If the panel's opening logic runs before the async /api/auth/me fetch resolves, user is still null and the check incorrectly treats firm_type as unset, showing the onboarding question to a firm that has already completed it.
-
-2. The "New engagement" suggestion chip is functionally identical to "Go to Engagements" -- both just navigate to /engagements with no distinction, even though a working "open the new engagement form directly" action (new-engagement) already exists and is used successfully elsewhere in this file.
+Confirmed via live testing and code tracing: the Concierge's "New engagement" suggestion chip was just updated to trigger a navigate-and-open action with modal: 'new-engagement', targeting the existing new-engagement modal action already used successfully elsewhere in the app (per the modalLabel map in ConciergePanel.tsx showing "Opened New Engagement drawer"). The write side of this mechanism works correctly -- ConciergePanel.tsx correctly stores the pending action in sessionStorage under jamm_concierge_pending before navigating. However, unlike clients/page.tsx, clients/[id]/page.tsx, settings/page.tsx, and settings/team/page.tsx, which all have an on-mount effect that reads and consumes this pending action to open their respective modals, engagements/page.tsx has no such consumption logic at all. This means clicking "New engagement" correctly navigates to the Engagements page but the modal never opens, since nothing on this page is listening for the pending action. This is a pre-existing gap in the modal action's implementation coverage, not something introduced by tonight's chip fix -- the chip fix correctly pointed at a real mechanism that was simply never fully wired up for this specific page.
 
 ## ACTION
 
-File: /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+File: /home/corby/jamm-os/frontend/src/app/(app)/engagements/page.tsx
 
-Fix 1 -- import useAuth's isLoading and wait for it before evaluating firm_type in the _open() effect. Find where user is currently obtained via useAuth() in this file (likely already destructured near the top of the component) and confirm isLoading is also destructured from the same call. Then, inside the _open async function, before the existing "if (!user?.firm_type)" check, add a wait similar to the existing uiContext.ready wait pattern:
+Add an on-mount effect matching the exact pattern already used in clients/page.tsx, placed near the other useState declarations at the top of the component:
 
-          if (isLoadingAuth) {
-            let waited = 0
-            while (isLoadingAuth && waited < 1500) {
-              await new Promise((resolve) => setTimeout(resolve, 100))
-              waited += 100
-            }
-          }
-
-Note: since isLoading is a value from a hook, not a ref, a simple closure-captured while loop like this will not see updates to it across renders. Instead, use a ref that mirrors isLoading's current value, updated via a separate small effect:
-
-  const isLoadingAuthRef = useRef(true)
   useEffect(() => {
-    isLoadingAuthRef.current = isLoading
-  }, [isLoading])
+    const raw = sessionStorage.getItem('jamm_concierge_pending')
+    if (!raw) return
+    try {
+      const action = JSON.parse(raw)
+      if (Date.now() - (action._ts ?? 0) > 10000) {
+        sessionStorage.removeItem('jamm_concierge_pending')
+        return
+      }
+      if (action.modal === 'new-engagement') {
+        sessionStorage.removeItem('jamm_concierge_pending')
+        setModalOpen(true)
+      }
+    } catch {
+      sessionStorage.removeItem('jamm_concierge_pending')
+    }
+  }, [])
 
-Then inside _open, wait on the ref instead:
+Place this effect after the existing useState declarations, in the same relative position clients/page.tsx uses (immediately after the relevant state variables, before any other effects). useEffect is already imported in this file, confirmed in VERIFY BEFORE ACT.
 
-          if (isLoadingAuthRef.current) {
-            let waited = 0
-            while (isLoadingAuthRef.current && waited < 1500) {
-              await new Promise((resolve) => setTimeout(resolve, 100))
-              waited += 100
-            }
-          }
-
-Place this new wait block right after the existing uiContext.ready wait block, before the pathname.startsWith('/dashboard') check, so both readiness conditions (page context and auth) are satisfied before any firm_type-dependent branching happens.
-
-Fix 2 -- change the 'New engagement' chip to trigger the existing new-engagement modal action instead of a plain route navigation. In the handleSuggestion function, the routes map currently includes 'New engagement': '/engagements'. Remove this specific entry from the plain routes map, and add a special case before or after the existing route lookup that handles 'New engagement' by calling executeAction directly with the modal action shape already used successfully elsewhere in this file for new-engagement (matching whatever exact action.type and structure the existing working new-engagement modal action uses, found via the modalLabel map reference at VERIFY BEFORE ACT).
-
-Do not change any other suggestion chip mapping. Do not change the show_briefing_again, set_firm_type, or any other action handling. Do not touch any other file.
+Do not add prefill handling (unlike the new-client case, the new-engagement modal action currently has no prefill fields defined anywhere in the codebase, so none should be invented here). Do not change modalOpen's existing wiring to the "+ New Engagement" button or the empty-state "New" action. Do not touch any other file.
 
 ## VERIFY AFTER ACT
 
-grep -n "isLoadingAuthRef" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+grep -n "jamm_concierge_pending" "/home/corby/jamm-os/frontend/src/app/(app)/engagements/page.tsx"
 
-Expected: the ref declaration, its update effect, and its use inside the _open wait block, all present.
-
-grep -n "'New engagement'" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
-
-Expected: no longer present in the plain routes map; present instead wherever the new special-case handling for this chip was added.
+Expected: present, with the read, the 10-second freshness check, and the modal === 'new-engagement' match all visible.
 
 cd /home/corby/jamm-os/frontend
 npm run build
@@ -129,19 +108,20 @@ Expected: zero TypeScript errors.
 
 ## MANUAL VERIFICATION (the actual test)
 
-1. Restart the frontend with a clean build.
-2. Log in as a firm with firm_type already set (Riverside). Navigate directly to Dashboard as the very first page load of a fresh browser session (private window), open the Concierge panel immediately.
-3. Confirm the onboarding "what does your firm do most" question does NOT appear -- confirm either the morning briefing or the plain "Let's get ready to work" message appears instead, matching a firm with firm_type already configured.
-4. Repeat step 2-3 three times with fresh private windows to confirm this holds consistently, not just once, since race conditions can be intermittent.
-5. Ask the Concierge a question that produces a "New engagement" suggestion chip (e.g. ask about creating an engagement), click the chip, and confirm it opens the New Engagement drawer/modal directly rather than just navigating to the plain Engagements list page.
+1. Restart the frontend.
+2. On the Dashboard, ask the Concierge a question that produces a "New engagement" suggestion chip.
+3. Click the chip.
+4. Confirm you land on the Engagements page AND the New Engagement modal/drawer is now open automatically, not just the plain page.
+5. Regression check: click the "+ New Engagement" button directly (not via the chip) and confirm it still opens the modal normally, unaffected by this change.
+6. Regression check: navigate to Engagements via a normal method (sidebar, if reachable, or direct navigation) with no pending action in sessionStorage, and confirm the modal does NOT auto-open when there's nothing pending.
 
-Report what you observe at steps 3 (across all three attempts) and 5.
+Report what you observe at step 4 specifically.
 
 ## GIT
 
 cd /home/corby/jamm-os
 git add -A
-git commit -m "fix: Concierge panel now waits for useAuth's isLoading to resolve before evaluating firm_type, preventing the onboarding question from incorrectly reappearing for firms that already have firm_type set; also fixed the New engagement suggestion chip to open the new-engagement form directly instead of just navigating to the plain Engagements list, matching what Go to Engagements already does"
+git commit -m "fix: add missing jamm_concierge_pending consumption to Engagements page, so the Concierge's New engagement suggestion chip actually opens the New Engagement modal after navigating, matching the same pattern already implemented on Clients, Client Detail, and Settings pages"
 git pull --rebase origin main
 git push origin main
 
