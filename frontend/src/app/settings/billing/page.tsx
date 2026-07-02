@@ -1,15 +1,28 @@
 // frontend/src/app/settings/billing/page.tsx
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, Suspense } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
 import { AppShell } from '@/components/layout/AppShell'
+import { StatusBadge } from '@/components/ui/StatusBadge'
 import { onConciergeAction } from '@/lib/events/conciergeEvents'
 import api from '@/lib/api'
 
-export default function SettingsBillingPage() {
+interface StripeStatus {
+  connected: boolean
+  charges_enabled: boolean
+  payouts_enabled: boolean
+  details_submitted: boolean
+  stripe_account_id?: string
+}
+
+function SettingsBillingContent() {
+  const searchParams = useSearchParams()
   const stripeRef = useRef<HTMLDivElement>(null)
   const [connecting, setConnecting] = useState(false)
+  const [status, setStatus] = useState<StripeStatus | null>(null)
+  const [loadingStatus, setLoadingStatus] = useState(true)
 
   useEffect(() => {
     return onConciergeAction((action) => {
@@ -18,6 +31,32 @@ export default function SettingsBillingPage() {
       }
     })
   }, [])
+
+  async function fetchStatus() {
+    try {
+      const resp = await api.get('/stripe/status')
+      setStatus(resp.data)
+    } catch {
+      toast.error('Failed to load Stripe connection status.')
+    } finally {
+      setLoadingStatus(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchStatus()
+  }, [])
+
+  useEffect(() => {
+    const connected = searchParams.get('connected')
+    const error = searchParams.get('error')
+    if (connected === 'stripe') {
+      toast.success('Stripe connected successfully.')
+      fetchStatus()
+    }
+    if (error === 'stripe_already_connected') toast.error('This firm already has a Stripe account connected.')
+    if (error === 'stripe_failed') toast.error('Stripe connection failed. Please try again.')
+  }, [searchParams])
 
   async function handleConnectStripe() {
     setConnecting(true)
@@ -60,15 +99,43 @@ export default function SettingsBillingPage() {
             directly through the portal. Required before any invoice can be sent for online
             collection.
           </p>
-          <button
-            className="h-8 px-4 rounded-[6px] bg-[#635BFF] text-white text-[12px] font-medium hover:opacity-90 transition-opacity disabled:opacity-60"
-            onClick={handleConnectStripe}
-            disabled={connecting}
-          >
-            {connecting ? 'Connecting…' : 'Connect Stripe'}
-          </button>
+          {loadingStatus ? (
+            <div className="h-8 w-32 rounded-[6px] bg-[#F3F4F6] dark:bg-[#333333] animate-pulse" />
+          ) : status?.connected ? (
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center gap-2">
+                <StatusBadge variant="complete" label="Connected" />
+                {status.stripe_account_id && (
+                  <span className="text-[11px] text-[#6B7280]">{status.stripe_account_id}</span>
+                )}
+              </div>
+              {status.charges_enabled && status.payouts_enabled ? (
+                <p className="text-[11px] text-[#6B7280]">Charges and payouts are enabled.</p>
+              ) : (
+                <p className="text-[11px] text-status-amber-text">
+                  Stripe needs additional details before payments can go live.
+                </p>
+              )}
+            </div>
+          ) : (
+            <button
+              className="h-8 px-4 rounded-[6px] bg-[#635BFF] text-white text-[12px] font-medium hover:opacity-90 transition-opacity disabled:opacity-60"
+              onClick={handleConnectStripe}
+              disabled={connecting}
+            >
+              {connecting ? 'Connecting…' : 'Connect Stripe'}
+            </button>
+          )}
         </div>
       </div>
     </AppShell>
+  )
+}
+
+export default function SettingsBillingPage() {
+  return (
+    <Suspense fallback={<div />}>
+      <SettingsBillingContent />
+    </Suspense>
   )
 }
