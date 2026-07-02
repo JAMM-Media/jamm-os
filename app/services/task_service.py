@@ -55,6 +55,15 @@ def update_task(
     old_assigned = str(task.assigned_to) if task.assigned_to else None
     old_due_date = task.due_date
 
+    # Fields already covered by a dedicated event below -- excluded from the
+    # generic no-silent-changes delta so they are not double-logged.
+    _EVENTED_FIELDS = {"status", "assigned_to", "due_date"}
+    _tracked_fields = [
+        f for f in payload.model_dump(exclude_unset=True).keys()
+        if f not in _EVENTED_FIELDS
+    ]
+    _old_values = {f: getattr(task, f) for f in _tracked_fields}
+
     updated = crud_task.update_task(db, task, payload)
 
     new_status = str(updated.status) if updated.status else None
@@ -130,6 +139,21 @@ def update_task(
                 "days_before_original_due": (old_due_date - datetime.now(timezone.utc).date()).days
                     if old_due_date else None,
             }
+        )
+
+    from app.services.behavioral_log import build_changed_fields
+
+    _new_values = {f: getattr(updated, f) for f in _tracked_fields}
+    _changed_fields = build_changed_fields(_old_values, _new_values)
+    if _changed_fields:
+        log_event(
+            firm_id=updated.firm_id,
+            event_type="task.updated",
+            entity_type="task",
+            entity_id=updated.id,
+            actor_type="staff",
+            actor_id=current_user_id,
+            metadata={"changed_fields": _changed_fields},
         )
 
     return updated

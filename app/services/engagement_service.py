@@ -116,6 +116,15 @@ async def update_engagement(
     old_deadline = engagement.filing_deadline
     old_assigned = str(engagement.assigned_to) if hasattr(engagement, 'assigned_to') and engagement.assigned_to else None
 
+    # Fields already covered by a dedicated event below -- excluded from the
+    # generic no-silent-changes delta so they are not double-logged.
+    _EVENTED_FIELDS = {"status", "filing_deadline", "extended_deadline"}
+    _tracked_fields = [
+        f for f in payload.model_dump(exclude_unset=True).keys()
+        if f not in _EVENTED_FIELDS
+    ]
+    _old_values = {f: getattr(engagement, f) for f in _tracked_fields}
+
     updated = crud_engagement.update_engagement(db, engagement, payload)
 
     new_status = str(updated.status) if updated.status else None
@@ -249,6 +258,21 @@ async def update_engagement(
                     if hasattr(updated, 'extended_deadline') and updated.extended_deadline else None,
                 "form_type": str(updated.engagement_type) if updated.engagement_type else None,
             }
+        )
+
+    from app.services.behavioral_log import build_changed_fields
+
+    _new_values = {f: getattr(updated, f) for f in _tracked_fields}
+    _changed_fields = build_changed_fields(_old_values, _new_values)
+    if _changed_fields:
+        log_event(
+            firm_id=updated.firm_id,
+            event_type="engagement.updated",
+            entity_type="engagement",
+            entity_id=updated.id,
+            actor_type="staff",
+            actor_id=current_user_id,
+            metadata={"changed_fields": _changed_fields},
         )
 
     return updated

@@ -4,6 +4,9 @@ import logging
 import threading
 import uuid
 from typing import Optional
+from datetime import date, datetime
+from decimal import Decimal
+from enum import Enum
 
 from app.db.session import SessionLocal
 from app.models.behavioral_event import BehavioralEvent
@@ -116,3 +119,54 @@ def log_setting_changes(
                 "to_value": _safe(new_v),
             },
         )
+
+
+# Field name substrings that trigger redaction under the IRS Publication 4557
+# no-silent-changes rule: the event records THAT the field changed, never the
+# values themselves.
+SENSITIVE_FIELD_MARKERS = ("ssn", "ein", "tax_id", "bank", "routing", "account_number")
+
+
+def _is_sensitive_field(field_name: str) -> bool:
+    lowered = field_name.lower()
+    return any(marker in lowered for marker in SENSITIVE_FIELD_MARKERS)
+
+
+def _serialize_for_jsonb(value):
+    """Recursively cast UUIDs, enums, dates, and Decimals to strings so JSONB accepts them."""
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, (uuid.UUID, Decimal, date, datetime)):
+        return str(value)
+    if isinstance(value, Enum):
+        return value.value if hasattr(value, "value") else str(value)
+    if isinstance(value, dict):
+        return {k: _serialize_for_jsonb(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_serialize_for_jsonb(v) for v in value]
+    return str(value)
+
+
+def build_changed_fields(old_values: dict, new_values: dict) -> dict:
+    """
+    Builds the {field_name: {"from": ..., "to": ...}} delta for the
+    no-silent-changes generic *.updated events.
+
+    old_values / new_values must share the same keys (the set of fields the
+    update payload actually touched). Fields whose value did not change are
+    omitted. Sensitive-named fields (ssn, ein, tax_id, bank, routing,
+    account_number) are recorded as changed but with both values redacted.
+    """
+    changed = {}
+    for field_name, old_v in old_values.items():
+        new_v = new_values.get(field_name)
+        if old_v == new_v:
+            continue
+        if _is_sensitive_field(field_name):
+            changed[field_name] = {"from": "redacted", "to": "redacted"}
+        else:
+            changed[field_name] = {
+                "from": _serialize_for_jsonb(old_v),
+                "to": _serialize_for_jsonb(new_v),
+            }
+    return changed

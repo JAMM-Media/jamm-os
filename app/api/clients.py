@@ -489,6 +489,16 @@ def update_client(
     old_entity_subtype = client.entity_subtype
     old_is_active = client.is_active
     old_portal_access = client.portal_access_enabled
+
+    # Fields already covered by a dedicated event below -- excluded from the
+    # generic no-silent-changes delta so they are not double-logged.
+    _EVENTED_FIELDS = {"entity_type", "entity_subtype", "is_active"}
+    _tracked_fields = [
+        f for f in payload.model_dump(exclude_unset=True).keys()
+        if f not in _EVENTED_FIELDS
+    ]
+    _old_values = {f: getattr(client, f) for f in _tracked_fields}
+
     updated = crud_client.update_client(db, client, payload)
     write_audit_log(
         db=db,
@@ -544,6 +554,21 @@ def update_client(
                 "from_enabled": old_portal_access,
                 "to_enabled": updated.portal_access_enabled,
             }
+        )
+
+    from app.services.behavioral_log import build_changed_fields
+
+    _new_values = {f: getattr(updated, f) for f in _tracked_fields}
+    _changed_fields = build_changed_fields(_old_values, _new_values)
+    if _changed_fields:
+        log_event(
+            firm_id=current_firm.id,
+            event_type="client.updated",
+            entity_type="client",
+            entity_id=client.id,
+            actor_type="staff",
+            actor_id=current_user.id,
+            metadata={"changed_fields": _changed_fields},
         )
 
     return updated

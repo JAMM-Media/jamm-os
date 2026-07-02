@@ -421,6 +421,15 @@ def update_invoice_tracked(
     old_total = float(invoice.total_amount) if invoice.total_amount is not None else None
     old_due_date = invoice.due_date
 
+    # Fields already covered by a dedicated event below -- excluded from the
+    # generic no-silent-changes delta so they are not double-logged.
+    _EVENTED_FIELDS = {"status", "total_amount", "due_date"}
+    _tracked_fields = [
+        f for f in payload.model_dump(exclude_unset=True).keys()
+        if f not in _EVENTED_FIELDS
+    ]
+    _old_values = {f: getattr(invoice, f) for f in _tracked_fields}
+
     updated = crud_invoice.update_invoice(db, invoice, payload)
 
     # Fire events only for meaningful state changes, with before/after
@@ -469,6 +478,21 @@ def update_invoice_tracked(
                 "to_due_date": updated.due_date.isoformat() if updated.due_date else None,
                 "client_id": str(updated.client_id),
             }
+        )
+
+    from app.services.behavioral_log import build_changed_fields
+
+    _new_values = {f: getattr(updated, f) for f in _tracked_fields}
+    _changed_fields = build_changed_fields(_old_values, _new_values)
+    if _changed_fields:
+        log_event(
+            firm_id=firm_id,
+            event_type="invoice.updated",
+            entity_type="invoice",
+            entity_id=updated.id,
+            actor_type="staff",
+            actor_id=current_user_id,
+            metadata={"changed_fields": _changed_fields},
         )
 
     return updated, None
