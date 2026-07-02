@@ -5,7 +5,6 @@ import { useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { useQueryClient } from '@tanstack/react-query'
-import { AppShell } from '@/components/layout/AppShell'
 import { Breadcrumb } from '@/components/layout/Breadcrumb'
 import { engagementsApi, tasksApi, documentsApi } from '@/lib/api'
 import { useFetch } from '@/lib/hooks/useFetch'
@@ -112,28 +111,23 @@ export default function EngagementDetailPage() {
 
   if (isLoading) {
     return (
-      <AppShell>
         <div className="p-6">
           <div className="h-6 w-48 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded mb-4" />
           <div className="h-8 w-72 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded mb-2" />
           <div className="h-4 w-56 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
         </div>
-      </AppShell>
     )
   }
 
   if (!engagement) {
     return (
-      <AppShell>
         <div className="flex items-center justify-center h-full p-6">
           <p className="text-[13px] text-[#6B7280]">Engagement not found.</p>
         </div>
-      </AppShell>
     )
   }
 
-  return (
-    <AppShell>
+  return (<>
       <div className="p-6">
         <Breadcrumb
           items={[
@@ -526,6 +520,5 @@ export default function EngagementDetailPage() {
           </div>
         </div>
       )}
-    </AppShell>
-  )
+  </>)
 }

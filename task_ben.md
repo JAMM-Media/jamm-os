@@ -49,79 +49,59 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-# Task: Add missing jamm_concierge_pending consumption to Engagements page so the New Engagement chip actually opens the modal
+# Task: Fix double-wrapped AppShell on engagements/[id]/page.tsx, a leftover gap from Phase 1
 
 USE: claude sonnet
 
 ## VERIFY BEFORE ACT
 
-sed -n '1,40p' "/home/corby/jamm-os/frontend/src/app/(app)/engagements/page.tsx"
+grep -n "<AppShell\|</AppShell>\|import.*AppShell" "/home/corby/jamm-os/frontend/src/app/(app)/engagements/[id]/page.tsx"
 
-Confirm modalOpen (useState(false)) is the existing state variable controlling the New Engagement modal's visibility, already wired to the "+ New Engagement" button via setModalOpen(true), and confirm useEffect is already imported.
-
-sed -n '25,50p' "/home/corby/jamm-os/frontend/src/app/(app)/clients/page.tsx"
-
-Confirm the exact working reference pattern already used on the Clients page: an on-mount useEffect reading jamm_concierge_pending from sessionStorage, checking the action is less than 10 seconds old (via _ts), matching on action.modal, and calling the local modal-open setter.
+Confirm exactly 3 <AppShell> / </AppShell> pairs at lines 115/121, 127/131, and 136/529, plus the import at line 8.
 
 ## WHAT IS WRONG
 
-Confirmed via live testing and code tracing: the Concierge's "New engagement" suggestion chip was just updated to trigger a navigate-and-open action with modal: 'new-engagement', targeting the existing new-engagement modal action already used successfully elsewhere in the app (per the modalLabel map in ConciergePanel.tsx showing "Opened New Engagement drawer"). The write side of this mechanism works correctly -- ConciergePanel.tsx correctly stores the pending action in sessionStorage under jamm_concierge_pending before navigating. However, unlike clients/page.tsx, clients/[id]/page.tsx, settings/page.tsx, and settings/team/page.tsx, which all have an on-mount effect that reads and consumes this pending action to open their respective modals, engagements/page.tsx has no such consumption logic at all. This means clicking "New engagement" correctly navigates to the Engagements page but the modal never opens, since nothing on this page is listening for the pending action. This is a pre-existing gap in the modal action's implementation coverage, not something introduced by tonight's chip fix -- the chip fix correctly pointed at a real mechanism that was simply never fully wired up for this specific page.
+Confirmed via direct verification: engagements/[id]/page.tsx was physically moved into the (app) route group during Phase 1 (git mv moved the entire engagements folder including its [id] subfolder), but Phase 1's task only explicitly listed engagements/page.tsx for unwrapping, not engagements/[id]/page.tsx. As a result, this file still has its own AppShell wrapper tags, meaning it currently renders AppShell twice on every load: once from the new (app)/layout.tsx (which now correctly wraps every page in the group), and again from its own leftover wrapper tags. This likely produces a duplicate sidebar and duplicate Concierge panel on this specific page, though the exact visual symptom was not directly observed since this page was not part of Phase 1's manual test coverage.
 
 ## ACTION
 
-File: /home/corby/jamm-os/frontend/src/app/(app)/engagements/page.tsx
+File: /home/corby/jamm-os/frontend/src/app/(app)/engagements/[id]/page.tsx
 
-Add an on-mount effect matching the exact pattern already used in clients/page.tsx, placed near the other useState declarations at the top of the component:
+Remove all 3 <AppShell> opening tags and their 3 matching </AppShell> closing tags (at the line pairs confirmed in VERIFY BEFORE ACT), preserving everything between them exactly as-is -- the loading state, not-found state, and main content must remain completely unchanged, only the wrapper tags removed. Remove the AppShell import on line 8.
 
-  useEffect(() => {
-    const raw = sessionStorage.getItem('jamm_concierge_pending')
-    if (!raw) return
-    try {
-      const action = JSON.parse(raw)
-      if (Date.now() - (action._ts ?? 0) > 10000) {
-        sessionStorage.removeItem('jamm_concierge_pending')
-        return
-      }
-      if (action.modal === 'new-engagement') {
-        sessionStorage.removeItem('jamm_concierge_pending')
-        setModalOpen(true)
-      }
-    } catch {
-      sessionStorage.removeItem('jamm_concierge_pending')
-    }
-  }, [])
-
-Place this effect after the existing useState declarations, in the same relative position clients/page.tsx uses (immediately after the relevant state variables, before any other effects). useEffect is already imported in this file, confirmed in VERIFY BEFORE ACT.
-
-Do not add prefill handling (unlike the new-client case, the new-engagement modal action currently has no prefill fields defined anywhere in the codebase, so none should be invented here). Do not change modalOpen's existing wiring to the "+ New Engagement" button or the empty-state "New" action. Do not touch any other file.
+Do not touch any other file in this task.
 
 ## VERIFY AFTER ACT
 
-grep -n "jamm_concierge_pending" "/home/corby/jamm-os/frontend/src/app/(app)/engagements/page.tsx"
+grep -c "<AppShell" "/home/corby/jamm-os/frontend/src/app/(app)/engagements/[id]/page.tsx"
 
-Expected: present, with the read, the 10-second freshness check, and the modal === 'new-engagement' match all visible.
+Expected: 0.
+
+grep -n "import.*AppShell" "/home/corby/jamm-os/frontend/src/app/(app)/engagements/[id]/page.tsx"
+
+Expected: no matches.
 
 cd /home/corby/jamm-os/frontend
+rm -rf .next
 npm run build
 
-Expected: zero TypeScript errors.
+Expected: zero TypeScript errors, /engagements/[id] still resolves as a valid route.
 
-## MANUAL VERIFICATION (the actual test)
+## MANUAL VERIFICATION
 
-1. Restart the frontend.
-2. On the Dashboard, ask the Concierge a question that produces a "New engagement" suggestion chip.
-3. Click the chip.
-4. Confirm you land on the Engagements page AND the New Engagement modal/drawer is now open automatically, not just the plain page.
-5. Regression check: click the "+ New Engagement" button directly (not via the chip) and confirm it still opens the modal normally, unaffected by this change.
-6. Regression check: navigate to Engagements via a normal method (sidebar, if reachable, or direct navigation) with no pending action in sessionStorage, and confirm the modal does NOT auto-open when there's nothing pending.
+1. Restart the frontend with a clean build.
+2. Navigate to any individual engagement's detail page (e.g. click into "2025 S-Corp Tax Return" from the Engagements list).
+3. Confirm only one sidebar and one Concierge panel render, not two.
+4. Confirm the page's actual content (Overview, Tasks, QC Checklist, Documents tabs) renders correctly and completely unchanged.
+5. Confirm conversation persistence still works: ask a question on the Engagements list, click into a specific engagement's detail page, confirm the conversation is still there (this page is inside the (app) group, so persistence should hold here too, same as clients/[id] already does).
 
-Report what you observe at step 4 specifically.
+Report what you observe at steps 3 and 5.
 
 ## GIT
 
 cd /home/corby/jamm-os
 git add -A
-git commit -m "fix: add missing jamm_concierge_pending consumption to Engagements page, so the Concierge's New engagement suggestion chip actually opens the New Engagement modal after navigating, matching the same pattern already implemented on Clients, Client Detail, and Settings pages"
+git commit -m "fix: remove leftover AppShell wrapper tags from engagements/[id]/page.tsx -- a gap from Phase 1 where the file was physically moved into the (app) route group but never had its own now-redundant AppShell tags stripped, causing it to render AppShell twice (once from the new shared layout, once from its own leftover wrapper)"
 git pull --rebase origin main
 git push origin main
 
