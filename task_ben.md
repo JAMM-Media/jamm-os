@@ -49,88 +49,111 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-# Task: Bypass the LLM entirely for the deterministic __OPEN__ trigger, eliminating risk of any model overriding the fixed-output instruction
+# Task: Phase 1 -- Create shared (app) route group layout and migrate dashboard, engagements, clients pages to eliminate AppShell/ConciergePanel remounting on navigation
 
-USE: claude sonnet
+USE: claude fable-5
 
 ## VERIFY BEFORE ACT
 
-sed -n '290,340p' /home/corby/jamm-os/app/api/concierge/route.py
+cat /home/corby/jamm-os/frontend/src/app/layout.tsx
 
-Confirm the concierge_chat function signature: current_firm (with firm_type and concierge_active available), current_user, db all present as parameters before any model call happens. Confirm the guard classifier already special-cases last_user_msg == "__OPEN__" by skipping the safety classifier for it, establishing __OPEN__ as an already-recognized sentinel in this function.
+Confirm the true root layout only wraps QueryProvider, AuthProvider, ThemeProvider, and Toaster -- no AppShell, no Sidebar, no ConciergePanel.
 
-grep -n "def generate_and_log" -A 15 /home/corby/jamm-os/app/api/concierge/route.py
+cat /home/corby/jamm-os/frontend/src/components/layout/AppShell.tsx | head -15
 
-Confirm what generate_and_log logs via ConciergeQuestionLog, to decide whether the __OPEN__ bypass should also create a log entry or deliberately skip it since __OPEN__ is not a real user question (the guard classifier already treats it this way).
+Confirm AppShell's props interface is exactly { children: React.ReactNode }, with no page-specific props required, and pathname is read internally via usePathname(), not passed in.
+
+grep -c "<AppShell" /home/corby/jamm-os/frontend/src/app/dashboard/page.tsx /home/corby/jamm-os/frontend/src/app/engagements/page.tsx /home/corby/jamm-os/frontend/src/app/clients/page.tsx "/home/corby/jamm-os/frontend/src/app/clients/[id]/page.tsx"
+
+Confirm counts match what was previously verified: dashboard 2, engagements 2, clients 2, clients/[id] 3, all with matching closing </AppShell> counts.
 
 ## WHAT IS WRONG
 
-Confirmed via live testing on a clean build: the model (currently claude-sonnet-5, previously claude-opus-4-8 during earlier testing) is sometimes asked to reproduce an exact fixed string for the __OPEN__ empty-state trigger ("Let's get ready to work. I'm ready to help with anything you need." when firm_type is set, or the three-option onboarding question when firm_type is null). The prompt explicitly instructs "output exactly this and nothing else" and "do not add any other text," but this is inherently unreliable to enforce via prompt instruction alone, since the model has full tool access and real firm data available at generation time, creating constant pressure to be "more helpful" than the fixed string allows. This was confirmed to fail with claude-sonnet-5 in production testing, generating rich free-form status reports with invented headers and proactive advice instead of the required string.
+Confirmed via live testing and code tracing: AppShell (which renders Sidebar and ConciergePanel) is individually imported and rendered inside 23 separate page.tsx files across the app, rather than once in a shared Next.js layout. This means every client-side navigation between pages fully unmounts and remounts the entire AppShell tree, including ConciergePanel, destroying all local component state (the messages array holding the active conversation, and the hasInitialized ref meant to prevent the opening flow from re-triggering). This is the root cause of a bug where an active Concierge conversation completely disappears and gets replaced with a fresh opening message whenever the user clicks a "Go to X" suggestion chip or otherwise navigates between pages while the panel is open. Every prior fix to hasInitialized or messages state was addressing symptoms of this deeper structural issue, not the actual cause, since the whole component was being destroyed and recreated on every navigation regardless of any state-management logic inside it.
 
-The __OPEN__ output is fully deterministic given only current_firm.firm_type -- there are exactly four possible correct outputs (the onboarding question if firm_type is null, or one of three identical "Let's get ready to work" messages if firm_type is tax_prep, bookkeeping, or advisory -- note the three firm_type variants currently produce identical text per prior session work, so there are really only two distinct possible outputs). Since there is no actual ambiguity or judgment involved, the correct fix is to stop asking any LLM to generate this output at all, and instead return the fixed string directly from the backend. This makes the __OPEN__ trigger 100% reliable regardless of which model powers the rest of the Concierge, faster (no generation wait), and cheaper (no API call), while leaving every other Concierge interaction (which genuinely benefits from model-generated, context-aware responses) completely unaffected.
+The correct fix is the standard Next.js pattern: move AppShell into a shared layout.tsx so React treats it as a stable, persistent part of the tree across route changes within that layout's scope, instead of tearing it down and rebuilding it per page. A plain root-level layout.tsx cannot be used directly, since /portal has its own separate layout.tsx for the unauthenticated client-facing portal and must never receive the authenticated AppShell. The correct mechanism is a Next.js route group -- a folder named (app) that does not affect the URL structure -- containing its own layout.tsx that wraps AppShell around children, with the authenticated pages physically moved inside that folder.
+
+This task is Phase 1 of two: migrate only dashboard, engagements, and clients (both the list page and the [id] detail page) as a proof of concept, verify cross-page conversation persistence actually works end to end, before rolling the same pattern out to the remaining 20 pages in a follow-up task.
+
+This is the highest-risk structural change made to this codebase this session -- it touches file locations, not just file contents, across the app's most-used pages. Move slowly, verify every step before proceeding to the next, and stop to report rather than guess if anything about the file structure does not match what is described below.
 
 ## ACTION
 
-File: /home/corby/jamm-os/app/api/concierge/route.py
+Step 1: Create the route group layout.
 
-In concierge_chat, immediately after current_firm and body are available (near the top of the function, before the guard classifier block, api_key checks, or any model-related setup), add a bypass for the __OPEN__ sentinel:
+Create /home/corby/jamm-os/frontend/src/app/(app)/layout.tsx:
 
-    last_user_msg_for_open_check = next(
-        (m.content for m in reversed(body.messages) if m.role == "user"),
-        None,
-    )
-    if last_user_msg_for_open_check == "__OPEN__" and len(body.messages) == 1:
-        if not current_firm.firm_type:
-            open_text = (
-                "Welcome to JAMM Concierge. Before we start -- what does your firm do most? "
-                "This lets me point you to the right setup path.\n"
-                "1. Tax prep and returns\n"
-                "2. Bookkeeping and monthly close\n"
-                "3. Advisory and planning"
-            )
-        else:
-            open_text = "Let's get ready to work. I'm ready to help with anything you need."
+// path: frontend/src/app/(app)/layout.tsx
+import { AppShell } from '@/components/layout/AppShell'
 
-        def generate_open_bypass():
-            for line in open_text.split("\n"):
-                yield f"data: {line}\n\n"
+export default function AppGroupLayout({
+  children,
+}: {
+  children: React.ReactNode
+}) {
+  return <AppShell>{children}</AppShell>
+}
 
-        return StreamingResponse(generate_open_bypass(), media_type="text/event-stream")
+Step 2: Move the four page files into the new route group, preserving their exact relative paths and all dynamic segment folder names.
 
-The len(body.messages) == 1 check ensures this only fires on the very first __OPEN__ trigger of a session (a single-message array containing only the __OPEN__ sentinel), not on any later message that might coincidentally match, matching how the frontend only ever sends __OPEN__ as the sole message in a fresh array.
+Move (using git mv to preserve history, not delete-and-recreate):
 
-Do not add a ConciergeQuestionLog entry for this bypass path, since __OPEN__ is not a real user question and the guard classifier already treats it as a non-question sentinel elsewhere in this same function. Add a one-line comment above the bypass explaining this is intentional.
+git mv frontend/src/app/dashboard frontend/src/app/(app)/dashboard
+git mv frontend/src/app/engagements frontend/src/app/(app)/engagements
+git mv frontend/src/app/clients frontend/src/app/(app)/clients
 
-This bypass makes the entire EMPTY STATE -- FIRST OPEN section of prompts.py (the exact-output instructions, the three intake_example blocks, the three firm_type-specific instruction blocks) dead code that is never actually reached by a real __OPEN__ trigger anymore, since the backend now short-circuits before ever calling the model for this case. Do not delete that section of prompts.py in this task -- leave it in place as a reference/fallback in case the bypass is ever removed, but note in your verification output that it is no longer live.
+Note: engagements and clients folders each already contain their own [id] subfolder or similar nested routes -- moving the parent folder moves all nested routes automatically. Confirm after each git mv that the nested dynamic route folders moved correctly by listing the new directory contents before proceeding to the next git mv.
 
-Do not change the morning briefing endpoint, the dashboard-specific opening flow in the frontend, or any other part of this file. Do not touch any other file.
+Step 3: In each of the four now-moved page.tsx files (dashboard/page.tsx, engagements/page.tsx, clients/page.tsx, clients/[id]/page.tsx), remove every <AppShell> opening tag and its matching </AppShell> closing tag, while preserving everything between them exactly as-is (the actual page content, loading states, and error states must remain completely unchanged, only the wrapper tags are removed). Also remove the now-unused AppShell import line from each file's import block.
+
+For dashboard/page.tsx: 2 <AppShell> instances to unwrap (a loading/error state and the main success state).
+For engagements/page.tsx: 2 instances.
+For clients/page.tsx: 2 instances.
+For clients/[id]/page.tsx: 3 instances (a loading state, a not-found state, and the main state).
+
+Each unwrap means deleting just the <AppShell> and </AppShell> lines themselves and dedenting the content between them if needed for readability, not deleting or altering the JSX content itself. Do this one file at a time, verifying the AppShell count drops to zero in that specific file before moving to the next file.
+
+Do not modify AppShell.tsx itself. Do not touch any of the other 19 pages that still individually import AppShell -- those remain unchanged in this phase and will continue to work exactly as before, just without the persistence fix yet. Do not modify ConciergePanel.tsx in this task.
 
 ## VERIFY AFTER ACT
 
-grep -n "generate_open_bypass\|last_user_msg_for_open_check" /home/corby/jamm-os/app/api/concierge/route.py
+find /home/corby/jamm-os/frontend/src/app/\(app\) -type f -name "*.tsx"
 
-Expected: both present, positioned before the guard classifier block.
+Expected: dashboard/page.tsx, engagements/page.tsx, clients/page.tsx, clients/[id]/page.tsx (and any other files that were nested inside the original engagements/ or clients/ folders, such as loading.tsx or additional dynamic routes) all present under the new (app) route group.
 
-python3 -c "from app.api.concierge.route import router; print('OK')"
+grep -c "<AppShell" "/home/corby/jamm-os/frontend/src/app/(app)/dashboard/page.tsx" "/home/corby/jamm-os/frontend/src/app/(app)/engagements/page.tsx" "/home/corby/jamm-os/frontend/src/app/(app)/clients/page.tsx" "/home/corby/jamm-os/frontend/src/app/(app)/clients/[id]/page.tsx"
 
-Expected: OK, no import errors.
+Expected: 0 for all four files -- every AppShell wrapper tag removed.
 
-## MANUAL VERIFICATION (the actual test)
+grep -n "import.*AppShell" "/home/corby/jamm-os/frontend/src/app/(app)/dashboard/page.tsx" "/home/corby/jamm-os/frontend/src/app/(app)/engagements/page.tsx" "/home/corby/jamm-os/frontend/src/app/(app)/clients/page.tsx" "/home/corby/jamm-os/frontend/src/app/(app)/clients/[id]/page.tsx"
 
-1. Restart the backend.
-2. Clear sessionStorage (or use a private window), navigate to a non-dashboard page (Engagements or Clients) for a firm with firm_type already set, and open the Concierge panel for the first time in this session.
-3. Confirm the message is exactly "Let's get ready to work. I'm ready to help with anything you need." with nothing else -- no free-form content, no firm data, no extra sections -- regardless of which model is currently configured as the primary model.
-4. Check DevTools Network tab for this specific request and confirm no call to api.anthropic.com appears for it (bypass should be instant, no LLM round trip).
-5. Regression check: ask a real follow-up question in the same session (not __OPEN__) and confirm normal model-generated responses still work correctly.
-6. Regression check: test the dashboard morning briefing flow separately and confirm it is completely unaffected by this change.
+Expected: no matches -- unused import removed from all four.
 
-Report what you observe at steps 3 and 4 specifically.
+cd /home/corby/jamm-os/frontend
+rm -rf .next
+npm run build
+
+Expected: zero errors, and the build output's route list still shows /dashboard, /engagements, /clients, and /clients/[id] as valid routes (route groups do not appear in the URL, Next.js resolves them transparently).
+
+## MANUAL VERIFICATION (the actual test -- this is what actually proves the fix)
+
+1. Restart the frontend with a clean build (the rm -rf .next above already forces this).
+2. Log in, navigate to Dashboard, open the Concierge panel, ask a real question (e.g. "how do I add a new engagement") and get a real answer.
+3. Click the "Go to Engagements" suggestion chip that appears below the answer.
+4. Confirm you land on the Engagements page AND the panel still shows the full prior conversation (the question and answer from step 2), not a fresh "Let's get ready to work" message.
+5. Ask a follow-up question on the Engagements page and confirm it works normally, continuing the same conversation.
+6. Navigate to Clients using the sidebar (not a chip) and confirm the conversation still persists.
+7. Open a specific client's detail page and confirm the conversation still persists there too.
+8. Regression check: navigate to a page NOT in this phase's migration (e.g. Staff, Billing, Settings) and confirm the conversation DOES still reset there for now, since those 19 pages have not been migrated yet -- this is expected and will be fixed in Phase 2, not a failure of this task.
+9. Regression check: confirm the /portal client-facing login page is completely unaffected and still has no sidebar or Concierge panel.
+
+Report what you observe at steps 4 through 7 specifically, since that is the actual proof this phase worked.
 
 ## GIT
 
 cd /home/corby/jamm-os
 git add -A
-git commit -m "fix: bypass the LLM entirely for the deterministic __OPEN__ empty-state trigger, returning the fixed opening message directly from the backend instead of asking the model to reproduce it exactly, eliminating the risk of any model overriding this hard constraint regardless of which model is configured as primary"
+git commit -m "fix: Phase 1 -- move AppShell into a shared (app) route group layout for dashboard, engagements, and clients pages, so the Concierge panel and its conversation state persist across navigation between these pages instead of fully remounting and losing all state on every route change. Phase 2 will roll this pattern out to the remaining pages."
 git pull --rebase origin main
 git push origin main
 

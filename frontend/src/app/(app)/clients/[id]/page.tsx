@@ -4,7 +4,6 @@
 import { Suspense, useState, useEffect, useRef } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
-import { AppShell } from '@/components/layout/AppShell'
 import { Breadcrumb } from '@/components/layout/Breadcrumb'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { clientsApi, engagementsApi, invoicesApi } from '@/lib/api'
@@ -324,17 +323,14 @@ function ClientDetailContent() {
 
   if (clientLoading) {
     return (
-      <AppShell>
         <div className="flex flex-col items-center justify-center h-full gap-3 p-6">
           <div className="h-6 w-48 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
         </div>
-      </AppShell>
     )
   }
 
   if (!client) {
     return (
-      <AppShell>
         <div className="flex flex-col items-center justify-center h-full gap-3 p-6">
           <p className="text-[13px] font-medium text-brand dark:text-[#EDEEF0]">
             Client not found
@@ -346,12 +342,10 @@ function ClientDetailContent() {
             <ArrowLeft className="h-3 w-3" /> Back to Clients
           </button>
         </div>
-      </AppShell>
     )
   }
 
-  return (
-    <AppShell>
+  return (<>
       <div className="p-6">
         <Breadcrumb
           items={[
@@ -1058,8 +1052,7 @@ function ClientDetailContent() {
         preselectedClientId={clientId}
         initialEngagementType={initialEngagementType}
       />
-    </AppShell>
-  )
+  </>)
 }
 
 export default function ClientDetailPage() {
