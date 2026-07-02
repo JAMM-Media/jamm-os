@@ -22,6 +22,7 @@ from app.models.user import User
 from app.services.automation_presets import seed_firm_presets
 from app.services.tax_organizer_service import seed_firm_organizer_templates
 from app.services.engagement_letter_seed import seed_firm_letter_templates
+from app.services import firm_service
 from app.services import s3 as s3_service
 
 router = APIRouter(prefix="/firms", tags=["firms"])
@@ -36,7 +37,7 @@ router = APIRouter(prefix="/firms", tags=["firms"])
 def create_firm(
     payload: FirmCreate,
     db: Session = Depends(get_db),
-    _: object = Depends(require_system_admin),
+    current_user: User = Depends(require_system_admin),
 ):
     existing = crud_firm.get_firm_by_slug(db, payload.slug)
     if existing:
@@ -44,7 +45,7 @@ def create_firm(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"A firm with the slug '{payload.slug}' already exists.",
         )
-    new_firm = crud_firm.create_firm(db, payload)
+    new_firm = firm_service.create_firm(db, payload, current_user_id=current_user.id)
     seeded = seed_firm_presets(firm_id=new_firm.id, db=db)
     logger.info(f"Firm {new_firm.id} created with {seeded} automation presets")
     seeded_templates = seed_firm_organizer_templates(firm_id=new_firm.id, db=db)

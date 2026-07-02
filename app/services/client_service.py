@@ -44,6 +44,8 @@ def create_client(
                 if hasattr(client, 'entity_type') and client.entity_type else None,
             "source": "manual",
             "client_id": str(client.id),
+            "referral_source": client.referral_source.value if client.referral_source else None,
+            "referring_client_id": str(client.referring_client_id) if client.referring_client_id else None,
         }
     )
 
