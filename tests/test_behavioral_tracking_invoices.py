@@ -170,13 +170,13 @@ def test_send_invoice_reminder_no_email_returns_error():
 
 
 # ---------------------------------------------------------------------------
-# Test 6 -- mark_invoice_partial_payment stub exists and returns None
+# Test 6 -- mark_invoice_partial_payment fires invoice.partial_payment
 # ---------------------------------------------------------------------------
-def test_mark_invoice_partial_payment_stub_exists():
+def test_mark_invoice_partial_payment_fires_event():
     from app.services.invoice_service import mark_invoice_partial_payment
 
     mock_db = MagicMock()
-    mock_invoice = MagicMock()
+    mock_invoice = _mock_invoice(status=InvoiceStatus.sent)
 
     with patch("app.services.invoice_service.log_event") as mock_log:
         result = mark_invoice_partial_payment(
@@ -188,17 +188,22 @@ def test_mark_invoice_partial_payment_stub_exists():
         )
 
     assert result is None
-    mock_log.assert_not_called()
+    assert mock_log.called
+    call_kwargs = mock_log.call_args.kwargs
+    assert call_kwargs["event_type"] == "invoice.partial_payment"
+    assert call_kwargs["metadata"]["amount_paid"] == 500.0
+    assert call_kwargs["metadata"]["remaining_balance"] == 500.0
 
 
 # ---------------------------------------------------------------------------
-# Test 7 -- mark_invoice_refunded stub exists and returns None
+# Test 7 -- mark_invoice_refunded fires invoice.refunded
 # ---------------------------------------------------------------------------
-def test_mark_invoice_refunded_stub_exists():
+def test_mark_invoice_refunded_fires_event():
     from app.services.invoice_service import mark_invoice_refunded
 
     mock_db = MagicMock()
-    mock_invoice = MagicMock()
+    mock_invoice = _mock_invoice(status=InvoiceStatus.paid)
+    mock_invoice.paid_at = datetime(2026, 6, 15, tzinfo=timezone.utc)
 
     with patch("app.services.invoice_service.log_event") as mock_log:
         result = mark_invoice_refunded(
@@ -210,4 +215,8 @@ def test_mark_invoice_refunded_stub_exists():
         )
 
     assert result is None
-    mock_log.assert_not_called()
+    assert mock_log.called
+    call_kwargs = mock_log.call_args.kwargs
+    assert call_kwargs["event_type"] == "invoice.refunded"
+    assert call_kwargs["metadata"]["amount_refunded"] == 250.0
+    assert call_kwargs["metadata"]["reason"] == "duplicate"

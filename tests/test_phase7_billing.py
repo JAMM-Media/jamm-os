@@ -8,7 +8,7 @@ webhook handling, tenant isolation, and portal billing.
 """
 
 import uuid
-from datetime import date
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from unittest.mock import patch
 
@@ -95,6 +95,40 @@ def _create_client_in_db(firm_id):
     finally:
         db.close()
     return client_id
+
+
+def _create_invoice_in_db(
+    firm_id,
+    client_id,
+    total_amount="1000.00",
+    status=InvoiceStatus.sent,
+    sent_at=None,
+    paid_at=None,
+    stripe_payment_intent_id="pi_test_webhook",
+):
+    """Insert an Invoice directly (bypasses POST /invoices/). Returns invoice_id."""
+    db = TestingSessionLocal()
+    try:
+        inv = Invoice(
+            firm_id=firm_id,
+            client_id=client_id,
+            invoice_number=f"INV-{uuid.uuid4().hex[:8]}",
+            subtotal=Decimal(total_amount),
+            tax_rate=Decimal("0.0"),
+            tax_amount=Decimal("0.0"),
+            total_amount=Decimal(total_amount),
+            status=status,
+            sent_at=sent_at or datetime.now(timezone.utc),
+            paid_at=paid_at,
+            stripe_payment_intent_id=stripe_payment_intent_id,
+        )
+        db.add(inv)
+        db.commit()
+        db.refresh(inv)
+        invoice_id = inv.id
+    finally:
+        db.close()
+    return invoice_id
 
 
 def _create_engagement_in_db(firm_id, client_id):
@@ -654,6 +688,248 @@ def test_webhook_account_updated(client, firm_a_owner):
         assert conn.charges_enabled is True
     finally:
         db.close()
+
+
+def test_webhook_partial_payment(client, firm_a_owner):
+    firm_id = uuid.UUID(firm_a_owner["firm_id"])
+    client_id = _create_client_in_db(firm_id)
+    invoice_id = _create_invoice_in_db(
+        firm_id, client_id, total_amount="1000.00", stripe_payment_intent_id="pi_test_partial"
+    )
+
+    fake_event = {
+        "type": "payment_intent.succeeded",
+        "data": {
+            "object": {
+                "id": "pi_test_partial",
+                "metadata": {"invoice_id": str(invoice_id)},
+                "amount_received": 50000,
+                "latest_charge": "ch_test_partial",
+            }
+        },
+    }
+
+    with patch(_WEBHOOK_MOCK, return_value=fake_event), \
+         patch("app.services.invoice_service.log_event") as mock_log:
+        r = client.post(
+            "/payments/webhook",
+            content=b'{"type":"payment_intent.succeeded"}',
+            headers={"stripe-signature": "t=1,v1=fake"},
+        )
+
+    assert r.status_code == 200, r.text
+
+    assert mock_log.called
+    call_kwargs = mock_log.call_args.kwargs
+    assert call_kwargs["event_type"] == "invoice.partial_payment"
+    assert call_kwargs["metadata"]["amount_paid"] == 500.0
+    assert call_kwargs["metadata"]["remaining_balance"] == 500.0
+
+    db = TestingSessionLocal()
+    try:
+        inv = db.get(Invoice, invoice_id)
+        assert inv.status == InvoiceStatus.partial
+        assert Decimal(str(inv.amount_paid)) == Decimal("500.00")
+    finally:
+        db.close()
+
+
+def test_webhook_successive_partial_payments_accumulate(client, firm_a_owner):
+    firm_id = uuid.UUID(firm_a_owner["firm_id"])
+    client_id = _create_client_in_db(firm_id)
+    invoice_id = _create_invoice_in_db(
+        firm_id, client_id, total_amount="1000.00", stripe_payment_intent_id="pi_test_accum"
+    )
+
+    def _fake_event(amount_received_cents):
+        return {
+            "type": "payment_intent.succeeded",
+            "data": {
+                "object": {
+                    "id": "pi_test_accum",
+                    "metadata": {"invoice_id": str(invoice_id)},
+                    "amount_received": amount_received_cents,
+                    "latest_charge": "ch_test_accum",
+                }
+            },
+        }
+
+    with patch(_WEBHOOK_MOCK, return_value=_fake_event(50000)), \
+         patch("app.services.invoice_service.log_event") as mock_log_1:
+        r1 = client.post(
+            "/payments/webhook",
+            content=b'{"type":"payment_intent.succeeded"}',
+            headers={"stripe-signature": "t=1,v1=fake"},
+        )
+    assert r1.status_code == 200, r1.text
+    call_kwargs_1 = mock_log_1.call_args.kwargs
+    assert call_kwargs_1["metadata"]["amount_paid"] == 500.0
+    assert call_kwargs_1["metadata"]["remaining_balance"] == 500.0
+
+    with patch(_WEBHOOK_MOCK, return_value=_fake_event(30000)), \
+         patch("app.services.invoice_service.log_event") as mock_log_2:
+        r2 = client.post(
+            "/payments/webhook",
+            content=b'{"type":"payment_intent.succeeded"}',
+            headers={"stripe-signature": "t=1,v1=fake"},
+        )
+    assert r2.status_code == 200, r2.text
+    call_kwargs_2 = mock_log_2.call_args.kwargs
+    assert call_kwargs_2["event_type"] == "invoice.partial_payment"
+    assert call_kwargs_2["metadata"]["amount_paid"] == 800.0
+    assert call_kwargs_2["metadata"]["remaining_balance"] == 200.0
+
+    db = TestingSessionLocal()
+    try:
+        inv = db.get(Invoice, invoice_id)
+        assert inv.status == InvoiceStatus.partial
+        assert Decimal(str(inv.amount_paid)) == Decimal("800.00")
+    finally:
+        db.close()
+
+
+def test_webhook_refund_fires_event_and_updates_invoice(client, firm_a_owner):
+    firm_id = uuid.UUID(firm_a_owner["firm_id"])
+    client_id = _create_client_in_db(firm_id)
+    invoice_id = _create_invoice_in_db(
+        firm_id,
+        client_id,
+        total_amount="1000.00",
+        status=InvoiceStatus.paid,
+        paid_at=datetime.now(timezone.utc),
+        stripe_payment_intent_id="pi_test_refund",
+    )
+
+    fake_event = {
+        "type": "charge.refunded",
+        "data": {
+            "object": {
+                "id": "ch_test_refund",
+                "metadata": {"invoice_id": str(invoice_id)},
+                "amount_refunded": 25000,
+                "refunds": {"data": [{"reason": "requested_by_customer"}]},
+            }
+        },
+    }
+
+    with patch(_WEBHOOK_MOCK, return_value=fake_event), \
+         patch("app.services.invoice_service.log_event") as mock_log:
+        r = client.post(
+            "/payments/webhook",
+            content=b'{"type":"charge.refunded"}',
+            headers={"stripe-signature": "t=1,v1=fake"},
+        )
+
+    assert r.status_code == 200, r.text
+
+    assert mock_log.called
+    call_kwargs = mock_log.call_args.kwargs
+    assert call_kwargs["event_type"] == "invoice.refunded"
+    assert call_kwargs["metadata"]["amount_refunded"] == 250.0
+    assert call_kwargs["metadata"]["reason"] == "requested_by_customer"
+
+    db = TestingSessionLocal()
+    try:
+        inv = db.get(Invoice, invoice_id)
+        assert inv.status == InvoiceStatus.refunded
+        assert Decimal(str(inv.refunded_amount)) == Decimal("250.00")
+    finally:
+        db.close()
+
+
+def test_webhook_payment_failed_fires_event_without_changing_status(client, firm_a_owner):
+    firm_id = uuid.UUID(firm_a_owner["firm_id"])
+    client_id = _create_client_in_db(firm_id)
+    invoice_id = _create_invoice_in_db(
+        firm_id, client_id, total_amount="1000.00", stripe_payment_intent_id="pi_test_failed_real"
+    )
+
+    fake_event = {
+        "type": "payment_intent.payment_failed",
+        "data": {
+            "object": {
+                "id": "pi_test_failed_real",
+                "metadata": {"invoice_id": str(invoice_id)},
+                "last_payment_error": {
+                    "code": "card_declined",
+                    "message": "Your card was declined.",
+                },
+            }
+        },
+    }
+
+    with patch(_WEBHOOK_MOCK, return_value=fake_event), \
+         patch("app.services.invoice_service.log_event") as mock_log:
+        r = client.post(
+            "/payments/webhook",
+            content=b'{"type":"payment_intent.payment_failed"}',
+            headers={"stripe-signature": "t=1,v1=fake"},
+        )
+
+    assert r.status_code == 200, r.text
+
+    assert mock_log.called
+    call_kwargs = mock_log.call_args.kwargs
+    assert call_kwargs["event_type"] == "invoice.payment_failed"
+    assert call_kwargs["metadata"]["failure_code"] == "card_declined"
+    assert call_kwargs["metadata"]["failure_message"] == "Your card was declined."
+
+    db = TestingSessionLocal()
+    try:
+        inv = db.get(Invoice, invoice_id)
+        assert inv.status == InvoiceStatus.sent
+    finally:
+        db.close()
+
+
+def test_webhook_account_updated_fires_status_changed_event(client, firm_a_owner):
+    firm_id = uuid.UUID(firm_a_owner["firm_id"])
+
+    db = TestingSessionLocal()
+    try:
+        conn = StripeConnection(
+            firm_id=firm_id,
+            stripe_account_id="acct_test_status_changed",
+            charges_enabled=False,
+            payouts_enabled=False,
+            details_submitted=False,
+        )
+        db.add(conn)
+        db.commit()
+        db.refresh(conn)
+        account_id = conn.stripe_account_id
+    finally:
+        db.close()
+
+    fake_event = {
+        "type": "account.updated",
+        "data": {
+            "object": {
+                "id": account_id,
+                "charges_enabled": True,
+                "payouts_enabled": False,
+                "details_submitted": True,
+            }
+        },
+    }
+
+    with patch(_WEBHOOK_MOCK, return_value=fake_event), \
+         patch("app.services.stripe_service.log_event") as mock_log:
+        r = client.post(
+            "/payments/webhook",
+            content=b'{"type":"account.updated"}',
+            headers={"stripe-signature": "t=1,v1=fake"},
+        )
+
+    assert r.status_code == 200, r.text
+
+    assert mock_log.called
+    call_kwargs = mock_log.call_args.kwargs
+    assert call_kwargs["event_type"] == "stripe.account_status_changed"
+    assert call_kwargs["metadata"]["charges_enabled"] is True
+    assert call_kwargs["metadata"]["payouts_enabled"] is False
+    assert call_kwargs["metadata"]["details_submitted"] is True
+    assert set(call_kwargs["metadata"]["changed"]) == {"charges_enabled", "details_submitted"}
 
 
 # ===========================================================================
