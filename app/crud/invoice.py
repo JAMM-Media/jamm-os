@@ -79,7 +79,7 @@ def create_invoice(
     line_items = data.get("line_items")
     if line_items:
         data["line_items"] = [
-            {k: str(v) for k, v in item.items()} for item in line_items
+            {k: (str(v) if v is not None else None) for k, v in item.items()} for item in line_items
         ]
 
     invoice = Invoice(
@@ -98,7 +98,7 @@ def update_invoice(db: Session, invoice: Invoice, invoice_in: InvoiceUpdate) -> 
     updates = invoice_in.model_dump(exclude_unset=True)
     if "line_items" in updates and updates["line_items"] is not None:
         updates["line_items"] = [
-            {k: str(v) for k, v in item.items()} for item in updates["line_items"]
+            {k: (str(v) if v is not None else None) for k, v in item.items()} for item in updates["line_items"]
         ]
     for field, value in updates.items():
         setattr(invoice, field, value)
