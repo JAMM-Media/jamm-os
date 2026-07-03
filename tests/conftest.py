@@ -31,6 +31,12 @@ os.environ["RATE_LIMIT_ENABLED"] = "false"
 # Lets any module detect test context, independent of DATABASE_URL parsing.
 os.environ["JAMM_TESTING"] = "1"
 
+# Test-only Fernet key, generated once with:
+#   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+# Not a secret, never used outside this test suite. Set unconditionally (before
+# any app import) so Settings picks it up regardless of the developer's local .env.
+os.environ["ENCRYPTION_KEY"] = "j8iv6pxYd3itXw7qMCwKAxzvl_0xjTZD1w2tGFHbXho="
+
 DATABASE_URL = os.environ["DATABASE_URL"]
 
 _PRODUCTION_MARKERS = ("ondigitalocean.com", ":25060")
@@ -91,6 +97,35 @@ def override_get_db():
 
 
 app.dependency_overrides[get_db] = override_get_db
+
+
+@pytest.fixture(autouse=True)
+def mock_email_service(monkeypatch):
+    """
+    Replaces EmailService._send with a no-op recorder for every test. No
+    network IO ever happens. _send_raw (used by the magic link and portal
+    invite flows) delegates straight to _send, so patching _send alone
+    covers both call paths. Tests that want to assert an email would have
+    been sent can request this fixture directly and inspect the list.
+    """
+    from app.services.email_service import EmailService
+
+    sent_emails = []
+
+    def _fake_send(to_email, subject, html_body, from_name, reply_to=None,
+                    display_name=None, sending_domain=None):
+        sent_emails.append({
+            "to_email": to_email,
+            "subject": subject,
+            "html_body": html_body,
+            "from_name": from_name,
+            "reply_to": reply_to,
+            "display_name": display_name,
+            "sending_domain": sending_domain,
+        })
+
+    monkeypatch.setattr(EmailService, "_send", staticmethod(_fake_send))
+    return sent_emails
 
 
 @pytest.fixture(autouse=True)

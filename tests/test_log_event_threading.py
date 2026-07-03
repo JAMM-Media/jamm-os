@@ -1,5 +1,6 @@
 # tests/test_log_event_threading.py
 
+import os
 import threading
 import time
 import uuid
@@ -42,23 +43,33 @@ def test_context_resolved_before_thread():
 
 
 def test_log_event_returns_immediately():
+    """
+    Fire-and-forget is a production-only behavior: under JAMM_TESTING=1,
+    behavioral_log.log_event runs _write synchronously so tests can assert
+    on the written row without a race. Force the production (threaded)
+    path here to verify the non-blocking contract it actually protects.
+    """
     release = threading.Event()
 
     def fake_session_local():
         release.wait(2.0)
         raise RuntimeError("stop before touching the db further")
 
-    with patch("app.services.behavioral_log.SessionLocal", side_effect=fake_session_local):
-        start = time.monotonic()
-        log_event(
-            event_type="document.viewed",
-            firm_id=uuid.uuid4(),
-        )
-        elapsed = time.monotonic() - start
+    previous = os.environ.pop("JAMM_TESTING", None)
+    try:
+        with patch("app.services.behavioral_log.SessionLocal", side_effect=fake_session_local):
+            start = time.monotonic()
+            log_event(
+                event_type="document.viewed",
+                firm_id=uuid.uuid4(),
+            )
+            elapsed = time.monotonic() - start
 
-    assert elapsed < 0.5
-
-    release.set()
+        assert elapsed < 0.5
+    finally:
+        if previous is not None:
+            os.environ["JAMM_TESTING"] = previous
+        release.set()
 
 
 def test_thread_failure_does_not_raise():

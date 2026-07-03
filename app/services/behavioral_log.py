@@ -129,7 +129,10 @@ def log_event(
             if db is not None:
                 db.close()
 
-    threading.Thread(target=_write, daemon=True).start()
+    if os.environ.get("JAMM_TESTING") == "1":
+        _write()
+    else:
+        threading.Thread(target=_write, daemon=True).start()
 
 
 def log_setting_changes(
