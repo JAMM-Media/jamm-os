@@ -14,10 +14,6 @@ def get_task_for_firm(db: Session, task_id: UUID, firm_id: UUID) -> Task | None:
     ).first()
 
 
-def get_task(db: Session, task_id: UUID) -> Task | None:
-    return db.query(Task).filter(Task.id == task_id).first()
-
-
 def get_tasks_for_user(
     db: Session,
     user_id: UUID,
@@ -42,15 +38,6 @@ def get_tasks_for_firm(
 ):
     """Returns a query scoped to the firm, for use with paginate()."""
     query = db.query(Task).filter(Task.firm_id == firm_id)
-    if client_id:
-        query = query.filter(Task.client_id == client_id)
-    if engagement_id:
-        query = query.filter(Task.engagement_id == engagement_id)
-    return query
-
-
-def get_tasks(db: Session, client_id: UUID | None = None, engagement_id: UUID | None = None):
-    query = db.query(Task)
     if client_id:
         query = query.filter(Task.client_id == client_id)
     if engagement_id:

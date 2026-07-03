@@ -18,18 +18,6 @@ def get_engagement_for_firm(db: Session, engagement_id: UUID, firm_id: UUID) -> 
     return db.execute(stmt).scalars().first()
 
 
-def get_engagement(db: Session, engagement_id: UUID) -> Engagement | None:
-    stmt = select(Engagement).where(Engagement.id == engagement_id)
-    return db.execute(stmt).scalars().first()
-
-
-def get_engagements(db: Session, client_id: UUID | None = None):
-    stmt = select(Engagement)
-    if client_id:
-        stmt = stmt.where(Engagement.client_id == client_id)
-    return db.execute(stmt).scalars().all()
-
-
 def create_engagement(db: Session, engagement_in: EngagementCreate, firm_id: UUID) -> Engagement:
     data = engagement_in.model_dump()
 

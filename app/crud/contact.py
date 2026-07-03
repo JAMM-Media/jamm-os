@@ -14,20 +14,9 @@ def get_contact_for_firm(db: Session, contact_id: UUID, firm_id: UUID) -> Contac
     ).first()
 
 
-def get_contact(db: Session, contact_id: UUID) -> Contact | None:
-    return db.query(Contact).filter(Contact.id == contact_id).first()
-
-
 def get_contacts_for_firm(db: Session, firm_id: UUID, client_id: UUID | None = None):
     """Returns a query scoped to the firm, for use with paginate()."""
     query = db.query(Contact).filter(Contact.firm_id == firm_id)
-    if client_id:
-        query = query.filter(Contact.client_id == client_id)
-    return query
-
-
-def get_contacts(db: Session, client_id: UUID | None = None):
-    query = db.query(Contact)
     if client_id:
         query = query.filter(Contact.client_id == client_id)
     return query

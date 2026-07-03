@@ -77,21 +77,9 @@ def _run_archive(firm_id, db, log):
     s3_key = f"exports/{firm_id}/documents_{date.today().isoformat()}.zip"
     upload_fileobj(zip_buf, s3_key, "application/zip")
 
-    import boto3
-    from app.core.config import get_settings
+    from app.services.s3 import generate_presigned_url
 
-    settings = get_settings()
-    s3_client = boto3.client(
-        "s3",
-        aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
-        aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
-        region_name=settings.AWS_REGION,
-    )
-    download_url = s3_client.generate_presigned_url(
-        "get_object",
-        Params={"Bucket": settings.S3_BUCKET_NAME, "Key": s3_key},
-        ExpiresIn=86400,
-    )
+    download_url = generate_presigned_url(s3_key)
 
     from app.models.user import User
     from app.models.firm import Firm
@@ -116,7 +104,7 @@ def _run_archive(firm_id, db, log):
         firm_name=firm_name,
         recipient_name=firm_owner.full_name or "Firm Owner",
         title="Your document archive is ready",
-        body=f"Your document archive containing {doc_count} files is ready to download. The link below will expire in 24 hours.",
+        body=f"Your document archive containing {doc_count} files is ready to download. The link below will expire in 1 hour.",
         app_url=download_url,
     )
 
