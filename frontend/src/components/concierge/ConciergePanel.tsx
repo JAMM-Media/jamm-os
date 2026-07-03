@@ -3,7 +3,7 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
-import { X, Send, Zap, Download, ChevronDown } from 'lucide-react'
+import { X, Send, Zap, Download, ChevronDown, Trash2 } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import jsPDF from 'jspdf'
 import { useAuth } from '@/lib/hooks/useAuth'
@@ -200,8 +200,6 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
       setAutopilotOn(false)
       autopilotRef.current = false
       sessionStorage.removeItem('jamm_concierge_autopilot')
-      sessionStorage.removeItem('jamm_concierge_messages')
-      setMessages([])
       hasInitialized.current = false
     }
   }, [isOpen])
@@ -458,6 +456,14 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
     }, 60_000)
     return () => clearInterval(interval)
   }, [isOpen, fetchNotifications])
+
+  function handleClearConversation() {
+    const confirmed = window.confirm('Clear this conversation? This cannot be undone.')
+    if (!confirmed) return
+    setMessages([])
+    sessionStorage.removeItem('jamm_concierge_messages')
+    setSuggestions([])
+  }
 
   async function handleSend(text?: string) {
     const msg = (text ?? input).trim()
@@ -875,6 +881,17 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
                 When ON, I&apos;ll navigate the app and open forms for you automatically. When OFF, I&apos;ll just tell you where to go.
               </div>
             </div>
+
+            {messages.length > 1 && (
+              <button
+                onClick={handleClearConversation}
+                aria-label="Clear conversation"
+                title="Clear conversation"
+                className="text-[#6B7280] hover:text-[#DC2626] dark:hover:text-[#F87171] transition-colors"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            )}
 
             <button
               onClick={onClose}

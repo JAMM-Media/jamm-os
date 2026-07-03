@@ -49,81 +49,89 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-# Task: Fix proxy route crashing on 204 No Content responses, and remove temporary diagnostic logging
+# Task: Add Clear Conversation button, stop auto-wiping conversation on panel close
 
 USE: claude sonnet
 
 ## VERIFY BEFORE ACT
 
-grep -n "PROXY FETCH ERROR" "/home/corby/jamm-os/frontend/src/app/api/backend/[...path]/route.ts"
+grep -n 'if (!isOpen)' -A 10 /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-Confirm the temporary diagnostic console.error lines added during live debugging are present in both catch blocks (the attemptRefresh function and the main proxyRequest function).
+Confirm the current close-effect: on close, it resets autopilot, clears jamm_concierge_autopilot and jamm_concierge_messages from sessionStorage, calls setMessages([]), and sets hasInitialized.current = false.
 
-sed -n '155,169p' "/home/corby/jamm-os/frontend/src/app/api/backend/[...path]/route.ts"
+sed -n '845,882p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-Confirm the current final response-building block: const data = await res.text() followed by new NextResponse(data, { status: res.status, ... }), with no special handling for status codes that the Response constructor forbids from carrying a body.
+Confirm the exact header structure: the Autopilot toggle button, then the Close (X) button, both inside a flex container with gap-2.
+
+grep -n "from 'lucide-react'" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+
+Confirm the current icon import line, so Trash2 can be added to it.
 
 ## WHAT IS WRONG
 
-Confirmed via direct server-side error logging: the proxy route crashes with "TypeError: Response constructor: Invalid response status code 204" whenever the backend returns a 204 No Content response (such as the newly-implemented POST /notes/mark-read endpoint, and likely also DELETE /notes/{note_id} and other 204-returning endpoints that may not have been exercised through this proxy path before). The Fetch API's Response constructor, per the HTTP spec, disallows any body -- including an empty string -- on responses with status 204, 205, or 304. The proxy unconditionally passes the awaited response text as the body to NextResponse regardless of status code, which throws for these specific status codes. The backend itself always behaves correctly (its own logs consistently show a clean 204), but the proxy crashes trying to relay that response to the browser, which the browser then sees as a 503 Service Unavailable with no indication of the real cause, since the crash happens inside the proxy's own catch block, which was previously swallowing the actual error entirely.
+Closing the Concierge panel (clicking X) currently wipes the entire conversation automatically and irreversibly, with no way to keep it or bring it back. This was flagged as the wrong default -- closing the panel is often just "I'm done looking at this for now," not "delete everything I just discussed." The fix is twofold: stop clearing the conversation automatically on close (the conversation should persist until the user explicitly clears it), and add a small, explicit Clear Conversation icon in the panel header that the user can click when they genuinely want to start fresh, with a confirmation step since this action is irreversible. The button should only appear once there is an actual conversation to clear (more than just the initial opening message), not on every fresh empty panel.
 
 ## ACTION
 
-File: /home/corby/jamm-os/frontend/src/app/api/backend/[...path]/route.ts
+File: /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-Fix 1 -- handle no-body status codes correctly. Replace the final response-building block:
+Step 1: Update the icon import to add Trash2:
 
-    const data = await res.text()
-    return new NextResponse(data, {
-      status: res.status,
-      headers: {
-        'Content-Type': contentType || 'application/json',
-      },
-    })
+import { X, Send, Zap, Download, ChevronDown, Trash2 } from 'lucide-react'
 
-With a version that checks for the no-body status codes and constructs the response without a body in that case:
+Step 2: Update the close-effect to stop wiping the conversation, keeping only the autopilot reset and the hasInitialized reset (which is still needed so the opening flow correctly re-evaluates on the next open):
 
-    if ([204, 205, 304].includes(res.status)) {
-      return new NextResponse(null, { status: res.status })
+    if (!isOpen) {
+      setAutopilotOn(false)
+      autopilotRef.current = false
+      sessionStorage.removeItem('jamm_concierge_autopilot')
+      hasInitialized.current = false
     }
-    const data = await res.text()
-    return new NextResponse(data, {
-      status: res.status,
-      headers: {
-        'Content-Type': contentType || 'application/json',
-      },
-    })
 
-Fix 2 -- remove the temporary diagnostic logging added during live debugging, restoring both catch blocks to their clean form (or optionally keep lightweight logging if useful going forward -- your call, but remove the exact temporary "PROXY FETCH ERROR" marker text either way since it was explicitly a debugging aid, not intended as permanent instrumentation).
+Remove sessionStorage.removeItem('jamm_concierge_messages') and setMessages([]) from this block -- the conversation now persists across a close/reopen cycle within the same browser session, exactly as it already does across page navigation.
 
-In the attemptRefresh function's catch block, revert to:
+Step 3: Add a handler function for clearing the conversation, placed near the other handler functions in the component:
 
-  } catch {
-    return null
+  function handleClearConversation() {
+    const confirmed = window.confirm('Clear this conversation? This cannot be undone.')
+    if (!confirmed) return
+    setMessages([])
+    sessionStorage.removeItem('jamm_concierge_messages')
+    setSuggestions([])
   }
 
-In the main proxyRequest function's catch block, you may either revert fully to the original:
+Step 4: Add the Clear Conversation button in the header, positioned between the Autopilot toggle and the Close button, only rendered when there is more than just an initial single message:
 
-  } catch {
-    return NextResponse.json(
-      { detail: 'Backend unreachable' },
-      { status: 503 }
-    )
-  }
+Insert this new button inside the header's flex container (the div with className="flex items-center gap-2" that currently holds the Autopilot toggle and the Close button), after the Autopilot toggle's closing </div> and before the existing Close button:
 
-or keep minimal, permanent error logging without the temporary marker text, at your discretion -- if logging is kept, use a professional log line rather than the ad-hoc debugging label used tonight.
+            {messages.length > 1 && (
+              <button
+                onClick={handleClearConversation}
+                aria-label="Clear conversation"
+                title="Clear conversation"
+                className="text-[#6B7280] hover:text-[#DC2626] dark:hover:text-[#F87171] transition-colors"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            )}
 
-Do not change the SSE streaming handling, the PDF response handling, the 401 refresh-and-retry logic, the multipart detection added in a prior fix, or any other part of this file.
+The messages.length > 1 condition hides the button when only the initial opening message is present (morning briefing, cooldown message, or plain opener), showing it only once a real back-and-forth exists.
+
+Do not change any other part of the header, the Autopilot toggle's own logic, or any other section of this file.
 
 ## VERIFY AFTER ACT
 
-grep -n "204, 205, 304" "/home/corby/jamm-os/frontend/src/app/api/backend/[...path]/route.ts"
+grep -n "Trash2" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-Expected: present, in the new no-body status check.
+Expected: present in the import line and in the new button.
 
-grep -n "PROXY FETCH ERROR" "/home/corby/jamm-os/frontend/src/app/api/backend/[...path]/route.ts"
+grep -n "handleClearConversation" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-Expected: no matches -- temporary diagnostic marker fully removed.
+Expected: the function definition and its use in the new button's onClick, both present.
+
+grep -n "setMessages(\[\])" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+
+Expected: no longer present inside the close-effect (the if (!isOpen) block) -- only present now inside handleClearConversation.
 
 cd /home/corby/jamm-os/frontend
 npm run build
@@ -132,20 +140,22 @@ Expected: zero TypeScript errors.
 
 ## MANUAL VERIFICATION (the actual test)
 
-1. Restart the frontend with a clean build.
-2. Open a client's Notes panel, confirm POST /notes/mark-read now returns 204 successfully in the Network tab, no 503, no error.
-3. Reload the page and reopen the same client's Notes panel, confirm previously-read notes now correctly persist as read.
-4. Regression check: delete a note (which also returns 204 via DELETE /notes/{note_id}) and confirm that still works correctly too, since it shares the same status code and was likely silently broken by this same bug even before tonight's testing.
-5. Regression check: ask the Concierge a normal question, confirm streaming responses still work correctly, unaffected by this change.
-6. Regression check: download a morning briefing PDF, confirm PDF responses still work correctly.
+1. Restart the frontend.
+2. Open the Concierge panel, ask a real question, get an answer. Confirm the Clear Conversation icon now appears in the header (it should not have been visible before this exchange, only the initial opening message).
+3. Close the panel (X button), then reopen it. Confirm the conversation from step 2 is still there, not wiped -- this is the core behavior change.
+4. Click the new Clear Conversation icon. Confirm a browser confirm dialog appears asking to confirm.
+5. Cancel the dialog, confirm the conversation is untouched.
+6. Click the icon again and confirm this time. Confirm the conversation is now cleared, back to a blank state with no messages and no leftover suggestion chips.
+7. Regression check: confirm Autopilot still correctly resets to off when the panel is closed (unrelated to the conversation-clearing change, should be unaffected).
+8. Regression check: navigate between pages (not closing the panel) and confirm the conversation still persists across navigation exactly as it did before this task, since Phase 1/2 persistence logic was not touched.
 
-Report what you observe at steps 2, 3, and 4 specifically.
+Report what you observe at steps 3, 4, and 6 specifically.
 
 ## GIT
 
 cd /home/corby/jamm-os
 git add -A
-git commit -m "fix: proxy route was crashing with 'Invalid response status code 204' whenever the backend returned a 204 No Content response, since the Fetch API's Response constructor forbids any body (even an empty string) on 204/205/304 status codes and the proxy unconditionally passed response text as the body regardless of status. This silently broke every 204-returning endpoint relayed through the proxy, surfacing now via the newly-implemented mark-as-read endpoint but likely also affecting note deletion and any other 204 response. Also removed temporary diagnostic logging added during live debugging."
+git commit -m "feat: Concierge conversation now persists across closing and reopening the panel instead of being automatically wiped, and a new Clear Conversation icon in the header lets the user explicitly clear it when they want to, with a confirmation step since the action is irreversible. The button only appears once a real conversation exists, not on the initial opening message alone."
 git pull --rebase origin main
 git push origin main
 
