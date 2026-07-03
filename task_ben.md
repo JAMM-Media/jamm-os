@@ -49,83 +49,71 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-# Task: Fix billing/calendar topic misclassification caused by overly short "ar" keyword substring collision
+# Task: Convert NotesPanel's uncached /users/ fetch to React Query for proper caching and deduplication
 
 USE: claude sonnet
 
 ## VERIFY BEFORE ACT
 
-grep -n '"ar"' /home/corby/jamm-os/app/api/concierge/route.py
+sed -n '130,145p' /home/corby/jamm-os/frontend/src/components/notes/NotesPanel.tsx
 
-Confirm "ar" exists as a standalone keyword in the billing entry of _TOPIC_KEYWORDS.
+Confirm the current implementation: a plain useEffect calling api.get('/users/') with no caching, no deduplication, and no protection against re-firing if the component re-renders or remounts.
 
-python3 -c "
-msg = 'is there any calendar in the app?'
-print('ar' in msg)
-"
+grep -n "import.*useQuery" /home/corby/jamm-os/frontend/src/components/notes/NotesPanel.tsx
 
-Confirm this prints True, demonstrating that the short keyword "ar" matches as a substring inside "calendar" even though the message has nothing to do with billing.
+Confirm whether useQuery is already imported in this file (it likely is not, since the current implementation uses plain useEffect).
 
 ## WHAT IS WRONG
 
-Confirmed via live testing and direct reproduction: a calendar-only question ("is there any calendar in the app?") was classified as [TOPIC:billing] instead of [TOPIC:calendar], showing the wrong suggestion chip. Root cause: _classify_topic uses plain substring matching (kw in lower), not word-boundary-aware matching. The billing keyword set includes the short abbreviation "ar" (shorthand for accounts receivable), which matches as a substring inside any word containing those two consecutive letters, including "calendar" itself. This produces a tied score between billing and calendar for calendar-related messages, and since billing is defined earlier in the dictionary, ties resolve in its favor via Python's max() returning the first-encountered maximum. This is a pre-existing flaw in the keyword matching approach that was only exposed now that a calendar topic exists to collide with it, but the same short-keyword substring risk could affect other topics too.
+Confirmed via live testing and code tracing: NotesPanel fetches the full staff list via a raw useEffect + api.get('/users/') call with no caching layer, unlike other data-fetching in this codebase that correctly uses React Query's useQuery (e.g. Sidebar.tsx's notifData, firmData, and myIntegrations, and the client detail page's own qboAr). This staff list rarely changes within a session, making it a good candidate for React Query's built-in caching, which would prevent redundant refetches if NotesPanel re-renders or remounts, and would deduplicate simultaneous requests if multiple instances of this component happen to render at once.
 
 ## ACTION
 
-File: /home/corby/jamm-os/app/api/concierge/route.py
+File: /home/corby/jamm-os/frontend/src/components/notes/NotesPanel.tsx
 
-Remove the standalone "ar" keyword from the billing entry in _TOPIC_KEYWORDS, since "accounts receivable" (the full phrase) is already present in the same set and provides the same intent-matching without the substring collision risk. Find the billing keyword set and remove just the "ar" entry:
+Add useQuery to the existing react-query import (or add the import if not present).
 
-    "billing": {
-        "invoice", "invoices", "billing", "payment", "stripe", "overdue invoice",
-        "ar", "accounts receivable", "send invoice", "invoice status",
-        "partial payment", "payment receipt", "invoice line", "bill",
-        "unbilled", "collect payment", "paid", "unpaid", "owes", "owe", "money",
-    },
+Replace the existing useEffect + api.get('/users/') pattern with a useQuery call using a stable query key and a reasonable staleTime, matching the pattern already used elsewhere in this codebase (e.g. Sidebar.tsx's firmData query):
 
-Change to:
+  const { data: staffData } = useQuery({
+    queryKey: ['users-list'],
+    queryFn: () => api.get('/users/').then((res) => res.data),
+    staleTime: 5 * 60 * 1000,
+  })
 
-    "billing": {
-        "invoice", "invoices", "billing", "payment", "stripe", "overdue invoice",
-        "accounts receivable", "send invoice", "invoice status",
-        "partial payment", "payment receipt", "invoice line", "bill",
-        "unbilled", "collect payment", "paid", "unpaid", "owes", "owe", "money",
-    },
+Adjust the exact shape of how staffData is then used (setting local state, mapping to a dropdown list, etc.) to match whatever the removed useEffect was doing with the fetched data -- preserve the existing behavior and UI exactly, only change how the data is fetched and cached, not what is done with it once available.
 
-Do not change any other keyword in any topic's set. Do not change _classify_topic's matching algorithm itself in this task -- switching from substring matching to word-boundary matching across all topics is a larger, separate change that could affect every topic's behavior simultaneously and should be scoped on its own if this kind of collision is found again elsewhere. This task only removes the one confirmed problematic short keyword.
+Do not change any other fetch in this file. Do not change NotesPanel's other useEffect (the one at line 159, unrelated to this fix). Do not touch any other file.
 
 ## VERIFY AFTER ACT
 
-grep -n '"billing": {' -A 6 /home/corby/jamm-os/app/api/concierge/route.py
+grep -n "useQuery.*users-list\|queryKey: \['users-list'\]" /home/corby/jamm-os/frontend/src/components/notes/NotesPanel.tsx
 
-Expected: "ar" is no longer present in the billing set, "accounts receivable" still is.
+Expected: present.
 
-python3 -c "
-msg = 'is there any calendar in the app?'
-print('ar' in msg)
-"
+grep -n "useEffect.*api.get('/users/')" /home/corby/jamm-os/frontend/src/components/notes/NotesPanel.tsx
 
-Expected: still True (this is just confirming the substring exists in the word, which is unavoidable and fine) -- the actual fix is that "ar" is no longer a keyword being checked against messages at all, not that the substring stopped existing in the English language.
+Expected: no longer present -- the raw useEffect fetch is fully replaced.
 
-python3 -c "from app.api.concierge.route import router; print('OK')"
+cd /home/corby/jamm-os/frontend
+npm run build
 
-Expected: OK, no import errors.
+Expected: zero TypeScript errors.
 
 ## MANUAL VERIFICATION (the actual test)
 
-1. Restart the backend (full kill and restart, not reload).
-2. Ask "is there any calendar in the app?" again, the exact question that triggered the misclassification.
-3. Check DevTools Console [CONCIERGE RAW] output, confirm [TOPIC:calendar] now appears instead of [TOPIC:billing].
-4. Confirm the Go to Calendar chip now appears and navigates correctly.
-5. Regression check: ask a real billing question (e.g. "what invoices are overdue?") and confirm it still correctly tags [TOPIC:billing] and shows the Go to Billing chip, unaffected by removing the "ar" keyword since "accounts receivable" and "overdue invoice" still cover that intent.
+1. Restart the frontend with a clean build.
+2. Open DevTools Network tab, open a client detail page, and specifically look at how many times a request to /users/ fires.
+3. Confirm the staff/user dropdown functionality inside Notes still works exactly as before (assigning, mentioning, or whatever it was used for).
+4. Navigate away and back to the same or a different client's Notes section, confirm the /users/ request does not refire within the 5-minute staleTime window (React Query should serve from cache).
 
-Report the exact [TOPIC:...] value observed at step 3, and confirm step 5 still works correctly.
+Report what you observe at steps 2 and 4.
 
 ## GIT
 
 cd /home/corby/jamm-os
 git add -A
-git commit -m "fix: remove overly short 'ar' keyword from billing topic classifier, which was matching as a substring inside unrelated words like 'calendar' (c-a-l-e-n-d-AR) and causing calendar questions to be misclassified as billing due to a tied keyword score resolving in billing's favor"
+git commit -m "perf: NotesPanel now fetches the staff/users list via React Query instead of a raw uncached useEffect, adding proper caching and deduplication to prevent redundant refetches on re-render or remount"
 git pull --rebase origin main
 git push origin main
 

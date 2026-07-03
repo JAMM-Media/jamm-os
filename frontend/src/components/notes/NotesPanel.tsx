@@ -2,6 +2,7 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { useNotes, Note } from './useNotes'
 import api from '@/lib/api'
 
@@ -131,25 +132,24 @@ export function NotesPanel({
   const [showMentionPopover, setShowMentionPopover] = useState(false)
   const [mentionQuery, setMentionQuery] = useState('')
   const [mentionIndex, setMentionIndex] = useState(0)
-  const [staffList, setStaffList] = useState<StaffMember[]>([])
-
-  useEffect(() => {
-    if (staffList.length === 0) {
-      api.get('/users/').then((res) => {
-        const items = Array.isArray(res.data) ? res.data : (res.data.items ?? [])
-        setStaffList(items.map((u: Record<string, unknown>) => ({
-          id: String(u.id),
-          name: String(u.full_name ?? u.name ?? ''),
-          initials: String(u.full_name ?? u.name ?? '')
-            .split(' ')
-            .map((p: string) => p[0] ?? '')
-            .join('')
-            .slice(0, 2)
-            .toUpperCase(),
-        })))
-      }).catch(() => {})
-    }
-  }, [staffList.length])
+  const { data: staffData } = useQuery({
+    queryKey: ['users-list'],
+    queryFn: () => api.get('/users/').then((res) => res.data),
+    staleTime: 5 * 60 * 1000,
+  })
+  const staffList: StaffMember[] = (() => {
+    const items = Array.isArray(staffData) ? staffData : (staffData?.items ?? [])
+    return items.map((u: Record<string, unknown>) => ({
+      id: String(u.id),
+      name: String(u.full_name ?? u.name ?? ''),
+      initials: String(u.full_name ?? u.name ?? '')
+        .split(' ')
+        .map((p: string) => p[0] ?? '')
+        .join('')
+        .slice(0, 2)
+        .toUpperCase(),
+    }))
+  })()
 
   const filteredStaff = staffList.filter((s) =>
     s.name.toLowerCase().includes(mentionQuery.trim().toLowerCase())
