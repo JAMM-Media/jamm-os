@@ -71,6 +71,10 @@ class Invoice(Base):
     stripe_payment_intent_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     stripe_charge_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
+    amount_paid: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False, default=0)
+    refunded_amount: Mapped[Optional[float]] = mapped_column(Numeric(10, 2), nullable=True)
+    refund_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
     delivery_method: Mapped[InvoiceDeliveryMethod] = mapped_column(
         PgEnum(InvoiceDeliveryMethod, name="invoicedeliverymethod"),
         default=InvoiceDeliveryMethod.portal,

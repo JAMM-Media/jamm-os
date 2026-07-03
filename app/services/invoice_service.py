@@ -552,11 +552,9 @@ def bulk_update_invoices_tracked(
 
 
 # ------------------------------------------------------------
-# STRIPE-DEPENDENT STUBS
-# These functions are called by the Stripe webhook handler once
-# Stripe Connect is fully wired. Do not remove or implement
-# until the webhook handler in app/api/stripe_webhook.py is
-# complete. See invoice tracking gap notes from July 2026.
+# Stripe webhook behavioral events. Called from app/api/payments.py
+# after the invoice row itself has already been updated via the
+# matching app/crud/invoice.py function.
 # ------------------------------------------------------------
 
 def mark_invoice_partial_payment(
@@ -568,11 +566,20 @@ def mark_invoice_partial_payment(
     remaining_balance: float,
     payment_method: str = "stripe",
 ) -> None:
-    # TODO: called from Stripe webhook on payment_intent.succeeded
-    # with amount less than total_amount. Wire log_event here.
-    # Metadata to capture: amount_paid, remaining_balance,
-    # payment_method, days_since_sent, client_id.
-    pass
+    log_event(
+        firm_id=firm_id,
+        event_type="invoice.partial_payment",
+        entity_type="invoice",
+        entity_id=invoice.id,
+        actor_type="client",
+        actor_id=None,
+        metadata={
+            "amount_paid": amount_paid,
+            "remaining_balance": remaining_balance,
+            "days_since_sent": (datetime.now(timezone.utc) - invoice.sent_at).days
+                if hasattr(invoice, 'sent_at') and invoice.sent_at else None,
+        }
+    )
 
 
 def mark_invoice_refunded(
@@ -583,8 +590,42 @@ def mark_invoice_refunded(
     amount_refunded: float,
     reason: Optional[str] = None,
 ) -> None:
-    # TODO: called from Stripe webhook on charge.refunded.
-    # Wire log_event here.
-    # Metadata to capture: amount_refunded, reason,
-    # days_since_payment, client_id.
-    pass
+    log_event(
+        firm_id=firm_id,
+        event_type="invoice.refunded",
+        entity_type="invoice",
+        entity_id=invoice.id,
+        actor_type="system",
+        actor_id=None,
+        metadata={
+            "amount_refunded": amount_refunded,
+            "reason": reason,
+            "days_since_payment": (datetime.now(timezone.utc) - invoice.paid_at).days
+                if hasattr(invoice, 'paid_at') and invoice.paid_at else None,
+        }
+    )
+
+
+def mark_invoice_payment_failed(
+    *,
+    db: Session,
+    invoice: Invoice,
+    firm_id: UUID,
+    failure_code: Optional[str] = None,
+    failure_message: Optional[str] = None,
+) -> None:
+    log_event(
+        firm_id=firm_id,
+        event_type="invoice.payment_failed",
+        entity_type="invoice",
+        entity_id=invoice.id,
+        actor_type="system",
+        actor_id=None,
+        metadata={
+            "amount": float(invoice.total_amount) if invoice.total_amount else None,
+            "failure_code": failure_code,
+            "failure_message": failure_message,
+            "days_since_sent": (datetime.now(timezone.utc) - invoice.sent_at).days
+                if hasattr(invoice, 'sent_at') and invoice.sent_at else None,
+        }
+    )

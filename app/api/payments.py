@@ -1,5 +1,6 @@
 # app/api/payments.py
 
+from decimal import Decimal
 from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
@@ -114,25 +115,91 @@ async def stripe_webhook(
         if not invoice:
             return {"status": "ok"}
 
-        stripe_charge_id = event_data.get("latest_charge", None)
-        crud_invoice.mark_invoice_paid(db, invoice, stripe_charge_id)
-        from app.services.invoice_service import mark_invoice_paid
-        mark_invoice_paid(db=db, invoice=invoice, firm_id=invoice.firm_id)
-        await emit_event(
-            event=TriggerEvent.invoice_paid,
-            payload={
-                "firm_id": str(invoice.firm_id),
-                "invoice_id": str(invoice.id),
-                "client_id": str(invoice.client_id),
-                "engagement_id": str(invoice.engagement_id) if invoice.engagement_id else None,
-                "amount": str(invoice.total_amount),
-            },
-            background_tasks=background_tasks,
+        amount_received_cents = event_data.get("amount_received", event_data.get("amount"))
+        payment_amount = (
+            Decimal(amount_received_cents) / 100
+            if amount_received_cents is not None
+            else invoice.total_amount
         )
+        existing_paid = Decimal(str(invoice.amount_paid)) if invoice.amount_paid else Decimal("0")
+        cumulative_paid = existing_paid + payment_amount
+
+        if cumulative_paid < invoice.total_amount:
+            remaining_balance = invoice.total_amount - cumulative_paid
+            crud_invoice.mark_invoice_partial_payment(db, invoice, amount_paid=cumulative_paid)
+            from app.services.invoice_service import mark_invoice_partial_payment
+            mark_invoice_partial_payment(
+                db=db,
+                invoice=invoice,
+                firm_id=invoice.firm_id,
+                amount_paid=float(cumulative_paid),
+                remaining_balance=float(remaining_balance),
+            )
+        else:
+            stripe_charge_id = event_data.get("latest_charge", None)
+            crud_invoice.mark_invoice_paid(db, invoice, stripe_charge_id)
+            from app.services.invoice_service import mark_invoice_paid
+            mark_invoice_paid(db=db, invoice=invoice, firm_id=invoice.firm_id)
+            await emit_event(
+                event=TriggerEvent.invoice_paid,
+                payload={
+                    "firm_id": str(invoice.firm_id),
+                    "invoice_id": str(invoice.id),
+                    "client_id": str(invoice.client_id),
+                    "engagement_id": str(invoice.engagement_id) if invoice.engagement_id else None,
+                    "amount": str(invoice.total_amount),
+                },
+                background_tasks=background_tasks,
+            )
 
     elif event_type == "payment_intent.payment_failed":
-        invoice_id = event_data.get("metadata", {}).get("invoice_id")  # noqa: F841
-        # TODO: emit invoice.payment_failed — Phase 8
+        invoice_id = event_data.get("metadata", {}).get("invoice_id")
+        if invoice_id is not None:
+            stmt = select(Invoice).where(
+                Invoice.id == UUID(invoice_id),
+                Invoice.is_deleted == False,
+            )
+            invoice = db.execute(stmt).scalar_one_or_none()
+            if invoice:
+                last_error = event_data.get("last_payment_error") or {}
+                from app.services.invoice_service import mark_invoice_payment_failed
+                mark_invoice_payment_failed(
+                    db=db,
+                    invoice=invoice,
+                    firm_id=invoice.firm_id,
+                    failure_code=last_error.get("code"),
+                    failure_message=last_error.get("message"),
+                )
+
+    elif event_type == "charge.refunded":
+        invoice_id = event_data.get("metadata", {}).get("invoice_id")
+        if invoice_id is not None:
+            stmt = select(Invoice).where(
+                Invoice.id == UUID(invoice_id),
+                Invoice.is_deleted == False,
+            )
+            invoice = db.execute(stmt).scalar_one_or_none()
+            if invoice:
+                amount_refunded_cents = event_data.get("amount_refunded")
+                amount_refunded = (
+                    Decimal(amount_refunded_cents) / 100
+                    if amount_refunded_cents is not None
+                    else Decimal("0")
+                )
+                refunds_data = (event_data.get("refunds") or {}).get("data") or []
+                reason = refunds_data[0].get("reason") if refunds_data else None
+
+                crud_invoice.mark_invoice_refunded(
+                    db, invoice, amount_refunded=amount_refunded, reason=reason
+                )
+                from app.services.invoice_service import mark_invoice_refunded
+                mark_invoice_refunded(
+                    db=db,
+                    invoice=invoice,
+                    firm_id=invoice.firm_id,
+                    amount_refunded=float(amount_refunded),
+                    reason=reason,
+                )
 
     elif event_type == "account.updated":
         stripe_account_id = event_data["id"]
@@ -141,12 +208,36 @@ async def stripe_webhook(
         )
         connection = db.execute(stmt).scalar_one_or_none()
         if connection:
+            prior_charges_enabled = connection.charges_enabled
+            prior_payouts_enabled = connection.payouts_enabled
+            prior_details_submitted = connection.details_submitted
+
+            new_charges_enabled = event_data["charges_enabled"]
+            new_payouts_enabled = event_data["payouts_enabled"]
+            new_details_submitted = event_data["details_submitted"]
+
             crud_stripe.update_connection_status(
                 db,
                 connection,
-                charges_enabled=event_data["charges_enabled"],
-                payouts_enabled=event_data["payouts_enabled"],
-                details_submitted=event_data["details_submitted"],
+                charges_enabled=new_charges_enabled,
+                payouts_enabled=new_payouts_enabled,
+                details_submitted=new_details_submitted,
+            )
+
+            changed = []
+            if prior_charges_enabled != new_charges_enabled:
+                changed.append("charges_enabled")
+            if prior_payouts_enabled != new_payouts_enabled:
+                changed.append("payouts_enabled")
+            if prior_details_submitted != new_details_submitted:
+                changed.append("details_submitted")
+
+            stripe_service.log_account_status_changed(
+                firm_id=connection.firm_id,
+                charges_enabled=new_charges_enabled,
+                payouts_enabled=new_payouts_enabled,
+                details_submitted=new_details_submitted,
+                changed=changed,
             )
 
     return {"status": "ok"}

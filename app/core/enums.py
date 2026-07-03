@@ -80,6 +80,8 @@ class InvoiceStatus(str, Enum):
     paid = "paid"
     overdue = "overdue"
     void = "void"
+    partial = "partial"
+    refunded = "refunded"
 
 
 class InvoiceDeliveryMethod(str, Enum):

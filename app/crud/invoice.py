@@ -2,6 +2,7 @@
 
 import uuid
 from datetime import datetime, timezone, date
+from decimal import Decimal
 from typing import Optional
 
 from sqlalchemy import select, func
@@ -131,6 +132,32 @@ def mark_invoice_paid(
     invoice.paid_at = datetime.now(timezone.utc)
     if stripe_charge_id is not None:
         invoice.stripe_charge_id = stripe_charge_id
+    db.commit()
+    db.refresh(invoice)
+    return invoice
+
+
+def mark_invoice_partial_payment(
+    db: Session,
+    invoice: Invoice,
+    amount_paid: Decimal,
+) -> Invoice:
+    invoice.amount_paid = amount_paid
+    invoice.status = InvoiceStatus.partial
+    db.commit()
+    db.refresh(invoice)
+    return invoice
+
+
+def mark_invoice_refunded(
+    db: Session,
+    invoice: Invoice,
+    amount_refunded: Decimal,
+    reason: Optional[str] = None,
+) -> Invoice:
+    invoice.status = InvoiceStatus.refunded
+    invoice.refunded_amount = amount_refunded
+    invoice.refund_reason = reason
     db.commit()
     db.refresh(invoice)
     return invoice

@@ -6,6 +6,7 @@ import stripe
 from fastapi import HTTPException
 
 from app.core.config import get_settings
+from app.services.behavioral_log import log_event
 
 
 def _get_stripe():
@@ -118,6 +119,30 @@ def retrieve_payment_intent(
         }
     except stripe.error.StripeError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+def log_account_status_changed(
+    *,
+    firm_id: UUID,
+    charges_enabled: bool,
+    payouts_enabled: bool,
+    details_submitted: bool,
+    changed: list[str],
+) -> None:
+    log_event(
+        firm_id=firm_id,
+        event_type="stripe.account_status_changed",
+        entity_type="firm",
+        entity_id=firm_id,
+        actor_type="system",
+        actor_id=None,
+        metadata={
+            "charges_enabled": charges_enabled,
+            "payouts_enabled": payouts_enabled,
+            "details_submitted": details_submitted,
+            "changed": changed,
+        }
+    )
 
 
 def construct_webhook_event(
