@@ -7,6 +7,7 @@ import { X, Send, Zap, Download, ChevronDown, Trash2 } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import jsPDF from 'jspdf'
 import { useAuth } from '@/lib/hooks/useAuth'
+import { useConfirm } from '@/lib/hooks/useConfirm'
 import { useConciergeContext } from '@/lib/hooks/useConciergeContext'
 import api from '@/lib/api'
 import {
@@ -88,6 +89,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
     '/firm-chat': 'Firm Chat',
   }
   const { user, isLoading } = useAuth()
+  const { confirm, ConfirmDialog } = useConfirm()
   const uiContext = useConciergeContext()
   const currentPage = uiContext.entity_name
     ? uiContext.entity_name
@@ -457,8 +459,8 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
     return () => clearInterval(interval)
   }, [isOpen, fetchNotifications])
 
-  function handleClearConversation() {
-    const confirmed = window.confirm('Clear this conversation? This cannot be undone.')
+  async function handleClearConversation() {
+    const confirmed = await confirm({ message: 'Clear this conversation? This cannot be undone.', confirmLabel: 'Clear', destructive: true })
     if (!confirmed) return
     setMessages([])
     sessionStorage.removeItem('jamm_concierge_messages')
@@ -752,7 +754,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
             const capitalized = (data.name ?? name).replace(/\b\w/g, c => c.toUpperCase())
             const resolvedRoute = `/clients/${data.id}${queryString}`
             if (formDirty) {
-              const ok = window.confirm('You have unsaved changes. Navigate away?')
+              const ok = await confirm('You have unsaved changes. Navigate away?')
               if (!ok) return
             }
             sessionStorage.setItem('jamm_concierge_status', `Navigated to ${capitalized}`)
@@ -768,7 +770,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
 
       const navLabel = routeToLabel[normalizedRoute] ?? `Navigated to ${normalizedRoute}`
       if (formDirty) {
-        const ok = window.confirm('You have unsaved changes. Navigate away?')
+        const ok = await confirm('You have unsaved changes. Navigate away?')
         if (!ok) return
       }
       sessionStorage.setItem('jamm_concierge_status', navLabel)
@@ -813,6 +815,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
 
   return (
     <>
+      {ConfirmDialog}
       {hasMounted && isOpen && (
         <div
           style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.25)', zIndex: 39 }}
@@ -975,13 +978,13 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
                           {copiedId === n.id ? 'Copied' : 'Copy'}
                         </button>
                         <button
-                          onClick={() => {
+                          onClick={async () => {
                             const targetClientId = uiContext.entity_type === 'client' ? uiContext.entity_id : null
                             if (!targetClientId) {
                               window.alert('Open the specific client record first, then I can pre-fill this message for you to send.')
                               return
                             }
-                            const confirmed = window.confirm(
+                            const confirmed = await confirm(
                               `Open ${uiContext.entity_name ?? 'this client'}'s Messages tab with this draft ready to send?\n\nMessage:\n${draft}\n\nYou will have a final chance to review before sending.`
                             )
                             if (!confirmed) return
@@ -1327,7 +1330,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
                 )}
                 <div className="flex gap-2 mt-2">
                   <button
-                    onClick={() => {
+                    onClick={async () => {
                       const currentContent = editingDraftContent[i] ?? msg.draft!.content
                       navigator.clipboard.writeText(currentContent).then(() => {
                         setCopiedId(`msg-${i}`)
@@ -1339,17 +1342,17 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
                     {copiedId === `msg-${i}` ? 'Copied' : 'Copy'}
                   </button>
                   <button
-                    onClick={() => {
+                    onClick={async () => {
                       const currentContent = editingDraftContent[i] ?? msg.draft!.content
 
                       if (msg.draft!.type === 'STAFF_REASSIGN') {
-                        const confirmed = window.confirm('Open the engagement to apply this reassignment?')
+                        const confirmed = await confirm('Open the engagement to apply this reassignment?')
                         if (confirmed) router.push('/engagements')
                         return
                       }
 
                       if (msg.draft!.type === 'INVOICE_ITEMS') {
-                        const confirmed = window.confirm('Open billing to create this invoice?')
+                        const confirmed = await confirm('Open billing to create this invoice?')
                         if (confirmed) router.push('/billing')
                         return
                       }
@@ -1364,7 +1367,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
                         window.alert('Open the specific client record first, then I can pre-fill this message for you to send.')
                         return
                       }
-                      const confirmed = window.confirm(
+                      const confirmed = await confirm(
                         `Open ${uiContext.entity_name ?? 'this client'}'s Messages tab with this draft ready to send?\n\nMessage:\n${currentContent}\n\nYou will have a final chance to review before sending.`
                       )
                       if (!confirmed) return

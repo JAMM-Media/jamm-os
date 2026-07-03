@@ -49,89 +49,196 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-# Task: Add Clear Conversation button, stop auto-wiping conversation on panel close
+# Task: Build reusable JAMM-branded confirm modal, replace all 8 window.confirm() calls across the app
 
 USE: claude sonnet
 
 ## VERIFY BEFORE ACT
 
-grep -n 'if (!isOpen)' -A 10 /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+cat /home/corby/jamm-os/frontend/src/components/ui/Modal.tsx
 
-Confirm the current close-effect: on close, it resets autopilot, clears jamm_concierge_autopilot and jamm_concierge_messages from sessionStorage, calls setMessages([]), and sets hasInitialized.current = false.
+Confirm the existing Modal component's props (open, onClose, title, children, footer, size) and styling conventions, to build the new ConfirmModal on top of it rather than duplicating structure.
 
-sed -n '845,882p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+grep -n "window.confirm" -B 2 -A 3 /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx /home/corby/jamm-os/frontend/src/components/engagements/EditEngagementModal.tsx
 
-Confirm the exact header structure: the Autopilot toggle button, then the Close (X) button, both inside a flex container with gap-2.
-
-grep -n "from 'lucide-react'" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
-
-Confirm the current icon import line, so Trash2 can be added to it.
+Confirm all 8 current call sites match what is listed below, in case line numbers have shifted since this task was written.
 
 ## WHAT IS WRONG
 
-Closing the Concierge panel (clicking X) currently wipes the entire conversation automatically and irreversibly, with no way to keep it or bring it back. This was flagged as the wrong default -- closing the panel is often just "I'm done looking at this for now," not "delete everything I just discussed." The fix is twofold: stop clearing the conversation automatically on close (the conversation should persist until the user explicitly clears it), and add a small, explicit Clear Conversation icon in the panel header that the user can click when they genuinely want to start fresh, with a confirmation step since this action is irreversible. The button should only appear once there is an actual conversation to clear (more than just the initial opening message), not on every fresh empty panel.
+The app uses the browser's native window.confirm() dialog in 8 places across 2 files. This dialog is rendered by the browser itself, not the page, so it cannot be styled, colored, or branded in any way -- it always shows as a generic "localhost:3000 says" box regardless of the app's actual design. This breaks visual consistency with the rest of the product, which has a fully custom design system including an existing branded Modal component. The fix is to build a reusable, JAMM-branded confirm modal and a matching hook that mimics window.confirm()'s ergonomics (an awaitable function returning true/false), then convert all 8 existing call sites to use it instead.
 
 ## ACTION
 
-File: /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+Step 1: Create a new reusable confirm modal component. Create /home/corby/jamm-os/frontend/src/components/ui/ConfirmModal.tsx:
 
-Step 1: Update the icon import to add Trash2:
+// frontend/src/components/ui/ConfirmModal.tsx
+'use client'
+import { Modal } from './Modal'
 
-import { X, Send, Zap, Download, ChevronDown, Trash2 } from 'lucide-react'
+interface ConfirmModalProps {
+  open: boolean
+  message: string
+  confirmLabel?: string
+  cancelLabel?: string
+  destructive?: boolean
+  onConfirm: () => void
+  onCancel: () => void
+}
 
-Step 2: Update the close-effect to stop wiping the conversation, keeping only the autopilot reset and the hasInitialized reset (which is still needed so the opening flow correctly re-evaluates on the next open):
+export function ConfirmModal({
+  open,
+  message,
+  confirmLabel = 'Confirm',
+  cancelLabel = 'Cancel',
+  destructive = false,
+  onConfirm,
+  onCancel,
+}: ConfirmModalProps) {
+  return (
+    <Modal
+      open={open}
+      onClose={onCancel}
+      title="Confirm"
+      size="sm"
+      footer={
+        <>
+          <button
+            onClick={onCancel}
+            className="text-[13px] font-medium px-3 py-1.5 rounded-[6px] border border-[0.5px] border-surface-border dark:border-dark-border text-[#6B7280] dark:text-[#9CA3AF] hover:border-brand hover:text-brand dark:hover:border-[#4A7FA5] dark:hover:text-[#4A7FA5] transition-colors"
+          >
+            {cancelLabel}
+          </button>
+          <button
+            onClick={onConfirm}
+            className={`text-[13px] font-medium px-3 py-1.5 rounded-[6px] transition-colors ${
+              destructive
+                ? 'bg-[#DC2626] text-white hover:bg-[#B91C1C]'
+                : 'bg-brand dark:bg-[#4A7FA5] text-white hover:opacity-90'
+            }`}
+          >
+            {confirmLabel}
+          </button>
+        </>
+      }
+    >
+      <p className="text-[13px] text-[#374151] dark:text-[#D1D5DB] whitespace-pre-wrap leading-relaxed">
+        {message}
+      </p>
+    </Modal>
+  )
+}
 
-    if (!isOpen) {
-      setAutopilotOn(false)
-      autopilotRef.current = false
-      sessionStorage.removeItem('jamm_concierge_autopilot')
-      hasInitialized.current = false
-    }
+Step 2: Create a matching hook. Create /home/corby/jamm-os/frontend/src/lib/hooks/useConfirm.tsx:
 
-Remove sessionStorage.removeItem('jamm_concierge_messages') and setMessages([]) from this block -- the conversation now persists across a close/reopen cycle within the same browser session, exactly as it already does across page navigation.
+// frontend/src/lib/hooks/useConfirm.tsx
+'use client'
+import { useState, useCallback, useRef } from 'react'
+import { ConfirmModal } from '@/components/ui/ConfirmModal'
 
-Step 3: Add a handler function for clearing the conversation, placed near the other handler functions in the component:
+interface ConfirmOptions {
+  message: string
+  confirmLabel?: string
+  cancelLabel?: string
+  destructive?: boolean
+}
 
-  function handleClearConversation() {
-    const confirmed = window.confirm('Clear this conversation? This cannot be undone.')
-    if (!confirmed) return
-    setMessages([])
-    sessionStorage.removeItem('jamm_concierge_messages')
-    setSuggestions([])
-  }
+export function useConfirm() {
+  const [options, setOptions] = useState<ConfirmOptions | null>(null)
+  const resolveRef = useRef<((value: boolean) => void) | null>(null)
 
-Step 4: Add the Clear Conversation button in the header, positioned between the Autopilot toggle and the Close button, only rendered when there is more than just an initial single message:
+  const confirm = useCallback((opts: ConfirmOptions | string): Promise<boolean> => {
+    const normalized = typeof opts === 'string' ? { message: opts } : opts
+    setOptions(normalized)
+    return new Promise((resolve) => {
+      resolveRef.current = resolve
+    })
+  }, [])
 
-Insert this new button inside the header's flex container (the div with className="flex items-center gap-2" that currently holds the Autopilot toggle and the Close button), after the Autopilot toggle's closing </div> and before the existing Close button:
+  const handleConfirm = useCallback(() => {
+    resolveRef.current?.(true)
+    resolveRef.current = null
+    setOptions(null)
+  }, [])
 
-            {messages.length > 1 && (
-              <button
-                onClick={handleClearConversation}
-                aria-label="Clear conversation"
-                title="Clear conversation"
-                className="text-[#6B7280] hover:text-[#DC2626] dark:hover:text-[#F87171] transition-colors"
-              >
-                <Trash2 className="h-4 w-4" />
-              </button>
-            )}
+  const handleCancel = useCallback(() => {
+    resolveRef.current?.(false)
+    resolveRef.current = null
+    setOptions(null)
+  }, [])
 
-The messages.length > 1 condition hides the button when only the initial opening message is present (morning briefing, cooldown message, or plain opener), showing it only once a real back-and-forth exists.
+  const ConfirmDialog = options ? (
+    <ConfirmModal
+      open={true}
+      message={options.message}
+      confirmLabel={options.confirmLabel}
+      cancelLabel={options.cancelLabel}
+      destructive={options.destructive}
+      onConfirm={handleConfirm}
+      onCancel={handleCancel}
+    />
+  ) : null
 
-Do not change any other part of the header, the Autopilot toggle's own logic, or any other section of this file.
+  return { confirm, ConfirmDialog }
+}
+
+This hook exposes an async confirm() function that behaves like window.confirm() (call it, await the result, get true or false) while actually rendering a real, branded modal behind the scenes. ConfirmDialog must be rendered somewhere in the component tree of whatever component calls useConfirm() -- typically near the top of that component's JSX return.
+
+Step 3: Wire it into ConciergePanel.tsx. Import and call the hook near the other hooks at the top of the component:
+
+const { confirm, ConfirmDialog } = useConfirm()
+
+Render {ConfirmDialog} somewhere in the component's JSX return, near the top level (e.g. immediately after the outer wrapping div opens, before the header).
+
+Convert all 7 window.confirm() call sites in this file. For each one, the containing function must be or become async if it is not already, and the call changes from a synchronous window.confirm(msg) returning a boolean directly, to an awaited confirm(msg) call:
+
+Site 1 (line ~461, handleClearConversation): make the function async, change to:
+    const confirmed = await confirm({ message: 'Clear this conversation? This cannot be undone.', confirmLabel: 'Clear', destructive: true })
+
+Site 2 (line ~755, inside the client-resolve async block): already inside an async function, change to:
+    const ok = await confirm('You have unsaved changes. Navigate away?')
+
+Site 3 (line ~771, inside executeAction): already async, change to:
+    const ok = await confirm('You have unsaved changes. Navigate away?')
+
+Site 4 (line ~984, draft-send confirmation with dynamic message): the containing onClick handler must become async, change to:
+    const confirmed = await confirm(`Open ${uiContext.entity_name ?? 'this client'}'s Messages tab with this draft ready to send?\n\nMessage:\n${draft}\n\nYou will have a final chance to review before sending.`)
+
+Site 5 (line ~1346, STAFF_REASSIGN): the containing onClick handler must become async, change to:
+    const confirmed = await confirm('Open the engagement to apply this reassignment?')
+
+Site 6 (line ~1352, INVOICE_ITEMS): the containing onClick handler must become async, change to:
+    const confirmed = await confirm('Open billing to create this invoice?')
+
+Site 7 (line ~1367, second draft-send confirmation, duplicate of site 4's pattern with currentContent instead of draft): the containing onClick handler must become async, change to:
+    const confirmed = await confirm(`Open ${uiContext.entity_name ?? 'this client'}'s Messages tab with this draft ready to send?\n\nMessage:\n${currentContent}\n\nYou will have a final chance to review before sending.`)
+
+For any onClick={() => { ... }} handler that needs to become async, change it to onClick={async () => { ... }} -- React supports async event handlers without any special handling required.
+
+Step 4: Wire it into EditEngagementModal.tsx the same way. Import useConfirm, call the hook, render {ConfirmDialog} in the component's JSX, and convert the one call site (line ~95):
+
+    const confirmed = await confirm(`${uncheckedQcCount} checklist item${uncheckedQcCount > 1 ? 's are' : ' is'} not checked. Mark engagement as complete anyway?`)
+
+The containing function must be or become async if it is not already.
+
+Do not change the actual confirmation logic, messages, or subsequent behavior at any of the 8 sites -- only the mechanism used to ask the question. Do not touch any other file.
 
 ## VERIFY AFTER ACT
 
-grep -n "Trash2" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+find /home/corby/jamm-os/frontend/src/components/ui/ConfirmModal.tsx /home/corby/jamm-os/frontend/src/lib/hooks/useConfirm.tsx
 
-Expected: present in the import line and in the new button.
+Expected: both files exist.
 
-grep -n "handleClearConversation" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+grep -c "window.confirm" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx /home/corby/jamm-os/frontend/src/components/engagements/EditEngagementModal.tsx
 
-Expected: the function definition and its use in the new button's onClick, both present.
+Expected: 0 for both files -- every window.confirm() call replaced.
 
-grep -n "setMessages(\[\])" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+grep -c "await confirm(" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-Expected: no longer present inside the close-effect (the if (!isOpen) block) -- only present now inside handleClearConversation.
+Expected: 7.
+
+grep -c "await confirm(" /home/corby/jamm-os/frontend/src/components/engagements/EditEngagementModal.tsx
+
+Expected: 1.
 
 cd /home/corby/jamm-os/frontend
 npm run build
@@ -140,22 +247,20 @@ Expected: zero TypeScript errors.
 
 ## MANUAL VERIFICATION (the actual test)
 
-1. Restart the frontend.
-2. Open the Concierge panel, ask a real question, get an answer. Confirm the Clear Conversation icon now appears in the header (it should not have been visible before this exchange, only the initial opening message).
-3. Close the panel (X button), then reopen it. Confirm the conversation from step 2 is still there, not wiped -- this is the core behavior change.
-4. Click the new Clear Conversation icon. Confirm a browser confirm dialog appears asking to confirm.
-5. Cancel the dialog, confirm the conversation is untouched.
-6. Click the icon again and confirm this time. Confirm the conversation is now cleared, back to a blank state with no messages and no leftover suggestion chips.
-7. Regression check: confirm Autopilot still correctly resets to off when the panel is closed (unrelated to the conversation-clearing change, should be unaffected).
-8. Regression check: navigate between pages (not closing the panel) and confirm the conversation still persists across navigation exactly as it did before this task, since Phase 1/2 persistence logic was not touched.
+1. Restart the frontend with a clean build.
+2. Trigger the Clear Conversation confirm (ask a question, click the trash icon). Confirm the dialog now shows as a real, JAMM-branded modal matching the app's design (rounded corners, correct colors, proper Cancel/Clear buttons), not the native browser "localhost:3000 says" box.
+3. Confirm clicking Cancel correctly cancels (conversation stays), and clicking Clear (styled as destructive/red) correctly clears.
+4. Test at least one more of the 7 remaining ConciergePanel sites if reachable (e.g. trigger a scenario with unsaved changes and attempt navigation via a chip), confirm it also shows the new branded modal.
+5. Test the EditEngagementModal site: attempt to mark an engagement complete with unchecked QC items, confirm the new branded modal appears there too.
+6. Regression check: confirm Escape key still closes the new confirm modal (inherited from the base Modal component), and clicking the overlay outside the modal also closes it as a cancel.
 
-Report what you observe at steps 3, 4, and 6 specifically.
+Report what you observe at steps 2, 3, and 5 specifically.
 
 ## GIT
 
 cd /home/corby/jamm-os
 git add -A
-git commit -m "feat: Concierge conversation now persists across closing and reopening the panel instead of being automatically wiped, and a new Clear Conversation icon in the header lets the user explicitly clear it when they want to, with a confirmation step since the action is irreversible. The button only appears once a real conversation exists, not on the initial opening message alone."
+git commit -m "feat: replace all 8 native window.confirm() dialogs across the app with a reusable, JAMM-branded ConfirmModal and useConfirm hook, built on the existing Modal component. Native browser confirm dialogs cannot be styled and always displayed as a generic localhost box, breaking visual consistency with the rest of the product's design system."
 git pull --rebase origin main
 git push origin main
 

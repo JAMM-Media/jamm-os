@@ -2,6 +2,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useConfirm } from '@/lib/hooks/useConfirm'
 import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Modal } from '@/components/ui/Modal'
@@ -58,6 +59,7 @@ export function EditEngagementModal({ isOpen, onClose, engagement, onSuccess, un
   const [form, setForm] = useState<FormState>(() => toFormState(engagement))
   const [nameError, setNameError] = useState('')
   const [saving, setSaving] = useState(false)
+  const { confirm, ConfirmDialog } = useConfirm()
 
   useEffect(() => {
     if (isOpen) {
@@ -92,7 +94,7 @@ export function EditEngagementModal({ isOpen, onClose, engagement, onSuccess, un
     }
 
     if (patch.status === 'completed' && uncheckedQcCount > 0) {
-      const confirmed = window.confirm(
+      const confirmed = await confirm(
         `${uncheckedQcCount} checklist item${uncheckedQcCount > 1 ? 's are' : ' is'} not checked. Mark engagement as complete anyway?`
       )
       if (!confirmed) return
@@ -114,7 +116,9 @@ export function EditEngagementModal({ isOpen, onClose, engagement, onSuccess, un
   }
 
   return (
-    <Modal
+    <>
+      {ConfirmDialog}
+      <Modal
       open={isOpen}
       onClose={onClose}
       title="Edit Engagement"
@@ -185,6 +189,7 @@ export function EditEngagementModal({ isOpen, onClose, engagement, onSuccess, un
           />
         </FormField>
       </div>
-    </Modal>
+      </Modal>
+    </>
   )
 }
