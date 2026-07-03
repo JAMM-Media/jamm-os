@@ -1,5 +1,6 @@
 # app/services/invoice_service.py
 
+import logging
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Optional
@@ -11,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.crud import invoice as crud_invoice
 from app.crud import time_entry as crud_time_entry
+from app.db.session import SessionLocal
 from app.models.client import Client
 from app.models.engagement import Engagement
 from app.models.firm import Firm
@@ -19,6 +21,8 @@ from app.core.enums import InvoiceStatus, TriggerEvent
 from app.schemas.invoice import InvoiceCreate, InvoiceUpdate
 from app.services.event_bus import emit_event
 from app.services.behavioral_log import log_event
+
+logger = logging.getLogger(__name__)
 
 
 async def create_invoice(
@@ -201,6 +205,43 @@ def mark_invoice_overdue(
             "client_id": str(invoice.client_id),
         }
     )
+
+
+def run_invoice_overdue_sweep() -> None:
+    """
+    Daily sweep: transitions sent/partial invoices past their due_date to
+    overdue and fires invoice.overdue for each. The status transition is the
+    idempotency guard -- once an invoice is overdue it no longer matches the
+    sent/partial filter, so it is never selected (and never events-fired)
+    again.
+    """
+    try:
+        db = SessionLocal()
+        try:
+            today = datetime.now(timezone.utc).date()
+            stmt = select(Invoice).where(
+                Invoice.status.in_([InvoiceStatus.sent, InvoiceStatus.partial]),
+                Invoice.due_date.isnot(None),
+                Invoice.due_date < today,
+                Invoice.is_deleted == False,  # noqa: E712
+            )
+            invoices = db.execute(stmt).scalars().all()
+
+            for invoice in invoices:
+                try:
+                    invoice.status = InvoiceStatus.overdue
+                    db.commit()
+                    mark_invoice_overdue(db=db, invoice=invoice)
+                except Exception as exc:
+                    db.rollback()
+                    logger.error(
+                        "run_invoice_overdue_sweep: failed for invoice %s: %s",
+                        invoice.id, exc, exc_info=True,
+                    )
+        finally:
+            db.close()
+    except Exception as exc:
+        logger.error("run_invoice_overdue_sweep failed: %s", exc, exc_info=True)
 
 
 def delete_invoice(

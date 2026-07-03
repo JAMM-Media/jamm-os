@@ -17,6 +17,7 @@ from app.services.qbo_budget_service import run_budget_variance_checks
 from app.services.gmail_signals_service import run_gmail_signals_for_all_firms
 from app.services.outlook_signals_service import run_outlook_signals_for_all_firms
 from app.services.esign_reminder_service import run_esign_auto_reminders, run_esign_escalation_check
+from app.services.invoice_service import run_invoice_overdue_sweep
 from app.core.scheduler_lock import try_acquire_scheduler_lock, release_scheduler_lock
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
@@ -160,6 +161,14 @@ async def lifespan(app: FastAPI):
             hour=9,
             minute=15,
             id="esign_escalation_check",
+            replace_existing=True,
+        )
+        scheduler.add_job(
+            run_invoice_overdue_sweep,
+            trigger="cron",
+            hour=7,
+            minute=45,
+            id="invoice_overdue_sweep",
             replace_existing=True,
         )
         scheduler.start()

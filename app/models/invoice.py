@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime, date
 from typing import Optional
 
-from sqlalchemy import String, Boolean, DateTime, Date, ForeignKey, Text, Numeric, JSON, Integer, func
+from sqlalchemy import String, Boolean, DateTime, Date, ForeignKey, Text, Numeric, JSON, Integer, UniqueConstraint, func
 from sqlalchemy import Enum as PgEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -14,6 +14,10 @@ from app.core.enums import InvoiceStatus, InvoiceDeliveryMethod
 
 class Invoice(Base):
     __tablename__ = "invoices"
+
+    __table_args__ = (
+        UniqueConstraint("firm_id", "invoice_number", name="uq_invoice_firm_invoice_number"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
 

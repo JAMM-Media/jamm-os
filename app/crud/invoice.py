@@ -6,6 +6,7 @@ from decimal import Decimal
 from typing import Optional
 
 from sqlalchemy import select, func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.invoice import Invoice
@@ -65,16 +66,15 @@ def get_invoices_count(
     return db.execute(stmt).scalar_one()
 
 
+_INVOICE_NUMBER_CONSTRAINT = "uq_invoice_firm_invoice_number"
+
+
 def create_invoice(
     db: Session,
     invoice_in: InvoiceCreate,
     firm_id: uuid.UUID,
     created_by: uuid.UUID,
 ) -> Invoice:
-    count_stmt = select(func.count()).select_from(Invoice).where(Invoice.firm_id == firm_id)
-    existing_count = db.execute(count_stmt).scalar_one()
-    invoice_number = f"INV-{(existing_count + 1):04d}"
-
     data = invoice_in.model_dump(exclude={"invoice_number"})
     line_items = data.get("line_items")
     if line_items:
@@ -82,16 +82,29 @@ def create_invoice(
             {k: (str(v) if v is not None else None) for k, v in item.items()} for item in line_items
         ]
 
-    invoice = Invoice(
-        **data,
-        firm_id=firm_id,
-        created_by=created_by,
-        invoice_number=invoice_number,
-    )
-    db.add(invoice)
-    db.commit()
-    db.refresh(invoice)
-    return invoice
+    max_attempts = 3
+    for attempt in range(1, max_attempts + 1):
+        count_stmt = select(func.count()).select_from(Invoice).where(Invoice.firm_id == firm_id)
+        existing_count = db.execute(count_stmt).scalar_one()
+        invoice_number = f"INV-{(existing_count + 1):04d}"
+
+        invoice = Invoice(
+            **data,
+            firm_id=firm_id,
+            created_by=created_by,
+            invoice_number=invoice_number,
+        )
+        db.add(invoice)
+        try:
+            db.commit()
+        except IntegrityError as exc:
+            db.rollback()
+            if _INVOICE_NUMBER_CONSTRAINT not in str(getattr(exc, "orig", exc)) or attempt == max_attempts:
+                raise
+            continue
+
+        db.refresh(invoice)
+        return invoice
 
 
 def update_invoice(db: Session, invoice: Invoice, invoice_in: InvoiceUpdate) -> Invoice:
