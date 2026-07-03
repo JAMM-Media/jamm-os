@@ -49,59 +49,124 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-# Task: Fix double-wrapped AppShell on engagements/[id]/page.tsx, a leftover gap from Phase 1
+# Task: Phase 2 -- Migrate remaining 19 pages into the (app) route group for full Concierge conversation persistence
 
-USE: claude sonnet
+USE: claude fable-5
 
 ## VERIFY BEFORE ACT
 
-grep -n "<AppShell\|</AppShell>\|import.*AppShell" "/home/corby/jamm-os/frontend/src/app/(app)/engagements/[id]/page.tsx"
+cat "/home/corby/jamm-os/frontend/src/app/(app)/layout.tsx"
 
-Confirm exactly 3 <AppShell> / </AppShell> pairs at lines 115/121, 127/131, and 136/529, plus the import at line 8.
+Confirm the route group layout created in Phase 1 wraps children in AppShell.
+
+Confirm exact current <AppShell> counts per file (already verified, use as ground truth -- if any count differs from this list when you check, stop and report rather than proceeding):
+
+staff/page.tsx: 2
+tasks/page.tsx: 2
+tasks/[id]/page.tsx: 3
+settings/page.tsx: 1
+settings/team/page.tsx: 2
+settings/my-integrations/page.tsx: 1
+settings/integrations/page.tsx: 1
+settings/billing/page.tsx: 1
+calendar/page.tsx: 1
+(dashboard)/firm-chat/page.tsx: 1
+(dashboard)/timesheets/page.tsx: 1
+(dashboard)/inbox/page.tsx: 1
+(dashboard)/templates/page.tsx: 1
+documents/page.tsx: 2
+documents/[id]/page.tsx: 3
+notifications/page.tsx: 1
+billing/page.tsx: 2
+billing/[id]/page.tsx: 3
+billing/wip/page.tsx: 1
+
+Total: 19 files, 29 AppShell instances.
 
 ## WHAT IS WRONG
 
-Confirmed via direct verification: engagements/[id]/page.tsx was physically moved into the (app) route group during Phase 1 (git mv moved the entire engagements folder including its [id] subfolder), but Phase 1's task only explicitly listed engagements/page.tsx for unwrapping, not engagements/[id]/page.tsx. As a result, this file still has its own AppShell wrapper tags, meaning it currently renders AppShell twice on every load: once from the new (app)/layout.tsx (which now correctly wraps every page in the group), and again from its own leftover wrapper tags. This likely produces a duplicate sidebar and duplicate Concierge panel on this specific page, though the exact visual symptom was not directly observed since this page was not part of Phase 1's manual test coverage.
+Phase 1 (already completed) moved dashboard, engagements, and clients into a shared (app) route group layout, fixing Concierge conversation persistence across navigation for those pages. This is Phase 2: migrate the remaining 19 pages using the identical pattern, so persistence works across the entire authenticated app, not just those three areas.
+
+Phase 1 left one gap that was found and fixed separately: engagements/[id]/page.tsx was physically moved via its parent folder's git mv but its own AppShell tags were not stripped, since it was not explicitly listed in that task's file list, causing a double-wrapped AppShell (rendering two sidebars and two Concierge panels) until caught and fixed afterward. This task exists specifically to prevent that mistake from recurring at 19-file scale: every single file listed above, including every nested [id] or sub-route file, must be individually verified both before moving (confirming the AppShell count matches what is listed above) and after unwrapping (confirming the count is exactly 0), with no file skipped or assumed identical to a sibling file just because it is in the same folder.
 
 ## ACTION
 
-File: /home/corby/jamm-os/frontend/src/app/(app)/engagements/[id]/page.tsx
+Step 1: Move all remaining page folders into the (app) route group using git mv, preserving history. The (dashboard) route group currently has no layout.tsx of its own and will be dissolved into (app) for consistency, since maintaining two separate authenticated route groups serves no purpose.
 
-Remove all 3 <AppShell> opening tags and their 3 matching </AppShell> closing tags (at the line pairs confirmed in VERIFY BEFORE ACT), preserving everything between them exactly as-is -- the loading state, not-found state, and main content must remain completely unchanged, only the wrapper tags removed. Remove the AppShell import on line 8.
+git mv frontend/src/app/staff frontend/src/app/(app)/staff
+git mv frontend/src/app/tasks frontend/src/app/(app)/tasks
+git mv frontend/src/app/settings frontend/src/app/(app)/settings
+git mv frontend/src/app/calendar frontend/src/app/(app)/calendar
+git mv "frontend/src/app/(dashboard)/firm-chat" "frontend/src/app/(app)/firm-chat"
+git mv "frontend/src/app/(dashboard)/timesheets" "frontend/src/app/(app)/timesheets"
+git mv "frontend/src/app/(dashboard)/inbox" "frontend/src/app/(app)/inbox"
+git mv "frontend/src/app/(dashboard)/templates" "frontend/src/app/(app)/templates"
+git mv frontend/src/app/documents frontend/src/app/(app)/documents
+git mv frontend/src/app/notifications frontend/src/app/(app)/notifications
+git mv frontend/src/app/billing frontend/src/app/(app)/billing
 
-Do not touch any other file in this task.
+After all moves, confirm the now-empty (dashboard) route group folder is removed (git mv of its last child should leave it empty; delete the empty (dashboard) folder if it remains).
+
+After each individual git mv, list the destination directory's contents before proceeding to the next move, to confirm every nested file (including any [id] subfolders, and settings' team/my-integrations/integrations/billing subfolders) moved correctly.
+
+Step 2: For every one of the 19 files, remove every <AppShell> opening tag and matching </AppShell> closing tag, preserving all content between them exactly as-is, and remove the AppShell import line. Process one file at a time. Before moving to the next file, run grep -c "<AppShell" on the file just edited and confirm it now reads exactly 0. Do not proceed to the next file until this is confirmed for the current one. If any file's JSX structure requires a Fragment (<>...</>) instead of simply deleting the tags, because multiple sibling elements existed under a single AppShell wrapper (as was required for clients/[id]/page.tsx and engagements/[id]/page.tsx in prior work), apply the same Fragment pattern here as needed, verified by a successful build with zero TypeScript errors for that specific change.
+
+Pay particular attention to the three files with the highest instance counts (tasks/[id]/page.tsx, documents/[id]/page.tsx, billing/[id]/page.tsx, each with 3), since these detail-page patterns proved most likely to need Fragment wrapping in prior work on clients/[id] and engagements/[id].
+
+Do not modify AppShell.tsx or (app)/layout.tsx. Do not modify ConciergePanel.tsx. Do not modify any file's actual page content, only the AppShell wrapper tags and the now-unused import.
 
 ## VERIFY AFTER ACT
 
-grep -c "<AppShell" "/home/corby/jamm-os/frontend/src/app/(app)/engagements/[id]/page.tsx"
+For every one of the 19 files, confirm and report individually (not just a summary count) both the <AppShell> count is 0 and the AppShell import is absent:
 
-Expected: 0.
+grep -c "<AppShell" "/home/corby/jamm-os/frontend/src/app/(app)/staff/page.tsx"
+grep -c "<AppShell" "/home/corby/jamm-os/frontend/src/app/(app)/tasks/page.tsx"
+grep -c "<AppShell" "/home/corby/jamm-os/frontend/src/app/(app)/tasks/[id]/page.tsx"
+grep -c "<AppShell" "/home/corby/jamm-os/frontend/src/app/(app)/settings/page.tsx"
+grep -c "<AppShell" "/home/corby/jamm-os/frontend/src/app/(app)/settings/team/page.tsx"
+grep -c "<AppShell" "/home/corby/jamm-os/frontend/src/app/(app)/settings/my-integrations/page.tsx"
+grep -c "<AppShell" "/home/corby/jamm-os/frontend/src/app/(app)/settings/integrations/page.tsx"
+grep -c "<AppShell" "/home/corby/jamm-os/frontend/src/app/(app)/settings/billing/page.tsx"
+grep -c "<AppShell" "/home/corby/jamm-os/frontend/src/app/(app)/calendar/page.tsx"
+grep -c "<AppShell" "/home/corby/jamm-os/frontend/src/app/(app)/firm-chat/page.tsx"
+grep -c "<AppShell" "/home/corby/jamm-os/frontend/src/app/(app)/timesheets/page.tsx"
+grep -c "<AppShell" "/home/corby/jamm-os/frontend/src/app/(app)/inbox/page.tsx"
+grep -c "<AppShell" "/home/corby/jamm-os/frontend/src/app/(app)/templates/page.tsx"
+grep -c "<AppShell" "/home/corby/jamm-os/frontend/src/app/(app)/documents/page.tsx"
+grep -c "<AppShell" "/home/corby/jamm-os/frontend/src/app/(app)/documents/[id]/page.tsx"
+grep -c "<AppShell" "/home/corby/jamm-os/frontend/src/app/(app)/notifications/page.tsx"
+grep -c "<AppShell" "/home/corby/jamm-os/frontend/src/app/(app)/billing/page.tsx"
+grep -c "<AppShell" "/home/corby/jamm-os/frontend/src/app/(app)/billing/[id]/page.tsx"
+grep -c "<AppShell" "/home/corby/jamm-os/frontend/src/app/(app)/billing/wip/page.tsx"
 
-grep -n "import.*AppShell" "/home/corby/jamm-os/frontend/src/app/(app)/engagements/[id]/page.tsx"
+Expected: 0 for every single one, no exceptions.
 
-Expected: no matches.
+find "/home/corby/jamm-os/frontend/src/app/(dashboard)" -type f 2>/dev/null
+
+Expected: no output or "No such file or directory" -- confirming the old, now-empty route group was fully dissolved.
 
 cd /home/corby/jamm-os/frontend
 rm -rf .next
 npm run build
 
-Expected: zero TypeScript errors, /engagements/[id] still resolves as a valid route.
+Expected: zero TypeScript errors, and every original route (/staff, /tasks, /tasks/[id], /settings, /settings/team, /settings/my-integrations, /settings/integrations, /settings/billing, /calendar, /firm-chat, /timesheets, /inbox, /templates, /documents, /documents/[id], /notifications, /billing, /billing/[id], /billing/wip) still resolves correctly, since route groups are transparent to the URL.
 
-## MANUAL VERIFICATION
+## MANUAL VERIFICATION (the actual test)
 
 1. Restart the frontend with a clean build.
-2. Navigate to any individual engagement's detail page (e.g. click into "2025 S-Corp Tax Return" from the Engagements list).
-3. Confirm only one sidebar and one Concierge panel render, not two.
-4. Confirm the page's actual content (Overview, Tasks, QC Checklist, Documents tabs) renders correctly and completely unchanged.
-5. Confirm conversation persistence still works: ask a question on the Engagements list, click into a specific engagement's detail page, confirm the conversation is still there (this page is inside the (app) group, so persistence should hold here too, same as clients/[id] already does).
+2. Log in, go to Dashboard, open the Concierge panel, ask a real question and get an answer.
+3. Navigate via sidebar or chip through at least 6 of the newly migrated pages in sequence (e.g. Staff, Tasks, Settings, Calendar, Documents, Billing), without ever closing the panel.
+4. Confirm the original conversation from step 2 is still fully visible after every single one of those navigations, not reset at any point.
+5. Spot-check the three highest-risk files individually: open a specific task's detail page, a specific document's detail page, and a specific invoice's detail page. Confirm each renders with exactly one sidebar and one Concierge panel (not doubled), and confirm the conversation still persists on each.
+6. Confirm Settings' internal tab-switching (Account, Firm Settings, Portal, Email, Data) still works normally, unaffected by this change, since Settings has its own internal activeTab state separate from the route-level pages like settings/team.
 
-Report what you observe at steps 3 and 5.
+Report what you observe at steps 4 and 5 specifically, since those are the actual proof this phase worked across the full remaining page set.
 
 ## GIT
 
 cd /home/corby/jamm-os
 git add -A
-git commit -m "fix: remove leftover AppShell wrapper tags from engagements/[id]/page.tsx -- a gap from Phase 1 where the file was physically moved into the (app) route group but never had its own now-redundant AppShell tags stripped, causing it to render AppShell twice (once from the new shared layout, once from its own leftover wrapper)"
+git commit -m "fix: Phase 2 -- migrate remaining 19 pages (staff, tasks, settings and its sub-routes, calendar, firm-chat, timesheets, inbox, templates, documents, notifications, billing and its sub-routes) into the shared (app) route group layout, completing the Concierge conversation persistence fix across the entire authenticated app. Dissolved the now-unused (dashboard) route group. Every file's AppShell wrapper tags individually verified removed to prevent the double-wrapping gap found and fixed separately in engagements/[id]/page.tsx after Phase 1."
 git pull --rebase origin main
 git push origin main
 
