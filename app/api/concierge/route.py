@@ -222,7 +222,7 @@ _TOPIC_KEYWORDS: dict[str, set[str]] = {
     },
     "billing": {
         "invoice", "invoices", "billing", "payment", "stripe", "overdue invoice",
-        "ar", "accounts receivable", "send invoice", "invoice status",
+        "accounts receivable", "send invoice", "invoice status",
         "partial payment", "payment receipt", "invoice line", "bill",
         "unbilled", "collect payment", "paid", "unpaid", "owes", "owe", "money",
     },

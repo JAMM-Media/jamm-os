@@ -49,112 +49,83 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-# Task: Fix Go to Tasks chip navigation, and complete the calendar chip fix end-to-end (frontend label + backend classifier)
+# Task: Fix billing/calendar topic misclassification caused by overly short "ar" keyword substring collision
 
 USE: claude sonnet
 
 ## VERIFY BEFORE ACT
 
-grep -n "const routes: Record<string, string>" -A 10 /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+grep -n '"ar"' /home/corby/jamm-os/app/api/concierge/route.py
 
-Confirm 'Go to Tasks' is absent from this routes map, while it exists as a valid label in TOPIC_CHIPS for the tasks topic, meaning the chip renders but does nothing on click.
+Confirm "ar" exists as a standalone keyword in the billing entry of _TOPIC_KEYWORDS.
 
-grep -n "const TOPIC_CHIPS" -A 15 /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+python3 -c "
+msg = 'is there any calendar in the app?'
+print('ar' in msg)
+"
 
-Confirm there is no calendar entry anywhere in this map.
-
-sed -n '194,263p' /home/corby/jamm-os/app/api/concierge/route.py
-
-Confirm _TOPIC_KEYWORDS has no "calendar" key and no calendar-related keywords in any other topic's set, meaning the backend classifier can never produce a "calendar" topic value regardless of what the frontend expects.
+Confirm this prints True, demonstrating that the short keyword "ar" matches as a substring inside "calendar" even though the message has nothing to do with billing.
 
 ## WHAT IS WRONG
 
-Three related gaps, all stemming from the same underlying issue: the suggestion-chip system spans two layers (a backend keyword classifier in route.py that decides the topic, and a frontend map in ConciergePanel.tsx that turns a topic into a chip label and then a route) with no shared source of truth between them, so entries can exist on one side without the other.
-
-1. Confirmed via live testing: 'Go to Tasks' exists as a chip label in TOPIC_CHIPS and the backend correctly tags tasks questions [TOPIC:tasks], but the routes map inside handleSuggestion has no 'Go to Tasks' entry, so clicking the chip does nothing.
-
-2. There is no calendar entry in TOPIC_CHIPS, so even if the backend could produce [TOPIC:calendar], no chip would show.
-
-3. There is no calendar keyword set in the backend's _TOPIC_KEYWORDS at all, so _classify_topic can never return "calendar" in the first place -- any calendar-related question always falls through to "general". This means fixing only the frontend (issue 2) would be incomplete on its own, since the backend would never actually produce the topic value needed to trigger it.
-
-All three must be fixed together for the calendar chip to work end to end; fixing only some of them leaves an unreachable, dead code path.
+Confirmed via live testing and direct reproduction: a calendar-only question ("is there any calendar in the app?") was classified as [TOPIC:billing] instead of [TOPIC:calendar], showing the wrong suggestion chip. Root cause: _classify_topic uses plain substring matching (kw in lower), not word-boundary-aware matching. The billing keyword set includes the short abbreviation "ar" (shorthand for accounts receivable), which matches as a substring inside any word containing those two consecutive letters, including "calendar" itself. This produces a tied score between billing and calendar for calendar-related messages, and since billing is defined earlier in the dictionary, ties resolve in its favor via Python's max() returning the first-encountered maximum. This is a pre-existing flaw in the keyword matching approach that was only exposed now that a calendar topic exists to collide with it, but the same short-keyword substring risk could affect other topics too.
 
 ## ACTION
 
-File 1: /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+File: /home/corby/jamm-os/app/api/concierge/route.py
 
-Fix A -- add the missing route for the existing Go to Tasks chip. Change:
+Remove the standalone "ar" keyword from the billing entry in _TOPIC_KEYWORDS, since "accounts receivable" (the full phrase) is already present in the same set and provides the same intent-matching without the substring collision risk. Find the billing keyword set and remove just the "ar" entry:
 
-      'Go to Documents': '/documents',
-      'Go to Dashboard': '/dashboard',
-      'Import clients': '/clients',
-
-To:
-
-      'Go to Documents': '/documents',
-      'Go to Dashboard': '/dashboard',
-      'Go to Tasks': '/tasks',
-      'Go to Calendar': '/calendar',
-      'Import clients': '/clients',
-
-Fix B -- add a calendar entry to TOPIC_CHIPS:
-
-          tasks: ['Go to Tasks'],
-          calendar: ['Go to Calendar'],
-
-Place the calendar line directly after tasks in the same map. Do not change any other topic or route mapping in this file.
-
-File 2: /home/corby/jamm-os/app/api/concierge/route.py
-
-Fix C -- add a calendar keyword set to _TOPIC_KEYWORDS, matching the exact formatting style of the existing entries, placed near "automations" and "irs_authorizations":
-
-    "calendar": {
-        "calendar", "schedule", "scheduled", "appointment", "appointments",
-        "meeting", "meetings", "deadline calendar view", "calendar event",
-        "calendar view", "upcoming events", "holiday", "holidays",
+    "billing": {
+        "invoice", "invoices", "billing", "payment", "stripe", "overdue invoice",
+        "ar", "accounts receivable", "send invoice", "invoice status",
+        "partial payment", "payment receipt", "invoice line", "bill",
+        "unbilled", "collect payment", "paid", "unpaid", "owes", "owe", "money",
     },
 
-Do not change any other topic's keyword set or _classify_topic itself. Do not touch any other file in either location.
+Change to:
+
+    "billing": {
+        "invoice", "invoices", "billing", "payment", "stripe", "overdue invoice",
+        "accounts receivable", "send invoice", "invoice status",
+        "partial payment", "payment receipt", "invoice line", "bill",
+        "unbilled", "collect payment", "paid", "unpaid", "owes", "owe", "money",
+    },
+
+Do not change any other keyword in any topic's set. Do not change _classify_topic's matching algorithm itself in this task -- switching from substring matching to word-boundary matching across all topics is a larger, separate change that could affect every topic's behavior simultaneously and should be scoped on its own if this kind of collision is found again elsewhere. This task only removes the one confirmed problematic short keyword.
 
 ## VERIFY AFTER ACT
 
-grep -n "'Go to Tasks': '/tasks'\|'Go to Calendar': '/calendar'" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+grep -n '"billing": {' -A 6 /home/corby/jamm-os/app/api/concierge/route.py
 
-Expected: both present.
+Expected: "ar" is no longer present in the billing set, "accounts receivable" still is.
 
-grep -n "calendar: \['Go to Calendar'\]" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+python3 -c "
+msg = 'is there any calendar in the app?'
+print('ar' in msg)
+"
 
-Expected: present.
-
-grep -n "\"calendar\":" /home/corby/jamm-os/app/api/concierge/route.py
-
-Expected: present as a new key in _TOPIC_KEYWORDS.
-
-cd /home/corby/jamm-os/frontend
-npm run build
-
-Expected: zero TypeScript errors.
+Expected: still True (this is just confirming the substring exists in the word, which is unavoidable and fine) -- the actual fix is that "ar" is no longer a keyword being checked against messages at all, not that the substring stopped existing in the English language.
 
 python3 -c "from app.api.concierge.route import router; print('OK')"
 
 Expected: OK, no import errors.
 
-## MANUAL VERIFICATION (the actual test -- restart BOTH backend and frontend before testing, since this task spans both)
+## MANUAL VERIFICATION (the actual test)
 
-1. Restart the backend and the frontend, both with clean builds.
-2. Ask "where are my tasks?" -- confirm the Go to Tasks chip appears and clicking it now navigates to the Tasks page correctly.
-3. Ask "where is my calendar?" or "do I have any meetings scheduled?" -- open DevTools Console and confirm the [CONCIERGE RAW] output shows [TOPIC:calendar], not [TOPIC:general].
-4. Confirm the Go to Calendar chip appears below that response.
-5. Click it and confirm it navigates to the Calendar page correctly.
-6. Regression check: click 2-3 other existing chips (Go to Clients, Go to Billing) and confirm they still work normally.
+1. Restart the backend (full kill and restart, not reload).
+2. Ask "is there any calendar in the app?" again, the exact question that triggered the misclassification.
+3. Check DevTools Console [CONCIERGE RAW] output, confirm [TOPIC:calendar] now appears instead of [TOPIC:billing].
+4. Confirm the Go to Calendar chip now appears and navigates correctly.
+5. Regression check: ask a real billing question (e.g. "what invoices are overdue?") and confirm it still correctly tags [TOPIC:billing] and shows the Go to Billing chip, unaffected by removing the "ar" keyword since "accounts receivable" and "overdue invoice" still cover that intent.
 
-Report what you observe at steps 2, 3, and 5.
+Report the exact [TOPIC:...] value observed at step 3, and confirm step 5 still works correctly.
 
 ## GIT
 
 cd /home/corby/jamm-os
 git add -A
-git commit -m "fix: Go to Tasks chip now navigates correctly (was missing from the frontend routes map despite the chip label existing), and calendar topic support is now complete end to end -- added the missing calendar keyword set to the backend classifier so it can actually produce a calendar topic value, plus the corresponding frontend chip label and route that were added but previously unreachable without this backend counterpart"
+git commit -m "fix: remove overly short 'ar' keyword from billing topic classifier, which was matching as a substring inside unrelated words like 'calendar' (c-a-l-e-n-d-AR) and causing calendar questions to be misclassified as billing due to a tied keyword score resolving in billing's favor"
 git pull --rebase origin main
 git push origin main
 
