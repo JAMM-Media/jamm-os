@@ -49,238 +49,103 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-# Task: Build the missing mark-as-read feature for Notes, with per-user read tracking
+# Task: Fix proxy route crashing on 204 No Content responses, and remove temporary diagnostic logging
 
 USE: claude sonnet
 
 ## VERIFY BEFORE ACT
 
-cat /home/corby/jamm-os/app/models/note.py
+grep -n "PROXY FETCH ERROR" "/home/corby/jamm-os/frontend/src/app/api/backend/[...path]/route.ts"
 
-Confirm the Note model has no is_read field and no existing read-tracking mechanism.
+Confirm the temporary diagnostic console.error lines added during live debugging are present in both catch blocks (the attemptRefresh function and the main proxyRequest function).
 
-.venv/bin/alembic heads
+sed -n '155,169p' "/home/corby/jamm-os/frontend/src/app/api/backend/[...path]/route.ts"
 
-Confirm the current single migration head before adding a new one.
+Confirm the current final response-building block: const data = await res.text() followed by new NextResponse(data, { status: res.status, ... }), with no special handling for status codes that the Response constructor forbids from carrying a body.
 
 ## WHAT IS WRONG
 
-Confirmed via live testing and full code tracing: the frontend (useNotes.ts) has always been correctly built to call POST /notes/mark-read and read an is_read field back from the API, but this backend feature was never actually implemented. The Note model has no is_read column, no separate read-tracking table exists, and no /notes/mark-read route is registered anywhere -- the notes router only has GET /, POST /, PATCH /{note_id}, and DELETE /{note_id}. Since FastAPI matches the incoming POST /notes/mark-read request against the PATCH and DELETE routes registered under the /{note_id} pattern (treating "mark-read" as a literal note_id value), and POST is not a valid method for either, the request correctly returns 405 Method Not Allowed. The frontend's markAsRead() call fails silently (empty .catch()), and every note reports isRead: false on every load regardless of what was previously "read," since nothing ever persists.
-
-Read status must be tracked per-user, not globally on the note itself, since notes are visible to the whole firm team and one person reading a note should not mark it as read for everyone else -- this requires a separate join table, not a single boolean column on Note.
+Confirmed via direct server-side error logging: the proxy route crashes with "TypeError: Response constructor: Invalid response status code 204" whenever the backend returns a 204 No Content response (such as the newly-implemented POST /notes/mark-read endpoint, and likely also DELETE /notes/{note_id} and other 204-returning endpoints that may not have been exercised through this proxy path before). The Fetch API's Response constructor, per the HTTP spec, disallows any body -- including an empty string -- on responses with status 204, 205, or 304. The proxy unconditionally passes the awaited response text as the body to NextResponse regardless of status code, which throws for these specific status codes. The backend itself always behaves correctly (its own logs consistently show a clean 204), but the proxy crashes trying to relay that response to the browser, which the browser then sees as a 503 Service Unavailable with no indication of the real cause, since the crash happens inside the proxy's own catch block, which was previously swallowing the actual error entirely.
 
 ## ACTION
 
-Step 1: New model. Create /home/corby/jamm-os/app/models/note_read.py:
+File: /home/corby/jamm-os/frontend/src/app/api/backend/[...path]/route.ts
 
-# app/models/note_read.py
-import uuid
-from datetime import datetime
-from sqlalchemy import ForeignKey, DateTime, UniqueConstraint
-from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy.sql import func
-from app.db.base_class import Base
+Fix 1 -- handle no-body status codes correctly. Replace the final response-building block:
 
+    const data = await res.text()
+    return new NextResponse(data, {
+      status: res.status,
+      headers: {
+        'Content-Type': contentType || 'application/json',
+      },
+    })
 
-class NoteRead(Base):
-    __tablename__ = "note_reads"
+With a version that checks for the no-body status codes and constructs the response without a body in that case:
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        primary_key=True,
-        default=uuid.uuid4,
+    if ([204, 205, 304].includes(res.status)) {
+      return new NextResponse(null, { status: res.status })
+    }
+    const data = await res.text()
+    return new NextResponse(data, {
+      status: res.status,
+      headers: {
+        'Content-Type': contentType || 'application/json',
+      },
+    })
+
+Fix 2 -- remove the temporary diagnostic logging added during live debugging, restoring both catch blocks to their clean form (or optionally keep lightweight logging if useful going forward -- your call, but remove the exact temporary "PROXY FETCH ERROR" marker text either way since it was explicitly a debugging aid, not intended as permanent instrumentation).
+
+In the attemptRefresh function's catch block, revert to:
+
+  } catch {
+    return null
+  }
+
+In the main proxyRequest function's catch block, you may either revert fully to the original:
+
+  } catch {
+    return NextResponse.json(
+      { detail: 'Backend unreachable' },
+      { status: 503 }
     )
-    note_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("notes.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
-    user_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
-    read_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-        nullable=False,
-    )
+  }
 
-    __table_args__ = (
-        UniqueConstraint("note_id", "user_id", name="uq_note_reads_note_user"),
-    )
+or keep minimal, permanent error logging without the temporary marker text, at your discretion -- if logging is kept, use a professional log line rather than the ad-hoc debugging label used tonight.
 
-Add the import for this new model wherever app/models/__init__.py aggregates model imports, matching the existing pattern used for other models in that file, so Alembic autogenerate can see it.
-
-Step 2: Generate and apply the migration.
-
-cd /home/corby/jamm-os
-.venv/bin/alembic revision --autogenerate -m "add note_reads table for per-user note read tracking"
-
-Inspect the generated migration file to confirm it only creates the note_reads table with the correct columns, foreign keys, and unique constraint -- it should not include any unrelated changes. If it includes anything unexpected, stop and report rather than proceeding.
-
-.venv/bin/alembic upgrade head
-
-Confirm this applies cleanly with a single head.
-
-Step 3: CRUD functions. In /home/corby/jamm-os/app/crud/note.py, add two new functions matching the existing file's style:
-
-from app.models.note_read import NoteRead
-
-def get_read_note_ids(
-    db: Session,
-    note_ids: list[uuid.UUID],
-    user_id: uuid.UUID,
-) -> set[uuid.UUID]:
-    if not note_ids:
-        return set()
-    stmt = select(NoteRead.note_id).where(
-        NoteRead.note_id.in_(note_ids),
-        NoteRead.user_id == user_id,
-    )
-    return set(db.execute(stmt).scalars().all())
-
-
-def mark_notes_read(
-    db: Session,
-    note_ids: list[uuid.UUID],
-    user_id: uuid.UUID,
-) -> None:
-    if not note_ids:
-        return
-    already_read = get_read_note_ids(db, note_ids=note_ids, user_id=user_id)
-    to_insert = [
-        NoteRead(note_id=note_id, user_id=user_id)
-        for note_id in note_ids
-        if note_id not in already_read
-    ]
-    if to_insert:
-        db.add_all(to_insert)
-        db.commit()
-
-Add the necessary import for NoteRead at the top of the file alongside the existing Note import.
-
-Step 4: Schema. In /home/corby/jamm-os/app/schemas/note.py, add is_read to NoteOut and a new request schema for the mark-read endpoint:
-
-Add to NoteOut (after is_deleted, before created_at, matching the existing field ordering style):
-
-    is_read: bool = False
-
-Add a new class near NoteCreate:
-
-class NoteMarkReadRequest(BaseModel):
-    entity_type: str
-    entity_id: uuid.UUID
-
-Step 5: Service layer. In /home/corby/jamm-os/app/services/note_service.py:
-
-Modify get_notes to compute is_read per note for the requesting user. After fetching notes via crud_note.get_notes_for_entity, before building the result list, fetch the set of read note ids in one query and set is_read on each NoteOut:
-
-def get_notes(
-    db: Session,
-    firm_id: uuid.UUID,
-    entity_type: str,
-    entity_id: uuid.UUID,
-    requesting_user: User,
-) -> list[NoteOut]:
-    notes = crud_note.get_notes_for_entity(
-        db,
-        firm_id=firm_id,
-        entity_type=entity_type,
-        entity_id=entity_id,
-        requesting_user_id=requesting_user.id,
-    )
-    note_ids = [note.id for note in notes]
-    read_note_ids = crud_note.get_read_note_ids(db, note_ids=note_ids, user_id=requesting_user.id)
-    result = []
-    for note in notes:
-        note_out = NoteOut.model_validate(note)
-        note_out.is_read = note.id in read_note_ids
-        _enrich(note_out, db)
-        result.append(note_out)
-    return result
-
-Add a new service function for marking notes read, placed after get_notes:
-
-def mark_notes_read(
-    db: Session,
-    firm_id: uuid.UUID,
-    entity_type: str,
-    entity_id: uuid.UUID,
-    requesting_user: User,
-) -> None:
-    notes = crud_note.get_notes_for_entity(
-        db,
-        firm_id=firm_id,
-        entity_type=entity_type,
-        entity_id=entity_id,
-        requesting_user_id=requesting_user.id,
-    )
-    note_ids = [note.id for note in notes]
-    crud_note.mark_notes_read(db, note_ids=note_ids, user_id=requesting_user.id)
-
-Step 6: Route. In /home/corby/jamm-os/app/api/notes.py, add the missing endpoint. Update the import line to include NoteMarkReadRequest, and add the new route before the existing /{note_id} routes (route ordering matters in FastAPI -- a literal path segment like /mark-read must be registered before a parameterized /{note_id} pattern, or the parameterized route will incorrectly match it first, which is the exact bug being fixed):
-
-Change the import line:
-
-from app.schemas.note import NoteCreate, NoteUpdate, NoteOut, NoteMarkReadRequest
-
-Add this new route immediately after create_note (POST /) and before update_note (PATCH /{note_id}):
-
-@router.post("/mark-read", status_code=status.HTTP_204_NO_CONTENT)
-def mark_notes_read(
-    data: NoteMarkReadRequest,
-    db: Session = Depends(get_db),
-    current_firm: Firm = Depends(get_current_firm),
-    current_user: User = Depends(require_staff_or_above),
-):
-    note_service.mark_notes_read(
-        db,
-        firm_id=current_firm.id,
-        entity_type=data.entity_type,
-        entity_id=data.entity_id,
-        requesting_user=current_user,
-    )
-
-Do not change any other existing route in this file. Do not change the frontend -- useNotes.ts is already correctly built for this feature and requires no changes.
+Do not change the SSE streaming handling, the PDF response handling, the 401 refresh-and-retry logic, the multipart detection added in a prior fix, or any other part of this file.
 
 ## VERIFY AFTER ACT
 
-grep -n "class NoteRead" /home/corby/jamm-os/app/models/note_read.py
+grep -n "204, 205, 304" "/home/corby/jamm-os/frontend/src/app/api/backend/[...path]/route.ts"
 
-Expected: present.
+Expected: present, in the new no-body status check.
 
-.venv/bin/alembic heads
+grep -n "PROXY FETCH ERROR" "/home/corby/jamm-os/frontend/src/app/api/backend/[...path]/route.ts"
 
-Expected: single head, the new migration applied.
+Expected: no matches -- temporary diagnostic marker fully removed.
 
-grep -n "is_read" /home/corby/jamm-os/app/schemas/note.py /home/corby/jamm-os/app/services/note_service.py
+cd /home/corby/jamm-os/frontend
+npm run build
 
-Expected: present in both, with the correct per-user computation logic in note_service.py.
-
-grep -n "@router.post(\"/mark-read\"" /home/corby/jamm-os/app/api/notes.py
-
-Expected: present, positioned before the /{note_id} routes.
-
-python3 -c "from app.main import app; print('OK')"
-
-Expected: OK, no import errors.
+Expected: zero TypeScript errors.
 
 ## MANUAL VERIFICATION (the actual test)
 
-1. Restart the backend.
-2. Open a client's Notes panel, confirm existing notes show as unread (if any exist) or add a new note first.
-3. Trigger the mark-as-read action (whatever UI action calls markAsRead() -- likely opening the panel itself, based on the existing hook).
-4. Check DevTools Network tab, confirm POST /notes/mark-read now returns 204, not 405.
-5. Reload the page and reopen the same client's Notes panel. Confirm the previously-read notes now correctly show as read (is_read: true from the API), not reverting to unread.
-6. Regression check: create a new note as a different concept -- confirm it correctly shows as unread until read, and that read status is genuinely per-user (if testing with two different staff accounts, one marking notes read should not affect the other's unread count, though this may not be practically testable without a second account and can be reported as "not tested" if only one account is available).
+1. Restart the frontend with a clean build.
+2. Open a client's Notes panel, confirm POST /notes/mark-read now returns 204 successfully in the Network tab, no 503, no error.
+3. Reload the page and reopen the same client's Notes panel, confirm previously-read notes now correctly persist as read.
+4. Regression check: delete a note (which also returns 204 via DELETE /notes/{note_id}) and confirm that still works correctly too, since it shares the same status code and was likely silently broken by this same bug even before tonight's testing.
+5. Regression check: ask the Concierge a normal question, confirm streaming responses still work correctly, unaffected by this change.
+6. Regression check: download a morning briefing PDF, confirm PDF responses still work correctly.
 
-Report what you observe at steps 4 and 5 specifically.
+Report what you observe at steps 2, 3, and 4 specifically.
 
 ## GIT
 
 cd /home/corby/jamm-os
 git add -A
-git commit -m "feat: implement the missing mark-as-read feature for Notes, which the frontend was always correctly built for but had no backend support. Added a note_reads join table for per-user read tracking (since notes are shared across the firm team and one person's read status should not affect others), the missing POST /notes/mark-read endpoint, and per-user is_read computation on note retrieval. This also fixes the underlying 405 error, which was caused by the request incorrectly matching the /{note_id} pattern since no literal /mark-read route existed"
+git commit -m "fix: proxy route was crashing with 'Invalid response status code 204' whenever the backend returned a 204 No Content response, since the Fetch API's Response constructor forbids any body (even an empty string) on 204/205/304 status codes and the proxy unconditionally passed response text as the body regardless of status. This silently broke every 204-returning endpoint relayed through the proxy, surfacing now via the newly-implemented mark-as-read endpoint but likely also affecting note deletion and any other 204 response. Also removed temporary diagnostic logging added during live debugging."
 git pull --rebase origin main
 git push origin main
 

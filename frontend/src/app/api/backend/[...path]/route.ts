@@ -154,6 +154,9 @@ async function proxyRequest(
       })
     }
 
+    if ([204, 205, 304].includes(res.status)) {
+      return new NextResponse(null, { status: res.status })
+    }
     const data = await res.text()
     return new NextResponse(data, {
       status: res.status,
