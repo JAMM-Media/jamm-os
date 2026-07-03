@@ -38,9 +38,12 @@ def get_notes(
         entity_id=entity_id,
         requesting_user_id=requesting_user.id,
     )
+    note_ids = [note.id for note in notes]
+    read_note_ids = crud_note.get_read_note_ids(db, note_ids=note_ids, user_id=requesting_user.id)
     result = []
     for note in notes:
         note_out = NoteOut.model_validate(note)
+        note_out.is_read = note.id in read_note_ids
         _enrich(note_out, db)
         result.append(note_out)
     return result
@@ -102,3 +105,21 @@ def delete_note(
         )
 
     crud_note.soft_delete_note(db, note=note)
+
+
+def mark_notes_read(
+    db: Session,
+    firm_id: uuid.UUID,
+    entity_type: str,
+    entity_id: uuid.UUID,
+    requesting_user: User,
+) -> None:
+    notes = crud_note.get_notes_for_entity(
+        db,
+        firm_id=firm_id,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        requesting_user_id=requesting_user.id,
+    )
+    note_ids = [note.id for note in notes]
+    crud_note.mark_notes_read(db, note_ids=note_ids, user_id=requesting_user.id)

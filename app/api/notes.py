@@ -10,7 +10,7 @@ from app.dependencies.tenant import get_current_firm
 from app.dependencies.roles import require_staff_or_above
 from app.models.firm import Firm
 from app.models.user import User
-from app.schemas.note import NoteCreate, NoteUpdate, NoteOut
+from app.schemas.note import NoteCreate, NoteUpdate, NoteOut, NoteMarkReadRequest
 from app.services import note_service
 
 router = APIRouter(prefix="/notes", tags=["Notes"])
@@ -45,6 +45,22 @@ def create_note(
         firm_id=current_firm.id,
         author_id=current_user.id,
         data=data,
+    )
+
+
+@router.post("/mark-read", status_code=status.HTTP_204_NO_CONTENT)
+def mark_notes_read(
+    data: NoteMarkReadRequest,
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    current_user: User = Depends(require_staff_or_above),
+):
+    note_service.mark_notes_read(
+        db,
+        firm_id=current_firm.id,
+        entity_type=data.entity_type,
+        entity_id=data.entity_id,
+        requesting_user=current_user,
     )
 
 

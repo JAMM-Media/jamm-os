@@ -24,6 +24,11 @@ class NoteCreate(NoteBase):
     entity_id: uuid.UUID
 
 
+class NoteMarkReadRequest(BaseModel):
+    entity_type: str
+    entity_id: uuid.UUID
+
+
 class NoteUpdate(BaseModel):
     body: str
 
@@ -42,6 +47,7 @@ class NoteOut(NoteBase):
     entity_id: uuid.UUID
     author_id: uuid.UUID
     is_deleted: bool
+    is_read: bool = False
     created_at: datetime
     updated_at: datetime
     author_name: Optional[str] = None

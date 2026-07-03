@@ -7,6 +7,7 @@ from sqlalchemy import select, or_, and_
 from sqlalchemy.orm import Session
 
 from app.models.note import Note
+from app.models.note_read import NoteRead
 from app.schemas.note import NoteCreate, NoteUpdate
 
 
@@ -79,3 +80,35 @@ def soft_delete_note(db: Session, note: Note) -> Note:
     db.commit()
     db.refresh(note)
     return note
+
+
+def get_read_note_ids(
+    db: Session,
+    note_ids: list[uuid.UUID],
+    user_id: uuid.UUID,
+) -> set[uuid.UUID]:
+    if not note_ids:
+        return set()
+    stmt = select(NoteRead.note_id).where(
+        NoteRead.note_id.in_(note_ids),
+        NoteRead.user_id == user_id,
+    )
+    return set(db.execute(stmt).scalars().all())
+
+
+def mark_notes_read(
+    db: Session,
+    note_ids: list[uuid.UUID],
+    user_id: uuid.UUID,
+) -> None:
+    if not note_ids:
+        return
+    already_read = get_read_note_ids(db, note_ids=note_ids, user_id=user_id)
+    to_insert = [
+        NoteRead(note_id=note_id, user_id=user_id)
+        for note_id in note_ids
+        if note_id not in already_read
+    ]
+    if to_insert:
+        db.add_all(to_insert)
+        db.commit()

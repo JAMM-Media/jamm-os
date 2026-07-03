@@ -49,71 +49,238 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-# Task: Convert NotesPanel's uncached /users/ fetch to React Query for proper caching and deduplication
+# Task: Build the missing mark-as-read feature for Notes, with per-user read tracking
 
 USE: claude sonnet
 
 ## VERIFY BEFORE ACT
 
-sed -n '130,145p' /home/corby/jamm-os/frontend/src/components/notes/NotesPanel.tsx
+cat /home/corby/jamm-os/app/models/note.py
 
-Confirm the current implementation: a plain useEffect calling api.get('/users/') with no caching, no deduplication, and no protection against re-firing if the component re-renders or remounts.
+Confirm the Note model has no is_read field and no existing read-tracking mechanism.
 
-grep -n "import.*useQuery" /home/corby/jamm-os/frontend/src/components/notes/NotesPanel.tsx
+.venv/bin/alembic heads
 
-Confirm whether useQuery is already imported in this file (it likely is not, since the current implementation uses plain useEffect).
+Confirm the current single migration head before adding a new one.
 
 ## WHAT IS WRONG
 
-Confirmed via live testing and code tracing: NotesPanel fetches the full staff list via a raw useEffect + api.get('/users/') call with no caching layer, unlike other data-fetching in this codebase that correctly uses React Query's useQuery (e.g. Sidebar.tsx's notifData, firmData, and myIntegrations, and the client detail page's own qboAr). This staff list rarely changes within a session, making it a good candidate for React Query's built-in caching, which would prevent redundant refetches if NotesPanel re-renders or remounts, and would deduplicate simultaneous requests if multiple instances of this component happen to render at once.
+Confirmed via live testing and full code tracing: the frontend (useNotes.ts) has always been correctly built to call POST /notes/mark-read and read an is_read field back from the API, but this backend feature was never actually implemented. The Note model has no is_read column, no separate read-tracking table exists, and no /notes/mark-read route is registered anywhere -- the notes router only has GET /, POST /, PATCH /{note_id}, and DELETE /{note_id}. Since FastAPI matches the incoming POST /notes/mark-read request against the PATCH and DELETE routes registered under the /{note_id} pattern (treating "mark-read" as a literal note_id value), and POST is not a valid method for either, the request correctly returns 405 Method Not Allowed. The frontend's markAsRead() call fails silently (empty .catch()), and every note reports isRead: false on every load regardless of what was previously "read," since nothing ever persists.
+
+Read status must be tracked per-user, not globally on the note itself, since notes are visible to the whole firm team and one person reading a note should not mark it as read for everyone else -- this requires a separate join table, not a single boolean column on Note.
 
 ## ACTION
 
-File: /home/corby/jamm-os/frontend/src/components/notes/NotesPanel.tsx
+Step 1: New model. Create /home/corby/jamm-os/app/models/note_read.py:
 
-Add useQuery to the existing react-query import (or add the import if not present).
+# app/models/note_read.py
+import uuid
+from datetime import datetime
+from sqlalchemy import ForeignKey, DateTime, UniqueConstraint
+from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.sql import func
+from app.db.base_class import Base
 
-Replace the existing useEffect + api.get('/users/') pattern with a useQuery call using a stable query key and a reasonable staleTime, matching the pattern already used elsewhere in this codebase (e.g. Sidebar.tsx's firmData query):
 
-  const { data: staffData } = useQuery({
-    queryKey: ['users-list'],
-    queryFn: () => api.get('/users/').then((res) => res.data),
-    staleTime: 5 * 60 * 1000,
-  })
+class NoteRead(Base):
+    __tablename__ = "note_reads"
 
-Adjust the exact shape of how staffData is then used (setting local state, mapping to a dropdown list, etc.) to match whatever the removed useEffect was doing with the fetched data -- preserve the existing behavior and UI exactly, only change how the data is fetched and cached, not what is done with it once available.
+    id: Mapped[uuid.UUID] = mapped_column(
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    note_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("notes.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    read_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
 
-Do not change any other fetch in this file. Do not change NotesPanel's other useEffect (the one at line 159, unrelated to this fix). Do not touch any other file.
+    __table_args__ = (
+        UniqueConstraint("note_id", "user_id", name="uq_note_reads_note_user"),
+    )
+
+Add the import for this new model wherever app/models/__init__.py aggregates model imports, matching the existing pattern used for other models in that file, so Alembic autogenerate can see it.
+
+Step 2: Generate and apply the migration.
+
+cd /home/corby/jamm-os
+.venv/bin/alembic revision --autogenerate -m "add note_reads table for per-user note read tracking"
+
+Inspect the generated migration file to confirm it only creates the note_reads table with the correct columns, foreign keys, and unique constraint -- it should not include any unrelated changes. If it includes anything unexpected, stop and report rather than proceeding.
+
+.venv/bin/alembic upgrade head
+
+Confirm this applies cleanly with a single head.
+
+Step 3: CRUD functions. In /home/corby/jamm-os/app/crud/note.py, add two new functions matching the existing file's style:
+
+from app.models.note_read import NoteRead
+
+def get_read_note_ids(
+    db: Session,
+    note_ids: list[uuid.UUID],
+    user_id: uuid.UUID,
+) -> set[uuid.UUID]:
+    if not note_ids:
+        return set()
+    stmt = select(NoteRead.note_id).where(
+        NoteRead.note_id.in_(note_ids),
+        NoteRead.user_id == user_id,
+    )
+    return set(db.execute(stmt).scalars().all())
+
+
+def mark_notes_read(
+    db: Session,
+    note_ids: list[uuid.UUID],
+    user_id: uuid.UUID,
+) -> None:
+    if not note_ids:
+        return
+    already_read = get_read_note_ids(db, note_ids=note_ids, user_id=user_id)
+    to_insert = [
+        NoteRead(note_id=note_id, user_id=user_id)
+        for note_id in note_ids
+        if note_id not in already_read
+    ]
+    if to_insert:
+        db.add_all(to_insert)
+        db.commit()
+
+Add the necessary import for NoteRead at the top of the file alongside the existing Note import.
+
+Step 4: Schema. In /home/corby/jamm-os/app/schemas/note.py, add is_read to NoteOut and a new request schema for the mark-read endpoint:
+
+Add to NoteOut (after is_deleted, before created_at, matching the existing field ordering style):
+
+    is_read: bool = False
+
+Add a new class near NoteCreate:
+
+class NoteMarkReadRequest(BaseModel):
+    entity_type: str
+    entity_id: uuid.UUID
+
+Step 5: Service layer. In /home/corby/jamm-os/app/services/note_service.py:
+
+Modify get_notes to compute is_read per note for the requesting user. After fetching notes via crud_note.get_notes_for_entity, before building the result list, fetch the set of read note ids in one query and set is_read on each NoteOut:
+
+def get_notes(
+    db: Session,
+    firm_id: uuid.UUID,
+    entity_type: str,
+    entity_id: uuid.UUID,
+    requesting_user: User,
+) -> list[NoteOut]:
+    notes = crud_note.get_notes_for_entity(
+        db,
+        firm_id=firm_id,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        requesting_user_id=requesting_user.id,
+    )
+    note_ids = [note.id for note in notes]
+    read_note_ids = crud_note.get_read_note_ids(db, note_ids=note_ids, user_id=requesting_user.id)
+    result = []
+    for note in notes:
+        note_out = NoteOut.model_validate(note)
+        note_out.is_read = note.id in read_note_ids
+        _enrich(note_out, db)
+        result.append(note_out)
+    return result
+
+Add a new service function for marking notes read, placed after get_notes:
+
+def mark_notes_read(
+    db: Session,
+    firm_id: uuid.UUID,
+    entity_type: str,
+    entity_id: uuid.UUID,
+    requesting_user: User,
+) -> None:
+    notes = crud_note.get_notes_for_entity(
+        db,
+        firm_id=firm_id,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        requesting_user_id=requesting_user.id,
+    )
+    note_ids = [note.id for note in notes]
+    crud_note.mark_notes_read(db, note_ids=note_ids, user_id=requesting_user.id)
+
+Step 6: Route. In /home/corby/jamm-os/app/api/notes.py, add the missing endpoint. Update the import line to include NoteMarkReadRequest, and add the new route before the existing /{note_id} routes (route ordering matters in FastAPI -- a literal path segment like /mark-read must be registered before a parameterized /{note_id} pattern, or the parameterized route will incorrectly match it first, which is the exact bug being fixed):
+
+Change the import line:
+
+from app.schemas.note import NoteCreate, NoteUpdate, NoteOut, NoteMarkReadRequest
+
+Add this new route immediately after create_note (POST /) and before update_note (PATCH /{note_id}):
+
+@router.post("/mark-read", status_code=status.HTTP_204_NO_CONTENT)
+def mark_notes_read(
+    data: NoteMarkReadRequest,
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    current_user: User = Depends(require_staff_or_above),
+):
+    note_service.mark_notes_read(
+        db,
+        firm_id=current_firm.id,
+        entity_type=data.entity_type,
+        entity_id=data.entity_id,
+        requesting_user=current_user,
+    )
+
+Do not change any other existing route in this file. Do not change the frontend -- useNotes.ts is already correctly built for this feature and requires no changes.
 
 ## VERIFY AFTER ACT
 
-grep -n "useQuery.*users-list\|queryKey: \['users-list'\]" /home/corby/jamm-os/frontend/src/components/notes/NotesPanel.tsx
+grep -n "class NoteRead" /home/corby/jamm-os/app/models/note_read.py
 
 Expected: present.
 
-grep -n "useEffect.*api.get('/users/')" /home/corby/jamm-os/frontend/src/components/notes/NotesPanel.tsx
+.venv/bin/alembic heads
 
-Expected: no longer present -- the raw useEffect fetch is fully replaced.
+Expected: single head, the new migration applied.
 
-cd /home/corby/jamm-os/frontend
-npm run build
+grep -n "is_read" /home/corby/jamm-os/app/schemas/note.py /home/corby/jamm-os/app/services/note_service.py
 
-Expected: zero TypeScript errors.
+Expected: present in both, with the correct per-user computation logic in note_service.py.
+
+grep -n "@router.post(\"/mark-read\"" /home/corby/jamm-os/app/api/notes.py
+
+Expected: present, positioned before the /{note_id} routes.
+
+python3 -c "from app.main import app; print('OK')"
+
+Expected: OK, no import errors.
 
 ## MANUAL VERIFICATION (the actual test)
 
-1. Restart the frontend with a clean build.
-2. Open DevTools Network tab, open a client detail page, and specifically look at how many times a request to /users/ fires.
-3. Confirm the staff/user dropdown functionality inside Notes still works exactly as before (assigning, mentioning, or whatever it was used for).
-4. Navigate away and back to the same or a different client's Notes section, confirm the /users/ request does not refire within the 5-minute staleTime window (React Query should serve from cache).
+1. Restart the backend.
+2. Open a client's Notes panel, confirm existing notes show as unread (if any exist) or add a new note first.
+3. Trigger the mark-as-read action (whatever UI action calls markAsRead() -- likely opening the panel itself, based on the existing hook).
+4. Check DevTools Network tab, confirm POST /notes/mark-read now returns 204, not 405.
+5. Reload the page and reopen the same client's Notes panel. Confirm the previously-read notes now correctly show as read (is_read: true from the API), not reverting to unread.
+6. Regression check: create a new note as a different concept -- confirm it correctly shows as unread until read, and that read status is genuinely per-user (if testing with two different staff accounts, one marking notes read should not affect the other's unread count, though this may not be practically testable without a second account and can be reported as "not tested" if only one account is available).
 
-Report what you observe at steps 2 and 4.
+Report what you observe at steps 4 and 5 specifically.
 
 ## GIT
 
 cd /home/corby/jamm-os
 git add -A
-git commit -m "perf: NotesPanel now fetches the staff/users list via React Query instead of a raw uncached useEffect, adding proper caching and deduplication to prevent redundant refetches on re-render or remount"
+git commit -m "feat: implement the missing mark-as-read feature for Notes, which the frontend was always correctly built for but had no backend support. Added a note_reads join table for per-user read tracking (since notes are shared across the firm team and one person's read status should not affect others), the missing POST /notes/mark-read endpoint, and per-user is_read computation on note retrieval. This also fixes the underlying 405 error, which was caused by the request incorrectly matching the /{note_id} pattern since no literal /mark-read route existed"
 git pull --rebase origin main
 git push origin main
 
