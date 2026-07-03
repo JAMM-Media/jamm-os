@@ -279,7 +279,7 @@ def test_send_message(client):
 
     r = client.post(
         f"/firm-chat/channels/{channel_id}/messages",
-        data={"body": "Hello team!", "mentions": "[]"},
+        json={"body": "Hello team!", "mentions": []},
         headers=ctx["staff_headers"],
     )
     assert r.status_code == 201, r.text
@@ -302,12 +302,11 @@ def test_send_message_with_mention(client):
     channel_id = create_r.json()["id"]
 
     manager_id = str(ctx["manager_id"])
-    import json
     r = client.post(
         f"/firm-chat/channels/{channel_id}/messages",
-        data={
-            "body": f"Hey @manager!",
-            "mentions": json.dumps([manager_id]),
+        json={
+            "body": "Hey @manager!",
+            "mentions": [manager_id],
         },
         headers=ctx["staff_headers"],
     )
@@ -329,12 +328,12 @@ def test_get_messages(client):
 
     client.post(
         f"/firm-chat/channels/{channel_id}/messages",
-        data={"body": "First message", "mentions": "[]"},
+        json={"body": "First message", "mentions": []},
         headers=ctx["staff_headers"],
     )
     client.post(
         f"/firm-chat/channels/{channel_id}/messages",
-        data={"body": "Second message", "mentions": "[]"},
+        json={"body": "Second message", "mentions": []},
         headers=ctx["manager_headers"],
     )
 
@@ -363,7 +362,7 @@ def test_unread_count_increments(client):
     # Staff sends a message
     client.post(
         f"/firm-chat/channels/{channel_id}/messages",
-        data={"body": "Unread message", "mentions": "[]"},
+        json={"body": "Unread message", "mentions": []},
         headers=ctx["staff_headers"],
     )
 
@@ -430,17 +429,17 @@ def test_get_unread_summary(client):
     # Staff sends 1 message to channel 1 and 2 messages to channel 2
     client.post(
         f"/firm-chat/channels/{ch1_id}/messages",
-        data={"body": "Msg in ch1", "mentions": "[]"},
+        json={"body": "Msg in ch1", "mentions": []},
         headers=ctx["staff_headers"],
     )
     client.post(
         f"/firm-chat/channels/{ch2_id}/messages",
-        data={"body": "Msg 1 in ch2", "mentions": "[]"},
+        json={"body": "Msg 1 in ch2", "mentions": []},
         headers=ctx["staff_headers"],
     )
     client.post(
         f"/firm-chat/channels/{ch2_id}/messages",
-        data={"body": "Msg 2 in ch2", "mentions": "[]"},
+        json={"body": "Msg 2 in ch2", "mentions": []},
         headers=ctx["staff_headers"],
     )
 

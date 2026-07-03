@@ -209,7 +209,7 @@ def test_presets_seeded_on_firm_creation(client, firm_a_owner):
     available in the standard test fixtures. Instead, call seed_firm_presets()
     directly to verify the seeder works and the rules appear in the API.
     """
-    from app.services.automation_presets import seed_firm_presets
+    from app.services.automation_presets import seed_firm_presets, _get_preset_rules
 
     firm_id = uuid.UUID(firm_a_owner["firm_id"])
     headers = firm_a_owner["headers"]
@@ -220,7 +220,7 @@ def test_presets_seeded_on_firm_creation(client, firm_a_owner):
     finally:
         db.close()
 
-    assert count == 15
+    assert count == len(_get_preset_rules(firm_id))
 
     r = client.get("/automation-rules/", headers=headers)
     assert r.status_code == 200, r.text

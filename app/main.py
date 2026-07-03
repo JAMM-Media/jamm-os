@@ -202,8 +202,7 @@ app.add_middleware(
     ],
 )
 
-if settings.env == "production":
-    app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(SecurityHeadersMiddleware)
 
 app.add_middleware(RequestContextMiddleware)
 

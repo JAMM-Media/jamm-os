@@ -265,8 +265,13 @@ def test_delete_template(client, firm_a_owner):
     r = client.delete(f"/esign/templates/{template_id}", headers=headers)
     assert r.status_code == 200, r.text
 
+    # Delete is a soft delete (is_active=False), not a hard delete: the
+    # frontend's "Deleted Templates" tab lists and restores inactive
+    # templates, so GET must keep returning them. A proper is_deleted
+    # column (distinct from is_active) is deferred post launch.
     r2 = client.get(f"/esign/templates/{template_id}", headers=headers)
-    assert r2.status_code == 404
+    assert r2.status_code == 200, r2.text
+    assert r2.json()["is_active"] is False
 
 
 # ---------------------------------------------------------------------------

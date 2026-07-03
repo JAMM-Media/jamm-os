@@ -200,7 +200,12 @@ def send_message(
     # Validate mentions: keep only UUIDs that are valid users in this firm
     valid_mentions: list[uuid.UUID] = []
     if data.mentions:
-        mentioned_ids = list(data.mentions)
+        mentioned_ids = []
+        for m in data.mentions:
+            try:
+                mentioned_ids.append(uuid.UUID(str(m)))
+            except (ValueError, AttributeError):
+                continue
         stmt = select(User.id).where(
             User.id.in_(mentioned_ids),
             User.firm_id == firm_id,
