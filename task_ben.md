@@ -49,124 +49,112 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-# Task: Phase 2 -- Migrate remaining 19 pages into the (app) route group for full Concierge conversation persistence
+# Task: Fix Go to Tasks chip navigation, and complete the calendar chip fix end-to-end (frontend label + backend classifier)
 
-USE: claude fable-5
+USE: claude sonnet
 
 ## VERIFY BEFORE ACT
 
-cat "/home/corby/jamm-os/frontend/src/app/(app)/layout.tsx"
+grep -n "const routes: Record<string, string>" -A 10 /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-Confirm the route group layout created in Phase 1 wraps children in AppShell.
+Confirm 'Go to Tasks' is absent from this routes map, while it exists as a valid label in TOPIC_CHIPS for the tasks topic, meaning the chip renders but does nothing on click.
 
-Confirm exact current <AppShell> counts per file (already verified, use as ground truth -- if any count differs from this list when you check, stop and report rather than proceeding):
+grep -n "const TOPIC_CHIPS" -A 15 /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-staff/page.tsx: 2
-tasks/page.tsx: 2
-tasks/[id]/page.tsx: 3
-settings/page.tsx: 1
-settings/team/page.tsx: 2
-settings/my-integrations/page.tsx: 1
-settings/integrations/page.tsx: 1
-settings/billing/page.tsx: 1
-calendar/page.tsx: 1
-(dashboard)/firm-chat/page.tsx: 1
-(dashboard)/timesheets/page.tsx: 1
-(dashboard)/inbox/page.tsx: 1
-(dashboard)/templates/page.tsx: 1
-documents/page.tsx: 2
-documents/[id]/page.tsx: 3
-notifications/page.tsx: 1
-billing/page.tsx: 2
-billing/[id]/page.tsx: 3
-billing/wip/page.tsx: 1
+Confirm there is no calendar entry anywhere in this map.
 
-Total: 19 files, 29 AppShell instances.
+sed -n '194,263p' /home/corby/jamm-os/app/api/concierge/route.py
+
+Confirm _TOPIC_KEYWORDS has no "calendar" key and no calendar-related keywords in any other topic's set, meaning the backend classifier can never produce a "calendar" topic value regardless of what the frontend expects.
 
 ## WHAT IS WRONG
 
-Phase 1 (already completed) moved dashboard, engagements, and clients into a shared (app) route group layout, fixing Concierge conversation persistence across navigation for those pages. This is Phase 2: migrate the remaining 19 pages using the identical pattern, so persistence works across the entire authenticated app, not just those three areas.
+Three related gaps, all stemming from the same underlying issue: the suggestion-chip system spans two layers (a backend keyword classifier in route.py that decides the topic, and a frontend map in ConciergePanel.tsx that turns a topic into a chip label and then a route) with no shared source of truth between them, so entries can exist on one side without the other.
 
-Phase 1 left one gap that was found and fixed separately: engagements/[id]/page.tsx was physically moved via its parent folder's git mv but its own AppShell tags were not stripped, since it was not explicitly listed in that task's file list, causing a double-wrapped AppShell (rendering two sidebars and two Concierge panels) until caught and fixed afterward. This task exists specifically to prevent that mistake from recurring at 19-file scale: every single file listed above, including every nested [id] or sub-route file, must be individually verified both before moving (confirming the AppShell count matches what is listed above) and after unwrapping (confirming the count is exactly 0), with no file skipped or assumed identical to a sibling file just because it is in the same folder.
+1. Confirmed via live testing: 'Go to Tasks' exists as a chip label in TOPIC_CHIPS and the backend correctly tags tasks questions [TOPIC:tasks], but the routes map inside handleSuggestion has no 'Go to Tasks' entry, so clicking the chip does nothing.
+
+2. There is no calendar entry in TOPIC_CHIPS, so even if the backend could produce [TOPIC:calendar], no chip would show.
+
+3. There is no calendar keyword set in the backend's _TOPIC_KEYWORDS at all, so _classify_topic can never return "calendar" in the first place -- any calendar-related question always falls through to "general". This means fixing only the frontend (issue 2) would be incomplete on its own, since the backend would never actually produce the topic value needed to trigger it.
+
+All three must be fixed together for the calendar chip to work end to end; fixing only some of them leaves an unreachable, dead code path.
 
 ## ACTION
 
-Step 1: Move all remaining page folders into the (app) route group using git mv, preserving history. The (dashboard) route group currently has no layout.tsx of its own and will be dissolved into (app) for consistency, since maintaining two separate authenticated route groups serves no purpose.
+File 1: /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-git mv frontend/src/app/staff frontend/src/app/(app)/staff
-git mv frontend/src/app/tasks frontend/src/app/(app)/tasks
-git mv frontend/src/app/settings frontend/src/app/(app)/settings
-git mv frontend/src/app/calendar frontend/src/app/(app)/calendar
-git mv "frontend/src/app/(dashboard)/firm-chat" "frontend/src/app/(app)/firm-chat"
-git mv "frontend/src/app/(dashboard)/timesheets" "frontend/src/app/(app)/timesheets"
-git mv "frontend/src/app/(dashboard)/inbox" "frontend/src/app/(app)/inbox"
-git mv "frontend/src/app/(dashboard)/templates" "frontend/src/app/(app)/templates"
-git mv frontend/src/app/documents frontend/src/app/(app)/documents
-git mv frontend/src/app/notifications frontend/src/app/(app)/notifications
-git mv frontend/src/app/billing frontend/src/app/(app)/billing
+Fix A -- add the missing route for the existing Go to Tasks chip. Change:
 
-After all moves, confirm the now-empty (dashboard) route group folder is removed (git mv of its last child should leave it empty; delete the empty (dashboard) folder if it remains).
+      'Go to Documents': '/documents',
+      'Go to Dashboard': '/dashboard',
+      'Import clients': '/clients',
 
-After each individual git mv, list the destination directory's contents before proceeding to the next move, to confirm every nested file (including any [id] subfolders, and settings' team/my-integrations/integrations/billing subfolders) moved correctly.
+To:
 
-Step 2: For every one of the 19 files, remove every <AppShell> opening tag and matching </AppShell> closing tag, preserving all content between them exactly as-is, and remove the AppShell import line. Process one file at a time. Before moving to the next file, run grep -c "<AppShell" on the file just edited and confirm it now reads exactly 0. Do not proceed to the next file until this is confirmed for the current one. If any file's JSX structure requires a Fragment (<>...</>) instead of simply deleting the tags, because multiple sibling elements existed under a single AppShell wrapper (as was required for clients/[id]/page.tsx and engagements/[id]/page.tsx in prior work), apply the same Fragment pattern here as needed, verified by a successful build with zero TypeScript errors for that specific change.
+      'Go to Documents': '/documents',
+      'Go to Dashboard': '/dashboard',
+      'Go to Tasks': '/tasks',
+      'Go to Calendar': '/calendar',
+      'Import clients': '/clients',
 
-Pay particular attention to the three files with the highest instance counts (tasks/[id]/page.tsx, documents/[id]/page.tsx, billing/[id]/page.tsx, each with 3), since these detail-page patterns proved most likely to need Fragment wrapping in prior work on clients/[id] and engagements/[id].
+Fix B -- add a calendar entry to TOPIC_CHIPS:
 
-Do not modify AppShell.tsx or (app)/layout.tsx. Do not modify ConciergePanel.tsx. Do not modify any file's actual page content, only the AppShell wrapper tags and the now-unused import.
+          tasks: ['Go to Tasks'],
+          calendar: ['Go to Calendar'],
+
+Place the calendar line directly after tasks in the same map. Do not change any other topic or route mapping in this file.
+
+File 2: /home/corby/jamm-os/app/api/concierge/route.py
+
+Fix C -- add a calendar keyword set to _TOPIC_KEYWORDS, matching the exact formatting style of the existing entries, placed near "automations" and "irs_authorizations":
+
+    "calendar": {
+        "calendar", "schedule", "scheduled", "appointment", "appointments",
+        "meeting", "meetings", "deadline calendar view", "calendar event",
+        "calendar view", "upcoming events", "holiday", "holidays",
+    },
+
+Do not change any other topic's keyword set or _classify_topic itself. Do not touch any other file in either location.
 
 ## VERIFY AFTER ACT
 
-For every one of the 19 files, confirm and report individually (not just a summary count) both the <AppShell> count is 0 and the AppShell import is absent:
+grep -n "'Go to Tasks': '/tasks'\|'Go to Calendar': '/calendar'" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-grep -c "<AppShell" "/home/corby/jamm-os/frontend/src/app/(app)/staff/page.tsx"
-grep -c "<AppShell" "/home/corby/jamm-os/frontend/src/app/(app)/tasks/page.tsx"
-grep -c "<AppShell" "/home/corby/jamm-os/frontend/src/app/(app)/tasks/[id]/page.tsx"
-grep -c "<AppShell" "/home/corby/jamm-os/frontend/src/app/(app)/settings/page.tsx"
-grep -c "<AppShell" "/home/corby/jamm-os/frontend/src/app/(app)/settings/team/page.tsx"
-grep -c "<AppShell" "/home/corby/jamm-os/frontend/src/app/(app)/settings/my-integrations/page.tsx"
-grep -c "<AppShell" "/home/corby/jamm-os/frontend/src/app/(app)/settings/integrations/page.tsx"
-grep -c "<AppShell" "/home/corby/jamm-os/frontend/src/app/(app)/settings/billing/page.tsx"
-grep -c "<AppShell" "/home/corby/jamm-os/frontend/src/app/(app)/calendar/page.tsx"
-grep -c "<AppShell" "/home/corby/jamm-os/frontend/src/app/(app)/firm-chat/page.tsx"
-grep -c "<AppShell" "/home/corby/jamm-os/frontend/src/app/(app)/timesheets/page.tsx"
-grep -c "<AppShell" "/home/corby/jamm-os/frontend/src/app/(app)/inbox/page.tsx"
-grep -c "<AppShell" "/home/corby/jamm-os/frontend/src/app/(app)/templates/page.tsx"
-grep -c "<AppShell" "/home/corby/jamm-os/frontend/src/app/(app)/documents/page.tsx"
-grep -c "<AppShell" "/home/corby/jamm-os/frontend/src/app/(app)/documents/[id]/page.tsx"
-grep -c "<AppShell" "/home/corby/jamm-os/frontend/src/app/(app)/notifications/page.tsx"
-grep -c "<AppShell" "/home/corby/jamm-os/frontend/src/app/(app)/billing/page.tsx"
-grep -c "<AppShell" "/home/corby/jamm-os/frontend/src/app/(app)/billing/[id]/page.tsx"
-grep -c "<AppShell" "/home/corby/jamm-os/frontend/src/app/(app)/billing/wip/page.tsx"
+Expected: both present.
 
-Expected: 0 for every single one, no exceptions.
+grep -n "calendar: \['Go to Calendar'\]" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-find "/home/corby/jamm-os/frontend/src/app/(dashboard)" -type f 2>/dev/null
+Expected: present.
 
-Expected: no output or "No such file or directory" -- confirming the old, now-empty route group was fully dissolved.
+grep -n "\"calendar\":" /home/corby/jamm-os/app/api/concierge/route.py
+
+Expected: present as a new key in _TOPIC_KEYWORDS.
 
 cd /home/corby/jamm-os/frontend
-rm -rf .next
 npm run build
 
-Expected: zero TypeScript errors, and every original route (/staff, /tasks, /tasks/[id], /settings, /settings/team, /settings/my-integrations, /settings/integrations, /settings/billing, /calendar, /firm-chat, /timesheets, /inbox, /templates, /documents, /documents/[id], /notifications, /billing, /billing/[id], /billing/wip) still resolves correctly, since route groups are transparent to the URL.
+Expected: zero TypeScript errors.
 
-## MANUAL VERIFICATION (the actual test)
+python3 -c "from app.api.concierge.route import router; print('OK')"
 
-1. Restart the frontend with a clean build.
-2. Log in, go to Dashboard, open the Concierge panel, ask a real question and get an answer.
-3. Navigate via sidebar or chip through at least 6 of the newly migrated pages in sequence (e.g. Staff, Tasks, Settings, Calendar, Documents, Billing), without ever closing the panel.
-4. Confirm the original conversation from step 2 is still fully visible after every single one of those navigations, not reset at any point.
-5. Spot-check the three highest-risk files individually: open a specific task's detail page, a specific document's detail page, and a specific invoice's detail page. Confirm each renders with exactly one sidebar and one Concierge panel (not doubled), and confirm the conversation still persists on each.
-6. Confirm Settings' internal tab-switching (Account, Firm Settings, Portal, Email, Data) still works normally, unaffected by this change, since Settings has its own internal activeTab state separate from the route-level pages like settings/team.
+Expected: OK, no import errors.
 
-Report what you observe at steps 4 and 5 specifically, since those are the actual proof this phase worked across the full remaining page set.
+## MANUAL VERIFICATION (the actual test -- restart BOTH backend and frontend before testing, since this task spans both)
+
+1. Restart the backend and the frontend, both with clean builds.
+2. Ask "where are my tasks?" -- confirm the Go to Tasks chip appears and clicking it now navigates to the Tasks page correctly.
+3. Ask "where is my calendar?" or "do I have any meetings scheduled?" -- open DevTools Console and confirm the [CONCIERGE RAW] output shows [TOPIC:calendar], not [TOPIC:general].
+4. Confirm the Go to Calendar chip appears below that response.
+5. Click it and confirm it navigates to the Calendar page correctly.
+6. Regression check: click 2-3 other existing chips (Go to Clients, Go to Billing) and confirm they still work normally.
+
+Report what you observe at steps 2, 3, and 5.
 
 ## GIT
 
 cd /home/corby/jamm-os
 git add -A
-git commit -m "fix: Phase 2 -- migrate remaining 19 pages (staff, tasks, settings and its sub-routes, calendar, firm-chat, timesheets, inbox, templates, documents, notifications, billing and its sub-routes) into the shared (app) route group layout, completing the Concierge conversation persistence fix across the entire authenticated app. Dissolved the now-unused (dashboard) route group. Every file's AppShell wrapper tags individually verified removed to prevent the double-wrapping gap found and fixed separately in engagements/[id]/page.tsx after Phase 1."
+git commit -m "fix: Go to Tasks chip now navigates correctly (was missing from the frontend routes map despite the chip label existing), and calendar topic support is now complete end to end -- added the missing calendar keyword set to the backend classifier so it can actually produce a calendar topic value, plus the corresponding frontend chip label and route that were added but previously unreachable without this backend counterpart"
 git pull --rebase origin main
 git push origin main
 

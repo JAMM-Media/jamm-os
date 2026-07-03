@@ -355,6 +355,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
           clients: ['Go to Clients', 'Import clients'],
           engagements: ['Go to Engagements', 'New engagement'],
           tasks: ['Go to Tasks'],
+          calendar: ['Go to Calendar'],
           document_requests: ['Go to Documents'],
           portal: ['Go to Clients'],
           billing: ['Go to Billing'],
@@ -529,6 +530,8 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
       'Go to Billing': '/billing',
       'Go to Documents': '/documents',
       'Go to Dashboard': '/dashboard',
+      'Go to Tasks': '/tasks',
+      'Go to Calendar': '/calendar',
       'Import clients': '/clients',
     }
     if (label === 'New engagement') {

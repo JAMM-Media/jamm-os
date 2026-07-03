@@ -241,6 +241,11 @@ _TOPIC_KEYWORDS: dict[str, set[str]] = {
         "form 8821", "auth expiry", "expiring", "poa", "power of attorney",
         "caf", "irs auth", "renew authorization",
     },
+    "calendar": {
+        "calendar", "schedule", "scheduled", "appointment", "appointments",
+        "meeting", "meetings", "deadline calendar view", "calendar event",
+        "calendar view", "upcoming events", "holiday", "holidays",
+    },
     "staff": {
         "staff", "team", "invite", "staff member", "role", "roles", "manager",
         "permission", "permissions", "capacity", "overloaded", "bandwidth",
