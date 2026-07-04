@@ -36,6 +36,10 @@ export function QcChecklistTab({ engagementId, engagementStatus: _engagementStat
   const onUncheckedCountChangeRef = useRef(onUncheckedCountChange)
   onUncheckedCountChangeRef.current = onUncheckedCountChange
 
+  useEffect(() => {
+    onUncheckedCountChangeRef.current?.(items.filter((i) => !i.is_checked).length)
+  }, [items])
+
   const fetchItems = useCallback(async () => {
     setLoading(true)
     try {
@@ -52,7 +56,6 @@ export function QcChecklistTab({ engagementId, engagementStatus: _engagementStat
           }))
         : []
       setItems(all)
-      onUncheckedCountChangeRef.current?.(all.filter((i) => !i.is_checked).length)
     } catch {
       toast.error('Failed to load QC checklist')
     } finally {
@@ -84,7 +87,6 @@ export function QcChecklistTab({ engagementId, engagementStatus: _engagementStat
               }
             : i
         )
-        onUncheckedCountChangeRef.current?.(next.filter((i) => !i.is_checked).length)
         return next
       })
     } catch {
@@ -116,7 +118,6 @@ export function QcChecklistTab({ engagementId, engagementStatus: _engagementStat
       }
       setItems((prev) => {
         const next = [...prev, newItem]
-        onUncheckedCountChangeRef.current?.(next.filter((i) => !i.is_checked).length)
         return next
       })
       setNewTitle('')
@@ -133,7 +134,6 @@ export function QcChecklistTab({ engagementId, engagementStatus: _engagementStat
       await api.delete(`/qc-checklists/items/${item.id}`)
       setItems((prev) => {
         const next = prev.filter((i) => i.id !== item.id)
-        onUncheckedCountChangeRef.current?.(next.filter((i) => !i.is_checked).length)
         return next
       })
     } catch {
