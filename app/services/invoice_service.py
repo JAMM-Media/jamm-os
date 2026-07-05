@@ -59,7 +59,7 @@ async def create_invoice(
         actor_type="staff",
         actor_id=current_user_id,
         metadata={
-            "amount": float(invoice.total_amount) if invoice.total_amount else None,
+            "amount": str(invoice.total_amount) if invoice.total_amount else None,
             "engagement_linked": invoice.engagement_id is not None,
             "client_id": str(invoice.client_id),
             "engagement_id": str(invoice.engagement_id) if invoice.engagement_id else None,
@@ -105,7 +105,7 @@ async def send_invoice(
         actor_type="staff",
         actor_id=current_user_id,
         metadata={
-            "amount": float(result.total_amount) if result.total_amount else None,
+            "amount": str(result.total_amount) if result.total_amount else None,
             "days_since_creation": (datetime.now(timezone.utc) - result.created_at).days
                 if result.created_at else None,
             "client_id": str(result.client_id),
@@ -174,7 +174,7 @@ def mark_invoice_paid(
         actor_type="client",
         actor_id=None,
         metadata={
-            "amount": float(invoice.total_amount) if invoice.total_amount else None,
+            "amount": str(invoice.total_amount) if invoice.total_amount else None,
             "payment_method": payment_method,
             "days_since_sent": (datetime.now(timezone.utc) - invoice.sent_at).days
                 if hasattr(invoice, 'sent_at') and invoice.sent_at else None,
@@ -196,7 +196,7 @@ def mark_invoice_overdue(
         actor_type="system",
         actor_id=None,
         metadata={
-            "amount": float(invoice.total_amount) if hasattr(invoice, 'total_amount') else None,
+            "amount": str(invoice.total_amount) if hasattr(invoice, 'total_amount') else None,
             "days_since_sent": (
                 (datetime.now(timezone.utc) - invoice.sent_at).days
                 if hasattr(invoice, 'sent_at') and invoice.sent_at
@@ -257,7 +257,7 @@ def delete_invoice(
     if invoice.status == InvoiceStatus.paid:
         return None, "paid"
 
-    amount = float(invoice.total_amount) if invoice.total_amount else None
+    amount = str(invoice.total_amount) if invoice.total_amount else None
     days_since_creation = (datetime.now(timezone.utc) - invoice.created_at).days \
         if invoice.created_at else None
     inv_firm_id = invoice.firm_id
@@ -360,7 +360,7 @@ async def create_invoice_from_time_entries(
         actor_type="staff",
         actor_id=current_user_id,
         metadata={
-            "amount": float(invoice.total_amount) if invoice.total_amount else None,
+            "amount": str(invoice.total_amount) if invoice.total_amount else None,
             "engagement_linked": True,
             "client_id": str(invoice.client_id),
             "engagement_id": str(engagement_id),
@@ -431,7 +431,7 @@ def send_invoice_reminder(
         actor_id=current_user_id,
         metadata={
             "reminder_number": invoice.reminder_count,
-            "amount": float(invoice.total_amount) if invoice.total_amount else None,
+            "amount": str(invoice.total_amount) if invoice.total_amount else None,
             "days_since_sent": (datetime.now(timezone.utc) - invoice.sent_at).days
                 if invoice.sent_at else None,
             "days_overdue": (datetime.now(timezone.utc).date() - invoice.due_date).days
@@ -500,8 +500,8 @@ def update_invoice_tracked(
             actor_type="staff",
             actor_id=current_user_id,
             metadata={
-                "from_amount": old_total,
-                "to_amount": new_total,
+                "from_amount": str(old_total) if old_total is not None else None,
+                "to_amount": str(new_total) if new_total is not None else None,
                 "client_id": str(updated.client_id),
             }
         )
@@ -615,8 +615,8 @@ def mark_invoice_partial_payment(
         actor_type="client",
         actor_id=None,
         metadata={
-            "amount_paid": amount_paid,
-            "remaining_balance": remaining_balance,
+            "amount_paid": str(amount_paid),
+            "remaining_balance": str(remaining_balance),
             "days_since_sent": (datetime.now(timezone.utc) - invoice.sent_at).days
                 if hasattr(invoice, 'sent_at') and invoice.sent_at else None,
         }
@@ -639,7 +639,7 @@ def mark_invoice_refunded(
         actor_type="system",
         actor_id=None,
         metadata={
-            "amount_refunded": amount_refunded,
+            "amount_refunded": str(amount_refunded),
             "reason": reason,
             "days_since_payment": (datetime.now(timezone.utc) - invoice.paid_at).days
                 if hasattr(invoice, 'paid_at') and invoice.paid_at else None,
@@ -663,7 +663,7 @@ def mark_invoice_payment_failed(
         actor_type="system",
         actor_id=None,
         metadata={
-            "amount": float(invoice.total_amount) if invoice.total_amount else None,
+            "amount": str(invoice.total_amount) if invoice.total_amount else None,
             "failure_code": failure_code,
             "failure_message": failure_message,
             "days_since_sent": (datetime.now(timezone.utc) - invoice.sent_at).days

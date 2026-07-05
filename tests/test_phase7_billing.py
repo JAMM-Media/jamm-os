@@ -722,8 +722,8 @@ def test_webhook_partial_payment(client, firm_a_owner):
     assert mock_log.called
     call_kwargs = mock_log.call_args.kwargs
     assert call_kwargs["event_type"] == "invoice.partial_payment"
-    assert call_kwargs["metadata"]["amount_paid"] == 500.0
-    assert call_kwargs["metadata"]["remaining_balance"] == 500.0
+    assert call_kwargs["metadata"]["amount_paid"] == "500.0"
+    assert call_kwargs["metadata"]["remaining_balance"] == "500.0"
 
     db = TestingSessionLocal()
     try:
@@ -763,8 +763,8 @@ def test_webhook_successive_partial_payments_accumulate(client, firm_a_owner):
         )
     assert r1.status_code == 200, r1.text
     call_kwargs_1 = mock_log_1.call_args.kwargs
-    assert call_kwargs_1["metadata"]["amount_paid"] == 500.0
-    assert call_kwargs_1["metadata"]["remaining_balance"] == 500.0
+    assert call_kwargs_1["metadata"]["amount_paid"] == "500.0"
+    assert call_kwargs_1["metadata"]["remaining_balance"] == "500.0"
 
     with patch(_WEBHOOK_MOCK, return_value=_fake_event(30000)), \
          patch("app.services.invoice_service.log_event") as mock_log_2:
@@ -776,8 +776,8 @@ def test_webhook_successive_partial_payments_accumulate(client, firm_a_owner):
     assert r2.status_code == 200, r2.text
     call_kwargs_2 = mock_log_2.call_args.kwargs
     assert call_kwargs_2["event_type"] == "invoice.partial_payment"
-    assert call_kwargs_2["metadata"]["amount_paid"] == 800.0
-    assert call_kwargs_2["metadata"]["remaining_balance"] == 200.0
+    assert call_kwargs_2["metadata"]["amount_paid"] == "800.0"
+    assert call_kwargs_2["metadata"]["remaining_balance"] == "200.0"
 
     db = TestingSessionLocal()
     try:
@@ -825,7 +825,7 @@ def test_webhook_refund_fires_event_and_updates_invoice(client, firm_a_owner):
     assert mock_log.called
     call_kwargs = mock_log.call_args.kwargs
     assert call_kwargs["event_type"] == "invoice.refunded"
-    assert call_kwargs["metadata"]["amount_refunded"] == 250.0
+    assert call_kwargs["metadata"]["amount_refunded"] == "250.0"
     assert call_kwargs["metadata"]["reason"] == "requested_by_customer"
 
     db = TestingSessionLocal()

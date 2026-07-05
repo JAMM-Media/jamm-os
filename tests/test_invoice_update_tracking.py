@@ -78,8 +78,8 @@ def test_amount_change_fires_event():
     event_types = [c.kwargs["event_type"] for c in mock_log.call_args_list]
     assert "invoice.amount_changed" in event_types
     amount_call = next(c for c in mock_log.call_args_list if c.kwargs["event_type"] == "invoice.amount_changed")
-    assert amount_call.kwargs["metadata"]["from_amount"] == 100.0
-    assert amount_call.kwargs["metadata"]["to_amount"] == 200.0
+    assert amount_call.kwargs["metadata"]["from_amount"] == "100.0"
+    assert amount_call.kwargs["metadata"]["to_amount"] == "200.0"
 
 
 # ---------------------------------------------------------------------------

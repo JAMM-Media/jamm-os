@@ -191,8 +191,8 @@ def test_mark_invoice_partial_payment_fires_event():
     assert mock_log.called
     call_kwargs = mock_log.call_args.kwargs
     assert call_kwargs["event_type"] == "invoice.partial_payment"
-    assert call_kwargs["metadata"]["amount_paid"] == 500.0
-    assert call_kwargs["metadata"]["remaining_balance"] == 500.0
+    assert call_kwargs["metadata"]["amount_paid"] == "500.0"
+    assert call_kwargs["metadata"]["remaining_balance"] == "500.0"
 
 
 # ---------------------------------------------------------------------------
@@ -218,5 +218,5 @@ def test_mark_invoice_refunded_fires_event():
     assert mock_log.called
     call_kwargs = mock_log.call_args.kwargs
     assert call_kwargs["event_type"] == "invoice.refunded"
-    assert call_kwargs["metadata"]["amount_refunded"] == 250.0
+    assert call_kwargs["metadata"]["amount_refunded"] == "250.0"
     assert call_kwargs["metadata"]["reason"] == "duplicate"
