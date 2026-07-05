@@ -49,55 +49,129 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-# Task: Fix React render-phase state update violation in QcChecklistTab causing unchecked-item count to never propagate correctly
+# Task: Add unchecked-QC-items warning to bulk "Change Status" action on Engagements list
 
 USE: claude sonnet
 
 ## VERIFY BEFORE ACT
 
-grep -n "onUncheckedCountChange\|onUncheckedCountChangeRef" /home/corby/jamm-os/frontend/src/components/engagements/QcChecklistTab.tsx
+sed -n '82,93p' /home/corby/jamm-os/app/crud/qc_checklist.py
 
-Confirm all 4 current call sites: line ~55 (inside fetchItems, called correctly in a normal async function body after setItems), and lines ~87, ~119, ~136 (each incorrectly called inside a setItems updater function -- toggle-check, add item, and delete respectively).
+Confirm the existing list_items function's query pattern: filtering QcChecklistItem by firm_id and a single engagement_id.
+
+sed -n '110,133p' "/home/corby/jamm-os/frontend/src/app/(app)/engagements/page.tsx"
+
+Confirm the current handleBulkStatus function: it immediately optimistically updates local state, then calls engagementsApi.bulkUpdate(ids, { status: newStatus }) with no check of any kind beforehand.
+
+grep -n "useConfirm\|ConfirmDialog" "/home/corby/jamm-os/frontend/src/app/(app)/engagements/page.tsx"
+
+Confirm whether useConfirm is already imported and wired into this page (it may not be, since this page has not used the confirm modal pattern yet).
 
 ## WHAT IS WRONG
 
-Confirmed via live testing: a React console error, "Cannot update a component (EngagementDetailPage) while rendering a different component (QcChecklistTab)," appears when adding a QC checklist item. Root cause: onUncheckedCountChangeRef.current?.() is called synchronously inside three separate setItems updater functions (toggle-check, add item, delete item). React does not allow triggering an update to a different component's state (which this callback does, since it reports the count up to the parent EngagementDetailPage) from inside another component's state updater function during the same render pass. This is a React rules-of-hooks violation.
-
-The practical consequence, confirmed via live testing: after adding a new unchecked QC item and then attempting to mark the engagement as Completed, no warning about unchecked items appeared at all, even though an unchecked item genuinely existed. This strongly suggests the parent's uncheckedQcCount value was not correctly updated due to this violation, causing the downstream confirm-before-completing check in EditEngagementModal to incorrectly see zero unchecked items.
+The single-engagement Edit Engagement modal correctly warns before marking an engagement Completed if it has unchecked QC checklist items. The bulk "Change Status" action on the Engagements list page (handleBulkStatus) has no equivalent check at all -- a user can select multiple engagements and mark them all Completed via a single bulk API call with zero visibility into whether any of them have unchecked QC items. This is a real safety inconsistency between two paths that perform the same underlying action. No existing backend endpoint can report unchecked-item counts across a set of engagement IDs at once; today's data model only supports checking one engagement at a time via QcChecklistTab.
 
 ## ACTION
 
-File: /home/corby/jamm-os/frontend/src/components/engagements/QcChecklistTab.tsx
+Step 1: Backend. In /home/corby/jamm-os/app/crud/qc_checklist.py, add a new function near list_items:
 
-Remove the manual onUncheckedCountChangeRef.current?.() call from all four locations:
+def get_unchecked_counts(db: Session, firm_id, engagement_ids: list):
+    if not engagement_ids:
+        return {}
+    rows = db.execute(
+        select(QcChecklistItem.engagement_id, QcChecklistItem.is_checked)
+        .where(
+            QcChecklistItem.firm_id == firm_id,
+            QcChecklistItem.engagement_id.in_(engagement_ids),
+        )
+    ).all()
+    counts: dict = {}
+    for engagement_id, is_checked in rows:
+        if not is_checked:
+            counts[engagement_id] = counts.get(engagement_id, 0) + 1
+    return counts
 
-1. Inside fetchItems, remove the line onUncheckedCountChangeRef.current?.(all.filter((i) => !i.is_checked).length) that currently follows setItems(all).
+Step 2: In /home/corby/jamm-os/app/api/qc_checklists.py, add a new route near the other item endpoints (place it before the /items/{item_id} parameterized routes, following the same literal-segment-before-parameterized-route ordering rule already established elsewhere in this codebase):
 
-2. Inside the toggle-check setItems updater (~line 87), remove the line onUncheckedCountChangeRef.current?.(next.filter((i) => !i.is_checked).length) from inside the updater, keeping return next.
+from fastapi import Query
 
-3. Inside the add-item setItems updater (~line 119), remove the same pattern, keeping return next.
+@router.get("/unchecked-counts")
+def get_unchecked_counts(
+    engagement_ids: str = Query(...),
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    _: User = Depends(require_staff_or_above),
+):
+    ids = [UUID(x.strip()) for x in engagement_ids.split(",") if x.strip()]
+    counts = crud.get_unchecked_counts(db, current_firm.id, ids)
+    return {str(k): v for k, v in counts.items()}
 
-4. Inside the delete-item setItems updater (~line 136), remove the same pattern, keeping return next.
+engagement_ids is accepted as a comma-separated query string (e.g. ?engagement_ids=id1,id2,id3) rather than a JSON body, matching this being a GET request. Add the Query import to the existing fastapi import line at the top of the file rather than adding a separate import line.
 
-Add a single useEffect that watches items and reports the count whenever it changes, placed near the other hooks at the top of the component (after the onUncheckedCountChangeRef setup):
+Step 3: Frontend API client. Check /home/corby/jamm-os/frontend/src/lib/api/ for the existing qc-checklist API module (likely qcChecklistApi.ts or similar -- find it if it exists, or note its absence) and add a function to call the new endpoint:
 
-  useEffect(() => {
-    onUncheckedCountChangeRef.current?.(items.filter((i) => !i.is_checked).length)
-  }, [items])
+  getUncheckedCounts: async (engagementIds: string[]): Promise<Record<string, number>> => {
+    if (engagementIds.length === 0) return {}
+    const { data } = await api.get(`/qc-checklists/unchecked-counts?engagement_ids=${engagementIds.join(',')}`)
+    return data
+  },
 
-This correctly fires after every render where items has changed, regardless of which operation (fetch, toggle, add, delete) caused the change, replacing all four manual call sites with one consolidated, correctly-timed effect.
+If no existing qc-checklist API module exists in the frontend, add this function directly as a small local helper inside engagements/page.tsx instead, calling api.get directly with the same URL pattern -- do not create a new API module file just for this one function if the codebase does not already have one for QC checklists.
 
-Do not change any other logic in this file -- the actual item CRUD operations, loading states, and error handling must remain exactly as they are, only the count-reporting mechanism changes.
+Step 4: Wire it into handleBulkStatus in engagements/page.tsx. Import useConfirm near the other imports, call the hook near the other state declarations, and render {ConfirmDialog} somewhere in this page's JSX return (near the top level, following the same pattern used in ConciergePanel.tsx).
+
+Modify handleBulkStatus to check for unchecked items before proceeding, only when the new status is "completed":
+
+  async function handleBulkStatus(newStatus: string) {
+    setStatusDropOpen(false)
+    const ids = Array.from(selectedIds)
+    if (newStatus === 'completed') {
+      const counts = await getUncheckedCounts(ids) // or qcChecklistApi.getUncheckedCounts(ids), matching whichever was added in Step 3
+      const affectedCount = Object.values(counts).filter((c) => c > 0).length
+      if (affectedCount > 0) {
+        const confirmed = await confirm(
+          `${affectedCount} of the ${ids.length} selected engagements have unchecked QC checklist items. Mark all as complete anyway?`
+        )
+        if (!confirmed) return
+      }
+    }
+    setBulkLoading(true)
+    setLocalEngagements((les) =>
+      les.map((e) => selectedIds.has(e.id) ? { ...e, status: newStatus } : e)
+    )
+    setStatusOverrides((prev) => {
+      const next = { ...prev }
+      ids.forEach((id) => { next[id] = newStatus })
+      return next
+    })
+    try {
+      await engagementsApi.bulkUpdate(ids, { status: newStatus })
+      setSelectedIds(new Set())
+      toast.success(`Updated ${ids.length} engagement${ids.length !== 1 ? 's' : ''}`)
+    } catch {
+      toast.error('Bulk update failed')
+    } finally {
+      setBulkLoading(false)
+    }
+  }
+
+Note the confirm check now happens before setBulkLoading(true) and before the optimistic local state update, so cancelling the confirm leaves everything completely untouched, not partially updated.
+
+Do not change handlePushDeadline or any other bulk action. Do not add the unchecked-items check for any status other than "completed".
 
 ## VERIFY AFTER ACT
 
-grep -n "onUncheckedCountChangeRef.current?." /home/corby/jamm-os/frontend/src/components/engagements/QcChecklistTab.tsx
+grep -n "def get_unchecked_counts" /home/corby/jamm-os/app/crud/qc_checklist.py /home/corby/jamm-os/app/api/qc_checklists.py
 
-Expected: exactly one occurrence now, inside the new useEffect.
+Expected: present in both files.
 
-grep -n "useEffect(() => {" /home/corby/jamm-os/frontend/src/components/engagements/QcChecklistTab.tsx
+python3 -c "from app.main import app; print('OK')"
 
-Expected: the new effect present among any existing effects in the file.
+Expected: OK, no import errors.
+
+grep -n "getUncheckedCounts\|useConfirm" "/home/corby/jamm-os/frontend/src/app/(app)/engagements/page.tsx"
+
+Expected: both present.
 
 cd /home/corby/jamm-os/frontend
 npm run build
@@ -106,20 +180,21 @@ Expected: zero TypeScript errors.
 
 ## MANUAL VERIFICATION (the actual test)
 
-1. Restart the frontend with a clean build.
-2. Open any engagement, go to its QC Checklist tab, add a new checklist item, leave it unchecked.
-3. Confirm no React console error appears this time (the "Cannot update a component while rendering a different component" error should be gone).
-4. Open Edit Engagement, change status to Completed, save. Confirm the branded confirm modal now correctly appears warning about the unchecked item, matching the intended behavior from the earlier task.
-5. Confirm clicking Cancel on that warning correctly cancels the status change, and confirming it correctly proceeds.
-6. Regression check: check off the item, confirm the warning no longer appears when marking complete with zero unchecked items.
+1. Restart both backend and frontend.
+2. On the Engagements list, select 2 or more engagements where at least one has an unchecked QC checklist item (add one via an engagement's detail page first if none currently have any), choose Completed from Change Status.
+3. Confirm the new branded modal appears with wording like "X of the Y selected engagements have unchecked QC checklist items. Mark all as complete anyway?"
+4. Cancel it, confirm no engagement's status changed.
+5. Repeat and confirm this time, confirm all selected engagements correctly update to Completed.
+6. Select engagements where none have unchecked items, mark Completed, confirm no modal appears and the change happens immediately as before.
+7. Select engagements and change to a non-completed status (e.g. Active), confirm no QC check happens at all regardless of unchecked items.
 
-Report what you observe at steps 3 and 4 specifically.
+Report what you observe at steps 3, 5, and 7.
 
 ## GIT
 
 cd /home/corby/jamm-os
 git add -A
-git commit -m "fix: QcChecklistTab was calling its onUncheckedCountChange callback synchronously inside setItems updater functions (toggle, add, delete), violating React's rule against updating a different component's state during another component's render. Replaced all four manual call sites with a single useEffect watching items, which correctly and consistently reports the unchecked count after every change. This also fixes a real downstream bug where the unchecked-QC-items warning never appeared when marking an engagement complete, since the parent's count was never correctly updated."
+git commit -m "feat: bulk Change Status action on the Engagements list now warns before marking multiple engagements Completed if any of them have unchecked QC checklist items, matching the same safety check already present in the single-engagement Edit Engagement modal. Added a new backend endpoint to report unchecked-item counts across a set of engagement IDs at once, since no such batch lookup existed before."
 git pull --rebase origin main
 git push origin main
 

@@ -14,6 +14,7 @@ import { engagementsApi, clientsApi, type Engagement, type Client } from '@/lib/
 import { useFetch } from '@/lib/hooks/useFetch'
 import { Search, X, ChevronDown, Loader2 } from 'lucide-react'
 import api from '@/lib/api'
+import { useConfirm } from '@/lib/hooks/useConfirm'
 
 type ViewMode = 'table' | 'card'
 
@@ -33,6 +34,13 @@ export default function EngagementsPage() {
   const [bulkLetterOpen, setBulkLetterOpen] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [bulkLoading, setBulkLoading] = useState(false)
+  const { confirm, ConfirmDialog } = useConfirm()
+
+  async function getUncheckedCounts(ids: string[]): Promise<Record<string, number>> {
+    if (ids.length === 0) return {}
+    const { data } = await api.get(`/qc-checklists/unchecked-counts?engagement_ids=${ids.join(",")}`)
+    return data as Record<string, number>
+  }
   const [statusDropOpen, setStatusDropOpen] = useState(false)
   const [statusOverrides, setStatusOverrides] = useState<Record<string, string>>({})
   const [saveAsTemplateEngagement, setSaveAsTemplateEngagement] = useState<Engagement | null>(null)
@@ -114,8 +122,18 @@ export default function EngagementsPage() {
 
   async function handleBulkStatus(newStatus: string) {
     setStatusDropOpen(false)
-    setBulkLoading(true)
     const ids = Array.from(selectedIds)
+    if (newStatus === 'completed') {
+      const counts = await getUncheckedCounts(ids)
+      const affectedCount = Object.values(counts).filter((c) => c > 0).length
+      if (affectedCount > 0) {
+        const confirmed = await confirm(
+          `${affectedCount} of the ${ids.length} selected engagements have unchecked QC checklist items. Mark all as complete anyway?`
+        )
+        if (!confirmed) return
+      }
+    }
+    setBulkLoading(true)
     setLocalEngagements((les) =>
       les.map((e) => selectedIds.has(e.id) ? { ...e, status: newStatus } : e)
     )
@@ -160,6 +178,8 @@ export default function EngagementsPage() {
   }
 
   return (
+    <>
+      {ConfirmDialog}
       <div className="flex flex-col p-6 gap-4">
 
         <h1 className="text-2xl font-medium text-brand dark:text-[#EDEEF0]">
@@ -470,6 +490,7 @@ export default function EngagementsPage() {
         )}
 
       </div>
+    </>
   )
 }
 

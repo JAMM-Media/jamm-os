@@ -150,3 +150,20 @@ def populate_from_template(db: Session, firm_id, engagement_id, engagement_type:
         items.append(item)
     db.commit()
     return items
+
+
+def get_unchecked_counts(db: Session, firm_id, engagement_ids: list):
+    if not engagement_ids:
+        return {}
+    rows = db.execute(
+        select(QcChecklistItem.engagement_id, QcChecklistItem.is_checked)
+        .where(
+            QcChecklistItem.firm_id == firm_id,
+            QcChecklistItem.engagement_id.in_(engagement_ids),
+        )
+    ).all()
+    counts: dict = {}
+    for engagement_id, is_checked in rows:
+        if not is_checked:
+            counts[engagement_id] = counts.get(engagement_id, 0) + 1
+    return counts

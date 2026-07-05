@@ -2,7 +2,7 @@
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -90,6 +90,18 @@ def restore_template(
 
 
 # ── Item endpoints (staff+) ───────────────────────────────────────────────────
+
+@router.get("/unchecked-counts")
+def get_unchecked_counts(
+    engagement_ids: str = Query(...),
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    _: User = Depends(require_staff_or_above),
+):
+    ids = [UUID(x.strip()) for x in engagement_ids.split(",") if x.strip()]
+    counts = crud.get_unchecked_counts(db, current_firm.id, ids)
+    return {str(k): v for k, v in counts.items()}
+
 
 @router.get("/items/", response_model=list[QcChecklistItemOut])
 def list_items(

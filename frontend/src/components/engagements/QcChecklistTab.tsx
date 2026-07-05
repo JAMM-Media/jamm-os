@@ -37,7 +37,8 @@ export function QcChecklistTab({ engagementId, engagementStatus: _engagementStat
   onUncheckedCountChangeRef.current = onUncheckedCountChange
 
   useEffect(() => {
-    onUncheckedCountChangeRef.current?.(items.filter((i) => !i.is_checked).length)
+    const count = items.filter((i) => !i.is_checked).length
+    onUncheckedCountChangeRef.current?.(count)
   }, [items])
 
   const fetchItems = useCallback(async () => {
