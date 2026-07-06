@@ -7,6 +7,7 @@ import { useAuth } from '@/lib/hooks/useAuth'
 import { useFetch } from '@/lib/hooks/useFetch'
 import { Eye, EyeOff, Plug, CheckCircle2, ChevronLeft, Pencil, UserX, UserCheck, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { RoleBadge, formatRoleLabel } from '@/lib/roleLabels'
 import { toast } from 'sonner'
 import api from '@/lib/api'
 import { settingsApi, type FirmDetails, type StaffMember } from '@/lib/api/settingsApi'
@@ -292,33 +293,6 @@ const SECTIONS = [
   { label: 'Email', keys: ['sending_domain', 'email_calendar'] },
   { label: 'Data', keys: ['migration'] },
 ]
-
-function formatRoleLabel(role: string): string {
-  if (role === 'firm_owner') return 'Partner'
-  return role.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
-}
-
-function RoleBadge({ role }: { role: string }) {
-  if (role === 'firm_owner') {
-    return (
-      <span className="w-fit text-[11px] font-medium px-2 py-0.5 rounded-full bg-[#DBEAFE] text-[#1E40AF]">
-        {formatRoleLabel(role)}
-      </span>
-    )
-  }
-  if (role === 'manager') {
-    return (
-      <span className="w-fit text-[11px] font-medium px-2 py-0.5 rounded-full bg-[#FEF3C7] text-[#92400E]">
-        {formatRoleLabel(role)}
-      </span>
-    )
-  }
-  return (
-    <span className="w-fit text-[11px] font-medium px-2 py-0.5 rounded-full bg-[#E5E7EB] text-[#6B7280]">
-      {formatRoleLabel(role)}
-    </span>
-  )
-}
 
 function DataExportSection() {
   const [exporting, setExporting] = useState(false)
@@ -1128,7 +1102,7 @@ export default function SettingsPage() {
                       onChange={(e) => setInviteRole(e.target.value as 'staff' | 'manager' | 'firm_owner')}
                       className={inputClass}
                     >
-                      <option value="firm_owner">Partner</option>
+                      <option value="firm_owner">Owner</option>
                       <option value="staff">Staff</option>
                       <option value="manager">Manager</option>
                     </select>

@@ -4,32 +4,11 @@
 import { CheckCircle2 } from 'lucide-react'
 import { useFetch } from '@/lib/hooks/useFetch'
 import { staffApi, type StaffMember } from '@/lib/api/staffApi'
+import { RoleBadge } from '@/lib/roleLabels'
 
 function formatMonthYear(dateStr: string): string {
   const d = new Date(dateStr)
   return d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
-}
-
-function RoleBadge({ role }: { role: string }) {
-  if (role === 'firm_owner') {
-    return (
-      <span className="inline-flex items-center h-[22px] px-2 rounded-full bg-[#1F3148] text-white text-[11px] font-medium">
-        Owner
-      </span>
-    )
-  }
-  if (role === 'manager') {
-    return (
-      <span className="inline-flex items-center h-[22px] px-2 rounded-full bg-[#DBEAFE] text-[#1E40AF] text-[11px] font-medium">
-        Manager
-      </span>
-    )
-  }
-  return (
-    <span className="inline-flex items-center h-[22px] px-2 rounded-full bg-[#E5E7EB] text-[#1F3148] border border-[0.5px] border-[#1F3148] text-[11px] font-medium">
-      Staff
-    </span>
-  )
 }
 
 function StatusBadge({ active }: { active: boolean }) {
