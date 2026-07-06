@@ -1396,7 +1396,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
                 </div>
               </div>
             )}
-            {!autopilotOn && suggestions.length > 0 && i === messages.length - 1 && msg.role === 'concierge' && (
+            {!autopilotOn && suggestions.length > 0 && i === messages.length - 1 && msg.role === 'concierge' && revealedWordCount >= msg.content.split(/\s+/).filter(Boolean).length && (
               <div className="flex flex-wrap gap-2 mt-2 ml-8">
                 {suggestions.map((s) => (
                   <button
