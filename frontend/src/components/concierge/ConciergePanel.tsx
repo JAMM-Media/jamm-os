@@ -368,7 +368,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
           general: [],
         }
 
-        setSuggestions((TOPIC_CHIPS[topic] ?? []).slice(0, 3))
+        setSuggestions(parsedDraft ? [] : (TOPIC_CHIPS[topic] ?? []).slice(0, 3))
       } catch {
         setMessages((prev) => {
           const updated = [...prev]
