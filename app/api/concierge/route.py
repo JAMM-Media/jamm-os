@@ -812,13 +812,18 @@ Respond with exactly one word: SAFE or UNSAFE. Nothing else.""",
                     # extra response-only fields (e.g. parsed_output on some
                     # models) that the API rejects with a 400 error when sent
                     # back as input on the next tool-use iteration.
+                    # Thinking blocks require their own fields (thinking, signature);
+                    # flattening them through the tool_use allowlist strips those fields
+                    # and causes "thinking: Field required" 400 errors on the next turn.
                     _ALLOWED_CONTENT_FIELDS = {"type", "text", "id", "name", "input"}
+                    def _filter_block(b):
+                        d = b.model_dump()
+                        if d.get("type") == "thinking":
+                            return {k: v for k, v in d.items() if k in {"type", "thinking", "signature"} and v is not None}
+                        return {k: v for k, v in d.items() if k in _ALLOWED_CONTENT_FIELDS}
                     current_messages.append({
                         "role": "assistant",
-                        "content": [
-                            {k: v for k, v in b.model_dump().items() if k in _ALLOWED_CONTENT_FIELDS}
-                            for b in response.content
-                        ],
+                        "content": [_filter_block(b) for b in response.content],
                     })
                     current_messages.append({
                         "role": "user",
