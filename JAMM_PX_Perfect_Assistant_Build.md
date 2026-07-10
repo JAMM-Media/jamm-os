@@ -129,6 +129,20 @@ Knowing everything means nothing if the way it is delivered feels clumsy, roboti
 
 ---
 
+## Section 1a: Confirmed Interaction Standards, Added From Live Use
+
+These were discovered through real testing, not planned in advance, and are now permanent standards, not suggestions.
+
+Bold key figures (dollar amounts, counts, dates) that directly answer what was asked, inside any response, tool-derived or not.
+
+When a tool call returns 3 or more distinct named items, present them as a bullet list with the key figure bolded per item, never as one run-on sentence.
+
+Never surface internal implementation detail to the firm owner: no tool or function names, no raw data freshness caveats, nothing that exposes how the answer was produced rather than what the answer is.
+
+When a response presents named, selectable options the firm owner must choose between to continue, every one of those names, wherever it appears in the response including inline within bolded text, should be clickable and behave exactly as if the firm owner typed and sent that exact text themselves. A button below the message is the floor, not the ceiling. The name itself should be just as actionable as the button.
+
+Any action a draft response offers, such as opening it to send, must complete the full action end to end: navigate to the right place, with the right context, ready to send. A response that tells the firm owner to go do part of the work manually first is the same category of failure as not knowing the answer at all.
+
 ## Section 4: Open Decisions Standing Between Us and This Standard
 
 These are not tasks. They are decisions that have to be made before the related tasks can even be written.
