@@ -84,6 +84,8 @@ async def send_invoice(
         return None, "paid_or_void"
     if invoice.status == InvoiceStatus.sent:
         return None, "already_sent"
+    if invoice.due_date is None:
+        return None, "missing_due_date"
 
     result = crud_invoice.mark_invoice_sent(db, invoice)
 

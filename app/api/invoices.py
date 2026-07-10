@@ -200,6 +200,8 @@ async def send_invoice(
         raise HTTPException(status_code=400, detail="Cannot send a paid or void invoice")
     if error == "already_sent":
         raise HTTPException(status_code=400, detail="Invoice already sent")
+    if error == "missing_due_date":
+        raise HTTPException(status_code=400, detail="Invoice must have a due date before it can be sent")
     from app.services.audit_service import write_audit_log
     write_audit_log(
         db=db,
