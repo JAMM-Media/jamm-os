@@ -22,6 +22,7 @@ interface Message {
   actionConfirm?: string
   isBriefing?: boolean
   draft?: { type: string; content: string; source: string | null } | null
+  options?: string[]
 }
 
 interface Notification {
@@ -310,6 +311,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
           allRawLines.push(...lines)
 
           const partial = assembleSSELines(allRawLines)
+            .replace(/\[OPTIONS:[\s\S]*$/, '')
             .replace(/\[TOPIC:\w+\]\s*$/, '')
             .trimEnd()
           if (partial) {
@@ -327,7 +329,27 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
         assembled = assembleSSELines(allRawLines)
 
         console.log('[CONCIERGE RAW]', assembled)
-        const filteredAssembled = filterOutput(assembled.replace(/\[TOPIC:\w+\]\s*$/, '').trimEnd())
+
+        // Extract [OPTIONS:[...]] before stripping markers from display text
+        const optionsMatch = assembled.match(/\[OPTIONS:(\[[\s\S]*?\])\]/)
+        let parsedOptions: string[] = []
+        if (optionsMatch) {
+          try {
+            const parsed = JSON.parse(optionsMatch[1])
+            if (Array.isArray(parsed)) {
+              parsedOptions = parsed.filter((o): o is string => typeof o === 'string')
+            }
+          } catch {
+            console.warn('[CONCIERGE] Failed to parse OPTIONS marker:', optionsMatch[1])
+          }
+        }
+
+        const filteredAssembled = filterOutput(
+          assembled
+            .replace(/\[OPTIONS:\[[\s\S]*?\]\]\s*$/, '')
+            .replace(/\[TOPIC:\w+\]\s*$/, '')
+            .trimEnd()
+        )
         const parsedDraft = parseDraftFromResponse(filteredAssembled)
         const textForAction = parsedDraft ? parsedDraft.cleanedResponse : filteredAssembled
         const cleanContent = handleConciergeAction(textForAction)
@@ -339,6 +361,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
               role: 'concierge',
               content: cleanContent,
               draft: parsedDraft ? { type: parsedDraft.type, content: parsedDraft.content, source: parsedDraft.source } : null,
+              options: parsedOptions.length > 0 ? parsedOptions : undefined,
             }
           }
           return updated
@@ -368,7 +391,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
           general: [],
         }
 
-        setSuggestions(parsedDraft ? [] : (TOPIC_CHIPS[topic] ?? []).slice(0, 3))
+        setSuggestions(parsedDraft || parsedOptions.length > 0 ? [] : (TOPIC_CHIPS[topic] ?? []).slice(0, 3))
       } catch {
         setMessages((prev) => {
           const updated = [...prev]
@@ -1405,6 +1428,19 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
                     className="text-[11px] font-medium px-3 py-1.5 rounded-full border border-[#C8CDD6] dark:border-[#484848] text-[#1F3148] dark:text-[#EDEEF0] bg-white dark:bg-[#2D2D2D] hover:border-[#4A7FA5] hover:text-[#4A7FA5] transition-colors"
                   >
                     {s}
+                  </button>
+                ))}
+              </div>
+            )}
+            {msg.options && msg.options.length > 0 && i === messages.length - 1 && msg.role === 'concierge' && revealedWordCount >= msg.content.split(/\s+/).filter(Boolean).length && (
+              <div className="flex flex-wrap gap-2 mt-3 ml-8">
+                {msg.options.map((opt) => (
+                  <button
+                    key={opt}
+                    onClick={() => void handleSend(opt)}
+                    className="text-[11px] font-medium px-3 py-1.5 rounded-[6px] border border-[#4A7FA5] text-[#4A7FA5] bg-white dark:bg-[#2D2D2D] hover:bg-[#4A7FA5] hover:text-white transition-colors"
+                  >
+                    {opt}
                   </button>
                 ))}
               </div>
