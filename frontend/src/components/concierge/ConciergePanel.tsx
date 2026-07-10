@@ -21,7 +21,7 @@ interface Message {
   content: string
   actionConfirm?: string
   isBriefing?: boolean
-  draft?: { type: string; content: string; source: string | null } | null
+  draft?: { type: string; content: string; source: string | null; clientName: string | null } | null
   options?: string[]
 }
 
@@ -377,7 +377,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
             updated[updated.length - 1] = {
               role: 'concierge',
               content: cleanContent,
-              draft: parsedDraft ? { type: parsedDraft.type, content: parsedDraft.content, source: parsedDraft.source } : null,
+              draft: parsedDraft ? { type: parsedDraft.type, content: parsedDraft.content, source: parsedDraft.source, clientName: parsedDraft.clientName } : null,
               options: parsedOptions.length > 0 ? parsedOptions : undefined,
             }
           }
@@ -629,6 +629,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
     type: string
     content: string
     source: string | null
+    clientName: string | null
     cleanedResponse: string
   } | null {
     const startMarker = '---DRAFT:'
@@ -643,6 +644,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
     const type = text.slice(startIdx + startMarker.length, typeEnd).trim()
     let rawBlock = text.slice(typeEnd + 3, endIdx).trim()
 
+    // Strip SOURCE: first -- everything before it is potential content+CLIENT
     let source: string | null = null
     const sourceMatch = rawBlock.match(/SOURCE:\s*([\s\S]+?)(?:\n\s*\n|$)/)
     if (sourceMatch) {
@@ -650,10 +652,18 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
       rawBlock = rawBlock.slice(0, sourceMatch.index).trim()
     }
 
+    // Strip CLIENT: from what remains so it does not appear in displayed content
+    let clientName: string | null = null
+    const clientMatch = rawBlock.match(/CLIENT:\s*(.+?)(?:\n|$)/)
+    if (clientMatch) {
+      clientName = clientMatch[1].trim() || null
+      rawBlock = rawBlock.slice(0, clientMatch.index).trim()
+    }
+
     const cleanedResponse = text.slice(0, startIdx).trimEnd()
 
     if (!type || !rawBlock) return null
-    return { type, content: rawBlock, source, cleanedResponse }
+    return { type, content: rawBlock, source, clientName, cleanedResponse }
   }
 
   function filterOutput(text: string): string {
@@ -1018,9 +1028,10 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
                         </button>
                         <button
                           onClick={async () => {
-                            const targetClientId = uiContext.entity_type === 'client' ? uiContext.entity_id : null
+                            const notifClientId = typeof n.metadata?.client_id === 'string' ? n.metadata.client_id : null
+                            const targetClientId = notifClientId ?? (uiContext.entity_type === 'client' ? uiContext.entity_id : null)
                             if (!targetClientId) {
-                              window.alert('Open the specific client record first, then I can pre-fill this message for you to send.')
+                              window.alert('No client record could be identified for this draft. Open the client directly and use the Messages tab to send it.')
                               return
                             }
                             const confirmed = await confirm(
@@ -1396,35 +1407,52 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
                         return
                       }
 
-                      // CLIENT_EMAIL and IRS_RENEWAL: there is no mechanism for
-                      // the AI to send a message directly. Navigate to the
-                      // client's real Messages tab with the draft pre-filled,
-                      // so the user sends it through the actual working send
-                      // feature, after one final look.
-                      const targetClientId = uiContext.entity_type === 'client' ? uiContext.entity_id : null
-                      if (!targetClientId) {
-                        window.alert('Open the specific client record first, then I can pre-fill this message for you to send.')
+                      // CLIENT_EMAIL and IRS_RENEWAL: navigate to the client's
+                      // Messages tab with the draft pre-filled so the firm owner
+                      // sends it through the actual send feature after a final look.
+                      const navigateToClient = (clientId: string, clientDisplayName: string) => {
+                        confirm(
+                          `Open ${clientDisplayName}'s Messages tab with this draft ready to send?\n\nMessage:\n${currentContent}\n\nYou will have a final chance to review before sending.`
+                        ).then((confirmed) => {
+                          if (!confirmed) return
+                          const alreadyOnClientPage = pathname.startsWith(`/clients/${clientId}`)
+                          if (alreadyOnClientPage) {
+                            emitConciergeAction({ type: 'prefill-message', prefillMessage: currentContent })
+                          } else {
+                            sessionStorage.setItem(
+                              'jamm_concierge_pending',
+                              JSON.stringify({ clientId, prefillMessage: currentContent, _ts: Date.now() }),
+                            )
+                          }
+                          router.push(`/clients/${clientId}?tab=messages`)
+                        }).catch(() => {})
+                      }
+
+                      const contextClientId = uiContext.entity_type === 'client' ? uiContext.entity_id : null
+                      if (contextClientId) {
+                        navigateToClient(contextClientId, uiContext.entity_name ?? 'this client')
                         return
                       }
-                      const confirmed = await confirm(
-                        `Open ${uiContext.entity_name ?? 'this client'}'s Messages tab with this draft ready to send?\n\nMessage:\n${currentContent}\n\nYou will have a final chance to review before sending.`
-                      )
-                      if (!confirmed) return
 
-                      const alreadyOnClientPage = pathname.startsWith(`/clients/${targetClientId}`)
-                      if (alreadyOnClientPage) {
-                        emitConciergeAction({ type: 'prefill-message', prefillMessage: currentContent })
-                      } else {
-                        sessionStorage.setItem(
-                          'jamm_concierge_pending',
-                          JSON.stringify({
-                            clientId: targetClientId,
-                            prefillMessage: currentContent,
-                            _ts: Date.now(),
-                          }),
-                        )
+                      const draftClientName = msg.draft!.clientName
+                      if (draftClientName) {
+                        try {
+                          const result = await api.get('/clients/', { params: { q: draftClientName, limit: 5 } })
+                          const clients: Array<{ id: string; name: string }> = result.data.items ?? []
+                          const exactMatch = clients.find((c) => c.name.toLowerCase() === draftClientName.toLowerCase())
+                          const match = exactMatch ?? (clients.length === 1 ? clients[0] : null)
+                          if (match) {
+                            navigateToClient(match.id, match.name)
+                            return
+                          }
+                        } catch {
+                          // fall through to fallback
+                        }
+                        window.alert(`Could not find a client named "${draftClientName}" to open directly. Search for them in Clients and use the Messages tab to send this draft.`)
+                        return
                       }
-                      router.push(`/clients/${targetClientId}?tab=messages`)
+
+                      window.alert('No specific client was identified for this draft. Open the client record directly and use the Messages tab to send it.')
                     }}
                     className="text-[11px] font-medium px-2.5 py-1 rounded-[4px] bg-[#1F3148] text-white hover:bg-[#2a4060] transition-colors"
                   >
