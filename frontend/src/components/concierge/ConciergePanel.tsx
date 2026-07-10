@@ -1146,12 +1146,12 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
                         em: ({node, ...props}) => <em className="not-italic text-[11px] text-[#6B7280]" {...props} />,
                       }}
                     >
-                      {streaming && i === messages.length - 1
+                      {i === messages.length - 1 && revealedWordCount < msg.content.split(/\s+/).filter(Boolean).length
                         ? sanitizeRevealSlice(msg.content.split(/\s+/).filter(Boolean).slice(0, revealedWordCount).join(' '))
                         : msg.content}
                     </ReactMarkdown>
                   </div>
-                ) : streaming && i === messages.length - 1 ? (
+                ) : (streaming && i === messages.length - 1) ? (
                   <span className="text-[13px] text-[#6B7280] animate-pulse">Thinking...</span>
                 ) : null}
                 {msg.isBriefing && (
