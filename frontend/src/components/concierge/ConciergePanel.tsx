@@ -105,6 +105,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
   const [input, setInput] = useState('')
   const [streaming, setStreaming] = useState(false)
   const [revealedWordCount, setRevealedWordCount] = useState(0)
+  const [revealSession, setRevealSession] = useState(0)
   const revealTimerRef = useRef<number | null>(null)
   const [hasMounted, setHasMounted] = useState(false)
   useEffect(() => {
@@ -166,19 +167,26 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
   }, [messages])
 
   useEffect(() => {
-    if (!streaming) return
+    if (revealSession === 0) return
+    let count = 0
     function tick() {
-      setRevealedWordCount((prev) => {
-        if (prev >= targetWordCountRef.current) return prev
-        return prev + 1
-      })
-      revealTimerRef.current = requestAnimationFrame(tick)
+      const target = targetWordCountRef.current
+      if (count < target) {
+        count += 1
+        setRevealedWordCount(count)
+        revealTimerRef.current = requestAnimationFrame(tick)
+      } else {
+        revealTimerRef.current = null
+      }
     }
     revealTimerRef.current = requestAnimationFrame(tick)
     return () => {
-      if (revealTimerRef.current) cancelAnimationFrame(revealTimerRef.current)
+      if (revealTimerRef.current) {
+        cancelAnimationFrame(revealTimerRef.current)
+        revealTimerRef.current = null
+      }
     }
-  }, [streaming])
+  }, [revealSession])
   useEffect(() => {
     try {
       const stored = sessionStorage.getItem('jamm_concierge_messages')
@@ -245,10 +253,27 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
     }
   }, [])
 
+  function stripTrailingMarkers(text: string, partial = false): string {
+    let result = text
+    let changed = true
+    while (changed) {
+      const before = result
+      if (partial) {
+        result = result.replace(/\[OPTIONS:[\s\S]*$/, '').trimEnd()
+      } else {
+        result = result.replace(/\[OPTIONS:\[[\s\S]*?\]\]\s*$/, '').trimEnd()
+      }
+      result = result.replace(/\[TOPIC:\w+\]\s*$/, '').trimEnd()
+      changed = result !== before
+    }
+    return result
+  }
+
   const sendMessages = useCallback(
     async (thread: Message[]) => {
-      setStreaming(true)
+      setRevealSession((s) => s + 1)
       setRevealedWordCount(0)
+      setStreaming(true)
       setMessages((prev) => [...prev, { role: 'concierge', content: '' }])
 
       const token = localStorage.getItem('access_token')
@@ -310,10 +335,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
           buffer = lines.pop() ?? ''
           allRawLines.push(...lines)
 
-          const partial = assembleSSELines(allRawLines)
-            .replace(/\[OPTIONS:[\s\S]*$/, '')
-            .replace(/\[TOPIC:\w+\]\s*$/, '')
-            .trimEnd()
+          const partial = stripTrailingMarkers(assembleSSELines(allRawLines), true)
           if (partial) {
             setMessages((prev) => {
               const updated = [...prev]
@@ -344,12 +366,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
           }
         }
 
-        const filteredAssembled = filterOutput(
-          assembled
-            .replace(/\[OPTIONS:\[[\s\S]*?\]\]\s*$/, '')
-            .replace(/\[TOPIC:\w+\]\s*$/, '')
-            .trimEnd()
-        )
+        const filteredAssembled = filterOutput(stripTrailingMarkers(assembled))
         const parsedDraft = parseDraftFromResponse(filteredAssembled)
         const textForAction = parsedDraft ? parsedDraft.cleanedResponse : filteredAssembled
         const cleanContent = handleConciergeAction(textForAction)
@@ -403,7 +420,6 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
         })
       } finally {
         setStreaming(false)
-        setRevealedWordCount(0)
       }
     },
     [router, uiContext],
