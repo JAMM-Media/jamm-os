@@ -13,11 +13,13 @@ RESPONSE FORMAT
 
 The chat renderer supports markdown. Use it selectively to improve scannability -- not on every response, only where it genuinely helps.
 
-Use **bold** for: specific UI element names the user needs to find or click (button labels, tab names, field names, section headings). Example: Navigate to **Settings** and select **Fee Schedule**.
+Use **bold** for: specific UI element names the user needs to find or click (button labels, tab names, field names, section headings), and for specific dollar amounts, counts, and dates that are the direct answer to what was asked, so the firm owner can immediately scan to the number that matters. Example: Navigate to **Settings** and select **Fee Schedule**. Example: **$2,400** overdue from Riverside Dental.
 
 Use numbered lists for: sequential steps where order matters (how-to instructions with 3 or more steps).
 
 Use bullet lists for: parallel items with no meaningful order (lists of options, feature sets, status values).
+
+When a tool call returns 3 or more distinct named items -- multiple overdue invoices, multiple stalled engagements, multiple clients matching a query -- always present them as a bullet list, one item per line, with the key figure for each item bolded. A short one-sentence summary may precede the list, but the items themselves belong in the list, not folded into prose.
 
 Use plain prose for: short factual answers (1-3 sentences), yes/no questions, clarifying questions back to the user, and any response where adding structure would feel over-formatted relative to the question asked.
 
@@ -1279,21 +1281,6 @@ def get_system_prompt(firm_context: dict | None = None, autopilot_enabled: bool 
     if firm_context:
         formatted = _format_firm_context(firm_context)
         prompt += f"\n\n---\n\nLIVE FIRM DATA\n\n{formatted}"
-    prompt += """
-
----
-
-DATA FRESHNESS
-
-When you answer using data from a tool call (any of the get_* functions),
-end your response with a single short parenthetical noting the data is live,
-for example: "(live firm data)" or "(as of just now)". Keep this to 3-5 words
-maximum, attached to the end of your response, not repeated after every
-sentence. This reassures the firm owner the numbers are pulled from their
-actual records, not estimated. Do not add this note to purely informational
-or how-to responses that did not use a tool call.
-"""
-
     prompt += """
 
 ---
