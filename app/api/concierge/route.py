@@ -620,6 +620,14 @@ Respond with exactly one word: SAFE or UNSAFE. Nothing else.""",
                 )
                 return "I am JAMM Concierge. I am here to help you use JAMM PX."
 
+        # Strip any purely alphabetic trailing parenthetical (no digits, no $).
+        # Every legitimate data point shown in parentheses contains a digit or $.
+        # Confirmed leaks (get_overdue_invoices, dashboard data, current firm data,
+        # staff capacity check) are purely alphabetic. This is defense in depth
+        # alongside the prompt instruction, not a replacement for it.
+        import re as _re
+        text = _re.sub(r'\s*\([A-Za-z_ ]+\)\s*$', '', text.rstrip())
+
         return text
 
     _last_user_msg = next(

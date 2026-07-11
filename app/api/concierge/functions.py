@@ -699,17 +699,17 @@ def get_irs_auth_expiring(firm_id: uuid.UUID, db: Session, days: int = 30) -> di
         select(
             IrsAuthorization.id,
             IrsAuthorization.form_type,
-            IrsAuthorization.expiration_date,
+            IrsAuthorization.valid_until,
             Client.id.label("client_id"),
             Client.name.label("client_name"),
         )
         .join(Client, IrsAuthorization.client_id == Client.id)
         .where(
             IrsAuthorization.firm_id == firm_id,
-            IrsAuthorization.expiration_date >= today,
-            IrsAuthorization.expiration_date <= cutoff,
+            IrsAuthorization.valid_until >= today,
+            IrsAuthorization.valid_until <= cutoff,
         )
-        .order_by(IrsAuthorization.expiration_date.asc())
+        .order_by(IrsAuthorization.valid_until.asc())
         .limit(30)
     ).fetchall()
 
@@ -719,8 +719,8 @@ def get_irs_auth_expiring(firm_id: uuid.UUID, db: Session, days: int = 30) -> di
             "client_id": str(r.client_id),
             "client_name": r.client_name,
             "form_type": str(r.form_type) if r.form_type else None,
-            "expiration_date": r.expiration_date.isoformat() if r.expiration_date else None,
-            "days_until_expiry": (r.expiration_date - today).days if r.expiration_date else None,
+            "valid_until": r.valid_until.isoformat() if r.valid_until else None,
+            "days_until_expiry": (r.valid_until - today).days if r.valid_until else None,
         }
         for r in rows
     ]
