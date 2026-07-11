@@ -266,6 +266,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
       const before = result
       if (partial) {
         result = result.replace(/\[OPTIONS:[\s\S]*$/, '').trimEnd()
+        result = result.replace(/---DRAFT:[\s\S]*$/, '').trimEnd()
       } else {
         result = result.replace(/\[OPTIONS:\[[\s\S]*?\]\]\s*$/, '').trimEnd()
       }
