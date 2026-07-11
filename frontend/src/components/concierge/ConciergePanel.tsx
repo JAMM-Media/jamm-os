@@ -107,6 +107,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
   const [revealedWordCount, setRevealedWordCount] = useState(0)
   const [revealSession, setRevealSession] = useState(0)
   const revealTimerRef = useRef<number | null>(null)
+  const revealActiveRef = useRef(false)
   const [hasMounted, setHasMounted] = useState(false)
   useEffect(() => {
     setHasMounted(true)
@@ -171,13 +172,18 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
     let count = 0
     function tick() {
       const target = targetWordCountRef.current
+      // Only truly stop once the session is finalized AND count has caught up.
+      // Never stop purely because target happens to be 0 or equal to count on
+      // this frame -- the target may still grow as streaming content arrives.
+      if (!revealActiveRef.current && count >= target) {
+        revealTimerRef.current = null
+        return
+      }
       if (count < target) {
         count += 1
         setRevealedWordCount(count)
-        revealTimerRef.current = requestAnimationFrame(tick)
-      } else {
-        revealTimerRef.current = null
       }
+      revealTimerRef.current = requestAnimationFrame(tick)
     }
     revealTimerRef.current = requestAnimationFrame(tick)
     return () => {
@@ -273,6 +279,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
     async (thread: Message[]) => {
       setRevealSession((s) => s + 1)
       setRevealedWordCount(0)
+      revealActiveRef.current = true
       setStreaming(true)
       setMessages((prev) => [...prev, { role: 'concierge', content: '' }])
 
@@ -419,6 +426,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
           return updated
         })
       } finally {
+        revealActiveRef.current = false
         setStreaming(false)
       }
     },
