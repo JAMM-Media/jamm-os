@@ -21,6 +21,7 @@ interface Message {
   content: string
   actionConfirm?: string
   isBriefing?: boolean
+  skipReveal?: boolean
   draft?: { type: string; content: string; source: string | null; clientName: string | null } | null
   options?: string[]
 }
@@ -196,7 +197,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
   useEffect(() => {
     try {
       const stored = sessionStorage.getItem('jamm_concierge_messages')
-      if (stored) setMessages(JSON.parse(stored) as Message[])
+      if (stored) setMessages((JSON.parse(stored) as Message[]).map((m) => ({ ...m, skipReveal: true })))
     } catch {
       // ignore parse errors
     }
@@ -320,6 +321,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
             updated[updated.length - 1] = {
               role: 'concierge',
               content: errorContent,
+              skipReveal: true,
             }
             return updated
           })
@@ -423,6 +425,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
           updated[updated.length - 1] = {
             role: 'concierge',
             content: 'Something went wrong. Please try again.',
+            skipReveal: true,
           }
           return updated
         })
@@ -458,7 +461,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
             try {
               const res = await api.post('/concierge/morning-briefing')
               if (res.status === 200 && res.data?.briefing) {
-                setMessages([{ role: 'concierge', content: res.data.briefing, isBriefing: true }])
+                setMessages([{ role: 'concierge', content: res.data.briefing, isBriefing: true, skipReveal: true }])
                 api.post('/concierge/morning-briefing/detail')
                   .then((r) => { if (r.data?.briefing) { setDetailBriefing(r.data.briefing); setDetailReady(true) } })
                   .catch(() => {})
@@ -467,7 +470,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
                 return
               }
               if (res.status === 200 && res.data?.cooldown) {
-                setMessages([{ role: 'concierge', content: "Already checked in with your morning briefing earlier today. Ask me anytime if you'd like to see it again, or let me know if anything's changed or if you need help with something specific." }])
+                setMessages([{ role: 'concierge', content: "Already checked in with your morning briefing earlier today. Ask me anytime if you'd like to see it again, or let me know if anything's changed or if you need help with something specific.", skipReveal: true }])
                 hasInitialized.current = true
                 setBriefingLoading(false)
                 return
@@ -482,6 +485,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
             setMessages([{
               role: 'concierge',
               content: 'Here for anything you need. Before we start, what does your firm do most? This lets me point you to the right setup path.\n\n1. Tax prep and returns\n2. Bookkeeping and monthly close\n3. Advisory and planning',
+              skipReveal: true,
             }])
           } else {
             sendMessages([{ role: 'user', content: '__OPEN__' }])
@@ -556,6 +560,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
     const confirmMsg: Message = {
       role: 'concierge',
       content: `Got it. Here is what I have:\n\n${pasteForm.name.trim()}${pasteForm.email ? '\nEmail: ' + pasteForm.email.trim() : ''}${pasteForm.phone ? '\nPhone: ' + pasteForm.phone.trim() : ''}${pasteForm.entity_type ? '\nType: ' + pasteForm.entity_type : ''}\n\nTurn on Autopilot and I will open the New Client form with these fields pre-filled. Or navigate to Clients and select New Client to enter them manually.`,
+      skipReveal: true,
     }
     if (autopilotRef.current) {
       const action: ConciergeAction = {
@@ -1155,7 +1160,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
                         em: ({node, ...props}) => <em className="not-italic text-[11px] text-[#6B7280]" {...props} />,
                       }}
                     >
-                      {i === messages.length - 1 && revealedWordCount < msg.content.split(/\s+/).filter(Boolean).length
+                      {!msg.skipReveal && i === messages.length - 1 && revealedWordCount < msg.content.split(/\s+/).filter(Boolean).length
                         ? sanitizeRevealSlice(msg.content.split(/\s+/).filter(Boolean).slice(0, revealedWordCount).join(' '))
                         : msg.content}
                     </ReactMarkdown>
