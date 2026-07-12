@@ -329,7 +329,8 @@ def test_send_invoice(client, firm_a_owner):
     headers = firm_a_owner["headers"]
     client_id = _create_client_in_db(firm_id)
 
-    invoice_id = client.post("/invoices/", json=_invoice_payload(client_id), headers=headers).json()["id"]
+    payload = {**_invoice_payload(client_id), "due_date": date(2026, 8, 1).isoformat()}
+    invoice_id = client.post("/invoices/", json=payload, headers=headers).json()["id"]
 
     r = client.post(f"/invoices/{invoice_id}/send", headers=headers)
     assert r.status_code == 200, r.text
@@ -338,16 +339,31 @@ def test_send_invoice(client, firm_a_owner):
     assert data["sent_at"] is not None
 
 
-def test_cannot_send_already_sent_invoice(client, firm_a_owner):
+def test_cannot_send_invoice_without_due_date(client, firm_a_owner):
     firm_id = uuid.UUID(firm_a_owner["firm_id"])
     headers = firm_a_owner["headers"]
     client_id = _create_client_in_db(firm_id)
 
     invoice_id = client.post("/invoices/", json=_invoice_payload(client_id), headers=headers).json()["id"]
-    client.post(f"/invoices/{invoice_id}/send", headers=headers)
 
     r = client.post(f"/invoices/{invoice_id}/send", headers=headers)
     assert r.status_code == 400, r.text
+    assert r.json()["detail"] == "Invoice must have a due date before it can be sent"
+
+
+def test_cannot_send_already_sent_invoice(client, firm_a_owner):
+    firm_id = uuid.UUID(firm_a_owner["firm_id"])
+    headers = firm_a_owner["headers"]
+    client_id = _create_client_in_db(firm_id)
+
+    payload = {**_invoice_payload(client_id), "due_date": date(2026, 8, 1).isoformat()}
+    invoice_id = client.post("/invoices/", json=payload, headers=headers).json()["id"]
+    first_send = client.post(f"/invoices/{invoice_id}/send", headers=headers)
+    assert first_send.status_code == 200, first_send.text
+
+    r = client.post(f"/invoices/{invoice_id}/send", headers=headers)
+    assert r.status_code == 400, r.text
+    assert r.json()["detail"] == "Invoice already sent"
 
 
 @pytest.mark.skip(reason="WeasyPrint requires GTK")
@@ -1012,10 +1028,12 @@ def test_portal_can_see_sent_invoice(client):
     staff_headers = _staff_login(client, "sent_staff@firm.com")
 
     # Create and send invoice
+    payload = {**_invoice_payload(portal_client_id), "due_date": date(2026, 8, 1).isoformat()}
     invoice_id = client.post(
-        "/invoices/", json=_invoice_payload(portal_client_id), headers=staff_headers
+        "/invoices/", json=payload, headers=staff_headers
     ).json()["id"]
-    client.post(f"/invoices/{invoice_id}/send", headers=staff_headers)
+    send_r = client.post(f"/invoices/{invoice_id}/send", headers=staff_headers)
+    assert send_r.status_code == 200, send_r.text
 
     # Login as portal client
     login_r = _portal_login(client, firm_slug, "sent_client@example.com")
