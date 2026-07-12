@@ -16,8 +16,11 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.create_index(op.f("ix_audit_logs_firm_id"), "audit_logs", ["firm_id"], unique=False)
-    op.create_index(op.f("ix_integrations_user_id"), "integrations", ["user_id"], unique=False)
+    # This migration reconciles index/comment drift that exists in some
+    # environments and not others (e.g. an index already created manually
+    # in production), so it must tolerate either starting state.
+    op.execute("CREATE INDEX IF NOT EXISTS ix_audit_logs_firm_id ON audit_logs (firm_id)")
+    op.execute("CREATE INDEX IF NOT EXISTS ix_integrations_user_id ON integrations (user_id)")
     op.alter_column(
         "clients",
         "entity_type",
@@ -37,5 +40,5 @@ def downgrade() -> None:
         existing_comment="individual | business | trust | estate | non_profit",
         existing_nullable=True,
     )
-    op.drop_index(op.f("ix_integrations_user_id"), table_name="integrations")
-    op.drop_index(op.f("ix_audit_logs_firm_id"), table_name="audit_logs")
+    op.execute("DROP INDEX IF EXISTS ix_integrations_user_id")
+    op.execute("DROP INDEX IF EXISTS ix_audit_logs_firm_id")
