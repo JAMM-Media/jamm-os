@@ -39,6 +39,8 @@ from app.models.concierge_notification import ConciergeNotification
 from app.models.security_event import SecurityEvent
 from app.models.staff_credential import StaffCredential
 from app.models.cpe_record import CPERecord
+from app.models.metric_registry import MetricRegistry
+from app.models.finding import Finding
 
 settings = get_settings()
 

@@ -234,6 +234,45 @@ class ReferralSource(str, Enum):
     other = "other"
 
 
+class BetterDirection(str, Enum):
+    """Which direction of a metric's value counts as improvement."""
+    lower = "lower"
+    higher = "higher"
+
+
+class SubjectType(str, Enum):
+    """What kind of thing a finding is about."""
+    metric = "metric"
+    entity = "entity"
+    pattern = "pattern"
+
+
+class GateBar(str, Enum):
+    """Which confidence bar a finding is judged against."""
+    firm_facing = "firm_facing"
+    internal = "internal"
+
+
+class GateStatus(str, Enum):
+    """Where a finding sits in the confidence gate's judgment cycle."""
+    pending = "pending"
+    passed = "passed"
+    failed = "failed"
+
+
+class FindingLifecycleState(str, Enum):
+    """
+    Lifecycle of a finding after it has passed the confidence gate.
+    Null until the gate passes; set to indexed on pass.
+    """
+    indexed = "indexed"
+    surfaced = "surfaced"
+    displaced = "displaced"
+    resolved = "resolved"
+    dismissed = "dismissed"
+    archived = "archived"
+
+
 EFILEABLE_ENGAGEMENT_TYPES = {
     "tax_return_1040",
     "tax_return_1120",

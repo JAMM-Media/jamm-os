@@ -18,6 +18,7 @@ from app.services.gmail_signals_service import run_gmail_signals_for_all_firms
 from app.services.outlook_signals_service import run_outlook_signals_for_all_firms
 from app.services.esign_reminder_service import run_esign_auto_reminders, run_esign_escalation_check
 from app.services.invoice_service import run_invoice_overdue_sweep
+from app.services.findings_recheck import recheck_failed_findings
 from app.core.scheduler_lock import try_acquire_scheduler_lock, release_scheduler_lock
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
@@ -161,6 +162,20 @@ async def lifespan(app: FastAPI):
             hour=9,
             minute=15,
             id="esign_escalation_check",
+            replace_existing=True,
+        )
+        # Scheduler invokes with no floors argument, so recheck_failed_findings
+        # defaults to an empty floors_by_technique and every finding it touches
+        # fails closed. Wiring a real floors source into this job is a BLOCKING
+        # precondition of the first technique build, alongside the floor
+        # registry design itself.
+        scheduler.add_job(
+            recheck_failed_findings,
+            trigger="cron",
+            day_of_week="sun",
+            hour=5,
+            minute=0,
+            id="findings_weekly_recheck",
             replace_existing=True,
         )
         scheduler.add_job(
