@@ -1164,7 +1164,21 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
                         ol: ({node, ...props}) => <ol className="list-decimal list-outside ml-4 my-1 space-y-0.5" {...props} />,
                         li: ({node, ...props}) => <li className="leading-snug" {...props} />,
                         p: ({node, ...props}) => <p className="mb-1 last:mb-0" {...props} />,
-                        strong: ({node, ...props}) => <strong className="font-medium text-[#1F3148] dark:text-[#EDEEF0]" {...props} />,
+                        strong: ({node, children, ...props}) => {
+                          const text = Array.isArray(children)
+                            ? children.map(c => (typeof c === 'string' ? c : '')).join('')
+                            : typeof children === 'string' ? children : ''
+                          const isOption = !!(text && msg.options?.includes(text))
+                          return (
+                            <strong
+                              {...props}
+                              className={`font-medium text-[#1F3148] dark:text-[#EDEEF0]${isOption ? ' cursor-pointer underline decoration-dotted underline-offset-2 hover:text-[#4A7FA5] dark:hover:text-[#4A7FA5] transition-colors' : ''}`}
+                              onClick={isOption ? () => void handleSend(text) : undefined}
+                            >
+                              {children}
+                            </strong>
+                          )
+                        },
                         em: ({node, ...props}) => <em className="not-italic text-[11px] text-[#6B7280]" {...props} />,
                       }}
                     >
