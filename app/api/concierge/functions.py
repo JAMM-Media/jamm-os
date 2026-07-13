@@ -874,3 +874,45 @@ def get_task_status(firm_id: uuid.UUID, db: Session) -> dict:
         "tasks": tasks,
         "checklist_items": checklist_items,
     }
+
+
+# ---------------------------------------------------------------------------
+# Function 17: get_qc_checklist_status
+# Returns engagements with outstanding QC checklist items, using the same
+# unchecked-count logic as crud/qc_checklist.get_unchecked_counts but
+# firm-wide and joined with client and engagement names for readability.
+# ---------------------------------------------------------------------------
+def get_qc_checklist_status(firm_id: uuid.UUID, db: Session) -> dict:
+    rows = db.execute(
+        select(
+            Engagement.id,
+            Engagement.name.label("engagement_name"),
+            Client.name.label("client_name"),
+            func.count(QcChecklistItem.id).label("unchecked_count"),
+        )
+        .join(QcChecklistItem, QcChecklistItem.engagement_id == Engagement.id)
+        .join(Client, Engagement.client_id == Client.id)
+        .where(
+            QcChecklistItem.firm_id == firm_id,
+            QcChecklistItem.is_checked == False,  # noqa: E712
+            Engagement.status.notin_(["completed", "archived"]),
+        )
+        .group_by(Engagement.id, Engagement.name, Client.name)
+        .order_by(func.count(QcChecklistItem.id).desc())
+        .limit(30)
+    ).fetchall()
+
+    engagements = [
+        {
+            "engagement_id": str(r.id),
+            "engagement_name": r.engagement_name,
+            "client_name": r.client_name,
+            "unchecked_items": r.unchecked_count,
+        }
+        for r in rows
+    ]
+
+    return {
+        "engagements_with_outstanding_qc": len(engagements),
+        "engagements": engagements,
+    }
