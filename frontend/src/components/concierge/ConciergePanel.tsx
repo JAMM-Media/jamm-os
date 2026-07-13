@@ -430,6 +430,8 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
           staff: ['Go to Settings'],
           settings: ['Go to Settings'],
           operational_data: ['Go to Dashboard'],
+          qc_checklists: ['Go to Engagements'],
+          signature_envelopes: ['Go to Engagements'],
           general: [],
         }
 

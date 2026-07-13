@@ -54,49 +54,43 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Fix dark mode text contrast and wrong topic chip destination for time tracking questions
+TASK: Add missing topic buckets for QC checklists and signature envelopes to fix chip mismatches
 
 USE: claude sonnet
 
 VERIFY BEFORE ACT:
-grep -n "text-\[#374151\] dark:text-\[#9CA3AF\]" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
-grep -n "time_tracking: \['Go to Billing'\]" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+sed -n '232,306p' /home/corby/jamm-os/app/api/concierge/route.py
+grep -n "TOPIC_CHIPS" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-Confirm both exist before proceeding. Read the surrounding markdown rendering block and the full TOPIC_CHIPS object in full before editing.
+Confirm current state matches what is described below before editing.
 
-WHAT IS WRONG, PART ONE:
+WHAT IS WRONG:
 
-The message bubble background dark mode fix applied earlier tonight correctly gave the bubble itself a proper dark background, but the base paragraph text color for concierge responses was never updated to match. It still uses dark:text-[#9CA3AF], a muted mid gray, while bold text and headers elsewhere in the same file already correctly use the much brighter dark:text-[#EDEEF0]. Confirmed live: regular response text remains hard to read against the new dark bubble background, while bold numbers are readable. The firm owner explicitly asked for regular text to match the same bright, readable color already used elsewhere, accepting that bold will differentiate by weight alone rather than by a separate color in dark mode.
+Two separate keyword systems exist in this codebase: _OPERATIONAL_KEYWORDS, which decides whether a question routes to a tool, and _TOPIC_KEYWORDS, which decides which suggestion chip appears. Tonight, four new tools were added to _OPERATIONAL_KEYWORDS, but _TOPIC_KEYWORDS was never updated to match. Confirmed: no bucket exists anywhere in _TOPIC_KEYWORDS for QC checklist related terms or for signature envelope related terms. QC checklist questions currently fall through to whichever unrelated bucket happens to share an incidental keyword, producing a plausible looking but incorrect chip. Signature envelope questions currently classify as general, producing no chip at all, inconsistent with every other domain having one. Neither of these two domains has a dedicated top level page in the frontend, both live inline on the engagement detail page, confirmed by checking the route tree directly.
 
-CHANGE INSTRUCTIONS, PART ONE:
+CHANGE INSTRUCTIONS:
 
-Change the base text color class for concierge role messages from dark:text-[#9CA3AF] to dark:text-[#EDEEF0], matching the same bright color already used for bold text, headers, and other high visibility elements throughout this file. Do not change the light mode color. Do not change this for the user role messages, which use a fixed white on navy that already works correctly in both modes.
+In route.py, add two new entries to the _TOPIC_KEYWORDS dictionary, matching the exact style and format of the existing entries. Name one qc_checklists with keywords covering qc, quality control, qc checklist, qc items, qc pending, unchecked items, quality check. Name the other signature_envelopes with keywords covering signature, envelope, e-signature, esignature, pending signature, has signed, needs to sign, signed yet, declined signature, expired signature.
 
-WHAT IS WRONG, PART TWO:
+In ConciergePanel.tsx, add matching entries to the TOPIC_CHIPS object for both new topic keys, qc_checklists and signature_envelopes, each pointing to Go to Engagements, matching the exact chip destination already used for the engagements topic itself, since both of these domains are only reachable through the engagement detail page and there is no dedicated top level page for either to point to instead.
 
-The topic classifier already correctly identifies time tracking questions as the time_tracking topic, this is not a classification bug. The TOPIC_CHIPS map simply assigns time_tracking the same chip as billing, Go to Billing, instead of a distinct, correct destination. A dedicated /timesheets route already exists in the app with its own page, confirmed present in the frontend route tree. Sending a firm owner asking about logged hours to the billing page instead of the actual timesheets page is a real, avoidable mismatch.
-
-CHANGE INSTRUCTIONS, PART TWO:
-
-Change the time_tracking entry in the TOPIC_CHIPS object from ['Go to Billing'] to a chip pointing at the real /timesheets route, using whatever chip label and navigation pattern is already used for other entries in this same object, such as ['Go to Timesheets']. Confirm how chip labels actually trigger navigation elsewhere in this file, since the chip label alone may need to map to a real route path in whatever routing logic consumes these chip clicks, not just be a display string.
-
-Do not change any other entry in TOPIC_CHIPS. Do not change the classifier itself, which is already working correctly for this specific case.
+Do not change any existing topic bucket or any existing chip mapping. Do not add a dedicated page for either domain, that is out of scope for this task.
 
 VERIFY AFTER ACT:
 
-grep -n "dark:text-\[#EDEEF0\]" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
-grep -n "time_tracking:" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+grep -n "qc_checklists\|signature_envelopes" /home/corby/jamm-os/app/api/concierge/route.py /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-Expected: the base message text class now included in the first grep's matches, and the second grep showing a timesheets destination rather than billing.
+Expected: present in both files, both places.
 
+python3 -c "from app.main import app; print('OK')"
 npm run build in frontend, expected zero TypeScript errors.
 
 MANUAL VERIFICATION:
 
-Full restart, full .next wipe. In dark mode, ask a question with a longer response and confirm the regular sentence text is now clearly bright and readable, not just the bold numbers. Ask how many hours has each staff member logged this week, confirm the chip that appears now says something related to timesheets, not billing, and confirm clicking it actually navigates to the real /timesheets page.
+Restart both servers. Ask which engagements have outstanding QC items, confirm the resulting chip now correctly reads Go to Engagements. Ask which signature requests are still pending, confirm a chip now appears at all, and that it also reads Go to Engagements rather than nothing.
 
 GIT:
 git add -A
-git commit -m "fix dark mode base text color to match the already-correct bold text color, and fix the time_tracking topic chip pointing at billing instead of the real timesheets page"
+git commit -m "add missing QC checklist and signature envelope topic buckets to the chip classifier, which was never updated when the corresponding tools and operational keywords were added earlier tonight, closing the gap between tool routing keywords and chip classification keywords"
 git pull --rebase origin main
 git push origin main

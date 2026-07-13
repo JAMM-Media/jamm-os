@@ -293,6 +293,14 @@ _TOPIC_KEYWORDS: dict[str, set[str]] = {
         "firm settings", "notification preference", "data export", "account",
         "subscription", "billing settings", "portal branding",
     },
+    "qc_checklists": {
+        "qc", "quality control", "qc checklist", "qc items", "qc pending",
+        "unchecked items", "quality check",
+    },
+    "signature_envelopes": {
+        "signature", "envelope", "e-signature", "esignature", "pending signature",
+        "has signed", "needs to sign", "signed yet", "declined signature", "expired signature",
+    },
     "operational_data": {
         "attention", "urgent", "focus", "today", "stalled", "stuck", "idle",
         "unbilled", "overdue", "owes", "outstanding", "capacity", "overloaded",
