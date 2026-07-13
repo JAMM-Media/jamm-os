@@ -896,7 +896,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
       {ConfirmDialog}
       {hasMounted && isOpen && (
         <div
-          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.25)', zIndex: 39 }}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.25)', zIndex: 39, pointerEvents: 'none' }}
         />
       )}
 
@@ -1153,12 +1153,8 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
                 </div>
               )}
               <div
-                className={`text-[13px] leading-[1.6] px-3 py-2 rounded-[12px] max-w-[75%] ${msg.role === 'user' ? 'text-white' : ''}`}
-                style={
-                  msg.role === 'user'
-                    ? { background: '#1F3148', color: '#FFFFFF' }
-                    : { background: '#E4E6EA', color: '#1F3148' }
-                }
+                className={`text-[13px] leading-[1.6] px-3 py-2 rounded-[12px] max-w-[75%] ${msg.role === 'user' ? 'text-white' : 'bg-[#E4E6EA] dark:bg-[#2D2D2D] text-[#1F3148] dark:text-[#EDEEF0]'}`}
+                style={msg.role === 'user' ? { background: '#1F3148', color: '#FFFFFF' } : undefined}
               >
                 {msg.content ? (
                   <div className={`prose prose-sm max-w-none text-[13px] ${msg.role === 'user' ? 'text-white' : 'text-[#374151] dark:text-[#9CA3AF]'}`}>
