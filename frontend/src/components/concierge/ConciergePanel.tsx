@@ -107,6 +107,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
   const [streaming, setStreaming] = useState(false)
   const [revealedWordCount, setRevealedWordCount] = useState(0)
   const [revealSession, setRevealSession] = useState(0)
+  const revealSessionRef = useRef(0)
   const revealTimerRef = useRef<number | null>(null)
   const revealActiveRef = useRef(false)
   const [hasMounted, setHasMounted] = useState(false)
@@ -170,8 +171,14 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
 
   useEffect(() => {
     if (revealSession === 0) return
+    const effectSession = revealSession
     let count = 0
     function tick() {
+      // If a newer session has started since this loop instance was created,
+      // bail immediately without touching any shared refs or state.
+      // rAF callbacks are not bound to React's synchronous effect cleanup timing,
+      // so a stale frame can fire after cleanup has already run for this session.
+      if (revealSessionRef.current !== effectSession) return
       const target = targetWordCountRef.current
       // Only truly stop once the session is finalized AND count has caught up.
       // Never stop purely because target happens to be 0 or equal to count on
@@ -279,7 +286,8 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
 
   const sendMessages = useCallback(
     async (thread: Message[]) => {
-      setRevealSession((s) => s + 1)
+      revealSessionRef.current += 1
+      setRevealSession(revealSessionRef.current)
       setRevealedWordCount(0)
       revealActiveRef.current = true
       setStreaming(true)
