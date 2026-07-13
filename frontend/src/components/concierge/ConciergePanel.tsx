@@ -424,7 +424,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
           document_requests: ['Go to Documents'],
           portal: ['Go to Clients'],
           billing: ['Go to Billing'],
-          time_tracking: ['Go to Billing'],
+          time_tracking: ['Go to Timesheets'],
           automations: ['Go to Settings'],
           irs_authorizations: ['Go to Clients'],
           staff: ['Go to Settings'],
@@ -609,6 +609,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
       'Go to Tasks': '/tasks',
       'Go to Calendar': '/calendar',
       'Import clients': '/clients',
+      'Go to Timesheets': '/timesheets',
     }
     if (label === 'New engagement') {
       void executeAction({ type: 'navigate-and-open', route: '/engagements', modal: 'new-engagement' })
@@ -1157,7 +1158,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
                 style={msg.role === 'user' ? { background: '#1F3148', color: '#FFFFFF' } : undefined}
               >
                 {msg.content ? (
-                  <div className={`prose prose-sm max-w-none text-[13px] ${msg.role === 'user' ? 'text-white' : 'text-[#374151] dark:text-[#9CA3AF]'}`}>
+                  <div className={`prose prose-sm max-w-none text-[13px] ${msg.role === 'user' ? 'text-white' : 'text-[#374151] dark:text-[#EDEEF0]'}`}>
                     <ReactMarkdown
                       components={{
                         h2: ({node, ...props}) => <h2 className="text-[13px] font-semibold text-[#1F3148] dark:text-[#EDEEF0] mt-3 mb-1 first:mt-0" {...props} />,
