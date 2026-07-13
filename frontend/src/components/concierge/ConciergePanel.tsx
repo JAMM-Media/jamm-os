@@ -165,41 +165,25 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
   useEffect(() => {
     const lastMsg = messages[messages.length - 1]
     if (lastMsg && lastMsg.role === 'concierge') {
-      const newTarget = lastMsg.content.split(/\s+/).filter(Boolean).length
-      if (newTarget !== targetWordCountRef.current) {
-        console.log(`[REVEAL DEBUG] targetWordCountRef updated ${targetWordCountRef.current} -> ${newTarget} session=${revealSessionRef.current}`)
-      }
-      targetWordCountRef.current = newTarget
+      targetWordCountRef.current = lastMsg.content.split(/\s+/).filter(Boolean).length
     }
   }, [messages])
 
   useEffect(() => {
     if (revealSession === 0) return
     const effectSession = revealSession
-    const sessionMatch = revealSessionRef.current === effectSession
-    const targetAtStart = targetWordCountRef.current
-    console.log(`[REVEAL DEBUG] effect start session=${effectSession} revealSessionRef=${revealSessionRef.current} match=${sessionMatch} targetAtStart=${targetAtStart} active=${revealActiveRef.current}`)
     let count = 0
-    let frameCount = 0
     function tick() {
       // If a newer session has started since this loop instance was created,
       // bail immediately without touching any shared refs or state.
       // rAF callbacks are not bound to React's synchronous effect cleanup timing,
       // so a stale frame can fire after cleanup has already run for this session.
-      if (revealSessionRef.current !== effectSession) {
-        console.log(`[REVEAL DEBUG] tick STALE bail session=${effectSession} revealSessionRef=${revealSessionRef.current} count=${count}`)
-        return
-      }
+      if (revealSessionRef.current !== effectSession) return
       const target = targetWordCountRef.current
-      frameCount += 1
-      if (frameCount === 1 || frameCount % 20 === 0) {
-        console.log(`[REVEAL DEBUG] tick frame=${frameCount} session=${effectSession} count=${count} target=${target} active=${revealActiveRef.current}`)
-      }
       // Only truly stop once the session is finalized AND count has caught up.
       // Never stop purely because target happens to be 0 or equal to count on
       // this frame -- the target may still grow as streaming content arrives.
       if (!revealActiveRef.current && count >= target) {
-        console.log(`[REVEAL DEBUG] tick STOPPING session=${effectSession} count=${count} target=${target} frames=${frameCount}`)
         revealTimerRef.current = null
         return
       }
@@ -211,7 +195,6 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
     }
     revealTimerRef.current = requestAnimationFrame(tick)
     return () => {
-      console.log(`[REVEAL DEBUG] cleanup session=${effectSession} count=${count} frames=${frameCount} timerRef=${revealTimerRef.current}`)
       if (revealTimerRef.current) {
         cancelAnimationFrame(revealTimerRef.current)
         revealTimerRef.current = null
@@ -306,7 +289,6 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
       revealSessionRef.current += 1
       setRevealSession(revealSessionRef.current)
       setRevealedWordCount(0)
-      console.log(`[REVEAL DEBUG] sendMessages start session=${revealSessionRef.current} targetWordCount=${targetWordCountRef.current}`)
       revealActiveRef.current = true
       setStreaming(true)
       setMessages((prev) => [...prev, { role: 'concierge', content: '' }])
@@ -406,6 +388,13 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
         const parsedDraft = parseDraftFromResponse(filteredAssembled)
         const textForAction = parsedDraft ? parsedDraft.cleanedResponse : filteredAssembled
         const cleanContent = handleConciergeAction(textForAction)
+        // Set the true final word count synchronously here, before revealActiveRef
+        // is set to false in the finally block. The [messages]-keyed effect that
+        // normally updates this ref runs asynchronously after a re-render, which
+        // means there is a race where the tick loop's stopping condition can be
+        // satisfied against a stale zero target if the effect has not yet run.
+        // This direct assignment closes that race completely.
+        targetWordCountRef.current = cleanContent.split(/\s+/).filter(Boolean).length
         setMessages((prev) => {
           const updated = [...prev]
           const last = updated[updated.length - 1]
@@ -456,7 +445,6 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
           return updated
         })
       } finally {
-        console.log(`[REVEAL DEBUG] sendMessages finally session=${revealSessionRef.current} targetWordCount=${targetWordCountRef.current}`)
         revealActiveRef.current = false
         setStreaming(false)
       }
