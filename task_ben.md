@@ -54,38 +54,33 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Make inline bolded option names clickable, not just the buttons below
+TASK: Add diagnostic logging to the reveal system, third distinct trigger found tonight, do not fix yet
 
 USE: Fable 5
 
 VERIFY BEFORE ACT:
-grep -n "parsedOptions\|msg.options" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
-grep -n "ReactMarkdown\|react-markdown" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+sed -n '160,195p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+grep -n "revealSessionRef\|revealActiveRef" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-Confirm matches exist and confirm how message content actually gets rendered as markdown before writing any code.
+Confirm current state matches before editing.
 
 WHAT THIS IS:
 
-Options currently render correctly as clickable buttons below the message. The same option names also appear bolded inline within the message text itself. The standard now documented in JAMM_PX_Perfect_Assistant_Build.md under Section 1a is that the inline name itself should be just as actionable as the button, not a plain visual duplicate.
+This is a diagnostic task, not a fix. A third distinct trigger for the same blank-display symptom has now been found tonight: a single normal question, asked at normal pace, not rapid fire, displayed permanently blank until a completely new message was sent, at which point the answer appeared immediately. Two prior triggers were already found and fixed tonight, a target-word-count-still-zero timing issue and a rapid-fire session race condition. This third trigger does not match either known cause exactly, since it happened on a single normal question with no rapid sequential messages involved. Rather than guess at a third distinct root cause blind, add logging to observe what actually happens the next time this is reproduced.
 
 CHANGE INSTRUCTIONS:
 
-When rendering message content where msg.options is present and non-empty, detect bolded text spans within the rendered markdown whose text exactly matches one of the strings in msg.options, and make those specific spans clickable, triggering the exact same send behavior as the corresponding button below. Bolded text not matching any option string exactly stays plain, unchanged.
+Add console.log statements clearly prefixed with [REVEAL DEBUG] at these points: when the reveal effect instance starts, log the revealSession value and revealSessionRef.current value at that exact moment, and whether they match. Inside tick, log count, target, and both session values on the first frame only and then once every 20 frames afterward, not every frame. Log whenever revealActiveRef.current changes and what set it. Log whenever the effect's cleanup function actually runs and what revealSession value it belonged to. Specifically also log the exact value of targetWordCountRef.current at the moment the reveal effect first starts, since a mismatch between when the target effect and the reveal effect actually run relative to each other, not just a one-time zero at the very first frame, is a plausible explanation for a session that never catches up until an unrelated event forces a rerender.
 
-Do not make every bolded span in every message clickable, only ones exactly matching a real option from msg.options on that specific message. Both the inline clickable name and the button row below should coexist and both work.
-
-Visually, the clickable inline name should read as interactive without looking like a broken sentence, for example an underline on hover or a subtle color shift, not a full button style change.
+Do not attempt to fix the underlying issue in this task. Only add logging around the existing logic exactly as it stands.
 
 VERIFY AFTER ACT:
 
+grep -n "REVEAL DEBUG" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 npm run build in frontend, expected zero TypeScript errors.
 
 MANUAL VERIFICATION:
 
-Full restart of both servers, full .next wipe. Ask the overdue invoices draft question again. Confirm both the button row and the bolded client names within the bulleted list are independently clickable and both correctly send the exact option text.
+Full restart, open browser console filtered to REVEAL DEBUG. Ask a single normal question at normal pace and wait. If it displays correctly, try several more single questions, one at a time, with normal pauses, until the blank state reproduces again. The moment it reproduces, copy the full console output from that specific question's session start through the point a new message was sent, and report that full output back, do not summarize it.
 
-GIT:
-git add -A
-git commit -m "make inline bolded option names clickable in addition to the existing button row"
-git pull --rebase origin main
-git push origin main
+Do not commit or push yet. This is temporary instrumentation, wait for the console output to be reviewed before deciding on a real fix.
