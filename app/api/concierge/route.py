@@ -48,6 +48,7 @@ from app.api.concierge.functions import (
     get_client_document_status,
     get_task_status,
     get_qc_checklist_status,
+    get_time_tracking_detail,
 )
 
 logger = logging.getLogger(__name__)
@@ -183,6 +184,11 @@ _CONCIERGE_TOOLS = [
         "description": "Returns all active engagements that have unchecked QC checklist items, with the client name and count of outstanding items per engagement. Call this when the firm owner asks which engagements have outstanding QC items, which work has not passed quality control, what QC is still pending, or any question specifically about QC checklist completion status across engagements.",
         "input_schema": {"type": "object", "properties": {}, "required": []},
     },
+    {
+        "name": "get_time_tracking_detail",
+        "description": "Returns hours logged this week per staff member split into billable and non-billable totals, plus total unbilled billable hours this month across ALL engagement statuses firm-wide. Call this when the firm owner asks how many hours a staff member has logged, what the billable vs non-billable breakdown looks like, who is logging the most time, or about time tracking detail in general. Distinct from get_unbilled_completed_work, which covers only completed engagements and only the dollar value of unbilled time, not the per-staff or billable split breakdown.",
+        "input_schema": {"type": "object", "properties": {}, "required": []},
+    },
 ]
 
 _OPERATIONAL_KEYWORDS = {
@@ -200,6 +206,8 @@ _OPERATIONAL_KEYWORDS = {
     "task", "tasks", "checklist", "todo", "to-do", "to do", "outstanding tasks",
     "overdue tasks", "what is left", "what's left", "not done", "incomplete",
     "qc", "quality control", "quality check", "qc items", "qc checklist",
+    "hours logged", "time tracking", "time entries", "billable hours",
+    "non-billable", "nonbillable", "hours this week", "time logged",
 }
 
 def _is_operational_question(message: str) -> bool:
@@ -496,6 +504,8 @@ Respond with exactly one word: SAFE or UNSAFE. Nothing else.""",
                 result = get_task_status(current_firm.id, db)
             elif tool_name == "get_qc_checklist_status":
                 result = get_qc_checklist_status(current_firm.id, db)
+            elif tool_name == "get_time_tracking_detail":
+                result = get_time_tracking_detail(current_firm.id, db)
             else:
                 result = {"error": f"Unknown tool: {tool_name}"}
             return _json.dumps(result, default=str)

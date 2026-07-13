@@ -917,3 +917,72 @@ def get_qc_checklist_status(firm_id: uuid.UUID, db: Session) -> dict:
         "engagements_with_outstanding_qc": len(engagements),
         "engagements": engagements,
     }
+
+
+# ---------------------------------------------------------------------------
+# Function 18: get_time_tracking_detail
+# Returns hours logged per staff member for the current week, split into
+# billable and non-billable totals, and total firm-wide unbilled billable
+# hours across ALL engagement statuses (distinct from get_unbilled_completed_work
+# which covers completed engagements in the current month only).
+# ---------------------------------------------------------------------------
+def get_time_tracking_detail(firm_id: uuid.UUID, db: Session) -> dict:
+    today = date.today()
+    week_start = today - timedelta(days=today.weekday())
+    month_start = today.replace(day=1)
+
+    # Per-staff breakdown of billable vs non-billable hours this week
+    staff_rows = db.execute(
+        select(
+            User.id,
+            User.full_name,
+            TimeEntry.is_billable,
+            func.sum(TimeEntry.hours).label("total_hours"),
+        )
+        .join(User, TimeEntry.user_id == User.id)
+        .where(
+            TimeEntry.firm_id == firm_id,
+            TimeEntry.date >= week_start,
+        )
+        .group_by(User.id, User.full_name, TimeEntry.is_billable)
+        .order_by(User.full_name.asc())
+    ).fetchall()
+
+    staff_map: dict = {}
+    for r in staff_rows:
+        uid = str(r.id)
+        if uid not in staff_map:
+            staff_map[uid] = {
+                "user_id": uid,
+                "name": r.full_name,
+                "billable_hours": 0.0,
+                "non_billable_hours": 0.0,
+            }
+        if r.is_billable:
+            staff_map[uid]["billable_hours"] = round(float(r.total_hours or 0), 2)
+        else:
+            staff_map[uid]["non_billable_hours"] = round(float(r.total_hours or 0), 2)
+
+    staff_list = sorted(staff_map.values(), key=lambda x: x["billable_hours"] + x["non_billable_hours"], reverse=True)
+
+    firm_billable = sum(s["billable_hours"] for s in staff_list)
+    firm_non_billable = sum(s["non_billable_hours"] for s in staff_list)
+
+    # Unbilled billable hours this month across all engagements (not just completed)
+    unbilled_all = db.execute(
+        select(func.sum(TimeEntry.hours))
+        .where(
+            TimeEntry.firm_id == firm_id,
+            TimeEntry.is_billable == True,  # noqa: E712
+            TimeEntry.is_billed == False,  # noqa: E712
+            TimeEntry.date >= month_start,
+        )
+    ).scalar()
+
+    return {
+        "week_start": week_start.isoformat(),
+        "firm_billable_hours_this_week": round(firm_billable, 2),
+        "firm_non_billable_hours_this_week": round(firm_non_billable, 2),
+        "unbilled_billable_hours_this_month_all_engagements": round(float(unbilled_all or 0), 2),
+        "staff": staff_list,
+    }
