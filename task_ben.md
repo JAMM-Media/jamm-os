@@ -54,54 +54,68 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Fix topic classifier double-counting overlapping keywords within the same bucket
+TASK: Build real multi-client batch drafting, review each, send in sequence
 
-USE: claude sonnet
+USE: Fable 5
 
 VERIFY BEFORE ACT:
-sed -n '232,320p' /home/corby/jamm-os/app/api/concierge/route.py
-grep -n "def _classify_topic" -A 15 /home/corby/jamm-os/app/api/concierge/route.py
+grep -n "function parseDraftFromResponse" -A 40 /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+grep -n "MULTIPLE QUALIFYING CLIENTS" -A 15 /home/corby/jamm-os/app/api/concierge/prompts.py
+grep -n "msg.draft" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+grep -n "draft?:" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-Confirm current state matches what is described below before editing.
+Confirm all match what is described below. Read every single place msg.draft is referenced in the file in full before changing anything, since this task changes that field from a single object to an array and every read site needs to be updated consistently, not just the ones that are obvious.
 
-WHAT IS WRONG:
+WHAT THIS IS:
 
-_classify_topic scores each topic bucket by summing one point per keyword found as a substring of the user's message, with no deduplication. Several buckets contain a shorter keyword and a longer keyword where the shorter one is a substring of the longer one, for example staff and staff member both exist in the staff bucket's keyword set, and team and team member both exist there too. Any message containing the longer phrase also necessarily contains the shorter one, so it gets counted twice for what is conceptually a single mention. Confirmed live: the message how many hours has each staff member logged this week scores time_tracking at 1 via hours, operational_data at 1 via week, but staff at 2, via both staff and staff member matching independently, causing staff to incorrectly win outright even though the message is fundamentally a time tracking question. This is not a keyword coverage gap, it is a scoring mechanism flaw that will recur anywhere else a keyword set contains one phrase that is a substring of another phrase in the same set.
+Currently, when multiple clients qualify for a draft, the model is correctly required to ask which single client the firm owner means, via the OPTIONS marker, and only ever produces one draft once a single client is identified. This is safe and already working. What is missing is a real path for when the firm owner explicitly wants drafts for all of the qualifying clients at once, not just one at a time. Right now there is no way to get more than one draft in a single response at all.
+
+The per-draft client resolution mechanism already exists and already works correctly: each draft block already carries its own CLIENT line, used by the Open to send handler to resolve which real client record to navigate to. This existing mechanism is what makes batch drafting tractable without rebuilding client resolution from scratch, since each draft in a batch can carry its own CLIENT line exactly the same way a single draft does today.
 
 CHANGE INSTRUCTIONS:
 
-Change the scoring logic inside _classify_topic so that within a single topic's keyword set, a shorter keyword does not count as a separate point if a longer keyword that contains it as a substring has already matched. Concretely, for each topic, first find all keywords that actually match the message, then before scoring, remove any matched keyword that is itself a substring of a different matched keyword in the same set, so only the longest, most specific match for that particular mention contributes to the score. Do not change matching across different topics, only deduplicate nested matches within the same topic's own keyword set.
+In prompts.py, add a new rule directly alongside the existing MULTIPLE QUALIFYING CLIENTS rule, not replacing it. The existing rule continues to apply as the default: when multiple clients qualify and the firm owner has not indicated they want all of them, still ask via OPTIONS, still never draft a placeholder. Add a new rule for the explicit case: if the firm owner clearly asks for drafts for all of the qualifying clients, using language like all of them, all three, everyone, each of them, or similar clear intent to cover every qualifying client rather than pick one, the model should produce multiple consecutive draft blocks in the same response, one per qualifying client, each using the exact same ---DRAFT:TYPE--- through ---END DRAFT--- format already established, each with its own accurate CLIENT line naming that specific client, and each with content genuinely personalized to that client's real situation, not a copy-pasted generic template repeated with only the name swapped. Never produce a placeholder in any of the batch drafts, the same absolute rule from the existing single-draft instructions applies to every draft in a batch.
 
-Do not add, remove, or reword any actual keyword in any topic bucket. This is purely a fix to how matches are counted, not a change to what counts as a match.
+In ConciergePanel.tsx, change parseDraftFromResponse so that instead of finding only the first occurrence of a draft block, it finds every occurrence in the message text, returning an array of parsed draft objects instead of a single object or null. Each element in the array should have the same shape currently returned for a single draft: type, content, source, clientName. The cleanedResponse, the display text with all draft blocks stripped out, should be computed once, based on everything before the first draft block begins, the same as it is today.
+
+Change the Message type and every place that currently reads msg.draft as a single object to instead read msg.drafts as an array, which may be null, empty, or contain one or more entries. A single draft is simply an array of length one under this new shape, there is no need to maintain two separate code paths for the single-draft case and the batch case, one array-based rendering path handles both.
+
+Update the rendering logic so that when msg.drafts contains more than one entry, each draft renders as its own separate, clearly delineated card, each with its own independent Copy button and its own independent Open to send button, and each tracks its own state independently, so sending or copying one draft does not affect the others, and the firm owner can review and act on each one in turn without needing to re-ask the question.
+
+Update the Open to send handler so it operates on a single specific draft from the array, using that specific draft's own clientName for resolution exactly the way the existing single-draft logic already does, not the first or the last draft in the array by default.
+
+Do not change how a single draft, the ordinary one-client case, looks or behaves to the firm owner, a batch of one should look and act exactly like today's existing single draft card.
+
+Do not change the OPTIONS marker mechanism, the existing ask-which-client behavior, or anything about how a single, unambiguous draft gets triggered. This task only adds the explicit multi-draft path on top of what already exists.
 
 VERIFY AFTER ACT:
 
-python3 -c "
-import sys
-sys.path.insert(0, '/home/corby/jamm-os')
-from app.api.concierge.route import _classify_topic
-result = _classify_topic('How many hours has each staff member logged this week?')
-print('classified as:', result)
-assert result == 'time_tracking', f'expected time_tracking, got {result}'
-print('PASS')
-"
+grep -n "msg.drafts\|parseDraftFromResponse" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-Expected: classified as: time_tracking, then PASS. Paste this exact output, not a paraphrase of it.
+Expected: consistent use of the new array-based field throughout, no remaining references to the old singular msg.draft anywhere in the file.
 
-Also run the full existing test suite relevant to the concierge module, if one exists, and paste the real pytest output directly, not a summary:
-
-pytest tests/ -k concierge -v 2>&1 | tail -40
-
-Paste this real output as part of your own verification, do not simply state that tests pass without showing the actual run.
+npm run build in frontend, expected zero TypeScript errors.
 
 python3 -c "from app.main import app; print('OK')"
 
+Also run the actual relevant test suite and paste the real output directly, not a summary, using the correct database and test file targeting, for example:
+
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/jammpx_dev .venv/bin/pytest tests/test_phase7_billing.py -v 2>&1 | tail -60
+
+Paste this real output as part of your own verification.
+
 MANUAL VERIFICATION:
 
-Restart backend. Ask how many hours has each staff member logged this week, confirm the chip is now Go to Timesheets, not Go to Settings. Separately ask a genuine staff related question with no time or hours language at all, such as which staff member has the lightest workload right now, confirm this still correctly produces the staff related chip, Go to Settings, so the fix did not overcorrect and break the legitimate staff classification case.
+Full kill and restart of both servers, full .next wipe, this touches core message rendering state.
+
+First confirm the existing single-client case still works exactly as before: ask a question where only one client qualifies, or where multiple qualify but you pick just one via OPTIONS, confirm one draft card appears and behaves exactly as it always has, Copy and Open to send both working correctly for that one client.
+
+Then test the new batch case: ask a question where multiple clients qualify, such as which clients have overdue invoices, then explicitly ask for drafts for all three, or similar clear all-of-them language. Confirm multiple separate draft cards appear, one per real client, each with genuinely personalized content, no placeholders, no identical copy-pasted text across drafts. Confirm each draft's Open to send button navigates to that specific correct client, not the same one for all of them. Confirm copying or sending one draft does not affect or remove the others.
+
+Report pass or fail individually for the single-client regression check and the new batch case.
 
 GIT:
 git add -A
-git commit -m "fix topic classifier double-counting overlapping keywords within the same bucket, such as staff and staff member both matching independently, which was causing questions like how many hours has each staff member logged to misclassify as staff instead of time_tracking due to an inflated score rather than an actual keyword gap"
+git commit -m "add real multi-client batch drafting: when a firm owner explicitly asks for drafts for all qualifying clients, the model now produces multiple genuinely personalized draft blocks in one response, each independently reviewable and sendable, built on the existing per-draft client resolution mechanism rather than a new parallel system"
 git pull --rebase origin main
 git push origin main
