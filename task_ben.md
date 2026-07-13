@@ -12,6 +12,11 @@
 - List endpoints return { items: [], total: N }. Never a plain array.
 - Never use em dashes anywhere in any string, copy, or comment.
 - Always use "engagements" not "projects". Always use "magic-link" not "portal link". Always use "automation presets" not "automation rules".
+- Never trust file contents shown in VS Code opened against the Windows copy (C:\Users\corby\jamm-os) or Windows File Explorer. Verify all file state via the WSL terminal (cat, ls -la, wc -l) before assuming a file is stale, empty, or correct.
+- Generated snapshot files (codebase_snapshot.txt, frontend/frontend_snapshot.txt) are gitignored. Never manually stage, commit, or resurrect them. Regenerate only via ./update_all_snapshots.sh.
+- Before the first commit of any session, confirm git config user.email is ben@jammpx.com. Never assume git identity is correct without checking.
+- Before writing or modifying anything touching the Concierge agent, read /home/corby/jamm-os/JAMM_PX_Perfect_Assistant_Build.md in full. Every Concierge task should be traceable to something described in that document.
+- If a Concierge tool call fails inside the tool-use loop, the failure must surface as a diagnosable logged event, never as a generic deflection presented to the firm owner as if it were a real answer. Check backend logs for "Tool execution failed" before concluding a knowledge gap exists rather than a broken tool call.
 
 ---
 
@@ -49,29 +54,38 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK 3: Gate suggestion chips on the reveal animation finishing, not on response completion
+TASK: Make inline bolded option names clickable, not just the buttons below
 
-USE: claude sonnet
+USE: Fable 5
 
 VERIFY BEFORE ACT:
-grep -n "revealedWordCount" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
-grep -n "suggestions.length > 0 && i === messages.length - 1" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+grep -n "parsedOptions\|msg.options" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+grep -n "ReactMarkdown\|react-markdown" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-Confirm both matches exist before proceeding. This task touches the same streaming and reveal logic that caused real problems earlier this session, so read the full surrounding function before editing rather than editing blind off the grep line alone.
+Confirm matches exist and confirm how message content actually gets rendered as markdown before writing any code.
+
+WHAT THIS IS:
+
+Options currently render correctly as clickable buttons below the message. The same option names also appear bolded inline within the message text itself. The standard now documented in JAMM_PX_Perfect_Assistant_Build.md under Section 1a is that the inline name itself should be just as actionable as the button, not a plain visual duplicate.
 
 CHANGE INSTRUCTIONS:
-In the render condition that currently shows suggestion chips (the block starting with the condition checking autopilotOn, suggestions.length, i === messages.length minus one, and msg.role), add an additional condition requiring the reveal animation for that message to have finished. Specifically, the chip block should only render once revealedWordCount is greater than or equal to the total word count of msg.content (msg.content.split(/\s+/).filter(Boolean).length), so the chip never appears fully formed while the message text above it is still animating in.
 
-Do not change the reveal animation timing or speed itself, only the condition gating when suggestions become visible.
+When rendering message content where msg.options is present and non-empty, detect bolded text spans within the rendered markdown whose text exactly matches one of the strings in msg.options, and make those specific spans clickable, triggering the exact same send behavior as the corresponding button below. Bolded text not matching any option string exactly stays plain, unchanged.
+
+Do not make every bolded span in every message clickable, only ones exactly matching a real option from msg.options on that specific message. Both the inline clickable name and the button row below should coexist and both work.
+
+Visually, the clickable inline name should read as interactive without looking like a broken sentence, for example an underline on hover or a subtle color shift, not a full button style change.
 
 VERIFY AFTER ACT:
-grep -n "revealedWordCount >= \|revealedWordCount >=" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-Confirm the new condition appears directly inside the same conditional block as suggestions.length > 0, not as a separate unrelated check.
+npm run build in frontend, expected zero TypeScript errors.
 
 MANUAL VERIFICATION:
-Full kill and restart of both servers, and a full .next wipe, since this touches streaming and reveal state. Ask a question that returns a longer response with a topic chip. Watch carefully whether the chip appears only after the full response has finished animating in, not while it is still revealing word by word.
+
+Full restart of both servers, full .next wipe. Ask the overdue invoices draft question again. Confirm both the button row and the bolded client names within the bulleted list are independently clickable and both correctly send the exact option text.
 
 GIT:
 git add -A
-git commit -m "gate suggestion chips on reveal animation completion"
+git commit -m "make inline bolded option names clickable in addition to the existing button row"
+git pull --rebase origin main
+git push origin main
