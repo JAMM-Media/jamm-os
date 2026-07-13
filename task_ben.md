@@ -54,43 +54,54 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Add missing topic buckets for QC checklists and signature envelopes to fix chip mismatches
+TASK: Fix topic classifier double-counting overlapping keywords within the same bucket
 
 USE: claude sonnet
 
 VERIFY BEFORE ACT:
-sed -n '232,306p' /home/corby/jamm-os/app/api/concierge/route.py
-grep -n "TOPIC_CHIPS" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+sed -n '232,320p' /home/corby/jamm-os/app/api/concierge/route.py
+grep -n "def _classify_topic" -A 15 /home/corby/jamm-os/app/api/concierge/route.py
 
 Confirm current state matches what is described below before editing.
 
 WHAT IS WRONG:
 
-Two separate keyword systems exist in this codebase: _OPERATIONAL_KEYWORDS, which decides whether a question routes to a tool, and _TOPIC_KEYWORDS, which decides which suggestion chip appears. Tonight, four new tools were added to _OPERATIONAL_KEYWORDS, but _TOPIC_KEYWORDS was never updated to match. Confirmed: no bucket exists anywhere in _TOPIC_KEYWORDS for QC checklist related terms or for signature envelope related terms. QC checklist questions currently fall through to whichever unrelated bucket happens to share an incidental keyword, producing a plausible looking but incorrect chip. Signature envelope questions currently classify as general, producing no chip at all, inconsistent with every other domain having one. Neither of these two domains has a dedicated top level page in the frontend, both live inline on the engagement detail page, confirmed by checking the route tree directly.
+_classify_topic scores each topic bucket by summing one point per keyword found as a substring of the user's message, with no deduplication. Several buckets contain a shorter keyword and a longer keyword where the shorter one is a substring of the longer one, for example staff and staff member both exist in the staff bucket's keyword set, and team and team member both exist there too. Any message containing the longer phrase also necessarily contains the shorter one, so it gets counted twice for what is conceptually a single mention. Confirmed live: the message how many hours has each staff member logged this week scores time_tracking at 1 via hours, operational_data at 1 via week, but staff at 2, via both staff and staff member matching independently, causing staff to incorrectly win outright even though the message is fundamentally a time tracking question. This is not a keyword coverage gap, it is a scoring mechanism flaw that will recur anywhere else a keyword set contains one phrase that is a substring of another phrase in the same set.
 
 CHANGE INSTRUCTIONS:
 
-In route.py, add two new entries to the _TOPIC_KEYWORDS dictionary, matching the exact style and format of the existing entries. Name one qc_checklists with keywords covering qc, quality control, qc checklist, qc items, qc pending, unchecked items, quality check. Name the other signature_envelopes with keywords covering signature, envelope, e-signature, esignature, pending signature, has signed, needs to sign, signed yet, declined signature, expired signature.
+Change the scoring logic inside _classify_topic so that within a single topic's keyword set, a shorter keyword does not count as a separate point if a longer keyword that contains it as a substring has already matched. Concretely, for each topic, first find all keywords that actually match the message, then before scoring, remove any matched keyword that is itself a substring of a different matched keyword in the same set, so only the longest, most specific match for that particular mention contributes to the score. Do not change matching across different topics, only deduplicate nested matches within the same topic's own keyword set.
 
-In ConciergePanel.tsx, add matching entries to the TOPIC_CHIPS object for both new topic keys, qc_checklists and signature_envelopes, each pointing to Go to Engagements, matching the exact chip destination already used for the engagements topic itself, since both of these domains are only reachable through the engagement detail page and there is no dedicated top level page for either to point to instead.
-
-Do not change any existing topic bucket or any existing chip mapping. Do not add a dedicated page for either domain, that is out of scope for this task.
+Do not add, remove, or reword any actual keyword in any topic bucket. This is purely a fix to how matches are counted, not a change to what counts as a match.
 
 VERIFY AFTER ACT:
 
-grep -n "qc_checklists\|signature_envelopes" /home/corby/jamm-os/app/api/concierge/route.py /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+python3 -c "
+import sys
+sys.path.insert(0, '/home/corby/jamm-os')
+from app.api.concierge.route import _classify_topic
+result = _classify_topic('How many hours has each staff member logged this week?')
+print('classified as:', result)
+assert result == 'time_tracking', f'expected time_tracking, got {result}'
+print('PASS')
+"
 
-Expected: present in both files, both places.
+Expected: classified as: time_tracking, then PASS. Paste this exact output, not a paraphrase of it.
+
+Also run the full existing test suite relevant to the concierge module, if one exists, and paste the real pytest output directly, not a summary:
+
+pytest tests/ -k concierge -v 2>&1 | tail -40
+
+Paste this real output as part of your own verification, do not simply state that tests pass without showing the actual run.
 
 python3 -c "from app.main import app; print('OK')"
-npm run build in frontend, expected zero TypeScript errors.
 
 MANUAL VERIFICATION:
 
-Restart both servers. Ask which engagements have outstanding QC items, confirm the resulting chip now correctly reads Go to Engagements. Ask which signature requests are still pending, confirm a chip now appears at all, and that it also reads Go to Engagements rather than nothing.
+Restart backend. Ask how many hours has each staff member logged this week, confirm the chip is now Go to Timesheets, not Go to Settings. Separately ask a genuine staff related question with no time or hours language at all, such as which staff member has the lightest workload right now, confirm this still correctly produces the staff related chip, Go to Settings, so the fix did not overcorrect and break the legitimate staff classification case.
 
 GIT:
 git add -A
-git commit -m "add missing QC checklist and signature envelope topic buckets to the chip classifier, which was never updated when the corresponding tools and operational keywords were added earlier tonight, closing the gap between tool routing keywords and chip classification keywords"
+git commit -m "fix topic classifier double-counting overlapping keywords within the same bucket, such as staff and staff member both matching independently, which was causing questions like how many hours has each staff member logged to misclassify as staff instead of time_tracking due to an inflated score rather than an actual keyword gap"
 git pull --rebase origin main
 git push origin main

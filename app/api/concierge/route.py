@@ -315,7 +315,9 @@ def _classify_topic(message: str) -> str:
     lower = message.lower()
     scores: dict[str, int] = {}
     for topic, keywords in _TOPIC_KEYWORDS.items():
-        score = sum(1 for kw in keywords if kw in lower)
+        matched = [kw for kw in keywords if kw in lower]
+        deduped = [kw for kw in matched if not any(kw != other and kw in other for other in matched)]
+        score = len(deduped)
         if score > 0:
             scores[topic] = score
     if not scores:
