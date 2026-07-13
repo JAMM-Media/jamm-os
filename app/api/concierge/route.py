@@ -46,6 +46,7 @@ from app.api.concierge.functions import (
     get_portal_inactive_clients,
     get_irs_auth_expiring,
     get_client_document_status,
+    get_task_status,
 )
 
 logger = logging.getLogger(__name__)
@@ -171,6 +172,11 @@ _CONCIERGE_TOOLS = [
             "required": ["client_id"],
         },
     },
+    {
+        "name": "get_task_status",
+        "description": "Returns all incomplete tasks and unchecked QC checklist items firm-wide, each with the client name, engagement name, assignee, due date, and overdue flag. Call this when the firm owner asks which tasks are overdue, what tasks are outstanding, what is on anyone's to-do list, what checklist items are not done, what is outstanding on a specific engagement's checklist, or any question about individual task or checklist item status independent of the engagement's overall completion status.",
+        "input_schema": {"type": "object", "properties": {}, "required": []},
+    },
 ]
 
 _OPERATIONAL_KEYWORDS = {
@@ -185,6 +191,8 @@ _OPERATIONAL_KEYWORDS = {
     "weekly", "week", "automation", "automations", "firing", "portal login",
     "portal inactive", "irs auth", "authorization expir", "expiring", "2848", "8821",
     "document status", "uploaded", "missing documents",
+    "task", "tasks", "checklist", "todo", "to-do", "to do", "outstanding tasks",
+    "overdue tasks", "what is left", "what's left", "not done", "incomplete",
 }
 
 def _is_operational_question(message: str) -> bool:
@@ -477,6 +485,8 @@ Respond with exactly one word: SAFE or UNSAFE. Nothing else.""",
                 _cid = _uuid.UUID(tool_input["client_id"])
                 _eid = _uuid.UUID(tool_input["engagement_id"]) if tool_input.get("engagement_id") else None
                 result = get_client_document_status(current_firm.id, _cid, db, engagement_id=_eid)
+            elif tool_name == "get_task_status":
+                result = get_task_status(current_firm.id, db)
             else:
                 result = {"error": f"Unknown tool: {tool_name}"}
             return _json.dumps(result, default=str)

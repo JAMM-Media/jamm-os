@@ -21,6 +21,8 @@ from app.models.automation_rule import AutomationRule
 from app.models.behavioral_event import BehavioralEvent
 from app.models.document_request import DocumentRequest
 from app.models.irs_authorization import IrsAuthorization
+from app.models.task import Task
+from app.models.qc_checklist import QcChecklistItem
 
 
 # ---------------------------------------------------------------------------
@@ -786,4 +788,89 @@ def get_client_document_status(
         "client_id": str(client_id),
         "open_requests": len(results),
         "requests": results,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Function 16: get_task_status
+# Returns incomplete tasks and unchecked QC checklist items firm-wide,
+# independent of engagement completion status.
+# ---------------------------------------------------------------------------
+def get_task_status(firm_id: uuid.UUID, db: Session) -> dict:
+    today = date.today()
+
+    # Incomplete tasks with engagement and client context
+    task_rows = db.execute(
+        select(
+            Task.id,
+            Task.title,
+            Task.status,
+            Task.due_date,
+            Task.is_completed,
+            Client.name.label("client_name"),
+            Engagement.name.label("engagement_name"),
+            User.full_name.label("assigned_to_name"),
+        )
+        .join(Client, Task.client_id == Client.id)
+        .join(Engagement, Task.engagement_id == Engagement.id)
+        .outerjoin(User, Task.assigned_to == User.id)
+        .where(
+            Task.firm_id == firm_id,
+            Task.is_completed == False,  # noqa: E712
+        )
+        .order_by(Task.due_date.asc().nullslast())
+        .limit(30)
+    ).fetchall()
+
+    tasks = [
+        {
+            "task_id": str(r.id),
+            "title": r.title,
+            "status": r.status,
+            "client_name": r.client_name,
+            "engagement_name": r.engagement_name,
+            "assigned_to": r.assigned_to_name,
+            "due_date": r.due_date.isoformat() if r.due_date else None,
+            "overdue": r.due_date is not None and r.due_date < today,
+        }
+        for r in task_rows
+    ]
+
+    # Unchecked QC checklist items with engagement and client context
+    checklist_rows = db.execute(
+        select(
+            QcChecklistItem.id,
+            QcChecklistItem.title,
+            Engagement.id.label("engagement_id"),
+            Engagement.name.label("engagement_name"),
+            Client.name.label("client_name"),
+        )
+        .join(Engagement, QcChecklistItem.engagement_id == Engagement.id)
+        .join(Client, Engagement.client_id == Client.id)
+        .where(
+            QcChecklistItem.firm_id == firm_id,
+            QcChecklistItem.is_checked == False,  # noqa: E712
+        )
+        .order_by(Engagement.name.asc())
+        .limit(30)
+    ).fetchall()
+
+    checklist_items = [
+        {
+            "item_id": str(r.id),
+            "title": r.title,
+            "engagement_name": r.engagement_name,
+            "client_name": r.client_name,
+        }
+        for r in checklist_rows
+    ]
+
+    overdue_count = sum(1 for t in tasks if t["overdue"])
+
+    return {
+        "incomplete_tasks": len(tasks),
+        "overdue_tasks": overdue_count,
+        "unchecked_checklist_items": len(checklist_items),
+        "tasks": tasks,
+        "checklist_items": checklist_items,
     }
