@@ -21,6 +21,9 @@ from app.models.automation_rule import AutomationRule
 from app.models.behavioral_event import BehavioralEvent
 from app.models.document_request import DocumentRequest
 from app.models.irs_authorization import IrsAuthorization
+from app.models.task import Task
+from app.models.qc_checklist import QcChecklistItem
+from app.models.signature_envelope import SignatureEnvelope
 
 
 # ---------------------------------------------------------------------------
@@ -786,4 +789,271 @@ def get_client_document_status(
         "client_id": str(client_id),
         "open_requests": len(results),
         "requests": results,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Function 16: get_task_status
+# Returns incomplete tasks and unchecked QC checklist items firm-wide,
+# independent of engagement completion status.
+# ---------------------------------------------------------------------------
+def get_task_status(firm_id: uuid.UUID, db: Session) -> dict:
+    today = date.today()
+
+    # Incomplete tasks with engagement and client context
+    task_rows = db.execute(
+        select(
+            Task.id,
+            Task.title,
+            Task.status,
+            Task.due_date,
+            Task.is_completed,
+            Client.name.label("client_name"),
+            Engagement.name.label("engagement_name"),
+            User.full_name.label("assigned_to_name"),
+        )
+        .join(Client, Task.client_id == Client.id)
+        .join(Engagement, Task.engagement_id == Engagement.id)
+        .outerjoin(User, Task.assigned_to == User.id)
+        .where(
+            Task.firm_id == firm_id,
+            Task.is_completed == False,  # noqa: E712
+        )
+        .order_by(Task.due_date.asc().nullslast())
+        .limit(30)
+    ).fetchall()
+
+    tasks = [
+        {
+            "task_id": str(r.id),
+            "title": r.title,
+            "status": r.status,
+            "client_name": r.client_name,
+            "engagement_name": r.engagement_name,
+            "assigned_to": r.assigned_to_name,
+            "due_date": r.due_date.isoformat() if r.due_date else None,
+            "overdue": r.due_date is not None and r.due_date < today,
+        }
+        for r in task_rows
+    ]
+
+    # Unchecked QC checklist items with engagement and client context
+    checklist_rows = db.execute(
+        select(
+            QcChecklistItem.id,
+            QcChecklistItem.title,
+            Engagement.id.label("engagement_id"),
+            Engagement.name.label("engagement_name"),
+            Client.name.label("client_name"),
+        )
+        .join(Engagement, QcChecklistItem.engagement_id == Engagement.id)
+        .join(Client, Engagement.client_id == Client.id)
+        .where(
+            QcChecklistItem.firm_id == firm_id,
+            QcChecklistItem.is_checked == False,  # noqa: E712
+            Engagement.status.notin_(["completed", "archived"]),
+        )
+        .order_by(Engagement.name.asc())
+        .limit(30)
+    ).fetchall()
+
+    checklist_items = [
+        {
+            "item_id": str(r.id),
+            "title": r.title,
+            "engagement_name": r.engagement_name,
+            "client_name": r.client_name,
+        }
+        for r in checklist_rows
+    ]
+
+    overdue_count = sum(1 for t in tasks if t["overdue"])
+
+    return {
+        "incomplete_tasks": len(tasks),
+        "overdue_tasks": overdue_count,
+        "unchecked_checklist_items": len(checklist_items),
+        "tasks": tasks,
+        "checklist_items": checklist_items,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Function 17: get_qc_checklist_status
+# Returns engagements with outstanding QC checklist items, using the same
+# unchecked-count logic as crud/qc_checklist.get_unchecked_counts but
+# firm-wide and joined with client and engagement names for readability.
+# ---------------------------------------------------------------------------
+def get_qc_checklist_status(firm_id: uuid.UUID, db: Session) -> dict:
+    rows = db.execute(
+        select(
+            Engagement.id,
+            Engagement.name.label("engagement_name"),
+            Client.name.label("client_name"),
+            func.count(QcChecklistItem.id).label("unchecked_count"),
+        )
+        .join(QcChecklistItem, QcChecklistItem.engagement_id == Engagement.id)
+        .join(Client, Engagement.client_id == Client.id)
+        .where(
+            QcChecklistItem.firm_id == firm_id,
+            QcChecklistItem.is_checked == False,  # noqa: E712
+            Engagement.status.notin_(["completed", "archived"]),
+        )
+        .group_by(Engagement.id, Engagement.name, Client.name)
+        .order_by(func.count(QcChecklistItem.id).desc())
+        .limit(30)
+    ).fetchall()
+
+    engagements = [
+        {
+            "engagement_id": str(r.id),
+            "engagement_name": r.engagement_name,
+            "client_name": r.client_name,
+            "unchecked_items": r.unchecked_count,
+        }
+        for r in rows
+    ]
+
+    return {
+        "engagements_with_outstanding_qc": len(engagements),
+        "engagements": engagements,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Function 18: get_time_tracking_detail
+# Returns hours logged per staff member for the current week, split into
+# billable and non-billable totals, and total firm-wide unbilled billable
+# hours across ALL engagement statuses (distinct from get_unbilled_completed_work
+# which covers completed engagements in the current month only).
+# ---------------------------------------------------------------------------
+def get_time_tracking_detail(firm_id: uuid.UUID, db: Session) -> dict:
+    today = date.today()
+    week_start = today - timedelta(days=today.weekday())
+    month_start = today.replace(day=1)
+
+    # Per-staff breakdown of billable vs non-billable hours this week
+    staff_rows = db.execute(
+        select(
+            User.id,
+            User.full_name,
+            TimeEntry.is_billable,
+            func.sum(TimeEntry.hours).label("total_hours"),
+        )
+        .join(User, TimeEntry.user_id == User.id)
+        .where(
+            TimeEntry.firm_id == firm_id,
+            TimeEntry.date >= week_start,
+        )
+        .group_by(User.id, User.full_name, TimeEntry.is_billable)
+        .order_by(User.full_name.asc())
+    ).fetchall()
+
+    staff_map: dict = {}
+    for r in staff_rows:
+        uid = str(r.id)
+        if uid not in staff_map:
+            staff_map[uid] = {
+                "user_id": uid,
+                "name": r.full_name,
+                "billable_hours": 0.0,
+                "non_billable_hours": 0.0,
+            }
+        if r.is_billable:
+            staff_map[uid]["billable_hours"] = round(float(r.total_hours or 0), 2)
+        else:
+            staff_map[uid]["non_billable_hours"] = round(float(r.total_hours or 0), 2)
+
+    staff_list = sorted(staff_map.values(), key=lambda x: x["billable_hours"] + x["non_billable_hours"], reverse=True)
+
+    firm_billable = sum(s["billable_hours"] for s in staff_list)
+    firm_non_billable = sum(s["non_billable_hours"] for s in staff_list)
+
+    # Unbilled billable hours this month across all engagements (not just completed)
+    unbilled_all = db.execute(
+        select(func.sum(TimeEntry.hours))
+        .where(
+            TimeEntry.firm_id == firm_id,
+            TimeEntry.is_billable == True,  # noqa: E712
+            TimeEntry.is_billed == False,  # noqa: E712
+            TimeEntry.date >= month_start,
+        )
+    ).scalar()
+
+    return {
+        "week_start": week_start.isoformat(),
+        "firm_billable_hours_this_week": round(firm_billable, 2),
+        "firm_non_billable_hours_this_week": round(firm_non_billable, 2),
+        "unbilled_billable_hours_this_month_all_engagements": round(float(unbilled_all or 0), 2),
+        "staff": staff_list,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Function 19: get_signature_envelope_status
+# Returns pending, declined, and expired envelopes firm-wide, or optionally
+# scoped to a specific client, with signer-level detail and days pending.
+# ---------------------------------------------------------------------------
+def get_signature_envelope_status(
+    firm_id: uuid.UUID,
+    db: Session,
+    client_id: uuid.UUID | None = None,
+) -> dict:
+    stmt = select(
+        SignatureEnvelope.id,
+        SignatureEnvelope.status,
+        SignatureEnvelope.subject,
+        SignatureEnvelope.signers,
+        SignatureEnvelope.sent_at,
+        SignatureEnvelope.expires_at,
+        SignatureEnvelope.reminder_count,
+        Client.name.label("client_name"),
+        Engagement.name.label("engagement_name"),
+    ).join(
+        Client, SignatureEnvelope.client_id == Client.id
+    ).outerjoin(
+        Engagement, SignatureEnvelope.engagement_id == Engagement.id
+    ).where(
+        SignatureEnvelope.firm_id == firm_id,
+        SignatureEnvelope.status.in_(["draft", "sent", "declined", "expired"]),
+    )
+
+    if client_id is not None:
+        stmt = stmt.where(SignatureEnvelope.client_id == client_id)
+
+    rows = db.execute(
+        stmt.order_by(SignatureEnvelope.sent_at.asc().nullslast()).limit(30)
+    ).fetchall()
+
+    now = datetime.now(timezone.utc)
+    envelopes = []
+    for r in rows:
+        sent_at = r.sent_at
+        days_pending = (now - sent_at).days if sent_at and sent_at.tzinfo else None
+
+        signers_pending = []
+        signers_done = []
+        for s in (r.signers or []):
+            if s.get("status") in ("signed", "completed"):
+                signers_done.append(s.get("name") or s.get("email", ""))
+            else:
+                signers_pending.append(s.get("name") or s.get("email", ""))
+
+        envelopes.append({
+            "envelope_id": str(r.id),
+            "client_name": r.client_name,
+            "engagement_name": r.engagement_name,
+            "subject": r.subject,
+            "status": r.status,
+            "sent_at": sent_at.isoformat() if sent_at else None,
+            "expires_at": r.expires_at.isoformat() if r.expires_at else None,
+            "days_pending": days_pending,
+            "reminders_sent": r.reminder_count,
+            "signers_pending": signers_pending,
+            "signers_completed": signers_done,
+        })
+
+    return {
+        "pending_count": len(envelopes),
+        "envelopes": envelopes,
     }

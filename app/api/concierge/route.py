@@ -18,6 +18,7 @@ from app.core.enums import UserRole
 from app.core.rate_limit import limiter
 from app.db.session import get_db
 from app.dependencies.auth import get_current_user
+from app.dependencies.roles import require_firm_owner
 from app.dependencies.tenant import get_current_firm
 from app.models.firm import Firm
 from app.models.client import Client
@@ -44,6 +45,10 @@ from app.api.concierge.functions import (
     get_portal_inactive_clients,
     get_irs_auth_expiring,
     get_client_document_status,
+    get_task_status,
+    get_qc_checklist_status,
+    get_time_tracking_detail,
+    get_signature_envelope_status,
 )
 
 logger = logging.getLogger(__name__)
@@ -169,6 +174,32 @@ _CONCIERGE_TOOLS = [
             "required": ["client_id"],
         },
     },
+    {
+        "name": "get_task_status",
+        "description": "Returns all incomplete tasks and unchecked QC checklist items firm-wide, each with the client name, engagement name, assignee, due date, and overdue flag. Call this when the firm owner asks which tasks are overdue, what tasks are outstanding, what is on anyone's to-do list, what checklist items are not done, what is outstanding on a specific engagement's checklist, or any question about individual task or checklist item status independent of the engagement's overall completion status.",
+        "input_schema": {"type": "object", "properties": {}, "required": []},
+    },
+    {
+        "name": "get_qc_checklist_status",
+        "description": "Returns all active engagements that have unchecked QC checklist items, with the client name and count of outstanding items per engagement. Call this when the firm owner asks which engagements have outstanding QC items, which work has not passed quality control, what QC is still pending, or any question specifically about QC checklist completion status across engagements.",
+        "input_schema": {"type": "object", "properties": {}, "required": []},
+    },
+    {
+        "name": "get_time_tracking_detail",
+        "description": "Returns hours logged this week per staff member split into billable and non-billable totals, plus total unbilled billable hours this month across ALL engagement statuses firm-wide. Call this when the firm owner asks how many hours a staff member has logged, what the billable vs non-billable breakdown looks like, who is logging the most time, or about time tracking detail in general. Distinct from get_unbilled_completed_work, which covers only completed engagements and only the dollar value of unbilled time, not the per-staff or billable split breakdown.",
+        "input_schema": {"type": "object", "properties": {}, "required": []},
+    },
+    {
+        "name": "get_signature_envelope_status",
+        "description": "Returns pending, declined, and expired signature envelopes, with client name, engagement, subject, how many days it has been pending, reminders sent, and which signers have or have not yet signed. Accepts an optional client_id to scope to a single client. Call this when the firm owner asks which signature requests are pending, has a client signed yet, who still needs to sign, which envelopes are declined or expired, or any question about the status of e-signature requests.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "client_id": {"type": "string", "description": "Optional UUID of a specific client to scope the lookup. Omit for a firm-wide view."}
+            },
+            "required": [],
+        },
+    },
 ]
 
 _OPERATIONAL_KEYWORDS = {
@@ -183,6 +214,13 @@ _OPERATIONAL_KEYWORDS = {
     "weekly", "week", "automation", "automations", "firing", "portal login",
     "portal inactive", "irs auth", "authorization expir", "expiring", "2848", "8821",
     "document status", "uploaded", "missing documents",
+    "task", "tasks", "checklist", "todo", "to-do", "to do", "outstanding tasks",
+    "overdue tasks", "what is left", "what's left", "not done", "incomplete",
+    "qc", "quality control", "quality check", "qc items", "qc checklist",
+    "hours logged", "time tracking", "time entries", "billable hours",
+    "non-billable", "nonbillable", "hours this week", "time logged",
+    "signature", "envelope", "signed", "sign", "pending signature",
+    "e-signature", "esignature", "has signed", "needs to sign",
 }
 
 def _is_operational_question(message: str) -> bool:
@@ -475,6 +513,15 @@ Respond with exactly one word: SAFE or UNSAFE. Nothing else.""",
                 _cid = _uuid.UUID(tool_input["client_id"])
                 _eid = _uuid.UUID(tool_input["engagement_id"]) if tool_input.get("engagement_id") else None
                 result = get_client_document_status(current_firm.id, _cid, db, engagement_id=_eid)
+            elif tool_name == "get_task_status":
+                result = get_task_status(current_firm.id, db)
+            elif tool_name == "get_qc_checklist_status":
+                result = get_qc_checklist_status(current_firm.id, db)
+            elif tool_name == "get_time_tracking_detail":
+                result = get_time_tracking_detail(current_firm.id, db)
+            elif tool_name == "get_signature_envelope_status":
+                _cid = _uuid.UUID(tool_input["client_id"]) if tool_input.get("client_id") else None
+                result = get_signature_envelope_status(current_firm.id, db, client_id=_cid)
             else:
                 result = {"error": f"Unknown tool: {tool_name}"}
             return _json.dumps(result, default=str)
@@ -1184,3 +1231,36 @@ def mark_notification_read(
     notification.dismissed_at = datetime.now(timezone.utc)
     db.commit()
     return {"ok": True}
+
+
+@router.get("/question-log")
+def get_question_log(
+    current_firm: Firm = Depends(get_current_firm),
+    current_user: User = Depends(require_firm_owner),
+    db: Session = Depends(get_db),
+    low_confidence_only: bool = True,
+    limit: int = 50,
+    offset: int = 0,
+):
+    stmt = select(ConciergeQuestionLog).where(
+        ConciergeQuestionLog.firm_id == current_firm.id,
+    )
+    if low_confidence_only:
+        stmt = stmt.where(ConciergeQuestionLog.low_confidence == True)  # noqa: E712
+    count_stmt = select(func.count()).select_from(stmt.subquery())
+    total = db.execute(count_stmt).scalar_one()
+    rows = db.execute(
+        stmt.order_by(ConciergeQuestionLog.asked_at.desc()).limit(limit).offset(offset)
+    ).scalars().all()
+    items = [
+        {
+            "id": str(r.id),
+            "question_text": r.question_text,
+            "response_summary": r.response_summary,
+            "low_confidence": r.low_confidence,
+            "asked_at": r.asked_at.isoformat(),
+            "reviewed": r.reviewed,
+        }
+        for r in rows
+    ]
+    return {"items": items, "total": total}

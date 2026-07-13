@@ -107,6 +107,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
   const [streaming, setStreaming] = useState(false)
   const [revealedWordCount, setRevealedWordCount] = useState(0)
   const [revealSession, setRevealSession] = useState(0)
+  const revealSessionRef = useRef(0)
   const revealTimerRef = useRef<number | null>(null)
   const revealActiveRef = useRef(false)
   const [hasMounted, setHasMounted] = useState(false)
@@ -170,8 +171,14 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
 
   useEffect(() => {
     if (revealSession === 0) return
+    const effectSession = revealSession
     let count = 0
     function tick() {
+      // If a newer session has started since this loop instance was created,
+      // bail immediately without touching any shared refs or state.
+      // rAF callbacks are not bound to React's synchronous effect cleanup timing,
+      // so a stale frame can fire after cleanup has already run for this session.
+      if (revealSessionRef.current !== effectSession) return
       const target = targetWordCountRef.current
       // Only truly stop once the session is finalized AND count has caught up.
       // Never stop purely because target happens to be 0 or equal to count on
@@ -279,7 +286,8 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
 
   const sendMessages = useCallback(
     async (thread: Message[]) => {
-      setRevealSession((s) => s + 1)
+      revealSessionRef.current += 1
+      setRevealSession(revealSessionRef.current)
       setRevealedWordCount(0)
       revealActiveRef.current = true
       setStreaming(true)
@@ -380,6 +388,13 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
         const parsedDraft = parseDraftFromResponse(filteredAssembled)
         const textForAction = parsedDraft ? parsedDraft.cleanedResponse : filteredAssembled
         const cleanContent = handleConciergeAction(textForAction)
+        // Set the true final word count synchronously here, before revealActiveRef
+        // is set to false in the finally block. The [messages]-keyed effect that
+        // normally updates this ref runs asynchronously after a re-render, which
+        // means there is a race where the tick loop's stopping condition can be
+        // satisfied against a stale zero target if the effect has not yet run.
+        // This direct assignment closes that race completely.
+        targetWordCountRef.current = cleanContent.split(/\s+/).filter(Boolean).length
         setMessages((prev) => {
           const updated = [...prev]
           const last = updated[updated.length - 1]
@@ -881,7 +896,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
       {ConfirmDialog}
       {hasMounted && isOpen && (
         <div
-          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.25)', zIndex: 39 }}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.25)', zIndex: 39, pointerEvents: 'none' }}
         />
       )}
 
@@ -1138,12 +1153,8 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
                 </div>
               )}
               <div
-                className={`text-[13px] leading-[1.6] px-3 py-2 rounded-[12px] max-w-[75%] ${msg.role === 'user' ? 'text-white' : ''}`}
-                style={
-                  msg.role === 'user'
-                    ? { background: '#1F3148', color: '#FFFFFF' }
-                    : { background: '#E4E6EA', color: '#1F3148' }
-                }
+                className={`text-[13px] leading-[1.6] px-3 py-2 rounded-[12px] max-w-[75%] ${msg.role === 'user' ? 'text-white' : 'bg-[#E4E6EA] dark:bg-[#2D2D2D] text-[#1F3148] dark:text-[#EDEEF0]'}`}
+                style={msg.role === 'user' ? { background: '#1F3148', color: '#FFFFFF' } : undefined}
               >
                 {msg.content ? (
                   <div className={`prose prose-sm max-w-none text-[13px] ${msg.role === 'user' ? 'text-white' : 'text-[#374151] dark:text-[#9CA3AF]'}`}>
@@ -1156,7 +1167,21 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
                         ol: ({node, ...props}) => <ol className="list-decimal list-outside ml-4 my-1 space-y-0.5" {...props} />,
                         li: ({node, ...props}) => <li className="leading-snug" {...props} />,
                         p: ({node, ...props}) => <p className="mb-1 last:mb-0" {...props} />,
-                        strong: ({node, ...props}) => <strong className="font-medium text-[#1F3148] dark:text-[#EDEEF0]" {...props} />,
+                        strong: ({node, children, ...props}) => {
+                          const text = Array.isArray(children)
+                            ? children.map(c => (typeof c === 'string' ? c : '')).join('')
+                            : typeof children === 'string' ? children : ''
+                          const isOption = !!(text && msg.options?.includes(text))
+                          return (
+                            <strong
+                              {...props}
+                              className={`font-medium text-[#1F3148] dark:text-[#EDEEF0]${isOption ? ' cursor-pointer underline decoration-dotted underline-offset-2 hover:text-[#4A7FA5] dark:hover:text-[#4A7FA5] transition-colors' : ''}`}
+                              onClick={isOption ? () => void handleSend(text) : undefined}
+                            >
+                              {children}
+                            </strong>
+                          )
+                        },
                         em: ({node, ...props}) => <em className="not-italic text-[11px] text-[#6B7280]" {...props} />,
                       }}
                     >

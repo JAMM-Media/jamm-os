@@ -12,6 +12,11 @@
 - List endpoints return { items: [], total: N }. Never a plain array.
 - Never use em dashes anywhere in any string, copy, or comment.
 - Always use "engagements" not "projects". Always use "magic-link" not "portal link". Always use "automation presets" not "automation rules".
+- Never trust file contents shown in VS Code opened against the Windows copy (C:\Users\corby\jamm-os) or Windows File Explorer. Verify all file state via the WSL terminal (cat, ls -la, wc -l) before assuming a file is stale, empty, or correct.
+- Generated snapshot files (codebase_snapshot.txt, frontend/frontend_snapshot.txt) are gitignored. Never manually stage, commit, or resurrect them. Regenerate only via ./update_all_snapshots.sh.
+- Before the first commit of any session, confirm git config user.email is ben@jammpx.com. Never assume git identity is correct without checking.
+- Before writing or modifying anything touching the Concierge agent, read /home/corby/jamm-os/JAMM_PX_Perfect_Assistant_Build.md in full. Every Concierge task should be traceable to something described in that document.
+- If a Concierge tool call fails inside the tool-use loop, the failure must surface as a diagnosable logged event, never as a generic deflection presented to the firm owner as if it were a real answer. Check backend logs for "Tool execution failed" before concluding a knowledge gap exists rather than a broken tool call.
 
 ---
 
@@ -49,29 +54,33 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK 3: Gate suggestion chips on the reveal animation finishing, not on response completion
+TASK: Add diagnostic logging to the reveal system, third distinct trigger found tonight, do not fix yet
 
-USE: claude sonnet
+USE: Fable 5
 
 VERIFY BEFORE ACT:
-grep -n "revealedWordCount" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
-grep -n "suggestions.length > 0 && i === messages.length - 1" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+sed -n '160,195p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+grep -n "revealSessionRef\|revealActiveRef" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-Confirm both matches exist before proceeding. This task touches the same streaming and reveal logic that caused real problems earlier this session, so read the full surrounding function before editing rather than editing blind off the grep line alone.
+Confirm current state matches before editing.
+
+WHAT THIS IS:
+
+This is a diagnostic task, not a fix. A third distinct trigger for the same blank-display symptom has now been found tonight: a single normal question, asked at normal pace, not rapid fire, displayed permanently blank until a completely new message was sent, at which point the answer appeared immediately. Two prior triggers were already found and fixed tonight, a target-word-count-still-zero timing issue and a rapid-fire session race condition. This third trigger does not match either known cause exactly, since it happened on a single normal question with no rapid sequential messages involved. Rather than guess at a third distinct root cause blind, add logging to observe what actually happens the next time this is reproduced.
 
 CHANGE INSTRUCTIONS:
-In the render condition that currently shows suggestion chips (the block starting with the condition checking autopilotOn, suggestions.length, i === messages.length minus one, and msg.role), add an additional condition requiring the reveal animation for that message to have finished. Specifically, the chip block should only render once revealedWordCount is greater than or equal to the total word count of msg.content (msg.content.split(/\s+/).filter(Boolean).length), so the chip never appears fully formed while the message text above it is still animating in.
 
-Do not change the reveal animation timing or speed itself, only the condition gating when suggestions become visible.
+Add console.log statements clearly prefixed with [REVEAL DEBUG] at these points: when the reveal effect instance starts, log the revealSession value and revealSessionRef.current value at that exact moment, and whether they match. Inside tick, log count, target, and both session values on the first frame only and then once every 20 frames afterward, not every frame. Log whenever revealActiveRef.current changes and what set it. Log whenever the effect's cleanup function actually runs and what revealSession value it belonged to. Specifically also log the exact value of targetWordCountRef.current at the moment the reveal effect first starts, since a mismatch between when the target effect and the reveal effect actually run relative to each other, not just a one-time zero at the very first frame, is a plausible explanation for a session that never catches up until an unrelated event forces a rerender.
+
+Do not attempt to fix the underlying issue in this task. Only add logging around the existing logic exactly as it stands.
 
 VERIFY AFTER ACT:
-grep -n "revealedWordCount >= \|revealedWordCount >=" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-Confirm the new condition appears directly inside the same conditional block as suggestions.length > 0, not as a separate unrelated check.
+grep -n "REVEAL DEBUG" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+npm run build in frontend, expected zero TypeScript errors.
 
 MANUAL VERIFICATION:
-Full kill and restart of both servers, and a full .next wipe, since this touches streaming and reveal state. Ask a question that returns a longer response with a topic chip. Watch carefully whether the chip appears only after the full response has finished animating in, not while it is still revealing word by word.
 
-GIT:
-git add -A
-git commit -m "gate suggestion chips on reveal animation completion"
+Full restart, open browser console filtered to REVEAL DEBUG. Ask a single normal question at normal pace and wait. If it displays correctly, try several more single questions, one at a time, with normal pauses, until the blank state reproduces again. The moment it reproduces, copy the full console output from that specific question's session start through the point a new message was sent, and report that full output back, do not summarize it.
+
+Do not commit or push yet. This is temporary instrumentation, wait for the console output to be reviewed before deciding on a real fix.

@@ -1322,7 +1322,12 @@ client or engagement is named.
 MULTIPLE QUALIFYING CLIENTS OR ENGAGEMENTS: If the live data returns more than one
 named client or engagement that could be the target of a draft, do not attach a draft
 at all in that response. Instead, end the response by asking which one the firm owner
-means, using the OPTIONS marker with the real client or engagement names as option values.
+means and attach the [OPTIONS:...] marker with the real client or engagement names as
+option values.
+The OPTIONS marker is required every single time this situation applies, with no exceptions.
+Asking in plain prose without attaching the marker is incomplete and unacceptable. Omitting
+the marker silently removes the firm owner's ability to select with a click, which is a real
+loss of functionality, not a cosmetic difference in phrasing.
 Only produce a draft once a single specific client or engagement has been identified --
 either because only one qualified in the first place, or because the firm owner has
 since chosen one from a previous options prompt.
