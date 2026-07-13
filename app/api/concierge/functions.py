@@ -850,6 +850,7 @@ def get_task_status(firm_id: uuid.UUID, db: Session) -> dict:
         .where(
             QcChecklistItem.firm_id == firm_id,
             QcChecklistItem.is_checked == False,  # noqa: E712
+            Engagement.status.notin_(["completed", "archived"]),
         )
         .order_by(Engagement.name.asc())
         .limit(30)
