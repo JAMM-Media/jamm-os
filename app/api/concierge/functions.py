@@ -23,6 +23,7 @@ from app.models.document_request import DocumentRequest
 from app.models.irs_authorization import IrsAuthorization
 from app.models.task import Task
 from app.models.qc_checklist import QcChecklistItem
+from app.models.signature_envelope import SignatureEnvelope
 
 
 # ---------------------------------------------------------------------------
@@ -985,4 +986,74 @@ def get_time_tracking_detail(firm_id: uuid.UUID, db: Session) -> dict:
         "firm_non_billable_hours_this_week": round(firm_non_billable, 2),
         "unbilled_billable_hours_this_month_all_engagements": round(float(unbilled_all or 0), 2),
         "staff": staff_list,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Function 19: get_signature_envelope_status
+# Returns pending, declined, and expired envelopes firm-wide, or optionally
+# scoped to a specific client, with signer-level detail and days pending.
+# ---------------------------------------------------------------------------
+def get_signature_envelope_status(
+    firm_id: uuid.UUID,
+    db: Session,
+    client_id: uuid.UUID | None = None,
+) -> dict:
+    stmt = select(
+        SignatureEnvelope.id,
+        SignatureEnvelope.status,
+        SignatureEnvelope.subject,
+        SignatureEnvelope.signers,
+        SignatureEnvelope.sent_at,
+        SignatureEnvelope.expires_at,
+        SignatureEnvelope.reminder_count,
+        Client.name.label("client_name"),
+        Engagement.name.label("engagement_name"),
+    ).join(
+        Client, SignatureEnvelope.client_id == Client.id
+    ).outerjoin(
+        Engagement, SignatureEnvelope.engagement_id == Engagement.id
+    ).where(
+        SignatureEnvelope.firm_id == firm_id,
+        SignatureEnvelope.status.in_(["draft", "sent", "declined", "expired"]),
+    )
+
+    if client_id is not None:
+        stmt = stmt.where(SignatureEnvelope.client_id == client_id)
+
+    rows = db.execute(
+        stmt.order_by(SignatureEnvelope.sent_at.asc().nullslast()).limit(30)
+    ).fetchall()
+
+    now = datetime.now(timezone.utc)
+    envelopes = []
+    for r in rows:
+        sent_at = r.sent_at
+        days_pending = (now - sent_at).days if sent_at and sent_at.tzinfo else None
+
+        signers_pending = []
+        signers_done = []
+        for s in (r.signers or []):
+            if s.get("status") in ("signed", "completed"):
+                signers_done.append(s.get("name") or s.get("email", ""))
+            else:
+                signers_pending.append(s.get("name") or s.get("email", ""))
+
+        envelopes.append({
+            "envelope_id": str(r.id),
+            "client_name": r.client_name,
+            "engagement_name": r.engagement_name,
+            "subject": r.subject,
+            "status": r.status,
+            "sent_at": sent_at.isoformat() if sent_at else None,
+            "expires_at": r.expires_at.isoformat() if r.expires_at else None,
+            "days_pending": days_pending,
+            "reminders_sent": r.reminder_count,
+            "signers_pending": signers_pending,
+            "signers_completed": signers_done,
+        })
+
+    return {
+        "pending_count": len(envelopes),
+        "envelopes": envelopes,
     }

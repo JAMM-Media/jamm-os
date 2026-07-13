@@ -49,6 +49,7 @@ from app.api.concierge.functions import (
     get_task_status,
     get_qc_checklist_status,
     get_time_tracking_detail,
+    get_signature_envelope_status,
 )
 
 logger = logging.getLogger(__name__)
@@ -189,6 +190,17 @@ _CONCIERGE_TOOLS = [
         "description": "Returns hours logged this week per staff member split into billable and non-billable totals, plus total unbilled billable hours this month across ALL engagement statuses firm-wide. Call this when the firm owner asks how many hours a staff member has logged, what the billable vs non-billable breakdown looks like, who is logging the most time, or about time tracking detail in general. Distinct from get_unbilled_completed_work, which covers only completed engagements and only the dollar value of unbilled time, not the per-staff or billable split breakdown.",
         "input_schema": {"type": "object", "properties": {}, "required": []},
     },
+    {
+        "name": "get_signature_envelope_status",
+        "description": "Returns pending, declined, and expired signature envelopes, with client name, engagement, subject, how many days it has been pending, reminders sent, and which signers have or have not yet signed. Accepts an optional client_id to scope to a single client. Call this when the firm owner asks which signature requests are pending, has a client signed yet, who still needs to sign, which envelopes are declined or expired, or any question about the status of e-signature requests.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "client_id": {"type": "string", "description": "Optional UUID of a specific client to scope the lookup. Omit for a firm-wide view."}
+            },
+            "required": [],
+        },
+    },
 ]
 
 _OPERATIONAL_KEYWORDS = {
@@ -208,6 +220,8 @@ _OPERATIONAL_KEYWORDS = {
     "qc", "quality control", "quality check", "qc items", "qc checklist",
     "hours logged", "time tracking", "time entries", "billable hours",
     "non-billable", "nonbillable", "hours this week", "time logged",
+    "signature", "envelope", "signed", "sign", "pending signature",
+    "e-signature", "esignature", "has signed", "needs to sign",
 }
 
 def _is_operational_question(message: str) -> bool:
@@ -506,6 +520,9 @@ Respond with exactly one word: SAFE or UNSAFE. Nothing else.""",
                 result = get_qc_checklist_status(current_firm.id, db)
             elif tool_name == "get_time_tracking_detail":
                 result = get_time_tracking_detail(current_firm.id, db)
+            elif tool_name == "get_signature_envelope_status":
+                _cid = _uuid.UUID(tool_input["client_id"]) if tool_input.get("client_id") else None
+                result = get_signature_envelope_status(current_firm.id, db, client_id=_cid)
             else:
                 result = {"error": f"Unknown tool: {tool_name}"}
             return _json.dumps(result, default=str)
