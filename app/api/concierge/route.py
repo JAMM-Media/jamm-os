@@ -18,6 +18,7 @@ from app.core.enums import UserRole
 from app.core.rate_limit import limiter
 from app.db.session import get_db
 from app.dependencies.auth import get_current_user
+from app.dependencies.roles import require_firm_owner
 from app.dependencies.tenant import get_current_firm
 from app.models.firm import Firm
 from app.models.client import Client
@@ -1247,3 +1248,36 @@ def mark_notification_read(
     notification.dismissed_at = datetime.now(timezone.utc)
     db.commit()
     return {"ok": True}
+
+
+@router.get("/question-log")
+def get_question_log(
+    current_firm: Firm = Depends(get_current_firm),
+    current_user: User = Depends(require_firm_owner),
+    db: Session = Depends(get_db),
+    low_confidence_only: bool = True,
+    limit: int = 50,
+    offset: int = 0,
+):
+    stmt = select(ConciergeQuestionLog).where(
+        ConciergeQuestionLog.firm_id == current_firm.id,
+    )
+    if low_confidence_only:
+        stmt = stmt.where(ConciergeQuestionLog.low_confidence == True)  # noqa: E712
+    count_stmt = select(func.count()).select_from(stmt.subquery())
+    total = db.execute(count_stmt).scalar_one()
+    rows = db.execute(
+        stmt.order_by(ConciergeQuestionLog.asked_at.desc()).limit(limit).offset(offset)
+    ).scalars().all()
+    items = [
+        {
+            "id": str(r.id),
+            "question_text": r.question_text,
+            "response_summary": r.response_summary,
+            "low_confidence": r.low_confidence,
+            "asked_at": r.asked_at.isoformat(),
+            "reviewed": r.reviewed,
+        }
+        for r in rows
+    ]
+    return {"items": items, "total": total}
