@@ -5,8 +5,6 @@
 # Vercel project dashboard (vercel.com) to enable actual routing. This is a
 # manual step performed by the JAMM PX team.
 
-import secrets
-import socket
 import logging
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -15,6 +13,7 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.dependencies.roles import require_firm_owner
 from app.models.user import User
+from app.services import domain_service
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +54,6 @@ def register_domain(
     current_user: User = Depends(require_firm_owner),
 ):
     from app.crud import firm as crud_firm
-    from app.services.behavioral_log import log_event
 
     domain = body.domain.strip().lower()
     for prefix in ("https://", "http://"):
@@ -74,20 +72,8 @@ def register_domain(
     if not firm:
         raise HTTPException(status_code=404, detail="Firm not found.")
 
-    token = secrets.token_hex(16)
-    firm.portal_domain = domain
-    firm.portal_domain_verified = False
-    firm.portal_domain_verification_token = token
-    db.commit()
-
-    log_event(
-        firm_id=firm.id,
-        event_type="portal_domain.registered",
-        entity_type="firm",
-        entity_id=firm.id,
-        actor_type="staff",
-        actor_id=current_user.id,
-        metadata={"domain": domain},
+    token = domain_service.register_portal_domain(
+        db=db, firm=firm, domain=domain, current_user_id=current_user.id,
     )
 
     return DnsRecordsResponse(
@@ -106,7 +92,6 @@ def verify_domain(
     current_user: User = Depends(require_firm_owner),
 ):
     from app.crud import firm as crud_firm
-    from app.services.behavioral_log import log_event
 
     firm = crud_firm.get_firm(db, current_user.firm_id)
     if not firm:
@@ -115,40 +100,9 @@ def verify_domain(
     if not firm.portal_domain:
         raise HTTPException(status_code=400, detail="No domain registered. Register a domain first.")
 
-    cname_resolved = False
-    try:
-        socket.getaddrinfo(firm.portal_domain, None)
-        cname_resolved = True
-    except socket.gaierror:
-        cname_resolved = False
-
-    txt_verified = False
-    try:
-        import dns.resolver
-        txt_host = "_jammpx-verify." + firm.portal_domain
-        answers = dns.resolver.resolve(txt_host, "TXT")
-        for rdata in answers:
-            for txt_string in rdata.strings:
-                if txt_string.decode("utf-8") == firm.portal_domain_verification_token:
-                    txt_verified = True
-                    break
-    except ImportError:
-        txt_verified = True
-    except Exception:
-        txt_verified = False
-
-    if cname_resolved and txt_verified:
-        firm.portal_domain_verified = True
-        db.commit()
-        log_event(
-            firm_id=firm.id,
-            event_type="portal_domain.verified",
-            entity_type="firm",
-            entity_id=firm.id,
-            actor_type="staff",
-            actor_id=current_user.id,
-            metadata={"domain": firm.portal_domain},
-        )
+    cname_resolved, txt_verified = domain_service.verify_portal_domain(
+        db=db, firm=firm, current_user_id=current_user.id,
+    )
 
     fully_verified = cname_resolved and txt_verified
     return VerifyResponse(
@@ -170,27 +124,12 @@ def remove_domain(
     current_user: User = Depends(require_firm_owner),
 ):
     from app.crud import firm as crud_firm
-    from app.services.behavioral_log import log_event
 
     firm = crud_firm.get_firm(db, current_user.firm_id)
     if not firm:
         raise HTTPException(status_code=404, detail="Firm not found.")
 
-    old_domain = firm.portal_domain
-    firm.portal_domain = None
-    firm.portal_domain_verified = False
-    firm.portal_domain_verification_token = None
-    db.commit()
-
-    log_event(
-        firm_id=firm.id,
-        event_type="portal_domain.removed",
-        entity_type="firm",
-        entity_id=firm.id,
-        actor_type="staff",
-        actor_id=current_user.id,
-        metadata={"domain": old_domain},
-    )
+    domain_service.remove_portal_domain(db=db, firm=firm, current_user_id=current_user.id)
 
     return RemoveResponse(message="Portal domain removed.")
 

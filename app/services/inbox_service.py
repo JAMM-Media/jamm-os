@@ -9,6 +9,7 @@ from sqlalchemy import select, func
 from sqlalchemy.orm import Session
 
 from app.models.integration import Integration
+from app.services.behavioral_log import log_event
 from app.services.gmail_signals_service import get_fresh_credentials
 from app.services.outlook_signals_service import get_fresh_outlook_credentials
 
@@ -371,3 +372,98 @@ def match_emails_to_clients(db: Session, firm_id: UUID, email_addresses: list[st
         for row in clients
         if row[2]
     }
+
+
+# ---------------------------------------------------------------------------
+# Behavioral events
+# ---------------------------------------------------------------------------
+
+def record_inbox_viewed(*, firm_id, current_user_id, provider, threads) -> None:
+    log_event(
+        event_type="email.inbox_viewed",
+        firm_id=firm_id,
+        actor_type="staff",
+        actor_id=current_user_id,
+        metadata={
+            "provider": provider,
+            "thread_count": len(threads),
+            "client_matched_count": sum(1 for t in threads if t.get("client_id")),
+            "unread_count": sum(1 for t in threads if t.get("unread")),
+        },
+    )
+
+
+def record_thread_opened(*, firm_id, current_user_id, provider, thread_id, message_count, match) -> None:
+    log_event(
+        event_type="email.thread_opened",
+        firm_id=firm_id,
+        actor_type="staff",
+        actor_id=current_user_id,
+        entity_type="client" if match else None,
+        entity_id=UUID(str(match["client_id"])) if match else None,
+        metadata={
+            "provider": provider,
+            "thread_id": thread_id,
+            "message_count": message_count,
+            "client_matched": bool(match),
+            "client_id": match["client_id"] if match else None,
+        },
+    )
+
+
+def record_awaiting_firm_reply(
+    *, firm_id, current_user_id, provider, thread_id, client_id,
+    last_client_message_date, message_count,
+) -> None:
+    log_event(
+        event_type="email.awaiting_firm_reply",
+        firm_id=firm_id,
+        actor_type="staff",
+        actor_id=current_user_id,
+        entity_type="client",
+        entity_id=UUID(str(client_id)),
+        metadata={
+            "provider": provider,
+            "thread_id": thread_id,
+            "client_id": client_id,
+            "last_client_message_date": last_client_message_date,
+            "message_count": message_count,
+        },
+    )
+
+
+def record_reply_sent(*, firm_id, current_user_id, provider, thread_id, to_address) -> None:
+    log_event(
+        event_type="email.reply_sent",
+        firm_id=firm_id,
+        actor_type="staff",
+        actor_id=current_user_id,
+        metadata={
+            "provider": provider,
+            "thread_id": thread_id,
+            "to_address_domain": to_address.split("@")[-1] if "@" in to_address else None,
+        },
+    )
+
+
+def record_composed_sent(*, firm_id, current_user_id, provider, to_address) -> None:
+    log_event(
+        event_type="email.composed_sent",
+        firm_id=firm_id,
+        actor_type="staff",
+        actor_id=current_user_id,
+        metadata={
+            "provider": provider,
+            "to_address_domain": to_address.split("@")[-1] if "@" in to_address else None,
+        },
+    )
+
+
+def record_frontend_event(*, firm_id, current_user_id, event_type, metadata) -> None:
+    log_event(
+        event_type=event_type,
+        firm_id=firm_id,
+        actor_type="staff",
+        actor_id=current_user_id,
+        metadata=metadata,
+    )

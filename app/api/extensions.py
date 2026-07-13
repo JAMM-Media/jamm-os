@@ -21,6 +21,7 @@ from app.schemas.engagement import EngagementUpdate
 from app.services.audit_service import write_audit_log
 from app.services.event_bus import emit_event
 from app.core.enums import TriggerEvent
+import app.services.extension_service as extension_service
 
 router = APIRouter(prefix="/extensions", tags=["Extensions"])
 
@@ -166,36 +167,6 @@ def update_extension(
     if not ext:
         raise HTTPException(status_code=404, detail="Extension not found")
 
-    updated = crud_extension.update_extension(db, ext, payload)
-
-    # If the deadline was updated, sync it to the engagement
-    if payload.extended_deadline is not None:
-        engagement = db.execute(
-            select(Engagement).where(
-                Engagement.id == ext.engagement_id,
-                Engagement.firm_id == current_firm.id,
-            )
-        ).scalars().first()
-        if engagement:
-            old_extended = engagement.extended_deadline
-            engagement.extended_deadline = payload.extended_deadline
-            db.commit()
-
-            from app.services.behavioral_log import log_event
-            if engagement.extended_deadline != old_extended:
-                log_event(
-                    firm_id=current_firm.id,
-                    event_type="engagement.deadline_changed",
-                    entity_type="engagement",
-                    entity_id=engagement.id,
-                    actor_type="staff",
-                    actor_id=None,
-                    metadata={
-                        "from_extended_deadline": old_extended.isoformat() if old_extended else None,
-                        "to_extended_deadline": engagement.extended_deadline.isoformat() if engagement.extended_deadline else None,
-                        "via": "extension_update",
-                        "extension_id": str(ext.id),
-                    }
-                )
-
-    return updated
+    return extension_service.update_extension(
+        db=db, ext=ext, payload=payload, firm_id=current_firm.id,
+    )

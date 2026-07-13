@@ -2,6 +2,11 @@
 
 import re
 
+from sqlalchemy.orm import Session
+
+from app.services.audit_service import write_audit_log
+from app.services.behavioral_log import log_event
+
 
 def parse_ack_file(contents: str) -> list[dict]:
     """
@@ -72,3 +77,45 @@ def parse_ack_file(contents: str) -> list[dict]:
 def _extract_kv(line: str, pattern: str) -> str | None:
     m = re.search(pattern, line)
     return m.group(1) if m else None
+
+
+def record_efiled(
+    *,
+    db: Session,
+    firm_id,
+    engagement_id,
+    actor_id,
+    confirmation_number,
+    form_type,
+    status,
+    tax_year,
+) -> None:
+    write_audit_log(
+        db=db,
+        firm_id=firm_id,
+        action="engagement.efiled",
+        actor_id=actor_id,
+        actor_type="staff",
+        entity_type="engagement",
+        entity_id=engagement_id,
+        metadata={
+            "confirmation_number": confirmation_number,
+            "form_type": form_type,
+            "irs_status": status,
+        },
+    )
+
+    log_event(
+        event_type="engagement.efiled",
+        firm_id=firm_id,
+        entity_type="engagement",
+        entity_id=engagement_id,
+        actor_type="staff",
+        actor_id=actor_id,
+        metadata={
+            "confirmation_number": confirmation_number,
+            "form_type": form_type,
+            "status": status,
+            "tax_year": tax_year,
+        },
+    )

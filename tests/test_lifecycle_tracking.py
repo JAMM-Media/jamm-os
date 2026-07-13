@@ -52,8 +52,8 @@ def test_user_role_change_fires_event():
     current_user = MagicMock(id=uuid.uuid4())
 
     with patch("app.api.users.crud_user.update_user", return_value=updated_user), \
-         patch("app.api.users.write_audit_log"), \
-         patch("app.services.behavioral_log.log_event") as mock_log:
+         patch("app.services.user_service.write_audit_log"), \
+         patch("app.services.user_service.log_event") as mock_log:
 
         update_user(
             user_id=old_user.id,
@@ -86,8 +86,8 @@ def test_user_deactivation_fires_event():
     current_user = MagicMock(id=uuid.uuid4())
 
     with patch("app.api.users.crud_user.update_user", return_value=updated_user), \
-         patch("app.api.users.write_audit_log"), \
-         patch("app.services.behavioral_log.log_event") as mock_log:
+         patch("app.services.user_service.write_audit_log"), \
+         patch("app.services.user_service.log_event") as mock_log:
 
         update_user(
             user_id=old_user.id,
@@ -119,8 +119,8 @@ def test_user_no_change_fires_nothing():
     current_user = MagicMock(id=uuid.uuid4())
 
     with patch("app.api.users.crud_user.update_user", return_value=updated_user), \
-         patch("app.api.users.write_audit_log"), \
-         patch("app.services.behavioral_log.log_event") as mock_log:
+         patch("app.services.user_service.write_audit_log"), \
+         patch("app.services.user_service.log_event") as mock_log:
 
         update_user(
             user_id=old_user.id,
@@ -149,7 +149,7 @@ def test_cost_rate_captures_old_value():
     current_firm = MagicMock(id=uuid.uuid4())
     body = _CostRateBody(cost_rate=75.0)
 
-    with patch("app.services.behavioral_log.log_event") as mock_log:
+    with patch("app.services.user_service.log_event") as mock_log:
         update_user_cost_rate(
             user_id=user.id,
             body=body,
@@ -182,8 +182,8 @@ def test_client_entity_change_fires_event():
 
     with patch("app.api.clients.crud_client.get_client_for_firm", return_value=old_client), \
          patch("app.api.clients.crud_client.update_client", return_value=updated_client), \
-         patch("app.services.audit_service.write_audit_log"), \
-         patch("app.services.behavioral_log.log_event") as mock_log:
+         patch("app.services.client_service.write_audit_log"), \
+         patch("app.services.client_service.log_event") as mock_log:
 
         update_client(
             client_id=old_client.id,
@@ -215,8 +215,8 @@ def test_client_portal_access_revoke_fires_event():
 
     with patch("app.api.clients.crud_client.get_client_for_firm", return_value=old_client), \
          patch("app.api.clients.crud_client.update_client", return_value=updated_client), \
-         patch("app.services.audit_service.write_audit_log"), \
-         patch("app.services.behavioral_log.log_event") as mock_log:
+         patch("app.services.client_service.write_audit_log"), \
+         patch("app.services.client_service.log_event") as mock_log:
 
         update_client(
             client_id=old_client.id,
@@ -247,8 +247,8 @@ def test_client_no_change_fires_nothing():
 
     with patch("app.api.clients.crud_client.get_client_for_firm", return_value=old_client), \
          patch("app.api.clients.crud_client.update_client", return_value=updated_client), \
-         patch("app.services.audit_service.write_audit_log"), \
-         patch("app.services.behavioral_log.log_event") as mock_log:
+         patch("app.services.client_service.write_audit_log"), \
+         patch("app.services.client_service.log_event") as mock_log:
 
         update_client(
             client_id=old_client.id,

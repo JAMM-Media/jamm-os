@@ -359,3 +359,54 @@ def get_csv_export(
         media_type="text/csv",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+def record_timer_started(
+    *,
+    firm_id: UUID,
+    engagement_id: UUID,
+    current_user_id: UUID,
+    activity_type: str,
+    is_billable: bool,
+) -> None:
+    log_event(
+        firm_id=firm_id,
+        event_type="time_entry.timer_started",
+        entity_type="engagement",
+        entity_id=engagement_id,
+        actor_type="staff",
+        actor_id=current_user_id,
+        metadata={
+            "activity_type": activity_type,
+            "is_billable": is_billable,
+            "hour_of_day": datetime.now(timezone.utc).hour,
+            "day_of_week": datetime.now(timezone.utc).weekday(),
+        },
+    )
+
+
+def record_timer_stopped(
+    *,
+    firm_id: UUID,
+    engagement_id: UUID,
+    current_user_id: UUID,
+    duration_seconds: int,
+    activity_type: str,
+    is_billable: bool,
+) -> None:
+    log_event(
+        firm_id=firm_id,
+        event_type="time_entry.timer_stopped",
+        entity_type="engagement",
+        entity_id=engagement_id,
+        actor_type="staff",
+        actor_id=current_user_id,
+        metadata={
+            "duration_seconds": duration_seconds,
+            "duration_minutes": round(duration_seconds / 60, 1),
+            "activity_type": activity_type,
+            "is_billable": is_billable,
+            "hour_of_day": datetime.now(timezone.utc).hour,
+            "day_of_week": datetime.now(timezone.utc).weekday(),
+        },
+    )

@@ -45,7 +45,7 @@ def test_bulk_task_status_change_fires():
 
     payload = BulkTaskUpdate(ids=[task.id], update=BulkTaskFieldUpdate(status=TaskStatus.DONE))
 
-    with patch("app.services.behavioral_log.log_event") as mock_log:
+    with patch("app.services.task_service.log_event") as mock_log:
         bulk_update_tasks(payload=payload, db=mock_db, current_firm=current_firm, _=None)
 
     event_types = [c.kwargs["event_type"] for c in mock_log.call_args_list]
@@ -67,7 +67,7 @@ def test_bulk_task_assignment_fires():
 
     payload = BulkTaskUpdate(ids=[task.id], update=BulkTaskFieldUpdate(assigned_to=new_assignee))
 
-    with patch("app.services.behavioral_log.log_event") as mock_log:
+    with patch("app.services.task_service.log_event") as mock_log:
         bulk_update_tasks(payload=payload, db=mock_db, current_firm=current_firm, _=None)
 
     event_types = [c.kwargs["event_type"] for c in mock_log.call_args_list]
@@ -92,7 +92,7 @@ def test_bulk_task_no_change_fires_nothing():
         update=BulkTaskFieldUpdate(status=TaskStatus.TODO, assigned_to=same_assignee, due_date=same_due_date),
     )
 
-    with patch("app.services.behavioral_log.log_event") as mock_log:
+    with patch("app.services.task_service.log_event") as mock_log:
         bulk_update_tasks(payload=payload, db=mock_db, current_firm=current_firm, _=None)
 
     mock_log.assert_not_called()
@@ -121,8 +121,8 @@ def test_bulk_create_engagement_fires_created_and_deadline():
     payload = BulkEngagementCreate(client_ids=[client_id], name="Bulk Eng", filing_deadline=deadline)
 
     with patch("app.crud.engagement.create_engagement", return_value=mock_engagement), \
-         patch("app.services.audit_service.write_audit_log"), \
-         patch("app.services.behavioral_log.log_event") as mock_log:
+         patch("app.services.engagement_service.write_audit_log"), \
+         patch("app.services.engagement_service.log_event") as mock_log:
 
         bulk_create_engagements(payload=payload, db=mock_db, current_firm=current_firm, current_user=current_user, _=None)
 
@@ -155,8 +155,8 @@ def test_bulk_create_no_deadline_no_deadline_set():
     payload = BulkEngagementCreate(client_ids=[client_id], name="Bulk Eng No Deadline")
 
     with patch("app.crud.engagement.create_engagement", return_value=mock_engagement), \
-         patch("app.services.audit_service.write_audit_log"), \
-         patch("app.services.behavioral_log.log_event") as mock_log:
+         patch("app.services.engagement_service.write_audit_log"), \
+         patch("app.services.engagement_service.log_event") as mock_log:
 
         bulk_create_engagements(payload=payload, db=mock_db, current_firm=current_firm, current_user=current_user, _=None)
 

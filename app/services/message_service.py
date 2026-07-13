@@ -1,6 +1,7 @@
 # app/services/message_service.py
 
 import uuid
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import HTTPException, status
@@ -11,6 +12,7 @@ from app.crud import message as crud_message
 from app.models.client import Client
 from app.models.user import User
 from app.schemas.message import ClientMessageCreate, ClientMessageOut, UnreadCountOut
+from app.services.behavioral_log import log_event
 
 
 def _enrich_message(msg_out: ClientMessageOut, db: Session) -> ClientMessageOut:
@@ -113,6 +115,19 @@ def send_message_client(
     )
     msg_out = ClientMessageOut.model_validate(message)
     _enrich_message(msg_out, db)
+
+    log_event(
+        firm_id=firm_id,
+        event_type="portal.message_sent",
+        entity_type="client",
+        entity_id=client_id,
+        actor_type="client",
+        actor_id=None,
+        metadata={
+            "time_of_day": datetime.now(timezone.utc).hour,
+            "day_of_week": datetime.now(timezone.utc).weekday(),
+        }
+    )
     return msg_out
 
 

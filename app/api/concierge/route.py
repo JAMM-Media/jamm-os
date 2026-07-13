@@ -24,9 +24,8 @@ from app.models.client import Client
 from app.models.engagement import Engagement
 from app.models.user import User
 from app.models.concierge_notification import ConciergeNotification
-from app.models.concierge_question_log import ConciergeQuestionLog
 from app.models.security_event import SecurityEvent
-from app.services.behavioral_log import log_event
+from app.services import concierge_service
 from app.api.concierge.prompts import get_system_prompt, MORNING_BRIEFING_PROMPT, MORNING_BRIEFING_DETAIL_PROMPT
 from app.api.concierge.context import router as context_router, get_firm_context_detail
 from app.api.concierge.cron import run_trigger_check
@@ -681,54 +680,19 @@ Respond with exactly one word: SAFE or UNSAFE. Nothing else.""",
         for chunk in generate():
             assembled_for_log.append(chunk)
             yield chunk
-        try:
-            full_response = "".join(assembled_for_log)
-            # Extract plain text from SSE lines for logging
-            response_text = "\n".join(
-                line[6:] for line in full_response.split("\n")
-                if line.startswith("data:") and not line.startswith("data: [FILTERED]")
-            ).strip()
-            if response_text:
-                last_user_text = next(
-                    (m.content for m in reversed(body.messages) if m.role == "user"),
-                    "",
-                )
-                LOW_CONFIDENCE_PHRASES = [
-                    "i'm not sure",
-                    "i don't have information",
-                    "i don't know",
-                    "i cannot confirm",
-                    "i'm unable to",
-                    "i am not sure",
-                    "i am unable to",
-                    "i don't have access",
-                    "i cannot find",
-                    "not available in my",
-                ]
-                lower_response = response_text.lower()
-                is_low_confidence = any(p in lower_response for p in LOW_CONFIDENCE_PHRASES)
-                log_entry = ConciergeQuestionLog(
-                    firm_id=current_firm.id,
-                    question_text=last_user_text[:2000],
-                    response_summary=response_text[:500],
-                    low_confidence=is_low_confidence,
-                )
-                db.add(log_entry)
-                db.commit()
-                log_event(
-                    firm_id=current_firm.id,
-                    event_type="concierge.question_asked",
-                    actor_type="user",
-                    actor_id=current_user.id,
-                    entity_type=_classify_topic(last_user_text),
-                    metadata={
-                        "question": last_user_text[:500],
-                        "low_confidence": is_low_confidence,
-                        "response_length": len(response_text),
-                    },
-                )
-        except Exception:
-            pass  # non-fatal -- logging failure must never block the response
+        full_response = "".join(assembled_for_log)
+        last_user_text = next(
+            (m.content for m in reversed(body.messages) if m.role == "user"),
+            "",
+        )
+        concierge_service.log_question_asked(
+            db=db,
+            firm_id=current_firm.id,
+            current_user_id=current_user.id,
+            last_user_text=last_user_text,
+            full_response=full_response,
+            entity_type=_classify_topic(last_user_text),
+        )
 
     # ------------------------------------------------------------------
     # Fable 5 tool use path -- operational questions with live data
@@ -876,43 +840,16 @@ Respond with exactly one word: SAFE or UNSAFE. Nothing else.""",
                 return
 
             # Log the question
-            try:
-                full_response = "".join(assembled)
-                response_text = "\n".join(
-                    line[6:] for line in full_response.split("\n")
-                    if line.startswith("data:") and not line.startswith("data: [FILTERED]")
-                ).strip()
-                if response_text:
-                    LOW_CONFIDENCE_PHRASES = [
-                        "i'm not sure", "i don't have information", "i don't know",
-                        "i cannot confirm", "i'm unable to", "i am not sure",
-                        "i am unable to", "i don't have access", "i cannot find",
-                        "not available in my",
-                    ]
-                    is_low_confidence = any(p in response_text.lower() for p in LOW_CONFIDENCE_PHRASES)
-                    log_entry = ConciergeQuestionLog(
-                        firm_id=current_firm.id,
-                        question_text=_last_user_msg[:2000],
-                        response_summary=response_text[:500],
-                        low_confidence=is_low_confidence,
-                    )
-                    db.add(log_entry)
-                    db.commit()
-                    log_event(
-                        firm_id=current_firm.id,
-                        event_type="concierge.question_asked",
-                        actor_type="user",
-                        actor_id=current_user.id,
-                        entity_type=_classify_topic(_last_user_msg),
-                        metadata={
-                            "question": _last_user_msg[:500],
-                            "low_confidence": is_low_confidence,
-                            "response_length": len(response_text),
-                            "model": "fable5_tools",
-                        },
-                    )
-            except Exception:
-                pass
+            full_response = "".join(assembled)
+            concierge_service.log_question_asked(
+                db=db,
+                firm_id=current_firm.id,
+                current_user_id=current_user.id,
+                last_user_text=_last_user_msg,
+                full_response=full_response,
+                entity_type=_classify_topic(_last_user_msg),
+                extra_metadata={"model": "fable5_tools"},
+            )
 
         return StreamingResponse(generate_with_tools_and_log(), media_type="text/event-stream")
 

@@ -2,6 +2,7 @@
 
 from datetime import datetime, timezone
 from uuid import UUID
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.crud import task as crud_task
@@ -157,6 +158,73 @@ def update_task(
         )
 
     return updated
+
+
+def bulk_update_tasks(
+    *,
+    db: Session,
+    ids,
+    update,  # TaskUpdate
+    firm_id: UUID,
+):
+    stmt = select(Task).where(
+        Task.id.in_(ids),
+        Task.firm_id == firm_id,
+    )
+    tasks = db.execute(stmt).scalars().all()
+    update_data = update.model_dump(exclude_none=True)
+
+    changed = []
+    for task in tasks:
+        old_status = task.status
+        old_assigned_to = task.assigned_to
+        old_due_date = task.due_date
+        for key, value in update_data.items():
+            setattr(task, key, value)
+        changed.append((task, old_status, old_assigned_to, old_due_date))
+    db.commit()
+
+    for task, old_status, old_assigned_to, old_due_date in changed:
+        if task.status != old_status:
+            log_event(
+                firm_id=firm_id,
+                event_type="task.status_changed",
+                entity_type="task",
+                entity_id=task.id,
+                actor_type="staff",
+                actor_id=None,
+                metadata={"from_status": str(old_status), "to_status": str(task.status), "via": "bulk"}
+            )
+        if task.assigned_to != old_assigned_to:
+            log_event(
+                firm_id=firm_id,
+                event_type="task.assigned",
+                entity_type="task",
+                entity_id=task.id,
+                actor_type="staff",
+                actor_id=None,
+                metadata={
+                    "from_staff_id": str(old_assigned_to) if old_assigned_to else None,
+                    "to_staff_id": str(task.assigned_to) if task.assigned_to else None,
+                    "via": "bulk",
+                }
+            )
+        if task.due_date != old_due_date:
+            log_event(
+                firm_id=firm_id,
+                event_type="task.due_date_changed",
+                entity_type="task",
+                entity_id=task.id,
+                actor_type="staff",
+                actor_id=None,
+                metadata={
+                    "from_due_date": old_due_date.isoformat() if old_due_date else None,
+                    "to_due_date": task.due_date.isoformat() if task.due_date else None,
+                    "via": "bulk",
+                }
+            )
+
+    return {"updated": len(tasks)}
 
 
 def delete_task(

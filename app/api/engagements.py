@@ -195,62 +195,9 @@ def bulk_update_engagements(
     current_firm: Firm = Depends(get_current_firm),
     _: object = Depends(require_staff_or_above),
 ):
-    stmt = select(Engagement).where(
-        Engagement.id.in_(payload.ids),
-        Engagement.firm_id == current_firm.id,
+    return engagement_service.bulk_update_engagements(
+        db=db, ids=payload.ids, update=payload.update, firm_id=current_firm.id,
     )
-    engagements = db.execute(stmt).scalars().all()
-    changed = []
-    for eng in engagements:
-        old_status = eng.status
-        old_filing = eng.filing_deadline
-        old_extended = eng.extended_deadline
-        if payload.update.status is not None:
-            eng.status = payload.update.status
-        if payload.update.deadline_push_days is not None:
-            delta = timedelta(days=payload.update.deadline_push_days)
-            if eng.extended_deadline is not None:
-                eng.extended_deadline = eng.extended_deadline + delta
-            elif eng.filing_deadline is not None:
-                eng.filing_deadline = eng.filing_deadline + delta
-        changed.append((eng, old_status, old_filing, old_extended))
-    db.commit()
-
-    from app.services.behavioral_log import log_event
-    for eng, old_status, old_filing, old_extended in changed:
-        if payload.update.status is not None and eng.status != old_status:
-            log_event(
-                firm_id=current_firm.id,
-                event_type="engagement.status_changed",
-                entity_type="engagement",
-                entity_id=eng.id,
-                actor_type="staff",
-                actor_id=None,
-                metadata={
-                    "from_status": str(old_status),
-                    "to_status": str(eng.status),
-                    "via": "bulk",
-                }
-            )
-        if eng.filing_deadline != old_filing or eng.extended_deadline != old_extended:
-            log_event(
-                firm_id=current_firm.id,
-                event_type="engagement.deadline_changed",
-                entity_type="engagement",
-                entity_id=eng.id,
-                actor_type="staff",
-                actor_id=None,
-                metadata={
-                    "from_filing_deadline": old_filing.isoformat() if old_filing else None,
-                    "to_filing_deadline": eng.filing_deadline.isoformat() if eng.filing_deadline else None,
-                    "from_extended_deadline": old_extended.isoformat() if old_extended else None,
-                    "to_extended_deadline": eng.extended_deadline.isoformat() if eng.extended_deadline else None,
-                    "via": "bulk",
-                    "push_days": payload.update.deadline_push_days,
-                }
-            )
-
-    return {"updated": len(engagements)}
 
 
 # ---------------------------------------------------------
@@ -432,77 +379,9 @@ def bulk_create_engagements(
     current_user: User = Depends(get_current_user),
     _: object = Depends(require_staff_or_above),
 ):
-    from app.services.audit_service import write_audit_log
-    from sqlalchemy import select as _select
-
-    created_ids = []
-    skipped = 0
-
-    for client_id in payload.client_ids:
-        client = db.execute(
-            _select(ClientModel).where(
-                ClientModel.id == client_id,
-                ClientModel.firm_id == current_firm.id,
-            )
-        ).scalars().first()
-        if not client:
-            skipped += 1
-            continue
-
-        eng_create = EngagementCreate(
-            client_id=client.id,
-            name=payload.name,
-            engagement_type=payload.engagement_type,
-            status=payload.status,
-            start_date=payload.start_date,
-            end_date=payload.end_date,
-            notes=payload.notes,
-            filing_deadline=payload.filing_deadline,
-        )
-        engagement = crud_engagement.create_engagement(db, eng_create, firm_id=current_firm.id)
-
-        write_audit_log(
-            db=db,
-            firm_id=current_firm.id,
-            action="engagement.bulk_created",
-            actor_id=current_user.id,
-            actor_type="staff",
-            entity_type="engagement",
-            entity_id=engagement.id,
-        )
-
-        from app.services.behavioral_log import log_event
-        log_event(
-            firm_id=current_firm.id,
-            event_type="engagement.created",
-            entity_type="engagement",
-            entity_id=engagement.id,
-            actor_type="staff",
-            actor_id=current_user.id,
-            metadata={
-                "form_type": str(engagement.engagement_type) if engagement.engagement_type else None,
-                "client_id": str(engagement.client_id),
-                "filing_deadline": engagement.filing_deadline.isoformat() if engagement.filing_deadline else None,
-                "via": "bulk_create",
-            }
-        )
-        if engagement.filing_deadline:
-            log_event(
-                firm_id=current_firm.id,
-                event_type="engagement.deadline_set",
-                entity_type="engagement",
-                entity_id=engagement.id,
-                actor_type="staff",
-                actor_id=current_user.id,
-                metadata={
-                    "deadline_type": "filing_deadline",
-                    "deadline_date": engagement.filing_deadline.isoformat(),
-                    "via": "bulk_create",
-                    "engagement_type": str(engagement.engagement_type) if engagement.engagement_type else None,
-                }
-            )
-
-        created_ids.append(engagement.id)
+    created_ids, skipped = engagement_service.bulk_create_engagements(
+        db=db, payload=payload, firm_id=current_firm.id, current_user_id=current_user.id,
+    )
 
     return BulkEngagementCreateResult(
         created=len(created_ids),

@@ -46,7 +46,7 @@ def test_bulk_deadline_push_fires_deadline_changed():
         update=BulkEngagementFieldUpdate(deadline_push_days=7),
     )
 
-    with patch("app.services.behavioral_log.log_event") as mock_log:
+    with patch("app.services.engagement_service.log_event") as mock_log:
         bulk_update_engagements(payload=payload, db=db, current_firm=firm, _=None)
 
     assert mock_log.call_count == 2
@@ -74,7 +74,7 @@ def test_bulk_status_change_fires_status_changed():
         update=BulkEngagementFieldUpdate(status="completed"),
     )
 
-    with patch("app.services.behavioral_log.log_event") as mock_log:
+    with patch("app.services.engagement_service.log_event") as mock_log:
         bulk_update_engagements(payload=payload, db=db, current_firm=firm, _=None)
 
     assert mock_log.call_count == 1
@@ -98,7 +98,7 @@ def test_bulk_no_change_fires_nothing():
         update=BulkEngagementFieldUpdate(),
     )
 
-    with patch("app.services.behavioral_log.log_event") as mock_log:
+    with patch("app.services.engagement_service.log_event") as mock_log:
         bulk_update_engagements(payload=payload, db=db, current_firm=firm, _=None)
 
     mock_log.assert_not_called()
@@ -121,7 +121,7 @@ def test_extension_update_fires_deadline_changed():
 
     with patch("app.api.extensions.crud_extension.get_extension", return_value=ext), \
          patch("app.api.extensions.crud_extension.update_extension", return_value=ext), \
-         patch("app.services.behavioral_log.log_event") as mock_log:
+         patch("app.services.extension_service.log_event") as mock_log:
 
         update_extension(ext_id=ext.id, payload=payload, db=db, current_firm=firm, _=None)
 
@@ -152,7 +152,7 @@ def test_extension_update_same_deadline_fires_nothing():
 
     with patch("app.api.extensions.crud_extension.get_extension", return_value=ext), \
          patch("app.api.extensions.crud_extension.update_extension", return_value=ext), \
-         patch("app.services.behavioral_log.log_event") as mock_log:
+         patch("app.services.extension_service.log_event") as mock_log:
 
         update_extension(ext_id=ext.id, payload=payload, db=db, current_firm=firm, _=None)
 

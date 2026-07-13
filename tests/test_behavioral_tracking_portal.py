@@ -27,7 +27,7 @@ def _make_client(client_id=CLIENT_ID, firm_id=FIRM_ID):
 # Test 1 — portal_logout fires portal.session_ended
 # ---------------------------------------------------------------------------
 
-@patch("app.api.portal.log_event")
+@patch("app.services.portal_service.log_event")
 @patch("app.api.portal.crud_portal_session")
 def test_portal_logout_fires_session_ended_event(mock_crud_session, mock_log_event):
     now = datetime.now(timezone.utc)
@@ -75,7 +75,7 @@ def test_portal_logout_fires_session_ended_event(mock_crud_session, mock_log_eve
 # Test 2 — portal_logout with missing last_active_at yields duration=None
 # ---------------------------------------------------------------------------
 
-@patch("app.api.portal.log_event")
+@patch("app.services.portal_service.log_event")
 @patch("app.api.portal.crud_portal_session")
 def test_portal_logout_session_duration_none_when_missing(mock_crud_session, mock_log_event):
     now = datetime.now(timezone.utc)
@@ -121,8 +121,8 @@ def test_portal_logout_session_duration_none_when_missing(mock_crud_session, moc
 # Test 3 — portal document upload fires portal.document_uploaded
 # ---------------------------------------------------------------------------
 
-@patch("app.api.portal.log_event")
-@patch("app.api.portal.upload_document")
+@patch("app.services.portal_service.log_event")
+@patch("app.services.document_service.upload_document")
 def test_portal_document_uploaded_fires_event(mock_upload_document, mock_log_event):
     now = datetime.now(timezone.utc)
     mock_doc = MagicMock()
@@ -179,8 +179,8 @@ def test_portal_document_uploaded_fires_event(mock_upload_document, mock_log_eve
 # Test 4 — portal upload without engagement_id returns 400, no log_event
 # ---------------------------------------------------------------------------
 
-@patch("app.api.portal.log_event")
-@patch("app.api.portal.upload_document")
+@patch("app.services.portal_service.log_event")
+@patch("app.services.document_service.upload_document")
 def test_portal_upload_requires_engagement_id(mock_upload_document, mock_log_event):
     engagement_id = None
 
@@ -200,8 +200,8 @@ def test_portal_upload_requires_engagement_id(mock_upload_document, mock_log_eve
 # Test 5 — portal todo complete fires portal.todo_completed
 # ---------------------------------------------------------------------------
 
-@patch("app.api.portal.log_event")
-@patch("app.api.portal.dr_service")
+@patch("app.services.portal_service.log_event")
+@patch("app.services.portal_service.dr_service")
 @patch("app.api.portal.crud_dr")
 def test_portal_todo_completed_fires_event(mock_crud_dr, mock_dr_service, mock_log_event):
     now = datetime.now(timezone.utc)
@@ -257,7 +257,7 @@ def test_portal_todo_completed_fires_event(mock_crud_dr, mock_dr_service, mock_l
 # Test 6 — wrong client returns 403, no log_event
 # ---------------------------------------------------------------------------
 
-@patch("app.api.portal.log_event")
+@patch("app.services.portal_service.log_event")
 @patch("app.api.portal.crud_dr")
 def test_portal_todo_wrong_client_returns_403(mock_crud_dr, mock_log_event):
     other_client_id = uuid.uuid4()

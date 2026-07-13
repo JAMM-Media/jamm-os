@@ -16,6 +16,8 @@ from app.models.irs_authorization import IrsAuthorization
 from app.models.note import Note
 from app.models.task import Task
 from app.models.time_entry import TimeEntry
+from app.services import behavioral_log
+from app.services.audit_service import write_audit_log
 
 
 def _fmt(value) -> str:
@@ -237,3 +239,27 @@ def generate_firm_export_zip(firm_id: UUID, db: Session) -> bytes:
             zf.writestr("documents_manifest.csv", f.getvalue())
 
     return buf.getvalue()
+
+
+def record_export(
+    *,
+    db: Session,
+    firm_id: UUID,
+    current_user_id: UUID,
+) -> None:
+    write_audit_log(
+        db=db,
+        firm_id=firm_id,
+        actor_id=current_user_id,
+        actor_type="user",
+        action="firm.data_exported",
+        entity_type="firm",
+        entity_id=firm_id,
+    )
+
+    behavioral_log.log_event(
+        event_type="firm.data_exported",
+        firm_id=firm_id,
+        actor_id=current_user_id,
+        actor_type="user",
+    )

@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -18,8 +18,7 @@ from app.models.firm import Firm
 from app.models.user import User
 from app.core.enums import EngagementStatus
 from app.services.ack_parser_service import parse_ack_file
-from app.services.behavioral_log import log_event
-from app.services.audit_service import write_audit_log
+import app.services.ack_parser_service as ack_parser_service
 
 router = APIRouter(tags=["ACK Parser"])
 
@@ -37,7 +36,6 @@ class AckUploadResult(BaseModel):
 @router.post("/upload", response_model=AckUploadResult)
 async def upload_ack(
     file: UploadFile,
-    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_firm: Firm = Depends(get_current_firm),
     current_user: User = Depends(require_manager_or_above),
@@ -124,39 +122,15 @@ async def upload_ack(
         db.commit()
         matched += 1
 
-        engagement_id = eng.id
-        firm_id = current_firm.id
-        actor_id = current_user.id
-
-        background_tasks.add_task(
-            log_event,
-            event_type="engagement.efiled",
-            firm_id=firm_id,
-            entity_type="engagement",
-            entity_id=engagement_id,
-            actor_type="staff",
-            actor_id=actor_id,
-            metadata={
-                "confirmation_number": confirmation_number,
-                "form_type": form_type,
-                "status": status,
-                "tax_year": tax_year,
-            },
-        )
-
-        write_audit_log(
+        ack_parser_service.record_efiled(
             db=db,
             firm_id=current_firm.id,
-            action="engagement.efiled",
+            engagement_id=eng.id,
             actor_id=current_user.id,
-            actor_type="staff",
-            entity_type="engagement",
-            entity_id=eng.id,
-            metadata={
-                "confirmation_number": confirmation_number,
-                "form_type": form_type,
-                "irs_status": status,
-            },
+            confirmation_number=confirmation_number,
+            form_type=form_type,
+            status=status,
+            tax_year=tax_year,
         )
 
     return AckUploadResult(

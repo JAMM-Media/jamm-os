@@ -49,11 +49,11 @@ def test_client_update_non_evented_field_fires_client_updated(client, firm_a_own
     assert create_r.status_code == 201, create_r.text
     client_id = create_r.json()["id"]
 
-    # The client update path's log_event calls are all bound via a local
+    # The client update path's log_event calls are bound via the top-level
     # `from app.services.behavioral_log import log_event` import inside
-    # app/api/clients.py::update_client, so the source module is the
+    # app/services/client_service.py::update_client, so that module is the
     # correct patch target.
-    with patch("app.services.behavioral_log.log_event") as mock_log:
+    with patch("app.services.client_service.log_event") as mock_log:
         update_r = client.patch(
             f"/clients/{client_id}",
             json={"phone": "555-9999"},
@@ -85,7 +85,7 @@ def test_client_update_sensitive_field_is_redacted(client, firm_a_owner):
     assert create_r.status_code == 201, create_r.text
     client_id = create_r.json()["id"]
 
-    with patch("app.services.behavioral_log.log_event") as mock_log:
+    with patch("app.services.client_service.log_event") as mock_log:
         update_r = client.patch(
             f"/clients/{client_id}",
             json={"tax_id": "98-7654321"},

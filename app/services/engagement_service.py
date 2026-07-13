@@ -1,6 +1,6 @@
 # app/services/engagement_service.py
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 from typing import Optional
 from fastapi import BackgroundTasks
@@ -9,11 +9,14 @@ from sqlalchemy import select, func
 
 from app.crud import engagement as crud_engagement
 from app.crud.qc_checklist import populate_from_template
+from app.models.client import Client as ClientModel
 from app.models.engagement import Engagement
 from app.models.task import Task
 from app.models.document import Document
 from app.models.time_entry import TimeEntry
+from app.schemas.engagement import EngagementCreate
 from app.core.enums import TriggerEvent
+from app.services.audit_service import write_audit_log
 from app.services.event_bus import emit_event
 from app.services.behavioral_log import log_event
 
@@ -312,6 +315,148 @@ def delete_engagement(
     )
 
     return True
+
+
+def bulk_update_engagements(
+    *,
+    db: Session,
+    ids,
+    update,  # BulkEngagementFieldUpdate
+    firm_id: UUID,
+):
+    stmt = select(Engagement).where(
+        Engagement.id.in_(ids),
+        Engagement.firm_id == firm_id,
+    )
+    engagements = db.execute(stmt).scalars().all()
+    changed = []
+    for eng in engagements:
+        old_status = eng.status
+        old_filing = eng.filing_deadline
+        old_extended = eng.extended_deadline
+        if update.status is not None:
+            eng.status = update.status
+        if update.deadline_push_days is not None:
+            delta = timedelta(days=update.deadline_push_days)
+            if eng.extended_deadline is not None:
+                eng.extended_deadline = eng.extended_deadline + delta
+            elif eng.filing_deadline is not None:
+                eng.filing_deadline = eng.filing_deadline + delta
+        changed.append((eng, old_status, old_filing, old_extended))
+    db.commit()
+
+    for eng, old_status, old_filing, old_extended in changed:
+        if update.status is not None and eng.status != old_status:
+            log_event(
+                firm_id=firm_id,
+                event_type="engagement.status_changed",
+                entity_type="engagement",
+                entity_id=eng.id,
+                actor_type="staff",
+                actor_id=None,
+                metadata={
+                    "from_status": str(old_status),
+                    "to_status": str(eng.status),
+                    "via": "bulk",
+                }
+            )
+        if eng.filing_deadline != old_filing or eng.extended_deadline != old_extended:
+            log_event(
+                firm_id=firm_id,
+                event_type="engagement.deadline_changed",
+                entity_type="engagement",
+                entity_id=eng.id,
+                actor_type="staff",
+                actor_id=None,
+                metadata={
+                    "from_filing_deadline": old_filing.isoformat() if old_filing else None,
+                    "to_filing_deadline": eng.filing_deadline.isoformat() if eng.filing_deadline else None,
+                    "from_extended_deadline": old_extended.isoformat() if old_extended else None,
+                    "to_extended_deadline": eng.extended_deadline.isoformat() if eng.extended_deadline else None,
+                    "via": "bulk",
+                    "push_days": update.deadline_push_days,
+                }
+            )
+
+    return {"updated": len(engagements)}
+
+
+def bulk_create_engagements(
+    *,
+    db: Session,
+    payload,  # BulkEngagementCreate
+    firm_id: UUID,
+    current_user_id: UUID,
+):
+    created_ids = []
+    skipped = 0
+
+    for client_id in payload.client_ids:
+        client = db.execute(
+            select(ClientModel).where(
+                ClientModel.id == client_id,
+                ClientModel.firm_id == firm_id,
+            )
+        ).scalars().first()
+        if not client:
+            skipped += 1
+            continue
+
+        eng_create = EngagementCreate(
+            client_id=client.id,
+            name=payload.name,
+            engagement_type=payload.engagement_type,
+            status=payload.status,
+            start_date=payload.start_date,
+            end_date=payload.end_date,
+            notes=payload.notes,
+            filing_deadline=payload.filing_deadline,
+        )
+        engagement = crud_engagement.create_engagement(db, eng_create, firm_id=firm_id)
+
+        write_audit_log(
+            db=db,
+            firm_id=firm_id,
+            action="engagement.bulk_created",
+            actor_id=current_user_id,
+            actor_type="staff",
+            entity_type="engagement",
+            entity_id=engagement.id,
+        )
+
+        log_event(
+            firm_id=firm_id,
+            event_type="engagement.created",
+            entity_type="engagement",
+            entity_id=engagement.id,
+            actor_type="staff",
+            actor_id=current_user_id,
+            metadata={
+                "form_type": str(engagement.engagement_type) if engagement.engagement_type else None,
+                "client_id": str(engagement.client_id),
+                "filing_deadline": engagement.filing_deadline.isoformat() if engagement.filing_deadline else None,
+                "via": "bulk_create",
+            }
+        )
+        if engagement.filing_deadline:
+            log_event(
+                firm_id=firm_id,
+                event_type="engagement.deadline_set",
+                entity_type="engagement",
+                entity_id=engagement.id,
+                actor_type="staff",
+                actor_id=current_user_id,
+                metadata={
+                    "deadline_type": "filing_deadline",
+                    "deadline_date": engagement.filing_deadline.isoformat(),
+                    "via": "bulk_create",
+                    "engagement_type": str(engagement.engagement_type) if engagement.engagement_type else None,
+                }
+            )
+
+        created_ids.append(engagement.id)
+
+    return created_ids, skipped
 
 
 def update_complexity_flags(

@@ -15,13 +15,206 @@ NOTE: Templates 4-7 are seeded for new firms only. Existing firms that
 already have the original three templates will not receive these automatically.
 """
 
+import logging
+from urllib.parse import quote
 from uuid import UUID, uuid4
 from datetime import datetime, timezone
 
+from fastapi import BackgroundTasks, HTTPException
 from sqlalchemy.orm import Session
 
+from app.crud import tax_organizer as crud_organizer
+from app.core.enums import TriggerEvent
 from app.models.tax_organizer import TaxOrganizerTemplate
 from app.services.audit_service import write_audit_log
+from app.services.behavioral_log import log_event
+from app.services.email_service import EmailService
+from app.services.event_bus import emit_event
+
+logger = logging.getLogger(__name__)
+
+
+async def send_organizer(
+    *,
+    db: Session,
+    payload,  # TaxOrganizerSendRequest
+    client,
+    engagement,
+    firm,
+    current_user_id,
+    background_tasks: BackgroundTasks,
+):
+    organizer = crud_organizer.create_organizer(
+        db=db,
+        request=payload,
+        firm_id=firm.id,
+    )
+
+    log_event(
+        firm_id=firm.id,
+        event_type="tax_organizer.sent",
+        entity_type="tax_organizer",
+        entity_id=organizer.id,
+        actor_type="staff",
+        actor_id=current_user_id,
+        metadata={
+            "client_id": str(payload.client_id),
+            "engagement_id": str(payload.engagement_id),
+            "template_id": str(payload.template_id),
+            "tax_year": organizer.tax_year,
+        }
+    )
+
+    write_audit_log(
+        db=db,
+        firm_id=firm.id,
+        actor_id=current_user_id,
+        action="tax_organizer.sent",
+        entity_type="tax_organizer",
+        entity_id=organizer.id,
+    )
+
+    await emit_event(
+        event=TriggerEvent.doc_request_created,  # reuse closest event
+        payload={
+            "firm_id": str(firm.id),
+            "engagement_id": str(engagement.id),
+            "client_id": str(client.id),
+            "organizer_id": str(organizer.id),
+            "tax_year": organizer.tax_year,
+        },
+        background_tasks=background_tasks,
+    )
+
+    try:
+        if client.email:
+            from app.services import portal_magic_link
+            from app.core.config import get_settings
+            settings = get_settings()
+
+            _, raw_token = portal_magic_link.generate_magic_link(
+                client_id=client.id,
+                firm_id=firm.id,
+                expiry_hours=72,
+                db=db,
+            )
+            redirect_path = f"/portal?tab=organizer&organizer_id={organizer.id}"
+            magic_url = (
+                f"{settings.FRONTEND_URL}/portal/auth"
+                f"?token={raw_token}"
+                f"&redirect={quote(redirect_path, safe='')}"
+            )
+            firm_name = firm.name
+            email_settings = EmailService.get_firm_email_settings(firm)
+            html_body = (
+                f"<p>Hi {client.name},</p>"
+                f"<p>{firm_name} has sent you a tax organizer to fill out. "
+                f"Click the link below to open it and get started. No login or password required "
+                f"-- the link is your access.</p>"
+                f"<p><a href='{magic_url}' style='display:inline-block;"
+                f"padding:10px 20px;background:#1F3148;color:#ffffff;"
+                f"text-decoration:none;border-radius:6px;font-weight:600;"
+                f"font-size:14px;'>Open My Tax Organizer</a></p>"
+                f"<p style='color:#6B7280;font-size:12px;'>This link expires "
+                f"in 72 hours and can only be used once. If you need a new link, "
+                f"contact {firm_name}.</p>"
+            )
+            EmailService._send_raw(
+                client.email,
+                f"Your {organizer.tax_year} tax organizer from {firm.name}",
+                html_body,
+                firm.name,
+                reply_to=email_settings.get("reply_to"),
+                display_name=email_settings.get("display_name"),
+                sending_domain=email_settings.get("sending_domain"),
+            )
+    except Exception as e:
+        logger.error(
+            "Auto magic link email failed on organizer creation: organizer_id=%s error=%s",
+            organizer.id, str(e)
+        )
+
+    return organizer
+
+
+def send_organizer_magic_link(
+    *,
+    db: Session,
+    organizer,
+    organizer_id,
+    client,
+    firm,
+    current_user_id,
+):
+    from app.services import portal_magic_link
+    from app.core.config import get_settings
+    settings = get_settings()
+
+    _, raw_token = portal_magic_link.generate_magic_link(
+        client_id=client.id,
+        firm_id=firm.id,
+        expiry_hours=72,
+        db=db,
+    )
+
+    redirect_path = f"/portal?tab=organizer&organizer_id={organizer_id}"
+    magic_url = (
+        f"{settings.FRONTEND_URL}/portal/auth"
+        f"?token={raw_token}"
+        f"&redirect={quote(redirect_path, safe='')}"
+    )
+
+    firm_name = firm.name
+    email_settings = EmailService.get_firm_email_settings(firm)
+
+    html_body = (
+        f"<p>Hi {client.name},</p>"
+        f"<p>{firm_name} has sent you a tax organizer to complete. "
+        f"Click the link below to open it. No login or password required "
+        f"-- the link is your access.</p>"
+        f"<p><a href='{magic_url}' style='display:inline-block;"
+        f"padding:10px 20px;background:#1F3148;color:#ffffff;"
+        f"text-decoration:none;border-radius:6px;font-weight:600;"
+        f"font-size:14px;'>Open My Tax Organizer</a></p>"
+        f"<p style='color:#6B7280;font-size:12px;'>This link expires "
+        f"in 72 hours and can only be used once. If you need a new link, "
+        f"contact {firm_name}.</p>"
+    )
+
+    try:
+        EmailService._send_raw(
+            to=client.email,
+            subject=f"Your tax organizer from {firm_name}",
+            html_body=html_body,
+            firm_name=firm_name,
+            reply_to=email_settings.get("reply_to"),
+            display_name=email_settings.get("display_name"),
+            sending_domain=email_settings.get("sending_domain"),
+        )
+    except Exception as e:
+        logger.error(
+            "Organizer magic link email failed: organizer_id=%s error=%s",
+            organizer_id, str(e)
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to send email. Please try again."
+        )
+
+    log_event(
+        firm_id=firm.id,
+        event_type="tax_organizer.link_sent",
+        entity_type="tax_organizer",
+        entity_id=organizer_id,
+        actor_type="staff",
+        actor_id=current_user_id,
+        metadata={
+            "client_id": str(client.id),
+            "delivery_method": "magic_link_email",
+        }
+    )
+
+    return {"sent": True, "expires_hours": 72}
 
 
 def seed_firm_organizer_templates(firm_id: UUID, db: Session) -> int:

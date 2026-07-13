@@ -107,7 +107,6 @@ async def import_clients_csv(
     - entity_type must be one of: individual, business, trust, estate, non_profit
     - firm_id is always injected from JWT — never from the CSV
     """
-    VALID_ENTITY_TYPES = {"individual", "business", "trust", "estate", "non_profit"}
     MAX_ROWS = 500
 
     # Read and decode the uploaded file
@@ -146,121 +145,8 @@ async def import_clients_csv(
                    f"Your file has {len(rows)} rows.",
         )
 
-    # Load existing emails for this firm for deduplication
-    existing_emails = set(
-        row[0]
-        for row in db.execute(
-            select(Client.email).where(
-                Client.firm_id == current_firm.id,
-                Client.email.isnot(None),
-            )
-        ).all()
-        if row[0]
-    )
-
-    # Load existing names for this firm for name deduplication
-    existing_names = set(
-        row[0].lower().strip()
-        for row in db.execute(
-            select(Client.name).where(
-                Client.firm_id == current_firm.id,
-            )
-        ).all()
-        if row[0]
-    )
-
-    created = 0
-    skipped = 0
-    errors = []
-
-    for i, row in enumerate(rows, start=2):  # start=2 because row 1 is the header
-        name = row.get("name", "").strip()
-        if not name:
-            errors.append({"row": i, "reason": "Missing required field: name"})
-            continue
-
-        # Deduplicate on name
-        if name.lower().strip() in existing_names:
-            skipped += 1
-            errors.append({"row": i, "reason": "Client with this name already exists"})
-            continue
-
-        email = row.get("email", "").strip() or None
-        entity_type = row.get("entity_type", "").strip().lower() or None
-        entity_subtype = row.get("entity_subtype", "").strip().lower() or None
-        phone = row.get("phone", "").strip() or None
-        company_name = row.get("company_name", "").strip() or None
-        address_line1 = row.get("address_line1", "").strip() or None
-        address_line2 = row.get("address_line2", "").strip() or None
-        city = row.get("city", "").strip() or None
-        state = row.get("state", "").strip() or None
-        postal_code = row.get("postal_code", "").strip() or None
-        country = row.get("country", "").strip() or None
-        tags = row.get("tags", "").strip() or None
-        notes = row.get("notes", "").strip() or None
-
-        # Validate entity_type if provided
-        if entity_type and entity_type not in VALID_ENTITY_TYPES:
-            errors.append({
-                "row": i,
-                "reason": f"Invalid entity_type '{entity_type}'. "
-                          f"Must be one of: {', '.join(sorted(VALID_ENTITY_TYPES))}",
-            })
-            continue
-
-        # Deduplicate on email
-        if email and email.lower() in existing_emails:
-            skipped += 1
-            continue
-
-        try:
-            new_client = Client(
-                firm_id=current_firm.id,
-                name=name,
-                email=email,
-                entity_type=entity_type,
-                entity_subtype=entity_subtype,
-                phone=phone,
-                company_name=company_name,
-                address_line1=address_line1,
-                address_line2=address_line2,
-                city=city,
-                state=state,
-                postal_code=postal_code,
-                country=country,
-                tags=tags,
-                notes=notes,
-                is_active=True,
-            )
-            db.add(new_client)
-            db.flush()  # get the ID without committing yet
-
-            if email:
-                existing_emails.add(email.lower())
-            existing_names.add(name.lower().strip())
-
-            created += 1
-
-        except Exception as e:
-            db.rollback()
-            errors.append({"row": i, "reason": f"Database error: {str(e)}"})
-            continue
-
-    db.commit()
-
-    from app.services.behavioral_log import log_event
-    log_event(
-        firm_id=current_firm.id,
-        event_type="client.csv_import_completed",
-        entity_type="firm",
-        entity_id=current_firm.id,
-        actor_type="staff",
-        metadata={
-            "created": created,
-            "skipped": skipped,
-            "errors": len(errors),
-            "total_rows": len(rows),
-        },
+    created, skipped, errors = client_service.import_clients_csv(
+        db=db, rows=rows, firm_id=current_firm.id,
     )
 
     return ClientImportResult(created=created, skipped=skipped, errors=errors)
@@ -481,97 +367,14 @@ def update_client(
     _: object = Depends(require_staff_or_above),
     current_user: User = Depends(get_current_user),
 ):
-    from app.services.audit_service import write_audit_log
     client = crud_client.get_client_for_firm(db, client_id, current_firm.id)
     if not client:
         raise HTTPException(status_code=404, detail="Client not found")
-    old_entity_type = client.entity_type
-    old_entity_subtype = client.entity_subtype
-    old_is_active = client.is_active
-    old_portal_access = client.portal_access_enabled
 
-    # Fields already covered by a dedicated event below -- excluded from the
-    # generic no-silent-changes delta so they are not double-logged.
-    _EVENTED_FIELDS = {"entity_type", "entity_subtype", "is_active"}
-    _tracked_fields = [
-        f for f in payload.model_dump(exclude_unset=True).keys()
-        if f not in _EVENTED_FIELDS
-    ]
-    _old_values = {f: getattr(client, f) for f in _tracked_fields}
-
-    updated = crud_client.update_client(db, client, payload)
-    write_audit_log(
-        db=db,
-        firm_id=current_firm.id,
-        action='client.updated',
-        actor_id=current_user.id,
-        actor_type='staff',
-        entity_type='client',
-        entity_id=client.id,
+    return client_service.update_client(
+        db=db, client=client, payload=payload,
+        firm_id=current_firm.id, current_user_id=current_user.id,
     )
-
-    from app.services.behavioral_log import log_event
-
-    if updated.entity_type != old_entity_type or updated.entity_subtype != old_entity_subtype:
-        log_event(
-            firm_id=current_firm.id,
-            event_type="client.entity_changed",
-            entity_type="client",
-            entity_id=client.id,
-            actor_type="staff",
-            actor_id=current_user.id,
-            metadata={
-                "from_entity_type": str(old_entity_type) if old_entity_type else None,
-                "to_entity_type": str(updated.entity_type) if updated.entity_type else None,
-                "from_entity_subtype": str(old_entity_subtype) if old_entity_subtype else None,
-                "to_entity_subtype": str(updated.entity_subtype) if updated.entity_subtype else None,
-            }
-        )
-
-    if updated.is_active != old_is_active:
-        log_event(
-            firm_id=current_firm.id,
-            event_type="client.active_changed",
-            entity_type="client",
-            entity_id=client.id,
-            actor_type="staff",
-            actor_id=current_user.id,
-            metadata={
-                "from_active": old_is_active,
-                "to_active": updated.is_active,
-            }
-        )
-
-    if updated.portal_access_enabled != old_portal_access:
-        log_event(
-            firm_id=current_firm.id,
-            event_type="client.portal_access_changed",
-            entity_type="client",
-            entity_id=client.id,
-            actor_type="staff",
-            actor_id=current_user.id,
-            metadata={
-                "from_enabled": old_portal_access,
-                "to_enabled": updated.portal_access_enabled,
-            }
-        )
-
-    from app.services.behavioral_log import build_changed_fields
-
-    _new_values = {f: getattr(updated, f) for f in _tracked_fields}
-    _changed_fields = build_changed_fields(_old_values, _new_values)
-    if _changed_fields:
-        log_event(
-            firm_id=current_firm.id,
-            event_type="client.updated",
-            entity_type="client",
-            entity_id=client.id,
-            actor_type="staff",
-            actor_id=current_user.id,
-            metadata={"changed_fields": _changed_fields},
-        )
-
-    return updated
 
 
 # ---------------------------------------------------------

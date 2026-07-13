@@ -3,7 +3,7 @@
 import io
 import json
 import uuid
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 from typing import Optional
 from uuid import UUID
 
@@ -14,7 +14,6 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.crud import document as crud_document
 from app.crud import signature_envelope as crud_envelope
 from app.crud import engagement_letter_template as crud_template
 from app.db.session import get_db
@@ -40,9 +39,7 @@ from app.schemas.signature_envelope import (
 from app.core.config import get_settings as _get_settings
 from app.services import dropbox_sign
 from app.services import letter_renderer
-from app.services import s3 as s3_service
 from app.services.audit_service import write_audit_log
-from app.services.behavioral_log import log_event
 from app.services import esign_service
 
 router = APIRouter(prefix="/esign", tags=["E-Signatures"])
@@ -304,10 +301,6 @@ def create_followup_task(
     current_firm: Firm = Depends(get_current_firm),
     _: User = Depends(require_manager_or_above),
 ):
-    from datetime import timedelta as _timedelta
-    from uuid import uuid4
-    from app.models.task import Task
-
     envelope = crud_envelope.get_signature_envelope(db, envelope_id, current_firm.id)
     if not envelope:
         raise HTTPException(status_code=404, detail="Signature envelope not found")
@@ -320,58 +313,7 @@ def create_followup_task(
     if envelope.engagement_id is None:
         raise HTTPException(status_code=400, detail="Cannot create follow-up task: envelope has no linked engagement")
 
-    now = datetime.now(timezone.utc)
-    sent_at = envelope.sent_at
-    if sent_at is not None and sent_at.tzinfo is None:
-        sent_at = sent_at.replace(tzinfo=timezone.utc)
-    days_since_sent = (now - sent_at).days if sent_at else 0
-
-    task = Task(
-        id=uuid4(),
-        firm_id=current_firm.id,
-        client_id=envelope.client_id,
-        engagement_id=envelope.engagement_id,
-        title=f"Follow up with client - engagement letter unsigned ({days_since_sent} days)",
-        notes=(
-            f"Engagement letter '{envelope.subject or 'Untitled'}' was sent {days_since_sent} days ago "
-            f"and has received {envelope.reminder_count} reminder(s) with no response. "
-            f"Direct client contact required."
-        ),
-        status="todo",
-        due_date=(now + _timedelta(days=3)).date(),
-        created_at=now,
-        updated_at=now,
-    )
-    db.add(task)
-    db.flush()
-
-    crud_envelope.update_signature_envelope(
-        db,
-        envelope,
-        SignatureEnvelopeUpdate(followup_task_id=task.id),
-    )
-
-    write_audit_log(
-        db=db,
-        firm_id=current_firm.id,
-        action="esign.followup_task_created",
-        actor_type="staff",
-        entity_type="signature_envelope",
-        entity_id=envelope_id,
-    )
-    log_event(
-        firm_id=current_firm.id,
-        event_type="esign.followup_task_created",
-        entity_type="signature_envelope",
-        entity_id=envelope_id,
-        actor_type="staff",
-        actor_id=None,
-        metadata={
-            "task_id": str(task.id),
-            "client_id": str(envelope.client_id),
-            "days_since_sent": days_since_sent,
-        },
-    )
+    task = esign_service.create_followup_task(db=db, envelope=envelope, firm_id=current_firm.id)
 
     return EsignFollowupTaskOut(task_id=task.id, task_title=task.title)
 
@@ -478,171 +420,15 @@ async def handle_webhook(
     )
 
     if event_type == "signature_request_signed":
-        # Skip if already processed — envelope already has a signed document
-        if envelope.signed_document_id:
-            from fastapi.responses import PlainTextResponse
-            return PlainTextResponse("Hello API Event Received")
-        try:
-            pdf_bytes = dropbox_sign.download_signed_document(signature_request_id)
-            store_signed_document(
-                str(envelope.id),
-                str(envelope.firm_id),
-                str(envelope.client_id),
-                envelope.engagement_id,
-                envelope.provider_envelope_id,
-                pdf_bytes,
-            )
-        except HTTPException as _hex:
-            if _hex.status_code == 409:
-                # Already downloaded in a previous webhook attempt — treat as success
-                pass
-            else:
-                import logging as _log
-                _log.getLogger(__name__).error(
-                    "Failed to store signed document: %s", _hex, exc_info=True
-                )
-        except Exception as _exc:
-            import logging as _log
-            _log.getLogger(__name__).error(
-                "Failed to store signed document: %s", _exc, exc_info=True
-            )
-        write_audit_log(
-            db=db,
-            firm_id=envelope.firm_id,
-            action="esign.signed",
-            actor_type="client",
-            entity_type="signature_envelope",
-            entity_id=envelope.id,
-        )
-        log_event(
-            firm_id=envelope.firm_id,
-            event_type="engagement_letter.signed",
-            entity_type="signature_envelope",
-            entity_id=envelope.id,
-            actor_type="client",
-            actor_id=None,
-            metadata={
-                "client_id": str(envelope.client_id),
-                "engagement_id": str(envelope.engagement_id) if envelope.engagement_id else None,
-                "days_to_sign": (
-                    (datetime.now(timezone.utc) - envelope.sent_at).days
-                    if hasattr(envelope, 'sent_at') and envelope.sent_at
-                    else None
-                ),
-            }
-        )
-
+        esign_service.process_webhook_signed(db, envelope)
     elif event_type == "signature_request_viewed":
-        # SignatureEnvelope does not track a "first viewed" state, so this
-        # fires on every viewed webhook, not just the first one.
-        write_audit_log(
-            db=db,
-            firm_id=envelope.firm_id,
-            action="esign.viewed",
-            actor_type="client",
-            entity_type="signature_envelope",
-            entity_id=envelope.id,
-        )
-        log_event(
-            firm_id=envelope.firm_id,
-            event_type="engagement_letter.viewed",
-            entity_type="signature_envelope",
-            entity_id=envelope.id,
-            actor_type="client",
-            actor_id=None,
-            metadata={
-                "client_id": str(envelope.client_id),
-                "engagement_id": str(envelope.engagement_id) if envelope.engagement_id else None,
-                "days_since_sent": (
-                    (datetime.now(timezone.utc) - envelope.sent_at).days
-                    if hasattr(envelope, 'sent_at') and envelope.sent_at
-                    else None
-                ),
-            }
-        )
-
+        esign_service.process_webhook_viewed(db, envelope)
     elif event_type == "signature_request_declined":
-        write_audit_log(
-            db=db,
-            firm_id=envelope.firm_id,
-            action="esign.declined",
-            actor_type="client",
-            entity_type="signature_envelope",
-            entity_id=envelope.id,
-        )
-        log_event(
-            firm_id=envelope.firm_id,
-            event_type="engagement_letter.declined",
-            entity_type="signature_envelope",
-            entity_id=envelope.id,
-            actor_type="client",
-            actor_id=None,
-            metadata={
-                "client_id": str(envelope.client_id),
-                "engagement_id": str(envelope.engagement_id) if envelope.engagement_id else None,
-                "days_since_sent": (
-                    (datetime.now(timezone.utc) - envelope.sent_at).days
-                    if hasattr(envelope, 'sent_at') and envelope.sent_at
-                    else None
-                ),
-            }
-        )
-
+        esign_service.process_webhook_declined(db, envelope)
     elif event_type == "signature_request_canceled":
-        # The webhook payload carries no signer/staff identity for who
-        # canceled, so this is recorded as a system action.
-        write_audit_log(
-            db=db,
-            firm_id=envelope.firm_id,
-            action="esign.voided",
-            actor_type="system",
-            entity_type="signature_envelope",
-            entity_id=envelope.id,
-        )
-        log_event(
-            firm_id=envelope.firm_id,
-            event_type="engagement_letter.voided",
-            entity_type="signature_envelope",
-            entity_id=envelope.id,
-            actor_type="system",
-            actor_id=None,
-            metadata={
-                "client_id": str(envelope.client_id),
-                "engagement_id": str(envelope.engagement_id) if envelope.engagement_id else None,
-                "days_since_sent": (
-                    (datetime.now(timezone.utc) - envelope.sent_at).days
-                    if hasattr(envelope, 'sent_at') and envelope.sent_at
-                    else None
-                ),
-            }
-        )
-
+        esign_service.process_webhook_voided(db, envelope)
     elif event_type == "signature_request_expired":
-        write_audit_log(
-            db=db,
-            firm_id=envelope.firm_id,
-            action="esign.expired",
-            actor_type="system",
-            entity_type="signature_envelope",
-            entity_id=envelope.id,
-        )
-        log_event(
-            firm_id=envelope.firm_id,
-            event_type="engagement_letter.expired",
-            entity_type="signature_envelope",
-            entity_id=envelope.id,
-            actor_type="system",
-            actor_id=None,
-            metadata={
-                "client_id": str(envelope.client_id),
-                "engagement_id": str(envelope.engagement_id) if envelope.engagement_id else None,
-                "days_since_sent": (
-                    (datetime.now(timezone.utc) - envelope.sent_at).days
-                    if hasattr(envelope, 'sent_at') and envelope.sent_at
-                    else None
-                ),
-            }
-        )
+        esign_service.process_webhook_expired(db, envelope)
 
     from fastapi.responses import PlainTextResponse
     return PlainTextResponse("Hello API Event Received")
@@ -739,68 +525,17 @@ def upload_and_prepare(
     if not client:
         raise HTTPException(status_code=404, detail="Client not found")
 
-    # Read file bytes and upload to S3
-    import uuid as _uuid
     pdf_bytes = file.file.read()
-    s3_key = (
-        f"{current_firm.id}/letters/{engagement_id}"
-        f"/{file.filename or 'engagement_letter'}_{date.today()}_{_uuid.uuid4().hex[:8]}.pdf"
-    )
-    s3_service.upload_fileobj(
-        io.BytesIO(pdf_bytes),
-        s3_key,
-        file.content_type or "application/pdf",
-    )
 
-    # Create document record
-    doc = crud_document.create_document(
+    envelope = esign_service.upload_and_prepare_envelope(
         db=db,
         firm_id=current_firm.id,
-        client_id=client.id,
         engagement_id=engagement_id,
-        uploaded_by=current_user.id,
-        filename=file.filename or "engagement_letter.pdf",
-        s3_key=s3_key,
-        content_type="application/pdf",
-        size_bytes=len(pdf_bytes),
-    )
-
-    # Create draft envelope with client as signer
-    envelope_schema = SignatureEnvelopeCreate(
-        client_id=client.id,
-        engagement_id=engagement_id,
-        document_id=doc.id,
-        subject=file.filename or "Engagement Letter",
-        signers=[{
-            "name": getattr(client, "full_name", None) or client.name,
-            "email": client.email or "",
-            "status": "pending",
-            "signed_at": None,
-        }],
-    )
-    envelope = crud_envelope.create_signature_envelope(db, envelope_schema, firm_id=current_firm.id)
-
-    write_audit_log(
-        db=db,
-        firm_id=current_firm.id,
-        action="esign.document_uploaded",
-        actor_type="staff",
-        entity_type="signature_envelope",
-        entity_id=envelope.id,
-    )
-    log_event(
-        firm_id=current_firm.id,
-        event_type="engagement_letter.uploaded",
-        entity_type="signature_envelope",
-        entity_id=envelope.id,
-        actor_type="staff",
-        actor_id=current_user.id,
-        metadata={
-            "client_id": str(client.id),
-            "engagement_id": str(engagement_id),
-            "filename": file.filename or "engagement_letter.pdf",
-            "size_bytes": len(pdf_bytes),
-        }
+        client=client,
+        current_user_id=current_user.id,
+        pdf_bytes=pdf_bytes,
+        filename=file.filename,
+        content_type=file.content_type,
     )
 
     return envelope
@@ -821,22 +556,7 @@ def create_letter_template(
     current_firm: Firm = Depends(get_current_firm),
     _: User = Depends(require_staff_or_above),
 ):
-    template = crud_template.create_template(db, payload, firm_id=current_firm.id)
-
-    log_event(
-        firm_id=current_firm.id,
-        event_type="letter_template.created",
-        entity_type="letter_template",
-        entity_id=template.id,
-        actor_type="staff",
-        actor_id=None,
-        metadata={
-            "engagement_type": payload.engagement_type,
-            "variable_count": len(payload.variable_fields),
-        }
-    )
-
-    return template
+    return esign_service.create_letter_template(db=db, payload=payload, firm_id=current_firm.id)
 
 
 @router.get("/templates", response_model=PaginatedResponse[EngagementLetterTemplateOut])
@@ -942,21 +662,10 @@ def update_letter_template(
     template = crud_template.get_template(db, template_id, current_firm.id)
     if not template:
         raise HTTPException(status_code=404, detail="Template not found")
-    updated = crud_template.update_template(db, template, payload)
 
-    log_event(
-        firm_id=current_firm.id,
-        event_type="letter_template.updated",
-        entity_type="letter_template",
-        entity_id=template_id,
-        actor_type="staff",
-        actor_id=None,
-        metadata={
-            "engagement_type": payload.engagement_type,
-        }
+    return esign_service.update_letter_template(
+        db=db, template=template, payload=payload, firm_id=current_firm.id,
     )
-
-    return updated
 
 
 @router.delete("/templates/{template_id}")
@@ -971,86 +680,3 @@ def delete_letter_template(
         raise HTTPException(status_code=404, detail="Template not found")
     crud_template.delete_template(db, template)
     return {"deleted": True}
-
-
-# -----------------------------------------------------------------------
-# Background task — store the completed signed PDF after webhook confirms
-# -----------------------------------------------------------------------
-def store_signed_document(
-    envelope_id: str,
-    firm_id: str,
-    client_id: str,
-    engagement_id,
-    provider_envelope_id: str,
-    pdf_bytes: bytes,
-) -> None:
-    from app.db.session import SessionLocal
-    db = SessionLocal()
-    try:
-        from app.models.signature_envelope import SignatureEnvelope as _SE
-        envelope = db.query(_SE).filter(_SE.id == envelope_id).first()
-        if not envelope:
-            return
-
-        engagement_segment = (
-            str(engagement_id) if engagement_id else "no_engagement"
-        )
-        s3_key = (
-            f"{firm_id}/signed/{client_id}"
-            f"/{engagement_segment}/{provider_envelope_id}.pdf"
-        )
-
-        # Build a readable filename from the engagement name if available
-        readable_name = "Engagement Letter"
-        if engagement_id:
-            from app.models.engagement import Engagement as _Eng
-            eng = db.query(_Eng).filter(_Eng.id == engagement_id).first()
-            if eng:
-                import re
-                safe_name = re.sub(r'[^\w\s\-]', '', eng.name).strip()
-                readable_name = safe_name if safe_name else "Engagement Letter"
-
-        filename = f"{readable_name} — Signed.pdf"
-
-        s3_service.upload_fileobj(io.BytesIO(pdf_bytes), s3_key, "application/pdf")
-
-        doc = crud_document.create_document(
-            db=db,
-            firm_id=uuid.UUID(firm_id),
-            client_id=uuid.UUID(client_id),
-            engagement_id=uuid.UUID(str(engagement_id)) if engagement_id else None,
-            uploaded_by=None,
-            filename=filename,
-            s3_key=s3_key,
-            content_type="application/pdf",
-            size_bytes=len(pdf_bytes),
-        )
-
-        crud_envelope.update_signature_envelope(
-            db,
-            envelope,
-            SignatureEnvelopeUpdate(
-                signed_document_id=doc.id,
-                status="signed",
-            ),
-        )
-        db.commit()
-
-        try:
-            from app.services.irs_auth_service import activate_authorization_for_envelope
-            activate_authorization_for_envelope(
-                db=db,
-                envelope_id=envelope.id,
-                firm_id=uuid.UUID(firm_id) if isinstance(firm_id, str) else firm_id,
-            )
-        except Exception as _auth_exc:
-            import logging as _log
-            _log.getLogger(__name__).error(
-                "IRS auth activation on signing failed: %s", _auth_exc, exc_info=True
-            )
-    except Exception as exc:
-        import logging as _log
-        _log.getLogger(__name__).error("store_signed_document failed: %s", exc, exc_info=True)
-        db.rollback()
-    finally:
-        db.close()

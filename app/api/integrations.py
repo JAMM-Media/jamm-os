@@ -1,6 +1,5 @@
 # app/api/integrations.py
 
-import threading
 import uuid as _uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -23,7 +22,7 @@ from app.services.quickbooks_service import QuickBooksService
 from app.services.gmail_service import GmailService
 from app.services.outlook_service import OutlookService
 from app.services.audit_service import write_audit_log
-from app.services.behavioral_log import log_event
+from app.services import integration_service
 
 router = APIRouter(prefix="/integrations", tags=["integrations"])
 
@@ -221,17 +220,9 @@ def quickbooks_client_deep_link(
     qb_customer_id = client.quickbooks_customer_id
     deep_link_url = f"https://app.qbo.intuit.com/app/customerdetail?nameId={qb_customer_id}"
 
-    threading.Thread(
-        target=log_event,
-        kwargs={
-            "event_type": "integration.qbo_deep_link_opened",
-            "firm_id": current_firm.id,
-            "entity_type": "client",
-            "entity_id": client_id,
-            "metadata": {"quickbooks_customer_id": qb_customer_id},
-        },
-        daemon=True,
-    ).start()
+    integration_service.record_qbo_deep_link_opened(
+        firm_id=current_firm.id, client_id=client_id, quickbooks_customer_id=qb_customer_id,
+    )
 
     return {"url": deep_link_url, "quickbooks_customer_id": qb_customer_id}
 

@@ -40,3 +40,29 @@ def update_automation_rule(
         )
 
     return updated
+
+
+def toggle_automation_rule(
+    db: Session,
+    rule: AutomationRule,
+    enabled: bool,
+    *,
+    firm_id: UUID,
+):
+    result = crud_rule.toggle_rule(db, rule=rule, enabled=enabled)
+
+    log_event(
+        firm_id=firm_id,
+        event_type="firm.automation_enabled" if enabled else "firm.automation_disabled",
+        entity_type="automation_rule",
+        entity_id=rule.id,
+        actor_type="staff",
+        actor_id=None,
+        metadata={
+            "rule_name": rule.name,
+            "rule_type": rule.trigger_event if hasattr(rule, 'trigger_event') else None,
+            "execution_count": rule.execution_count if hasattr(rule, 'execution_count') else None,
+        }
+    )
+
+    return result

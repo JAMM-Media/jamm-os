@@ -4,8 +4,6 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 
-from sqlalchemy import select as sa_select
-
 from app.db.session import get_db
 from app.models.task import Task
 from app.models.firm import Firm
@@ -88,65 +86,9 @@ def bulk_update_tasks(
     current_firm: Firm = Depends(get_current_firm),
     _: object = Depends(require_manager_or_above),
 ):
-    stmt = sa_select(Task).where(
-        Task.id.in_(payload.ids),
-        Task.firm_id == current_firm.id,
+    return task_service.bulk_update_tasks(
+        db=db, ids=payload.ids, update=payload.update, firm_id=current_firm.id,
     )
-    tasks = db.execute(stmt).scalars().all()
-    update_data = payload.update.model_dump(exclude_none=True)
-
-    changed = []
-    for task in tasks:
-        old_status = task.status
-        old_assigned_to = task.assigned_to
-        old_due_date = task.due_date
-        for key, value in update_data.items():
-            setattr(task, key, value)
-        changed.append((task, old_status, old_assigned_to, old_due_date))
-    db.commit()
-
-    from app.services.behavioral_log import log_event
-    for task, old_status, old_assigned_to, old_due_date in changed:
-        if task.status != old_status:
-            log_event(
-                firm_id=current_firm.id,
-                event_type="task.status_changed",
-                entity_type="task",
-                entity_id=task.id,
-                actor_type="staff",
-                actor_id=None,
-                metadata={"from_status": str(old_status), "to_status": str(task.status), "via": "bulk"}
-            )
-        if task.assigned_to != old_assigned_to:
-            log_event(
-                firm_id=current_firm.id,
-                event_type="task.assigned",
-                entity_type="task",
-                entity_id=task.id,
-                actor_type="staff",
-                actor_id=None,
-                metadata={
-                    "from_staff_id": str(old_assigned_to) if old_assigned_to else None,
-                    "to_staff_id": str(task.assigned_to) if task.assigned_to else None,
-                    "via": "bulk",
-                }
-            )
-        if task.due_date != old_due_date:
-            log_event(
-                firm_id=current_firm.id,
-                event_type="task.due_date_changed",
-                entity_type="task",
-                entity_id=task.id,
-                actor_type="staff",
-                actor_id=None,
-                metadata={
-                    "from_due_date": old_due_date.isoformat() if old_due_date else None,
-                    "to_due_date": task.due_date.isoformat() if task.due_date else None,
-                    "via": "bulk",
-                }
-            )
-
-    return {"updated": len(tasks)}
 
 
 # ---------------------------------------------------------

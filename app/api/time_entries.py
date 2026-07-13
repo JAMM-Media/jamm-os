@@ -1,10 +1,10 @@
 # app/api/time_entries.py
 
-from datetime import date as date_type, datetime, timezone
+from datetime import date as date_type
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -189,7 +189,6 @@ class TimerStartRequest(BaseModel):
 @router.post("/timer/start")
 def timer_start(
     payload: TimerStartRequest,
-    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_staff_or_above),
 ):
@@ -202,21 +201,12 @@ def timer_start(
     if not engagement:
         raise HTTPException(status_code=404, detail="Engagement not found")
 
-    from app.services.behavioral_log import log_event
-    background_tasks.add_task(
-        log_event,
-        event_type="time_entry.timer_started",
+    time_entry_service.record_timer_started(
         firm_id=current_user.firm_id,
-        entity_type="engagement",
-        entity_id=payload.engagement_id,
-        actor_type="staff",
-        actor_id=current_user.id,
-        metadata={
-            "activity_type": payload.activity_type,
-            "is_billable": payload.is_billable,
-            "hour_of_day": datetime.now(timezone.utc).hour,
-            "day_of_week": datetime.now(timezone.utc).weekday(),
-        },
+        engagement_id=payload.engagement_id,
+        current_user_id=current_user.id,
+        activity_type=payload.activity_type,
+        is_billable=payload.is_billable,
     )
     return {"status": "ok"}
 
@@ -234,27 +224,16 @@ class TimerStopRequest(BaseModel):
 @router.post("/timer/stop")
 def timer_stop(
     payload: TimerStopRequest,
-    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_staff_or_above),
 ):
-    from app.services.behavioral_log import log_event
-    background_tasks.add_task(
-        log_event,
-        event_type="time_entry.timer_stopped",
+    time_entry_service.record_timer_stopped(
         firm_id=current_user.firm_id,
-        entity_type="engagement",
-        entity_id=payload.engagement_id,
-        actor_type="staff",
-        actor_id=current_user.id,
-        metadata={
-            "duration_seconds": payload.duration_seconds,
-            "duration_minutes": round(payload.duration_seconds / 60, 1),
-            "activity_type": payload.activity_type,
-            "is_billable": payload.is_billable,
-            "hour_of_day": datetime.now(timezone.utc).hour,
-            "day_of_week": datetime.now(timezone.utc).weekday(),
-        },
+        engagement_id=payload.engagement_id,
+        current_user_id=current_user.id,
+        duration_seconds=payload.duration_seconds,
+        activity_type=payload.activity_type,
+        is_billable=payload.is_billable,
     )
     return {"status": "ok"}
 

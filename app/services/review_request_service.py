@@ -22,6 +22,7 @@ from app.models.firm import Firm
 from app.models.client import Client
 from app.models.user import User
 from app.core.enums import UserRole
+from app.services.behavioral_log import log_event
 
 logger = logging.getLogger(__name__)
 
@@ -89,7 +90,6 @@ def send_review_request(
     )
 
     # Log behavioral event
-    from app.services.behavioral_log import log_event
     log_event(
         firm_id=firm.id,
         event_type="review_request.sent",
@@ -104,6 +104,111 @@ def send_review_request(
     )
 
     return {"sent": True}
+
+
+def record_nps_score(
+    *,
+    db: Session,
+    firm: Firm,
+    score: int,
+    engagement_id: UUID,
+) -> str:
+    settings = firm.settings or {}
+    google_review_url = settings.get("google_review_url", "")
+
+    # Merge score into settings
+    firm.settings = {**settings, "last_nps_score": score}
+    db.commit()
+
+    log_event(
+        firm_id=firm.id,
+        event_type="review_request.score_recorded",
+        entity_type="engagement",
+        entity_id=engagement_id,
+        actor_type="client",
+        actor_id=None,
+        metadata={
+            "score": score,
+            "engagement_id": str(engagement_id),
+        },
+    )
+
+    return google_review_url
+
+
+def submit_feedback(
+    *,
+    db: Session,
+    firm: Firm,
+    score: int,
+    engagement_id: UUID,
+    feedback_text: str,
+) -> None:
+    # Email feedback to firm owner
+    try:
+        from app.services.email_service import EmailService
+        from app.models.user import User
+        from app.core.enums import UserRole
+        from sqlalchemy import select
+
+        owner = db.execute(
+            select(User).where(
+                User.firm_id == firm.id,
+                User.role == UserRole.firm_owner,
+                User.is_active == True,
+            )
+        ).scalar_one_or_none()
+
+        if owner and owner.email:
+            email_settings = EmailService.get_firm_email_settings(firm)
+            html = f"""
+            <div style="font-family:Inter,sans-serif;
+                        max-width:520px;margin:0 auto;padding:24px;">
+              <p style="font-size:14px;color:#1F3148;font-weight:500;">
+                Client feedback received
+              </p>
+              <p style="font-size:13px;color:#374151;">
+                <strong>Score:</strong> {score}/10
+              </p>
+              <p style="font-size:13px;color:#374151;">
+                <strong>Feedback:</strong>
+              </p>
+              <p style="font-size:13px;color:#374151;
+                        background:#EDEEF0;padding:12px;
+                        border-radius:6px;line-height:1.6;">
+                {feedback_text}
+              </p>
+              <p style="font-size:11px;color:#9CA3AF;margin-top:16px;">
+                This feedback was submitted privately and was not
+                posted publicly.
+              </p>
+            </div>
+            """
+            EmailService._send_raw(
+                to_email=owner.email,
+                subject=f"Client feedback — {score}/10",
+                html_body=html,
+                from_name="JAMM PX",
+                reply_to=email_settings.get("reply_to"),
+                sending_domain=email_settings.get("sending_domain"),
+            )
+    except Exception as e:
+        logger.error(
+            "Failed to email feedback to firm owner: %s", str(e)
+        )
+
+    log_event(
+        firm_id=firm.id,
+        event_type="review_request.feedback_submitted",
+        entity_type="engagement",
+        entity_id=engagement_id,
+        actor_type="client",
+        actor_id=None,
+        metadata={
+            "score": score,
+            "feedback_length": len(feedback_text),
+        },
+    )
 
 
 def _send_review_email(
