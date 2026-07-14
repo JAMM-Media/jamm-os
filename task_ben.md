@@ -54,55 +54,47 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Strip markdown syntax from draft content, and fix stale draft reattachment on fresh multi-client questions
+TASK: Fix OPTIONS marker being dropped after last task's new paragraph broke rule adjacency
 
 USE: claude sonnet
 
 VERIFY BEFORE ACT:
-grep -n "CLIENT_EMAIL:" -A 10 /home/corby/jamm-os/app/api/concierge/prompts.py
-grep -n "MULTIPLE QUALIFYING CLIENTS" -A 20 /home/corby/jamm-os/app/api/concierge/prompts.py
-grep -n "EXPLICIT BATCH DRAFTING" -A 20 /home/corby/jamm-os/app/api/concierge/prompts.py
+grep -n "MULTIPLE QUALIFYING CLIENTS" -A 30 /home/corby/jamm-os/app/api/concierge/prompts.py
 
-Confirm all three exist before proceeding.
+Confirm the exact current ordering: the MULTIPLE QUALIFYING CLIENTS rule, followed by the new does-not-carry-forward paragraph added in the previous task, followed by EXPLICIT BATCH DRAFTING. Read this entire block in full before editing.
 
-WHAT IS WRONG, PART ONE:
+WHAT IS WRONG:
 
-Confirmed live: draft content generated for a client email contained literal markdown bold syntax, asterisks around a dollar amount, visible as raw text inside the draft box rather than rendered formatting. Draft content is plain text destined for an actual email sent to a real client, it is never rendered through the chat's markdown display, so any markdown syntax inside it appears as literal asterisks in the real message if the firm owner copies or sends it without noticing. This is a real risk, not a cosmetic issue, a client could receive an email with visible asterisks in it.
+Confirmed live via raw console output: after the previous task's fix correctly stopped the model from reattaching a stale draft to a fresh generic question, the model's response ends with plain prose, let me know if you would like a reminder drafted for any of them, and the OPTIONS marker is completely absent. This is not a frontend rendering issue, confirmed by inspecting the raw text directly, the marker was never emitted. The most likely cause: the new paragraph added in the previous task was inserted directly between the MULTIPLE QUALIFYING CLIENTS rule and its own OPTIONS marker is required every single time, with no exceptions sentence, breaking the adjacency between the rule and its enforcement language. This is the same category of failure already fixed once before tonight, where OPTIONS compliance degrades whenever the requirement is not stated immediately alongside the specific scenario it applies to.
 
-CHANGE INSTRUCTIONS, PART ONE:
+CHANGE INSTRUCTIONS:
 
-Add an explicit rule directly in the draft rules section, applying to every draft type, not just CLIENT_EMAIL: draft content must never contain markdown syntax of any kind, including bold asterisks, italics, bullet dashes, or headers. Draft content is plain text only. State this as an absolute rule with a concrete negative example, similar in strength to the existing rule against placeholder client names, since that rule has proven effective at being reliably followed once stated this directly.
+Reposition the does-not-carry-forward paragraph so it no longer sits between the MULTIPLE QUALIFYING CLIENTS rule and its own OPTIONS requirement sentence. Move it to appear immediately before the MULTIPLE QUALIFYING CLIENTS heading instead, as context that applies going into that rule, rather than interrupting the rule and its own enforcement language.
 
-WHAT IS WRONG, PART TWO:
+Additionally, explicitly restate the OPTIONS requirement within the does-not-carry-forward paragraph itself, do not rely solely on proximity to the original rule. Add a direct sentence such as: this fresh evaluation still requires the OPTIONS marker exactly as the rule above states, with no exception for questions that follow an earlier draft. Redundant restatement is intentional here, since the marker requirement has already needed reinforcement once tonight and should not depend on the model correctly inferring that an adjacent rule still applies after new instructions have been inserted nearby.
 
-Confirmed live: after the firm owner selected a specific client and received a draft for that client, they then asked a completely fresh, generic question, which clients have overdue invoices right now, with no client specified and no reference back to the previous selection. The model incorrectly treated the earlier client selection as still applicable and reattached the same old draft to the new response, in addition to correctly listing all three current overdue clients. The MULTIPLE QUALIFYING CLIENTS rule should have applied fresh to this new question exactly as it would on a first ask, requiring OPTIONS and no draft, since the new question did not specify a client and multiple clients still qualify.
-
-CHANGE INSTRUCTIONS, PART TWO:
-
-Add an explicit instruction directly alongside the MULTIPLE QUALIFYING CLIENTS rule: a previously selected client from an earlier turn in the conversation does not carry forward to a new, generic question that does not itself specify a client or clearly continue the same specific request. Each new question that could produce a draft must be evaluated fresh, based only on what that specific question actually asks and what it specifically names, not on what was selected earlier for a different request. Only treat a new message as referring to a previously selected client if it is clearly and directly a continuation of that same specific request, such as the firm owner immediately following up with something like also draft one for the other invoice right after receiving a draft, not a standalone, generically phrased question asked afterward.
+Do not change the actual content or meaning of either the MULTIPLE QUALIFYING CLIENTS rule or the does-not-carry-forward paragraph, only their ordering and the addition of one explicit restatement sentence.
 
 VERIFY AFTER ACT:
 
-grep -n "never contain markdown syntax\|does not carry forward" /home/corby/jamm-os/app/api/concierge/prompts.py
+grep -n "MULTIPLE QUALIFYING CLIENTS" -A 35 /home/corby/jamm-os/app/api/concierge/prompts.py
 
-Expected: both new instructions present.
+Confirm the does-not-carry-forward paragraph now appears before the MULTIPLE QUALIFYING CLIENTS heading, and confirm it now contains an explicit restatement of the OPTIONS requirement.
 
 python3 -c "from app.main import app; print('OK')"
 
 MANUAL VERIFICATION:
 
-Restart backend only, no frontend changes in this task.
+Restart backend only.
 
-Ask for a draft involving a dollar amount, confirm the draft content contains no asterisks or other markdown syntax anywhere, plain text only.
+Recreate the exact sequence that surfaced this bug: ask about overdue invoices, pick one specific client and get a draft, then ask a completely fresh, generic question with no client specified, such as which clients have overdue invoices right now again. With the browser console open and filtered to CONCIERGE RAW, confirm the raw output now includes the OPTIONS marker with the real client names, and confirm the clickable option buttons actually render below the message this time, not just that the marker is present in raw text.
 
-Recreate the exact sequence that caused the stale draft bug: ask about overdue invoices, pick one specific client and get a draft, then ask a completely fresh, generic question with no client specified, such as which clients have overdue invoices right now again. Confirm this new response lists the clients and asks which one via OPTIONS again, with no draft attached, rather than silently reattaching the earlier client's draft.
+Separately, confirm the markdown-free draft fix from the previous task still holds, and confirm the batch drafting feature still works, asking for drafts for all three again.
 
-Separately, confirm the batch drafting feature from the previous task still works correctly, ask for drafts for all three again, confirm multiple distinct drafts still appear correctly, to make sure this change did not regress that feature.
-
-Report pass or fail individually for the markdown check, the stale draft check, and the batch regression check.
+Report pass or fail individually for the OPTIONS marker presence in raw output, the clickable buttons actually rendering, the markdown check, and the batch drafting check, all four separately.
 
 GIT:
 git add -A
-git commit -m "strip markdown syntax from draft content since it is plain text destined for a real email not the chat display, and fix the model incorrectly reattaching a previously selected client's draft to a fresh, generic multi-client question that did not specify a client"
+git commit -m "fix OPTIONS marker being silently dropped after the previous task's new paragraph broke adjacency with its own required-every-time enforcement sentence, by repositioning the paragraph and explicitly restating the marker requirement within it rather than relying on proximity alone"
 git pull --rebase origin main
 git push origin main
