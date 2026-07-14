@@ -54,68 +54,55 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Build real multi-client batch drafting, review each, send in sequence
+TASK: Strip markdown syntax from draft content, and fix stale draft reattachment on fresh multi-client questions
 
-USE: Fable 5
+USE: claude sonnet
 
 VERIFY BEFORE ACT:
-grep -n "function parseDraftFromResponse" -A 40 /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
-grep -n "MULTIPLE QUALIFYING CLIENTS" -A 15 /home/corby/jamm-os/app/api/concierge/prompts.py
-grep -n "msg.draft" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
-grep -n "draft?:" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+grep -n "CLIENT_EMAIL:" -A 10 /home/corby/jamm-os/app/api/concierge/prompts.py
+grep -n "MULTIPLE QUALIFYING CLIENTS" -A 20 /home/corby/jamm-os/app/api/concierge/prompts.py
+grep -n "EXPLICIT BATCH DRAFTING" -A 20 /home/corby/jamm-os/app/api/concierge/prompts.py
 
-Confirm all match what is described below. Read every single place msg.draft is referenced in the file in full before changing anything, since this task changes that field from a single object to an array and every read site needs to be updated consistently, not just the ones that are obvious.
+Confirm all three exist before proceeding.
 
-WHAT THIS IS:
+WHAT IS WRONG, PART ONE:
 
-Currently, when multiple clients qualify for a draft, the model is correctly required to ask which single client the firm owner means, via the OPTIONS marker, and only ever produces one draft once a single client is identified. This is safe and already working. What is missing is a real path for when the firm owner explicitly wants drafts for all of the qualifying clients at once, not just one at a time. Right now there is no way to get more than one draft in a single response at all.
+Confirmed live: draft content generated for a client email contained literal markdown bold syntax, asterisks around a dollar amount, visible as raw text inside the draft box rather than rendered formatting. Draft content is plain text destined for an actual email sent to a real client, it is never rendered through the chat's markdown display, so any markdown syntax inside it appears as literal asterisks in the real message if the firm owner copies or sends it without noticing. This is a real risk, not a cosmetic issue, a client could receive an email with visible asterisks in it.
 
-The per-draft client resolution mechanism already exists and already works correctly: each draft block already carries its own CLIENT line, used by the Open to send handler to resolve which real client record to navigate to. This existing mechanism is what makes batch drafting tractable without rebuilding client resolution from scratch, since each draft in a batch can carry its own CLIENT line exactly the same way a single draft does today.
+CHANGE INSTRUCTIONS, PART ONE:
 
-CHANGE INSTRUCTIONS:
+Add an explicit rule directly in the draft rules section, applying to every draft type, not just CLIENT_EMAIL: draft content must never contain markdown syntax of any kind, including bold asterisks, italics, bullet dashes, or headers. Draft content is plain text only. State this as an absolute rule with a concrete negative example, similar in strength to the existing rule against placeholder client names, since that rule has proven effective at being reliably followed once stated this directly.
 
-In prompts.py, add a new rule directly alongside the existing MULTIPLE QUALIFYING CLIENTS rule, not replacing it. The existing rule continues to apply as the default: when multiple clients qualify and the firm owner has not indicated they want all of them, still ask via OPTIONS, still never draft a placeholder. Add a new rule for the explicit case: if the firm owner clearly asks for drafts for all of the qualifying clients, using language like all of them, all three, everyone, each of them, or similar clear intent to cover every qualifying client rather than pick one, the model should produce multiple consecutive draft blocks in the same response, one per qualifying client, each using the exact same ---DRAFT:TYPE--- through ---END DRAFT--- format already established, each with its own accurate CLIENT line naming that specific client, and each with content genuinely personalized to that client's real situation, not a copy-pasted generic template repeated with only the name swapped. Never produce a placeholder in any of the batch drafts, the same absolute rule from the existing single-draft instructions applies to every draft in a batch.
+WHAT IS WRONG, PART TWO:
 
-In ConciergePanel.tsx, change parseDraftFromResponse so that instead of finding only the first occurrence of a draft block, it finds every occurrence in the message text, returning an array of parsed draft objects instead of a single object or null. Each element in the array should have the same shape currently returned for a single draft: type, content, source, clientName. The cleanedResponse, the display text with all draft blocks stripped out, should be computed once, based on everything before the first draft block begins, the same as it is today.
+Confirmed live: after the firm owner selected a specific client and received a draft for that client, they then asked a completely fresh, generic question, which clients have overdue invoices right now, with no client specified and no reference back to the previous selection. The model incorrectly treated the earlier client selection as still applicable and reattached the same old draft to the new response, in addition to correctly listing all three current overdue clients. The MULTIPLE QUALIFYING CLIENTS rule should have applied fresh to this new question exactly as it would on a first ask, requiring OPTIONS and no draft, since the new question did not specify a client and multiple clients still qualify.
 
-Change the Message type and every place that currently reads msg.draft as a single object to instead read msg.drafts as an array, which may be null, empty, or contain one or more entries. A single draft is simply an array of length one under this new shape, there is no need to maintain two separate code paths for the single-draft case and the batch case, one array-based rendering path handles both.
+CHANGE INSTRUCTIONS, PART TWO:
 
-Update the rendering logic so that when msg.drafts contains more than one entry, each draft renders as its own separate, clearly delineated card, each with its own independent Copy button and its own independent Open to send button, and each tracks its own state independently, so sending or copying one draft does not affect the others, and the firm owner can review and act on each one in turn without needing to re-ask the question.
-
-Update the Open to send handler so it operates on a single specific draft from the array, using that specific draft's own clientName for resolution exactly the way the existing single-draft logic already does, not the first or the last draft in the array by default.
-
-Do not change how a single draft, the ordinary one-client case, looks or behaves to the firm owner, a batch of one should look and act exactly like today's existing single draft card.
-
-Do not change the OPTIONS marker mechanism, the existing ask-which-client behavior, or anything about how a single, unambiguous draft gets triggered. This task only adds the explicit multi-draft path on top of what already exists.
+Add an explicit instruction directly alongside the MULTIPLE QUALIFYING CLIENTS rule: a previously selected client from an earlier turn in the conversation does not carry forward to a new, generic question that does not itself specify a client or clearly continue the same specific request. Each new question that could produce a draft must be evaluated fresh, based only on what that specific question actually asks and what it specifically names, not on what was selected earlier for a different request. Only treat a new message as referring to a previously selected client if it is clearly and directly a continuation of that same specific request, such as the firm owner immediately following up with something like also draft one for the other invoice right after receiving a draft, not a standalone, generically phrased question asked afterward.
 
 VERIFY AFTER ACT:
 
-grep -n "msg.drafts\|parseDraftFromResponse" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+grep -n "never contain markdown syntax\|does not carry forward" /home/corby/jamm-os/app/api/concierge/prompts.py
 
-Expected: consistent use of the new array-based field throughout, no remaining references to the old singular msg.draft anywhere in the file.
-
-npm run build in frontend, expected zero TypeScript errors.
+Expected: both new instructions present.
 
 python3 -c "from app.main import app; print('OK')"
 
-Also run the actual relevant test suite and paste the real output directly, not a summary, using the correct database and test file targeting, for example:
-
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/jammpx_dev .venv/bin/pytest tests/test_phase7_billing.py -v 2>&1 | tail -60
-
-Paste this real output as part of your own verification.
-
 MANUAL VERIFICATION:
 
-Full kill and restart of both servers, full .next wipe, this touches core message rendering state.
+Restart backend only, no frontend changes in this task.
 
-First confirm the existing single-client case still works exactly as before: ask a question where only one client qualifies, or where multiple qualify but you pick just one via OPTIONS, confirm one draft card appears and behaves exactly as it always has, Copy and Open to send both working correctly for that one client.
+Ask for a draft involving a dollar amount, confirm the draft content contains no asterisks or other markdown syntax anywhere, plain text only.
 
-Then test the new batch case: ask a question where multiple clients qualify, such as which clients have overdue invoices, then explicitly ask for drafts for all three, or similar clear all-of-them language. Confirm multiple separate draft cards appear, one per real client, each with genuinely personalized content, no placeholders, no identical copy-pasted text across drafts. Confirm each draft's Open to send button navigates to that specific correct client, not the same one for all of them. Confirm copying or sending one draft does not affect or remove the others.
+Recreate the exact sequence that caused the stale draft bug: ask about overdue invoices, pick one specific client and get a draft, then ask a completely fresh, generic question with no client specified, such as which clients have overdue invoices right now again. Confirm this new response lists the clients and asks which one via OPTIONS again, with no draft attached, rather than silently reattaching the earlier client's draft.
 
-Report pass or fail individually for the single-client regression check and the new batch case.
+Separately, confirm the batch drafting feature from the previous task still works correctly, ask for drafts for all three again, confirm multiple distinct drafts still appear correctly, to make sure this change did not regress that feature.
+
+Report pass or fail individually for the markdown check, the stale draft check, and the batch regression check.
 
 GIT:
 git add -A
-git commit -m "add real multi-client batch drafting: when a firm owner explicitly asks for drafts for all qualifying clients, the model now produces multiple genuinely personalized draft blocks in one response, each independently reviewable and sendable, built on the existing per-draft client resolution mechanism rather than a new parallel system"
+git commit -m "strip markdown syntax from draft content since it is plain text destined for a real email not the chat display, and fix the model incorrectly reattaching a previously selected client's draft to a fresh, generic multi-client question that did not specify a client"
 git pull --rebase origin main
 git push origin main
