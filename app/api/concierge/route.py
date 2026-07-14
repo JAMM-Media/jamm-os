@@ -325,6 +325,19 @@ def _classify_topic(message: str) -> str:
     return max(scores, key=lambda t: scores[t])
 
 
+# Registry: tool name -> function that extracts a deduplicated list of client
+# names from that tool's raw result dict. Add entries here when other live data
+# functions are confirmed to also trigger the OPTIONS-omission failure mode.
+# Only get_overdue_invoices is wired up now, as the one proven failing case.
+_MULTI_CLIENT_TOOL_EXTRACTORS: dict[str, object] = {
+    "get_overdue_invoices": lambda result: list({
+        inv["client_name"]
+        for inv in result.get("invoices", [])
+        if inv.get("client_name")
+    }),
+}
+
+
 class MessageItem(BaseModel):
     role: str
     content: str
@@ -776,6 +789,9 @@ Respond with exactly one word: SAFE or UNSAFE. Nothing else.""",
             import json as _json
 
             current_messages = list(tool_messages)
+            # Tracks raw result dicts for tools in _MULTI_CLIENT_TOOL_EXTRACTORS
+            # so the OPTIONS marker safety net can inspect them after the loop.
+            _captured_tool_results: dict[str, dict] = {}
 
             # Tool use loop -- max 5 iterations
             for _iteration in range(5):
@@ -831,6 +847,12 @@ Respond with exactly one word: SAFE or UNSAFE. Nothing else.""",
                     for block in response.content:
                         if block.type == "tool_use":
                             result_text = _execute_tool(block.name, block.input)
+                            # OPTIONS safety net: capture raw result for tracked tools
+                            if block.name in _MULTI_CLIENT_TOOL_EXTRACTORS:
+                                try:
+                                    _captured_tool_results[block.name] = _json.loads(result_text)
+                                except Exception:
+                                    pass
                             tool_results.append({
                                 "type": "tool_result",
                                 "tool_use_id": block.id,
@@ -867,6 +889,26 @@ Respond with exactly one word: SAFE or UNSAFE. Nothing else.""",
                     yield f"data: \n\n"
                     yield f"data: [FILTERED]\n\n"
                     yield f"data: {filtered_final}\n\n"
+
+                # OPTIONS marker safety net: if a multi-client tool result was
+                # captured this turn and the model omitted the OPTIONS marker,
+                # construct it deterministically from the real tool data before
+                # yielding anything further. Only fires when no OPTIONS marker
+                # is present AND no completed draft block is present (a draft
+                # means the model correctly resolved to a single client).
+                if "[OPTIONS:" not in filtered_final and "---DRAFT:" not in filtered_final:
+                    for _tool_name, _extractor in _MULTI_CLIENT_TOOL_EXTRACTORS.items():
+                        if _tool_name in _captured_tool_results:
+                            _client_names = _extractor(_captured_tool_results[_tool_name])
+                            if len(_client_names) > 1:
+                                _options_marker = "[OPTIONS:" + "|".join(_client_names) + "]"
+                                filtered_final = filtered_final.rstrip() + "\n" + _options_marker
+                                logger.info(
+                                    f"OPTIONS safety net: appended marker for {len(_client_names)} "
+                                    f"clients from {_tool_name} (firm {current_firm.id})"
+                                )
+                                break
+
                 # Trailing marker so the frontend can render contextually
                 # relevant suggestion chips without re-guessing the topic
                 # from the response text. Classified from the user's actual

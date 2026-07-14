@@ -54,47 +54,61 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Fix OPTIONS marker being dropped after last task's new paragraph broke rule adjacency
+TASK: Build a backend safety net that deterministically constructs the OPTIONS marker when the model omits it after a multi-client tool result
 
-USE: claude sonnet
+USE: Fable 5
 
 VERIFY BEFORE ACT:
-grep -n "MULTIPLE QUALIFYING CLIENTS" -A 30 /home/corby/jamm-os/app/api/concierge/prompts.py
+sed -n '820,865p' /home/corby/jamm-os/app/api/concierge/route.py
+grep -n "def get_overdue_invoices" -A 30 /home/corby/jamm-os/app/api/concierge/functions.py
 
-Confirm the exact current ordering: the MULTIPLE QUALIFYING CLIENTS rule, followed by the new does-not-carry-forward paragraph added in the previous task, followed by EXPLICIT BATCH DRAFTING. Read this entire block in full before editing.
+Confirm the current tool-use loop structure matches what is described below, and confirm the exact real shape of get_overdue_invoices's returned dict, specifically the field name holding the list of individual overdue invoices and the field name holding each invoice's client name, before writing any extraction code. Do not assume field names, read them directly.
 
 WHAT IS WRONG:
 
-Confirmed live via raw console output: after the previous task's fix correctly stopped the model from reattaching a stale draft to a fresh generic question, the model's response ends with plain prose, let me know if you would like a reminder drafted for any of them, and the OPTIONS marker is completely absent. This is not a frontend rendering issue, confirmed by inspecting the raw text directly, the marker was never emitted. The most likely cause: the new paragraph added in the previous task was inserted directly between the MULTIPLE QUALIFYING CLIENTS rule and its own OPTIONS marker is required every single time, with no exceptions sentence, breaking the adjacency between the rule and its enforcement language. This is the same category of failure already fixed once before tonight, where OPTIONS compliance degrades whenever the requirement is not stated immediately alongside the specific scenario it applies to.
+The MULTIPLE QUALIFYING CLIENTS rule, requiring the OPTIONS marker whenever a live data call returns more than one named client, has now failed three separate times tonight for the exact same underlying reason across different specific triggers: a marker ordering bug, a prompt paragraph adjacency bug, and now, confirmed live after both of those were fixed, a case where the model simply did not include the marker in its response despite everything else being correct, including asking the right clarifying question in prose. This is not a wording problem that can be solved with a fourth prompt rewrite. A soft, natural language instruction to an LLM cannot guarantee one hundred percent compliance no matter how it is phrased, since the model's response is still generated probabilistically each time. The backend already knows with total certainty when a multi-client tool call happened and exactly which real clients it returned, since it executed that call itself. Relying on the model to remember to also write that same information back out in a specific marker format is fragile in a way that code-level enforcement is not.
 
 CHANGE INSTRUCTIONS:
 
-Reposition the does-not-carry-forward paragraph so it no longer sits between the MULTIPLE QUALIFYING CLIENTS rule and its own OPTIONS requirement sentence. Move it to appear immediately before the MULTIPLE QUALIFYING CLIENTS heading instead, as context that applies going into that rule, rather than interrupting the rule and its own enforcement language.
+Immediately after the tool-use loop exits, at the point where final_text and filtered_final are computed, add a deterministic check and correction step, before this text is yielded to the frontend.
 
-Additionally, explicitly restate the OPTIONS requirement within the does-not-carry-forward paragraph itself, do not rely solely on proximity to the original rule. Add a direct sentence such as: this fresh evaluation still requires the OPTIONS marker exactly as the rule above states, with no exception for questions that follow an earlier draft. Redundant restatement is intentional here, since the marker requirement has already needed reinforcement once tonight and should not depend on the model correctly inferring that an adjacent rule still applies after new instructions have been inserted nearby.
+Track, across the full tool-use loop, whether get_overdue_invoices was called during this turn and what it returned, specifically capturing the list of individual overdue invoices and each one's client name from the real tool result already sitting in memory from execution.
 
-Do not change the actual content or meaning of either the MULTIPLE QUALIFYING CLIENTS rule or the does-not-carry-forward paragraph, only their ordering and the addition of one explicit restatement sentence.
+After filtered_final is computed, check two things: whether get_overdue_invoices was called this turn and returned more than one distinct client, and whether filtered_final already contains an OPTIONS marker. If a multi-client result exists and no OPTIONS marker is present in the final text, and the response does not already contain a completed draft block, construct the correct OPTIONS marker directly from the real client names captured from the tool result, and append it to filtered_final in the same format the model would have used, before this text is sent onward to the rest of the existing pipeline, including the TOPIC marker logic and the SSE yield.
+
+Build this in a way that is clearly extensible to other live data functions later, for example a small mapping of tool name to a function that extracts a list of client names from that specific tool's result shape, with get_overdue_invoices as the first and only entry for now. Do not attempt to wire up every other live data function in this task, that is deliberately out of scope, this task solves the one proven, repeatedly failing case.
+
+Do not change the existing prompt instructions in prompts.py, this is a backend safety net operating independently of and in addition to those instructions, not a replacement for them. Do not change anything about how the OPTIONS marker gets parsed or rendered on the frontend, that logic is already correct and only needs a reliably present marker to work with.
 
 VERIFY AFTER ACT:
 
-grep -n "MULTIPLE QUALIFYING CLIENTS" -A 35 /home/corby/jamm-os/app/api/concierge/prompts.py
+grep -n "OPTIONS.*safety net\|_extract_client_names\|multi_client_tool" /home/corby/jamm-os/app/api/concierge/route.py
 
-Confirm the does-not-carry-forward paragraph now appears before the MULTIPLE QUALIFYING CLIENTS heading, and confirm it now contains an explicit restatement of the OPTIONS requirement.
+Confirm the new deterministic construction logic is present near where final_text and filtered_final are computed.
 
 python3 -c "from app.main import app; print('OK')"
+
+Also write a small standalone script that directly calls the relevant part of this logic with a fake tool result containing more than one client and no existing OPTIONS marker in the text, confirming the correct marker gets appended, and run it, pasting the real output:
+
+python3 -c "
+# construct a minimal test of the new extraction and append logic here,
+# using a fake multi-client get_overdue_invoices style result and a fake
+# response string with no OPTIONS marker, confirming the function under
+# test appends the correct marker with the real names from the fake data
+"
 
 MANUAL VERIFICATION:
 
 Restart backend only.
 
-Recreate the exact sequence that surfaced this bug: ask about overdue invoices, pick one specific client and get a draft, then ask a completely fresh, generic question with no client specified, such as which clients have overdue invoices right now again. With the browser console open and filtered to CONCIERGE RAW, confirm the raw output now includes the OPTIONS marker with the real client names, and confirm the clickable option buttons actually render below the message this time, not just that the marker is present in raw text.
+Ask which clients have overdue invoices right now at least five separate times in a row, spaced normally, not rapid fire, in fresh separate conversations if possible to avoid any interaction with the stale-draft fix from earlier. Confirm the OPTIONS marker and the clickable client buttons appear every single one of the five times, not most of them.
 
-Separately, confirm the markdown-free draft fix from the previous task still holds, and confirm the batch drafting feature still works, asking for drafts for all three again.
+Separately, ask a question involving get_overdue_invoices where only one client actually qualifies, if achievable with the current test data, or reason about this from the code directly, and confirm the safety net does not incorrectly attach an OPTIONS marker when there is only one client, since that would be a new, different bug.
 
-Report pass or fail individually for the OPTIONS marker presence in raw output, the clickable buttons actually rendering, the markdown check, and the batch drafting check, all four separately.
+Report pass or fail individually for all five repetitions, and for the single-client case.
 
 GIT:
 git add -A
-git commit -m "fix OPTIONS marker being silently dropped after the previous task's new paragraph broke adjacency with its own required-every-time enforcement sentence, by repositioning the paragraph and explicitly restating the marker requirement within it rather than relying on proximity alone"
+git commit -m "add a deterministic backend safety net that constructs the OPTIONS marker directly from real tool result data when the model omits it after a multi-client overdue invoices call, since the prompt instruction alone has now failed to guarantee this three separate times tonight despite being correctly worded and correctly positioned, built as an extensible registry so other live data functions can be added to this same mechanism later"
 git pull --rebase origin main
 git push origin main
