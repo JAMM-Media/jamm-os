@@ -240,6 +240,19 @@ class BetterDirection(str, Enum):
     higher = "higher"
 
 
+class MetricWindowType(str, Enum):
+    """How a metric's value is computed relative to time."""
+    weekly_summary = "weekly_summary"
+    rolling_snapshot = "rolling_snapshot"
+
+
+class MetricRunStatus(str, Enum):
+    """Status of one nightly metric computation run."""
+    running = "running"
+    succeeded = "succeeded"
+    failed = "failed"
+
+
 class SubjectType(str, Enum):
     """What kind of thing a finding is about."""
     metric = "metric"

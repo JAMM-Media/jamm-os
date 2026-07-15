@@ -10,6 +10,12 @@ from app.schemas.automation_rule import AutomationRuleUpdate
 from app.services.behavioral_log import build_changed_fields, log_event
 
 
+# Fields that constitute the rule's actual behavior. Editing one of these on
+# a preset-lineage rule is what "customized" means; renaming or toggling
+# enabled/disabled does not count (toggling has its own event entirely).
+_CONFIGURATION_FIELDS = {"actions", "trigger_conditions", "trigger_event"}
+
+
 def update_automation_rule(
     db: Session,
     rule: AutomationRule,
@@ -25,6 +31,17 @@ def update_automation_rule(
 
     new_values = {f: getattr(updated, f) for f in tracked_fields}
     changed_fields = build_changed_fields(old_values, new_values)
+
+    if (
+        updated.preset_key is not None
+        and not updated.is_customized
+        and _CONFIGURATION_FIELDS.intersection(changed_fields)
+    ):
+        updated.is_customized = True
+        db.add(updated)
+        db.commit()
+        db.refresh(updated)
+
     if changed_fields:
         log_event(
             firm_id=firm_id,

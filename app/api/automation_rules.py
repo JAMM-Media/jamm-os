@@ -151,6 +151,7 @@ def reset_rule_to_default(
     if not rule.default_actions:
         raise HTTPException(status_code=400, detail="No default actions stored for this rule")
     rule.actions = rule.default_actions
+    rule.is_customized = False
     db.commit()
     db.refresh(rule)
     return rule

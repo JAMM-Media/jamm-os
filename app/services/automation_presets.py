@@ -32,6 +32,8 @@ def _get_preset_rules(firm_id: UUID) -> List[Dict[str, Any]]:
             "id": uuid4(),
             "firm_id": firm_id,
             "name": "Document Request Reminder (3-day)",
+            "preset_key": "doc_request_reminder_3day",
+            "is_customized": False,
             "description": (
                 "Sends a reminder to the client 3 days after a document request is created "
                 "if it is still pending"
@@ -73,6 +75,8 @@ def _get_preset_rules(firm_id: UUID) -> List[Dict[str, Any]]:
             "id": uuid4(),
             "firm_id": firm_id,
             "name": "E-Signature Reminder (2-day)",
+            "preset_key": "esign_reminder_2day",
+            "is_customized": False,
             "description": (
                 "Sends a reminder to the client 2 days after an engagement letter is sent "
                 "for signature if not yet signed"
@@ -114,6 +118,8 @@ def _get_preset_rules(firm_id: UUID) -> List[Dict[str, Any]]:
             "id": uuid4(),
             "firm_id": firm_id,
             "name": "Overdue Task Alert to Staff",
+            "preset_key": "overdue_task_alert_to_staff",
+            "is_customized": False,
             "description": "Notifies the assigned staff member when a task becomes overdue",
             "is_enabled": True,
             "trigger_event": TriggerEvent.task_assigned,
@@ -150,6 +156,8 @@ def _get_preset_rules(firm_id: UUID) -> List[Dict[str, Any]]:
             "id": uuid4(),
             "firm_id": firm_id,
             "name": "Auto-Create Invoice on Engagement Completion",
+            "preset_key": "auto_create_invoice_on_completion",
+            "is_customized": False,
             "description": (
                 "Automatically creates a draft invoice when an engagement is marked as completed"
             ),
@@ -198,6 +206,8 @@ def _get_preset_rules(firm_id: UUID) -> List[Dict[str, Any]]:
             "id": uuid4(),
             "firm_id": firm_id,
             "name": "New Client Welcome Email",
+            "preset_key": "new_client_welcome_email",
+            "is_customized": False,
             "description": (
                 "Sends a welcome email to the client when they are first added to the system"
             ),
@@ -236,6 +246,8 @@ def _get_preset_rules(firm_id: UUID) -> List[Dict[str, Any]]:
             "id": uuid4(),
             "firm_id": firm_id,
             "name": "Notify Staff When Documents Are Complete",
+            "preset_key": "notify_staff_docs_complete",
+            "is_customized": False,
             "description": (
                 "Notifies the assigned staff member when a client finishes uploading "
                 "all requested documents"
@@ -275,6 +287,8 @@ def _get_preset_rules(firm_id: UUID) -> List[Dict[str, Any]]:
             "id": uuid4(),
             "firm_id": firm_id,
             "name": "Invoice Overdue Reminder",
+            "preset_key": "invoice_overdue_reminder",
+            "is_customized": False,
             "description": "Sends a payment reminder to the client when an invoice becomes overdue",
             "is_enabled": True,
             "trigger_event": TriggerEvent.invoice_overdue,
@@ -311,6 +325,8 @@ def _get_preset_rules(firm_id: UUID) -> List[Dict[str, Any]]:
             "id": uuid4(),
             "firm_id": firm_id,
             "name": "Recurring Engagement Kickoff Notification",
+            "preset_key": "recurring_engagement_kickoff",
+            "is_customized": False,
             "description": (
                 "Notifies the assigned staff member when a new recurring engagement "
                 "is automatically created"
@@ -350,6 +366,8 @@ def _get_preset_rules(firm_id: UUID) -> List[Dict[str, Any]]:
             "id": uuid4(),
             "firm_id": firm_id,
             "name": "1040 Season Kickoff",
+            "preset_key": "season_1040_kickoff",
+            "is_customized": False,
             "description": (
                 "Sends welcome email and creates intake tasks when a 1040 engagement is opened."
             ),
@@ -400,6 +418,8 @@ def _get_preset_rules(firm_id: UUID) -> List[Dict[str, Any]]:
             "id": uuid4(),
             "firm_id": firm_id,
             "name": "Extension Filed Auto-Notify",
+            "preset_key": "extension_filed_auto_notify",
+            "is_customized": False,
             "description": (
                 "Notifies client of extension, creates deadline task, and updates engagement status."
             ),
@@ -440,6 +460,8 @@ def _get_preset_rules(firm_id: UUID) -> List[Dict[str, Any]]:
             "id": uuid4(),
             "firm_id": firm_id,
             "name": "IRS Authorization Expiry Warning",
+            "preset_key": "irs_authorization_expiry_warning",
+            "is_customized": False,
             "description": (
                 "Alerts staff and client when an IRS authorization is approaching expiry."
             ),
@@ -490,6 +512,8 @@ def _get_preset_rules(firm_id: UUID) -> List[Dict[str, Any]]:
             "id": uuid4(),
             "firm_id": firm_id,
             "name": "Invoice Overdue Escalating Sequence",
+            "preset_key": "invoice_overdue_escalating_sequence",
+            "is_customized": False,
             "description": (
                 "Sends escalating payment reminders on day 1, day 7, "
                 "and notifies firm owner on day 14."
@@ -541,6 +565,8 @@ def _get_preset_rules(firm_id: UUID) -> List[Dict[str, Any]]:
             "id": uuid4(),
             "firm_id": firm_id,
             "name": "Engagement Deadline Approaching — 14-day Alert",
+            "preset_key": "deadline_approaching_14day_alert",
+            "is_customized": False,
             "description": "Notifies assigned staff 14 days before an engagement deadline.",
             "is_enabled": True,
             "trigger_event": TriggerEvent.engagement_deadline_approaching,
@@ -575,6 +601,8 @@ def _get_preset_rules(firm_id: UUID) -> List[Dict[str, Any]]:
             "id": uuid4(),
             "firm_id": firm_id,
             "name": "Return Completed: Client Delivery Loop",
+            "preset_key": "return_completed_client_delivery_loop",
+            "is_customized": False,
             "description": (
                 "Creates delivery task, generates invoice, and notifies client "
                 "when a return is complete."
@@ -636,6 +664,8 @@ def _get_preset_rules(firm_id: UUID) -> List[Dict[str, Any]]:
             "id": uuid4(),
             "firm_id": firm_id,
             "name": "New Client Full Onboarding Sequence",
+            "preset_key": "new_client_full_onboarding_sequence",
+            "is_customized": False,
             "description": (
                 "Sends welcome email, creates onboarding tasks, and sends intake "
                 "document request for new clients."
@@ -687,6 +717,8 @@ def _get_preset_rules(firm_id: UUID) -> List[Dict[str, Any]]:
             "id": uuid4(),
             "firm_id": firm_id,
             "name": "Morning Briefing",
+            "preset_key": "morning_briefing",
+            "is_customized": False,
             "description": (
                 "Get a daily summary of your firm's current engagement status, "
                 "incomplete items, and upcoming due dates when you open the dashboard each morning."
@@ -706,6 +738,8 @@ def _get_preset_rules(firm_id: UUID) -> List[Dict[str, Any]]:
             "id": uuid4(),
             "firm_id": firm_id,
             "name": "Budget Variance Alert",
+            "preset_key": "budget_variance_alert",
+            "is_customized": False,
             "description": (
                 "Creates a task when a client's actual spend deviates from their QBO budget "
                 "by more than 15% in any category."

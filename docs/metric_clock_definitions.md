@@ -116,3 +116,18 @@ actually working for it?
 - Custom rules excluded from the benchmark metric (they vary per firm
   by definition and fail the firm-independent-anchor test).
 - Benchmark-eligible: yes.
+
+## Clarifications - July 2026
+
+- Document collection "actually used": the clock stops at the last upload
+  among items not ultimately waived. A rejected-then-reuploaded item counts
+  at its final upload.
+- Automation utilization: a catalog slot counts as utilized when a rule with
+  that preset_key is enabled and has fired at least once, regardless of
+  is_customized. Customization state is stamped in fire metadata for
+  analysis but does not affect the metric. Only rules with null preset_key
+  (pure customs) are excluded. Lineage (preset_key) is permanent;
+  customization is state.
+- portal_utilization_todos: deactivated. The portal To-do tab surfaces
+  document request items, already counted by portal_utilization_documents.
+  Reactivate if and when a standalone Todo entity ships as its own feature.

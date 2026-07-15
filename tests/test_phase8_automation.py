@@ -247,6 +247,119 @@ def test_preset_rules_are_disabled_by_default(client, firm_a_owner):
 
 
 # ===========================================================================
+# GROUP 4b — Preset lineage (preset_key / is_customized)
+# ===========================================================================
+
+def test_seeded_preset_rules_carry_preset_key(client, firm_a_owner):
+    from app.services.automation_presets import seed_firm_presets
+    from app.core.automation_preset_catalog import PRESET_CATALOG_BY_KEY
+
+    firm_id = uuid.UUID(firm_a_owner["firm_id"])
+    headers = firm_a_owner["headers"]
+
+    db = TestingSessionLocal()
+    try:
+        seed_firm_presets(firm_id=firm_id, db=db)
+    finally:
+        db.close()
+
+    r = client.get("/automation-rules/?limit=200", headers=headers)
+    assert r.status_code == 200, r.text
+    items = r.json()["items"]
+
+    seeded = [rule for rule in items if rule["preset_key"] is not None]
+    assert len(seeded) == len(PRESET_CATALOG_BY_KEY)
+    for rule in seeded:
+        assert rule["preset_key"] in PRESET_CATALOG_BY_KEY
+        assert rule["is_customized"] is False
+
+
+def test_editing_actions_on_preset_rule_sets_is_customized(client, firm_a_owner):
+    from app.services.automation_presets import seed_firm_presets
+
+    firm_id = uuid.UUID(firm_a_owner["firm_id"])
+    headers = firm_a_owner["headers"]
+
+    db = TestingSessionLocal()
+    try:
+        seed_firm_presets(firm_id=firm_id, db=db)
+    finally:
+        db.close()
+
+    r = client.get("/automation-rules/?limit=200", headers=headers)
+    preset_rule = next(rule for rule in r.json()["items"] if rule["preset_key"] is not None)
+    assert preset_rule["is_customized"] is False
+
+    r = client.patch(
+        f"/automation-rules/{preset_rule['id']}",
+        json={"actions": [{"type": "send_notification", "config": {"to": "staff"}, "order": 0}]},
+        headers=headers,
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["is_customized"] is True
+    assert r.json()["preset_key"] == preset_rule["preset_key"]
+
+
+def test_renaming_preset_rule_does_not_set_is_customized(client, firm_a_owner):
+    """Cosmetic edits (name/description) are not 'configuration' -- only
+    actions/trigger_conditions/trigger_event count as customization."""
+    from app.services.automation_presets import seed_firm_presets
+
+    firm_id = uuid.UUID(firm_a_owner["firm_id"])
+    headers = firm_a_owner["headers"]
+
+    db = TestingSessionLocal()
+    try:
+        seed_firm_presets(firm_id=firm_id, db=db)
+    finally:
+        db.close()
+
+    r = client.get("/automation-rules/?limit=200", headers=headers)
+    preset_rule = next(rule for rule in r.json()["items"] if rule["preset_key"] is not None)
+
+    r = client.patch(
+        f"/automation-rules/{preset_rule['id']}",
+        json={"name": "Renamed Preset Rule"},
+        headers=headers,
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["is_customized"] is False
+
+
+def test_reset_to_default_clears_is_customized(client, firm_a_owner):
+    from app.services.automation_presets import seed_firm_presets
+
+    firm_id = uuid.UUID(firm_a_owner["firm_id"])
+    headers = firm_a_owner["headers"]
+
+    db = TestingSessionLocal()
+    try:
+        seed_firm_presets(firm_id=firm_id, db=db)
+    finally:
+        db.close()
+
+    r = client.get("/automation-rules/?limit=200", headers=headers)
+    preset_rule = next(rule for rule in r.json()["items"] if rule["preset_key"] is not None)
+
+    client.patch(
+        f"/automation-rules/{preset_rule['id']}",
+        json={"actions": [{"type": "send_notification", "config": {"to": "staff"}, "order": 0}]},
+        headers=headers,
+    )
+
+    r = client.post(f"/automation-rules/{preset_rule['id']}/reset-to-default", headers=headers)
+    assert r.status_code == 200, r.text
+    assert r.json()["is_customized"] is False
+
+
+def test_custom_rule_has_no_preset_key(client, firm_a_owner):
+    headers = firm_a_owner["headers"]
+    rule = _create_rule(client, headers)
+    assert rule["preset_key"] is None
+    assert rule["is_customized"] is False
+
+
+# ===========================================================================
 # GROUP 5 — Tenant isolation
 # ===========================================================================
 

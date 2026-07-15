@@ -7,7 +7,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
 from tests.conftest import TestingSessionLocal
-from app.core.enums import BetterDirection
+from app.core.enums import BetterDirection, MetricWindowType
 from app.core.metric_seed_data import SEED_METRICS
 from app.models.metric_registry import MetricRegistry
 
@@ -20,7 +20,7 @@ def _seed_registry(db):
     so this test proves the model/schema can hold and be queried for
     exactly the locked Session 0 core.
     """
-    for key, display_name, unit, better_direction, benchmark_eligible, tier in SEED_METRICS:
+    for key, display_name, unit, better_direction, benchmark_eligible, tier, window_type in SEED_METRICS:
         db.add(
             MetricRegistry(
                 key=key,
@@ -29,6 +29,7 @@ def _seed_registry(db):
                 better_direction=BetterDirection(better_direction),
                 benchmark_eligible=benchmark_eligible,
                 tier=tier,
+                window_type=MetricWindowType(window_type),
             )
         )
     db.commit()
@@ -60,6 +61,7 @@ def test_unique_constraint_on_key_rejects_duplicate():
                 better_direction=BetterDirection.lower,
                 benchmark_eligible=True,
                 tier=1,
+                window_type=MetricWindowType.weekly_summary,
             )
         )
         db.commit()
@@ -72,6 +74,7 @@ def test_unique_constraint_on_key_rejects_duplicate():
                 better_direction=BetterDirection.lower,
                 benchmark_eligible=True,
                 tier=1,
+                window_type=MetricWindowType.weekly_summary,
             )
         )
         with pytest.raises(IntegrityError):
@@ -91,6 +94,7 @@ def test_better_direction_stored_as_non_native_enum_string():
             better_direction=BetterDirection.lower,
             benchmark_eligible=True,
             tier=1,
+            window_type=MetricWindowType.weekly_summary,
         )
         db.add(row)
         db.commit()

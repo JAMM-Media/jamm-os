@@ -185,6 +185,80 @@ def test_update_checklist_item_status(client, firm_a_owner):
     assert items["item-2"]["status"] == "pending"
 
 
+def test_rejected_item_fires_item_rejected_not_item_waived(client, firm_a_owner):
+    """Staff rejecting an item via the API must fire document_request.item_rejected,
+    never document_request.item_waived -- these used to be the same event."""
+    from unittest.mock import patch
+
+    headers = firm_a_owner["headers"]
+    client_id, engagement_id = _make_client_and_engagement(client, headers)
+    created = _create_request(client, headers, client_id, engagement_id)
+    req_id = created.json()["id"]
+
+    with patch("app.services.document_request_service.log_event") as mock_log:
+        r = client.patch(
+            f"/document-requests/{req_id}/items/item-1",
+            json={"status": "rejected"},
+            headers=headers,
+        )
+    assert r.status_code == 200, r.text
+
+    event_types = [call.kwargs["event_type"] for call in mock_log.call_args_list]
+    assert "document_request.item_rejected" in event_types
+    assert "document_request.item_waived" not in event_types
+
+
+def test_waived_item_fires_item_waived_not_item_rejected(firm_a_owner):
+    """A true waive (service layer -- 'waived' is not yet a reachable API status)
+    must fire document_request.item_waived, never document_request.item_rejected."""
+    import uuid as _uuid
+    from unittest.mock import patch
+    from tests.conftest import TestingSessionLocal
+    from app.crud import document_request as crud
+    from app.schemas.document_request import DocumentRequestCreate, ChecklistItem
+    import app.services.document_request_service as dr_service
+
+    firm_id = _uuid.UUID(firm_a_owner["firm_id"])
+    db = TestingSessionLocal()
+    try:
+        from app.models.client import Client
+        from app.models.engagement import Engagement
+
+        cl = Client(firm_id=firm_id, name="Waive Test Client")
+        db.add(cl)
+        db.commit()
+        db.refresh(cl)
+
+        eng = Engagement(firm_id=firm_id, name="Waive Test Engagement", client_id=cl.id)
+        db.add(eng)
+        db.commit()
+        db.refresh(eng)
+
+        payload = DocumentRequestCreate(
+            client_id=cl.id,
+            engagement_id=eng.id,
+            title="Waive Test Docs",
+            checklist_items=[ChecklistItem(id="item-1", label="Doc")],
+        )
+        doc_request = crud.create_document_request(db, payload, firm_id=firm_id)
+
+        with patch("app.services.document_request_service.log_event") as mock_log:
+            dr_service.update_checklist_item_status(
+                db=db,
+                request_id=doc_request.id,
+                item_id="item-1",
+                new_status="waived",
+                firm_id=firm_id,
+                current_user_id=_uuid.uuid4(),
+            )
+
+        event_types = [call.kwargs["event_type"] for call in mock_log.call_args_list]
+        assert "document_request.item_waived" in event_types
+        assert "document_request.item_rejected" not in event_types
+    finally:
+        db.close()
+
+
 def test_auto_complete_when_all_required_items_uploaded(client, firm_a_owner):
     headers = firm_a_owner["headers"]
     client_id, engagement_id = _make_client_and_engagement(client, headers)

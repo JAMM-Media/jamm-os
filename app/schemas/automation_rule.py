@@ -53,6 +53,8 @@ class AutomationRuleOut(AutomationRuleBase):
     created_at: datetime
     updated_at: datetime
     default_actions: List[Any] = []
+    preset_key: Optional[str] = None
+    is_customized: bool = False
     model_config = ConfigDict(from_attributes=True)
 
 

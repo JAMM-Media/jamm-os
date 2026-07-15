@@ -25,6 +25,10 @@ class AutomationRule(Base):
     trigger_conditions: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     actions: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     default_actions: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    # Set when the rule is created from a catalog preset; never cleared
+    # afterward, including when the rule is customized. Null means pure custom.
+    preset_key: Mapped[str | None] = mapped_column(nullable=True, index=True)
+    is_customized: Mapped[bool] = mapped_column(default=False, nullable=False)
     execution_count: Mapped[int] = mapped_column(default=0, nullable=False)
     last_executed_at: Mapped[datetime | None] = mapped_column(nullable=True)
     created_at: Mapped[datetime] = mapped_column(

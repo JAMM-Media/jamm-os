@@ -175,6 +175,8 @@ def _execute_rule(
                     "trigger_event": str(rule.trigger_event),
                     "rule_name": rule.name,
                     "actions_executed": len(executed),
+                    "preset_key": rule.preset_key,
+                    "is_customized": rule.is_customized,
                 }
             )
 

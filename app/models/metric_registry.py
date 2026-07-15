@@ -9,7 +9,7 @@ from sqlalchemy import Boolean, Integer, String, DateTime, func
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.core.enums import BetterDirection
+from app.core.enums import BetterDirection, MetricWindowType
 from app.db.base_class import Base
 
 
@@ -40,6 +40,10 @@ class MetricRegistry(Base):
     )
 
     benchmark_eligible: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    window_type: Mapped[MetricWindowType] = mapped_column(
+        sa.Enum(MetricWindowType, native_enum=False), nullable=False
+    )
 
     tier: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
 

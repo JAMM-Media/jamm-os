@@ -6,7 +6,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
 
-from app.core.enums import BetterDirection
+from app.core.enums import BetterDirection, MetricWindowType
 
 
 class MetricRegistryBase(BaseModel):
@@ -16,6 +16,7 @@ class MetricRegistryBase(BaseModel):
     unit: str
     better_direction: BetterDirection
     benchmark_eligible: bool = False
+    window_type: MetricWindowType
     tier: int = 1
     is_active: bool = True
 
@@ -30,6 +31,7 @@ class MetricRegistryUpdate(BaseModel):
     unit: Optional[str] = None
     better_direction: Optional[BetterDirection] = None
     benchmark_eligible: Optional[bool] = None
+    window_type: Optional[MetricWindowType] = None
     tier: Optional[int] = None
     is_active: Optional[bool] = None
 

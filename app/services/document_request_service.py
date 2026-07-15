@@ -266,10 +266,23 @@ def update_checklist_item_status(
             }
         )
 
-    if new_status in {"rejected", "waived"}:
+    if new_status == "waived":
         log_event(
             firm_id=doc_request.firm_id,
             event_type="document_request.item_waived",
+            entity_type="document_request",
+            entity_id=request_id,
+            actor_type="staff",
+            actor_id=current_user_id,
+            metadata={
+                "item_id": item_id,
+            }
+        )
+
+    if new_status == "rejected":
+        log_event(
+            firm_id=doc_request.firm_id,
+            event_type="document_request.item_rejected",
             entity_type="document_request",
             entity_id=request_id,
             actor_type="staff",

@@ -8,7 +8,7 @@ from pydantic import ValidationError
 from sqlalchemy.exc import IntegrityError
 
 from tests.conftest import TestingSessionLocal
-from app.core.enums import BetterDirection, GateBar, GateStatus, SubjectType
+from app.core.enums import BetterDirection, GateBar, GateStatus, MetricWindowType, SubjectType
 from app.models.finding import Finding
 from app.models.firm import Firm
 from app.models.metric_registry import MetricRegistry
@@ -38,6 +38,7 @@ def _make_metric_registry_row(key="engagement_velocity") -> str:
             better_direction=BetterDirection.lower,
             benchmark_eligible=True,
             tier=1,
+            window_type=MetricWindowType.weekly_summary,
         )
         db.add(row)
         db.commit()
