@@ -54,46 +54,46 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Fix OPTIONS safety net's corrected text never being transmitted to the frontend
+TASK: Force get_overdue_invoices to actually be called via tool_choice, since prompt instructions alone cannot guarantee it
 
 USE: Fable 5
 
 VERIFY BEFORE ACT:
-sed -n '888,940p' /home/corby/jamm-os/app/api/concierge/route.py
-grep -n "\[FILTERED\]" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+sed -n '795,825p' /home/corby/jamm-os/app/api/concierge/route.py
+grep -n "_OPERATIONAL_KEYWORDS\s*=" -A 20 /home/corby/jamm-os/app/api/concierge/route.py
 
-Confirm the current structure matches exactly what is described below, and confirm how the frontend actually handles a [FILTERED] sentinel event, since the fix needs to reuse that exact same proven mechanism, not invent a new one.
+Confirm the tool-use loop matches exactly what is described below before editing.
 
 WHAT IS WRONG:
 
-The OPTIONS safety net's own internal logic is confirmed correct via backend logs: it correctly detects a multi-client tool result, correctly extracts real client names, and correctly appends a well-formed OPTIONS marker to filtered_final. However, the only existing mechanism that sends a corrected version of the response text to the frontend, the FILTERED sentinel and replacement text yield, only fires inside a conditional block that runs and completes before the safety net executes at all. The safety net's modification to filtered_final happens strictly afterward, with no yield statement following it anywhere. This means the safety net's correction is computed on the server and then never transmitted to the client under any circumstance, confirmed live: the backend log showed the marker being correctly constructed and appended, while the frontend received no marker at all and rendered no buttons.
+tool_choice has never been set anywhere in this file, confirmed by direct search. Every tool-use API call has always defaulted to auto, meaning the model has always had full discretion over whether to call any tool at all, on every turn, including the very first one. Confirmed live, repeatedly, across multiple separate diagnostic sessions tonight: a question that clearly and specifically requires get_overdue_invoices sometimes results in the model answering from memory or general reasoning instead of calling the tool at all, despite an explicit, emphatically worded prompt instruction added earlier tonight specifically to prevent this. A natural language instruction to an LLM, no matter how strongly worded or how many times reinforced, cannot guarantee one hundred percent compliance, since the model's behavior on any given turn remains probabilistic. The Anthropic API provides tool_choice specifically to remove this discretion at the code level when a tool call must not be skippable, and it has never been used anywhere in this codebase.
 
 CHANGE INSTRUCTIONS:
 
-Restructure this section so there is exactly one final determination of the true, fully corrected response text, computed after both the leak filter and the OPTIONS safety net have had a chance to modify it, followed by exactly one yield of the FILTERED sentinel and replacement text pattern if and only if the fully corrected text differs from what was originally streamed to the client during generation.
+Add a narrow, specific detection function, separate from the existing broad _OPERATIONAL_KEYWORDS set, that determines whether a message is unambiguously and specifically about overdue invoices rather than some other operational topic that happens to share a keyword like overdue or outstanding. Base this on genuinely specific phrase combinations such as the co-occurrence of a word like invoice or invoices together with overdue, owe, owes, or outstanding, or explicit phrases like who owes us money or which clients have overdue invoices. Do not rely on the single word overdue alone, since that word already appears broadly across the operational keyword set for engagements, tasks, and other unrelated domains, and forcing this specific tool on unrelated questions would be a new bug, not a fix.
 
-Concretely: compute filtered_final from the leak filter as it does today, but do not yield the FILTERED sentinel immediately. Run the OPTIONS safety net logic against this filtered_final exactly as it already does, allowing it to further modify filtered_final if needed. Only after both of these steps have completed, compare this final version of filtered_final against the original final_text that was actually streamed to the client during generation, and if they differ at all, for any reason, whether from the leak filter, the safety net, or both, yield the FILTERED sentinel and the fully corrected filtered_final exactly once, containing every correction that was made.
+In the tool-use loop, on the first iteration only, iteration index zero, if this new specific detection function returns true for the current user's message, pass tool_choice as a forced choice of the get_overdue_invoices tool specifically, using whatever parameter shape the installed Anthropic SDK version expects for forcing a single named tool, confirm the correct shape from the SDK's own type definitions or documentation comments already present elsewhere in this codebase if any exist, do not guess at the exact parameter structure. On every iteration after the first, and on the first iteration when this specific detection does not apply, continue passing tool_choice as auto exactly as the implicit current default behavior, so the model retains normal discretion for every other kind of question and for every turn after the initial forced call.
 
-Do not create two separate yield blocks for the two different correction sources. There should be one single source of truth for what the truly final, fully corrected text is, and one single transmission of it to the frontend when it differs from what was already streamed.
-
-Do not change the frontend's handling of the FILTERED sentinel, it already works correctly, this fix only needs to make sure the safety net's correction is actually included in what gets sent through that existing, proven mechanism.
+Do not change the broader _OPERATIONAL_KEYWORDS set or _is_operational_question, which correctly and separately decides whether to enter the tool-use loop at all. This task only affects whether tool_choice is forced once inside that loop for this one specific, narrow case.
 
 VERIFY AFTER ACT:
 
-sed -n '888,945p' /home/corby/jamm-os/app/api/concierge/route.py
+grep -n "tool_choice" /home/corby/jamm-os/app/api/concierge/route.py
 
-Confirm there is now exactly one yield of the FILTERED sentinel pattern, positioned after both the leak filter and the safety net have both had a chance to run, not two separate yield blocks.
+Expected: present, conditionally applied only on the first iteration and only for the narrow overdue invoices detection.
 
 python3 -c "from app.main import app; print('OK')"
 
 MANUAL VERIFICATION:
 
-Restart backend, keep terminal visible filtered for OPTIONS SAFETY NET. In a single fresh conversation, ask which clients have overdue invoices right now at least eight times in a row, spaced normally, specifically trying to catch another case where the safety net actually has to construct and append a marker, not just cases where the model already included it correctly on its own. When the safety net logs that it appended a marker, confirm in the same moment that the browser actually shows the clickable buttons this time, not just that the backend log looks correct.
+Restart backend, keep terminal visible filtered for OPTIONS SAFETY NET and tool execution confirmation. In a single fresh conversation, ask which clients have overdue invoices right now at least ten times in a row, spaced normally. For every single one of the ten, confirm in the backend log that get_overdue_invoices was actually called on that turn, with no exceptions this time, not nine out of ten, not eight out of ten, all ten. Confirm the clickable buttons render every single time as a direct result.
 
-Report pass or fail individually for all eight attempts, and specifically flag which attempts, if any, involved the safety net actually firing versus the model including the marker on its own, since both cases need to work correctly now.
+Separately, ask an unrelated operational question that does not involve overdue invoices at all, such as which staff member has the lightest workload right now, and confirm this new forced tool_choice logic does not incorrectly interfere with it, that question should proceed exactly as it always has, calling whatever tool is actually appropriate for it, not get_overdue_invoices.
+
+Report pass or fail individually for all ten overdue invoice attempts, and for the separate unrelated question check.
 
 GIT:
 git add -A
-git commit -m "fix OPTIONS safety net correction never being transmitted to the frontend, since the only mechanism for sending corrected text ran before the safety net modified the response, meaning the safety net's own logic was already fully correct but its output was a dead end that never reached the client, confirmed via backend logs showing correct marker construction alongside no buttons rendering in the browser"
+git commit -m "force get_overdue_invoices to be called via the API's own tool_choice parameter instead of relying solely on a prompt instruction, since prompt-only compliance has now been proven unreliable across multiple separate real test sessions tonight despite repeated reinforcement, closing this gap at the code level where it can actually be guaranteed rather than merely requested"
 git pull --rebase origin main
 git push origin main

@@ -338,6 +338,30 @@ _MULTI_CLIENT_TOOL_EXTRACTORS: dict[str, object] = {
 }
 
 
+
+def _is_overdue_invoices_question(message: str) -> bool:
+    """Return True only when the message is unambiguously asking about overdue
+    invoices specifically, not merely about any operational topic that shares a
+    word like overdue or outstanding. Used to force tool_choice on iteration 0
+    so get_overdue_invoices is guaranteed to be called rather than skipped."""
+    lower = message.lower()
+    invoice_words = {"invoice", "invoices"}
+    payment_words = {"overdue", "owe", "owes", "outstanding", "unpaid"}
+    has_invoice = any(w in lower for w in invoice_words)
+    has_payment = any(w in lower for w in payment_words)
+    if has_invoice and has_payment:
+        return True
+    explicit_phrases = {
+        "who owes us money",
+        "who owes us",
+        "which clients owe",
+        "clients owe",
+        "overdue balances",
+        "outstanding balances",
+    }
+    return any(p in lower for p in explicit_phrases)
+
+
 class MessageItem(BaseModel):
     role: str
     content: str
@@ -796,6 +820,21 @@ Respond with exactly one word: SAFE or UNSAFE. Nothing else.""",
             # Tool use loop -- max 5 iterations
             for _iteration in range(5):
                 try:
+                    # On the first iteration, force get_overdue_invoices if the
+                    # question is specifically about overdue invoices. Prompt-only
+                    # compliance has been proven unreliable for this case across
+                    # multiple sessions. tool_choice={"type":"tool"} removes the
+                    # model's discretion entirely for this one turn.
+                    # On all subsequent iterations, revert to auto so the model
+                    # can freely choose follow-up tool calls or respond normally.
+                    if _iteration == 0 and _is_overdue_invoices_question(_last_user_msg):
+                        _tool_choice: dict = {"type": "tool", "name": "get_overdue_invoices"}
+                        logger.info(
+                            f"[TOOL CHOICE] forcing get_overdue_invoices on iteration 0 "
+                            f"for firm {current_firm.id}"
+                        )
+                    else:
+                        _tool_choice = {"type": "auto"}
                     # TEMP: testing claude-sonnet-5 (released 2026-06-30) as a possible
                     # replacement for the claude-opus-4-8 swap, itself a temporary
                     # substitute for claude-fable-5 which remains suspended under an
@@ -812,6 +851,7 @@ Respond with exactly one word: SAFE or UNSAFE. Nothing else.""",
                         system=_system_blocks,
                         tools=_CONCIERGE_TOOLS,
                         messages=current_messages,
+                        tool_choice=_tool_choice,
                         output_config={"effort": "medium"},
                     ) as stream:
                         accumulated_text = ""
