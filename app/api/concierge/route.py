@@ -851,8 +851,15 @@ Respond with exactly one word: SAFE or UNSAFE. Nothing else.""",
                             if block.name in _MULTI_CLIENT_TOOL_EXTRACTORS:
                                 try:
                                     _captured_tool_results[block.name] = _json.loads(result_text)
-                                except Exception:
-                                    pass
+                                    logger.info(
+                                        f"[OPTIONS SAFETY NET] captured result for {block.name}: "
+                                        f"raw keys={list(_captured_tool_results[block.name].keys())}"
+                                    )
+                                except Exception as _cap_exc:
+                                    logger.warning(
+                                        f"[OPTIONS SAFETY NET] failed to parse result for "
+                                        f"{block.name}: {_cap_exc}"
+                                    )
                             tool_results.append({
                                 "type": "tool_result",
                                 "tool_use_id": block.id,
@@ -896,18 +903,53 @@ Respond with exactly one word: SAFE or UNSAFE. Nothing else.""",
                 # yielding anything further. Only fires when no OPTIONS marker
                 # is present AND no completed draft block is present (a draft
                 # means the model correctly resolved to a single client).
-                if "[OPTIONS:" not in filtered_final and "---DRAFT:" not in filtered_final:
+                _sn_captured_tools = list(_captured_tool_results.keys())
+                _sn_options_already_present = "[OPTIONS:" in filtered_final
+                _sn_draft_already_present = "---DRAFT:" in filtered_final
+                logger.info(
+                    f"[OPTIONS SAFETY NET] check running -- "
+                    f"captured_tools={_sn_captured_tools} "
+                    f"options_already_present={_sn_options_already_present} "
+                    f"draft_already_present={_sn_draft_already_present} "
+                    f"firm={current_firm.id}"
+                )
+                if not _sn_options_already_present and not _sn_draft_already_present:
                     for _tool_name, _extractor in _MULTI_CLIENT_TOOL_EXTRACTORS.items():
                         if _tool_name in _captured_tool_results:
                             _client_names = _extractor(_captured_tool_results[_tool_name])
+                            logger.info(
+                                f"[OPTIONS SAFETY NET] {_tool_name} found in captured results: "
+                                f"extracted {len(_client_names)} distinct client names: {_client_names}"
+                            )
                             if len(_client_names) > 1:
                                 _options_marker = "[OPTIONS:" + _json.dumps(_client_names) + "]"
                                 filtered_final = filtered_final.rstrip() + "\n" + _options_marker
                                 logger.info(
-                                    f"OPTIONS safety net: appended marker for {len(_client_names)} "
+                                    f"[OPTIONS SAFETY NET] appended marker for {len(_client_names)} "
                                     f"clients from {_tool_name} (firm {current_firm.id})"
                                 )
                                 break
+                            else:
+                                logger.info(
+                                    f"[OPTIONS SAFETY NET] only {len(_client_names)} distinct client "
+                                    f"from {_tool_name} -- no marker needed (single client case)"
+                                )
+                        else:
+                            logger.info(
+                                f"[OPTIONS SAFETY NET] {_tool_name} NOT found in captured_tool_results "
+                                f"-- tool was not called this turn or capture failed"
+                            )
+                else:
+                    if _sn_options_already_present:
+                        logger.info(
+                            f"[OPTIONS SAFETY NET] skipped -- OPTIONS marker already present "
+                            f"in filtered_final (firm {current_firm.id})"
+                        )
+                    if _sn_draft_already_present:
+                        logger.info(
+                            f"[OPTIONS SAFETY NET] skipped -- draft block already present "
+                            f"in filtered_final (firm {current_firm.id})"
+                        )
 
                 # Trailing marker so the frontend can render contextually
                 # relevant suggestion chips without re-guessing the topic

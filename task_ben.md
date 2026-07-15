@@ -54,32 +54,40 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Fix OPTIONS safety net constructing the wrong marker format
+TASK: Prevent the model from answering live-data questions from memory instead of a fresh tool call
 
 USE: claude sonnet
 
 VERIFY BEFORE ACT:
-grep -n "_MULTI_CLIENT_TOOL_EXTRACTORS\|OPTIONS:.*name1" /home/corby/jamm-os/app/api/concierge/route.py
-grep -n "\[OPTIONS:(\[" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+grep -n "_CONCIERGE_TOOLS\s*=" /home/corby/jamm-os/app/api/concierge/route.py
+grep -n "SCOPE\|live data\|always call" /home/corby/jamm-os/app/api/concierge/prompts.py | head -20
 
-Confirm both exist. The frontend regex requires a JSON array wrapped inside the marker, for example [OPTIONS:["a","b","c"]], with double closing brackets. The backend safety net currently constructs [OPTIONS:name1|name2|...], pipe separated, single bracket, which will never match this regex and will render as literal visible text instead of buttons.
+Confirm current state before editing. Read the full system prompt section governing tool use and live data in full.
+
+WHAT IS WRONG:
+
+Confirmed live via backend logs: when the same live-data question was asked a fourth time within the same conversation, having already been asked and correctly answered three times before, the model did not call get_overdue_invoices at all this turn, captured_tools was empty. It answered directly from its own memory of the earlier turns in the conversation instead of re-querying live data. This caused the OPTIONS safety net to correctly find nothing to attach to, since no tool was actually called, but the underlying issue is more serious than the missing marker: the model treating a repeated question as not requiring a fresh data lookup is a real staleness risk, directly contradicting the core standard that the agent must always know the real, current, live answer, not a remembered one from earlier in the same conversation. If the underlying data had genuinely changed between the first and fourth ask, this same behavior would have produced a confidently wrong answer instead of just a missing marker.
 
 CHANGE INSTRUCTIONS:
 
-Find the exact line where the safety net constructs its OPTIONS string from the captured client names. Change it to build a proper JSON array using Python's json.dumps on the list of client names, then wrap that JSON string inside the marker exactly as the model's own output does elsewhere, producing a string of the form [OPTIONS:] followed immediately by the JSON array, followed by a closing bracket, so the final result looks like [OPTIONS:["Goldstein Family Trust","Marcus & Diana Webb","Brightline Properties LLC"]], not the pipe separated version currently being built.
+Add an explicit, absolute instruction to the system prompt, in the section governing tool use and live data: whenever a question requires live firm data, the relevant tool must be called fresh every single time that question is asked, even if the exact same question was already asked and answered earlier in the same conversation. Never answer a live data question using only a remembered result from an earlier turn. State plainly that conversation history is for context and continuity, not a substitute for a fresh data lookup, and that a firm owner asking the same question twice may legitimately be checking whether anything has changed since they last asked, which a memory based answer would silently fail to reflect.
 
 VERIFY AFTER ACT:
 
-Run the same standalone test used to verify this feature originally, but this time assert the exact string produced matches the pattern the frontend regex expects, for example asserting it contains a literal ["  immediately after OPTIONS: and ends with "]] Paste the real output.
+grep -n "fresh every single time\|Never answer a live data question" /home/corby/jamm-os/app/api/concierge/prompts.py
+
+Expected: present.
 
 python3 -c "from app.main import app; print('OK')"
 
 MANUAL VERIFICATION:
 
-Restart backend. Ask which clients have overdue invoices right now, confirm the resulting marker in the raw console output now uses the JSON array format, and confirm actual clickable buttons render, not raw bracket text.
+Restart backend, keep terminal visible filtered for OPTIONS SAFETY NET and tool execution logs. In a single fresh conversation, ask which clients have overdue invoices right now at least six times in a row, spaced normally. For every single attempt, confirm in the backend log that get_overdue_invoices was actually called that turn, not skipped, and confirm the OPTIONS marker and clickable buttons are present every time as a result.
+
+Report the tool-call confirmation and marker presence individually for all six attempts, not a general impression.
 
 GIT:
 git add -A
-git commit -m "fix OPTIONS safety net constructing a pipe separated format instead of the JSON array format the frontend regex actually requires, which would have rendered as raw visible text instead of clickable buttons"
+git commit -m "require the model to always call live data tools fresh for every question requiring live data, even when the same question was already asked earlier in the same conversation, since answering from memory instead of a fresh lookup was causing the OPTIONS safety net to have no fresh tool result to work with and is a real staleness risk independent of that specific symptom"
 git pull --rebase origin main
 git push origin main

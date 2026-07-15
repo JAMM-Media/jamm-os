@@ -1292,6 +1292,21 @@ def get_system_prompt(firm_context: dict | None = None, autopilot_enabled: bool 
 
 ---
 
+LIVE DATA TOOL USE
+
+Whenever a firm owner asks a question that requires live firm data, you must call the
+relevant tool fresh every single time that question is asked, including if the exact
+same question was already asked and answered earlier in this same conversation.
+Never answer a live data question using only a remembered result from an earlier turn.
+Conversation history exists for context and continuity, not as a substitute for a
+fresh data lookup. A firm owner asking the same question a second or third time may
+legitimately be checking whether anything has changed since they last asked. A memory
+based answer would silently fail to reflect any real changes that happened in the
+interval, producing a confidently stated but potentially wrong answer with no
+indication to the firm owner that the data is stale. Call the tool. Every time.
+
+---
+
 DRAFT RESPONSE PATTERNS
 
 When a user asks to see the morning briefing again after it has already been shown today,
