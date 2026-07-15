@@ -54,61 +54,32 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Build a backend safety net that deterministically constructs the OPTIONS marker when the model omits it after a multi-client tool result
+TASK: Fix OPTIONS safety net constructing the wrong marker format
 
-USE: Fable 5
+USE: claude sonnet
 
 VERIFY BEFORE ACT:
-sed -n '820,865p' /home/corby/jamm-os/app/api/concierge/route.py
-grep -n "def get_overdue_invoices" -A 30 /home/corby/jamm-os/app/api/concierge/functions.py
+grep -n "_MULTI_CLIENT_TOOL_EXTRACTORS\|OPTIONS:.*name1" /home/corby/jamm-os/app/api/concierge/route.py
+grep -n "\[OPTIONS:(\[" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-Confirm the current tool-use loop structure matches what is described below, and confirm the exact real shape of get_overdue_invoices's returned dict, specifically the field name holding the list of individual overdue invoices and the field name holding each invoice's client name, before writing any extraction code. Do not assume field names, read them directly.
-
-WHAT IS WRONG:
-
-The MULTIPLE QUALIFYING CLIENTS rule, requiring the OPTIONS marker whenever a live data call returns more than one named client, has now failed three separate times tonight for the exact same underlying reason across different specific triggers: a marker ordering bug, a prompt paragraph adjacency bug, and now, confirmed live after both of those were fixed, a case where the model simply did not include the marker in its response despite everything else being correct, including asking the right clarifying question in prose. This is not a wording problem that can be solved with a fourth prompt rewrite. A soft, natural language instruction to an LLM cannot guarantee one hundred percent compliance no matter how it is phrased, since the model's response is still generated probabilistically each time. The backend already knows with total certainty when a multi-client tool call happened and exactly which real clients it returned, since it executed that call itself. Relying on the model to remember to also write that same information back out in a specific marker format is fragile in a way that code-level enforcement is not.
+Confirm both exist. The frontend regex requires a JSON array wrapped inside the marker, for example [OPTIONS:["a","b","c"]], with double closing brackets. The backend safety net currently constructs [OPTIONS:name1|name2|...], pipe separated, single bracket, which will never match this regex and will render as literal visible text instead of buttons.
 
 CHANGE INSTRUCTIONS:
 
-Immediately after the tool-use loop exits, at the point where final_text and filtered_final are computed, add a deterministic check and correction step, before this text is yielded to the frontend.
-
-Track, across the full tool-use loop, whether get_overdue_invoices was called during this turn and what it returned, specifically capturing the list of individual overdue invoices and each one's client name from the real tool result already sitting in memory from execution.
-
-After filtered_final is computed, check two things: whether get_overdue_invoices was called this turn and returned more than one distinct client, and whether filtered_final already contains an OPTIONS marker. If a multi-client result exists and no OPTIONS marker is present in the final text, and the response does not already contain a completed draft block, construct the correct OPTIONS marker directly from the real client names captured from the tool result, and append it to filtered_final in the same format the model would have used, before this text is sent onward to the rest of the existing pipeline, including the TOPIC marker logic and the SSE yield.
-
-Build this in a way that is clearly extensible to other live data functions later, for example a small mapping of tool name to a function that extracts a list of client names from that specific tool's result shape, with get_overdue_invoices as the first and only entry for now. Do not attempt to wire up every other live data function in this task, that is deliberately out of scope, this task solves the one proven, repeatedly failing case.
-
-Do not change the existing prompt instructions in prompts.py, this is a backend safety net operating independently of and in addition to those instructions, not a replacement for them. Do not change anything about how the OPTIONS marker gets parsed or rendered on the frontend, that logic is already correct and only needs a reliably present marker to work with.
+Find the exact line where the safety net constructs its OPTIONS string from the captured client names. Change it to build a proper JSON array using Python's json.dumps on the list of client names, then wrap that JSON string inside the marker exactly as the model's own output does elsewhere, producing a string of the form [OPTIONS:] followed immediately by the JSON array, followed by a closing bracket, so the final result looks like [OPTIONS:["Goldstein Family Trust","Marcus & Diana Webb","Brightline Properties LLC"]], not the pipe separated version currently being built.
 
 VERIFY AFTER ACT:
 
-grep -n "OPTIONS.*safety net\|_extract_client_names\|multi_client_tool" /home/corby/jamm-os/app/api/concierge/route.py
-
-Confirm the new deterministic construction logic is present near where final_text and filtered_final are computed.
+Run the same standalone test used to verify this feature originally, but this time assert the exact string produced matches the pattern the frontend regex expects, for example asserting it contains a literal ["  immediately after OPTIONS: and ends with "]] Paste the real output.
 
 python3 -c "from app.main import app; print('OK')"
 
-Also write a small standalone script that directly calls the relevant part of this logic with a fake tool result containing more than one client and no existing OPTIONS marker in the text, confirming the correct marker gets appended, and run it, pasting the real output:
-
-python3 -c "
-# construct a minimal test of the new extraction and append logic here,
-# using a fake multi-client get_overdue_invoices style result and a fake
-# response string with no OPTIONS marker, confirming the function under
-# test appends the correct marker with the real names from the fake data
-"
-
 MANUAL VERIFICATION:
 
-Restart backend only.
-
-Ask which clients have overdue invoices right now at least five separate times in a row, spaced normally, not rapid fire, in fresh separate conversations if possible to avoid any interaction with the stale-draft fix from earlier. Confirm the OPTIONS marker and the clickable client buttons appear every single one of the five times, not most of them.
-
-Separately, ask a question involving get_overdue_invoices where only one client actually qualifies, if achievable with the current test data, or reason about this from the code directly, and confirm the safety net does not incorrectly attach an OPTIONS marker when there is only one client, since that would be a new, different bug.
-
-Report pass or fail individually for all five repetitions, and for the single-client case.
+Restart backend. Ask which clients have overdue invoices right now, confirm the resulting marker in the raw console output now uses the JSON array format, and confirm actual clickable buttons render, not raw bracket text.
 
 GIT:
 git add -A
-git commit -m "add a deterministic backend safety net that constructs the OPTIONS marker directly from real tool result data when the model omits it after a multi-client overdue invoices call, since the prompt instruction alone has now failed to guarantee this three separate times tonight despite being correctly worded and correctly positioned, built as an extensible registry so other live data functions can be added to this same mechanism later"
+git commit -m "fix OPTIONS safety net constructing a pipe separated format instead of the JSON array format the frontend regex actually requires, which would have rendered as raw visible text instead of clickable buttons"
 git pull --rebase origin main
 git push origin main

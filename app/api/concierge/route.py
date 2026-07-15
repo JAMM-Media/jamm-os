@@ -901,7 +901,7 @@ Respond with exactly one word: SAFE or UNSAFE. Nothing else.""",
                         if _tool_name in _captured_tool_results:
                             _client_names = _extractor(_captured_tool_results[_tool_name])
                             if len(_client_names) > 1:
-                                _options_marker = "[OPTIONS:" + "|".join(_client_names) + "]"
+                                _options_marker = "[OPTIONS:" + _json.dumps(_client_names) + "]"
                                 filtered_final = filtered_final.rstrip() + "\n" + _options_marker
                                 logger.info(
                                     f"OPTIONS safety net: appended marker for {len(_client_names)} "
