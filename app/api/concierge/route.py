@@ -891,11 +891,8 @@ Respond with exactly one word: SAFE or UNSAFE. Nothing else.""",
 
                 final_text = accumulated_text
                 filtered_final = filter_output(final_text)
-                if filtered_final != final_text:
-                    # Text already streamed progressively; send replacement sentinel.
-                    yield f"data: \n\n"
-                    yield f"data: [FILTERED]\n\n"
-                    yield f"data: {filtered_final}\n\n"
+                # Do not yield FILTERED here -- the safety net below may further
+                # modify filtered_final. One single yield happens after both have run.
 
                 # OPTIONS marker safety net: if a multi-client tool result was
                 # captured this turn and the model omitted the OPTIONS marker,
@@ -950,6 +947,15 @@ Respond with exactly one word: SAFE or UNSAFE. Nothing else.""",
                             f"[OPTIONS SAFETY NET] skipped -- draft block already present "
                             f"in filtered_final (firm {current_firm.id})"
                         )
+
+                # Single final FILTERED yield: if either the leak filter or the
+                # safety net modified filtered_final, transmit the fully corrected
+                # text exactly once. This must come after both have had a chance
+                # to modify filtered_final, not before.
+                if filtered_final != final_text:
+                    yield f"data: \n\n"
+                    yield f"data: [FILTERED]\n\n"
+                    yield f"data: {filtered_final}\n\n"
 
                 # Trailing marker so the frontend can render contextually
                 # relevant suggestion chips without re-guessing the topic

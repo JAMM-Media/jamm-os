@@ -54,40 +54,46 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Prevent the model from answering live-data questions from memory instead of a fresh tool call
+TASK: Fix OPTIONS safety net's corrected text never being transmitted to the frontend
 
-USE: claude sonnet
+USE: Fable 5
 
 VERIFY BEFORE ACT:
-grep -n "_CONCIERGE_TOOLS\s*=" /home/corby/jamm-os/app/api/concierge/route.py
-grep -n "SCOPE\|live data\|always call" /home/corby/jamm-os/app/api/concierge/prompts.py | head -20
+sed -n '888,940p' /home/corby/jamm-os/app/api/concierge/route.py
+grep -n "\[FILTERED\]" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-Confirm current state before editing. Read the full system prompt section governing tool use and live data in full.
+Confirm the current structure matches exactly what is described below, and confirm how the frontend actually handles a [FILTERED] sentinel event, since the fix needs to reuse that exact same proven mechanism, not invent a new one.
 
 WHAT IS WRONG:
 
-Confirmed live via backend logs: when the same live-data question was asked a fourth time within the same conversation, having already been asked and correctly answered three times before, the model did not call get_overdue_invoices at all this turn, captured_tools was empty. It answered directly from its own memory of the earlier turns in the conversation instead of re-querying live data. This caused the OPTIONS safety net to correctly find nothing to attach to, since no tool was actually called, but the underlying issue is more serious than the missing marker: the model treating a repeated question as not requiring a fresh data lookup is a real staleness risk, directly contradicting the core standard that the agent must always know the real, current, live answer, not a remembered one from earlier in the same conversation. If the underlying data had genuinely changed between the first and fourth ask, this same behavior would have produced a confidently wrong answer instead of just a missing marker.
+The OPTIONS safety net's own internal logic is confirmed correct via backend logs: it correctly detects a multi-client tool result, correctly extracts real client names, and correctly appends a well-formed OPTIONS marker to filtered_final. However, the only existing mechanism that sends a corrected version of the response text to the frontend, the FILTERED sentinel and replacement text yield, only fires inside a conditional block that runs and completes before the safety net executes at all. The safety net's modification to filtered_final happens strictly afterward, with no yield statement following it anywhere. This means the safety net's correction is computed on the server and then never transmitted to the client under any circumstance, confirmed live: the backend log showed the marker being correctly constructed and appended, while the frontend received no marker at all and rendered no buttons.
 
 CHANGE INSTRUCTIONS:
 
-Add an explicit, absolute instruction to the system prompt, in the section governing tool use and live data: whenever a question requires live firm data, the relevant tool must be called fresh every single time that question is asked, even if the exact same question was already asked and answered earlier in the same conversation. Never answer a live data question using only a remembered result from an earlier turn. State plainly that conversation history is for context and continuity, not a substitute for a fresh data lookup, and that a firm owner asking the same question twice may legitimately be checking whether anything has changed since they last asked, which a memory based answer would silently fail to reflect.
+Restructure this section so there is exactly one final determination of the true, fully corrected response text, computed after both the leak filter and the OPTIONS safety net have had a chance to modify it, followed by exactly one yield of the FILTERED sentinel and replacement text pattern if and only if the fully corrected text differs from what was originally streamed to the client during generation.
+
+Concretely: compute filtered_final from the leak filter as it does today, but do not yield the FILTERED sentinel immediately. Run the OPTIONS safety net logic against this filtered_final exactly as it already does, allowing it to further modify filtered_final if needed. Only after both of these steps have completed, compare this final version of filtered_final against the original final_text that was actually streamed to the client during generation, and if they differ at all, for any reason, whether from the leak filter, the safety net, or both, yield the FILTERED sentinel and the fully corrected filtered_final exactly once, containing every correction that was made.
+
+Do not create two separate yield blocks for the two different correction sources. There should be one single source of truth for what the truly final, fully corrected text is, and one single transmission of it to the frontend when it differs from what was already streamed.
+
+Do not change the frontend's handling of the FILTERED sentinel, it already works correctly, this fix only needs to make sure the safety net's correction is actually included in what gets sent through that existing, proven mechanism.
 
 VERIFY AFTER ACT:
 
-grep -n "fresh every single time\|Never answer a live data question" /home/corby/jamm-os/app/api/concierge/prompts.py
+sed -n '888,945p' /home/corby/jamm-os/app/api/concierge/route.py
 
-Expected: present.
+Confirm there is now exactly one yield of the FILTERED sentinel pattern, positioned after both the leak filter and the safety net have both had a chance to run, not two separate yield blocks.
 
 python3 -c "from app.main import app; print('OK')"
 
 MANUAL VERIFICATION:
 
-Restart backend, keep terminal visible filtered for OPTIONS SAFETY NET and tool execution logs. In a single fresh conversation, ask which clients have overdue invoices right now at least six times in a row, spaced normally. For every single attempt, confirm in the backend log that get_overdue_invoices was actually called that turn, not skipped, and confirm the OPTIONS marker and clickable buttons are present every time as a result.
+Restart backend, keep terminal visible filtered for OPTIONS SAFETY NET. In a single fresh conversation, ask which clients have overdue invoices right now at least eight times in a row, spaced normally, specifically trying to catch another case where the safety net actually has to construct and append a marker, not just cases where the model already included it correctly on its own. When the safety net logs that it appended a marker, confirm in the same moment that the browser actually shows the clickable buttons this time, not just that the backend log looks correct.
 
-Report the tool-call confirmation and marker presence individually for all six attempts, not a general impression.
+Report pass or fail individually for all eight attempts, and specifically flag which attempts, if any, involved the safety net actually firing versus the model including the marker on its own, since both cases need to work correctly now.
 
 GIT:
 git add -A
-git commit -m "require the model to always call live data tools fresh for every question requiring live data, even when the same question was already asked earlier in the same conversation, since answering from memory instead of a fresh lookup was causing the OPTIONS safety net to have no fresh tool result to work with and is a real staleness risk independent of that specific symptom"
+git commit -m "fix OPTIONS safety net correction never being transmitted to the frontend, since the only mechanism for sending corrected text ran before the safety net modified the response, meaning the safety net's own logic was already fully correct but its output was a dead end that never reached the client, confirmed via backend logs showing correct marker construction alongside no buttons rendering in the browser"
 git pull --rebase origin main
 git push origin main
