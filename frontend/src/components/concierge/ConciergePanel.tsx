@@ -427,7 +427,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
           time_tracking: ['Go to Timesheets'],
           automations: ['Go to Settings'],
           irs_authorizations: ['Go to Clients'],
-          staff: ['Go to Settings'],
+          staff: ['Go to Dashboard'],
           settings: ['Go to Settings'],
           operational_data: ['Go to Dashboard'],
           qc_checklists: ['Go to Engagements'],
@@ -612,6 +612,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
       'Go to Calendar': '/calendar',
       'Import clients': '/clients',
       'Go to Timesheets': '/timesheets',
+      'Go to Staff': '/staff',
     }
     if (label === 'New engagement') {
       void executeAction({ type: 'navigate-and-open', route: '/engagements', modal: 'new-engagement' })

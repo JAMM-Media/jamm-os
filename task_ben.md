@@ -54,46 +54,40 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Force get_overdue_invoices to actually be called via tool_choice, since prompt instructions alone cannot guarantee it
+TASK: Fix staff topic chip pointing to Settings instead of the real dedicated Staff page
 
-USE: Fable 5
+USE: claude sonnet
 
 VERIFY BEFORE ACT:
-sed -n '795,825p' /home/corby/jamm-os/app/api/concierge/route.py
-grep -n "_OPERATIONAL_KEYWORDS\s*=" -A 20 /home/corby/jamm-os/app/api/concierge/route.py
+grep -n "staff:" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+find /home/corby/jamm-os/frontend/src/app -path "*staff*page.tsx"
 
-Confirm the tool-use loop matches exactly what is described below before editing.
+Confirm the staff topic currently maps to Go to Settings, and confirm the real staff route exists at the path found.
 
 WHAT IS WRONG:
 
-tool_choice has never been set anywhere in this file, confirmed by direct search. Every tool-use API call has always defaulted to auto, meaning the model has always had full discretion over whether to call any tool at all, on every turn, including the very first one. Confirmed live, repeatedly, across multiple separate diagnostic sessions tonight: a question that clearly and specifically requires get_overdue_invoices sometimes results in the model answering from memory or general reasoning instead of calling the tool at all, despite an explicit, emphatically worded prompt instruction added earlier tonight specifically to prevent this. A natural language instruction to an LLM, no matter how strongly worded or how many times reinforced, cannot guarantee one hundred percent compliance, since the model's behavior on any given turn remains probabilistic. The Anthropic API provides tool_choice specifically to remove this discretion at the code level when a tool call must not be skippable, and it has never been used anywhere in this codebase.
+The staff topic chip currently points to Go to Settings. Staff and team management, including the roster component, lives at its own dedicated route, confirmed to exist separately from Settings. Sending a firm owner asking about staff capacity or workload to the Settings page instead of the actual staff management page is a real destination mismatch, the same category of bug already found and fixed once tonight for the time_tracking topic pointing at billing instead of timesheets.
 
 CHANGE INSTRUCTIONS:
 
-Add a narrow, specific detection function, separate from the existing broad _OPERATIONAL_KEYWORDS set, that determines whether a message is unambiguously and specifically about overdue invoices rather than some other operational topic that happens to share a keyword like overdue or outstanding. Base this on genuinely specific phrase combinations such as the co-occurrence of a word like invoice or invoices together with overdue, owe, owes, or outstanding, or explicit phrases like who owes us money or which clients have overdue invoices. Do not rely on the single word overdue alone, since that word already appears broadly across the operational keyword set for engagements, tasks, and other unrelated domains, and forcing this specific tool on unrelated questions would be a new bug, not a fix.
+Change the staff entry in the TOPIC_CHIPS object from Go to Settings to a chip pointing at the real staff route found above, using a label consistent with the existing naming pattern used by other entries, such as Go to Staff or Go to Team, matching whatever terminology is already used elsewhere in this app for this page, check the actual page title or heading if one exists rather than guessing at the exact wording.
 
-In the tool-use loop, on the first iteration only, iteration index zero, if this new specific detection function returns true for the current user's message, pass tool_choice as a forced choice of the get_overdue_invoices tool specifically, using whatever parameter shape the installed Anthropic SDK version expects for forcing a single named tool, confirm the correct shape from the SDK's own type definitions or documentation comments already present elsewhere in this codebase if any exist, do not guess at the exact parameter structure. On every iteration after the first, and on the first iteration when this specific detection does not apply, continue passing tool_choice as auto exactly as the implicit current default behavior, so the model retains normal discretion for every other kind of question and for every turn after the initial forced call.
-
-Do not change the broader _OPERATIONAL_KEYWORDS set or _is_operational_question, which correctly and separately decides whether to enter the tool-use loop at all. This task only affects whether tool_choice is forced once inside that loop for this one specific, narrow case.
+Do not change any other entry in TOPIC_CHIPS.
 
 VERIFY AFTER ACT:
 
-grep -n "tool_choice" /home/corby/jamm-os/app/api/concierge/route.py
+grep -n "staff:" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-Expected: present, conditionally applied only on the first iteration and only for the narrow overdue invoices detection.
+Expected: no longer Go to Settings, now pointing at the real staff page.
 
-python3 -c "from app.main import app; print('OK')"
+npm run build in frontend, expected zero TypeScript errors.
 
 MANUAL VERIFICATION:
 
-Restart backend, keep terminal visible filtered for OPTIONS SAFETY NET and tool execution confirmation. In a single fresh conversation, ask which clients have overdue invoices right now at least ten times in a row, spaced normally. For every single one of the ten, confirm in the backend log that get_overdue_invoices was actually called on that turn, with no exceptions this time, not nine out of ten, not eight out of ten, all ten. Confirm the clickable buttons render every single time as a direct result.
-
-Separately, ask an unrelated operational question that does not involve overdue invoices at all, such as which staff member has the lightest workload right now, and confirm this new forced tool_choice logic does not incorrectly interfere with it, that question should proceed exactly as it always has, calling whatever tool is actually appropriate for it, not get_overdue_invoices.
-
-Report pass or fail individually for all ten overdue invoice attempts, and for the separate unrelated question check.
+Restart frontend. Ask which staff member has the lightest workload right now, confirm the chip now correctly reads Go to Staff or similar, and confirm clicking it navigates to the real staff management page, not Settings.
 
 GIT:
 git add -A
-git commit -m "force get_overdue_invoices to be called via the API's own tool_choice parameter instead of relying solely on a prompt instruction, since prompt-only compliance has now been proven unreliable across multiple separate real test sessions tonight despite repeated reinforcement, closing this gap at the code level where it can actually be guaranteed rather than merely requested"
+git commit -m "fix staff topic chip pointing to Settings instead of the real dedicated staff management page, same category of destination mismatch already fixed once tonight for time_tracking"
 git pull --rebase origin main
 git push origin main
