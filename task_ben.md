@@ -54,40 +54,35 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Fix staff topic chip pointing to Settings instead of the real dedicated Staff page
+TASK: Extend bold rule to cover key terms in general knowledge answers, not just tool-derived figures
 
 USE: claude sonnet
 
 VERIFY BEFORE ACT:
-grep -n "staff:" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
-find /home/corby/jamm-os/frontend/src/app -path "*staff*page.tsx"
+grep -n "key figures" -B 2 -A 5 /home/corby/jamm-os/app/api/concierge/prompts.py
 
-Confirm the staff topic currently maps to Go to Settings, and confirm the real staff route exists at the path found.
+Confirm the current bold rule's exact wording before editing.
 
 WHAT IS WRONG:
 
-The staff topic chip currently points to Go to Settings. Staff and team management, including the roster component, lives at its own dedicated route, confirmed to exist separately from Settings. Sending a firm owner asking about staff capacity or workload to the Settings page instead of the actual staff management page is a real destination mismatch, the same category of bug already found and fixed once tonight for the time_tracking topic pointing at billing instead of timesheets.
+The existing bold rule only covers dollar amounts, counts, and dates that directly answer a question, which are always tool-derived figures. Confirmed live: a general tax knowledge question with no firm data involved, what is a 1120-S used for, produced a completely unbolded wall of text, technically correct per the current narrow rule, but a real readability gap. Educational and definitional answers with no numbers in them still benefit from bolding the specific terms being defined, so a firm owner can scan the response quickly.
 
 CHANGE INSTRUCTIONS:
 
-Change the staff entry in the TOPIC_CHIPS object from Go to Settings to a chip pointing at the real staff route found above, using a label consistent with the existing naming pattern used by other entries, such as Go to Staff or Go to Team, matching whatever terminology is already used elsewhere in this app for this page, check the actual page title or heading if one exists rather than guessing at the exact wording.
-
-Do not change any other entry in TOPIC_CHIPS.
+Add a new sentence directly alongside the existing bold rule, not replacing it: also bold the specific term, form number, or concept being directly defined or explained in a general knowledge answer, such as a tax form number or a piece of terminology central to the question, even when the response contains no dollar amounts or other figures. Keep this restrained, bold only the one or two central terms actually being explained, not every noun in the response.
 
 VERIFY AFTER ACT:
 
-grep -n "staff:" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+grep -n "term.*being.*defined\|central to the question" /home/corby/jamm-os/app/api/concierge/prompts.py
 
-Expected: no longer Go to Settings, now pointing at the real staff page.
-
-npm run build in frontend, expected zero TypeScript errors.
+Expected: present.
 
 MANUAL VERIFICATION:
 
-Restart frontend. Ask which staff member has the lightest workload right now, confirm the chip now correctly reads Go to Staff or similar, and confirm clicking it navigates to the real staff management page, not Settings.
+Restart backend. Ask what is a 1120-S used for, confirm the form name and key terms like S corporation are now bolded. Ask an unrelated firm-data question, confirm the existing figure-bolding behavior is unchanged.
 
 GIT:
 git add -A
-git commit -m "fix staff topic chip pointing to Settings instead of the real dedicated staff management page, same category of destination mismatch already fixed once tonight for time_tracking"
+git commit -m "extend bold formatting rule to cover key terms in general knowledge answers with no tool-derived figures, since educational responses were rendering as unbolded walls of text under the previous narrower rule"
 git pull --rebase origin main
 git push origin main
