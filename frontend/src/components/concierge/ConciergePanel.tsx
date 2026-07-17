@@ -22,7 +22,7 @@ interface Message {
   actionConfirm?: string
   isBriefing?: boolean
   skipReveal?: boolean
-  draft?: { type: string; content: string; source: string | null; clientName: string | null } | null
+  drafts?: Array<{ type: string; content: string; source: string | null; clientName: string | null }> | null
   options?: string[]
 }
 
@@ -127,7 +127,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
   const [briefingLoading, setBriefingLoading] = useState(false)
   const [isDownloading, setIsDownloading] = useState(false)
   const [copiedId, setCopiedId] = useState<string | null>(null)
-  const [editingDraftContent, setEditingDraftContent] = useState<Record<number, string>>({})
+  const [editingDraftContent, setEditingDraftContent] = useState<Record<string, string>>({})
   const [detailBriefing, setDetailBriefing] = useState<string | null>(null)
   const [detailReady, setDetailReady] = useState(false)
   const [pasteForm, setPasteForm] = useState({
@@ -385,8 +385,8 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
         }
 
         const filteredAssembled = filterOutput(stripTrailingMarkers(assembled))
-        const parsedDraft = parseDraftFromResponse(filteredAssembled)
-        const textForAction = parsedDraft ? parsedDraft.cleanedResponse : filteredAssembled
+        const parsedResult = parseDraftFromResponse(filteredAssembled)
+        const textForAction = parsedResult ? parsedResult.cleanedResponse : filteredAssembled
         const cleanContent = handleConciergeAction(textForAction)
         // Set the true final word count synchronously here, before revealActiveRef
         // is set to false in the finally block. The [messages]-keyed effect that
@@ -402,7 +402,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
             updated[updated.length - 1] = {
               role: 'concierge',
               content: cleanContent,
-              draft: parsedDraft ? { type: parsedDraft.type, content: parsedDraft.content, source: parsedDraft.source, clientName: parsedDraft.clientName } : null,
+              drafts: parsedResult ? parsedResult.drafts : null,
               options: parsedOptions.length > 0 ? parsedOptions : undefined,
             }
           }
@@ -424,16 +424,18 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
           document_requests: ['Go to Documents'],
           portal: ['Go to Clients'],
           billing: ['Go to Billing'],
-          time_tracking: ['Go to Billing'],
+          time_tracking: ['Go to Timesheets'],
           automations: ['Go to Settings'],
           irs_authorizations: ['Go to Clients'],
-          staff: ['Go to Settings'],
+          staff: ['Go to Dashboard'],
           settings: ['Go to Settings'],
           operational_data: ['Go to Dashboard'],
+          qc_checklists: ['Go to Engagements'],
+          signature_envelopes: ['Go to Engagements'],
           general: [],
         }
 
-        setSuggestions(parsedDraft || parsedOptions.length > 0 ? [] : (TOPIC_CHIPS[topic] ?? []).slice(0, 3))
+        setSuggestions(parsedResult || parsedOptions.length > 0 ? [] : (TOPIC_CHIPS[topic] ?? []).slice(0, 3))
       } catch {
         setMessages((prev) => {
           const updated = [...prev]
@@ -609,6 +611,8 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
       'Go to Tasks': '/tasks',
       'Go to Calendar': '/calendar',
       'Import clients': '/clients',
+      'Go to Timesheets': '/timesheets',
+      'Go to Staff': '/staff',
     }
     if (label === 'New engagement') {
       void executeAction({ type: 'navigate-and-open', route: '/engagements', modal: 'new-engagement' })
@@ -655,44 +659,44 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
   }
 
   function parseDraftFromResponse(text: string): {
-    type: string
-    content: string
-    source: string | null
-    clientName: string | null
+    drafts: Array<{ type: string; content: string; source: string | null; clientName: string | null }>
     cleanedResponse: string
   } | null {
     const startMarker = '---DRAFT:'
     const endMarker = '---END DRAFT---'
-    const startIdx = text.indexOf(startMarker)
-    const endIdx = text.indexOf(endMarker)
-    if (startIdx === -1 || endIdx === -1 || endIdx <= startIdx) return null
-
-    const typeEnd = text.indexOf('---', startIdx + startMarker.length)
-    if (typeEnd === -1) return null
-
-    const type = text.slice(startIdx + startMarker.length, typeEnd).trim()
-    let rawBlock = text.slice(typeEnd + 3, endIdx).trim()
-
-    // Strip SOURCE: first -- everything before it is potential content+CLIENT
-    let source: string | null = null
-    const sourceMatch = rawBlock.match(/SOURCE:\s*([\s\S]+?)(?:\n\s*\n|$)/)
-    if (sourceMatch) {
-      source = sourceMatch[1].replace(/\s+/g, ' ').trim()
-      rawBlock = rawBlock.slice(0, sourceMatch.index).trim()
+    const firstStartIdx = text.indexOf(startMarker)
+    if (firstStartIdx === -1) return null
+    const cleanedResponse = text.slice(0, firstStartIdx).trimEnd()
+    const drafts: Array<{ type: string; content: string; source: string | null; clientName: string | null }> = []
+    let searchFrom = 0
+    while (true) {
+      const startIdx = text.indexOf(startMarker, searchFrom)
+      if (startIdx === -1) break
+      const endIdx = text.indexOf(endMarker, startIdx)
+      if (endIdx === -1) break
+      const typeEnd = text.indexOf('---', startIdx + startMarker.length)
+      if (typeEnd === -1) break
+      const type = text.slice(startIdx + startMarker.length, typeEnd).trim()
+      let rawBlock = text.slice(typeEnd + 3, endIdx).trim()
+      let source: string | null = null
+      const sourceMatch = rawBlock.match(/SOURCE:\s*([\s\S]+?)(?:\n\s*\n|$)/)
+      if (sourceMatch) {
+        source = sourceMatch[1].replace(/\s+/g, ' ').trim()
+        rawBlock = rawBlock.slice(0, sourceMatch.index).trim()
+      }
+      let clientName: string | null = null
+      const clientMatch = rawBlock.match(/CLIENT:\s*(.+?)(?:\n|$)/)
+      if (clientMatch) {
+        clientName = clientMatch[1].trim() || null
+        rawBlock = rawBlock.slice(0, clientMatch.index).trim()
+      }
+      if (type && rawBlock) {
+        drafts.push({ type, content: rawBlock, source, clientName })
+      }
+      searchFrom = endIdx + endMarker.length
     }
-
-    // Strip CLIENT: from what remains so it does not appear in displayed content
-    let clientName: string | null = null
-    const clientMatch = rawBlock.match(/CLIENT:\s*(.+?)(?:\n|$)/)
-    if (clientMatch) {
-      clientName = clientMatch[1].trim() || null
-      rawBlock = rawBlock.slice(0, clientMatch.index).trim()
-    }
-
-    const cleanedResponse = text.slice(0, startIdx).trimEnd()
-
-    if (!type || !rawBlock) return null
-    return { type, content: rawBlock, source, clientName, cleanedResponse }
+    if (drafts.length === 0) return null
+    return { drafts, cleanedResponse }
   }
 
   function filterOutput(text: string): string {
@@ -1157,7 +1161,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
                 style={msg.role === 'user' ? { background: '#1F3148', color: '#FFFFFF' } : undefined}
               >
                 {msg.content ? (
-                  <div className={`prose prose-sm max-w-none text-[13px] ${msg.role === 'user' ? 'text-white' : 'text-[#374151] dark:text-[#9CA3AF]'}`}>
+                  <div className={`prose prose-sm max-w-none text-[13px] ${msg.role === 'user' ? 'text-white' : 'text-[#374151] dark:text-[#EDEEF0]'}`}>
                     <ReactMarkdown
                       components={{
                         h2: ({node, ...props}) => <h2 className="text-[13px] font-semibold text-[#1F3148] dark:text-[#EDEEF0] mt-3 mb-1 first:mt-0" {...props} />,
@@ -1397,111 +1401,114 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
                 )}
               </div>
             </div>
-            {msg.draft && (
-              <div className="ml-8 mt-2 rounded-[8px] bg-[#F0F4F8] dark:bg-[#1a2a3a] border border-[0.5px] border-[#C8CDD6] dark:border-[#3a4a5a] px-3 py-2.5">
-                <p className="text-[10px] text-[#6B7280] dark:text-[#9CA3AF] mb-1.5 font-medium uppercase tracking-wide">
-                  {msg.draft.type === 'CLIENT_EMAIL' ? 'Draft email' :
-                   msg.draft.type === 'INVOICE_ITEMS' ? 'Draft invoice' :
-                   msg.draft.type === 'STAFF_REASSIGN' ? 'Suggested reassignment' :
-                   msg.draft.type === 'IRS_RENEWAL' ? 'Draft renewal request' :
-                   'Draft'}
-                </p>
-                <textarea
-                  value={editingDraftContent[i] ?? msg.draft.content}
-                  onChange={(e) => setEditingDraftContent((prev) => ({ ...prev, [i]: e.target.value }))}
-                  rows={Math.min(8, Math.max(3, (editingDraftContent[i] ?? msg.draft.content).split('\n').length + 1))}
-                  className="w-full text-[12px] leading-[1.5] text-[#374151] dark:text-[#D1D5DB] bg-white dark:bg-[#2D2D2D] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] rounded-[6px] px-2 py-1.5 resize-none focus:outline-none focus:border-[#4A7FA5]"
-                />
-                {msg.draft.source && (
-                  <p className="text-[10px] text-[#9CA3AF] mt-1.5 italic">
-                    Based on: {msg.draft.source}
+            {(msg.drafts ?? []).map((draft, draftIdx) => {
+              const draftKey = `${i}-${draftIdx}`
+              const currentContent = editingDraftContent[draftKey] ?? draft.content
+              const isBatch = (msg.drafts?.length ?? 0) > 1
+              return (
+                <div key={draftIdx} className="ml-8 mt-2 rounded-[8px] bg-[#F0F4F8] dark:bg-[#1a2a3a] border border-[0.5px] border-[#C8CDD6] dark:border-[#3a4a5a] px-3 py-2.5">
+                  <p className="text-[10px] text-[#6B7280] dark:text-[#9CA3AF] mb-1.5 font-medium uppercase tracking-wide">
+                    {draft.type === 'CLIENT_EMAIL' ? 'Draft email' :
+                     draft.type === 'INVOICE_ITEMS' ? 'Draft invoice' :
+                     draft.type === 'STAFF_REASSIGN' ? 'Suggested reassignment' :
+                     draft.type === 'IRS_RENEWAL' ? 'Draft renewal request' :
+                     'Draft'}
+                    {isBatch && draft.clientName ? ` — ${draft.clientName}` : ''}
                   </p>
-                )}
-                <div className="flex gap-2 mt-2">
-                  <button
-                    onClick={async () => {
-                      const currentContent = editingDraftContent[i] ?? msg.draft!.content
-                      navigator.clipboard.writeText(currentContent).then(() => {
-                        setCopiedId(`msg-${i}`)
-                        setTimeout(() => setCopiedId(null), 2000)
-                      }).catch(() => {})
-                    }}
-                    className="text-[11px] font-medium px-2.5 py-1 rounded-[4px] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] text-[#6B7280] dark:text-[#9CA3AF] hover:border-[#4A7FA5] hover:text-[#4A7FA5] transition-colors"
-                  >
-                    {copiedId === `msg-${i}` ? 'Copied' : 'Copy'}
-                  </button>
-                  <button
-                    onClick={async () => {
-                      const currentContent = editingDraftContent[i] ?? msg.draft!.content
-
-                      if (msg.draft!.type === 'STAFF_REASSIGN') {
-                        const confirmed = await confirm('Open the engagement to apply this reassignment?')
-                        if (confirmed) router.push('/engagements')
-                        return
-                      }
-
-                      if (msg.draft!.type === 'INVOICE_ITEMS') {
-                        const confirmed = await confirm('Open billing to create this invoice?')
-                        if (confirmed) router.push('/billing')
-                        return
-                      }
-
-                      // CLIENT_EMAIL and IRS_RENEWAL: navigate to the client's
-                      // Messages tab with the draft pre-filled so the firm owner
-                      // sends it through the actual send feature after a final look.
-                      const navigateToClient = (clientId: string, clientDisplayName: string) => {
-                        confirm(
-                          `Open ${clientDisplayName}'s Messages tab with this draft ready to send?\n\nMessage:\n${currentContent}\n\nYou will have a final chance to review before sending.`
-                        ).then((confirmed) => {
-                          if (!confirmed) return
-                          const alreadyOnClientPage = pathname.startsWith(`/clients/${clientId}`)
-                          if (alreadyOnClientPage) {
-                            emitConciergeAction({ type: 'prefill-message', prefillMessage: currentContent })
-                          } else {
-                            sessionStorage.setItem(
-                              'jamm_concierge_pending',
-                              JSON.stringify({ clientId, prefillMessage: currentContent, _ts: Date.now() }),
-                            )
-                          }
-                          router.push(`/clients/${clientId}?tab=messages`)
+                  <textarea
+                    value={currentContent}
+                    onChange={(e) => setEditingDraftContent((prev) => ({ ...prev, [draftKey]: e.target.value }))}
+                    rows={Math.min(8, Math.max(3, currentContent.split('\n').length + 1))}
+                    className="w-full text-[12px] leading-[1.5] text-[#374151] dark:text-[#D1D5DB] bg-white dark:bg-[#2D2D2D] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] rounded-[6px] px-2 py-1.5 resize-none focus:outline-none focus:border-[#4A7FA5]"
+                  />
+                  {draft.source && (
+                    <p className="text-[10px] text-[#9CA3AF] mt-1.5 italic">
+                      Based on: {draft.source}
+                    </p>
+                  )}
+                  <div className="flex gap-2 mt-2">
+                    <button
+                      onClick={async () => {
+                        navigator.clipboard.writeText(currentContent).then(() => {
+                          setCopiedId(`msg-${draftKey}`)
+                          setTimeout(() => setCopiedId(null), 2000)
                         }).catch(() => {})
-                      }
-
-                      const contextClientId = uiContext.entity_type === 'client' ? uiContext.entity_id : null
-                      if (contextClientId) {
-                        navigateToClient(contextClientId, uiContext.entity_name ?? 'this client')
-                        return
-                      }
-
-                      const draftClientName = msg.draft!.clientName
-                      if (draftClientName) {
-                        try {
-                          const result = await api.get('/clients/', { params: { q: draftClientName, limit: 5 } })
-                          const clients: Array<{ id: string; name: string }> = result.data.items ?? []
-                          const exactMatch = clients.find((c) => c.name.toLowerCase() === draftClientName.toLowerCase())
-                          const match = exactMatch ?? (clients.length === 1 ? clients[0] : null)
-                          if (match) {
-                            navigateToClient(match.id, match.name)
-                            return
-                          }
-                        } catch {
-                          // fall through to fallback
+                      }}
+                      className="text-[11px] font-medium px-2.5 py-1 rounded-[4px] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] text-[#6B7280] dark:text-[#9CA3AF] hover:border-[#4A7FA5] hover:text-[#4A7FA5] transition-colors"
+                    >
+                      {copiedId === `msg-${draftKey}` ? 'Copied' : 'Copy'}
+                    </button>
+                    <button
+                      onClick={async () => {
+                        if (draft.type === 'STAFF_REASSIGN') {
+                          const confirmed = await confirm('Open the engagement to apply this reassignment?')
+                          if (confirmed) router.push('/engagements')
+                          return
                         }
-                        window.alert(`Could not find a client named "${draftClientName}" to open directly. Search for them in Clients and use the Messages tab to send this draft.`)
-                        return
-                      }
 
-                      window.alert('No specific client was identified for this draft. Open the client record directly and use the Messages tab to send it.')
-                    }}
-                    className="text-[11px] font-medium px-2.5 py-1 rounded-[4px] bg-[#1F3148] text-white hover:bg-[#2a4060] transition-colors"
-                  >
-                    {msg.draft.type === 'STAFF_REASSIGN' ? 'Open engagement' :
-                     msg.draft.type === 'INVOICE_ITEMS' ? 'Open billing' :
-                     'Open to send'}
-                  </button>
+                        if (draft.type === 'INVOICE_ITEMS') {
+                          const confirmed = await confirm('Open billing to create this invoice?')
+                          if (confirmed) router.push('/billing')
+                          return
+                        }
+
+                        // CLIENT_EMAIL and IRS_RENEWAL: navigate to the client's
+                        // Messages tab with the draft pre-filled so the firm owner
+                        // sends it through the actual send feature after a final look.
+                        const navigateToClient = (clientId: string, clientDisplayName: string) => {
+                          confirm(
+                            `Open ${clientDisplayName}'s Messages tab with this draft ready to send?\n\nMessage:\n${currentContent}\n\nYou will have a final chance to review before sending.`
+                          ).then((confirmed) => {
+                            if (!confirmed) return
+                            const alreadyOnClientPage = pathname.startsWith(`/clients/${clientId}`)
+                            if (alreadyOnClientPage) {
+                              emitConciergeAction({ type: 'prefill-message', prefillMessage: currentContent })
+                            } else {
+                              sessionStorage.setItem(
+                                'jamm_concierge_pending',
+                                JSON.stringify({ clientId, prefillMessage: currentContent, _ts: Date.now() }),
+                              )
+                            }
+                            router.push(`/clients/${clientId}?tab=messages`)
+                          }).catch(() => {})
+                        }
+
+                        const contextClientId = uiContext.entity_type === 'client' ? uiContext.entity_id : null
+                        if (contextClientId && !isBatch) {
+                          navigateToClient(contextClientId, uiContext.entity_name ?? 'this client')
+                          return
+                        }
+
+                        const draftClientName = draft.clientName
+                        if (draftClientName) {
+                          try {
+                            const result = await api.get('/clients/', { params: { q: draftClientName, limit: 5 } })
+                            const clients: Array<{ id: string; name: string }> = result.data.items ?? []
+                            const exactMatch = clients.find((c) => c.name.toLowerCase() === draftClientName.toLowerCase())
+                            const match = exactMatch ?? (clients.length === 1 ? clients[0] : null)
+                            if (match) {
+                              navigateToClient(match.id, match.name)
+                              return
+                            }
+                          } catch {
+                            // fall through to fallback
+                          }
+                          window.alert(`Could not find a client named "${draftClientName}" to open directly. Search for them in Clients and use the Messages tab to send this draft.`)
+                          return
+                        }
+
+                        window.alert('No specific client was identified for this draft. Open the client record directly and use the Messages tab to send it.')
+                      }}
+                      className="text-[11px] font-medium px-2.5 py-1 rounded-[4px] bg-[#1F3148] text-white hover:bg-[#2a4060] transition-colors"
+                    >
+                      {draft.type === 'STAFF_REASSIGN' ? 'Open engagement' :
+                       draft.type === 'INVOICE_ITEMS' ? 'Open billing' :
+                       'Open to send'}
+                    </button>
+                  </div>
                 </div>
-              </div>
-            )}
+              )
+            })}
             {!autopilotOn && suggestions.length > 0 && i === messages.length - 1 && msg.role === 'concierge' && revealedWordCount >= msg.content.split(/\s+/).filter(Boolean).length && (
               <div className="flex flex-wrap gap-2 mt-2 ml-8">
                 {suggestions.map((s) => (

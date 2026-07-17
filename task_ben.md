@@ -54,33 +54,40 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Add diagnostic logging to the reveal system, third distinct trigger found tonight, do not fix yet
+TASK: Fix staff topic chip pointing to Settings instead of the real dedicated Staff page
 
-USE: Fable 5
+USE: claude sonnet
 
 VERIFY BEFORE ACT:
-sed -n '160,195p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
-grep -n "revealSessionRef\|revealActiveRef" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+grep -n "staff:" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+find /home/corby/jamm-os/frontend/src/app -path "*staff*page.tsx"
 
-Confirm current state matches before editing.
+Confirm the staff topic currently maps to Go to Settings, and confirm the real staff route exists at the path found.
 
-WHAT THIS IS:
+WHAT IS WRONG:
 
-This is a diagnostic task, not a fix. A third distinct trigger for the same blank-display symptom has now been found tonight: a single normal question, asked at normal pace, not rapid fire, displayed permanently blank until a completely new message was sent, at which point the answer appeared immediately. Two prior triggers were already found and fixed tonight, a target-word-count-still-zero timing issue and a rapid-fire session race condition. This third trigger does not match either known cause exactly, since it happened on a single normal question with no rapid sequential messages involved. Rather than guess at a third distinct root cause blind, add logging to observe what actually happens the next time this is reproduced.
+The staff topic chip currently points to Go to Settings. Staff and team management, including the roster component, lives at its own dedicated route, confirmed to exist separately from Settings. Sending a firm owner asking about staff capacity or workload to the Settings page instead of the actual staff management page is a real destination mismatch, the same category of bug already found and fixed once tonight for the time_tracking topic pointing at billing instead of timesheets.
 
 CHANGE INSTRUCTIONS:
 
-Add console.log statements clearly prefixed with [REVEAL DEBUG] at these points: when the reveal effect instance starts, log the revealSession value and revealSessionRef.current value at that exact moment, and whether they match. Inside tick, log count, target, and both session values on the first frame only and then once every 20 frames afterward, not every frame. Log whenever revealActiveRef.current changes and what set it. Log whenever the effect's cleanup function actually runs and what revealSession value it belonged to. Specifically also log the exact value of targetWordCountRef.current at the moment the reveal effect first starts, since a mismatch between when the target effect and the reveal effect actually run relative to each other, not just a one-time zero at the very first frame, is a plausible explanation for a session that never catches up until an unrelated event forces a rerender.
+Change the staff entry in the TOPIC_CHIPS object from Go to Settings to a chip pointing at the real staff route found above, using a label consistent with the existing naming pattern used by other entries, such as Go to Staff or Go to Team, matching whatever terminology is already used elsewhere in this app for this page, check the actual page title or heading if one exists rather than guessing at the exact wording.
 
-Do not attempt to fix the underlying issue in this task. Only add logging around the existing logic exactly as it stands.
+Do not change any other entry in TOPIC_CHIPS.
 
 VERIFY AFTER ACT:
 
-grep -n "REVEAL DEBUG" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+grep -n "staff:" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+
+Expected: no longer Go to Settings, now pointing at the real staff page.
+
 npm run build in frontend, expected zero TypeScript errors.
 
 MANUAL VERIFICATION:
 
-Full restart, open browser console filtered to REVEAL DEBUG. Ask a single normal question at normal pace and wait. If it displays correctly, try several more single questions, one at a time, with normal pauses, until the blank state reproduces again. The moment it reproduces, copy the full console output from that specific question's session start through the point a new message was sent, and report that full output back, do not summarize it.
+Restart frontend. Ask which staff member has the lightest workload right now, confirm the chip now correctly reads Go to Staff or similar, and confirm clicking it navigates to the real staff management page, not Settings.
 
-Do not commit or push yet. This is temporary instrumentation, wait for the console output to be reviewed before deciding on a real fix.
+GIT:
+git add -A
+git commit -m "fix staff topic chip pointing to Settings instead of the real dedicated staff management page, same category of destination mismatch already fixed once tonight for time_tracking"
+git pull --rebase origin main
+git push origin main

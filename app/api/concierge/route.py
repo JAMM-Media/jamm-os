@@ -293,6 +293,14 @@ _TOPIC_KEYWORDS: dict[str, set[str]] = {
         "firm settings", "notification preference", "data export", "account",
         "subscription", "billing settings", "portal branding",
     },
+    "qc_checklists": {
+        "qc", "quality control", "qc checklist", "qc items", "qc pending",
+        "unchecked items", "quality check",
+    },
+    "signature_envelopes": {
+        "signature", "envelope", "e-signature", "esignature", "pending signature",
+        "has signed", "needs to sign", "signed yet", "declined signature", "expired signature",
+    },
     "operational_data": {
         "attention", "urgent", "focus", "today", "stalled", "stuck", "idle",
         "unbilled", "overdue", "owes", "outstanding", "capacity", "overloaded",
@@ -307,12 +315,51 @@ def _classify_topic(message: str) -> str:
     lower = message.lower()
     scores: dict[str, int] = {}
     for topic, keywords in _TOPIC_KEYWORDS.items():
-        score = sum(1 for kw in keywords if kw in lower)
+        matched = [kw for kw in keywords if kw in lower]
+        deduped = [kw for kw in matched if not any(kw != other and kw in other for other in matched)]
+        score = len(deduped)
         if score > 0:
             scores[topic] = score
     if not scores:
         return "general"
     return max(scores, key=lambda t: scores[t])
+
+
+# Registry: tool name -> function that extracts a deduplicated list of client
+# names from that tool's raw result dict. Add entries here when other live data
+# functions are confirmed to also trigger the OPTIONS-omission failure mode.
+# Only get_overdue_invoices is wired up now, as the one proven failing case.
+_MULTI_CLIENT_TOOL_EXTRACTORS: dict[str, object] = {
+    "get_overdue_invoices": lambda result: list({
+        inv["client_name"]
+        for inv in result.get("invoices", [])
+        if inv.get("client_name")
+    }),
+}
+
+
+
+def _is_overdue_invoices_question(message: str) -> bool:
+    """Return True only when the message is unambiguously asking about overdue
+    invoices specifically, not merely about any operational topic that shares a
+    word like overdue or outstanding. Used to force tool_choice on iteration 0
+    so get_overdue_invoices is guaranteed to be called rather than skipped."""
+    lower = message.lower()
+    invoice_words = {"invoice", "invoices"}
+    payment_words = {"overdue", "owe", "owes", "outstanding", "unpaid"}
+    has_invoice = any(w in lower for w in invoice_words)
+    has_payment = any(w in lower for w in payment_words)
+    if has_invoice and has_payment:
+        return True
+    explicit_phrases = {
+        "who owes us money",
+        "who owes us",
+        "which clients owe",
+        "clients owe",
+        "overdue balances",
+        "outstanding balances",
+    }
+    return any(p in lower for p in explicit_phrases)
 
 
 class MessageItem(BaseModel):
@@ -766,10 +813,28 @@ Respond with exactly one word: SAFE or UNSAFE. Nothing else.""",
             import json as _json
 
             current_messages = list(tool_messages)
+            # Tracks raw result dicts for tools in _MULTI_CLIENT_TOOL_EXTRACTORS
+            # so the OPTIONS marker safety net can inspect them after the loop.
+            _captured_tool_results: dict[str, dict] = {}
 
             # Tool use loop -- max 5 iterations
             for _iteration in range(5):
                 try:
+                    # On the first iteration, force get_overdue_invoices if the
+                    # question is specifically about overdue invoices. Prompt-only
+                    # compliance has been proven unreliable for this case across
+                    # multiple sessions. tool_choice={"type":"tool"} removes the
+                    # model's discretion entirely for this one turn.
+                    # On all subsequent iterations, revert to auto so the model
+                    # can freely choose follow-up tool calls or respond normally.
+                    if _iteration == 0 and _is_overdue_invoices_question(_last_user_msg):
+                        _tool_choice: dict = {"type": "tool", "name": "get_overdue_invoices"}
+                        logger.info(
+                            f"[TOOL CHOICE] forcing get_overdue_invoices on iteration 0 "
+                            f"for firm {current_firm.id}"
+                        )
+                    else:
+                        _tool_choice = {"type": "auto"}
                     # TEMP: testing claude-sonnet-5 (released 2026-06-30) as a possible
                     # replacement for the claude-opus-4-8 swap, itself a temporary
                     # substitute for claude-fable-5 which remains suspended under an
@@ -786,6 +851,7 @@ Respond with exactly one word: SAFE or UNSAFE. Nothing else.""",
                         system=_system_blocks,
                         tools=_CONCIERGE_TOOLS,
                         messages=current_messages,
+                        tool_choice=_tool_choice,
                         output_config={"effort": "medium"},
                     ) as stream:
                         accumulated_text = ""
@@ -821,6 +887,19 @@ Respond with exactly one word: SAFE or UNSAFE. Nothing else.""",
                     for block in response.content:
                         if block.type == "tool_use":
                             result_text = _execute_tool(block.name, block.input)
+                            # OPTIONS safety net: capture raw result for tracked tools
+                            if block.name in _MULTI_CLIENT_TOOL_EXTRACTORS:
+                                try:
+                                    _captured_tool_results[block.name] = _json.loads(result_text)
+                                    logger.info(
+                                        f"[OPTIONS SAFETY NET] captured result for {block.name}: "
+                                        f"raw keys={list(_captured_tool_results[block.name].keys())}"
+                                    )
+                                except Exception as _cap_exc:
+                                    logger.warning(
+                                        f"[OPTIONS SAFETY NET] failed to parse result for "
+                                        f"{block.name}: {_cap_exc}"
+                                    )
                             tool_results.append({
                                 "type": "tool_result",
                                 "tool_use_id": block.id,
@@ -852,11 +931,72 @@ Respond with exactly one word: SAFE or UNSAFE. Nothing else.""",
 
                 final_text = accumulated_text
                 filtered_final = filter_output(final_text)
+                # Do not yield FILTERED here -- the safety net below may further
+                # modify filtered_final. One single yield happens after both have run.
+
+                # OPTIONS marker safety net: if a multi-client tool result was
+                # captured this turn and the model omitted the OPTIONS marker,
+                # construct it deterministically from the real tool data before
+                # yielding anything further. Only fires when no OPTIONS marker
+                # is present AND no completed draft block is present (a draft
+                # means the model correctly resolved to a single client).
+                _sn_captured_tools = list(_captured_tool_results.keys())
+                _sn_options_already_present = "[OPTIONS:" in filtered_final
+                _sn_draft_already_present = "---DRAFT:" in filtered_final
+                logger.info(
+                    f"[OPTIONS SAFETY NET] check running -- "
+                    f"captured_tools={_sn_captured_tools} "
+                    f"options_already_present={_sn_options_already_present} "
+                    f"draft_already_present={_sn_draft_already_present} "
+                    f"firm={current_firm.id}"
+                )
+                if not _sn_options_already_present and not _sn_draft_already_present:
+                    for _tool_name, _extractor in _MULTI_CLIENT_TOOL_EXTRACTORS.items():
+                        if _tool_name in _captured_tool_results:
+                            _client_names = _extractor(_captured_tool_results[_tool_name])
+                            logger.info(
+                                f"[OPTIONS SAFETY NET] {_tool_name} found in captured results: "
+                                f"extracted {len(_client_names)} distinct client names: {_client_names}"
+                            )
+                            if len(_client_names) > 1:
+                                _options_marker = "[OPTIONS:" + _json.dumps(_client_names) + "]"
+                                filtered_final = filtered_final.rstrip() + "\n" + _options_marker
+                                logger.info(
+                                    f"[OPTIONS SAFETY NET] appended marker for {len(_client_names)} "
+                                    f"clients from {_tool_name} (firm {current_firm.id})"
+                                )
+                                break
+                            else:
+                                logger.info(
+                                    f"[OPTIONS SAFETY NET] only {len(_client_names)} distinct client "
+                                    f"from {_tool_name} -- no marker needed (single client case)"
+                                )
+                        else:
+                            logger.info(
+                                f"[OPTIONS SAFETY NET] {_tool_name} NOT found in captured_tool_results "
+                                f"-- tool was not called this turn or capture failed"
+                            )
+                else:
+                    if _sn_options_already_present:
+                        logger.info(
+                            f"[OPTIONS SAFETY NET] skipped -- OPTIONS marker already present "
+                            f"in filtered_final (firm {current_firm.id})"
+                        )
+                    if _sn_draft_already_present:
+                        logger.info(
+                            f"[OPTIONS SAFETY NET] skipped -- draft block already present "
+                            f"in filtered_final (firm {current_firm.id})"
+                        )
+
+                # Single final FILTERED yield: if either the leak filter or the
+                # safety net modified filtered_final, transmit the fully corrected
+                # text exactly once. This must come after both have had a chance
+                # to modify filtered_final, not before.
                 if filtered_final != final_text:
-                    # Text already streamed progressively; send replacement sentinel.
                     yield f"data: \n\n"
                     yield f"data: [FILTERED]\n\n"
                     yield f"data: {filtered_final}\n\n"
+
                 # Trailing marker so the frontend can render contextually
                 # relevant suggestion chips without re-guessing the topic
                 # from the response text. Classified from the user's actual
