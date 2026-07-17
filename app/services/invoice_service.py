@@ -491,6 +491,17 @@ def update_invoice_tracked(
                 "client_id": str(updated.client_id),
             }
         )
+        if new_status == InvoiceStatus.paid:
+            # Manual mark-paid: same crud + event mechanics as the Stripe
+            # webhook's full-payment branch (api/payments.py), so both
+            # paths produce an identical invoice.paid event. A manual
+            # mark-paid is always a full payment; partial offline payments
+            # are a different flow that doesn't exist yet.
+            crud_invoice.mark_invoice_paid(db, updated)
+            updated.amount_paid = updated.total_amount
+            db.commit()
+            db.refresh(updated)
+            mark_invoice_paid(db=db, invoice=updated, firm_id=firm_id, payment_method="manual")
 
     new_total = float(updated.total_amount) if updated.total_amount is not None else None
     if new_total != old_total:

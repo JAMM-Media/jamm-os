@@ -19,7 +19,14 @@ SEED_METRICS = [
     ("invoice_payment_time", "Invoice Payment Time", "days", "lower", True, 1, "weekly_summary"),
     ("portal_utilization_documents", "Portal Utilization - Document Items", "percent", "higher", True, 1, "weekly_summary"),
     ("portal_utilization_invoices", "Portal Utilization - Invoice Payments", "percent", "higher", True, 1, "weekly_summary"),
+    # Deactivated post-seed via 87f61acace52: the portal To-do tab surfaces
+    # document request items, already counted by portal_utilization_documents.
     ("portal_utilization_todos", "Portal Utilization - Todos", "percent", "higher", True, 1, "weekly_summary"),
+    # Deactivated post-seed via d4253524dae8: e-signature always flows
+    # through the external Dropbox Sign hosted page, no portal-native
+    # signing flow exists, and no event distinguishes channel for esign
+    # resolutions. Undefined in the current product, not unmeasurable.
+    # Reactivate alongside the Dropbox Sign Tier 2 session.
     ("portal_utilization_esign", "Portal Utilization - E-signatures", "percent", "higher", True, 1, "weekly_summary"),
     ("automation_utilization", "Automation Utilization", "percent", "higher", True, 1, "rolling_snapshot"),
 ]

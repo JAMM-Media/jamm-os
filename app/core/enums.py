@@ -250,6 +250,7 @@ class MetricRunStatus(str, Enum):
     """Status of one nightly metric computation run."""
     running = "running"
     succeeded = "succeeded"
+    partial = "partial"
     failed = "failed"
 
 

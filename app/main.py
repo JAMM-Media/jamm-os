@@ -19,6 +19,8 @@ from app.services.outlook_signals_service import run_outlook_signals_for_all_fir
 from app.services.esign_reminder_service import run_esign_auto_reminders, run_esign_escalation_check
 from app.services.invoice_service import run_invoice_overdue_sweep
 from app.services.findings_recheck import recheck_failed_findings
+from app.services.deadline_scheduler import check_approaching_deadlines
+from app.services.metric_pipeline import run_nightly_metric_recompute
 from app.core.scheduler_lock import try_acquire_scheduler_lock, release_scheduler_lock
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
@@ -184,6 +186,25 @@ async def lifespan(app: FastAPI):
             hour=7,
             minute=45,
             id="invoice_overdue_sweep",
+            replace_existing=True,
+        )
+        # Runs before nightly_metric_recompute (4:00 AM) so deadline misses
+        # are always recorded before the metrics job counts them, without
+        # explicit dependency wiring between the two jobs.
+        scheduler.add_job(
+            check_approaching_deadlines,
+            trigger="cron",
+            hour=3,
+            minute=30,
+            id="deadline_miss_sweep",
+            replace_existing=True,
+        )
+        scheduler.add_job(
+            run_nightly_metric_recompute,
+            trigger="cron",
+            hour=4,
+            minute=0,
+            id="nightly_metric_recompute",
             replace_existing=True,
         )
         scheduler.start()

@@ -134,6 +134,67 @@ def test_locked_invoice_returns_error():
 
 
 # ---------------------------------------------------------------------------
+# Test 4b -- manual mark-paid fires invoice.paid with payment_method="manual",
+# stamps paid_at, and sets amount_paid to the full invoice total
+# ---------------------------------------------------------------------------
+def test_manual_mark_paid_fires_invoice_paid_event():
+    mock_db = MagicMock()
+    inv = _mock_invoice(status=InvoiceStatus.sent, total_amount=Decimal("500.00"))
+    updated = _mock_invoice(status=InvoiceStatus.paid, total_amount=Decimal("500.00"))
+    updated.id = inv.id
+    updated.client_id = inv.client_id
+    updated.paid_at = None
+    updated.amount_paid = Decimal("0")
+
+    with patch("app.services.invoice_service.crud_invoice.get_invoice", return_value=inv), \
+         patch("app.services.invoice_service.crud_invoice.update_invoice", return_value=updated), \
+         patch("app.services.invoice_service.log_event") as mock_log:
+
+        result, error = invoice_service.update_invoice_tracked(
+            db=mock_db,
+            invoice_id=inv.id,
+            payload=InvoiceUpdate(status=InvoiceStatus.paid),
+            firm_id=uuid.uuid4(),
+            current_user_id=uuid.uuid4(),
+        )
+
+    assert error is None
+    event_types = [c.kwargs["event_type"] for c in mock_log.call_args_list]
+    assert "invoice.status_changed" in event_types
+    assert "invoice.paid" in event_types
+    paid_call = next(c for c in mock_log.call_args_list if c.kwargs["event_type"] == "invoice.paid")
+    assert paid_call.kwargs["metadata"]["payment_method"] == "manual"
+    assert updated.paid_at is not None
+    assert updated.amount_paid == updated.total_amount
+
+
+# ---------------------------------------------------------------------------
+# Test 4c -- PATCHing an already-paid invoice returns locked and never
+# re-fires invoice.paid
+# ---------------------------------------------------------------------------
+def test_already_paid_invoice_does_not_refire_invoice_paid():
+    mock_db = MagicMock()
+    inv = _mock_invoice(status=InvoiceStatus.paid)
+
+    with patch("app.services.invoice_service.crud_invoice.get_invoice", return_value=inv), \
+         patch("app.services.invoice_service.log_event") as mock_log:
+
+        result, error = invoice_service.update_invoice_tracked(
+            db=mock_db,
+            invoice_id=inv.id,
+            payload=InvoiceUpdate(status=InvoiceStatus.paid),
+            firm_id=uuid.uuid4(),
+            current_user_id=uuid.uuid4(),
+        )
+
+    assert result is None
+    assert error == "locked"
+    event_types = [c.kwargs["event_type"] for c in mock_log.call_args_list]
+    assert "invoice.paid" not in event_types
+    mock_log.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
 # Test 5 -- bulk send fires invoice.status_changed once per invoice with via="bulk"
 # ---------------------------------------------------------------------------
 def test_bulk_send_fires_per_invoice():
