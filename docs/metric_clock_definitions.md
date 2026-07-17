@@ -131,3 +131,29 @@ actually working for it?
 - portal_utilization_todos: deactivated. The portal To-do tab surfaces
   document request items, already counted by portal_utilization_documents.
   Reactivate if and when a standalone Todo entity ships as its own feature.
+
+## Week Attribution - July 2026
+
+Locked in the Part 2 design session. These rules are permanent for the same
+reason the clock definitions are: historical summaries are computed against
+them and past values must remain interpretable.
+
+- Week convention: ISO weeks starting Monday. week_start stores the Monday
+  date. All bucketing is computed in UTC. Firm-local timezone effects are
+  deliberately out of scope at the weekly grain; local-time analysis belongs
+  to future finding types querying raw events directly.
+- Attribution rule: an observation belongs to the week its outcome became
+  known. Engagement velocity buckets to the completion week. Document
+  collection speed buckets to the week of the last used upload. Invoice
+  payment time buckets to the week the balance reached zero. Portal
+  utilization buckets to the week the opportunity resolved.
+- Exception: all three deadline adherence tracks bucket to the week the
+  deadline fell in, not the outcome week. Each weekly row answers one clean
+  question: of the engagements whose deadline fell this week, what share beat
+  it? This aligns with the miss-recognition rule in Metric 2: a row can go
+  non-adherent the moment the deadline passes and never has to move.
+- The current in-progress week is stored and revises on every nightly
+  recompute, consistent with the revise-freely rule.
+- Rolling snapshot metrics (automation_utilization) store the state as of the
+  end of each week (Sunday 23:59:59 UTC), reconstructed from the event stream
+  on each recompute against the versioned preset catalog.

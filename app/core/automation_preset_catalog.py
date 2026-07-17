@@ -31,7 +31,7 @@ PRESET_CATALOG: list[AutomationPresetCatalogEntry] = [
     AutomationPresetCatalogEntry("extension_filed_auto_notify", "Extension Filed Auto-Notify", date(2026, 5, 3)),
     AutomationPresetCatalogEntry("irs_authorization_expiry_warning", "IRS Authorization Expiry Warning", date(2026, 5, 3)),
     AutomationPresetCatalogEntry("invoice_overdue_escalating_sequence", "Invoice Overdue Escalating Sequence", date(2026, 5, 3)),
-    AutomationPresetCatalogEntry("deadline_approaching_14day_alert", "Engagement Deadline Approaching — 14-day Alert", date(2026, 5, 3)),
+    AutomationPresetCatalogEntry("deadline_approaching_14day_alert", "Engagement Deadline Approaching - 14-day Alert", date(2026, 5, 3)),
     AutomationPresetCatalogEntry("return_completed_client_delivery_loop", "Return Completed: Client Delivery Loop", date(2026, 5, 3)),
     AutomationPresetCatalogEntry("new_client_full_onboarding_sequence", "New Client Full Onboarding Sequence", date(2026, 5, 3)),
     # Shipped 2026-06-05 (commit 2c99f0fd)
