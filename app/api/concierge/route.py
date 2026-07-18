@@ -835,8 +835,13 @@ Respond with exactly one word: SAFE or UNSAFE. Nothing else.""",
                         )
                     else:
                         _tool_choice = {"type": "auto"}
+                    # Deliberate permanent choice: claude-sonnet-5 measured ~4s for a real
+                    # tool-use question vs ~8.8s on claude-fable-5, roughly double, with no
+                    # accuracy benefit for this single-question use case. Fable 5 is built
+                    # for long autonomous work; Sonnet 5 is equally correct and meaningfully
+                    # faster and cheaper here. Do not revert without measuring timing first.
                     with fable_client.messages.stream(
-                        model="claude-fable-5",
+                        model="claude-sonnet-5",
                         max_tokens=8000,
                         system=_system_blocks,
                         tools=_CONCIERGE_TOOLS,
