@@ -54,35 +54,43 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Extend bold rule to cover key terms in general knowledge answers, not just tool-derived figures
+TASK: Revert tool-use loop from the temporary claude-sonnet-5 pin back to claude-fable-5, now that access has been restored and extended
 
 USE: claude sonnet
 
 VERIFY BEFORE ACT:
-grep -n "key figures" -B 2 -A 5 /home/corby/jamm-os/app/api/concierge/prompts.py
+sed -n '835,855p' /home/corby/jamm-os/app/api/concierge/route.py
 
-Confirm the current bold rule's exact wording before editing.
+Confirm this matches exactly: a comment block explaining the temporary substitution starting at line 838, followed by model="claude-sonnet-5" at line 849. Confirm this is the only occurrence of claude-sonnet-5 or claude-fable-5 anywhere in this file before editing.
 
-WHAT IS WRONG:
+WHAT THIS IS:
 
-The existing bold rule only covers dollar amounts, counts, and dates that directly answer a question, which are always tool-derived figures. Confirmed live: a general tax knowledge question with no firm data involved, what is a 1120-S used for, produced a completely unbolded wall of text, technically correct per the current narrow rule, but a real readability gap. Educational and definitional answers with no numbers in them still benefit from bolding the specific terms being defined, so a firm owner can scan the response quickly.
+The tool-use loop was temporarily pinned to claude-sonnet-5 while claude-fable-5 was suspended under an export control directive. That suspension was lifted and access has since been restored and extended, but this code was never reverted back. Every tool-use response tonight, including every test performed while diagnosing and fixing the OPTIONS marker reliability issues, has actually been running on claude-sonnet-5, not claude-fable-5.
 
 CHANGE INSTRUCTIONS:
 
-Add a new sentence directly alongside the existing bold rule, not replacing it: also bold the specific term, form number, or concept being directly defined or explained in a general knowledge answer, such as a tax form number or a piece of terminology central to the question, even when the response contains no dollar amounts or other figures. Keep this restrained, bold only the one or two central terms actually being explained, not every noun in the response.
+Remove the entire TEMP comment block explaining the substitution, lines 838 through 847 as confirmed above. Change the model parameter from claude-sonnet-5 back to claude-fable-5. Do not add a new comment explaining this reversion, the git commit message will document why this changed.
+
+Do not change any other model reference in this file, including the guard classifier on Haiku, the plain conversational path on Sonnet 4-6, or any of the Haiku calls for the briefing, detail, and polish endpoints. Only this one specific tool-use loop reference changes.
 
 VERIFY AFTER ACT:
 
-grep -n "term.*being.*defined\|central to the question" /home/corby/jamm-os/app/api/concierge/prompts.py
+grep -n "claude-sonnet-5\|claude-fable-5" /home/corby/jamm-os/app/api/concierge/route.py
 
-Expected: present.
+Expected: claude-fable-5 present, claude-sonnet-5 no longer present anywhere in the file.
+
+python3 -c "from app.main import app; print('OK')"
 
 MANUAL VERIFICATION:
 
-Restart backend. Ask what is a 1120-S used for, confirm the form name and key terms like S corporation are now bolded. Ask an unrelated firm-data question, confirm the existing figure-bolding behavior is unchanged.
+Restart backend, keep terminal visible. Ask which clients have overdue invoices right now, confirm the response still works correctly end to end, tool_choice forcing still fires, the OPTIONS safety net still works, clickable buttons still render, exactly as they did on claude-sonnet-5. Time this response using the backend log timestamps, from the first httpx request to the final safety net check, and report the actual elapsed time, so we have a real point of comparison against tonight's earlier claude-sonnet-5 timings of roughly 1.6 to 4.5 seconds depending on question complexity.
+
+Ask a second, different operational question to confirm general tool-use behavior is unaffected by the model change.
+
+Report the exact timing found for the overdue invoices question and confirm the second question also worked correctly.
 
 GIT:
 git add -A
-git commit -m "extend bold formatting rule to cover key terms in general knowledge answers with no tool-derived figures, since educational responses were rendering as unbolded walls of text under the previous narrower rule"
+git commit -m "revert tool-use loop from the temporary claude-sonnet-5 substitution back to claude-fable-5, now that Fable 5 access has been restored and extended for another week, the export control suspension that necessitated the temporary swap has been lifted"
 git pull --rebase origin main
 git push origin main
