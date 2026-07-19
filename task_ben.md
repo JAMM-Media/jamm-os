@@ -54,43 +54,39 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Revert tool-use loop from the temporary claude-sonnet-5 pin back to claude-fable-5, now that access has been restored and extended
+TASK: Pin tool-use loop to claude-sonnet-5 permanently, based on measured timing evidence, not as a temporary stopgap
 
 USE: claude sonnet
 
 VERIFY BEFORE ACT:
-sed -n '835,855p' /home/corby/jamm-os/app/api/concierge/route.py
+grep -n "model=\"claude-fable-5\"" /home/corby/jamm-os/app/api/concierge/route.py
 
-Confirm this matches exactly: a comment block explaining the temporary substitution starting at line 838, followed by model="claude-sonnet-5" at line 849. Confirm this is the only occurrence of claude-sonnet-5 or claude-fable-5 anywhere in this file before editing.
+Confirm the current model reference and its exact line number before editing.
 
 WHAT THIS IS:
 
-The tool-use loop was temporarily pinned to claude-sonnet-5 while claude-fable-5 was suspended under an export control directive. That suspension was lifted and access has since been restored and extended, but this code was never reverted back. Every tool-use response tonight, including every test performed while diagnosing and fixing the OPTIONS marker reliability issues, has actually been running on claude-sonnet-5, not claude-fable-5.
+Earlier tonight the tool-use loop was reverted from a temporary claude-sonnet-5 substitution back to claude-fable-5, since the export control suspension that necessitated that substitution had been lifted. Direct timing evidence was then measured for the same question, which clients have overdue invoices right now, on both models using identical backend log timestamps. On claude-sonnet-5, the full round trip measured approximately 4.0 seconds. On claude-fable-5, the identical question measured approximately 8.8 seconds, roughly double. Both models produced correct, complete answers, this is a pure speed difference, not a correctness difference. This matches Anthropic's own guidance that claude-fable-5 is built for long, complex, autonomous work, while a short, well-scoped single question is equally good and meaningfully faster and cheaper on claude-sonnet-5.
 
 CHANGE INSTRUCTIONS:
 
-Remove the entire TEMP comment block explaining the substitution, lines 838 through 847 as confirmed above. Change the model parameter from claude-sonnet-5 back to claude-fable-5. Do not add a new comment explaining this reversion, the git commit message will document why this changed.
+Change the model parameter in the tool-use loop from claude-fable-5 to claude-sonnet-5. Add a short comment directly above it explaining this is a deliberate, permanent choice based on measured timing evidence, not a temporary substitution awaiting reversion, so a future reader does not mistake this for another TEMP style stopgap and revert it without checking. State plainly in the comment that claude-fable-5 was measured to take roughly double the time for the same real question with no accuracy benefit for this specific use case, a single focused chat response rather than long autonomous work.
 
-Do not change any other model reference in this file, including the guard classifier on Haiku, the plain conversational path on Sonnet 4-6, or any of the Haiku calls for the briefing, detail, and polish endpoints. Only this one specific tool-use loop reference changes.
+Do not change any other model reference in this file.
 
 VERIFY AFTER ACT:
 
 grep -n "claude-sonnet-5\|claude-fable-5" /home/corby/jamm-os/app/api/concierge/route.py
 
-Expected: claude-fable-5 present, claude-sonnet-5 no longer present anywhere in the file.
+Expected: claude-sonnet-5 present with the new explanatory comment above it, claude-fable-5 no longer present anywhere in the file.
 
 python3 -c "from app.main import app; print('OK')"
 
 MANUAL VERIFICATION:
 
-Restart backend, keep terminal visible. Ask which clients have overdue invoices right now, confirm the response still works correctly end to end, tool_choice forcing still fires, the OPTIONS safety net still works, clickable buttons still render, exactly as they did on claude-sonnet-5. Time this response using the backend log timestamps, from the first httpx request to the final safety net check, and report the actual elapsed time, so we have a real point of comparison against tonight's earlier claude-sonnet-5 timings of roughly 1.6 to 4.5 seconds depending on question complexity.
-
-Ask a second, different operational question to confirm general tool-use behavior is unaffected by the model change.
-
-Report the exact timing found for the overdue invoices question and confirm the second question also worked correctly.
+Restart backend. Ask which clients have overdue invoices right now, confirm it still works correctly end to end, tool_choice forcing still fires, OPTIONS safety net and buttons still work.
 
 GIT:
 git add -A
-git commit -m "revert tool-use loop from the temporary claude-sonnet-5 substitution back to claude-fable-5, now that Fable 5 access has been restored and extended for another week, the export control suspension that necessitated the temporary swap has been lifted"
+git commit -m "pin tool-use loop to claude-sonnet-5 as a permanent, deliberate choice based on measured timing evidence showing claude-fable-5 takes roughly double the time for the same real question with no correctness benefit for this single-question use case"
 git pull --rebase origin main
 git push origin main
