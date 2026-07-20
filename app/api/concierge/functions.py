@@ -683,10 +683,31 @@ def get_portal_inactive_clients(firm_id: uuid.UUID, db: Session, days: int = 14)
         reverse=True,
     )
 
+    total_client_count = db.execute(
+        select(func.count(Client.id)).where(Client.firm_id == firm_id)
+    ).scalar() or 0
+
+    portal_enabled_count = db.execute(
+        select(func.count(Client.id)).where(
+            Client.firm_id == firm_id,
+            Client.portal_access_enabled == True,
+        )
+    ).scalar() or 0
+
+    ever_logged_in_count = db.execute(
+        select(func.count(Client.id)).where(
+            Client.firm_id == firm_id,
+            Client.portal_last_login_at != None,
+        )
+    ).scalar() or 0
+
     return {
         "inactive_count": len(inactive),
         "threshold_days": days,
         "clients": inactive[:20],
+        "total_client_count": total_client_count,
+        "portal_enabled_count": portal_enabled_count,
+        "ever_logged_in_count": ever_logged_in_count,
     }
 
 

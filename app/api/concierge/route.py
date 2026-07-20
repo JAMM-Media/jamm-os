@@ -142,7 +142,7 @@ _CONCIERGE_TOOLS = [
     },
     {
         "name": "get_portal_inactive_clients",
-        "description": "Returns clients who have not logged into the portal in more than N days and have active document requests outstanding. Call this when the firm owner asks which clients are ignoring the portal or which clients have not uploaded their documents.",
+        "description": "Returns clients who have not logged into the portal in more than N days and have active document requests outstanding. Also returns firm-wide portal statistics: total client count, count with portal access enabled, and count who have ever logged in. Call this when the firm owner asks which clients are ignoring the portal, which clients have not uploaded documents, or for any portal adoption or engagement statistics.",
         "input_schema": {
             "type": "object",
             "properties": {
