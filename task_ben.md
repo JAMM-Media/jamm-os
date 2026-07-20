@@ -54,39 +54,38 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Pin tool-use loop to claude-sonnet-5 permanently, based on measured timing evidence, not as a temporary stopgap
+TASK: Add permanent logging for every successful tool execution in the tool-use loop
 
 USE: claude sonnet
 
 VERIFY BEFORE ACT:
-grep -n "model=\"claude-fable-5\"" /home/corby/jamm-os/app/api/concierge/route.py
+grep -n "def _execute_tool" -A 15 /home/corby/jamm-os/app/api/concierge/route.py
+grep -n "Tool execution failed" /home/corby/jamm-os/app/api/concierge/route.py
 
-Confirm the current model reference and its exact line number before editing.
+Confirm the current _execute_tool function structure and confirm only failures are currently logged, no successful executions.
 
-WHAT THIS IS:
+WHAT IS WRONG:
 
-Earlier tonight the tool-use loop was reverted from a temporary claude-sonnet-5 substitution back to claude-fable-5, since the export control suspension that necessitated that substitution had been lifted. Direct timing evidence was then measured for the same question, which clients have overdue invoices right now, on both models using identical backend log timestamps. On claude-sonnet-5, the full round trip measured approximately 4.0 seconds. On claude-fable-5, the identical question measured approximately 8.8 seconds, roughly double. Both models produced correct, complete answers, this is a pure speed difference, not a correctness difference. This matches Anthropic's own guidance that claude-fable-5 is built for long, complex, autonomous work, while a short, well-scoped single question is equally good and meaningfully faster and cheaper on claude-sonnet-5.
+There is no way to see which tool actually ran for a given question from the backend logs, only failures are logged. Confirmed live tonight: a response contained specific statistics that did not appear to come from the tool believed to have been called, and it was impossible to verify from the logs which tool, if any, actually supplied that data. This is a real, permanent trust gap, not a one-off diagnostic need, since knowing what data backs any given answer is fundamental to trusting the agent at all.
 
 CHANGE INSTRUCTIONS:
 
-Change the model parameter in the tool-use loop from claude-fable-5 to claude-sonnet-5. Add a short comment directly above it explaining this is a deliberate, permanent choice based on measured timing evidence, not a temporary substitution awaiting reversion, so a future reader does not mistake this for another TEMP style stopgap and revert it without checking. State plainly in the comment that claude-fable-5 was measured to take roughly double the time for the same real question with no accuracy benefit for this specific use case, a single focused chat response rather than long autonomous work.
-
-Do not change any other model reference in this file.
+In _execute_tool, add a logger.info call immediately after a tool successfully executes and before its result is returned, logging the tool name and the firm id, at minimum. Keep this lightweight and permanent, not a temporary debug addition, formatted consistently with the existing warning log already present in this function.
 
 VERIFY AFTER ACT:
 
-grep -n "claude-sonnet-5\|claude-fable-5" /home/corby/jamm-os/app/api/concierge/route.py
+grep -n "logger.info" /home/corby/jamm-os/app/api/concierge/route.py | grep -i tool
 
-Expected: claude-sonnet-5 present with the new explanatory comment above it, claude-fable-5 no longer present anywhere in the file.
+Expected: new line present inside _execute_tool.
 
 python3 -c "from app.main import app; print('OK')"
 
 MANUAL VERIFICATION:
 
-Restart backend. Ask which clients have overdue invoices right now, confirm it still works correctly end to end, tool_choice forcing still fires, OPTIONS safety net and buttons still work.
+Restart backend. Ask which clients haven't logged into their portal recently, and paste the backend log for that turn, confirming which tool name or names actually appear in the new log line.
 
 GIT:
 git add -A
-git commit -m "pin tool-use loop to claude-sonnet-5 as a permanent, deliberate choice based on measured timing evidence showing claude-fable-5 takes roughly double the time for the same real question with no correctness benefit for this single-question use case"
+git commit -m "add permanent logging for every successful tool execution, not just failures, closing a real observability gap where it was impossible to confirm which tool, if any, actually supplied the data behind a given answer"
 git pull --rebase origin main
 git push origin main
