@@ -45,6 +45,7 @@ from app.api.concierge.functions import (
     get_portal_inactive_clients,
     get_irs_auth_expiring,
     get_client_document_status,
+    get_outstanding_document_requests,
     get_task_status,
     get_qc_checklist_status,
     get_time_tracking_detail,
@@ -175,6 +176,15 @@ _CONCIERGE_TOOLS = [
         },
     },
     {
+        "name": "get_outstanding_document_requests",
+        "description": "Returns all firm-wide pending or partial document requests across all clients, with client name, engagement name, request title, status, and due date. Use this for broad questions about which clients have outstanding document requests across the firm. Distinct from get_client_document_status, which is for questions about one specific already-named client.",
+        "input_schema": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+        },
+    },
+    {
         "name": "get_task_status",
         "description": "Returns all incomplete tasks and unchecked QC checklist items firm-wide, each with the client name, engagement name, assignee, due date, and overdue flag. Call this when the firm owner asks which tasks are overdue, what tasks are outstanding, what is on anyone's to-do list, what checklist items are not done, what is outstanding on a specific engagement's checklist, or any question about individual task or checklist item status independent of the engagement's overall completion status.",
         "input_schema": {"type": "object", "properties": {}, "required": []},
@@ -213,7 +223,7 @@ _OPERATIONAL_KEYWORDS = {
     "deadline", "deadlines", "due", "coming up", "this week", "last week",
     "weekly", "week", "automation", "automations", "firing", "portal login",
     "portal inactive", "irs auth", "authorization expir", "expiring", "2848", "8821",
-    "document status", "uploaded", "missing documents",
+    "document status", "uploaded", "missing documents", "still missing", "what's missing", "still need", "still needs", "hasn't uploaded", "haven't uploaded", "outstanding documents", "missing paperwork",
     "task", "tasks", "checklist", "todo", "to-do", "to do", "outstanding tasks",
     "overdue tasks", "what is left", "what's left", "not done", "incomplete",
     "qc", "quality control", "quality check", "qc items", "qc checklist",
@@ -560,6 +570,8 @@ Respond with exactly one word: SAFE or UNSAFE. Nothing else.""",
                 _cid = _uuid.UUID(tool_input["client_id"])
                 _eid = _uuid.UUID(tool_input["engagement_id"]) if tool_input.get("engagement_id") else None
                 result = get_client_document_status(current_firm.id, _cid, db, engagement_id=_eid)
+            elif tool_name == "get_outstanding_document_requests":
+                result = get_outstanding_document_requests(current_firm.id, db)
             elif tool_name == "get_task_status":
                 result = get_task_status(current_firm.id, db)
             elif tool_name == "get_qc_checklist_status":

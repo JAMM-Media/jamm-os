@@ -756,6 +756,48 @@ def get_irs_auth_expiring(firm_id: uuid.UUID, db: Session, days: int = 30) -> di
     }
 
 
+
+# ---------------------------------------------------------------------------
+# Function: get_outstanding_document_requests
+# Returns all firm-wide pending or partial document requests with client and
+# engagement context, for answering broad questions about which clients have
+# outstanding requests across the firm.
+# ---------------------------------------------------------------------------
+def get_outstanding_document_requests(firm_id: uuid.UUID, db: Session) -> dict:
+    rows = db.execute(
+        select(
+            DocumentRequest.id,
+            DocumentRequest.title,
+            DocumentRequest.status,
+            DocumentRequest.due_date,
+            Client.name.label("client_name"),
+            Engagement.name.label("engagement_name"),
+        )
+        .join(Client, DocumentRequest.client_id == Client.id)
+        .join(Engagement, DocumentRequest.engagement_id == Engagement.id)
+        .where(
+            DocumentRequest.firm_id == firm_id,
+            DocumentRequest.status.in_(["pending", "partial"]),
+        )
+        .order_by(DocumentRequest.due_date.asc().nulls_last())
+        .limit(30)
+    ).fetchall()
+
+    outstanding = [
+        {
+            "client_name": r.client_name,
+            "engagement_name": r.engagement_name,
+            "request_title": r.title,
+            "status": r.status,
+            "due_date": r.due_date.isoformat() if r.due_date else None,
+        }
+        for r in rows
+    ]
+
+    return {
+        "outstanding_count": len(outstanding),
+        "requests": outstanding,
+    }
 # ---------------------------------------------------------------------------
 # Function 14: get_client_document_status
 # Returns document request status for a specific client and engagement.
