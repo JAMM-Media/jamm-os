@@ -571,6 +571,7 @@ Respond with exactly one word: SAFE or UNSAFE. Nothing else.""",
                 result = get_signature_envelope_status(current_firm.id, db, client_id=_cid)
             else:
                 result = {"error": f"Unknown tool: {tool_name}"}
+            logger.info(f"Tool executed: {tool_name} -- firm {current_firm.id}")
             return _json.dumps(result, default=str)
         except Exception as e:
             logger.warning(f"Tool execution failed: {tool_name} -- {e}")
