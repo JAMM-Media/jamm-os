@@ -54,38 +54,36 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Add permanent logging for every successful tool execution in the tool-use loop
+TASK: Add an absolute rule against stating any number not directly returned by a tool call this turn
 
 USE: claude sonnet
 
 VERIFY BEFORE ACT:
-grep -n "def _execute_tool" -A 15 /home/corby/jamm-os/app/api/concierge/route.py
-grep -n "Tool execution failed" /home/corby/jamm-os/app/api/concierge/route.py
+grep -n "Never produce a draft that contains a placeholder" /home/corby/jamm-os/app/api/concierge/prompts.py
+grep -n "never mention" /home/corby/jamm-os/app/api/concierge/prompts.py
 
-Confirm the current _execute_tool function structure and confirm only failures are currently logged, no successful executions.
+Confirm both exist, these are the two closest existing absolute rules in tone and strength, use them as the model for how this new rule should read.
 
 WHAT IS WRONG:
 
-There is no way to see which tool actually ran for a given question from the backend logs, only failures are logged. Confirmed live tonight: a response contained specific statistics that did not appear to come from the tool believed to have been called, and it was impossible to verify from the logs which tool, if any, actually supplied that data. This is a real, permanent trust gap, not a one-off diagnostic need, since knowing what data backs any given answer is fundamental to trusting the agent at all.
+Confirmed live, with direct evidence from the new per-tool-call logging: a question about portal login activity resulted in only one tool call, get_portal_inactive_clients, which returns only an inactive count, a threshold, and a client list. The model's response stated additional specific numbers, such as a count of how many clients have portal access enabled and how many have ever logged in firm wide, that do not exist anywhere in that tool's return value and were not supplied by any second tool call, confirmed by the same log showing only one tool executed this turn. The model fabricated specific, confident sounding statistics with no real data behind them, delivered in the same sentence and with the same tone as the one real number that did come from the tool. This is a direct violation of the core standard that the agent never fabricates a specific number.
 
 CHANGE INSTRUCTIONS:
 
-In _execute_tool, add a logger.info call immediately after a tool successfully executes and before its result is returned, logging the tool name and the firm id, at minimum. Keep this lightweight and permanent, not a temporary debug addition, formatted consistently with the existing warning log already present in this function.
+Add a new absolute rule, in the same section and with the same strength as the existing rule against placeholder client names in drafts: the agent must never state any specific number, count, percentage, or statistic in a response unless that exact number was directly returned by a tool call made in that same turn. If the agent wants to say something is likely true or explain probable context, it must say so in qualitative terms only, without inventing a specific figure to make the explanation sound more precise or complete than the real data supports. Give a concrete negative example: if a tool returns an inactive client count of zero with no other data, the agent must not also state how many clients have portal access enabled or how many have ever logged in unless a tool call in that same turn actually returned those specific numbers. State plainly that a real number and an invented number delivered in the same confident tone are indistinguishable to the firm owner, which is exactly why this rule has no exceptions.
 
 VERIFY AFTER ACT:
 
-grep -n "logger.info" /home/corby/jamm-os/app/api/concierge/route.py | grep -i tool
+grep -n "never state any specific number\|directly returned by a tool call" /home/corby/jamm-os/app/api/concierge/prompts.py
 
-Expected: new line present inside _execute_tool.
-
-python3 -c "from app.main import app; print('OK')"
+Expected: present.
 
 MANUAL VERIFICATION:
 
-Restart backend. Ask which clients haven't logged into their portal recently, and paste the backend log for that turn, confirming which tool name or names actually appear in the new log line.
+Restart backend. Ask which clients haven't logged into their portal recently, with the backend terminal visible and filtered for Tool executed. Confirm only get_portal_inactive_clients fires, and confirm the response this time contains only the real number that tool actually returns, with no additional invented statistics about portal enablement or firm wide login counts.
 
 GIT:
 git add -A
-git commit -m "add permanent logging for every successful tool execution, not just failures, closing a real observability gap where it was impossible to confirm which tool, if any, actually supplied the data behind a given answer"
+git commit -m "add an absolute rule against stating any number not directly returned by a tool call in that same turn, closing a confirmed live fabrication where the model invented specific portal enablement statistics with no real data behind them, delivered with the same confidence as the one real number a tool actually returned"
 git pull --rebase origin main
 git push origin main
