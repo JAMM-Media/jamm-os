@@ -54,36 +54,51 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Add an absolute rule against stating any number not directly returned by a tool call this turn
+TASK: Extend get_portal_inactive_clients with real firm-wide portal enablement and login statistics
 
 USE: claude sonnet
 
 VERIFY BEFORE ACT:
-grep -n "Never produce a draft that contains a placeholder" /home/corby/jamm-os/app/api/concierge/prompts.py
-grep -n "never mention" /home/corby/jamm-os/app/api/concierge/prompts.py
+grep -n "portal_access_enabled\|portal_last_login_at" /home/corby/jamm-os/app/models/client.py
+grep -n "def get_portal_inactive_clients" -A 55 /home/corby/jamm-os/app/api/concierge/functions.py
 
-Confirm both exist, these are the two closest existing absolute rules in tone and strength, use them as the model for how this new rule should read.
+Confirm the real fields exist as described and read the full current function before editing.
 
-WHAT IS WRONG:
+WHAT THIS IS:
 
-Confirmed live, with direct evidence from the new per-tool-call logging: a question about portal login activity resulted in only one tool call, get_portal_inactive_clients, which returns only an inactive count, a threshold, and a client list. The model's response stated additional specific numbers, such as a count of how many clients have portal access enabled and how many have ever logged in firm wide, that do not exist anywhere in that tool's return value and were not supplied by any second tool call, confirmed by the same log showing only one tool executed this turn. The model fabricated specific, confident sounding statistics with no real data behind them, delivered in the same sentence and with the same tone as the one real number that did come from the tool. This is a direct violation of the core standard that the agent never fabricates a specific number.
+Confirmed live, twice, with per-tool-call logging proving no second tool was ever called: the model was volunteering specific portal enablement and firm-wide login statistics, such as 3 of 27 clients have portal access enabled and 0 of 27 have ever logged in, with zero real data behind those numbers, since get_portal_inactive_clients does not compute or return anything like this. A prompt-only prohibition against fabricating numbers was already added and did not stop this from recurring identically on the next live test. Rather than attempt a third prompt rewrite, the actual fix is giving the model genuine data to draw from, since portal_access_enabled and portal_last_login_at already exist as real fields on the Client model and this is not a data modeling gap, only a tool coverage gap.
 
 CHANGE INSTRUCTIONS:
 
-Add a new absolute rule, in the same section and with the same strength as the existing rule against placeholder client names in drafts: the agent must never state any specific number, count, percentage, or statistic in a response unless that exact number was directly returned by a tool call made in that same turn. If the agent wants to say something is likely true or explain probable context, it must say so in qualitative terms only, without inventing a specific figure to make the explanation sound more precise or complete than the real data supports. Give a concrete negative example: if a tool returns an inactive client count of zero with no other data, the agent must not also state how many clients have portal access enabled or how many have ever logged in unless a tool call in that same turn actually returned those specific numbers. State plainly that a real number and an invented number delivered in the same confident tone are indistinguishable to the firm owner, which is exactly why this rule has no exceptions.
+Extend get_portal_inactive_clients to also compute and return, alongside its existing inactive client list: the total client count for the firm, the count of clients with portal_access_enabled true, and the count of clients where portal_last_login_at is not null, meaning they have logged in at least once. Add these as new top level keys in the returned dict, do not remove or rename any existing key, the existing inactive_count, threshold_days, and clients fields must remain exactly as they are for backward compatibility with anything already depending on this tool's current shape.
+
+Update this tool's description in the tool registration in route.py to mention that it now also returns firm-wide portal enablement and login statistics, not only the inactivity list, so the model knows this data is available without needing to reach for a second tool call or invent it.
 
 VERIFY AFTER ACT:
 
-grep -n "never state any specific number\|directly returned by a tool call" /home/corby/jamm-os/app/api/concierge/prompts.py
+grep -n "def get_portal_inactive_clients" -A 60 /home/corby/jamm-os/app/api/concierge/functions.py
 
-Expected: present.
+Confirm the new fields are present in the return statement alongside the original three.
+
+python3 -c "from app.main import app; print('OK')"
 
 MANUAL VERIFICATION:
 
-Restart backend. Ask which clients haven't logged into their portal recently, with the backend terminal visible and filtered for Tool executed. Confirm only get_portal_inactive_clients fires, and confirm the response this time contains only the real number that tool actually returns, with no additional invented statistics about portal enablement or firm wide login counts.
+Restart backend, keep terminal visible filtered for Tool executed. Ask which clients haven't logged into their portal recently. Confirm only get_portal_inactive_clients fires, same as before. Confirm the response's portal enablement and login statistics now match the real numbers the tool actually returned, not just numbers that happen to look the same as before, verify this by comparing the tool's actual return value in a quick direct database check against what the response states, using something like:
+
+python3 -c "
+from app.db.session import SessionLocal
+from app.api.concierge.functions import get_portal_inactive_clients
+db = SessionLocal()
+result = get_portal_inactive_clients('185314c9-e702-4eab-8600-249848022206', db)
+print(result)
+db.close()
+"
+
+Paste this real output alongside the actual chat response, side by side, so the two can be directly compared and confirmed to match exactly.
 
 GIT:
 git add -A
-git commit -m "add an absolute rule against stating any number not directly returned by a tool call in that same turn, closing a confirmed live fabrication where the model invented specific portal enablement statistics with no real data behind them, delivered with the same confidence as the one real number a tool actually returned"
+git commit -m "extend get_portal_inactive_clients with real firm-wide portal enablement and login statistics, using existing portal_access_enabled and portal_last_login_at fields, so the model has genuine data instead of inventing plausible sounding numbers, addressing the actual root cause after a prompt only prohibition failed to stop the same fabrication from recurring"
 git pull --rebase origin main
 git push origin main
