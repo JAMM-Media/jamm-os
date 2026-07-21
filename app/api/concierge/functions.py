@@ -9,7 +9,7 @@
 
 import uuid
 from datetime import datetime, timezone, timedelta, date
-from sqlalchemy import select, func
+from sqlalchemy import select, func, or_, and_
 from sqlalchemy.orm import Session
 
 from app.models.client import Client
@@ -143,8 +143,14 @@ def get_overdue_invoices(firm_id: uuid.UUID, db: Session) -> dict:
         .join(Client, Invoice.client_id == Client.id)
         .where(
             Invoice.firm_id == firm_id,
-            Invoice.status.in_(["sent", "overdue"]),
-            Invoice.due_date < today,
+            or_(
+                Invoice.status == "overdue",
+                and_(
+                    Invoice.status == "sent",
+                    Invoice.due_date != None,
+                    Invoice.due_date < today,
+                ),
+            ),
         )
         .order_by(Invoice.due_date.asc())
         .limit(20)
