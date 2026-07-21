@@ -23,10 +23,29 @@ export interface SSELineEvent {
  * consecutive data line, then collapse any resulting excess blank lines
  * (3+ consecutive newlines) down to a single paragraph break, and trim a
  * single trailing newline if present.
+ *
+ * When the backend's leak filter or safety net corrects a response after
+ * streaming has already begun, it sends a sentinel line whose data content
+ * is exactly [FILTERED], followed by the corrected final text. If this
+ * sentinel is found, everything up to and including the last occurrence is
+ * discarded and only the lines after it are assembled. If no sentinel is
+ * present, the function behaves exactly as before.
  */
 export function assembleSSELines(rawLines: string[]): string {
+  // Find the last [FILTERED] sentinel. Use last occurrence in case the
+  // backend sends the marker more than once, as the final one represents
+  // the most fully corrected version intended to be displayed.
+  let startIndex = 0
+  for (let i = rawLines.length - 1; i >= 0; i--) {
+    const line = rawLines[i]
+    if (line.startsWith('data:') && line.replace(/^data:\s*/, '').trim() === '[FILTERED]') {
+      startIndex = i + 1
+      break
+    }
+  }
+
   let assembled = ''
-  for (const line of rawLines) {
+  for (const line of rawLines.slice(startIndex)) {
     if (line.startsWith('data:')) {
       const chunk = line.replace(/^data:\s*/, '')
       assembled += chunk + '\n'
