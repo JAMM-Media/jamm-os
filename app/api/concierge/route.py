@@ -793,7 +793,8 @@ Respond with exactly one word: SAFE or UNSAFE. Nothing else.""",
                 # If filter changed the response, send a replacement sentinel
                 yield f"data: \n\n"
                 yield f"data: [FILTERED]\n\n"
-                yield f"data: {filtered}\n\n"
+                for _corrected_line in filtered.split("\n"):
+                    yield f"data: {_corrected_line}\n\n"
             yield f"data: [TOPIC:{_classify_topic(_last_user_msg)}]\n\n"
 
     def generate_and_log():
@@ -1017,7 +1018,8 @@ Respond with exactly one word: SAFE or UNSAFE. Nothing else.""",
                 if filtered_final != final_text:
                     yield f"data: \n\n"
                     yield f"data: [FILTERED]\n\n"
-                    yield f"data: {filtered_final}\n\n"
+                    for _corrected_line in filtered_final.split("\n"):
+                        yield f"data: {_corrected_line}\n\n"
 
                 # Trailing marker so the frontend can render contextually
                 # relevant suggestion chips without re-guessing the topic
