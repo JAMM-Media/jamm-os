@@ -39,6 +39,7 @@ from app.api.concierge.functions import (
     get_client_communication_gap,
     get_pipeline_bottleneck,
     get_client_full_snapshot,
+    resolve_client_by_name as _resolve_client_for_concierge,
     get_weekly_summary,
     get_deadline_calendar,
     get_automation_health,
@@ -108,6 +109,17 @@ _CONCIERGE_TOOLS = [
         "name": "get_pipeline_bottleneck",
         "description": "Returns engagement status distribution and flags any status holding 3x average volume. Call this when the firm owner asks where work is piling up, what their pipeline looks like, or where the bottleneck is.",
         "input_schema": {"type": "object", "properties": {}, "required": []},
+    },
+    {
+        "name": "resolve_client_by_name",
+        "description": "Resolves a client name mentioned in conversation into a real client_id UUID. Call this first, before any other client-scoped tool, whenever a firm owner refers to a client by name and no client_id is already provided in CURRENT CONTEXT. Performs a case-insensitive partial match so partial or slightly misspelled names will still resolve. If the result contains exactly one match, use that client_id immediately for the next tool call. If it contains more than one match, present the matching names to the firm owner using the OPTIONS marker to ask which client was meant before proceeding.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "name_query": {"type": "string", "description": "The client name or partial name to search for."}
+            },
+            "required": ["name_query"],
+        },
     },
     {
         "name": "get_client_full_snapshot",
@@ -554,6 +566,8 @@ Respond with exactly one word: SAFE or UNSAFE. Nothing else.""",
                 result = get_client_communication_gap(current_firm.id, db, days=int(tool_input.get("days", 21)))
             elif tool_name == "get_pipeline_bottleneck":
                 result = get_pipeline_bottleneck(current_firm.id, db)
+            elif tool_name == "resolve_client_by_name":
+                result = _resolve_client_for_concierge(current_firm.id, db, name_query=tool_input["name_query"])
             elif tool_name == "get_client_full_snapshot":
                 result = get_client_full_snapshot(current_firm.id, _uuid.UUID(tool_input["client_id"]), db)
             elif tool_name == "get_weekly_summary":

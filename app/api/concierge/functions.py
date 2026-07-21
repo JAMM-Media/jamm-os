@@ -379,6 +379,34 @@ def get_daily_brief(firm_id: uuid.UUID, db: Session) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Function: resolve_client_by_name
+# Case-insensitive partial name search. Returns matching client ids and names
+# so the model can resolve a name mentioned in conversation into a real UUID
+# before calling any client-scoped tool.
+# ---------------------------------------------------------------------------
+def resolve_client_by_name(firm_id: uuid.UUID, db: Session, name_query: str) -> dict:
+    rows = db.execute(
+        select(Client.id, Client.name)
+        .where(
+            Client.firm_id == firm_id,
+            Client.name.ilike(f"%{name_query}%"),
+            Client.is_active == True,
+        )
+        .order_by(Client.name.asc())
+        .limit(10)
+    ).fetchall()
+
+    matches = [
+        {"client_id": str(r.id), "client_name": r.name}
+        for r in rows
+    ]
+
+    return {
+        "match_count": len(matches),
+        "matches": matches,
+    }
+
+# ---------------------------------------------------------------------------
 # Function 8: get_client_full_snapshot
 # Returns all key data points for a single client.
 # ---------------------------------------------------------------------------
