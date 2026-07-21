@@ -54,47 +54,39 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Fix get_overdue_invoices silently excluding invoices with status overdue but a null due date
+TASK: Stop auto-offering a draft after pure information questions, only offer when the firm owner's own message actually requested action
 
 USE: claude sonnet
 
 VERIFY BEFORE ACT:
-grep -n "def get_overdue_invoices" -A 30 /home/corby/jamm-os/app/api/concierge/functions.py
+grep -n "you may append a short draft artifact" -A 15 /home/corby/jamm-os/app/api/concierge/prompts.py
 
-Confirm the current query matches exactly: Invoice.status.in_(["sent", "overdue"]) combined with Invoice.due_date < today as a single AND condition.
+Confirm the current three-condition rule matches what is described below before editing.
 
 WHAT IS WRONG:
 
-Confirmed live and confirmed directly against the database: Acme Consulting LLC has an invoice with status explicitly set to overdue and a null due_date. The current query requires both status in sent or overdue AND due_date less than today as one combined condition. Since SQL never evaluates a null due_date as less than today, this invoice is silently excluded from every overdue invoices answer, despite the system itself already having independently marked it overdue by status. This is a real financial correctness bug, a firm owner asking which clients owe money would never be told about this $2,400 invoice.
+The current rule attaches a draft offer whenever a live data call returns a named client and the model judges the natural next action to be a communication. Confirmed live and confirmed by direct product feedback: a purely informational question, which clients have overdue invoices right now, with no request for action anywhere in it, still ends every time with a follow up asking which client to draft a reminder for. This is the agent assuming what the firm owner probably wants next instead of answering only what was actually asked, the same category of overreach this build has been correcting all session.
 
 CHANGE INSTRUCTIONS:
 
-Change the where clause so it correctly handles the two statuses differently instead of applying one combined condition to both. An invoice with status already explicitly set to overdue should always be included regardless of what its due_date is, since the status itself is the authoritative signal. An invoice with status sent should only be included if its due_date is not null and is before today, since sent alone does not mean overdue yet, it needs an actual passed due date to qualify.
+Replace the third condition, the natural next action is a communication, which is currently judged by the model's own inference from the data alone, with a condition based on the firm owner's actual message: only attach a draft offer when the firm owner's own question contains real action language, such as draft, send, remind, email, follow up, reach out, or similarly explicit intent to act, not merely because the data happens to involve named clients who owe money. A purely informational question, phrased only as which, what, how many, or similar, with no action language present, should receive only the direct answer, with no draft offer appended at all.
 
-Concretely, this means an OR condition at the top level: status equals overdue, OR (status equals sent AND due_date is not null AND due_date less than today). Do not change how days_overdue is computed for the response, it already correctly falls back to None when due_date is null, that part is fine as is.
+State this plainly as a rule change: the presence of specific named clients in a tool result is not by itself sufficient reason to offer a draft. The firm owner's own words must contain the actual request for action.
+
+Do not change the two other existing conditions, calling a live data function and the result containing a named client, those remain necessary but are no longer sufficient on their own.
 
 VERIFY AFTER ACT:
 
-python3 -c "
-from app.db.session import SessionLocal
-from app.api.concierge.functions import get_overdue_invoices
-db = SessionLocal()
-result = get_overdue_invoices('185314c9-e702-4eab-8600-249848022206', db)
-for inv in result['invoices']:
-    print(inv['client_name'], inv['amount'], inv['due_date'])
-db.close()
-"
+grep -n "firm owner's own message\|action language" /home/corby/jamm-os/app/api/concierge/prompts.py
 
-Expected: Acme Consulting LLC now appears in this list with amount 2400.00, alongside the three invoices that already correctly appeared before.
-
-python3 -c "from app.main import app; print('OK')"
+Expected: present.
 
 MANUAL VERIFICATION:
 
-Restart backend. Ask which clients have overdue invoices right now. Confirm Acme Consulting LLC now appears alongside Goldstein Family Trust, Marcus and Diana Webb, and Brightline Properties LLC, with the correct 2400 dollar amount.
+Restart backend. Ask which clients have overdue invoices right now, confirm the response now ends with only the data, no draft offer and no follow up question attached. Separately, ask something like who owes us money and needs a reminder, confirm this one still correctly offers to draft, since it contains real action language. Report both results.
 
 GIT:
 git add -A
-git commit -m "fix get_overdue_invoices silently excluding invoices already marked overdue by status when due_date is null, confirmed live via a real audit finding Acme Consulting LLC's 2400 dollar overdue invoice was never surfaced despite being flagged overdue in the actual Billing page, a real financial correctness bug not a fabrication"
+git commit -m "stop automatically offering a draft after pure information questions, only offer when the firm owner's own message contains real action language, since the previous rule judged intent from the data alone and was appending a draft offer to every overdue invoice question regardless of whether the firm owner actually asked for one"
 git pull --rebase origin main
 git push origin main
