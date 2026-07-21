@@ -160,7 +160,7 @@ def get_morning_briefing_signals(firm_id: UUID, db: Session) -> dict:
         .join(Client, Engagement.client_id == Client.id)
         .where(
             Engagement.firm_id == firm_id,
-            Engagement.is_active == True,
+            Engagement.status.notin_(["completed", "archived"]),
         )
     ).all()
 
