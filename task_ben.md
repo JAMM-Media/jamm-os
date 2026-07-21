@@ -54,39 +54,57 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Stop auto-offering a draft after pure information questions, only offer when the firm owner's own message actually requested action
+TASK: Fix assembleSSELines never handling the [FILTERED] replacement sentinel, causing duplicated garbled output whenever the backend corrects a response
 
 USE: claude sonnet
 
 VERIFY BEFORE ACT:
-grep -n "you may append a short draft artifact" -A 15 /home/corby/jamm-os/app/api/concierge/prompts.py
+cat /home/corby/jamm-os/frontend/src/lib/concierge/assembleSSEStream.ts
 
-Confirm the current three-condition rule matches what is described below before editing.
+Confirm this matches exactly what is described below before editing.
 
 WHAT IS WRONG:
 
-The current rule attaches a draft offer whenever a live data call returns a named client and the model judges the natural next action to be a communication. Confirmed live and confirmed by direct product feedback: a purely informational question, which clients have overdue invoices right now, with no request for action anywhere in it, still ends every time with a follow up asking which client to draft a reminder for. This is the agent assuming what the firm owner probably wants next instead of answering only what was actually asked, the same category of overreach this build has been correcting all session.
+The backend, when its leak filter or the OPTIONS safety net changes the final response text after it has already started streaming, sends a specific sequence over SSE: the originally streamed lines, then a blank data line, then a line containing exactly [FILTERED], then the fully corrected final text as new data lines. This is meant to signal the frontend to discard everything shown so far and replace it entirely with what follows. assembleSSELines has no handling for this sentinel at all, it simply concatenates every line in order regardless of content. Confirmed live: a real response showed the original correct bulleted list, followed by the literal visible text [FILTERED], followed by a duplicated repeat of the same content, because the frontend appended everything instead of replacing.
+
+This is not a new bug introduced tonight. This mechanism has existed in the backend for some time and this is simply the first time it happened to fire on a response that got directly observed and reported, meaning any past response where the backend's leak filter changed the final text after streaming began would have shown this same garbled duplication to a real firm owner.
 
 CHANGE INSTRUCTIONS:
 
-Replace the third condition, the natural next action is a communication, which is currently judged by the model's own inference from the data alone, with a condition based on the firm owner's actual message: only attach a draft offer when the firm owner's own question contains real action language, such as draft, send, remind, email, follow up, reach out, or similarly explicit intent to act, not merely because the data happens to involve named clients who owe money. A purely informational question, phrased only as which, what, how many, or similar, with no action language present, should receive only the direct answer, with no draft offer appended at all.
+In assembleSSELines, before assembling anything, scan the input rawLines array for a data line whose content, after stripping the data: prefix and trimming whitespace, is exactly [FILTERED]. If found, discard every line before and including that marker line, and only assemble the lines that come after it, using the exact same assembly logic already in the function for the remaining lines. If no such marker line exists anywhere in the input, behave exactly as the function already does today, with no change in output.
 
-State this plainly as a rule change: the presence of specific named clients in a tool result is not by itself sufficient reason to offer a draft. The firm owner's own words must contain the actual request for action.
+If the marker appears more than once in the input, use the last occurrence, since that represents the most final, most fully corrected version the backend intended to send.
 
-Do not change the two other existing conditions, calling a live data function and the result containing a named client, those remain necessary but are no longer sufficient on their own.
+Do not change how any other part of this function works, only add this discard-and-restart behavior keyed on the marker.
 
 VERIFY AFTER ACT:
 
-grep -n "firm owner's own message\|action language" /home/corby/jamm-os/app/api/concierge/prompts.py
+Write and run a standalone test directly exercising this function with three cases, and paste the real output, not a summary:
 
-Expected: present.
+node -e "
+const { assembleSSELines } = require('./frontend/src/lib/concierge/assembleSSEStream.ts');
+" 
+
+If this cannot run directly due to TypeScript, instead write a small inline test using ts-node or by temporarily compiling, or simply construct the exact three test cases as plain JavaScript logic mirroring the real function and run them with plain node, clearly labeled as a manual equivalence check if the real module cannot be executed directly outside the Next.js build. Whatever approach is used, the three cases to prove are:
+
+Case one: no [FILTERED] line anywhere in the input, confirm output is identical to what the function already produces today, unchanged behavior.
+Case two: a [FILTERED] line appears once in the middle of the input, confirm the output contains only the content from after that line, with none of the content from before it present anywhere in the result.
+Case three: multiple lines of real content both before and after a single [FILTERED] marker, confirm the assembled output exactly matches only the after-marker lines, correctly rejoined with newlines exactly as the existing assembly logic already does.
+
+npm run build in frontend, expected zero TypeScript errors.
 
 MANUAL VERIFICATION:
 
-Restart backend. Ask which clients have overdue invoices right now, confirm the response now ends with only the data, no draft offer and no follow up question attached. Separately, ask something like who owes us money and needs a reminder, confirm this one still correctly offers to draft, since it contains real action language. Report both results.
+Full kill, .next wipe, restart both servers, this touches core message assembly.
+
+Reproduce a response that is known to trigger the backend's leak filter or the OPTIONS safety net replacement path, and confirm the displayed message no longer shows any raw [FILTERED] text or duplicated content, only the single, final, correct version.
+
+Separately, ask several normal questions that should not trigger any filtering at all, confirm they display exactly as they always have, with no regression from this change.
+
+Report pass or fail for the standalone test cases, the filtered-response reproduction, and the normal-response regression check, individually.
 
 GIT:
 git add -A
-git commit -m "stop automatically offering a draft after pure information questions, only offer when the firm owner's own message contains real action language, since the previous rule judged intent from the data alone and was appending a draft offer to every overdue invoice question regardless of whether the firm owner actually asked for one"
+git commit -m "fix assembleSSELines never handling the FILTERED replacement sentinel the backend sends when its leak filter or safety net corrects a response after streaming has already begun, which was causing the original text, the raw marker, and a duplicated corrected version to all display together instead of the frontend cleanly replacing the display with only the final corrected text"
 git pull --rebase origin main
 git push origin main
