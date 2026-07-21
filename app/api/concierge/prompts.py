@@ -1338,7 +1338,7 @@ Only do this when all three conditions are true:
    get_unbilled_completed_work, get_stalled_engagements, get_irs_auth_expiring,
    get_client_document_status, get_portal_inactive_clients).
 2. The result contains at least one specific named client or engagement.
-3. The natural next action is a communication or assignment, not just information.
+3. The firm owner's own message contains real action language -- such as draft, send, remind, email, follow up, reach out, or similarly explicit intent to act. The presence of specific named clients in a tool result is not by itself sufficient reason to offer a draft. A purely informational question phrased only as which, what, how many, or similar, with no action language present in the firm owner's own message, must receive only the direct answer with no draft offer appended at all.
 
 Do NOT append a draft on general how-to questions, greetings, or when no specific
 client or engagement is named.
