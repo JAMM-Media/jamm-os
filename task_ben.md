@@ -54,51 +54,51 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Extend get_portal_inactive_clients with real firm-wide portal enablement and login statistics
+TASK: Fix document status question classifier gap and add a firm-wide outstanding document requests tool
 
 USE: claude sonnet
 
 VERIFY BEFORE ACT:
-grep -n "portal_access_enabled\|portal_last_login_at" /home/corby/jamm-os/app/models/client.py
-grep -n "def get_portal_inactive_clients" -A 55 /home/corby/jamm-os/app/api/concierge/functions.py
+grep -n "\"document status\", \"uploaded\", \"missing documents\"" /home/corby/jamm-os/app/api/concierge/route.py
+grep -n "def get_client_document_status" -A 30 /home/corby/jamm-os/app/api/concierge/functions.py
+grep -n "def get_stalled_engagements" -A 15 /home/corby/jamm-os/app/api/concierge/functions.py
 
-Confirm the real fields exist as described and read the full current function before editing.
+Confirm the current operational keyword line, the existing single-client tool, and read one existing firm-wide aggregate tool such as get_stalled_engagements to match its exact structure and return shape before writing anything.
 
-WHAT THIS IS:
+WHAT IS WRONG:
 
-Confirmed live, twice, with per-tool-call logging proving no second tool was ever called: the model was volunteering specific portal enablement and firm-wide login statistics, such as 3 of 27 clients have portal access enabled and 0 of 27 have ever logged in, with zero real data behind those numbers, since get_portal_inactive_clients does not compute or return anything like this. A prompt-only prohibition against fabricating numbers was already added and did not stop this from recurring identically on the next live test. Rather than attempt a third prompt rewrite, the actual fix is giving the model genuine data to draw from, since portal_access_enabled and portal_last_login_at already exist as real fields on the Client model and this is not a data modeling gap, only a tool coverage gap.
+Two separate, confirmed gaps. First, the question what documents is Goldstein Family Trust still missing failed to enter the tool-use loop at all, confirmed live, the model responded that it had no tool available despite get_client_document_status being correctly registered and wired. The operational keyword set only contains the exact phrase missing documents, not the reversed word order still missing used in the real question, so the classifier never routed this question to the tool-use path in the first place. Second, even when correctly routed, get_client_document_status requires a specific client_id and can only ever answer for one already-named client. There is no way currently to answer the broader question which clients firm wide have outstanding document requests, which is the actual capability this domain is supposed to have per the standards document.
 
 CHANGE INSTRUCTIONS:
 
-Extend get_portal_inactive_clients to also compute and return, alongside its existing inactive client list: the total client count for the firm, the count of clients with portal_access_enabled true, and the count of clients where portal_last_login_at is not null, meaning they have logged in at least once. Add these as new top level keys in the returned dict, do not remove or rename any existing key, the existing inactive_count, threshold_days, and clients fields must remain exactly as they are for backward compatibility with anything already depending on this tool's current shape.
+In _OPERATIONAL_KEYWORDS, add additional phrasings covering common real ways this question gets asked, such as still missing, what's missing, still need, still needs, hasn't uploaded, haven't uploaded, outstanding documents, missing paperwork. Do not remove the existing missing documents entry.
 
-Update this tool's description in the tool registration in route.py to mention that it now also returns firm-wide portal enablement and login statistics, not only the inactivity list, so the model knows this data is available without needing to reach for a second tool call or invent it.
+In functions.py, add a new function, get_outstanding_document_requests, firm scoped, matching the exact pattern and docstring style of get_stalled_engagements. It should query DocumentRequest where status is in pending or partial, firm wide, not scoped to one client, joined to Client for the client name and Engagement for the engagement title, returning each outstanding request's client name, engagement title, request title, status, and due date if set. Order by due date ascending with nulls last, matching the pattern already used elsewhere in this file for similar deadline-oriented lists.
+
+Register this new tool in _CONCIERGE_TOOLS in route.py with a clear description distinguishing it from get_client_document_status, explicitly stating this one is for firm-wide questions about which clients have outstanding requests, while the existing tool remains for questions about one specific, already-named client's document status.
+
+Do not modify get_client_document_status itself, it is correctly scoped for its own purpose and should remain unchanged.
 
 VERIFY AFTER ACT:
 
-grep -n "def get_portal_inactive_clients" -A 60 /home/corby/jamm-os/app/api/concierge/functions.py
+grep -n "get_outstanding_document_requests" /home/corby/jamm-os/app/api/concierge/functions.py /home/corby/jamm-os/app/api/concierge/route.py
 
-Confirm the new fields are present in the return statement alongside the original three.
+Expected: present in both files, properly registered.
 
 python3 -c "from app.main import app; print('OK')"
 
 MANUAL VERIFICATION:
 
-Restart backend, keep terminal visible filtered for Tool executed. Ask which clients haven't logged into their portal recently. Confirm only get_portal_inactive_clients fires, same as before. Confirm the response's portal enablement and login statistics now match the real numbers the tool actually returned, not just numbers that happen to look the same as before, verify this by comparing the tool's actual return value in a quick direct database check against what the response states, using something like:
+Restart backend, keep terminal visible filtered for Tool executed.
 
-python3 -c "
-from app.db.session import SessionLocal
-from app.api.concierge.functions import get_portal_inactive_clients
-db = SessionLocal()
-result = get_portal_inactive_clients('185314c9-e702-4eab-8600-249848022206', db)
-print(result)
-db.close()
-"
+Ask what documents is Goldstein Family Trust still missing, confirm this now correctly triggers get_client_document_status, not a deflection.
 
-Paste this real output alongside the actual chat response, side by side, so the two can be directly compared and confirmed to match exactly.
+Ask which clients have outstanding document requests, confirm this now correctly triggers the new get_outstanding_document_requests tool and returns real, specific results, not a deflection to navigate manually.
+
+Report pass or fail individually for both questions, including which tool name appears in the log for each.
 
 GIT:
 git add -A
-git commit -m "extend get_portal_inactive_clients with real firm-wide portal enablement and login statistics, using existing portal_access_enabled and portal_last_login_at fields, so the model has genuine data instead of inventing plausible sounding numbers, addressing the actual root cause after a prompt only prohibition failed to stop the same fabrication from recurring"
+git commit -m "fix document status question classifier gap where still missing did not match the existing missing documents keyword, and add get_outstanding_document_requests for firm-wide questions, closing the gap where only a single already-named client's document status could be answered"
 git pull --rebase origin main
 git push origin main
