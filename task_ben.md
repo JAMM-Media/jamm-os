@@ -54,51 +54,47 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Fix document status question classifier gap and add a firm-wide outstanding document requests tool
+TASK: Fix get_overdue_invoices silently excluding invoices with status overdue but a null due date
 
 USE: claude sonnet
 
 VERIFY BEFORE ACT:
-grep -n "\"document status\", \"uploaded\", \"missing documents\"" /home/corby/jamm-os/app/api/concierge/route.py
-grep -n "def get_client_document_status" -A 30 /home/corby/jamm-os/app/api/concierge/functions.py
-grep -n "def get_stalled_engagements" -A 15 /home/corby/jamm-os/app/api/concierge/functions.py
+grep -n "def get_overdue_invoices" -A 30 /home/corby/jamm-os/app/api/concierge/functions.py
 
-Confirm the current operational keyword line, the existing single-client tool, and read one existing firm-wide aggregate tool such as get_stalled_engagements to match its exact structure and return shape before writing anything.
+Confirm the current query matches exactly: Invoice.status.in_(["sent", "overdue"]) combined with Invoice.due_date < today as a single AND condition.
 
 WHAT IS WRONG:
 
-Two separate, confirmed gaps. First, the question what documents is Goldstein Family Trust still missing failed to enter the tool-use loop at all, confirmed live, the model responded that it had no tool available despite get_client_document_status being correctly registered and wired. The operational keyword set only contains the exact phrase missing documents, not the reversed word order still missing used in the real question, so the classifier never routed this question to the tool-use path in the first place. Second, even when correctly routed, get_client_document_status requires a specific client_id and can only ever answer for one already-named client. There is no way currently to answer the broader question which clients firm wide have outstanding document requests, which is the actual capability this domain is supposed to have per the standards document.
+Confirmed live and confirmed directly against the database: Acme Consulting LLC has an invoice with status explicitly set to overdue and a null due_date. The current query requires both status in sent or overdue AND due_date less than today as one combined condition. Since SQL never evaluates a null due_date as less than today, this invoice is silently excluded from every overdue invoices answer, despite the system itself already having independently marked it overdue by status. This is a real financial correctness bug, a firm owner asking which clients owe money would never be told about this $2,400 invoice.
 
 CHANGE INSTRUCTIONS:
 
-In _OPERATIONAL_KEYWORDS, add additional phrasings covering common real ways this question gets asked, such as still missing, what's missing, still need, still needs, hasn't uploaded, haven't uploaded, outstanding documents, missing paperwork. Do not remove the existing missing documents entry.
+Change the where clause so it correctly handles the two statuses differently instead of applying one combined condition to both. An invoice with status already explicitly set to overdue should always be included regardless of what its due_date is, since the status itself is the authoritative signal. An invoice with status sent should only be included if its due_date is not null and is before today, since sent alone does not mean overdue yet, it needs an actual passed due date to qualify.
 
-In functions.py, add a new function, get_outstanding_document_requests, firm scoped, matching the exact pattern and docstring style of get_stalled_engagements. It should query DocumentRequest where status is in pending or partial, firm wide, not scoped to one client, joined to Client for the client name and Engagement for the engagement title, returning each outstanding request's client name, engagement title, request title, status, and due date if set. Order by due date ascending with nulls last, matching the pattern already used elsewhere in this file for similar deadline-oriented lists.
-
-Register this new tool in _CONCIERGE_TOOLS in route.py with a clear description distinguishing it from get_client_document_status, explicitly stating this one is for firm-wide questions about which clients have outstanding requests, while the existing tool remains for questions about one specific, already-named client's document status.
-
-Do not modify get_client_document_status itself, it is correctly scoped for its own purpose and should remain unchanged.
+Concretely, this means an OR condition at the top level: status equals overdue, OR (status equals sent AND due_date is not null AND due_date less than today). Do not change how days_overdue is computed for the response, it already correctly falls back to None when due_date is null, that part is fine as is.
 
 VERIFY AFTER ACT:
 
-grep -n "get_outstanding_document_requests" /home/corby/jamm-os/app/api/concierge/functions.py /home/corby/jamm-os/app/api/concierge/route.py
+python3 -c "
+from app.db.session import SessionLocal
+from app.api.concierge.functions import get_overdue_invoices
+db = SessionLocal()
+result = get_overdue_invoices('185314c9-e702-4eab-8600-249848022206', db)
+for inv in result['invoices']:
+    print(inv['client_name'], inv['amount'], inv['due_date'])
+db.close()
+"
 
-Expected: present in both files, properly registered.
+Expected: Acme Consulting LLC now appears in this list with amount 2400.00, alongside the three invoices that already correctly appeared before.
 
 python3 -c "from app.main import app; print('OK')"
 
 MANUAL VERIFICATION:
 
-Restart backend, keep terminal visible filtered for Tool executed.
-
-Ask what documents is Goldstein Family Trust still missing, confirm this now correctly triggers get_client_document_status, not a deflection.
-
-Ask which clients have outstanding document requests, confirm this now correctly triggers the new get_outstanding_document_requests tool and returns real, specific results, not a deflection to navigate manually.
-
-Report pass or fail individually for both questions, including which tool name appears in the log for each.
+Restart backend. Ask which clients have overdue invoices right now. Confirm Acme Consulting LLC now appears alongside Goldstein Family Trust, Marcus and Diana Webb, and Brightline Properties LLC, with the correct 2400 dollar amount.
 
 GIT:
 git add -A
-git commit -m "fix document status question classifier gap where still missing did not match the existing missing documents keyword, and add get_outstanding_document_requests for firm-wide questions, closing the gap where only a single already-named client's document status could be answered"
+git commit -m "fix get_overdue_invoices silently excluding invoices already marked overdue by status when due_date is null, confirmed live via a real audit finding Acme Consulting LLC's 2400 dollar overdue invoice was never surfaced despite being flagged overdue in the actual Billing page, a real financial correctness bug not a fabrication"
 git pull --rebase origin main
 git push origin main
