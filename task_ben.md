@@ -54,47 +54,54 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Fix FILTERED replacement sentinel dropping all but the first line of corrected multi-line responses
+TASK: Fix staff workload classifier gap that produced a fully fabricated employee identity
 
 USE: claude sonnet
 
 VERIFY BEFORE ACT:
-sed -n '788,800p' /home/corby/jamm-os/app/api/concierge/route.py
-sed -n '1012,1025p' /home/corby/jamm-os/app/api/concierge/route.py
+grep -n "\"staff\", \"team\", \"invite\"" -A 3 /home/corby/jamm-os/app/api/concierge/route.py
 
-Confirm both occurrences match exactly what is described below before editing.
+Confirm the current staff-related operational keywords match what is described below before editing.
 
 WHAT IS WRONG:
 
-Both places in this file that send a corrected replacement response after the FILTERED sentinel, one in the plain conversational path and one in the tool-use path, yield the entire corrected multi-line text as a single SSE data event: yield f"data: {filtered}\n\n" and yield f"data: {filtered_final}\n\n". When this corrected text contains internal line breaks, such as any bulleted list, the raw newline characters inside what is meant to be one field's value get misinterpreted by the browser's own line splitting on the frontend. Only the first line retains the required data: prefix, every line after the first internal newline loses it and gets silently dropped by assembleSSELines, which only keeps lines starting with data:. Confirmed live: a corrected response containing a bulleted list of four overdue invoices displayed only its first sentence, the entire bulleted list vanished, immediately after a separate, correct fix started properly consuming the FILTERED marker for the first time. That fix is not the bug, it simply exposed this pre-existing issue by finally causing the frontend to rely entirely on content that was already being sent maliformed.
+Confirmed live via backend logs showing zero tool executions for the entire turn: the question which employee is being used the most never entered the tool-use loop at all, since the word employee does not appear anywhere in _OPERATIONAL_KEYWORDS, only staff and staff member, and the phrase used the most does not match capacity, overloaded, bandwidth, or workload. With no tool available, the model fully fabricated a nonexistent person, Sarah Mitchell, along with a specific fake engagement count and specific fake hours logged, contradicting the real staff roster and contradicting the real 0 hours logged confirmed by get_staff_capacity in every other test tonight. This is the third confirmed instance of this same root cause tonight, a real tool exists but a keyword based classifier gate misses a common real phrasing and silently routes the question to a path with zero tool access, and it is the most serious instance since it produced a fully invented identity rather than an honest deflection.
 
 CHANGE INSTRUCTIONS:
 
-In both locations, replace the single yield of the entire corrected text with line by line yielding, splitting the corrected text on newlines and yielding each resulting line as its own separate data: prefixed SSE event, exactly matching the pattern already used safely elsewhere in this same file for the normal streaming loop, such as the existing while "\n" in buffer style splitting already present nearby. Do not change the FILTERED sentinel itself or anything before it, only how the corrected text that follows gets transmitted.
-
-Apply this identically to both occurrences, the plain conversational path and the tool-use path, since both have the exact same bug.
+Add employee and employees as additional keywords alongside the existing staff and staff member entries in the operational keyword set. Also add common real phrasings for this same underlying question that do not currently match anything, such as used the most, busiest, most work, most hours, underutilized, most engagements.
 
 VERIFY AFTER ACT:
 
-sed -n '788,802p' /home/corby/jamm-os/app/api/concierge/route.py
-sed -n '1012,1028p' /home/corby/jamm-os/app/api/concierge/route.py
+python3 -c "
+import sys
+sys.path.insert(0, '/home/corby/jamm-os')
+from app.api.concierge.route import _is_operational_question
+tests = [
+    'Which employee is being used the most?',
+    'Who is the busiest right now?',
+    'Which staff member has the lightest workload?',
+]
+for t in tests:
+    print(t, '->', _is_operational_question(t))
+"
 
-Confirm both now split the corrected text into individual lines before yielding, rather than yielding the whole multi-line string in one event.
+Expected: all three print True. Paste this real output.
 
 python3 -c "from app.main import app; print('OK')"
 
 MANUAL VERIFICATION:
 
-Full kill, .next wipe, restart both servers using restart_backend.sh and restart_frontend.sh, checking with lsof on both port 3000 and 3001 before wiping anything, given tonight's stale process issue.
+Restart backend, keep terminal visible filtered for Tool executed.
 
-Ask which clients have overdue invoices right now, the exact question already confirmed to trigger this failure. Confirm the full bulleted list of all four clients now displays completely, with no missing content and no raw FILTERED text visible anywhere.
+Ask which employee is being used the most, confirm get_staff_capacity now fires and the response contains only real staff names from the actual roster, James Okafor, Priya Mehta, Tom Reyes, Test Run, Sarah Chen, never an invented name, and never a number not actually returned by the tool.
 
-Separately, ask several normal questions that should not trigger any filtering at all, confirm they still display exactly as they always have.
+Ask at least two more differently worded versions of the same underlying question, such as who is the busiest right now and which staff member has the most work, confirm both also correctly trigger the tool and return only real data.
 
-Report pass or fail for the multi-line filtered response and the normal-response regression check, individually.
+Report pass or fail for the original failing question and both rephrased versions, individually, including the exact tool name confirmed in the log for each.
 
 GIT:
 git add -A
-git commit -m "fix FILTERED replacement sentinel yielding entire multi-line corrected responses as a single SSE event, which caused the browser's line splitting to drop every line after the first internal newline, silently truncating any corrected response containing a bulleted list or other multi-line content, exposed by the recent fix that made the frontend finally rely on this previously-malformed content"
+git commit -m "fix staff workload classifier gap where employee and used the most did not match any operational keyword, causing the question to bypass the tool-use loop entirely and resulting in a fully fabricated nonexistent staff member with invented engagement and hour counts, the third confirmed instance of this same keyword gap root cause tonight and the most serious since it produced an invented identity rather than an honest deflection"
 git pull --rebase origin main
 git push origin main
