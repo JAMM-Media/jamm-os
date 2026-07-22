@@ -9,6 +9,7 @@ interface LogEntry {
   question_text: string
   response_summary: string | null
   low_confidence: boolean
+  possible_fabrication: boolean
   asked_at: string
   reviewed: boolean
 }
@@ -27,6 +28,7 @@ export default function ConciergeLogPage() {
   const [entries, setEntries] = useState<LogEntry[]>([])
   const [total, setTotal] = useState(0)
   const [lowOnly, setLowOnly] = useState(true)
+  const [fabricationOnly, setFabricationOnly] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [expanded, setExpanded] = useState<string | null>(null)
@@ -36,7 +38,12 @@ export default function ConciergeLogPage() {
     setError(null)
     try {
       const res = await api.get('/concierge/question-log', {
-        params: { low_confidence_only: lowOnly, limit: 100, offset: 0 },
+        params: {
+          low_confidence_only: lowOnly,
+          possible_fabrication_only: fabricationOnly,
+          limit: 100,
+          offset: 0,
+        },
       })
       setEntries(res.data.items ?? [])
       setTotal(res.data.total ?? 0)
@@ -45,7 +52,7 @@ export default function ConciergeLogPage() {
     } finally {
       setLoading(false)
     }
-  }, [lowOnly])
+  }, [lowOnly, fabricationOnly])
 
   useEffect(() => { void load() }, [load])
 
@@ -65,6 +72,15 @@ export default function ConciergeLogPage() {
               className="rounded"
             />
             Low confidence only
+          </label>
+          <label className="flex items-center gap-2 text-[12px] text-[#374151] dark:text-[#D1D5DB] cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={fabricationOnly}
+              onChange={(e) => setFabricationOnly(e.target.checked)}
+              className="rounded"
+            />
+            Possible fabrication only
           </label>
           <span className="text-[11px] text-[#6B7280]">{total} result{total !== 1 ? 's' : ''}</span>
         </div>
@@ -96,6 +112,11 @@ export default function ConciergeLogPage() {
                     {e.low_confidence && (
                       <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
                         low confidence
+                      </span>
+                    )}
+                    {e.possible_fabrication && (
+                      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">
+                        possible fabrication
                       </span>
                     )}
                   </div>

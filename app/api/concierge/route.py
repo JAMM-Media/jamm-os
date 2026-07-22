@@ -600,6 +600,8 @@ Respond with exactly one word: SAFE or UNSAFE. Nothing else.""",
             else:
                 result = {"error": f"Unknown tool: {tool_name}"}
             logger.info(f"Tool executed: {tool_name} -- firm {current_firm.id}")
+            nonlocal _tool_executed_this_turn
+            _tool_executed_this_turn = True
             return _json.dumps(result, default=str)
         except Exception as e:
             logger.warning(f"Tool execution failed: {tool_name} -- {e}")
@@ -816,6 +818,7 @@ Respond with exactly one word: SAFE or UNSAFE. Nothing else.""",
             last_user_text=last_user_text,
             full_response=full_response,
             entity_type=_classify_topic(last_user_text),
+            on_tool_path=False,
         )
 
     # ------------------------------------------------------------------
@@ -843,6 +846,9 @@ Respond with exactly one word: SAFE or UNSAFE. Nothing else.""",
             import json as _json
 
             current_messages = list(tool_messages)
+            # Tracks whether at least one tool executed successfully this turn.
+            # Used by fabrication detection in the question log.
+            _tool_executed_this_turn = False
             # Tracks raw result dicts for tools in _MULTI_CLIENT_TOOL_EXTRACTORS
             # so the OPTIONS marker safety net can inspect them after the loop.
             _captured_tool_results: dict[str, dict] = {}
@@ -1061,6 +1067,8 @@ Respond with exactly one word: SAFE or UNSAFE. Nothing else.""",
                 last_user_text=_last_user_msg,
                 full_response=full_response,
                 entity_type=_classify_topic(_last_user_msg),
+                on_tool_path=True,
+                tool_executed=_tool_executed_this_turn,
                 extra_metadata={"model": "fable5_tools"},
             )
 
@@ -1405,6 +1413,7 @@ def get_question_log(
     current_user: User = Depends(require_firm_owner),
     db: Session = Depends(get_db),
     low_confidence_only: bool = True,
+    possible_fabrication_only: bool = False,
     limit: int = 50,
     offset: int = 0,
 ):
@@ -1413,6 +1422,8 @@ def get_question_log(
     )
     if low_confidence_only:
         stmt = stmt.where(ConciergeQuestionLog.low_confidence == True)  # noqa: E712
+    if possible_fabrication_only:
+        stmt = stmt.where(ConciergeQuestionLog.possible_fabrication == True)  # noqa: E712
     count_stmt = select(func.count()).select_from(stmt.subquery())
     total = db.execute(count_stmt).scalar_one()
     rows = db.execute(
@@ -1424,6 +1435,7 @@ def get_question_log(
             "question_text": r.question_text,
             "response_summary": r.response_summary,
             "low_confidence": r.low_confidence,
+            "possible_fabrication": r.possible_fabrication,
             "asked_at": r.asked_at.isoformat(),
             "reviewed": r.reviewed,
         }
