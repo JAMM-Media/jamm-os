@@ -59,6 +59,7 @@ class ChecklistTemplate(Base):
         DateTime(timezone=True),
         nullable=False,
         server_default=text("now()"),
+        default=lambda: datetime.now(timezone.utc),
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

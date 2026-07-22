@@ -121,13 +121,52 @@ def exchange_magic_link(token: str, db: Session) -> str:
             detail="Invalid or expired magic link",
         )
 
+    client = db.execute(
+        select(Client).where(Client.id == session.client_id)
+    ).scalar_one_or_none()
+    is_first_login = client is not None and client.portal_last_login_at is None
+
     session.magic_link_token_hash = None
     session.magic_link_expires_at = None
 
     new_jti = str(uuid.uuid4())
     session.access_jti = new_jti
     session.last_active_at = datetime.now(timezone.utc)
+
+    if client is not None:
+        client.portal_last_login_at = datetime.now(timezone.utc)
+
     db.commit()
+
+    if client is not None:
+        if is_first_login:
+            log_event(
+                firm_id=session.firm_id,
+                event_type="portal.first_login",
+                entity_type="client",
+                entity_id=client.id,
+                actor_type="client",
+                actor_id=None,
+                metadata={
+                    "time_since_invitation_days": (
+                        (datetime.now(timezone.utc) - client.portal_invited_at).days
+                        if getattr(client, "portal_invited_at", None) else None
+                    ),
+                    "login_method": "magic_link",
+                }
+            )
+        log_event(
+            firm_id=session.firm_id,
+            event_type="portal.login",
+            entity_type="client",
+            entity_id=client.id,
+            actor_type="client",
+            actor_id=None,
+            metadata={
+                "time_of_day": datetime.now(timezone.utc).hour,
+                "day_of_week": datetime.now(timezone.utc).weekday(),
+            },
+        )
 
     from app.services.portal_auth import create_portal_access_token
     return create_portal_access_token(session.client_id, session.firm_id, new_jti)

@@ -15,6 +15,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import select
 
 from tests.conftest import TestingSessionLocal
+from app.models.behavioral_event import BehavioralEvent
 from app.models.client import Client
 from app.models.firm import Firm
 from app.models.portal_session import PortalSession
@@ -181,3 +182,91 @@ def test_exchange_magic_link_one_time_use(client):
 
     r2 = client.get(f"/portal/auth?token={raw_token}")
     assert r2.status_code == 401, r2.text
+
+
+def test_exchange_magic_link_fires_first_login_and_login_events(client):
+    """
+    A client's first-ever magic-link exchange fires both portal.first_login
+    and portal.login, and sets Client.portal_last_login_at.
+    """
+    firm_id = _make_firm_owner(email="owner_ml5@test.com", slug="magic-firm-5")
+    client_id = _make_client(firm_id, email="client_ml5@test.com")
+
+    raw_token = secrets.token_hex(32)
+    expires_at = datetime.now(timezone.utc) + timedelta(hours=48)
+    _make_session_with_magic_link(firm_id, client_id, raw_token, expires_at)
+
+    r = client.get(f"/portal/auth?token={raw_token}")
+    assert r.status_code == 200, r.text
+
+    db = TestingSessionLocal()
+    try:
+        c = db.get(Client, client_id)
+        assert c.portal_last_login_at is not None
+
+        first_login = db.execute(
+            select(BehavioralEvent).where(
+                BehavioralEvent.firm_id == firm_id,
+                BehavioralEvent.entity_id == client_id,
+                BehavioralEvent.event_type == "portal.first_login",
+            )
+        ).scalar_one_or_none()
+        assert first_login is not None
+        assert first_login.extra_metadata["login_method"] == "magic_link"
+
+        login = db.execute(
+            select(BehavioralEvent).where(
+                BehavioralEvent.firm_id == firm_id,
+                BehavioralEvent.entity_id == client_id,
+                BehavioralEvent.event_type == "portal.login",
+            )
+        ).scalar_one_or_none()
+        assert login is not None
+    finally:
+        db.close()
+
+
+def test_exchange_magic_link_repeat_login_does_not_refire_first_login(client):
+    """
+    A client who has already logged in once (portal_last_login_at already set)
+    fires portal.login on a later magic-link exchange, but not portal.first_login again.
+    """
+    firm_id = _make_firm_owner(email="owner_ml6@test.com", slug="magic-firm-6")
+    client_id = _make_client(firm_id, email="client_ml6@test.com")
+
+    db = TestingSessionLocal()
+    try:
+        c = db.get(Client, client_id)
+        c.portal_last_login_at = datetime.now(timezone.utc) - timedelta(days=3)
+        db.commit()
+    finally:
+        db.close()
+
+    raw_token = secrets.token_hex(32)
+    expires_at = datetime.now(timezone.utc) + timedelta(hours=48)
+    _make_session_with_magic_link(firm_id, client_id, raw_token, expires_at)
+
+    r = client.get(f"/portal/auth?token={raw_token}")
+    assert r.status_code == 200, r.text
+
+    db = TestingSessionLocal()
+    try:
+        first_login_count = db.execute(
+            select(BehavioralEvent).where(
+                BehavioralEvent.firm_id == firm_id,
+                BehavioralEvent.entity_id == client_id,
+                BehavioralEvent.event_type == "portal.first_login",
+            )
+        ).scalars().all()
+        assert len(first_login_count) == 0
+
+        login = db.execute(
+            select(BehavioralEvent).where(
+                BehavioralEvent.firm_id == firm_id,
+                BehavioralEvent.entity_id == client_id,
+                BehavioralEvent.event_type == "portal.login",
+            )
+        ).scalar_one_or_none()
+        assert login is not None
+    finally:
+        db.close()

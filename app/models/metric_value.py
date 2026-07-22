@@ -1,7 +1,7 @@
 # app/models/metric_value.py
 
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import Optional
 
 from sqlalchemy import Date, DateTime, ForeignKey, Integer, Numeric, UniqueConstraint, func
@@ -54,12 +54,13 @@ class MetricValue(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
+        default=lambda: datetime.now(timezone.utc),
         nullable=False,
     )
 
     updated_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True),
-        onupdate=func.now(),
+        onupdate=lambda: datetime.now(timezone.utc),
         nullable=True,
     )
 

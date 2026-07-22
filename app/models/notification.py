@@ -1,7 +1,7 @@
 # app/models/notification.py
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import String, Boolean, DateTime, ForeignKey, Text
 from sqlalchemy import Enum as SAEnum
@@ -59,6 +59,7 @@ class Notification(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
+        default=lambda: datetime.now(timezone.utc),
         nullable=False,
     )
 

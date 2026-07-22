@@ -1,7 +1,7 @@
 # app/models/metric_run_log.py
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 import sqlalchemy as sa
@@ -41,11 +41,12 @@ class MetricRunLog(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
+        default=lambda: datetime.now(timezone.utc),
         nullable=False,
     )
 
     updated_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True),
-        onupdate=func.now(),
+        onupdate=lambda: datetime.now(timezone.utc),
         nullable=True,
     )

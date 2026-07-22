@@ -18,9 +18,6 @@ from app.models.firm import Firm
 from app.models.user import User
 from app.schemas.extension import ExtensionCreate, ExtensionOut, ExtensionUpdate
 from app.schemas.engagement import EngagementUpdate
-from app.services.audit_service import write_audit_log
-from app.services.event_bus import emit_event
-from app.core.enums import TriggerEvent
 import app.services.extension_service as extension_service
 
 router = APIRouter(prefix="/extensions", tags=["Extensions"])
@@ -39,16 +36,12 @@ async def file_extension(
     """
     File an IRS extension for an engagement.
 
-    On success:
-    1. Creates the Extension record
-    2. Updates Engagement.extended_deadline with the new deadline
-    3. Emits extension.filed event to the automation engine
-    4. Writes an audit log entry
-
     The extended_deadline on the Engagement is what the deadline scheduler
     and all deadline watch queries use from this point forward.
 
     Manager and firm_owner only. firm_id injected from JWT.
+    Business logic (Extension row, engagement sync, audit log, automation
+    event, engagement.extension_filed) lives in extension_service.file_extension.
     """
     # Verify engagement belongs to this firm
     engagement = db.execute(
@@ -67,46 +60,14 @@ async def file_extension(
             detail="client_id does not match the engagement's client",
         )
 
-    # Create the Extension record (auto-populates filed_at and extended_deadline)
-    extension = crud_extension.create_extension(
+    return await extension_service.file_extension(
         db=db,
-        ext_in=payload,
-        firm_id=current_firm.id,
-    )
-
-    # Update Engagement.extended_deadline — this is the critical write.
-    # The deadline scheduler checks extended_deadline first, so this
-    # immediately changes what deadline the system tracks for this engagement.
-    for key, value in {"extended_deadline": extension.extended_deadline}.items():
-        setattr(engagement, key, value)
-    db.commit()
-    db.refresh(engagement)
-
-    # Audit log
-    write_audit_log(
-        db=db,
+        payload=payload,
+        engagement=engagement,
         firm_id=current_firm.id,
         actor_id=current_user.id,
-        action="extension.filed",
-        entity_type="extension",
-        entity_id=extension.id,
-    )
-
-    # Emit event for automation engine
-    await emit_event(
-        event=TriggerEvent.extension_filed,
-        payload={
-            "firm_id": str(current_firm.id),
-            "engagement_id": str(engagement.id),
-            "client_id": str(engagement.client_id),
-            "extension_id": str(extension.id),
-            "form_type": extension.form_type,
-            "extended_deadline": extension.extended_deadline.isoformat(),
-        },
         background_tasks=background_tasks,
     )
-
-    return extension
 
 
 # ─── LIST ────────────────────────────────────────────────────────────────────

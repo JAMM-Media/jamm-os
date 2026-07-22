@@ -613,6 +613,35 @@ def test_zero_sample_week_written_explicitly():
         db.close()
 
 
+def test_zero_observations_anywhere_still_writes_zero_sample_rows():
+    """
+    A firm with zero relevant events at all for a metric (not even a
+    partial observation) must still get an explicit zero-sample row per
+    week from firm creation through the current week - never zero rows
+    outright, which would be indistinguishable from the pipeline having
+    never run for this firm/metric at all. This is the deadline_adherence_
+    extended scenario: no engagement of this firm's ever been extended, so
+    the builder's own first_week stays None and previously nothing got
+    written for the whole historical range.
+    """
+    db = TestingSessionLocal()
+    try:
+        firm = _make_firm(db, created_at=_at(2026, 5, 1))
+        metric = _make_metric(db, "deadline_adherence_extended")
+
+        # No events at all - the builder finds zero candidates and returns
+        # first_week=None.
+        compute_metric(db, metric, datetime.now(timezone.utc))
+        db.commit()
+
+        rows = _values(db, firm.id, metric.id)
+        assert len(rows) > 1
+        assert all(r.sample_size == 0 and r.value is None and r.std_dev is None for r in rows)
+        assert rows[0].week_start == _week_start(_at(2026, 5, 1))
+    finally:
+        db.close()
+
+
 def test_upsert_running_twice_produces_no_duplicates():
     db = TestingSessionLocal()
     try:
