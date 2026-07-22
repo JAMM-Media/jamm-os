@@ -25,6 +25,7 @@ from app.models.client import Client
 from app.models.engagement import Engagement
 from app.models.user import User
 from app.models.concierge_notification import ConciergeNotification
+from app.models.concierge_question_log import ConciergeQuestionLog
 from app.models.security_event import SecurityEvent
 from app.services import concierge_service
 from app.api.concierge.prompts import get_system_prompt, MORNING_BRIEFING_PROMPT, MORNING_BRIEFING_DETAIL_PROMPT
