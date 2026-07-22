@@ -228,6 +228,7 @@ _OPERATIONAL_KEYWORDS = {
     "attention", "urgent", "focus", "today", "stalled", "stuck", "idle",
     "unbilled", "invoiced", "billed", "overdue", "owes", "owe", "outstanding",
     "capacity", "overloaded", "bandwidth", "workload", "neglected", "contacted",
+    "employee", "employees", "used the most", "busiest", "most work", "most hours", "underutilized", "most engagements",
     "communication", "pipeline", "bottleneck", "brief", "summary", "overview",
     "snapshot", "what needs", "who owes", "what work", "who has",
     "what clients", "which clients", "how many clients", "how many engagements",
@@ -308,7 +309,8 @@ _TOPIC_KEYWORDS: dict[str, set[str]] = {
     "staff": {
         "staff", "team", "invite", "staff member", "role", "roles", "manager",
         "permission", "permissions", "capacity", "overloaded", "bandwidth",
-        "staff invite", "team member", "assign staff",
+        "staff invite", "team member", "assign staff", "employee", "employees",
+        "used the most", "busiest", "most work", "most hours", "underutilized", "most engagements", "workload",
     },
     "settings": {
         "settings", "setting", "branding", "integration", "api key",
