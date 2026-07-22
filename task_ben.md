@@ -54,57 +54,47 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Fix assembleSSELines never handling the [FILTERED] replacement sentinel, causing duplicated garbled output whenever the backend corrects a response
+TASK: Fix FILTERED replacement sentinel dropping all but the first line of corrected multi-line responses
 
 USE: claude sonnet
 
 VERIFY BEFORE ACT:
-cat /home/corby/jamm-os/frontend/src/lib/concierge/assembleSSEStream.ts
+sed -n '788,800p' /home/corby/jamm-os/app/api/concierge/route.py
+sed -n '1012,1025p' /home/corby/jamm-os/app/api/concierge/route.py
 
-Confirm this matches exactly what is described below before editing.
+Confirm both occurrences match exactly what is described below before editing.
 
 WHAT IS WRONG:
 
-The backend, when its leak filter or the OPTIONS safety net changes the final response text after it has already started streaming, sends a specific sequence over SSE: the originally streamed lines, then a blank data line, then a line containing exactly [FILTERED], then the fully corrected final text as new data lines. This is meant to signal the frontend to discard everything shown so far and replace it entirely with what follows. assembleSSELines has no handling for this sentinel at all, it simply concatenates every line in order regardless of content. Confirmed live: a real response showed the original correct bulleted list, followed by the literal visible text [FILTERED], followed by a duplicated repeat of the same content, because the frontend appended everything instead of replacing.
-
-This is not a new bug introduced tonight. This mechanism has existed in the backend for some time and this is simply the first time it happened to fire on a response that got directly observed and reported, meaning any past response where the backend's leak filter changed the final text after streaming began would have shown this same garbled duplication to a real firm owner.
+Both places in this file that send a corrected replacement response after the FILTERED sentinel, one in the plain conversational path and one in the tool-use path, yield the entire corrected multi-line text as a single SSE data event: yield f"data: {filtered}\n\n" and yield f"data: {filtered_final}\n\n". When this corrected text contains internal line breaks, such as any bulleted list, the raw newline characters inside what is meant to be one field's value get misinterpreted by the browser's own line splitting on the frontend. Only the first line retains the required data: prefix, every line after the first internal newline loses it and gets silently dropped by assembleSSELines, which only keeps lines starting with data:. Confirmed live: a corrected response containing a bulleted list of four overdue invoices displayed only its first sentence, the entire bulleted list vanished, immediately after a separate, correct fix started properly consuming the FILTERED marker for the first time. That fix is not the bug, it simply exposed this pre-existing issue by finally causing the frontend to rely entirely on content that was already being sent maliformed.
 
 CHANGE INSTRUCTIONS:
 
-In assembleSSELines, before assembling anything, scan the input rawLines array for a data line whose content, after stripping the data: prefix and trimming whitespace, is exactly [FILTERED]. If found, discard every line before and including that marker line, and only assemble the lines that come after it, using the exact same assembly logic already in the function for the remaining lines. If no such marker line exists anywhere in the input, behave exactly as the function already does today, with no change in output.
+In both locations, replace the single yield of the entire corrected text with line by line yielding, splitting the corrected text on newlines and yielding each resulting line as its own separate data: prefixed SSE event, exactly matching the pattern already used safely elsewhere in this same file for the normal streaming loop, such as the existing while "\n" in buffer style splitting already present nearby. Do not change the FILTERED sentinel itself or anything before it, only how the corrected text that follows gets transmitted.
 
-If the marker appears more than once in the input, use the last occurrence, since that represents the most final, most fully corrected version the backend intended to send.
-
-Do not change how any other part of this function works, only add this discard-and-restart behavior keyed on the marker.
+Apply this identically to both occurrences, the plain conversational path and the tool-use path, since both have the exact same bug.
 
 VERIFY AFTER ACT:
 
-Write and run a standalone test directly exercising this function with three cases, and paste the real output, not a summary:
+sed -n '788,802p' /home/corby/jamm-os/app/api/concierge/route.py
+sed -n '1012,1028p' /home/corby/jamm-os/app/api/concierge/route.py
 
-node -e "
-const { assembleSSELines } = require('./frontend/src/lib/concierge/assembleSSEStream.ts');
-" 
+Confirm both now split the corrected text into individual lines before yielding, rather than yielding the whole multi-line string in one event.
 
-If this cannot run directly due to TypeScript, instead write a small inline test using ts-node or by temporarily compiling, or simply construct the exact three test cases as plain JavaScript logic mirroring the real function and run them with plain node, clearly labeled as a manual equivalence check if the real module cannot be executed directly outside the Next.js build. Whatever approach is used, the three cases to prove are:
-
-Case one: no [FILTERED] line anywhere in the input, confirm output is identical to what the function already produces today, unchanged behavior.
-Case two: a [FILTERED] line appears once in the middle of the input, confirm the output contains only the content from after that line, with none of the content from before it present anywhere in the result.
-Case three: multiple lines of real content both before and after a single [FILTERED] marker, confirm the assembled output exactly matches only the after-marker lines, correctly rejoined with newlines exactly as the existing assembly logic already does.
-
-npm run build in frontend, expected zero TypeScript errors.
+python3 -c "from app.main import app; print('OK')"
 
 MANUAL VERIFICATION:
 
-Full kill, .next wipe, restart both servers, this touches core message assembly.
+Full kill, .next wipe, restart both servers using restart_backend.sh and restart_frontend.sh, checking with lsof on both port 3000 and 3001 before wiping anything, given tonight's stale process issue.
 
-Reproduce a response that is known to trigger the backend's leak filter or the OPTIONS safety net replacement path, and confirm the displayed message no longer shows any raw [FILTERED] text or duplicated content, only the single, final, correct version.
+Ask which clients have overdue invoices right now, the exact question already confirmed to trigger this failure. Confirm the full bulleted list of all four clients now displays completely, with no missing content and no raw FILTERED text visible anywhere.
 
-Separately, ask several normal questions that should not trigger any filtering at all, confirm they display exactly as they always have, with no regression from this change.
+Separately, ask several normal questions that should not trigger any filtering at all, confirm they still display exactly as they always have.
 
-Report pass or fail for the standalone test cases, the filtered-response reproduction, and the normal-response regression check, individually.
+Report pass or fail for the multi-line filtered response and the normal-response regression check, individually.
 
 GIT:
 git add -A
-git commit -m "fix assembleSSELines never handling the FILTERED replacement sentinel the backend sends when its leak filter or safety net corrects a response after streaming has already begun, which was causing the original text, the raw marker, and a duplicated corrected version to all display together instead of the frontend cleanly replacing the display with only the final corrected text"
+git commit -m "fix FILTERED replacement sentinel yielding entire multi-line corrected responses as a single SSE event, which caused the browser's line splitting to drop every line after the first internal newline, silently truncating any corrected response containing a bulleted list or other multi-line content, exposed by the recent fix that made the frontend finally rely on this previously-malformed content"
 git pull --rebase origin main
 git push origin main
