@@ -54,58 +54,44 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Redact SSN and EIN patterns from the raw question text before it gets stored in ConciergeQuestionLog
+TASK: Restrict Concierge chat access to owner and manager roles only, matching the existing morning briefing restriction
 
 USE: claude sonnet
 
 VERIFY BEFORE ACT:
-grep -n "def filter_output" -A 15 /home/corby/jamm-os/app/api/concierge/route.py
-grep -n "question_text=last_user_text" /home/corby/jamm-os/app/services/concierge_service.py
-grep -n "SSN_PATTERN\|EIN_PATTERN" /home/corby/jamm-os/app/api/concierge/route.py | head -5
+grep -n "def concierge_chat" -A 20 /home/corby/jamm-os/app/api/concierge/route.py
+grep -n "current_user.role in" /home/corby/jamm-os/app/api/concierge/route.py
 
-Confirm current state matches exactly what is described below before editing.
+Confirm the current concierge_chat endpoint has no role restriction beyond blocking client_portal_user, and confirm the exact pattern already used for the morning briefing restriction, current_user.role in ("staff", "client_portal_user"), before writing anything.
 
-WHAT IS WRONG:
+WHAT THIS IS:
 
-filter_output correctly redacts SSN and EIN patterns from the model's response before it reaches the firm owner, confirmed working in security testing earlier tonight. However, the raw user question text, last_user_text, gets written directly into ConciergeQuestionLog.question_text with zero filtering applied anywhere in the pipeline. If a firm owner types a real SSN or EIN into a question, expecting it to only be redacted from what comes back to them, that real number is currently being permanently stored in plain text in the review database, readable by anyone with access to the internal question log page.
+The firm this product actually serves is now closer to 4 to 40 employees, not the smaller range originally assumed. At that size, a junior staff member having identical Concierge access to the firm owner, including firm-wide accounts receivable, every client's overdue invoices, and every other staff member's individual workload, is a real exposure, not a theoretical one. The morning briefing endpoint already restricts access to owner and manager only, confirmed via current_user.role in ("staff", "client_portal_user") returning a 403. The main chat endpoint has no equivalent restriction at all. This is a deliberate decision to close the gap with the same safe default already established elsewhere in this codebase, not a guess at a new pattern.
 
 CHANGE INSTRUCTIONS:
 
-Extract the SSN and EIN redaction logic specifically, not the system prompt leak detection or the trailing parenthetical stripping, which are response-specific and must not run on raw user input, into its own small, standalone function, something like redact_sensitive_patterns(text), defined once and shared. Update filter_output to call this shared function for its own SSN and EIN redaction step, rather than duplicating the regex logic inline.
+Add the same role check already used for the morning briefing endpoints to the main concierge_chat endpoint, immediately after the existing client_portal_user check: if current_user.role in ("staff", "client_portal_user"), return a 403 with a clear detail message, something like Concierge access is currently limited to firm owners and managers. Do not silently reuse the exact same generic Access denied text already used elsewhere without a clearer message here, since a staff member hitting this for the first time deserves to understand why, not just see a bare denial.
 
-In concierge_service.py, apply this same shared redaction function to last_user_text before it gets used to build question_text, so a real SSN or EIN typed by a firm owner never reaches the stored log in plain text, even though it is fine for the live, in-conversation model to see it in order to answer the question naturally.
-
-Do not change the existing behavior of filter_output for the response path in any way other than sourcing its SSN and EIN redaction from the newly shared function. Do not apply system prompt leak detection or parenthetical stripping to user input, only the redaction step.
+Do not touch any other endpoint. Do not attempt to build granular per-tool scoping in this task, that is a real, separate feature requiring careful design, this task only closes the immediate full-access exposure with the same safe, already-precedented restriction.
 
 VERIFY AFTER ACT:
 
-grep -n "redact_sensitive_patterns" /home/corby/jamm-os/app/api/concierge/route.py /home/corby/jamm-os/app/services/concierge_service.py
+grep -n "current_user.role in" /home/corby/jamm-os/app/api/concierge/route.py
 
-Expected: present in both, confirming the shared function is genuinely shared, not duplicated.
-
-python3 -c "
-import sys
-sys.path.insert(0, '/home/corby/jamm-os')
-from app.api.concierge.route import redact_sensitive_patterns
-test = 'Client SSN is 123-45-6789, please note it'
-result = redact_sensitive_patterns(test)
-print(result)
-assert '123-45-6789' not in result, 'SSN was not redacted'
-print('PASS')
-"
-
-Paste this real output. If redact_sensitive_patterns is defined inside a function scope rather than at module level and cannot be imported this way, adjust the test to whatever real invocation path is correct and explain why, do not skip this verification.
+Expected: the new check now present in concierge_chat, alongside the existing ones in the briefing endpoints.
 
 python3 -c "from app.main import app; print('OK')"
 
 MANUAL VERIFICATION:
 
-Restart backend. Type a message containing a fake SSN pattern, such as client SSN is 123-45-6789, can you note that, into the Concierge. Confirm the live response still correctly avoids repeating the SSN, exactly as it did before. Then check the /concierge-log review page directly, find this exact question, and confirm the stored question_text now shows REDACTED in place of the real number, not the real SSN in plain text.
+Restart backend. If a staff login exists, log in as staff and confirm the Concierge chat now correctly returns access denied rather than answering normally. If no staff login currently exists to test with, confirm this at minimum by direct verification of the role check logic and note that live staff-account testing is still needed as a follow-up, do not skip reporting this gap.
 
-Report pass or fail for both the response behavior and the stored log entry specifically, since both need to be checked, not just one.
+Confirm the firm owner's own access is completely unaffected, ask a normal question as the owner and confirm it still works exactly as it always has.
+
+Report pass or fail for the owner regression check, and report clearly whether staff access was actually tested live or only verified by code inspection.
 
 GIT:
 git add -A
-git commit -m "redact SSN and EIN patterns from raw question text before it is stored in ConciergeQuestionLog, closing a real gap where sensitive numbers typed by a firm owner were correctly hidden from the live response but were being permanently stored in plain text in the internal review database, found during external research into financial-data handling expectations for AI assistants in accounting software"
+git commit -m "restrict Concierge chat access to owner and manager roles only, matching the existing morning briefing restriction, since the firm size this product now targets, 4 to 40 employees, makes full firm-wide financial and staff data access for junior staff a real exposure rather than a theoretical one, closing the gap with an already-precedented safe default rather than building full granular scoping under time pressure"
 git pull --rebase origin main
 git push origin main
