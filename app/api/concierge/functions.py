@@ -573,10 +573,8 @@ def get_deadline_calendar(firm_id: uuid.UUID, db: Session, days_ahead: int = 14)
             Engagement.status,
             Engagement.filing_deadline,
             Client.name.label("client_name"),
-            User.full_name.label("assigned_staff"),
         )
         .join(Client, Engagement.client_id == Client.id)
-        .outerjoin(User, Engagement.assigned_to == User.id)
         .where(
             Engagement.firm_id == firm_id,
             Engagement.filing_deadline >= today,
@@ -595,7 +593,6 @@ def get_deadline_calendar(firm_id: uuid.UUID, db: Session, days_ahead: int = 14)
             "status": str(r.status),
             "deadline": r.filing_deadline.isoformat() if r.filing_deadline else None,
             "days_until": (r.filing_deadline - today).days if r.filing_deadline else None,
-            "assigned_to": r.assigned_staff,
         }
         for r in rows
     ]
@@ -613,7 +610,7 @@ def get_deadline_calendar(firm_id: uuid.UUID, db: Session, days_ahead: int = 14)
 # ---------------------------------------------------------------------------
 def get_automation_health(firm_id: uuid.UUID, db: Session) -> dict:
     rules = db.execute(
-        select(AutomationRule.id, AutomationRule.name, AutomationRule.is_active)
+        select(AutomationRule.id, AutomationRule.name, AutomationRule.is_enabled)
         .where(AutomationRule.firm_id == firm_id)
         .order_by(AutomationRule.name.asc())
     ).fetchall()
@@ -646,15 +643,15 @@ def get_automation_health(firm_id: uuid.UUID, db: Session) -> dict:
         results.append({
             "rule_id": str(rule.id),
             "rule_name": rule.name,
-            "is_active": rule.is_active,
+            "is_enabled": rule.is_enabled,
             "fires_this_month": fire_count,
             "last_fired": last_fired.isoformat() if last_fired else None,
-            "status": "active_firing" if (rule.is_active and fire_count > 0)
-                      else "active_not_firing" if (rule.is_active and fire_count == 0)
+            "status": "active_firing" if (rule.is_enabled and fire_count > 0)
+                      else "active_not_firing" if (rule.is_enabled and fire_count == 0)
                       else "inactive",
         })
 
-    enabled_count = sum(1 for r in results if r["is_active"])
+    enabled_count = sum(1 for r in results if r["is_enabled"])
     firing_count = sum(1 for r in results if r["fires_this_month"] > 0)
 
     return {
