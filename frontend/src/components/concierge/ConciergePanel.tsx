@@ -130,6 +130,8 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
   const [editingDraftContent, setEditingDraftContent] = useState<Record<string, string>>({})
   const [detailBriefing, setDetailBriefing] = useState<string | null>(null)
   const [detailReady, setDetailReady] = useState(false)
+  const [detailFailed, setDetailFailed] = useState(false)
+  const detailTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [pasteForm, setPasteForm] = useState({
     name: '',
     email: '',
@@ -156,6 +158,14 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
   useEffect(() => {
     isLoadingAuthRef.current = isLoading
   }, [isLoading])
+
+  useEffect(() => {
+    if (detailReady) {
+      if (detailTimeoutRef.current) clearTimeout(detailTimeoutRef.current)
+      detailTimeoutRef.current = null
+      setDetailFailed(false)
+    }
+  }, [detailReady])
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -204,7 +214,17 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
   useEffect(() => {
     try {
       const stored = sessionStorage.getItem('jamm_concierge_messages')
-      if (stored) setMessages((JSON.parse(stored) as Message[]).map((m) => ({ ...m, skipReveal: true })))
+      if (stored) {
+        const parsed = JSON.parse(stored) as Message[]
+        setMessages(parsed.map((m) => ({ ...m, skipReveal: true })))
+        if (parsed.some((m) => m.isBriefing)) {
+          if (detailTimeoutRef.current) clearTimeout(detailTimeoutRef.current)
+          detailTimeoutRef.current = setTimeout(() => setDetailFailed(true), 15000)
+          api.post('/concierge/morning-briefing/detail')
+            .then((r) => { if (r.data?.briefing) { setDetailBriefing(r.data.briefing); setDetailReady(true) } })
+            .catch(() => {})
+        }
+      }
     } catch {
       // ignore parse errors
     }
@@ -479,6 +499,8 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
               const res = await api.post('/concierge/morning-briefing')
               if (res.status === 200 && res.data?.briefing) {
                 setMessages([{ role: 'concierge', content: res.data.briefing, isBriefing: true, skipReveal: true }])
+                if (detailTimeoutRef.current) clearTimeout(detailTimeoutRef.current)
+                detailTimeoutRef.current = setTimeout(() => setDetailFailed(true), 15000)
                 api.post('/concierge/morning-briefing/detail')
                   .then((r) => { if (r.data?.briefing) { setDetailBriefing(r.data.briefing); setDetailReady(true) } })
                   .catch(() => {})
@@ -779,6 +801,9 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
       return
     }
     if (action.type === 'show_briefing_again') {
+      setDetailFailed(false)
+      if (detailTimeoutRef.current) clearTimeout(detailTimeoutRef.current)
+      detailTimeoutRef.current = setTimeout(() => setDetailFailed(true), 15000)
       try {
         const res = await api.post('/concierge/morning-briefing/detail')
         if (res.status === 200 && res.data?.briefing) {
@@ -1200,8 +1225,9 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
                 {msg.isBriefing && (
                   <div className="mt-2">
                     <button
-                      disabled={!detailReady || isDownloading}
+                      disabled={(!detailReady && !detailFailed) || isDownloading}
                       onClick={async () => {
+                        setDetailFailed(false)
                         setIsDownloading(true)
                         try {
                           let briefingText = detailBriefing
@@ -1210,6 +1236,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
                             if (res.status === 200 && res.data?.briefing) {
                               briefingText = res.data.briefing
                               setDetailBriefing(res.data.briefing)
+                              setDetailReady(true)
                             }
                           }
                           if (briefingText) {
@@ -1383,10 +1410,12 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
                       }}
                       className="flex items-center gap-1.5 text-[11px] text-[#6B7280] hover:text-brand transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      {!detailReady ? (
-                        <span className="animate-pulse">Preparing report...</span>
-                      ) : isDownloading ? (
+                      {isDownloading ? (
                         <span>Generating PDF...</span>
+                      ) : !detailReady && detailFailed ? (
+                        <span>Could not load report - tap to retry</span>
+                      ) : !detailReady ? (
+                        <span className="animate-pulse">Preparing report...</span>
                       ) : (
                         <>
                           <Download className="h-3 w-3" />
