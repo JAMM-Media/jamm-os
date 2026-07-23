@@ -46,7 +46,6 @@ def get_stalled_engagements(firm_id: uuid.UUID, db: Session, days: int = 14) -> 
         .join(Client, Engagement.client_id == Client.id)
         .where(
             Engagement.firm_id == firm_id,
-            Engagement.status.notin_(["completed", "archived"]),
             Engagement.updated_at < cutoff,
         )
         .order_by(Engagement.updated_at.asc())
@@ -361,7 +360,6 @@ def get_daily_brief(firm_id: uuid.UUID, db: Session) -> dict:
             Engagement.firm_id == firm_id,
             Engagement.filing_deadline >= today,
             Engagement.filing_deadline <= in_14_days,
-            Engagement.status.notin_(["completed", "archived"]),
         )
         .order_by(Engagement.filing_deadline.asc())
         .limit(10)
@@ -582,7 +580,6 @@ def get_deadline_calendar(firm_id: uuid.UUID, db: Session, days_ahead: int = 14)
             Engagement.firm_id == firm_id,
             Engagement.filing_deadline >= today,
             Engagement.filing_deadline <= cutoff,
-            Engagement.status.notin_(["completed", "archived"]),
         )
         .order_by(Engagement.filing_deadline.asc())
         .limit(30)
@@ -915,7 +912,6 @@ def get_task_status(firm_id: uuid.UUID, db: Session) -> dict:
         .where(
             Task.firm_id == firm_id,
             Task.is_completed == False,  # noqa: E712
-            Engagement.status.notin_(["completed", "archived"]),
         )
         .order_by(Task.due_date.asc().nullslast())
         .limit(30)
@@ -949,7 +945,6 @@ def get_task_status(firm_id: uuid.UUID, db: Session) -> dict:
         .where(
             QcChecklistItem.firm_id == firm_id,
             QcChecklistItem.is_checked == False,  # noqa: E712
-            Engagement.status.notin_(["completed", "archived"]),
         )
         .order_by(Engagement.name.asc())
         .limit(30)
@@ -995,7 +990,6 @@ def get_qc_checklist_status(firm_id: uuid.UUID, db: Session) -> dict:
         .where(
             QcChecklistItem.firm_id == firm_id,
             QcChecklistItem.is_checked == False,  # noqa: E712
-            Engagement.status.notin_(["completed", "archived"]),
         )
         .group_by(Engagement.id, Engagement.name, Client.name)
         .order_by(func.count(QcChecklistItem.id).desc())
