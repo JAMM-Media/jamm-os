@@ -54,82 +54,58 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Add a business description field so clients can be found by a rough description of what their business does, not just by name
+TASK: Redact SSN and EIN patterns from the raw question text before it gets stored in ConciergeQuestionLog
 
-USE: Fable 5
+USE: claude sonnet
 
 VERIFY BEFORE ACT:
-sed -n '55,80p' /home/corby/jamm-os/app/models/client.py
-grep -n "def resolve_client_by_name" -A 25 /home/corby/jamm-os/app/api/concierge/functions.py
-grep -n "class ClientCreate\|class ClientUpdate\|class ClientOut" -A 15 /home/corby/jamm-os/app/schemas/client.py
-grep -rn "entity_type" /home/corby/jamm-os/frontend/src/app --include="*.tsx" | head -10
-.venv/bin/alembic heads
+grep -n "def filter_output" -A 15 /home/corby/jamm-os/app/api/concierge/route.py
+grep -n "question_text=last_user_text" /home/corby/jamm-os/app/services/concierge_service.py
+grep -n "SSN_PATTERN\|EIN_PATTERN" /home/corby/jamm-os/app/api/concierge/route.py | head -5
 
-Confirm current state matches described below. Check the real client creation and edit forms in the frontend to see where a new optional field would naturally fit into the existing form layout, do not guess at frontend structure.
+Confirm current state matches exactly what is described below before editing.
 
-WHAT THIS IS:
+WHAT IS WRONG:
 
-Confirmed live: asking to find a client by a rough business description, such as the client that does landscaping, correctly returns an honest I do not see a match, since no field anywhere on Client stores what kind of business a client actually runs, only entity_type, which is a tax classification, individual, business, trust, estate, unrelated to industry or business description. This is a real, deliberate product decision to close, not a bug, since the standards document calls for finding a client from a rough description as part of what full client knowledge coverage means.
+filter_output correctly redacts SSN and EIN patterns from the model's response before it reaches the firm owner, confirmed working in security testing earlier tonight. However, the raw user question text, last_user_text, gets written directly into ConciergeQuestionLog.question_text with zero filtering applied anywhere in the pipeline. If a firm owner types a real SSN or EIN into a question, expecting it to only be redacted from what comes back to them, that real number is currently being permanently stored in plain text in the review database, readable by anyone with access to the internal question log page.
 
 CHANGE INSTRUCTIONS:
 
-Add a new nullable field, business_description, a short free text string, to the Client model, matching the style of neighboring optional fields. Write a proper migration, checking alembic heads first and branching from the true current head, not a stale one.
+Extract the SSN and EIN redaction logic specifically, not the system prompt leak detection or the trailing parenthetical stripping, which are response-specific and must not run on raw user input, into its own small, standalone function, something like redact_sensitive_patterns(text), defined once and shared. Update filter_output to call this shared function for its own SSN and EIN redaction step, rather than duplicating the regex logic inline.
 
-Add this same field to the client create and update schemas as optional, and to the client response schema so it round-trips correctly.
+In concierge_service.py, apply this same shared redaction function to last_user_text before it gets used to build question_text, so a real SSN or EIN typed by a firm owner never reaches the stored log in plain text, even though it is fine for the live, in-conversation model to see it in order to answer the question naturally.
 
-Add a simple text input for this field to the real client creation form and the real client edit form in the frontend, labeled something like What does this client's business do, optional, placed near the existing entity type field since they are conceptually related. Keep this genuinely optional, do not require it, and do not backfill it for any existing client, leaving existing clients with this field empty is correct and expected.
-
-Extend resolve_client_by_name so that, in addition to the existing name match, it also matches against business_description using the same case insensitive partial match pattern, returning a match from either field without duplicating a client that happens to match both.
-
-Add an instruction to the system prompt, in the section governing client lookup, telling the model that if a firm owner describes a client by what their business does rather than by name, it should still call resolve_client_by_name, since business description is now included in that search, rather than assuming a description-based reference can never be resolved.
+Do not change the existing behavior of filter_output for the response path in any way other than sourcing its SSN and EIN redaction from the newly shared function. Do not apply system prompt leak detection or parenthetical stripping to user input, only the redaction step.
 
 VERIFY AFTER ACT:
 
-grep -n "business_description" /home/corby/jamm-os/app/models/client.py /home/corby/jamm-os/app/schemas/client.py /home/corby/jamm-os/app/api/concierge/functions.py /home/corby/jamm-os/app/api/concierge/prompts.py
+grep -n "redact_sensitive_patterns" /home/corby/jamm-os/app/api/concierge/route.py /home/corby/jamm-os/app/services/concierge_service.py
 
-Expected: present in all four.
-
-.venv/bin/alembic upgrade head
-
-Paste the real output, confirm it applies cleanly with no multi-head error.
-
-Manually set a real business_description on one existing test client directly against the database to make this testable, for example set Brightline Properties LLC's business_description to landscaping and lawn care services, and confirm this update succeeds:
+Expected: present in both, confirming the shared function is genuinely shared, not duplicated.
 
 python3 -c "
-from app.db.session import SessionLocal
-from app.models.client import Client
-db = SessionLocal()
-client = db.query(Client).filter(Client.name == 'Brightline Properties LLC').first()
-client.business_description = 'landscaping and lawn care services'
-db.commit()
-print('set business_description on', client.name)
-db.close()
-"
-
-python3 -c "
-from app.db.session import SessionLocal
-from app.api.concierge.functions import resolve_client_by_name
-db = SessionLocal()
-result = resolve_client_by_name('185314c9-e702-4eab-8600-249848022206', db, 'landscaping')
+import sys
+sys.path.insert(0, '/home/corby/jamm-os')
+from app.api.concierge.route import redact_sensitive_patterns
+test = 'Client SSN is 123-45-6789, please note it'
+result = redact_sensitive_patterns(test)
 print(result)
-db.close()
+assert '123-45-6789' not in result, 'SSN was not redacted'
+print('PASS')
 "
 
-Expected: Brightline Properties LLC appears as a match, confirming the extended search actually works before manual testing in the browser.
+Paste this real output. If redact_sensitive_patterns is defined inside a function scope rather than at module level and cannot be imported this way, adjust the test to whatever real invocation path is correct and explain why, do not skip this verification.
 
-npm run build in frontend, expected zero TypeScript errors.
 python3 -c "from app.main import app; print('OK')"
 
 MANUAL VERIFICATION:
 
-Restart both servers. Ask the exact question that originally failed to resolve, draft an email to the client that does landscaping about their overdue invoice, now that Brightline Properties LLC genuinely has that description set, confirm it now correctly resolves to Brightline Properties LLC instead of asking for the real name.
+Restart backend. Type a message containing a fake SSN pattern, such as client SSN is 123-45-6789, can you note that, into the Concierge. Confirm the live response still correctly avoids repeating the SSN, exactly as it did before. Then check the /concierge-log review page directly, find this exact question, and confirm the stored question_text now shows REDACTED in place of the real number, not the real SSN in plain text.
 
-Separately, open the real client edit form for a different client and confirm the new business description field is visible, editable, and saves correctly.
-
-Report pass or fail individually for the resolve_client_by_name test, the live chat question, and the frontend form check.
+Report pass or fail for both the response behavior and the stored log entry specifically, since both need to be checked, not just one.
 
 GIT:
 git add -A
-git commit -m "add business_description field to Client, closing a real gap where clients could only be found by name, never by what their business actually does, confirmed live during a deep audit; extends resolve_client_by_name to search both fields and adds the field to the real client creation and edit forms as optional"
+git commit -m "redact SSN and EIN patterns from raw question text before it is stored in ConciergeQuestionLog, closing a real gap where sensitive numbers typed by a firm owner were correctly hidden from the live response but were being permanently stored in plain text in the internal review database, found during external research into financial-data handling expectations for AI assistants in accounting software"
 git pull --rebase origin main
 git push origin main
