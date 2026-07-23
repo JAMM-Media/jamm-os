@@ -54,57 +54,61 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Fix two real tool crashes, get_deadline_calendar referencing a nonexistent Engagement field, and get_automation_health referencing the wrong AutomationRule field name
+TASK: Build a get_firm_settings tool covering subscription, notification preferences, and connected integrations, closing the confirmed live fabrication in this domain
 
-USE: claude sonnet
+USE: Fable 5
 
 VERIFY BEFORE ACT:
-grep -n "def get_deadline_calendar" -A 40 /home/corby/jamm-os/app/api/concierge/functions.py
-grep -n "def get_automation_health" -A 30 /home/corby/jamm-os/app/api/concierge/functions.py
+grep -n "class Firm" -A 5 /home/corby/jamm-os/app/models/firm.py
+grep -n "settings\|feature_flags" /home/corby/jamm-os/app/models/firm.py
+grep -n "quickbooks_connected\|stripe_account\|is_connected\|connected_at" /home/corby/jamm-os/app/services/quickbooks_service.py /home/corby/jamm-os/app/services/stripe_service.py 2>/dev/null
+grep -rn "class.*Integration\|quickbooks_id\|stripe_account_id" /home/corby/jamm-os/app/models/*.py 2>/dev/null
 
-Confirm both match what is described below before editing.
+Read all of this in full before writing anything. This task's whole point is replacing a confirmed live fabrication with real data, so every field used must be verified to genuinely exist and genuinely mean what it appears to mean, not assumed from a plausible-sounding name.
 
-WHAT IS WRONG, PART ONE:
+WHAT THIS IS:
 
-get_deadline_calendar joins User via Engagement.assigned_to, a field that does not exist anywhere on the Engagement model, confirmed by reading the full model directly. Engagement has no per-engagement staff assignment concept at all, only individual Task rows have their own assignee. This join fails every time this tool is called, confirmed live via the exact error type object Engagement has no attribute assigned_to.
+Confirmed live during a deep audit: asked what integrations are connected, the Concierge invented a list naming QuickBooks, Dropbox Sign, and Stripe, none of which were verified as actually connected. Asked about notification preferences, it invented a Notifications tab that does not exist. This is the exact same confident-fabrication pattern already found and fixed twice tonight for portal data and staff workload, in the one domain that currently has zero tool coverage at all in the entire Concierge tool inventory.
 
-CHANGE INSTRUCTIONS, PART ONE:
+CHANGE INSTRUCTIONS:
 
-Remove the outer join to User and remove assigned_staff from the select statement and from the assigned_to key in the returned dict entirely. Do not attempt to derive an assignee from Task, that would require a real design decision about which task's assignee represents an engagement's assignee when multiple tasks with different assignees exist, which is out of scope for this fix. This tool should simply stop claiming a per-engagement assignee exists, since it genuinely does not in this data model.
+In functions.py, add a new tool function, get_firm_settings, firm scoped, matching the existing docstring and structure pattern used by neighboring tools. It should return, using only fields confirmed to genuinely exist: the real subscription_tier, whatever real notification-relevant keys actually exist inside the settings JSON field on Firm, the real staff_auth_policy, the real timesheet_approval_required flag, and the real verification status of sending_domain and portal_domain, framed honestly as domain configuration, not invented as generic feature toggles.
 
-WHAT IS WRONG, PART TWO:
+For connected integrations specifically, base this only on whatever real, verifiable signal actually exists, such as a real non-null credential or connection timestamp field found during the verify step, for each of QuickBooks, Stripe, and e-sign. If no real signal exists at all for a given integration, the tool must report it as not connected or unknown, never invent a connected status. If none of the three have any real trackable connection signal anywhere in the codebase, say so plainly in the tool's returned data rather than guessing, and note this limitation in the tool's own description so the model knows not to overstate certainty here.
 
-get_automation_health references AutomationRule.is_active, which does not exist on the model. The real field, confirmed by reading the model directly, is is_enabled. This tool fails every time it is called, confirmed live via the exact error type object AutomationRule has no attribute is_active.
-
-CHANGE INSTRUCTIONS, PART TWO:
-
-Change every reference to AutomationRule.is_active to AutomationRule.is_enabled throughout this function.
+Register the tool in _CONCIERGE_TOOLS with a clear description covering subscription plan, notification preferences, and integration status questions. Add relevant keywords to both _OPERATIONAL_KEYWORDS and _TOPIC_KEYWORDS, including subscription, plan, integrations, connected, notification preferences, settings, since this domain currently has zero coverage in either keyword set.
 
 VERIFY AFTER ACT:
 
+grep -n "get_firm_settings" /home/corby/jamm-os/app/api/concierge/functions.py /home/corby/jamm-os/app/api/concierge/route.py
+
 python3 -c "
 from app.db.session import SessionLocal
-from app.api.concierge.functions import get_deadline_calendar, get_automation_health
+from app.api.concierge.functions import get_firm_settings
 db = SessionLocal()
-r1 = get_deadline_calendar('185314c9-e702-4eab-8600-249848022206', db)
-print('deadline calendar:', r1)
-r2 = get_automation_health('185314c9-e702-4eab-8600-249848022206', db)
-print('automation health:', r2)
+result = get_firm_settings('185314c9-e702-4eab-8600-249848022206', db)
+print(result)
 db.close()
 "
 
-Expected: both print real dicts with no traceback, no error.
+Paste this real output, confirm every field in it is something you can independently verify against the actual database record for this firm, not something that merely looks plausible.
 
 python3 -c "from app.main import app; print('OK')"
 
 MANUAL VERIFICATION:
 
-Restart backend, keep terminal visible. Ask what's on the calendar for this month, confirm a real answer with no data error message and no Tool execution failed line in the log. Ask which automations are currently enabled, confirm the same.
+Restart backend, keep terminal visible filtered for Tool executed.
 
-Report pass or fail for both, and paste the real Python output from the verification script above, not a summary.
+Ask what integrations are connected, confirm get_firm_settings fires and the response contains only real, verified information, explicitly saying so plainly if integration status genuinely cannot be determined from any real data, rather than naming specific tools as connected without real evidence.
+
+Ask what our notification preferences are, confirm the same tool fires and returns real data from the actual settings field, not an invented tab or feature.
+
+Ask what's our current subscription plan, confirm the real subscription_tier value comes back correctly.
+
+Report pass or fail for all three, including the exact tool name confirmed in the log for each, and paste the actual response text for all three, not a summary.
 
 GIT:
 git add -A
-git commit -m "fix get_deadline_calendar referencing a nonexistent Engagement.assigned_to field, since engagement level staff assignment does not exist in this data model, removing the field rather than approximating one from task level assignment, and fix get_automation_health referencing the wrong field name is_active instead of the real is_enabled, both confirmed live as real recurring tool crashes found during a deep audit"
+git commit -m "add get_firm_settings tool covering subscription tier, notification preferences, and integration status where a real verifiable signal exists, closing the confirmed live fabrication where the agent invented a QuickBooks Stripe Dropbox Sign integrations list and a nonexistent notifications tab, the one domain with zero tool coverage anywhere in the Concierge tool inventory"
 git pull --rebase origin main
 git push origin main
