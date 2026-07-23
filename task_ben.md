@@ -54,46 +54,82 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Fix morning briefing detail fetch permanently stuck on restored sessions, and add a timeout with retry instead of silently failing forever
+TASK: Add a business description field so clients can be found by a rough description of what their business does, not just by name
 
 USE: Fable 5
 
 VERIFY BEFORE ACT:
-grep -n "detailReady\|setDetailReady\|detailBriefing" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
-sed -n '470,500p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+sed -n '55,80p' /home/corby/jamm-os/app/models/client.py
+grep -n "def resolve_client_by_name" -A 25 /home/corby/jamm-os/app/api/concierge/functions.py
+grep -n "class ClientCreate\|class ClientUpdate\|class ClientOut" -A 15 /home/corby/jamm-os/app/schemas/client.py
+grep -rn "entity_type" /home/corby/jamm-os/frontend/src/app --include="*.tsx" | head -10
+.venv/bin/alembic heads
 
-Read the full briefing initialization flow and the show_briefing_again handler in full before changing anything, including how messages get restored from sessionStorage on page load.
+Confirm current state matches described below. Check the real client creation and edit forms in the frontend to see where a new optional field would naturally fit into the existing form layout, do not guess at frontend structure.
 
-WHAT IS WRONG:
+WHAT THIS IS:
 
-detailReady is a single, panel-wide boolean starting false on every fresh mount. It is only ever set true by two specific code paths: the very first live briefing generation on a given day, and the explicit show_briefing_again action. Confirmed live: after downloading a briefing successfully once, leaving the app, and returning, the download button showed Preparing report... indefinitely with no way to ever recover, since the restored briefing message went through neither of the two paths that set detailReady true. Separately, even when the detail fetch does fire, its catch block is empty, silently swallowing any real failure with zero retry option and zero indication to the firm owner that anything went wrong, leaving the same permanently stuck pulsing state as the cold path.
+Confirmed live: asking to find a client by a rough business description, such as the client that does landscaping, correctly returns an honest I do not see a match, since no field anywhere on Client stores what kind of business a client actually runs, only entity_type, which is a tax classification, individual, business, trust, estate, unrelated to industry or business description. This is a real, deliberate product decision to close, not a bug, since the standards document calls for finding a client from a rough description as part of what full client knowledge coverage means.
 
 CHANGE INSTRUCTIONS:
 
-When a briefing message is restored from sessionStorage on page load (identify this the same way skipReveal already identifies a restored message), and that restored message is a briefing, trigger the same detail fetch used elsewhere, calling /concierge/morning-briefing/detail and setting detailBriefing and detailReady on success, so a returning firm owner does not have to ask to see the briefing again just to make the download button work.
+Add a new nullable field, business_description, a short free text string, to the Client model, matching the style of neighboring optional fields. Write a proper migration, checking alembic heads first and branching from the true current head, not a stale one.
 
-Add a reasonable timeout, such as 15 seconds, starting whenever a detail fetch begins. If detailReady has still not become true by the time the timeout elapses, whether from the restoration path, the first-generation path, or the explicit show again path, transition the button to a clear failed state, such as Could not load report, with a way to retry the fetch on click, rather than leaving the pulsing Preparing report... text showing indefinitely with no recourse. Reuse the existing statusMessage pattern already used elsewhere in this file for similar failure messaging if it fits.
+Add this same field to the client create and update schemas as optional, and to the client response schema so it round-trips correctly.
 
-Do not remove or weaken the existing empty catch blocks' safety, silently failing an individual fetch attempt is fine, the requirement is that the user eventually sees a real failure state and a way to retry, not that every possible error gets surfaced immediately.
+Add a simple text input for this field to the real client creation form and the real client edit form in the frontend, labeled something like What does this client's business do, optional, placed near the existing entity type field since they are conceptually related. Keep this genuinely optional, do not require it, and do not backfill it for any existing client, leaving existing clients with this field empty is correct and expected.
+
+Extend resolve_client_by_name so that, in addition to the existing name match, it also matches against business_description using the same case insensitive partial match pattern, returning a match from either field without duplicating a client that happens to match both.
+
+Add an instruction to the system prompt, in the section governing client lookup, telling the model that if a firm owner describes a client by what their business does rather than by name, it should still call resolve_client_by_name, since business description is now included in that search, rather than assuming a description-based reference can never be resolved.
 
 VERIFY AFTER ACT:
 
-grep -n "detailReady\|setDetailReady\|Could not load report\|retry" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+grep -n "business_description" /home/corby/jamm-os/app/models/client.py /home/corby/jamm-os/app/schemas/client.py /home/corby/jamm-os/app/api/concierge/functions.py /home/corby/jamm-os/app/api/concierge/prompts.py
+
+Expected: present in all four.
+
+.venv/bin/alembic upgrade head
+
+Paste the real output, confirm it applies cleanly with no multi-head error.
+
+Manually set a real business_description on one existing test client directly against the database to make this testable, for example set Brightline Properties LLC's business_description to landscaping and lawn care services, and confirm this update succeeds:
+
+python3 -c "
+from app.db.session import SessionLocal
+from app.models.client import Client
+db = SessionLocal()
+client = db.query(Client).filter(Client.name == 'Brightline Properties LLC').first()
+client.business_description = 'landscaping and lawn care services'
+db.commit()
+print('set business_description on', client.name)
+db.close()
+"
+
+python3 -c "
+from app.db.session import SessionLocal
+from app.api.concierge.functions import resolve_client_by_name
+db = SessionLocal()
+result = resolve_client_by_name('185314c9-e702-4eab-8600-249848022206', db, 'landscaping')
+print(result)
+db.close()
+"
+
+Expected: Brightline Properties LLC appears as a match, confirming the extended search actually works before manual testing in the browser.
 
 npm run build in frontend, expected zero TypeScript errors.
+python3 -c "from app.main import app; print('OK')"
 
 MANUAL VERIFICATION:
 
-Full kill, .next wipe, restart both servers.
+Restart both servers. Ask the exact question that originally failed to resolve, draft an email to the client that does landscaping about their overdue invoice, now that Brightline Properties LLC genuinely has that description set, confirm it now correctly resolves to Brightline Properties LLC instead of asking for the real name.
 
-Reproduce the original failure: view a fresh briefing, confirm the download button works and produces a real PDF. Then reload the page entirely, so the briefing message is restored from sessionStorage rather than freshly generated, and confirm the download button now correctly becomes available again within a reasonable time, not stuck on Preparing report... forever.
+Separately, open the real client edit form for a different client and confirm the new business description field is visible, editable, and saves correctly.
 
-If possible, simulate a genuine failure, such as briefly stopping the backend before triggering the detail fetch, and confirm the button transitions to a clear failed state with a working retry option after the timeout, rather than pulsing indefinitely.
-
-Report pass or fail individually for the restoration case and the timeout and retry case.
+Report pass or fail individually for the resolve_client_by_name test, the live chat question, and the frontend form check.
 
 GIT:
 git add -A
-git commit -m "fix morning briefing download button getting permanently stuck on Preparing report when a briefing message is restored from a past session, since only live generation and explicit show-again previously triggered the detail fetch that unlocks downloading, and add a timeout with a clear failed state and retry option instead of silently pulsing forever on any real fetch failure"
+git commit -m "add business_description field to Client, closing a real gap where clients could only be found by name, never by what their business actually does, confirmed live during a deep audit; extends resolve_client_by_name to search both fields and adds the field to the real client creation and edit forms as optional"
 git pull --rebase origin main
 git push origin main
