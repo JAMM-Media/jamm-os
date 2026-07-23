@@ -1,7 +1,7 @@
 # app/models/portal_notification.py
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from sqlalchemy import String, Boolean, DateTime, ForeignKey, Text, func
@@ -54,6 +54,7 @@ class PortalNotification(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
+        default=lambda: datetime.now(timezone.utc),
         nullable=False,
     )
 

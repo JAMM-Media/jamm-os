@@ -1,6 +1,7 @@
 # app/models/behavioral_event.py
 
 import uuid
+from datetime import datetime, timezone
 from typing import Optional
 
 from sqlalchemy import String, DateTime, ForeignKey, Index
@@ -50,10 +51,12 @@ class BehavioralEvent(Base):
         nullable=True,
     )
 
+    # timestamps are application-observed UTC, set Python-side by design
     occurred_at: Mapped[DateTime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
         server_default=func.now(),
+        default=lambda: datetime.now(timezone.utc),
         index=True,
     )
 

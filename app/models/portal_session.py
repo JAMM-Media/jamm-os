@@ -48,13 +48,15 @@ class PortalSession(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
+        default=lambda: datetime.now(timezone.utc),
         nullable=False,
     )
 
     last_active_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
-        onupdate=func.now(),
+        onupdate=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(timezone.utc),
         nullable=False,
     )
 

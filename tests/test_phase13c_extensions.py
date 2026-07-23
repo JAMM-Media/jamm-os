@@ -19,6 +19,11 @@ Tests cover:
 from datetime import date, timedelta
 from uuid import uuid4
 
+from sqlalchemy import select
+
+from tests.conftest import TestingSessionLocal
+from app.models.behavioral_event import BehavioralEvent
+
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -156,6 +161,73 @@ def test_deadline_watch_uses_extended_deadline_after_filing(client, firm_a_owner
     items = r.json()
     # The engagement should not appear since extended_deadline overrides filing_deadline
     assert not any(i["engagement_id"] == eng["id"] for i in items)
+
+
+# ── engagement.extension_filed event ─────────────────────────────────────────
+
+def test_filing_extension_fires_extension_filed_event(client, firm_a_owner):
+    """
+    Filing an extension fires engagement.extension_filed with metadata:
+    extension_id, form_type, original_deadline, new_extended_deadline,
+    days_before_original_deadline.
+    """
+    headers = firm_a_owner["headers"]
+    firm_id = firm_a_owner["firm_id"]
+    cid = make_client(client, headers)
+    eng = make_engagement(client, headers, cid)
+
+    soon = (date.today() + timedelta(days=20)).isoformat()
+    client.patch(f"/engagements/{eng['id']}", json={"filing_deadline": soon}, headers=headers)
+
+    r = file_extension(client, headers, eng["id"], cid, form_type="4868")
+    assert r.status_code == 201
+    ext = r.json()
+
+    db = TestingSessionLocal()
+    try:
+        row = db.execute(
+            select(BehavioralEvent).where(
+                BehavioralEvent.firm_id == firm_id,
+                BehavioralEvent.entity_id == eng["id"],
+                BehavioralEvent.event_type == "engagement.extension_filed",
+            )
+        ).scalar_one_or_none()
+        assert row is not None
+        meta = row.extra_metadata
+        assert meta["extension_id"] == ext["id"]
+        assert meta["form_type"] == "4868"
+        assert meta["original_deadline"] == soon
+        assert meta["new_extended_deadline"] == ext["extended_deadline"]
+        assert meta["days_before_original_deadline"] is not None
+    finally:
+        db.close()
+
+
+def test_filing_extension_does_not_double_fire_via_update_engagement(client, firm_a_owner):
+    """
+    Filing an extension must fire engagement.extension_filed exactly once —
+    it must not also trigger update_engagement's own (payload-driven)
+    engagement.extension_filed branch, since the two paths are independent.
+    """
+    headers = firm_a_owner["headers"]
+    firm_id = firm_a_owner["firm_id"]
+    cid = make_client(client, headers)
+    eng = make_engagement(client, headers, cid)
+
+    file_extension(client, headers, eng["id"], cid, form_type="4868")
+
+    db = TestingSessionLocal()
+    try:
+        rows = db.execute(
+            select(BehavioralEvent).where(
+                BehavioralEvent.firm_id == firm_id,
+                BehavioralEvent.entity_id == eng["id"],
+                BehavioralEvent.event_type == "engagement.extension_filed",
+            )
+        ).scalars().all()
+        assert len(rows) == 1
+    finally:
+        db.close()
 
 
 # ── list and get ──────────────────────────────────────────────────────────────

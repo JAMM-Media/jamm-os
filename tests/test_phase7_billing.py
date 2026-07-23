@@ -339,6 +339,50 @@ def test_send_invoice(client, firm_a_owner):
     assert data["sent_at"] is not None
 
 
+def test_first_invoice_sent_fires_exactly_once(client, firm_a_owner):
+    """
+    firm.first_invoice_sent must fire on the firm's first-ever sent invoice
+    and never again, even after that invoice's status later changes away
+    from 'sent' (e.g. to paid) and a second invoice is sent.
+    """
+    from app.models.behavioral_event import BehavioralEvent
+    from sqlalchemy import select as sa_select
+
+    firm_id = uuid.UUID(firm_a_owner["firm_id"])
+    headers = firm_a_owner["headers"]
+    client_id = _create_client_in_db(firm_id)
+
+    payload_a = {**_invoice_payload(client_id), "due_date": date(2026, 8, 1).isoformat()}
+    invoice_a_id = client.post("/invoices/", json=payload_a, headers=headers).json()["id"]
+    send_a = client.post(f"/invoices/{invoice_a_id}/send", headers=headers)
+    assert send_a.status_code == 200, send_a.text
+
+    db = TestingSessionLocal()
+    try:
+        inv_a = db.get(Invoice, uuid.UUID(invoice_a_id))
+        inv_a.status = InvoiceStatus.paid
+        db.commit()
+    finally:
+        db.close()
+
+    payload_b = {**_invoice_payload(client_id), "due_date": date(2026, 8, 15).isoformat()}
+    invoice_b_id = client.post("/invoices/", json=payload_b, headers=headers).json()["id"]
+    send_b = client.post(f"/invoices/{invoice_b_id}/send", headers=headers)
+    assert send_b.status_code == 200, send_b.text
+
+    db = TestingSessionLocal()
+    try:
+        rows = db.execute(
+            sa_select(BehavioralEvent).where(
+                BehavioralEvent.firm_id == firm_id,
+                BehavioralEvent.event_type == "firm.first_invoice_sent",
+            )
+        ).scalars().all()
+        assert len(rows) == 1, f"expected exactly 1 firm.first_invoice_sent event, got {len(rows)}"
+    finally:
+        db.close()
+
+
 def test_cannot_send_invoice_without_due_date(client, firm_a_owner):
     firm_id = uuid.UUID(firm_a_owner["firm_id"])
     headers = firm_a_owner["headers"]

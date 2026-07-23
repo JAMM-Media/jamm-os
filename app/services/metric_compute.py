@@ -568,6 +568,27 @@ def _compute_automation_utilization(
 
 
 # ---------------------------------------------------------------------------
+# Cross-firm firm selection
+# ---------------------------------------------------------------------------
+
+def _cross_firm_aggregation_firm_ids(db: Session) -> list[uuid.UUID]:
+    """
+    Firm IDs eligible for any computation that spans more than one firm
+    (cross-firm benchmarking, network-wide correlation, etc). Demo firms are
+    excluded here so they can never leak into a multi-firm computation.
+
+    This is a guard for future code -- no cross-firm aggregation exists yet.
+    _compute_automation_utilization and _compute_weekly_metric below select
+    firm IDs directly via select(Firm.id) and must keep doing so: they are
+    firm-scoped (one firm's own MetricValue rows), and a demo firm still
+    needs those computed normally. Any future multi-firm pass must select
+    its firm IDs through this function instead of querying Firm directly.
+    """
+    stmt = select(Firm.id).where(Firm.is_demo.is_(False))
+    return [firm_id for (firm_id,) in db.execute(stmt).all()]
+
+
+# ---------------------------------------------------------------------------
 # Dispatch
 # ---------------------------------------------------------------------------
 
@@ -593,10 +614,18 @@ def _compute_weekly_metric(
     db: Session, metric_row: MetricRegistry, computed_at: datetime, current_week: date
 ) -> None:
     builder = _WEEKLY_BUILDERS[metric_row.key]
-    for (firm_id,) in db.execute(select(Firm.id)).all():
+    for (firm_id, firm_created_at) in db.execute(select(Firm.id, Firm.created_at)).all():
         first_week, observations = builder(db, firm_id, current_week)
         if first_week is None:
-            continue
+            # No observations anywhere for this firm/metric - still write
+            # the zero-sample-per-week series from firm creation through the
+            # current week. Per the locked zero-sample rule, a metric with
+            # genuinely no data must be indistinguishable in storage from one
+            # with sparse data (both all zero-sample rows); leaving rows
+            # entirely absent instead reads as ambiguous with the pipeline
+            # never having run at all for this firm/metric.
+            first_week = _week_start(firm_created_at)
+            observations = {}
         _write_weekly_series(
             db,
             firm_id=firm_id,

@@ -85,6 +85,16 @@ class Firm(Base):
         nullable=False,
     )
 
+    # Demo firms are excluded from any computation that spans more than one
+    # firm (cross-firm aggregation, benchmarking). Firm-scoped computation for
+    # a demo firm itself still runs normally.
+    is_demo: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
+    )
+
     staff_auth_policy: Mapped[str] = mapped_column(
         sa.String,
         nullable=False,

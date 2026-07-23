@@ -1,6 +1,6 @@
 # app/models/note_read.py
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import ForeignKey, DateTime, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -27,6 +27,7 @@ class NoteRead(Base):
     read_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
+        default=lambda: datetime.now(timezone.utc),
         nullable=False,
     )
 

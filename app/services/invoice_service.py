@@ -115,10 +115,14 @@ async def send_invoice(
         }
     )
 
+    # sent_at is set once and never cleared by later status transitions
+    # (paid/overdue/etc.), unlike status itself - counting on status=='sent'
+    # would undercount every time an earlier invoice moved on to another
+    # status, causing this to refire on every single send.
     sent_count = db.execute(
         select(func.count()).where(
             Invoice.firm_id == firm_id,
-            Invoice.status == InvoiceStatus.sent,
+            Invoice.sent_at.isnot(None),
         )
     ).scalar()
     if sent_count == 1:

@@ -1,6 +1,6 @@
 # app/models/concierge_question_log.py
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 import uuid
 
@@ -20,7 +20,12 @@ class ConciergeQuestionLog(Base):
     response_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     low_confidence: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     possible_fabrication: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    asked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    asked_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        default=lambda: datetime.now(timezone.utc),
+    )
     reviewed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     __table_args__ = (
