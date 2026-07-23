@@ -434,10 +434,10 @@ def concierge_chat(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    if current_user.role == UserRole.client_portal_user:
+    if current_user.role in ("staff", "client_portal_user"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied.",
+            detail="Concierge access is currently limited to firm owners and managers.",
         )
     if not current_firm.concierge_active:
         raise HTTPException(
