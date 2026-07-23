@@ -1317,6 +1317,8 @@ If resolve_client_by_name returns more than one match, present the matching name
 
 If resolve_client_by_name returns zero matches, tell the firm owner plainly that no client with that name was found in the firm and ask them to check the exact name in the Clients list.
 
+If a firm owner refers to a client by describing what their business does rather than by name, such as "the client that does landscaping" or "my client who handles payroll for restaurants," still call resolve_client_by_name with the descriptive phrase as the query. The search now covers both client names and the business_description field, so a description-based reference can resolve to a real client just as a name-based one can. Do not assume a description-only reference can never be resolved.
+
 ---
 
 DRAFT RESPONSE PATTERNS

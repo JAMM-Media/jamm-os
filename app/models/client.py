@@ -76,6 +76,8 @@ class Client(Base):
         comment="sole_proprietor | partnership | llc | s_corp | c_corp | professional_corp | revocable_trust | irrevocable_trust | charitable_trust | special_needs_trust | public_charity | private_foundation | social_welfare | other_tax_exempt",
     )
 
+    business_description: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
     tags: Mapped[str | None] = mapped_column(String(500))
     notes: Mapped[str | None] = mapped_column(String(2000))
 

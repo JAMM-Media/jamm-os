@@ -396,7 +396,10 @@ def resolve_client_by_name(firm_id: uuid.UUID, db: Session, name_query: str) -> 
         select(Client.id, Client.name)
         .where(
             Client.firm_id == firm_id,
-            Client.name.ilike(f"%{name_query}%"),
+            or_(
+                Client.name.ilike(f"%{name_query}%"),
+                Client.business_description.ilike(f"%{name_query}%"),
+            ),
             Client.is_active == True,
         )
         .order_by(Client.name.asc())
