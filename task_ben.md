@@ -54,76 +54,57 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Build automatic possible-fabrication detection into the ConciergeQuestionLog, closing the gap where confident fabrications produce no signal at all
+TASK: Fix two real tool crashes, get_deadline_calendar referencing a nonexistent Engagement field, and get_automation_health referencing the wrong AutomationRule field name
 
-USE: Fable 5
+USE: claude sonnet
 
 VERIFY BEFORE ACT:
-cat /home/corby/jamm-os/app/services/concierge_service.py
-sed -n '795,825p' /home/corby/jamm-os/app/api/concierge/route.py
-sed -n '1040,1065p' /home/corby/jamm-os/app/api/concierge/route.py
-grep -n "def _execute_tool" -A 5 /home/corby/jamm-os/app/api/concierge/route.py
-cat /home/corby/jamm-os/app/models/concierge_question_log.py
-ls /home/corby/jamm-os/migrations/versions/ | tail -5
+grep -n "def get_deadline_calendar" -A 40 /home/corby/jamm-os/app/api/concierge/functions.py
+grep -n "def get_automation_health" -A 30 /home/corby/jamm-os/app/api/concierge/functions.py
 
-Read all of this in full before writing any code. This task changes a logging pipeline used by every single real question asked of the Concierge, mistakes here have wide blast radius.
+Confirm both match what is described below before editing.
 
-WHAT THIS IS:
+WHAT IS WRONG, PART ONE:
 
-Confirmed live, twice tonight: a fully confident, non-hedging fabrication, inventing a nonexistent staff member with specific fake numbers, and separately, inventing specific portal enablement statistics, both went completely undetected by the existing low_confidence flag, which only matches a fixed list of hedge phrases such as i'm not sure or i don't have access. Neither fabrication contained any hedge language at all, both were stated with full confidence, so this existing detection mechanism structurally cannot catch this exact failure mode, no matter how long the hedge phrase list gets.
+get_deadline_calendar joins User via Engagement.assigned_to, a field that does not exist anywhere on the Engagement model, confirmed by reading the full model directly. Engagement has no per-engagement staff assignment concept at all, only individual Task rows have their own assignee. This join fails every time this tool is called, confirmed live via the exact error type object Engagement has no attribute assigned_to.
 
-Both real fabrications found tonight share a genuinely detectable, code level signature in one of two forms. First form, the more reliable one: the question was correctly classified as needing live data, the tool-use path was correctly entered, but no tool actually executed successfully this turn, and the response still contained a substantive, specific-sounding answer. Second form, less reliable but still worth surfacing: the question never entered the tool-use path at all, meaning the classifier missed it, and the response from the plain conversational path contains patterns suggestive of fabricated specific firm data, such as dollar amounts, percentages, or a proper name paired with a specific number.
+CHANGE INSTRUCTIONS, PART ONE:
 
-CHANGE INSTRUCTIONS:
+Remove the outer join to User and remove assigned_staff from the select statement and from the assigned_to key in the returned dict entirely. Do not attempt to derive an assignee from Task, that would require a real design decision about which task's assignee represents an engagement's assignee when multiple tasks with different assignees exist, which is out of scope for this fix. This tool should simply stop claiming a per-engagement assignee exists, since it genuinely does not in this data model.
 
-Add a new nullable boolean column, possible_fabrication, to the ConciergeQuestionLog model, defaulting to false, with its own index matching the existing pattern already used for the low_confidence column. Write a proper migration for this, matching the naming and structure of the most recent migrations already in this repo.
+WHAT IS WRONG, PART TWO:
 
-In the tool-use loop in route.py, add a simple tracking mechanism, a boolean or counter, set to indicate at least one tool executed successfully this turn, updated wherever the existing Tool executed log line already fires, reusing that exact point rather than adding a second separate check.
+get_automation_health references AutomationRule.is_active, which does not exist on the model. The real field, confirmed by reading the model directly, is is_enabled. This tool fails every time it is called, confirmed live via the exact error type object AutomationRule has no attribute is_active.
 
-Update log_question_asked in concierge_service.py to accept two new pieces of information: whether this question was on the tool-use path or the plain path, and whether any tool actually executed this turn if it was on the tool-use path. Compute possible_fabrication as follows: if on the tool-use path and no tool executed and the response is non-trivial in length, mark true, this is the reliable detector. If on the plain path, mark true only if the response contains a dollar sign, a percent sign, or a pattern matching two consecutive capitalized words immediately followed by a number, since this is a heuristic approximation, not a certainty, and should be conservative rather than trigger constantly on legitimate general knowledge answers. Do not mark possible_fabrication true if low_confidence is already true, since that is a different, already-visible category, this new flag exists specifically to catch confident-sounding fabrications that show no hedging at all.
+CHANGE INSTRUCTIONS, PART TWO:
 
-Update both call sites of log_question_asked in route.py to pass through whatever new information is needed for this computation.
-
-Update the /concierge-log endpoint to also return possible_fabrication for each entry, and add a query parameter allowing filtering by it, matching the existing pattern already used for low_confidence_only.
-
-Update the frontend /concierge-log review page to visibly show this new flag on each entry, distinct from the existing low confidence badge, for example a differently colored badge reading possible fabrication, and add its own filter toggle alongside the existing low confidence only toggle.
+Change every reference to AutomationRule.is_active to AutomationRule.is_enabled throughout this function.
 
 VERIFY AFTER ACT:
 
-grep -n "possible_fabrication" /home/corby/jamm-os/app/models/concierge_question_log.py /home/corby/jamm-os/app/services/concierge_service.py /home/corby/jamm-os/app/api/concierge/route.py /home/corby/jamm-os/frontend/src/app/concierge-log/page.tsx
-
-Expected: present in all four locations, or wherever the actual review page file is located if the path differs, confirm the real path first rather than assuming.
-
-Also write and run a standalone test proving the detection logic directly, not just that the code compiles, using realistic fake inputs matching tonight's two real fabrications, and paste the real output:
-
 python3 -c "
-# construct the actual detection function's real inputs here, simulating
-# the tool-use path with zero tools executed and a substantive response,
-# and separately the plain path with a fabricated-looking name and number,
-# confirming both are correctly flagged true, and confirming a normal,
-# real, tool-backed response is correctly flagged false
+from app.db.session import SessionLocal
+from app.api.concierge.functions import get_deadline_calendar, get_automation_health
+db = SessionLocal()
+r1 = get_deadline_calendar('185314c9-e702-4eab-8600-249848022206', db)
+print('deadline calendar:', r1)
+r2 = get_automation_health('185314c9-e702-4eab-8600-249848022206', db)
+print('automation health:', r2)
+db.close()
 "
 
-python3 -c "from app.main import app; print('OK')"
-npm run build in frontend, expected zero TypeScript errors.
+Expected: both print real dicts with no traceback, no error.
 
-Run the actual migration against the real dev database and confirm it applies cleanly:
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/jammpx_dev .venv/bin/alembic upgrade head
+python3 -c "from app.main import app; print('OK')"
 
 MANUAL VERIFICATION:
 
-Restart both servers.
+Restart backend, keep terminal visible. Ask what's on the calendar for this month, confirm a real answer with no data error message and no Tool execution failed line in the log. Ask which automations are currently enabled, confirm the same.
 
-Ask which employee is being used the most again, now that the classifier fix already makes this correctly call a real tool, confirm possible_fabrication is correctly false for this now-fixed case.
-
-If there is any way to temporarily and safely simulate the original bug for a real end to end test, such as asking a question using a phrasing deliberately excluded from any keyword list, do so and confirm possible_fabrication comes back true for that response, logged and visible on the /concierge-log page.
-
-Ask a normal, already-working question such as which clients have overdue invoices right now, confirm possible_fabrication is correctly false.
-
-Report pass or fail individually for all three checks, and confirm the review page visibly shows the new flag.
+Report pass or fail for both, and paste the real Python output from the verification script above, not a summary.
 
 GIT:
 git add -A
-git commit -m "add automatic possible_fabrication detection to ConciergeQuestionLog, catching confident non-hedging fabrications that the existing low_confidence hedge-phrase detector structurally cannot catch, since both real fabrications found tonight, an invented staff member and invented portal statistics, contained zero hedge language and were stated with full confidence, closing the gap where this class of failure could previously only be found by a human happening to ask the exact right question"
+git commit -m "fix get_deadline_calendar referencing a nonexistent Engagement.assigned_to field, since engagement level staff assignment does not exist in this data model, removing the field rather than approximating one from task level assignment, and fix get_automation_health referencing the wrong field name is_active instead of the real is_enabled, both confirmed live as real recurring tool crashes found during a deep audit"
 git pull --rebase origin main
 git push origin main
