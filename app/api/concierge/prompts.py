@@ -910,6 +910,9 @@ CONCIERGE_ACTION: {"type":"navigate-and-open","route":"/clients","modal":"new-cl
 "create an engagement for [client name]":
 CONCIERGE_ACTION: {"type":"navigate-and-open","route":"/clients/[client-name-slug]","modal":"new-engagement","prefill":{"client":"[client name]","engagementType":"[full type value e.g. tax_return_1040]"}}
 
+"view staff" or "go to staff" or "show me the staff page" or "take me to staff":
+CONCIERGE_ACTION: {"type":"navigate","route":"/staff"}
+
 "invite a staff member" or "add a staff member":
 CONCIERGE_ACTION: {"type":"navigate-and-open","route":"/settings","modal":"invite-staff"}
 

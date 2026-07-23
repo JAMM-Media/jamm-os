@@ -30,6 +30,9 @@ const PAGE_LABELS: Record<string, string> = {
   '/billing': 'Billing',
   '/settings': 'Settings',
   '/firm-chat': 'Firm Chat',
+  '/calendar': 'Calendar',
+  '/staff': 'Staff',
+  '/timesheets': 'Timesheets',
 }
 
 // UUID pattern for detecting entity IDs in routes
