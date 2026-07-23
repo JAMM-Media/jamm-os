@@ -54,61 +54,65 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Build a get_firm_settings tool covering subscription, notification preferences, and connected integrations, closing the confirmed live fabrication in this domain
+TASK: Fix task count including completed and archived engagements, and fix Autopilot navigating to Settings instead of the real Staff page
 
-USE: Fable 5
+USE: claude sonnet
 
 VERIFY BEFORE ACT:
-grep -n "class Firm" -A 5 /home/corby/jamm-os/app/models/firm.py
-grep -n "settings\|feature_flags" /home/corby/jamm-os/app/models/firm.py
-grep -n "quickbooks_connected\|stripe_account\|is_connected\|connected_at" /home/corby/jamm-os/app/services/quickbooks_service.py /home/corby/jamm-os/app/services/stripe_service.py 2>/dev/null
-grep -rn "class.*Integration\|quickbooks_id\|stripe_account_id" /home/corby/jamm-os/app/models/*.py 2>/dev/null
+sed -n '897,935p' /home/corby/jamm-os/app/api/concierge/functions.py
+grep -n "invite-staff" /home/corby/jamm-os/app/api/concierge/prompts.py
 
-Read all of this in full before writing anything. This task's whole point is replacing a confirmed live fabrication with real data, so every field used must be verified to genuinely exist and genuinely mean what it appears to mean, not assumed from a plausible-sounding name.
+Confirm both match exactly what is described below before editing. These are two independent, unrelated fixes in different files, verify each on its own before touching either.
 
-WHAT THIS IS:
+WHAT IS WRONG, PART ONE:
 
-Confirmed live during a deep audit: asked what integrations are connected, the Concierge invented a list naming QuickBooks, Dropbox Sign, and Stripe, none of which were verified as actually connected. Asked about notification preferences, it invented a Notifications tab that does not exist. This is the exact same confident-fabrication pattern already found and fixed twice tonight for portal data and staff workload, in the one domain that currently has zero tool coverage at all in the entire Concierge tool inventory.
+get_task_status counts incomplete tasks with no filter on the engagement's status at all, meaning a task belonging to a completed or archived engagement is still counted as an active outstanding task. This is the same category of bug already found and fixed once tonight between get_task_status and get_qc_checklist_status, where two tools counted the same underlying concept differently, this time affecting the raw task count itself against what a firm owner would expect to see as genuinely outstanding work. Confirmed as a real, live discrepancy during a deep audit comparing the reported task count against the real count on the actual Tasks page.
 
-CHANGE INSTRUCTIONS:
+CHANGE INSTRUCTIONS, PART ONE:
 
-In functions.py, add a new tool function, get_firm_settings, firm scoped, matching the existing docstring and structure pattern used by neighboring tools. It should return, using only fields confirmed to genuinely exist: the real subscription_tier, whatever real notification-relevant keys actually exist inside the settings JSON field on Firm, the real staff_auth_policy, the real timesheet_approval_required flag, and the real verification status of sending_domain and portal_domain, framed honestly as domain configuration, not invented as generic feature toggles.
+Add a join to Engagement in the incomplete tasks query in get_task_status, if one is not already effectively present through the existing engagement_id relationship, and add a filter excluding tasks whose engagement status is completed or archived, matching the exact same status.notin_(["completed", "archived"]) pattern already used correctly elsewhere in this file, such as in get_qc_checklist_status.
 
-For connected integrations specifically, base this only on whatever real, verifiable signal actually exists, such as a real non-null credential or connection timestamp field found during the verify step, for each of QuickBooks, Stripe, and e-sign. If no real signal exists at all for a given integration, the tool must report it as not connected or unknown, never invent a connected status. If none of the three have any real trackable connection signal anywhere in the codebase, say so plainly in the tool's returned data rather than guessing, and note this limitation in the tool's own description so the model knows not to overstate certainty here.
+WHAT IS WRONG, PART TWO:
 
-Register the tool in _CONCIERGE_TOOLS with a clear description covering subscription plan, notification preferences, and integration status questions. Add relevant keywords to both _OPERATIONAL_KEYWORDS and _TOPIC_KEYWORDS, including subscription, plan, integrations, connected, notification preferences, settings, since this domain currently has zero coverage in either keyword set.
+Every existing CONCIERGE_ACTION example in the system prompt involving staff uses the route /settings with an invite-staff modal, since that was the only staff-related example ever written. There is no example showing simple navigation to view the real Staff page. Confirmed live: asking Autopilot to take me to the staff page navigated to Settings, opening the invite staff modal, instead of the real Staff page at /staff, since the model had no better example to follow.
+
+CHANGE INSTRUCTIONS, PART TWO:
+
+Add a new CONCIERGE_ACTION example directly alongside the existing staff-related one, showing plain navigation to view the staff page: CONCIERGE_ACTION: {"type":"navigate","route":"/staff"}, used when the firm owner wants to simply view or go to the staff roster, distinct from the existing invite-staff example, which should remain for when the firm owner specifically wants to invite a new staff member.
 
 VERIFY AFTER ACT:
 
-grep -n "get_firm_settings" /home/corby/jamm-os/app/api/concierge/functions.py /home/corby/jamm-os/app/api/concierge/route.py
+grep -n "status.notin_" /home/corby/jamm-os/app/api/concierge/functions.py
+
+Confirm get_task_status now appears alongside the other tools already using this pattern.
+
+grep -n "\"route\":\"/staff\"" /home/corby/jamm-os/app/api/concierge/prompts.py
+
+Expected: present.
 
 python3 -c "
 from app.db.session import SessionLocal
-from app.api.concierge.functions import get_firm_settings
+from app.api.concierge.functions import get_task_status
 db = SessionLocal()
-result = get_firm_settings('185314c9-e702-4eab-8600-249848022206', db)
-print(result)
+result = get_task_status('185314c9-e702-4eab-8600-249848022206', db)
+print('incomplete_tasks:', result['incomplete_tasks'])
 db.close()
 "
 
-Paste this real output, confirm every field in it is something you can independently verify against the actual database record for this firm, not something that merely looks plausible.
+Paste this real output and compare it manually against the real count shown on the actual Tasks page in the app.
 
 python3 -c "from app.main import app; print('OK')"
 
 MANUAL VERIFICATION:
 
-Restart backend, keep terminal visible filtered for Tool executed.
+Restart backend. Ask what tasks are overdue right now, confirm the count now matches the real Tasks page count exactly.
 
-Ask what integrations are connected, confirm get_firm_settings fires and the response contains only real, verified information, explicitly saying so plainly if integration status genuinely cannot be determined from any real data, rather than naming specific tools as connected without real evidence.
+Restart frontend. Turn on Autopilot, ask it to take you to the staff page, confirm it now navigates directly to the real /staff page, not Settings.
 
-Ask what our notification preferences are, confirm the same tool fires and returns real data from the actual settings field, not an invented tab or feature.
-
-Ask what's our current subscription plan, confirm the real subscription_tier value comes back correctly.
-
-Report pass or fail for all three, including the exact tool name confirmed in the log for each, and paste the actual response text for all three, not a summary.
+Report pass or fail for both, including the exact before and after counts for the task fix.
 
 GIT:
 git add -A
-git commit -m "add get_firm_settings tool covering subscription tier, notification preferences, and integration status where a real verifiable signal exists, closing the confirmed live fabrication where the agent invented a QuickBooks Stripe Dropbox Sign integrations list and a nonexistent notifications tab, the one domain with zero tool coverage anywhere in the Concierge tool inventory"
+git commit -m "fix get_task_status counting tasks from completed and archived engagements as outstanding, matching the status exclusion pattern already used correctly elsewhere, and add a plain navigate-to-staff-page CONCIERGE_ACTION example so Autopilot stops defaulting to the invite-staff modal under Settings when the firm owner just wants to view the real Staff page"
 git pull --rebase origin main
 git push origin main
