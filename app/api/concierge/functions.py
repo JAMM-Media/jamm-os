@@ -24,6 +24,9 @@ from app.models.irs_authorization import IrsAuthorization
 from app.models.task import Task
 from app.models.qc_checklist import QcChecklistItem
 from app.models.signature_envelope import SignatureEnvelope
+from app.models.firm import Firm
+from app.models.integration import Integration
+from app.models.stripe_connection import StripeConnection
 
 
 # ---------------------------------------------------------------------------
@@ -1150,4 +1153,94 @@ def get_signature_envelope_status(
     return {
         "pending_count": len(envelopes),
         "envelopes": envelopes,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Function: get_firm_settings
+# Returns subscription tier, notification-relevant settings, staff policies,
+# domain configuration, and real integration connection status where a
+# verifiable signal exists in the database.
+# ---------------------------------------------------------------------------
+def get_firm_settings(firm_id: uuid.UUID, db: Session) -> dict:
+    firm = db.execute(
+        select(Firm).where(Firm.id == firm_id)
+    ).scalar_one_or_none()
+
+    if not firm:
+        return {"error": "Firm not found"}
+
+    # Real notification-relevant keys from the settings JSON field.
+    # Keys are whatever the firm has set; we surface them as-is.
+    settings = firm.settings or {}
+    notification_keys = {k: v for k, v in settings.items() if "notif" in k.lower() or "email" in k.lower() or "reminder" in k.lower()}
+
+    # QuickBooks: check Integration table for provider=quickbooks, status=connected
+    qb_row = db.execute(
+        select(Integration.status, Integration.connected_at, Integration.last_synced_at)
+        .where(
+            Integration.firm_id == firm_id,
+            Integration.provider == "quickbooks",
+        )
+        .order_by(Integration.connected_at.desc())
+        .limit(1)
+    ).fetchone()
+
+    if qb_row:
+        qb_status = qb_row.status
+        qb_connected_at = qb_row.connected_at.isoformat() if qb_row.connected_at else None
+        qb_last_synced = qb_row.last_synced_at.isoformat() if qb_row.last_synced_at else None
+    else:
+        qb_status = "not_connected"
+        qb_connected_at = None
+        qb_last_synced = None
+
+    # Stripe: check StripeConnection table, which is authoritative for Stripe status
+    stripe_row = db.execute(
+        select(StripeConnection.status, StripeConnection.connected_at, StripeConnection.disconnected_at, StripeConnection.charges_enabled)
+        .where(StripeConnection.firm_id == firm_id)
+    ).fetchone()
+
+    if stripe_row:
+        stripe_status = str(stripe_row.status.value) if hasattr(stripe_row.status, "value") else str(stripe_row.status)
+        stripe_connected_at = stripe_row.connected_at.isoformat() if stripe_row.connected_at else None
+        stripe_charges_enabled = stripe_row.charges_enabled
+    else:
+        stripe_status = "not_connected"
+        stripe_connected_at = None
+        stripe_charges_enabled = False
+
+    # Dropbox Sign / e-sign: no dedicated connection table exists. The only
+    # real signal is the esign_enabled feature flag. This indicates whether
+    # the feature is enabled for the firm, not whether a live credential is
+    # actively connected, since no connection record is stored.
+    feature_flags = firm.feature_flags or {}
+    esign_enabled = feature_flags.get("esign_enabled", False)
+
+    return {
+        "subscription_tier": firm.subscription_tier,
+        "staff_auth_policy": firm.staff_auth_policy,
+        "timesheet_approval_required": firm.timesheet_approval_required,
+        "sending_domain": firm.sending_domain,
+        "sending_domain_verified": firm.sending_domain_verified,
+        "portal_domain": firm.portal_domain,
+        "portal_domain_verified": firm.portal_domain_verified,
+        "notification_settings": notification_keys,
+        "settings_keys_present": list(settings.keys()),
+        "integrations": {
+            "quickbooks": {
+                "status": qb_status,
+                "connected_at": qb_connected_at,
+                "last_synced_at": qb_last_synced,
+            },
+            "stripe": {
+                "status": stripe_status,
+                "connected_at": stripe_connected_at,
+                "charges_enabled": stripe_charges_enabled,
+            },
+            "esign": {
+                "status": "enabled" if esign_enabled else "not_enabled",
+                "note": "esign_enabled feature flag only, no live credential record stored",
+            },
+        },
     }

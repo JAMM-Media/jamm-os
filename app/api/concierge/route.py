@@ -52,6 +52,7 @@ from app.api.concierge.functions import (
     get_qc_checklist_status,
     get_time_tracking_detail,
     get_signature_envelope_status,
+    get_firm_settings,
 )
 
 logger = logging.getLogger(__name__)
@@ -223,6 +224,15 @@ _CONCIERGE_TOOLS = [
             "required": [],
         },
     },
+    {
+        "name": "get_firm_settings",
+        "description": "Returns the firm's subscription tier, staff auth policy, timesheet approval setting, sending domain and portal domain configuration, notification-relevant settings keys, and real integration connection status for QuickBooks, Stripe, and e-sign based on actual database records. Use this when the firm owner asks about their subscription plan, what integrations are connected or disconnected, notification preferences, portal or sending domain setup, or any general question about firm configuration. Integration status for QuickBooks and Stripe is based on real connection records. E-sign status reflects only the feature flag, not a live credential, and the response says so explicitly.",
+        "input_schema": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+        },
+    },
 ]
 
 _OPERATIONAL_KEYWORDS = {
@@ -245,6 +255,10 @@ _OPERATIONAL_KEYWORDS = {
     "non-billable", "nonbillable", "hours this week", "time logged",
     "signature", "envelope", "signed", "sign", "pending signature",
     "e-signature", "esignature", "has signed", "needs to sign",
+    "subscription", "subscription plan", "plan", "integrations", "connected", "integration status",
+    "notification preferences", "notifications", "firm settings", "portal domain", "sending domain",
+    "quickbooks connected", "stripe connected", "dropbox sign",
+    "auth policy", "timesheet approval",
 }
 
 def _is_operational_question(message: str) -> bool:
@@ -599,6 +613,8 @@ Respond with exactly one word: SAFE or UNSAFE. Nothing else.""",
             elif tool_name == "get_signature_envelope_status":
                 _cid = _uuid.UUID(tool_input["client_id"]) if tool_input.get("client_id") else None
                 result = get_signature_envelope_status(current_firm.id, db, client_id=_cid)
+            elif tool_name == "get_firm_settings":
+                result = get_firm_settings(current_firm.id, db)
             else:
                 result = {"error": f"Unknown tool: {tool_name}"}
             logger.info(f"Tool executed: {tool_name} -- firm {current_firm.id}")
