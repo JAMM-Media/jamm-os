@@ -54,65 +54,46 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Fix task count including completed and archived engagements, and fix Autopilot navigating to Settings instead of the real Staff page
+TASK: Fix morning briefing detail fetch permanently stuck on restored sessions, and add a timeout with retry instead of silently failing forever
 
-USE: claude sonnet
+USE: Fable 5
 
 VERIFY BEFORE ACT:
-sed -n '897,935p' /home/corby/jamm-os/app/api/concierge/functions.py
-grep -n "invite-staff" /home/corby/jamm-os/app/api/concierge/prompts.py
+grep -n "detailReady\|setDetailReady\|detailBriefing" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+sed -n '470,500p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-Confirm both match exactly what is described below before editing. These are two independent, unrelated fixes in different files, verify each on its own before touching either.
+Read the full briefing initialization flow and the show_briefing_again handler in full before changing anything, including how messages get restored from sessionStorage on page load.
 
-WHAT IS WRONG, PART ONE:
+WHAT IS WRONG:
 
-get_task_status counts incomplete tasks with no filter on the engagement's status at all, meaning a task belonging to a completed or archived engagement is still counted as an active outstanding task. This is the same category of bug already found and fixed once tonight between get_task_status and get_qc_checklist_status, where two tools counted the same underlying concept differently, this time affecting the raw task count itself against what a firm owner would expect to see as genuinely outstanding work. Confirmed as a real, live discrepancy during a deep audit comparing the reported task count against the real count on the actual Tasks page.
+detailReady is a single, panel-wide boolean starting false on every fresh mount. It is only ever set true by two specific code paths: the very first live briefing generation on a given day, and the explicit show_briefing_again action. Confirmed live: after downloading a briefing successfully once, leaving the app, and returning, the download button showed Preparing report... indefinitely with no way to ever recover, since the restored briefing message went through neither of the two paths that set detailReady true. Separately, even when the detail fetch does fire, its catch block is empty, silently swallowing any real failure with zero retry option and zero indication to the firm owner that anything went wrong, leaving the same permanently stuck pulsing state as the cold path.
 
-CHANGE INSTRUCTIONS, PART ONE:
+CHANGE INSTRUCTIONS:
 
-Add a join to Engagement in the incomplete tasks query in get_task_status, if one is not already effectively present through the existing engagement_id relationship, and add a filter excluding tasks whose engagement status is completed or archived, matching the exact same status.notin_(["completed", "archived"]) pattern already used correctly elsewhere in this file, such as in get_qc_checklist_status.
+When a briefing message is restored from sessionStorage on page load (identify this the same way skipReveal already identifies a restored message), and that restored message is a briefing, trigger the same detail fetch used elsewhere, calling /concierge/morning-briefing/detail and setting detailBriefing and detailReady on success, so a returning firm owner does not have to ask to see the briefing again just to make the download button work.
 
-WHAT IS WRONG, PART TWO:
+Add a reasonable timeout, such as 15 seconds, starting whenever a detail fetch begins. If detailReady has still not become true by the time the timeout elapses, whether from the restoration path, the first-generation path, or the explicit show again path, transition the button to a clear failed state, such as Could not load report, with a way to retry the fetch on click, rather than leaving the pulsing Preparing report... text showing indefinitely with no recourse. Reuse the existing statusMessage pattern already used elsewhere in this file for similar failure messaging if it fits.
 
-Every existing CONCIERGE_ACTION example in the system prompt involving staff uses the route /settings with an invite-staff modal, since that was the only staff-related example ever written. There is no example showing simple navigation to view the real Staff page. Confirmed live: asking Autopilot to take me to the staff page navigated to Settings, opening the invite staff modal, instead of the real Staff page at /staff, since the model had no better example to follow.
-
-CHANGE INSTRUCTIONS, PART TWO:
-
-Add a new CONCIERGE_ACTION example directly alongside the existing staff-related one, showing plain navigation to view the staff page: CONCIERGE_ACTION: {"type":"navigate","route":"/staff"}, used when the firm owner wants to simply view or go to the staff roster, distinct from the existing invite-staff example, which should remain for when the firm owner specifically wants to invite a new staff member.
+Do not remove or weaken the existing empty catch blocks' safety, silently failing an individual fetch attempt is fine, the requirement is that the user eventually sees a real failure state and a way to retry, not that every possible error gets surfaced immediately.
 
 VERIFY AFTER ACT:
 
-grep -n "status.notin_" /home/corby/jamm-os/app/api/concierge/functions.py
+grep -n "detailReady\|setDetailReady\|Could not load report\|retry" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-Confirm get_task_status now appears alongside the other tools already using this pattern.
-
-grep -n "\"route\":\"/staff\"" /home/corby/jamm-os/app/api/concierge/prompts.py
-
-Expected: present.
-
-python3 -c "
-from app.db.session import SessionLocal
-from app.api.concierge.functions import get_task_status
-db = SessionLocal()
-result = get_task_status('185314c9-e702-4eab-8600-249848022206', db)
-print('incomplete_tasks:', result['incomplete_tasks'])
-db.close()
-"
-
-Paste this real output and compare it manually against the real count shown on the actual Tasks page in the app.
-
-python3 -c "from app.main import app; print('OK')"
+npm run build in frontend, expected zero TypeScript errors.
 
 MANUAL VERIFICATION:
 
-Restart backend. Ask what tasks are overdue right now, confirm the count now matches the real Tasks page count exactly.
+Full kill, .next wipe, restart both servers.
 
-Restart frontend. Turn on Autopilot, ask it to take you to the staff page, confirm it now navigates directly to the real /staff page, not Settings.
+Reproduce the original failure: view a fresh briefing, confirm the download button works and produces a real PDF. Then reload the page entirely, so the briefing message is restored from sessionStorage rather than freshly generated, and confirm the download button now correctly becomes available again within a reasonable time, not stuck on Preparing report... forever.
 
-Report pass or fail for both, including the exact before and after counts for the task fix.
+If possible, simulate a genuine failure, such as briefly stopping the backend before triggering the detail fetch, and confirm the button transitions to a clear failed state with a working retry option after the timeout, rather than pulsing indefinitely.
+
+Report pass or fail individually for the restoration case and the timeout and retry case.
 
 GIT:
 git add -A
-git commit -m "fix get_task_status counting tasks from completed and archived engagements as outstanding, matching the status exclusion pattern already used correctly elsewhere, and add a plain navigate-to-staff-page CONCIERGE_ACTION example so Autopilot stops defaulting to the invite-staff modal under Settings when the firm owner just wants to view the real Staff page"
+git commit -m "fix morning briefing download button getting permanently stuck on Preparing report when a briefing message is restored from a past session, since only live generation and explicit show-again previously triggered the detail fetch that unlocks downloading, and add a timeout with a clear failed state and retry option instead of silently pulsing forever on any real fetch failure"
 git pull --rebase origin main
 git push origin main
