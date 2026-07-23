@@ -915,6 +915,7 @@ def get_task_status(firm_id: uuid.UUID, db: Session) -> dict:
         .where(
             Task.firm_id == firm_id,
             Task.is_completed == False,  # noqa: E712
+            Engagement.status.notin_(["completed", "archived"]),
         )
         .order_by(Task.due_date.asc().nullslast())
         .limit(30)
