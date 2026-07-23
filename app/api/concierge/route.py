@@ -1,6 +1,7 @@
 # app/api/concierge/route.py
 
 import logging
+import re
 from datetime import datetime, timezone, timedelta
 from typing import Any
 from uuid import UUID
@@ -59,6 +60,15 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/concierge", tags=["concierge"])
 router.include_router(context_router)
+
+SSN_PATTERN = re.compile(r'\b\d{3}-\d{2}-\d{4}\b')
+EIN_PATTERN = re.compile(r'\b\d{2}-\d{7}\b')
+
+
+def redact_sensitive_patterns(text: str) -> str:
+    text = SSN_PATTERN.sub("[REDACTED]", text)
+    text = EIN_PATTERN.sub("[REDACTED]", text)
+    return text
 
 
 # ---------------------------------------------------------------------------
@@ -720,10 +730,6 @@ Respond with exactly one word: SAFE or UNSAFE. Nothing else.""",
     except Exception:
         _firm_context = None
 
-    import re
-
-    SSN_PATTERN = re.compile(r'\b\d{3}-\d{2}-\d{4}\b')
-    EIN_PATTERN = re.compile(r'\b\d{2}-\d{7}\b')
     SYSTEM_PROMPT_LEAK_PHRASES = [
         "my instructions are",
         "my system prompt",
@@ -738,19 +744,16 @@ Respond with exactly one word: SAFE or UNSAFE. Nothing else.""",
     ]
 
     def filter_output(text: str) -> str:
-        # Redact SSN patterns
+        # Log security events for sensitive patterns detected in model output
         if SSN_PATTERN.search(text):
             logger.error(
                 f"SECURITY: SSN pattern detected in output for firm {current_firm.id}"
             )
-            text = SSN_PATTERN.sub("[REDACTED]", text)
-
-        # Redact EIN patterns
         if EIN_PATTERN.search(text):
             logger.error(
                 f"SECURITY: EIN pattern detected in output for firm {current_firm.id}"
             )
-            text = EIN_PATTERN.sub("[REDACTED]", text)
+        text = redact_sensitive_patterns(text)
 
         # Detect system prompt leakage attempts in output
         lower = text.lower()
@@ -767,8 +770,7 @@ Respond with exactly one word: SAFE or UNSAFE. Nothing else.""",
         # Confirmed leaks (get_overdue_invoices, dashboard data, current firm data,
         # staff capacity check) are purely alphabetic. This is defense in depth
         # alongside the prompt instruction, not a replacement for it.
-        import re as _re
-        text = _re.sub(r'\s*\([A-Za-z_ ]+\)\s*$', '', text.rstrip())
+        text = re.sub(r'\s*\([A-Za-z_ ]+\)\s*$', '', text.rstrip())
 
         return text
 
