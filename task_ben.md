@@ -54,63 +54,55 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Give staff scoped Concierge access to their own tasks and engagements only, replacing the blanket block
+TASK: Fix get_client_full_snapshot leaving overdue status as model-computed math instead of a precomputed fact
 
-USE: Fable 5
+USE: claude sonnet
 
 VERIFY BEFORE ACT:
-grep -n "def concierge_chat" -A 20 /home/corby/jamm-os/app/api/concierge/route.py
-grep -n "_CONCIERGE_TOOLS\s*=" -A 5 /home/corby/jamm-os/app/api/concierge/route.py
-grep -n "def get_task_status" -A 40 /home/corby/jamm-os/app/api/concierge/functions.py
-grep -n "assigned_to" /home/corby/jamm-os/app/models/task.py
+grep -n "def get_client_full_snapshot" -A 70 /home/corby/jamm-os/app/api/concierge/functions.py
+grep -n "def get_overdue_invoices" -A 30 /home/corby/jamm-os/app/api/concierge/functions.py
 
-Confirm the current blanket staff block in concierge_chat, the existing _CONCIERGE_TOOLS list structure, the existing get_task_status pattern to match style against, and the real Task.assigned_to field before writing anything. Read the full tool-use loop in generate_with_tools before making any change to which tools get passed into it, this is a security-relevant change and must be scoped precisely.
+Confirm the current invoice section of get_client_full_snapshot returns only raw status and due_date with no computed overdue fields, and confirm the exact pattern get_overdue_invoices already uses correctly for computing is_overdue and days_overdue, since the fix should match that established pattern, not invent a new one.
 
-WHAT THIS IS:
+WHAT IS WRONG:
 
-Staff currently get a full 403 block from the Concierge entirely, a safe but overly broad temporary fix applied earlier tonight given the firm size this product targets, 4 to 40 employees, and the real risk of junior staff seeing firm-wide financial and personnel data. A full block is not the right permanent answer, since a staff member asking about their own assigned work is a completely different, low-risk case from them asking about firm-wide accounts receivable or another employee's workload. Engagement has no per-engagement assignment field at all, confirmed earlier tonight, only individual Task rows have a real assigned_to field, so a staff member's own engagements must be derived from their own tasks, not a direct engagement-level assignment.
+Confirmed live and confirmed against the real database: Marcus and Diana Webb's invoice INV-001 has a genuinely real due_date of 2026-06-24 and status sent, both correctly returned by get_client_full_snapshot with no data error at all. The bug is that this tool returns only the raw due_date and status with no precomputed indication of whether the invoice is actually overdue, leaving the model to determine this itself by comparing the due date against the current date. The model got this wrong, stating the invoice was not yet overdue despite it being genuinely about a month past due, confirmed correct and consistent by get_overdue_invoices elsewhere in the same session. This is the same underlying lesson already learned once tonight with tool_choice forcing, applied here to date arithmetic instead of tool selection, the model cannot be trusted to reliably compute something the backend can compute deterministically and hand over as a settled fact.
 
 CHANGE INSTRUCTIONS:
 
-In functions.py, add a new tool function, get_my_tasks, accepting firm_id, user_id, and db. It should return, matching the existing get_task_status pattern and docstring style, every incomplete task where assigned_to equals the given user_id specifically, not firm wide, including the client name, engagement name, due date, and status for each, plus the distinct set of engagement names those tasks belong to as a simple list, giving a staff member a real answer to what am I working on and what engagements am I involved in, scoped entirely to their own assignments.
+In the invoice section of get_client_full_snapshot, add the same is_overdue and days_overdue computation already used correctly in get_overdue_invoices, computed in Python against today's real date, not left for the model to infer. Add these as explicit fields on each invoice in the returned list, alongside the existing number, status, and due date fields already there.
 
-In route.py, remove the blanket staff block from concierge_chat entirely, keeping the existing client_portal_user block exactly as is. Instead, when current_user.role is staff, restrict which tools are actually available in the tool-use loop to only get_my_tasks, none of the firm-wide tools such as get_overdue_invoices, get_staff_capacity, get_firm_settings, or any other tool that returns data beyond one person's own assignments. Do this by constructing a separate, smaller tool list used only for the staff role, rather than filtering the full list dynamically in a way that could be error prone, an explicit, separate, minimal list is safer and easier to audit than a filter applied to the full one.
-
-Add or adjust the relevant operational keyword and topic keyword entries so questions like what am I working on or what are my tasks correctly route to get_my_tasks for a staff user.
-
-Ensure the system prompt context passed to a staff user's conversation makes clear the assistant currently only has visibility into that staff member's own assigned tasks and engagements, not firm-wide data, so the model does not imply broader knowledge it does not have access to in this scoped mode.
-
-Do not expose get_my_tasks or the staff-scoped tool list to owner or manager roles, they continue to use the full existing tool set exactly as it already works. Do not attempt to scope any tool other than tasks in this task, firm-wide financial, staff capacity, settings, and every other tool remain fully inaccessible to staff, this is a deliberate, narrow first version, not full role based access.
+Do not change get_overdue_invoices itself, it is already correct. Do not change any other part of get_client_full_snapshot, only the invoice section needs this addition.
 
 VERIFY AFTER ACT:
 
-grep -n "get_my_tasks" /home/corby/jamm-os/app/api/concierge/functions.py /home/corby/jamm-os/app/api/concierge/route.py
-
-Expected: present in both, and confirm in route.py that the staff-specific tool list genuinely only contains get_my_tasks, nothing else, by reading the actual list, not assuming.
-
 python3 -c "
 from app.db.session import SessionLocal
-from app.api.concierge.functions import get_my_tasks
+from app.api.concierge.functions import get_client_full_snapshot
+from app.models.client import Client
+
 db = SessionLocal()
-result = get_my_tasks('185314c9-e702-4eab-8600-249848022206', 'REPLACE_WITH_REAL_STAFF_USER_ID', db)
-print(result)
+client = db.query(Client).filter(Client.name.ilike('%Webb%')).first()
+result = get_client_full_snapshot('185314c9-e702-4eab-8600-249848022206', client.id, db)
+for inv in result['invoices']:
+    print(inv)
 db.close()
 "
 
-Use the real id of the test staff account already created tonight, teststaff@riverside-demo.com, look it up directly if the id is not already known, do not guess it.
+Expected: the INV-001 entry now includes is_overdue true and a real days_overdue number, not just raw status and due date. Paste this real output.
 
 python3 -c "from app.main import app; print('OK')"
 
 MANUAL VERIFICATION:
 
-Restart backend. Log in as the test staff account. Ask what am I working on or a similar phrasing, confirm a real, scoped answer about that specific staff member's own tasks only, not firm-wide data. Separately, ask something firm-wide, such as which clients have overdue invoices right now, as that same staff account, confirm this is still correctly blocked or answered honestly as out of scope, not answered with real firm-wide data.
+Restart backend. Ask what's Marcus and Diana Webb's outstanding balance from last year's engagement again, the exact question that surfaced this. Confirm the response now correctly states the invoice is overdue, not not yet overdue, consistent with what get_overdue_invoices already correctly says elsewhere.
 
-Log back in as the firm owner, confirm their access is completely unaffected, full tool set still works exactly as before.
+Ask about a different client with a genuinely current, not-yet-due invoice if the test data supports it, to confirm the fix correctly reports not overdue in that case too, not just always saying overdue regardless of the real date.
 
-Report pass or fail individually for the staff scoped question, the staff firm-wide question still being blocked, and the owner regression check.
+Report pass or fail for both.
 
 GIT:
 git add -A
-git commit -m "give staff scoped Concierge access to their own assigned tasks and engagements only, replacing the earlier blanket block, since a staff member asking about their own work is a fundamentally different and lower risk case than asking about firm-wide financial or personnel data, using a separate explicit minimal tool list for the staff role rather than filtering the full tool set, deliberately narrow as a first version rather than full role based access under time pressure"
+git commit -m "add precomputed is_overdue and days_overdue fields to get_client_full_snapshot's invoice data, since the model was left to determine overdue status itself by comparing a raw due date against the current date and got the math wrong, incorrectly calling a genuinely 29 day overdue invoice not yet overdue, confirmed live and confirmed the underlying due date data itself was correct, this was a reasoning gap not a data error, same underlying lesson as tool_choice forcing applied to date arithmetic instead of tool selection"
 git pull --rebase origin main
 git push origin main
