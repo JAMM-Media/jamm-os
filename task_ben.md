@@ -54,62 +54,51 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Refactor ConciergePanel.tsx onto the token system and give it real visual identity, phase 2 of 2 visual redesign
+TASK: Remove Smart Paste, give the header real identity, differentiate the trash icon at rest, and replace the raw browser tooltip on Autopilot
 
 USE: Fable 5
 
 VERIFY BEFORE ACT:
-grep -c "bg-\[#\|text-\[#\|border-\[#" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
-cat /home/corby/jamm-os/frontend/src/app/globals.css
-grep -n "revealedWordCount\|revealSession\|_STAFF_CONCIERGE\|parsedDraft\|msg.options\|stripTrailingMarkers" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx | wc -l
+sed -n '1580,1610p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+sed -n '955,1015p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+grep -n "title=" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-Read the entire file in full before changing a single line. This file has been through many separate, hard-won fixes tonight: the reveal animation system, four separate trailing marker types, batch drafting, staff role scoping, dark mode contrast. This task must not touch any state, any logic, any function body, any conditional behavior, only visual presentation, class names, and static JSX structure. If you are unsure whether something is presentational or logical, treat it as logical and do not touch it.
+Read the full header row and the full Smart Paste block in context before touching anything, including whatever triggers Smart Paste to open, such as a clipboard icon button elsewhere in the file, so it can be removed cleanly with no dangling reference.
 
 WHAT THIS IS:
 
-Phase 1 replaced the app's generic Inter typography with a distinctive serif and sans pairing, Lora and Plus Jakarta Sans, and refined the core color tokens toward a warmer palette, confirmed working cleanly across the rest of the app with no regressions. This file was deliberately excluded from phase 1 because it hardcodes a large number of raw hex color values directly in its className strings, bypassing the token system entirely, confirmed by the count returned in the first verify command. This means phase 1's changes never reached this file at all, it still looks exactly as it did before. This task has two goals: refactor these hardcoded hex values to reference the real design tokens so this panel is finally consistent with the rest of the redesigned app, and give the panel deliberate visual identity as the smart, differentiated layer of the product, using the concierge accent color token added in phase 1 specifically for this purpose and not used anywhere else yet.
+Four small, real findings from a direct visual review of the panel after the phase 1 and phase 2 redesign work. First, Smart Paste no longer serves a clear purpose and should be removed entirely, along with whatever button or icon currently triggers it. Second, the JAMM Concierge header reads as a plain text label with no more visual weight than the buttons next to it, undercutting the identity work already done elsewhere in this panel. Third, the trash can icon, which correctly triggers a real confirm dialog before clearing a conversation, looks visually identical at rest to the harmless close button right next to it, a destructive action and a harmless one should not share identical visual weight before the user even interacts with either. Fourth, hovering Autopilot currently shows the raw, unstyled native browser tooltip, a plain black box in a system font, which clashes directly with the warm, considered typography and color work done in phases 1 and 2.
 
 CHANGE INSTRUCTIONS:
 
-Replace hardcoded hex values throughout this file with the equivalent real token classes already defined in globals.css and tailwind.config.ts, such as bg-surface-card, text-brand, bg-dark-card, and so on, matching each hardcoded value to its closest real token rather than inventing new arbitrary values. Where light and dark mode variants both currently exist as separate hardcoded hex pairs, they should become a single token class that already handles both modes correctly through the existing dark variant system, do not keep them as two separate arbitrary hex values.
+Remove the Smart Paste form block entirely, along with its trigger button and any state variables that exist solely to control it. Confirm nothing else in the file references this state after removal.
 
-Apply the new display serif font, using the font-display utility class added in phase 1, to the panel's own header title, to bolded key figures inside message content such as dollar amounts and counts, currently rendered through the existing strong markdown renderer, and to the JC avatar initials, so the panel's own voice reads as distinctly considered rather than sharing the exact same typography as plain UI chrome elsewhere.
+Give the JAMM Concierge header real visual identity, pairing the existing font-display treatment on the text with a small, considered mark or icon, using the concierge accent color already established for the panel's identity, so the header reads as a named product moment, not a plain UI label. Keep this restrained and small, this is a refinement, not a redesign of the header layout.
 
-Use the concierge accent color token, added specifically for this purpose in phase 1, deliberately and sparingly, not as a wholesale color replacement. Good candidates: the avatar circle's background or a ring around it, a subtle border or accent line on the panel's own container distinguishing it visually from a plain flat page panel, and the streaming pulse or thinking indicator. Do not apply this accent color broadly across every button or every interactive element, it should read as special specifically because it appears rarely and deliberately.
+Give the trash icon a subtle distinct visual treatment at its resting state, not only on hover, such as a slightly different muted tone leaning toward its existing hover warning color rather than being visually identical to the neutral close button beside it. Do not change or remove the existing confirm dialog safeguard in handleClearConversation, that logic is correct and already in place, this is purely a visual distinction so the two icons do not look interchangeable before a user even interacts with them.
 
-Give the panel real elevation and visual weight distinguishing it from a flat, generic side panel, such as a genuine shadow, a subtle background treatment distinct from the surrounding page background, or a considered border treatment, appropriate to a refined, non-maximalist aesthetic given this is a trust focused financial product, not a loud or decorative one.
+Replace the native title attribute tooltip on the Autopilot toggle with a properly styled custom tooltip consistent with the rest of the redesigned panel, using the existing warm surface and border tokens and correct typography, positioned clearly without obstructing nearby content. Preserve the exact existing tooltip copy, when on I will navigate the app and open forms for you automatically, when off I will just tell you where to go, do not reword it, only restyle its presentation.
 
-Do not change the avatar's actual content logic, only its visual styling. Do not change any spacing or layout structure in a way that could affect where the reveal animation's word count boundary falls or how draft cards, option buttons, or the suggestion chip row are positioned relative to their messages, only update their color and typography treatment.
+Do not change any state, logic, or functional behavior anywhere in this task beyond removing the Smart Paste feature's own dead state, every other change is purely visual and structural JSX, not behavioral.
 
 VERIFY AFTER ACT:
 
-grep -c "bg-\[#\|text-\[#\|border-\[#" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+grep -n "Smart Paste" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-Expected: a significantly lower count than the number found in the before check, ideally at or near zero, confirming real token migration happened, not just a few changes.
+Expected: no matches remaining.
 
 npm run build in frontend, expected zero TypeScript errors.
-
-diff the actual logic sections against what they were before by confirming these specific patterns are byte for byte unchanged: the tick function inside the reveal animation effect, the stripTrailingMarkers function, the parseDraftFromResponse function, and the _STAFF_CONCIERGE_TOOLS related conditional rendering if any exists client side. Paste a diff or explicit confirmation that these specific logic blocks were not touched.
 
 MANUAL VERIFICATION:
 
 Full kill, .next wipe, restart both servers.
 
-This is a full regression sweep of every major feature this file has carried tonight, not just a visual check. Go through every one of these and report pass or fail individually, do not summarize:
+Confirm Smart Paste and its trigger are genuinely gone with no leftover empty space or broken button. Confirm the JAMM Concierge header now shows a real, considered identity mark, in both light and dark mode. Confirm the trash icon now looks visually distinct from the close button at rest, not just on hover, and confirm clicking it still correctly triggers the existing confirm dialog before clearing anything. Hover Autopilot and confirm the tooltip is now styled consistent with the rest of the panel, not the raw black browser default, with the exact same copy as before.
 
-1. Ask a longer question and confirm the word by word reveal animation still works smoothly, not instant, not blank, not stuck.
-2. Ask which clients have overdue invoices right now, confirm the clickable client option buttons still render correctly and are still clickable.
-3. Click one of those options, confirm a real, correctly personalized draft still generates with no placeholder text.
-4. Ask for drafts for all qualifying clients, confirm multiple distinct draft cards still render correctly, not merged or broken.
-5. Click Open to send on a draft, confirm the confirmation modal still appears correctly with accurate content.
-6. Ask a question that should produce a topic suggestion chip, confirm it still appears correctly positioned below its message, not above.
-7. Switch to dark mode, confirm all of the above still look correct and remain fully readable, this is the single most important check given how much effort dark mode contrast took to get right earlier tonight.
-8. Confirm the panel now visually looks distinctly different from a flat generic page panel, with real identity, not just recolored.
-
-Report pass or fail individually for all eight, with a screenshot of the panel in both light and dark mode.
+Report pass or fail individually for all four changes, with screenshots in both light and dark mode.
 
 GIT:
 git add -A
-git commit -m "phase 2 of 2 visual redesign: refactor ConciergePanel.tsx off hardcoded hex values onto the real design token system established in phase 1, apply the new display serif to the panel's own headers and key figures, and introduce the reserved concierge accent color deliberately and sparingly for the panel's visual identity, giving it real elevation and presence as the product's differentiated smart layer, with zero changes to any state, logic, or function body, confirmed through full regression testing of the reveal animation, draft generation, batch drafting, option buttons, and dark mode contrast"
+git commit -m "remove Smart Paste, give the JAMM Concierge header real identity treatment with the panel's established accent color, visually differentiate the destructive trash icon from the harmless close button at rest without changing the existing confirm dialog safeguard, and replace the raw native browser tooltip on Autopilot with a properly styled tooltip consistent with the rest of the redesigned panel"
 git pull --rebase origin main
 git push origin main
