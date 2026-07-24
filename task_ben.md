@@ -54,42 +54,40 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Give the Overdue Engagements stat card real visual distinction from its neutral peer cards when overdue count is positive
+TASK: Discourage formulaic report-style openers on plain factual answers
 
 USE: claude sonnet
 
 VERIFY BEFORE ACT:
-sed -n '30,50p' /home/corby/jamm-os/frontend/src/app/\(app\)/dashboard/page.tsx
-sed -n '555,570p' /home/corby/jamm-os/frontend/src/app/\(app\)/dashboard/page.tsx
+sed -n '12,45p' /home/corby/jamm-os/app/api/concierge/prompts.py
+sed -n '1325,1335p' /home/corby/jamm-os/app/api/concierge/prompts.py
 
-Confirm the shared MetricCard component and the Overdue Engagements call site exactly as described before editing.
+Confirm the RESPONSE FORMAT section including the closing-line rule added earlier tonight, and confirm the exact, separate, deliberate hardcoded opening line required for the show briefing again flow, since this task must not touch or weaken that specific requirement.
 
 WHAT THIS IS:
 
-An independent live audit specifically flagged that the Overdue Engagements card currently carries the same visual weight as neutral cards like Unbilled WIP, with the audit's specific suggestion being a larger size or a colored card background, not just red value text, which is the only distinction that currently exists. This is the single most urgent, time sensitive metric on the Dashboard when its count is positive, and it should draw the eye before anything else, not compete for attention equally with unrelated neutral stats.
+The same live audit that flagged the missing closing line on short factual answers also specifically flagged formulaic report-header style openers, such as here's a quick snapshot based on your firm's current data, as reading like a generated report rather than a person answering a question. No rule currently exists anywhere in the prompt governing this, the model produces these openers on its own with nothing discouraging it. This is the same root cause and same fix pattern as the closing-line rule added earlier tonight, applied to the other end of the response instead.
 
 CHANGE INSTRUCTIONS:
 
-Add a new optional prop to MetricCard, something like variant, accepting a value such as alert, defaulting to the existing neutral treatment when not passed. When variant is alert, the card's background and border should use the existing status-red tokens already established elsewhere in this codebase, at a subtlety appropriate for a background tint, not a solid, jarring red fill, still clearly a card, just visually distinct from its neutral siblings.
+Add a new rule to the RESPONSE FORMAT section, placed near the existing closing-line rule added earlier tonight: plain factual answers should not open with a generic report-style preamble such as here's a quick snapshot based on your firm's current data or similar framing that describes the act of answering rather than simply answering. The response should generally begin directly with the actual answer or the most relevant fact, the way a knowledgeable colleague would respond if asked the same question directly, not with a line announcing that an answer is about to follow.
 
-At the Overdue Engagements call site specifically, pass this new variant conditionally, only when the real overdue count is greater than zero, using the same visibleOverdue.length > 0 condition already used for the text color. When the count is zero, the card should render with the existing neutral treatment exactly as it does today, this distinction only applies when there is something genuinely urgent to flag.
-
-Do not change the other three MetricCard call sites, Revenue This Month, Outstanding AR, Unbilled WIP, they keep the existing neutral treatment unconditionally.
+Explicitly state this rule does not apply to the one required exact opening line for the show briefing again flow, here's your briefing again, which remains a fixed, deliberate format for that specific action and must not be affected by this new rule in any way.
 
 VERIFY AFTER ACT:
 
-npm run build in frontend, expected zero TypeScript errors.
+grep -n "report-style preamble\|does not apply to.*briefing again" /home/corby/jamm-os/app/api/concierge/prompts.py
+
+Expected: both present, confirming the new rule and its explicit exclusion are both there.
 
 MANUAL VERIFICATION:
 
-Full kill, .next wipe, restart both servers.
+Restart backend. Ask which clients have overdue invoices right now, confirm the response now begins directly with the answer, not a generic preamble. Ask how are things looking or a similarly broad question likely to previously trigger a snapshot-style opener, confirm the same. Separately, trigger the show briefing again flow specifically and confirm its required exact opening line is completely unaffected by this change.
 
-Confirm in light mode that with overdue engagements present, the Overdue Engagements card now visually stands out from its three neutral neighbors, not just through red text but through the card itself. Confirm the other three cards are completely unchanged. Confirm in dark mode the same distinction holds and remains fully readable, not overly bright or jarring against the dark background.
-
-Report pass or fail for light mode, dark mode, and confirmation the other three cards are unaffected, with a screenshot of the full stat card row in both modes.
+Report pass or fail for all three.
 
 GIT:
 git add -A
-git commit -m "give the Overdue Engagements stat card a distinct alert-tinted background when the overdue count is positive, addressing a live audit finding that this, the single most time sensitive metric on the Dashboard, currently carries identical visual weight to neutral stats like Unbilled WIP, with only its value text previously distinguishing it"
+git commit -m "discourage formulaic report-style openers on plain factual answers, extending the same fix pattern already applied to closing lines earlier tonight to the other end of the response, per the same live audit finding, with an explicit exclusion preserving the one required exact opening line for the show briefing again flow"
 git pull --rebase origin main
 git push origin main
