@@ -123,7 +123,6 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
   const [suggestions, setSuggestions] = useState<string[]>([])
   const [formDirty, setFormDirtyState] = useState(false)
   const [statusMessage, setStatusMessage] = useState('')
-  const [pasteFormOpen, setPasteFormOpen] = useState(false)
   const [briefingLoading, setBriefingLoading] = useState(false)
   const [isDownloading, setIsDownloading] = useState(false)
   const [copiedId, setCopiedId] = useState<string | null>(null)
@@ -132,13 +131,6 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
   const [detailReady, setDetailReady] = useState(false)
   const [detailFailed, setDetailFailed] = useState(false)
   const detailTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const [pasteForm, setPasteForm] = useState({
-    name: '',
-    email: '',
-    phone: '',
-    entity_type: '',
-  })
-
   // Keep a ref so the async sendMessages callback always reads current value.
   const autopilotRef = useRef(false)
   useEffect(() => { autopilotRef.current = autopilotOn }, [autopilotOn])
@@ -582,46 +574,6 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
     await sendMessages(newThread)
   }
 
-  function handlePasteFormSubmit() {
-    if (!pasteForm.name.trim()) return
-    setPasteFormOpen(false)
-    const summary = [
-      pasteForm.name.trim(),
-      pasteForm.email.trim(),
-      pasteForm.phone.trim(),
-      pasteForm.entity_type,
-    ].filter(Boolean).join(', ')
-    const userMsg: Message = {
-      role: 'user',
-      content: `Add client: ${summary}`,
-    }
-    setMessages((prev) => [...prev, userMsg])
-    const confirmMsg: Message = {
-      role: 'concierge',
-      content: `Got it. Here is what I have:\n\n${pasteForm.name.trim()}${pasteForm.email ? '\nEmail: ' + pasteForm.email.trim() : ''}${pasteForm.phone ? '\nPhone: ' + pasteForm.phone.trim() : ''}${pasteForm.entity_type ? '\nType: ' + pasteForm.entity_type : ''}\n\nTurn on Autopilot and I will open the New Client form with these fields pre-filled. Or navigate to Clients and select New Client to enter them manually.`,
-      skipReveal: true,
-    }
-    if (autopilotRef.current) {
-      const action: ConciergeAction = {
-        type: 'navigate-and-open',
-        route: '/clients',
-        modal: 'new-client',
-        prefill: {
-          name: pasteForm.name.trim(),
-          email: pasteForm.email.trim(),
-          phone: pasteForm.phone.trim(),
-          entityType: pasteForm.entity_type,
-        },
-      }
-      setMessages((prev) => [...prev, { role: 'concierge', content: '' }])
-      void executeAction(action)
-      setStatusMessage('Opening New Client form')
-    } else {
-      setMessages((prev) => [...prev, confirmMsg])
-    }
-    setPasteForm({ name: '', email: '', phone: '', entity_type: '' })
-  }
-
   function handleSuggestion(label: string) {
     const routes: Record<string, string> = {
       'Go to Clients': '/clients',
@@ -962,16 +914,18 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
                 <span className="text-[10px] font-medium text-white">{initials}</span>
               </div>
             )}
-            <span className="text-[14px] font-medium font-display text-brand dark:text-foreground">
-              JAMM Concierge
-            </span>
+            <div className="flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-concierge flex-shrink-0" />
+              <span className="text-[14px] font-medium font-display text-brand dark:text-foreground">
+                JAMM Concierge
+              </span>
+            </div>
           </div>
 
           <div className="flex items-center gap-2">
             {/* Autopilot toggle */}
             <div className="relative group">
               <button
-                title="When ON, I'll navigate the app and open forms for you automatically. When OFF, I'll just tell you where to go."
                 onClick={() => {
                   const next = !autopilotOn
                   setAutopilotOn(next)
@@ -987,7 +941,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
                 <Zap className={`h-3 w-3 transition-all ${autopilotOn ? 'fill-white stroke-white' : 'fill-none'}`} />
                 Autopilot
               </button>
-              <div className="absolute right-0 top-full mt-1 w-56 px-2.5 py-1.5 rounded-[6px] bg-brand text-white text-[11px] leading-snug opacity-0 group-hover:opacity-100 transition-opacity duration-150 pointer-events-none z-50 shadow-lg">
+              <div className="absolute right-0 top-full mt-1.5 w-60 px-3 py-2 rounded-[6px] bg-surface-card dark:bg-dark-card border border-[0.5px] border-surface-border dark:border-dark-border text-foreground text-[11px] leading-relaxed opacity-0 group-hover:opacity-100 transition-opacity duration-150 pointer-events-none z-50 shadow-lg">
                 When ON, I&apos;ll navigate the app and open forms for you automatically. When OFF, I&apos;ll just tell you where to go.
               </div>
             </div>
@@ -996,8 +950,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
               <button
                 onClick={handleClearConversation}
                 aria-label="Clear conversation"
-                title="Clear conversation"
-                className="text-muted-foreground hover:text-[#DC2626] dark:hover:text-[#F87171] transition-colors"
+                className="text-[#DC2626]/40 dark:text-[#F87171]/30 hover:text-[#DC2626] dark:hover:text-[#F87171] transition-colors"
               >
                 <Trash2 className="h-4 w-4" />
               </button>
@@ -1583,64 +1536,6 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
             </span>
           </div>
         )}
-        {/* Smart Paste form -- slides in above input when clipboard icon is clicked */}
-        {pasteFormOpen && (
-          <div className="px-4 pb-3 border-t border-[0.5px] border-surface-border dark:border-dark-border pt-3 flex-shrink-0 bg-white dark:bg-dark-page">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-[11px] font-medium text-brand-light">Add a client</span>
-              <button
-                onClick={() => {
-                  setPasteFormOpen(false)
-                  setPasteForm({ name: '', email: '', phone: '', entity_type: '' })
-                }}
-                className="text-muted-foreground hover:text-brand dark:hover:text-foreground transition-colors"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            </div>
-            <div className="flex flex-col gap-2">
-              <input
-                type="text"
-                placeholder="Full name (required)"
-                value={pasteForm.name}
-                onChange={(e) => setPasteForm((prev) => ({ ...prev, name: e.target.value }))}
-                className="w-full rounded-[6px] border border-[0.5px] border-surface-border dark:border-dark-border bg-surface-input dark:bg-dark-page text-[12px] text-foreground dark:text-muted-foreground placeholder:text-muted-foreground px-2.5 py-1.5 focus:outline-none focus:border-brand-light"
-              />
-              <input
-                type="email"
-                placeholder="Email address"
-                value={pasteForm.email}
-                onChange={(e) => setPasteForm((prev) => ({ ...prev, email: e.target.value }))}
-                className="w-full rounded-[6px] border border-[0.5px] border-surface-border dark:border-dark-border bg-surface-input dark:bg-dark-page text-[12px] text-foreground dark:text-muted-foreground placeholder:text-muted-foreground px-2.5 py-1.5 focus:outline-none focus:border-brand-light"
-              />
-              <input
-                type="tel"
-                placeholder="Phone number"
-                value={pasteForm.phone}
-                onChange={(e) => setPasteForm((prev) => ({ ...prev, phone: e.target.value }))}
-                className="w-full rounded-[6px] border border-[0.5px] border-surface-border dark:border-dark-border bg-surface-input dark:bg-dark-page text-[12px] text-foreground dark:text-muted-foreground placeholder:text-muted-foreground px-2.5 py-1.5 focus:outline-none focus:border-brand-light"
-              />
-              <select
-                value={pasteForm.entity_type}
-                onChange={(e) => setPasteForm((prev) => ({ ...prev, entity_type: e.target.value }))}
-                className="w-full rounded-[6px] border border-[0.5px] border-surface-border dark:border-dark-border bg-surface-input dark:bg-dark-page text-[12px] text-foreground dark:text-muted-foreground px-2.5 py-1.5 focus:outline-none focus:border-brand-light"
-              >
-                <option value="">Entity type (optional)</option>
-                <option value="individual">Individual</option>
-                <option value="business">Business</option>
-                <option value="trust">Trust</option>
-                <option value="estate">Estate</option>
-              </select>
-              <button
-                onClick={handlePasteFormSubmit}
-                disabled={!pasteForm.name.trim()}
-                className="w-full rounded-[6px] bg-brand text-white text-[12px] font-medium py-1.5 disabled:opacity-40 disabled:cursor-not-allowed hover:opacity-90 transition-colors"
-              >
-                Add Client
-              </button>
-            </div>
-          </div>
-        )}
         {/* Input area */}
         <div className="p-4 border-t border-[0.5px] border-surface-border dark:border-dark-border flex-shrink-0">
           <div className="flex items-end gap-2">
@@ -1656,18 +1551,6 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
               className="flex-1 rounded-[6px] border border-[0.5px] border-surface-border focus:border-brand-light focus:outline-none bg-surface-input dark:bg-dark-page text-[13px] text-foreground dark:text-muted-foreground placeholder:text-muted-foreground p-2.5 resize-none transition-colors disabled:opacity-60"
               style={{ minHeight: 36, maxHeight: 96, overflowY: 'auto' }}
             />
-            <button
-              onClick={() => setPasteFormOpen((prev) => !prev)}
-              aria-label="Add client"
-              title="Add a client"
-              className="h-9 w-9 rounded-[6px] border border-[0.5px] border-surface-border dark:border-dark-border flex items-center justify-center transition-all flex-shrink-0 bg-white dark:bg-dark-page hover:border-brand-light text-muted-foreground hover:text-brand-light"
-              style={pasteFormOpen ? { borderColor: '#4A7FA5', color: '#4A7FA5' } : {}}
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
-                <rect x="8" y="2" width="8" height="4" rx="1" ry="1"/>
-              </svg>
-            </button>
             <button
               onClick={() => handleSend()}
               disabled={!input.trim() || streaming}
