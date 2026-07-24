@@ -54,57 +54,40 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Redesign the client detail page and its four embedded tab components onto the token system, one coordinated visual unit
+TASK: Add a closing offer-to-help line to short factual answers, matching the pattern already proven to work
 
-USE: Fable 5
+USE: claude sonnet
 
 VERIFY BEFORE ACT:
-grep -c "bg-\[#\|text-\[#\|border-\[#" /home/corby/jamm-os/frontend/src/app/\(app\)/clients/\[id\]/page.tsx /home/corby/jamm-os/frontend/src/components/notes/NotesPanel.tsx /home/corby/jamm-os/frontend/src/components/clients/IrsAuthTab.tsx /home/corby/jamm-os/frontend/src/components/clients/DocumentExpirySection.tsx /home/corby/jamm-os/frontend/src/components/clients/PortalPreview.tsx
+sed -n '12,35p' /home/corby/jamm-os/app/api/concierge/prompts.py
+grep -n "Want me to help\|want me to draft\|Would you like" /home/corby/jamm-os/app/api/concierge/prompts.py
 
-Read all five files completely in full before changing anything. This is the single highest daily-traffic page in the entire application outside the Dashboard, carrying genuine business critical functionality: client contact information, engagement lists, document requests, IRS authorization status and expiry tracking, portal access and preview, notes, tax organizer data, and billing detail. This task must not touch any data fetching, any React Query usage, any state, any conditional logic, any API call, any function body, only visual presentation, class names, and static JSX structure. If unsure whether something is presentational or logical, treat it as logical and leave it untouched.
+Confirm the current RESPONSE FORMAT section and confirm whether this closing pattern already exists anywhere else in the prompt before writing a new instruction.
 
 WHAT THIS IS:
 
-Confirmed via a complete, systematic audit of the entire application: this page and its four embedded tab components, NotesPanel, IrsAuthTab, DocumentExpirySection, and PortalPreview, together account for roughly 207 hardcoded raw hex color values, meaning this entire page still looks exactly like the pre-redesign application while the Dashboard and Concierge panel have already been updated. Treating the parent page and its own tabs as one coordinated task is deliberate, fixing the page shell while leaving its own tabs on the old palette would simply move the inconsistency one click deeper rather than resolve it.
+An independent live audit of the actual running product specifically flagged short, purely factual multi-item answers, such as a bulleted list of overdue invoices with no draft attached, as reading like a database query result rather than an attentive colleague, scoring this the lowest of nine rated dimensions. The same audit specifically identified one existing response, ending with want me to help you work through any of those, as the single strongest attentive colleague moment observed in the entire session, and recommended extending exactly that pattern to every short factual answer rather than inventing new language from scratch. Separately, external research on the psychology of trust and warmth in professional software found that warmth needs to be paired with genuine usefulness or forward motion, not just friendly wording, to avoid reading as hollow, which is exactly what a bare closing offer to help accomplishes here, it points toward real next action, it does not just add friendly filler.
 
 CHANGE INSTRUCTIONS:
 
-Replace hardcoded hex values across all five files with the equivalent real design tokens already established and already proven on ConciergePanel.tsx and the Dashboard, brand, surface, dark, status, concierge where contextually appropriate, and font-sans, font-display.
+Add a new rule to the RESPONSE FORMAT section: whenever a response presents a factual, multi item list, such as overdue invoices, stalled engagements, outstanding tasks, or similar, and does not already end with a draft offer, an OPTIONS marker, or an existing closing question, it should end with one brief, natural closing line either offering to help with the most obvious next action, drafting something, checking further, or similar, or highlighting the single most relevant fact among the items just listed. Give a concrete example directly in the rule, matching the real observed phrasing, such as want me to help you work through any of those, so the model has a genuine reference point rather than inventing generic friendliness. State plainly that this should feel like a natural, specific offer tied to what was just shown, not a generic tacked on phrase repeated identically every time.
 
-Apply the display serif specifically to the client's name as the page's main heading, and to any key figures shown on this page such as outstanding balances, invoice amounts, or engagement counts, matching the same treatment already established for key figures elsewhere.
-
-Give the tab navigation, cards, and panels on this page the same real visual separation and elevation treatment already established on the Dashboard, rather than the current flat, barely distinguished boundaries.
-
-Ensure the IrsAuthBadge and StatusBadge components, and any status-driven color coding such as overdue, active, or expiring soon indicators, continue to use the correct semantic status tokens and remain immediately distinguishable by color, this information genuinely needs to stay scannable at a glance, do not let a broad token migration accidentally flatten meaningful status color distinctions into visually identical tones.
-
-Do not change any prop, any function, any API call, any React Query key or configuration, any conditional rendering logic, any state variable, in any of the five files. Every single change in this task must be limited to className strings, static JSX text for non-dynamic labels, and the addition of the font-display utility class, nothing else.
+Do not apply this to responses that already end with a draft, an OPTIONS marker, or an existing question, this is specifically for the currently cold case, a plain factual list with no follow up at all.
 
 VERIFY AFTER ACT:
 
-grep -c "bg-\[#\|text-\[#\|border-\[#" /home/corby/jamm-os/frontend/src/app/\(app\)/clients/\[id\]/page.tsx /home/corby/jamm-os/frontend/src/components/notes/NotesPanel.tsx /home/corby/jamm-os/frontend/src/components/clients/IrsAuthTab.tsx /home/corby/jamm-os/frontend/src/components/clients/DocumentExpirySection.tsx /home/corby/jamm-os/frontend/src/components/clients/PortalPreview.tsx
+grep -n "want me to help you work through\|closing line" /home/corby/jamm-os/app/api/concierge/prompts.py
 
-Expected: dramatically lower across all five files, ideally at or near zero in each.
-
-npm run build in frontend, expected zero TypeScript errors.
-
-Explicitly confirm, by direct comparison of the relevant code before and after, that every React Query hook, every API call, every prop passed into NotesPanel, IrsAuthTab, DocumentExpirySection, and PortalPreview, and every conditional branch remain byte for byte unchanged. Paste this confirmation explicitly, do not simply assert it.
+Expected: present.
 
 MANUAL VERIFICATION:
 
-Full kill, .next wipe, restart both servers.
+Restart backend. Ask which clients have overdue invoices right now, confirm the response now ends with a natural, specific closing line rather than stopping cold after the list. Ask a similar factual question about stalled engagements or outstanding tasks, confirm the same pattern holds. Separately, ask a question likely to trigger the existing OPTIONS marker for multiple qualifying clients, confirm this new closing line does not stack on top of or interfere with the existing required OPTIONS marker behavior already established earlier tonight.
 
-Open a real client's detail page in light mode. Confirm the page now visually matches the warm palette and typography already established elsewhere, no longer reading as a different, older product. Switch to dark mode, confirm the same and confirm full readability throughout, including inside every tab.
-
-Click through every tab on this page individually, Overview, Notes, IRS Authorizations, Documents, Portal, and confirm each one still displays real, correct data exactly as before, and confirm no interactive element, button, or form within any tab is broken or non-functional.
-
-Specifically confirm status indicators, an overdue or expiring IRS authorization, an active engagement, remain immediately visually distinguishable by color, not flattened into indistinguishable tones by the token migration.
-
-Confirm creating or viewing a note, if testable, still works correctly. Confirm the portal preview still renders correctly. Confirm opening a new engagement modal from this page, if present, still works correctly.
-
-Report pass or fail individually for light mode, dark mode, each tab's data accuracy, status color distinguishability, and functional interactivity, with screenshots of at least three different tabs in both light and dark mode.
+Report pass or fail for all three.
 
 GIT:
 git add -A
-git commit -m "redesign the client detail page and its four embedded tab components, notes, IRS authorizations, document expiry, and portal preview, onto the established token system and typography as one coordinated unit, since this is the highest daily traffic page in the application outside the Dashboard, with zero changes to any data fetching, state, or interactive logic across all five files"
+git commit -m "add a closing offer-to-help line to short factual multi-item answers, extending the exact pattern an independent live audit identified as the strongest attentive-colleague moment in the product to the cold, database-query-style answers it specifically flagged as the lowest scoring dimension in a nine dimension trust and engagement review"
 git pull --rebase origin main
 git push origin main
