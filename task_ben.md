@@ -54,44 +54,63 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Restrict Concierge chat access to owner and manager roles only, matching the existing morning briefing restriction
+TASK: Give staff scoped Concierge access to their own tasks and engagements only, replacing the blanket block
 
-USE: claude sonnet
+USE: Fable 5
 
 VERIFY BEFORE ACT:
 grep -n "def concierge_chat" -A 20 /home/corby/jamm-os/app/api/concierge/route.py
-grep -n "current_user.role in" /home/corby/jamm-os/app/api/concierge/route.py
+grep -n "_CONCIERGE_TOOLS\s*=" -A 5 /home/corby/jamm-os/app/api/concierge/route.py
+grep -n "def get_task_status" -A 40 /home/corby/jamm-os/app/api/concierge/functions.py
+grep -n "assigned_to" /home/corby/jamm-os/app/models/task.py
 
-Confirm the current concierge_chat endpoint has no role restriction beyond blocking client_portal_user, and confirm the exact pattern already used for the morning briefing restriction, current_user.role in ("staff", "client_portal_user"), before writing anything.
+Confirm the current blanket staff block in concierge_chat, the existing _CONCIERGE_TOOLS list structure, the existing get_task_status pattern to match style against, and the real Task.assigned_to field before writing anything. Read the full tool-use loop in generate_with_tools before making any change to which tools get passed into it, this is a security-relevant change and must be scoped precisely.
 
 WHAT THIS IS:
 
-The firm this product actually serves is now closer to 4 to 40 employees, not the smaller range originally assumed. At that size, a junior staff member having identical Concierge access to the firm owner, including firm-wide accounts receivable, every client's overdue invoices, and every other staff member's individual workload, is a real exposure, not a theoretical one. The morning briefing endpoint already restricts access to owner and manager only, confirmed via current_user.role in ("staff", "client_portal_user") returning a 403. The main chat endpoint has no equivalent restriction at all. This is a deliberate decision to close the gap with the same safe default already established elsewhere in this codebase, not a guess at a new pattern.
+Staff currently get a full 403 block from the Concierge entirely, a safe but overly broad temporary fix applied earlier tonight given the firm size this product targets, 4 to 40 employees, and the real risk of junior staff seeing firm-wide financial and personnel data. A full block is not the right permanent answer, since a staff member asking about their own assigned work is a completely different, low-risk case from them asking about firm-wide accounts receivable or another employee's workload. Engagement has no per-engagement assignment field at all, confirmed earlier tonight, only individual Task rows have a real assigned_to field, so a staff member's own engagements must be derived from their own tasks, not a direct engagement-level assignment.
 
 CHANGE INSTRUCTIONS:
 
-Add the same role check already used for the morning briefing endpoints to the main concierge_chat endpoint, immediately after the existing client_portal_user check: if current_user.role in ("staff", "client_portal_user"), return a 403 with a clear detail message, something like Concierge access is currently limited to firm owners and managers. Do not silently reuse the exact same generic Access denied text already used elsewhere without a clearer message here, since a staff member hitting this for the first time deserves to understand why, not just see a bare denial.
+In functions.py, add a new tool function, get_my_tasks, accepting firm_id, user_id, and db. It should return, matching the existing get_task_status pattern and docstring style, every incomplete task where assigned_to equals the given user_id specifically, not firm wide, including the client name, engagement name, due date, and status for each, plus the distinct set of engagement names those tasks belong to as a simple list, giving a staff member a real answer to what am I working on and what engagements am I involved in, scoped entirely to their own assignments.
 
-Do not touch any other endpoint. Do not attempt to build granular per-tool scoping in this task, that is a real, separate feature requiring careful design, this task only closes the immediate full-access exposure with the same safe, already-precedented restriction.
+In route.py, remove the blanket staff block from concierge_chat entirely, keeping the existing client_portal_user block exactly as is. Instead, when current_user.role is staff, restrict which tools are actually available in the tool-use loop to only get_my_tasks, none of the firm-wide tools such as get_overdue_invoices, get_staff_capacity, get_firm_settings, or any other tool that returns data beyond one person's own assignments. Do this by constructing a separate, smaller tool list used only for the staff role, rather than filtering the full list dynamically in a way that could be error prone, an explicit, separate, minimal list is safer and easier to audit than a filter applied to the full one.
+
+Add or adjust the relevant operational keyword and topic keyword entries so questions like what am I working on or what are my tasks correctly route to get_my_tasks for a staff user.
+
+Ensure the system prompt context passed to a staff user's conversation makes clear the assistant currently only has visibility into that staff member's own assigned tasks and engagements, not firm-wide data, so the model does not imply broader knowledge it does not have access to in this scoped mode.
+
+Do not expose get_my_tasks or the staff-scoped tool list to owner or manager roles, they continue to use the full existing tool set exactly as it already works. Do not attempt to scope any tool other than tasks in this task, firm-wide financial, staff capacity, settings, and every other tool remain fully inaccessible to staff, this is a deliberate, narrow first version, not full role based access.
 
 VERIFY AFTER ACT:
 
-grep -n "current_user.role in" /home/corby/jamm-os/app/api/concierge/route.py
+grep -n "get_my_tasks" /home/corby/jamm-os/app/api/concierge/functions.py /home/corby/jamm-os/app/api/concierge/route.py
 
-Expected: the new check now present in concierge_chat, alongside the existing ones in the briefing endpoints.
+Expected: present in both, and confirm in route.py that the staff-specific tool list genuinely only contains get_my_tasks, nothing else, by reading the actual list, not assuming.
+
+python3 -c "
+from app.db.session import SessionLocal
+from app.api.concierge.functions import get_my_tasks
+db = SessionLocal()
+result = get_my_tasks('185314c9-e702-4eab-8600-249848022206', 'REPLACE_WITH_REAL_STAFF_USER_ID', db)
+print(result)
+db.close()
+"
+
+Use the real id of the test staff account already created tonight, teststaff@riverside-demo.com, look it up directly if the id is not already known, do not guess it.
 
 python3 -c "from app.main import app; print('OK')"
 
 MANUAL VERIFICATION:
 
-Restart backend. If a staff login exists, log in as staff and confirm the Concierge chat now correctly returns access denied rather than answering normally. If no staff login currently exists to test with, confirm this at minimum by direct verification of the role check logic and note that live staff-account testing is still needed as a follow-up, do not skip reporting this gap.
+Restart backend. Log in as the test staff account. Ask what am I working on or a similar phrasing, confirm a real, scoped answer about that specific staff member's own tasks only, not firm-wide data. Separately, ask something firm-wide, such as which clients have overdue invoices right now, as that same staff account, confirm this is still correctly blocked or answered honestly as out of scope, not answered with real firm-wide data.
 
-Confirm the firm owner's own access is completely unaffected, ask a normal question as the owner and confirm it still works exactly as it always has.
+Log back in as the firm owner, confirm their access is completely unaffected, full tool set still works exactly as before.
 
-Report pass or fail for the owner regression check, and report clearly whether staff access was actually tested live or only verified by code inspection.
+Report pass or fail individually for the staff scoped question, the staff firm-wide question still being blocked, and the owner regression check.
 
 GIT:
 git add -A
-git commit -m "restrict Concierge chat access to owner and manager roles only, matching the existing morning briefing restriction, since the firm size this product now targets, 4 to 40 employees, makes full firm-wide financial and staff data access for junior staff a real exposure rather than a theoretical one, closing the gap with an already-precedented safe default rather than building full granular scoping under time pressure"
+git commit -m "give staff scoped Concierge access to their own assigned tasks and engagements only, replacing the earlier blanket block, since a staff member asking about their own work is a fundamentally different and lower risk case than asking about firm-wide financial or personnel data, using a separate explicit minimal tool list for the staff role rather than filtering the full tool set, deliberately narrow as a first version rather than full role based access under time pressure"
 git pull --rebase origin main
 git push origin main
