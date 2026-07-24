@@ -54,51 +54,62 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Remove Smart Paste, give the header real identity, differentiate the trash icon at rest, and replace the raw browser tooltip on Autopilot
+TASK: Redesign Dashboard onto the new token system and typography, fix layout cutoff if confirmed real, and unify empty-state tone
 
 USE: Fable 5
 
 VERIFY BEFORE ACT:
-sed -n '1580,1610p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
-sed -n '955,1015p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
-grep -n "title=" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+grep -c "bg-\[#\|text-\[#\|border-\[#" /home/corby/jamm-os/frontend/src/app/\(app\)/dashboard/page.tsx
+sed -n '1,100p' /home/corby/jamm-os/frontend/src/app/\(app\)/dashboard/page.tsx
+grep -n "No deadlines\|No unbilled\|No documents\|Your runway" /home/corby/jamm-os/frontend/src/app/\(app\)/dashboard/page.tsx
+grep -rn "mr-\[400px\]\|width.*400\|ConciergePanel" /home/corby/jamm-os/frontend/src/app/\(app\)/layout.tsx
 
-Read the full header row and the full Smart Paste block in context before touching anything, including whatever triggers Smart Paste to open, such as a clipboard icon button elsewhere in the file, so it can be removed cleanly with no dangling reference.
+Read the entire 610 line file in full before changing anything. This page pulls real, live data, stat cards, staff utilization bars, an overdue engagements table with real action buttons, an awaiting signature list. This task must not touch any data fetching, any state, any calculation, any conditional logic, only visual presentation and static empty-state copy text. If unsure whether something is presentational or logical, treat it as logical and leave it untouched.
 
 WHAT THIS IS:
 
-Four small, real findings from a direct visual review of the panel after the phase 1 and phase 2 redesign work. First, Smart Paste no longer serves a clear purpose and should be removed entirely, along with whatever button or icon currently triggers it. Second, the JAMM Concierge header reads as a plain text label with no more visual weight than the buttons next to it, undercutting the identity work already done elsewhere in this panel. Third, the trash can icon, which correctly triggers a real confirm dialog before clearing a conversation, looks visually identical at rest to the harmless close button right next to it, a destructive action and a harmless one should not share identical visual weight before the user even interacts with either. Fourth, hovering Autopilot currently shows the raw, unstyled native browser tooltip, a plain black box in a system font, which clashes directly with the warm, considered typography and color work done in phases 1 and 2.
+Phase 1 and phase 2 of the visual redesign replaced generic Inter typography with a distinctive serif and sans pairing, refined the color tokens toward a warmer palette, and gave the Concierge panel real visual identity, confirmed working with no regressions. This page, the actual homepage every firm owner sees first every single day, was never touched and still hardcodes 58 raw hex values, meaning it still looks exactly like the old design. Confirmed directly, side by side in the same screenshot, the Concierge panel and this page now visually read as two different products, which looks unfinished rather than intentional. Separately, this page's empty state copy is inconsistent in tone: the upcoming deadlines empty state, no deadlines in the next 14 days, your runway is clear, keep it that way, sounds like a person and matches the warm, buddy-like tone this product is aiming for, while the unbilled work and awaiting signature empty states are flat and generic by comparison, an inconsistency, not a case of every empty state needing invented personality from nothing.
 
 CHANGE INSTRUCTIONS:
 
-Remove the Smart Paste form block entirely, along with its trigger button and any state variables that exist solely to control it. Confirm nothing else in the file references this state after removal.
+Replace hardcoded hex values throughout this file with the equivalent real design tokens already established, matching the same migration pattern already proven on ConciergePanel.tsx, brand, surface, dark, status colors, and font-sans and font-display where appropriate.
 
-Give the JAMM Concierge header real visual identity, pairing the existing font-display treatment on the text with a small, considered mark or icon, using the concierge accent color already established for the panel's identity, so the header reads as a named product moment, not a plain UI label. Keep this restrained and small, this is a refinement, not a redesign of the header layout.
+Apply the display serif specifically to the large key figures on the stat cards, the dollar amounts and counts such as revenue this month, outstanding AR, unbilled WIP, and overdue engagements count, so a firm owner's eye is drawn to the numbers that actually matter first, matching the same treatment already applied to key figures inside Concierge responses.
 
-Give the trash icon a subtle distinct visual treatment at its resting state, not only on hover, such as a slightly different muted tone leaning toward its existing hover warning color rather than being visually identical to the neutral close button beside it. Do not change or remove the existing confirm dialog safeguard in handleClearConversation, that logic is correct and already in place, this is purely a visual distinction so the two icons do not look interchangeable before a user even interacts with them.
+Give the stat cards and section panels genuine visual separation from the page background, real elevation or a more considered surface treatment, rather than the current flat, barely distinguishable card boundaries.
 
-Replace the native title attribute tooltip on the Autopilot toggle with a properly styled custom tooltip consistent with the rest of the redesigned panel, using the existing warm surface and border tokens and correct typography, positioned clearly without obstructing nearby content. Preserve the exact existing tooltip copy, when on I will navigate the app and open forms for you automatically, when off I will just tell you where to go, do not reword it, only restyle its presentation.
+Rewrite the unbilled work and awaiting signature empty state copy to match the tone already established and working well in the upcoming deadlines empty state, warm, human, specific to what is actually true, not generic. Do not change the deadlines empty state copy itself, it already works, use it purely as the tone reference for the other two.
 
-Do not change any state, logic, or functional behavior anywhere in this task beyond removing the Smart Paste feature's own dead state, every other change is purely visual and structural JSX, not behavioral.
+If the verify step confirms the Concierge panel's fixed width is not accounted for anywhere in this page's or the surrounding layout's width or margin calculations, add the appropriate spacing so real dashboard content is never cut off or hidden behind the panel when it is open. If the verify step shows this is already handled correctly and the earlier screenshot was simply a narrow window, do not change anything here and state clearly in your summary that this was checked and found not to be a real issue.
+
+Do not change the underlying data these components display, do not change the staff utilization bar calculations, do not change the overdue engagements table's action buttons or their behavior, only their visual styling.
 
 VERIFY AFTER ACT:
 
-grep -n "Smart Paste" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+grep -c "bg-\[#\|text-\[#\|border-\[#" /home/corby/jamm-os/frontend/src/app/\(app\)/dashboard/page.tsx
 
-Expected: no matches remaining.
+Expected: significantly lower than 58, ideally at or near zero.
 
 npm run build in frontend, expected zero TypeScript errors.
+
+Confirm the stat card values, the staff utilization percentages, and the overdue engagements table rows are computed identically before and after by comparing the relevant calculation code directly, not just visually, paste this confirmation explicitly.
 
 MANUAL VERIFICATION:
 
 Full kill, .next wipe, restart both servers.
 
-Confirm Smart Paste and its trigger are genuinely gone with no leftover empty space or broken button. Confirm the JAMM Concierge header now shows a real, considered identity mark, in both light and dark mode. Confirm the trash icon now looks visually distinct from the close button at rest, not just on hover, and confirm clicking it still correctly triggers the existing confirm dialog before clearing anything. Hover Autopilot and confirm the tooltip is now styled consistent with the rest of the panel, not the raw black browser default, with the exact same copy as before.
+Load the Dashboard in light mode, confirm it now visually matches the warm palette and typography already established in the Concierge panel, no longer reading as two different products side by side. Switch to dark mode, confirm the same and confirm full readability, this is the most important check given how much effort dark mode contrast took earlier tonight.
 
-Report pass or fail individually for all four changes, with screenshots in both light and dark mode.
+Confirm every real number on the page, revenue, outstanding AR, unbilled WIP, overdue engagement count, staff utilization percentages, and the overdue engagements table contents, are completely unchanged from before this task, only their visual presentation changed.
+
+Confirm the three empty states, deadlines, unbilled work, and awaiting signature, now read with a consistent, warm tone.
+
+If the Concierge panel cutoff was confirmed as a real issue and fixed, open the panel and confirm real dashboard content, including the overdue engagements count card, is now fully visible, not hidden behind the panel.
+
+Report pass or fail individually for light mode, dark mode, data accuracy, empty state tone, and the panel cutoff fix if applicable.
 
 GIT:
 git add -A
-git commit -m "remove Smart Paste, give the JAMM Concierge header real identity treatment with the panel's established accent color, visually differentiate the destructive trash icon from the harmless close button at rest without changing the existing confirm dialog safeguard, and replace the raw native browser tooltip on Autopilot with a properly styled tooltip consistent with the rest of the redesigned panel"
+git commit -m "redesign Dashboard onto the established token system and typography from phases 1 and 2, apply the display serif to key stat figures, give cards real visual separation, and unify empty state copy tone to match the already-working deadlines empty state, with zero changes to any underlying data, calculation, or interactive logic"
 git pull --rebase origin main
 git push origin main
