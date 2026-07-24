@@ -54,47 +54,42 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Fix get_stalled_engagements including completed and archived engagements as stalled
+TASK: Give the Overdue Engagements stat card real visual distinction from its neutral peer cards when overdue count is positive
 
 USE: claude sonnet
 
 VERIFY BEFORE ACT:
-grep -n "def get_stalled_engagements" -A 30 /home/corby/jamm-os/app/api/concierge/functions.py
+sed -n '30,50p' /home/corby/jamm-os/frontend/src/app/\(app\)/dashboard/page.tsx
+sed -n '555,570p' /home/corby/jamm-os/frontend/src/app/\(app\)/dashboard/page.tsx
 
-Confirm the current query filters only on Engagement.updated_at with no status exclusion at all.
+Confirm the shared MetricCard component and the Overdue Engagements call site exactly as described before editing.
 
-WHAT IS WRONG:
+WHAT THIS IS:
 
-Confirmed live: engagements marked completed are appearing in the stalled engagements list, since the query only checks how long ago an engagement was last updated, with no exclusion for engagements that are already finished. This is conceptually different from an earlier decision made tonight about tasks remaining visible regardless of their parent engagement's status, that case involved individual real tasks still being genuinely incomplete. This case is different: stalled describes whether an engagement itself is failing to move forward, and a completed engagement is not supposed to be moving forward at all, there is nothing being neglected, so including it as stalled is simply incorrect, not a judgment call.
+An independent live audit specifically flagged that the Overdue Engagements card currently carries the same visual weight as neutral cards like Unbilled WIP, with the audit's specific suggestion being a larger size or a colored card background, not just red value text, which is the only distinction that currently exists. This is the single most urgent, time sensitive metric on the Dashboard when its count is positive, and it should draw the eye before anything else, not compete for attention equally with unrelated neutral stats.
 
 CHANGE INSTRUCTIONS:
 
-Add a filter excluding engagements with status completed or archived, matching the exact status.notin_(["completed", "archived"]) pattern already used correctly elsewhere in this file, such as in get_qc_checklist_status.
+Add a new optional prop to MetricCard, something like variant, accepting a value such as alert, defaulting to the existing neutral treatment when not passed. When variant is alert, the card's background and border should use the existing status-red tokens already established elsewhere in this codebase, at a subtlety appropriate for a background tint, not a solid, jarring red fill, still clearly a card, just visually distinct from its neutral siblings.
+
+At the Overdue Engagements call site specifically, pass this new variant conditionally, only when the real overdue count is greater than zero, using the same visibleOverdue.length > 0 condition already used for the text color. When the count is zero, the card should render with the existing neutral treatment exactly as it does today, this distinction only applies when there is something genuinely urgent to flag.
+
+Do not change the other three MetricCard call sites, Revenue This Month, Outstanding AR, Unbilled WIP, they keep the existing neutral treatment unconditionally.
 
 VERIFY AFTER ACT:
 
-python3 -c "
-from app.db.session import SessionLocal
-from app.api.concierge.functions import get_stalled_engagements
-db = SessionLocal()
-result = get_stalled_engagements('185314c9-e702-4eab-8600-249848022206', db)
-for e in result['stalled']:
-    print(e['client_name'], e['engagement_name'], e['status'], e['days_stalled'])
-db.close()
-"
-
-Expected: no entry in this output has status completed or archived. Paste this real output.
-
-python3 -c "from app.main import app; print('OK')"
+npm run build in frontend, expected zero TypeScript errors.
 
 MANUAL VERIFICATION:
 
-Restart backend. Ask is there any stalled engagements, confirm every engagement listed now genuinely has an active, in_review, planning, or draft status, none marked completed or archived.
+Full kill, .next wipe, restart both servers.
 
-Report pass or fail.
+Confirm in light mode that with overdue engagements present, the Overdue Engagements card now visually stands out from its three neutral neighbors, not just through red text but through the card itself. Confirm the other three cards are completely unchanged. Confirm in dark mode the same distinction holds and remains fully readable, not overly bright or jarring against the dark background.
+
+Report pass or fail for light mode, dark mode, and confirmation the other three cards are unaffected, with a screenshot of the full stat card row in both modes.
 
 GIT:
 git add -A
-git commit -m "fix get_stalled_engagements including completed and archived engagements, since stalled describes whether an engagement is failing to move forward and a finished engagement is not supposed to be moving forward at all, confirmed live via a real question returning several completed engagements incorrectly flagged as stalled"
+git commit -m "give the Overdue Engagements stat card a distinct alert-tinted background when the overdue count is positive, addressing a live audit finding that this, the single most time sensitive metric on the Dashboard, currently carries identical visual weight to neutral stats like Unbilled WIP, with only its value text previously distinguishing it"
 git pull --rebase origin main
 git push origin main
