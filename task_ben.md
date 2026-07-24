@@ -54,40 +54,52 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Discourage formulaic report-style openers on plain factual answers
+TASK: Add a deterministic backend check for show briefing again requests, guaranteeing the required action marker always fires regardless of exact phrasing
 
-USE: claude sonnet
+USE: Fable 5
 
 VERIFY BEFORE ACT:
-sed -n '12,45p' /home/corby/jamm-os/app/api/concierge/prompts.py
-sed -n '1325,1335p' /home/corby/jamm-os/app/api/concierge/prompts.py
+sed -n '460,500p' /home/corby/jamm-os/app/api/concierge/route.py
+grep -n "def morning_briefing_detail" -A 25 /home/corby/jamm-os/app/api/concierge/route.py
+sed -n '1320,1340p' /home/corby/jamm-os/app/api/concierge/prompts.py
+grep -n "show_briefing_again" -A 15 /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-Confirm the RESPONSE FORMAT section including the closing-line rule added earlier tonight, and confirm the exact, separate, deliberate hardcoded opening line required for the show briefing again flow, since this task must not touch or weaken that specific requirement.
+Read the full __OPEN__ bypass block in route.py completely, and the full morning_briefing_detail endpoint completely, before writing anything. This task's whole point is removing model discretion from a structural requirement, matching the same pattern already proven correct for the __OPEN__ sentinel in this exact file.
 
 WHAT THIS IS:
 
-The same live audit that flagged the missing closing line on short factual answers also specifically flagged formulaic report-header style openers, such as here's a quick snapshot based on your firm's current data, as reading like a generated report rather than a person answering a question. No rule currently exists anywhere in the prompt governing this, the model produces these openers on its own with nothing discouraging it. This is the same root cause and same fix pattern as the closing-line rule added earlier tonight, applied to the other end of the response instead.
+Confirmed live tonight: asking can I see the morning briefing again did not trigger the real show_briefing_again flow at all. The backend log showed Tool executed: get_daily_brief, an entirely different, ordinary tool call, with no show_briefing_again marker generated anywhere. The model answered as a normal conversational question and, having seen the required exact opening phrase Here's your briefing again in its own system prompt instructions, appears to have reused that phrase inappropriately without generating the required CONCIERGE_ACTION marker that the frontend depends on to actually fetch the real briefing detail and enable the download button. This is the exact same reliability failure mode already found and fixed twice tonight for the OPTIONS marker and for get_overdue_invoices, a natural language instruction, no matter how explicitly worded, cannot guarantee compliance for a case that must never fail. The fix pattern that already worked for those cases is a deterministic backend check that removes the model's discretion entirely, not a third rewording of the same prompt instruction.
 
 CHANGE INSTRUCTIONS:
 
-Add a new rule to the RESPONSE FORMAT section, placed near the existing closing-line rule added earlier tonight: plain factual answers should not open with a generic report-style preamble such as here's a quick snapshot based on your firm's current data or similar framing that describes the act of answering rather than simply answering. The response should generally begin directly with the actual answer or the most relevant fact, the way a knowledgeable colleague would respond if asked the same question directly, not with a line announcing that an answer is about to follow.
+Add a deterministic intent check in concierge_chat, following the same structural pattern as the existing __OPEN__ sentinel bypass immediately above it in this file. Detect whether the user's most recent message is asking to see the morning briefing again, using a reasonably broad keyword match, such as containing briefing together with again, show, or see, in any order or combination, so real phrasing variety is covered, not just one exact string.
 
-Explicitly state this rule does not apply to the one required exact opening line for the show briefing again flow, here's your briefing again, which remains a fixed, deliberate format for that specific action and must not be affected by this new rule in any way.
+When this intent is detected and the firm has already received a briefing today, confirmed via current_firm.briefing_sent_at being set to today's date, bypass the main conversational model's own discretion for the structural parts of this response. Reuse the exact same underlying content generation already used by the morning_briefing_detail endpoint to produce the real, live briefing content, do not duplicate this logic in a second place. Construct the final response deterministically in code: the fixed line Here's your briefing again, then the real generated briefing content, then the required marker line, CONCIERGE_ACTION: {"type":"show_briefing_again"}, exactly matching the frontend's existing expected format, on its own final line, every single time, regardless of the model's own judgment.
+
+If the firm has not received a briefing yet today, or briefing_sent_at is not set at all, do not trigger this bypass, let the conversation proceed normally, since there is no prior briefing to show again in that case.
+
+Log a clear, distinct line, similar in spirit to the existing Tool executed logging, whenever this deterministic bypass fires, so this exact flow can be directly confirmed working from the backend log going forward, the same way tool execution already can be.
 
 VERIFY AFTER ACT:
 
-grep -n "report-style preamble\|does not apply to.*briefing again" /home/corby/jamm-os/app/api/concierge/prompts.py
-
-Expected: both present, confirming the new rule and its explicit exclusion are both there.
+python3 -c "from app.main import app; print('OK')"
 
 MANUAL VERIFICATION:
 
-Restart backend. Ask which clients have overdue invoices right now, confirm the response now begins directly with the answer, not a generic preamble. Ask how are things looking or a similarly broad question likely to previously trigger a snapshot-style opener, confirm the same. Separately, trigger the show briefing again flow specifically and confirm its required exact opening line is completely unaffected by this change.
+Restart backend, keep terminal visible.
 
-Report pass or fail for all three.
+Ensure a briefing has already been shown today for the test firm, resetting and retriggering it first if needed. Ask can I see the morning briefing again, exactly the phrasing that failed live tonight, confirm the backend log now shows the new deterministic bypass log line firing, confirm the response correctly begins with Here's your briefing again, confirm real briefing content follows, and confirm the required CONCIERGE_ACTION marker line is present, not just implied.
+
+Ask at least two different rephrasings, such as show me my briefing again and can I see today's briefing once more, confirm the same deterministic behavior holds for each, not just the one exact phrase that was originally tested.
+
+Confirm the download briefing button actually becomes available and functional after this flow, since that is the real, functional consequence of the marker being present or absent, not just a cosmetic detail.
+
+Separately, confirm a normal question unrelated to the briefing, such as which clients have overdue invoices right now, is completely unaffected and does not accidentally trigger this new bypass.
+
+Report pass or fail individually for all three rephrasings, the download button functionality, and the unrelated-question regression check.
 
 GIT:
 git add -A
-git commit -m "discourage formulaic report-style openers on plain factual answers, extending the same fix pattern already applied to closing lines earlier tonight to the other end of the response, per the same live audit finding, with an explicit exclusion preserving the one required exact opening line for the show briefing again flow"
+git commit -m "add deterministic backend bypass for show briefing again requests, matching the same pattern already proven correct for the __OPEN__ sentinel, since confirmed live tonight the model failed to generate the required CONCIERGE_ACTION marker for a real, natural phrasing of this request, silently disabling the briefing download feature, the third confirmed instance tonight of a natural language instruction alone failing to guarantee compliance for a case that must never fail"
 git pull --rebase origin main
 git push origin main
