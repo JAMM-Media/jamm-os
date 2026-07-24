@@ -1242,3 +1242,53 @@ def get_firm_settings(firm_id: uuid.UUID, db: Session) -> dict:
             },
         },
     }
+
+
+# ---------------------------------------------------------------------------
+# Function: get_my_tasks
+# Returns all incomplete tasks assigned to a specific staff member, with
+# client name, engagement name, due date, status, and overdue flag per task,
+# plus the distinct engagement names those tasks belong to.
+# ---------------------------------------------------------------------------
+def get_my_tasks(firm_id: uuid.UUID, user_id: uuid.UUID, db: Session) -> dict:
+    today = date.today()
+
+    task_rows = db.execute(
+        select(
+            Task.id,
+            Task.title,
+            Task.status,
+            Task.due_date,
+            Client.name.label("client_name"),
+            Engagement.name.label("engagement_name"),
+        )
+        .join(Client, Task.client_id == Client.id)
+        .join(Engagement, Task.engagement_id == Engagement.id)
+        .where(
+            Task.firm_id == firm_id,
+            Task.assigned_to == user_id,
+            Task.is_completed == False,  # noqa: E712
+        )
+        .order_by(Task.due_date.asc().nullslast())
+    ).fetchall()
+
+    tasks = [
+        {
+            "task_id": str(r.id),
+            "title": r.title,
+            "status": r.status,
+            "client_name": r.client_name,
+            "engagement_name": r.engagement_name,
+            "due_date": r.due_date.isoformat() if r.due_date else None,
+            "overdue": r.due_date is not None and r.due_date < today,
+        }
+        for r in task_rows
+    ]
+
+    engagement_names = list(dict.fromkeys(r.engagement_name for r in task_rows))
+
+    return {
+        "task_count": len(tasks),
+        "tasks": tasks,
+        "engagements_with_my_tasks": engagement_names,
+    }
