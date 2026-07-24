@@ -54,40 +54,47 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Add a closing offer-to-help line to short factual answers, matching the pattern already proven to work
+TASK: Fix get_stalled_engagements including completed and archived engagements as stalled
 
 USE: claude sonnet
 
 VERIFY BEFORE ACT:
-sed -n '12,35p' /home/corby/jamm-os/app/api/concierge/prompts.py
-grep -n "Want me to help\|want me to draft\|Would you like" /home/corby/jamm-os/app/api/concierge/prompts.py
+grep -n "def get_stalled_engagements" -A 30 /home/corby/jamm-os/app/api/concierge/functions.py
 
-Confirm the current RESPONSE FORMAT section and confirm whether this closing pattern already exists anywhere else in the prompt before writing a new instruction.
+Confirm the current query filters only on Engagement.updated_at with no status exclusion at all.
 
-WHAT THIS IS:
+WHAT IS WRONG:
 
-An independent live audit of the actual running product specifically flagged short, purely factual multi-item answers, such as a bulleted list of overdue invoices with no draft attached, as reading like a database query result rather than an attentive colleague, scoring this the lowest of nine rated dimensions. The same audit specifically identified one existing response, ending with want me to help you work through any of those, as the single strongest attentive colleague moment observed in the entire session, and recommended extending exactly that pattern to every short factual answer rather than inventing new language from scratch. Separately, external research on the psychology of trust and warmth in professional software found that warmth needs to be paired with genuine usefulness or forward motion, not just friendly wording, to avoid reading as hollow, which is exactly what a bare closing offer to help accomplishes here, it points toward real next action, it does not just add friendly filler.
+Confirmed live: engagements marked completed are appearing in the stalled engagements list, since the query only checks how long ago an engagement was last updated, with no exclusion for engagements that are already finished. This is conceptually different from an earlier decision made tonight about tasks remaining visible regardless of their parent engagement's status, that case involved individual real tasks still being genuinely incomplete. This case is different: stalled describes whether an engagement itself is failing to move forward, and a completed engagement is not supposed to be moving forward at all, there is nothing being neglected, so including it as stalled is simply incorrect, not a judgment call.
 
 CHANGE INSTRUCTIONS:
 
-Add a new rule to the RESPONSE FORMAT section: whenever a response presents a factual, multi item list, such as overdue invoices, stalled engagements, outstanding tasks, or similar, and does not already end with a draft offer, an OPTIONS marker, or an existing closing question, it should end with one brief, natural closing line either offering to help with the most obvious next action, drafting something, checking further, or similar, or highlighting the single most relevant fact among the items just listed. Give a concrete example directly in the rule, matching the real observed phrasing, such as want me to help you work through any of those, so the model has a genuine reference point rather than inventing generic friendliness. State plainly that this should feel like a natural, specific offer tied to what was just shown, not a generic tacked on phrase repeated identically every time.
-
-Do not apply this to responses that already end with a draft, an OPTIONS marker, or an existing question, this is specifically for the currently cold case, a plain factual list with no follow up at all.
+Add a filter excluding engagements with status completed or archived, matching the exact status.notin_(["completed", "archived"]) pattern already used correctly elsewhere in this file, such as in get_qc_checklist_status.
 
 VERIFY AFTER ACT:
 
-grep -n "want me to help you work through\|closing line" /home/corby/jamm-os/app/api/concierge/prompts.py
+python3 -c "
+from app.db.session import SessionLocal
+from app.api.concierge.functions import get_stalled_engagements
+db = SessionLocal()
+result = get_stalled_engagements('185314c9-e702-4eab-8600-249848022206', db)
+for e in result['stalled']:
+    print(e['client_name'], e['engagement_name'], e['status'], e['days_stalled'])
+db.close()
+"
 
-Expected: present.
+Expected: no entry in this output has status completed or archived. Paste this real output.
+
+python3 -c "from app.main import app; print('OK')"
 
 MANUAL VERIFICATION:
 
-Restart backend. Ask which clients have overdue invoices right now, confirm the response now ends with a natural, specific closing line rather than stopping cold after the list. Ask a similar factual question about stalled engagements or outstanding tasks, confirm the same pattern holds. Separately, ask a question likely to trigger the existing OPTIONS marker for multiple qualifying clients, confirm this new closing line does not stack on top of or interfere with the existing required OPTIONS marker behavior already established earlier tonight.
+Restart backend. Ask is there any stalled engagements, confirm every engagement listed now genuinely has an active, in_review, planning, or draft status, none marked completed or archived.
 
-Report pass or fail for all three.
+Report pass or fail.
 
 GIT:
 git add -A
-git commit -m "add a closing offer-to-help line to short factual multi-item answers, extending the exact pattern an independent live audit identified as the strongest attentive-colleague moment in the product to the cold, database-query-style answers it specifically flagged as the lowest scoring dimension in a nine dimension trust and engagement review"
+git commit -m "fix get_stalled_engagements including completed and archived engagements, since stalled describes whether an engagement is failing to move forward and a finished engagement is not supposed to be moving forward at all, confirmed live via a real question returning several completed engagements incorrectly flagged as stalled"
 git pull --rebase origin main
 git push origin main
