@@ -47,6 +47,7 @@ def get_stalled_engagements(firm_id: uuid.UUID, db: Session, days: int = 14) -> 
         .where(
             Engagement.firm_id == firm_id,
             Engagement.updated_at < cutoff,
+            Engagement.status.notin_(["completed", "archived"]),
         )
         .order_by(Engagement.updated_at.asc())
         .limit(20)
