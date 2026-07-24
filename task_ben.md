@@ -54,55 +54,48 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Fix get_client_full_snapshot leaving overdue status as model-computed math instead of a precomputed fact
+TASK: Fix billing questions misclassifying as engagements when the word engagement appears alongside financial language
 
 USE: claude sonnet
 
 VERIFY BEFORE ACT:
-grep -n "def get_client_full_snapshot" -A 70 /home/corby/jamm-os/app/api/concierge/functions.py
-grep -n "def get_overdue_invoices" -A 30 /home/corby/jamm-os/app/api/concierge/functions.py
+grep -n "\"billing\": {" -A 8 /home/corby/jamm-os/app/api/concierge/route.py
 
-Confirm the current invoice section of get_client_full_snapshot returns only raw status and due_date with no computed overdue fields, and confirm the exact pattern get_overdue_invoices already uses correctly for computing is_overdue and days_overdue, since the fix should match that established pattern, not invent a new one.
+python3 -c "
+import sys
+sys.path.insert(0, '/home/corby/jamm-os')
+from app.api.concierge.route import _classify_topic
+print(_classify_topic(\"What's Marcus & Diana Webb's outstanding balance from last year's engagement?\"))
+"
+
+Confirm this currently prints engagements, not billing, before editing.
 
 WHAT IS WRONG:
 
-Confirmed live and confirmed against the real database: Marcus and Diana Webb's invoice INV-001 has a genuinely real due_date of 2026-06-24 and status sent, both correctly returned by get_client_full_snapshot with no data error at all. The bug is that this tool returns only the raw due_date and status with no precomputed indication of whether the invoice is actually overdue, leaving the model to determine this itself by comparing the due date against the current date. The model got this wrong, stating the invoice was not yet overdue despite it being genuinely about a month past due, confirmed correct and consistent by get_overdue_invoices elsewhere in the same session. This is the same underlying lesson already learned once tonight with tool_choice forcing, applied here to date arithmetic instead of tool selection, the model cannot be trusted to reliably compute something the backend can compute deterministically and hand over as a settled fact.
+Confirmed live: a genuinely financial question, asking about an outstanding balance, classifies as the engagements topic instead of billing, because the word engagement is present and scores in that bucket while the billing bucket's keyword set does not contain balance or outstanding balance, so the engagements bucket wins the scoring even though the question is fundamentally about money owed. This produces a Go to Engagements chip on an invoice focused answer, the same wrong-destination pattern already found and fixed for other topics earlier tonight.
 
 CHANGE INSTRUCTIONS:
 
-In the invoice section of get_client_full_snapshot, add the same is_overdue and days_overdue computation already used correctly in get_overdue_invoices, computed in Python against today's real date, not left for the model to infer. Add these as explicit fields on each invoice in the returned list, alongside the existing number, status, and due date fields already there.
-
-Do not change get_overdue_invoices itself, it is already correct. Do not change any other part of get_client_full_snapshot, only the invoice section needs this addition.
+Add balance and outstanding balance to the billing topic keyword set, matching the exact existing style and format of that set. Do not remove or change anything in the engagements keyword set, and do not change the underlying scoring logic itself, this is purely a missing keyword in one bucket.
 
 VERIFY AFTER ACT:
 
 python3 -c "
-from app.db.session import SessionLocal
-from app.api.concierge.functions import get_client_full_snapshot
-from app.models.client import Client
-
-db = SessionLocal()
-client = db.query(Client).filter(Client.name.ilike('%Webb%')).first()
-result = get_client_full_snapshot('185314c9-e702-4eab-8600-249848022206', client.id, db)
-for inv in result['invoices']:
-    print(inv)
-db.close()
+import sys
+sys.path.insert(0, '/home/corby/jamm-os')
+from app.api.concierge.route import _classify_topic
+print(_classify_topic(\"What's Marcus & Diana Webb's outstanding balance from last year's engagement?\"))
+print(_classify_topic('Which engagements are stalled right now?'))
 "
 
-Expected: the INV-001 entry now includes is_overdue true and a real days_overdue number, not just raw status and due date. Paste this real output.
-
-python3 -c "from app.main import app; print('OK')"
+Expected: the first line now prints billing, the second line still prints engagements, confirming the fix is targeted and did not break the legitimate engagements case.
 
 MANUAL VERIFICATION:
 
-Restart backend. Ask what's Marcus and Diana Webb's outstanding balance from last year's engagement again, the exact question that surfaced this. Confirm the response now correctly states the invoice is overdue, not not yet overdue, consistent with what get_overdue_invoices already correctly says elsewhere.
-
-Ask about a different client with a genuinely current, not-yet-due invoice if the test data supports it, to confirm the fix correctly reports not overdue in that case too, not just always saying overdue regardless of the real date.
-
-Report pass or fail for both.
+Restart backend. Ask what's Marcus and Diana Webb's outstanding balance from last year's engagement again, confirm the chip now correctly reads Go to Billing.
 
 GIT:
 git add -A
-git commit -m "add precomputed is_overdue and days_overdue fields to get_client_full_snapshot's invoice data, since the model was left to determine overdue status itself by comparing a raw due date against the current date and got the math wrong, incorrectly calling a genuinely 29 day overdue invoice not yet overdue, confirmed live and confirmed the underlying due date data itself was correct, this was a reasoning gap not a data error, same underlying lesson as tool_choice forcing applied to date arithmetic instead of tool selection"
+git commit -m "add balance and outstanding balance to the billing topic keyword set, fixing questions about money owed misclassifying as engagements when the word engagement also appears, which was producing a Go to Engagements chip on answers that were fundamentally about invoices"
 git pull --rebase origin main
 git push origin main
