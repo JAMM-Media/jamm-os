@@ -482,6 +482,44 @@ def concierge_chat(
 
         return StreamingResponse(generate_open_bypass(), media_type="text/event-stream")
 
+    # Deterministic briefing-again bypass -- removes model discretion for the structural
+    # requirement that CONCIERGE_ACTION: {"type":"show_briefing_again"} must always fire.
+    # Matches the same bypass pattern as __OPEN__ above.
+    # Triggered when: the message asks to see the briefing again (briefing + again/show/see)
+    # AND the firm has already received a briefing today.
+    _briefing_again_msg = next(
+        (m.content for m in reversed(body.messages) if m.role == "user"),
+        None,
+    )
+    if _briefing_again_msg and current_firm.briefing_sent_at:
+        _msg_lower = _briefing_again_msg.lower()
+        _has_briefing = "briefing" in _msg_lower
+        _has_trigger = any(w in _msg_lower for w in ("again", "show", "see", "once more", "one more"))
+        _briefing_today = current_firm.briefing_sent_at.date() == datetime.now(timezone.utc).date()
+        if _has_briefing and _has_trigger and _briefing_today:
+            logger.info(
+                f"[BRIEFING AGAIN BYPASS] deterministic bypass firing for firm {current_firm.id}"
+            )
+            try:
+                _context_data = get_firm_context_detail(current_firm.id, db)
+                _detail_client = anthropic.Anthropic(api_key=get_settings().ANTHROPIC_API_KEY)
+                _detail_response = _detail_client.messages.create(
+                    model="claude-haiku-4-5-20251001",
+                    max_tokens=2000,
+                    system=MORNING_BRIEFING_DETAIL_PROMPT,
+                    messages=[{"role": "user", "content": f"Firm data:\n{_context_data}\n\nReturn a comprehensive plain-text briefing report. Be exhaustive. Include every client, engagement, and item. No truncation."}],
+                )
+                _briefing_text = _detail_response.content[0].text.strip()
+                _full_response = f"Here's your briefing again:\n{_briefing_text}\nCONCIERGE_ACTION: {{\"type\":\"show_briefing_again\"}}"
+
+                def generate_briefing_again_bypass():
+                    for line in _full_response.split("\n"):
+                        yield f"data: {line}\n\n"
+
+                return StreamingResponse(generate_briefing_again_bypass(), media_type="text/event-stream")
+            except Exception as _e:
+                logger.warning(f"[BRIEFING AGAIN BYPASS] content generation failed for firm {current_firm.id}: {_e}, falling through to normal path")
+
     settings = get_settings()
     api_key = settings.ANTHROPIC_CONCIERGE_KEY
     if not api_key:
