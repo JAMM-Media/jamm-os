@@ -942,11 +942,11 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
           display: 'flex',
           flexDirection: 'column',
         }}
-        className="bg-[#EDEEF0] dark:bg-[#383838] border-l border-[0.5px] border-[#C8CDD6] dark:border-[#484848]"
+        className="bg-surface-card dark:bg-dark-card border-l-2 border-concierge shadow-xl"
       >
         {/* Header */}
         <div
-          className="flex items-center justify-between px-4 border-b border-[0.5px] border-[#C8CDD6] dark:border-[#484848] flex-shrink-0"
+          className="flex items-center justify-between px-4 border-b border-[0.5px] border-surface-border dark:border-dark-border flex-shrink-0"
           style={{ height: 48 }}
         >
           <div className="flex items-center gap-2">
@@ -958,11 +958,11 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
                 onError={(e) => { e.currentTarget.style.display = 'none' }}
               />
             ) : (
-              <div className="h-6 w-6 rounded-sm bg-[#3A6A94] flex items-center justify-center flex-shrink-0">
+              <div className="h-6 w-6 rounded-sm bg-brand-btn flex items-center justify-center flex-shrink-0">
                 <span className="text-[10px] font-medium text-white">{initials}</span>
               </div>
             )}
-            <span className="text-[14px] font-medium text-[#1F3148] dark:text-[#EDEEF0]">
+            <span className="text-[14px] font-medium font-display text-brand dark:text-foreground">
               JAMM Concierge
             </span>
           </div>
@@ -980,14 +980,14 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
                 }}
                 className={`flex items-center gap-1 text-[11px] font-medium px-2 py-1 rounded-[4px] border border-[0.5px] transition-all duration-150 ${
                   autopilotOn
-                    ? 'border-[#1F3148] bg-[#1F3148] text-white dark:border-[#4A7FA5] dark:bg-[#4A7FA5]'
-                    : 'border-[#C8CDD6] dark:border-[#484848] bg-transparent text-[#6B7280] dark:text-[#9CA3AF] hover:border-[#1F3148] hover:text-[#1F3148] dark:hover:border-[#4A7FA5] dark:hover:text-[#4A7FA5]'
+                    ? 'border-brand bg-brand text-white dark:border-brand-light dark:bg-brand-light'
+                    : 'border-surface-border dark:border-dark-border bg-transparent text-muted-foreground hover:border-brand hover:text-brand dark:hover:border-brand-light dark:hover:text-brand-light'
                 }`}
               >
                 <Zap className={`h-3 w-3 transition-all ${autopilotOn ? 'fill-white stroke-white' : 'fill-none'}`} />
                 Autopilot
               </button>
-              <div className="absolute right-0 top-full mt-1 w-56 px-2.5 py-1.5 rounded-[6px] bg-[#1F3148] text-white text-[11px] leading-snug opacity-0 group-hover:opacity-100 transition-opacity duration-150 pointer-events-none z-50 shadow-lg">
+              <div className="absolute right-0 top-full mt-1 w-56 px-2.5 py-1.5 rounded-[6px] bg-brand text-white text-[11px] leading-snug opacity-0 group-hover:opacity-100 transition-opacity duration-150 pointer-events-none z-50 shadow-lg">
                 When ON, I&apos;ll navigate the app and open forms for you automatically. When OFF, I&apos;ll just tell you where to go.
               </div>
             </div>
@@ -997,7 +997,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
                 onClick={handleClearConversation}
                 aria-label="Clear conversation"
                 title="Clear conversation"
-                className="text-[#6B7280] hover:text-[#DC2626] dark:hover:text-[#F87171] transition-colors"
+                className="text-muted-foreground hover:text-[#DC2626] dark:hover:text-[#F87171] transition-colors"
               >
                 <Trash2 className="h-4 w-4" />
               </button>
@@ -1006,7 +1006,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
             <button
               onClick={onClose}
               aria-label="Close concierge panel"
-              className="text-[#6B7280] hover:text-[#1F3148] dark:hover:text-[#EDEEF0] transition-colors"
+              className="text-muted-foreground hover:text-brand dark:hover:text-foreground transition-colors"
             >
               <X className="h-4 w-4" />
             </button>
@@ -1014,8 +1014,8 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
         </div>
 
         {autopilotOn && (
-          <div className="px-4 py-1 bg-[#EBF4FB] dark:bg-[#1a3a52] border-b border-[0.5px] border-[#C8CDD6] dark:border-[#484848]">
-            <p className="text-[11px] text-[#4A7FA5] dark:text-[#7ab8d8]">Autopilot on. I'll navigate for you.</p>
+          <div className="px-4 py-1 bg-brand-light/10 dark:bg-brand-dark border-b border-[0.5px] border-surface-border dark:border-dark-border">
+            <p className="text-[11px] text-brand-light dark:text-brand-muted">Autopilot on. I'll navigate for you.</p>
           </div>
         )}
 
@@ -1028,17 +1028,17 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
                 className="flex items-center gap-1.5"
               >
                 <span className="w-1.5 h-1.5 rounded-full bg-[#D97706]" />
-                <span className="text-[10px] font-semibold uppercase tracking-wide text-[#92400E] dark:text-[#D97706]">
+                <span className="text-[10px] font-semibold uppercase tracking-wide text-status-amber-text dark:text-[#D97706]">
                   {notifications.length} {notifications.length === 1 ? 'Alert' : 'Alerts'}
                 </span>
                 <ChevronDown
-                  className={`h-3 w-3 text-[#92400E] dark:text-[#D97706] transition-transform ${notificationsExpanded ? 'rotate-180' : ''}`}
+                  className={`h-3 w-3 text-status-amber-text dark:text-[#D97706] transition-transform ${notificationsExpanded ? 'rotate-180' : ''}`}
                 />
               </button>
               {notificationsExpanded && (
                 <button
                   onClick={() => notifications.forEach((n) => dismissNotification(n.id))}
-                  className="text-[10px] font-medium text-[#6B7280] dark:text-[#9CA3AF] hover:text-[#1F3148] dark:hover:text-[#EDEEF0] transition-colors"
+                  className="text-[10px] font-medium text-muted-foreground hover:text-brand dark:hover:text-foreground transition-colors"
                 >
                   Dismiss all
                 </button>
@@ -1051,11 +1051,11 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
               return (
                 <div
                   key={n.id}
-                  className="flex flex-col gap-2 bg-white dark:bg-[#2D2D2D] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] border-l-[3px] border-l-[#D97706] rounded-[8px] px-3 py-2.5"
+                  className="flex flex-col gap-2 bg-white dark:bg-dark-page border border-[0.5px] border-surface-border dark:border-dark-border border-l-[3px] border-l-[#D97706] rounded-[8px] px-3 py-2.5"
                 >
                   <div className="flex items-start gap-2">
                     <p
-                      className="flex-1 text-[12px] leading-[1.5] text-[#1F3148] dark:text-[#EDEEF0] cursor-pointer"
+                      className="flex-1 text-[12px] leading-[1.5] text-brand dark:text-foreground cursor-pointer"
                       onClick={() => { dismissNotification(n.id); handleSend(n.message) }}
                     >
                       {n.message}
@@ -1063,15 +1063,15 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
                     <button
                       onClick={(e) => { e.stopPropagation(); dismissNotification(n.id) }}
                       aria-label="Dismiss notification"
-                      className="flex-shrink-0 text-[#6B7280] hover:text-[#1F3148] dark:hover:text-[#EDEEF0] transition-colors mt-0.5"
+                      className="flex-shrink-0 text-muted-foreground hover:text-brand dark:hover:text-foreground transition-colors mt-0.5"
                     >
                       <X className="h-3.5 w-3.5" />
                     </button>
                   </div>
                   {draft && (
-                    <div className="mt-1 rounded-[6px] bg-[#F0F4F8] dark:bg-[#1a2a3a] border border-[0.5px] border-[#C8CDD6] dark:border-[#3a4a5a] px-2.5 py-2">
-                      <p className="text-[11px] text-[#6B7280] dark:text-[#9CA3AF] mb-1.5 font-medium uppercase tracking-wide">Draft</p>
-                      <p className="text-[12px] leading-[1.5] text-[#374151] dark:text-[#D1D5DB] whitespace-pre-wrap">{draft}</p>
+                    <div className="mt-1 rounded-[6px] bg-surface-card dark:bg-dark-card border border-[0.5px] border-surface-border dark:border-dark-border px-2.5 py-2">
+                      <p className="text-[11px] text-muted-foreground mb-1.5 font-medium uppercase tracking-wide">Draft</p>
+                      <p className="text-[12px] leading-[1.5] text-foreground whitespace-pre-wrap">{draft}</p>
                       <div className="flex gap-2 mt-2">
                         <button
                           onClick={() => {
@@ -1080,7 +1080,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
                               setTimeout(() => setCopiedId(null), 2000)
                             }).catch(() => {})
                           }}
-                          className="text-[11px] font-medium px-2.5 py-1 rounded-[4px] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] text-[#6B7280] dark:text-[#9CA3AF] hover:border-[#4A7FA5] hover:text-[#4A7FA5] transition-colors"
+                          className="text-[11px] font-medium px-2.5 py-1 rounded-[4px] border border-[0.5px] border-surface-border dark:border-dark-border text-muted-foreground hover:border-brand-light hover:text-brand-light transition-colors"
                         >
                           {copiedId === n.id ? 'Copied' : 'Copy'}
                         </button>
@@ -1112,7 +1112,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
                             }
                             router.push(`/clients/${targetClientId}?tab=messages`)
                           }}
-                          className="text-[11px] font-medium px-2.5 py-1 rounded-[4px] bg-[#1F3148] text-white hover:bg-[#2a4060] transition-colors"
+                          className="text-[11px] font-medium px-2.5 py-1 rounded-[4px] bg-brand text-white hover:opacity-90 transition-colors"
                         >
                           Open to send
                         </button>
@@ -1134,37 +1134,37 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
 
           {briefingLoading && messages.length === 0 && (
             <div className="flex gap-2.5 px-3 py-2">
-              <div className="w-7 h-7 rounded-full bg-[#1F3148] flex items-center justify-center flex-shrink-0">
+              <div className="w-7 h-7 rounded-full bg-concierge flex items-center justify-center flex-shrink-0">
                 <span className="text-white text-[10px] font-medium">JC</span>
               </div>
               <div className="flex flex-col gap-2 flex-1 pt-1">
-                <div className="h-3 w-32 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+                <div className="h-3 w-32 bg-surface-border dark:bg-dark-border animate-pulse rounded" />
                 <div className="flex flex-col gap-1.5 ml-3 mt-0.5">
-                  <div className="h-2 w-full bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
-                  <div className="h-2 w-4/5 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+                  <div className="h-2 w-full bg-surface-border dark:bg-dark-border animate-pulse rounded" />
+                  <div className="h-2 w-4/5 bg-surface-border dark:bg-dark-border animate-pulse rounded" />
                 </div>
-                <div className="h-3 w-28 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded mt-2" />
+                <div className="h-3 w-28 bg-surface-border dark:bg-dark-border animate-pulse rounded mt-2" />
                 <div className="flex flex-col gap-1.5 ml-3 mt-0.5">
-                  <div className="h-2 w-full bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
-                  <div className="h-2 w-3/4 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
-                  <div className="h-2 w-2/3 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+                  <div className="h-2 w-full bg-surface-border dark:bg-dark-border animate-pulse rounded" />
+                  <div className="h-2 w-3/4 bg-surface-border dark:bg-dark-border animate-pulse rounded" />
+                  <div className="h-2 w-2/3 bg-surface-border dark:bg-dark-border animate-pulse rounded" />
                 </div>
-                <div className="h-px w-full bg-[#D5D8DE] dark:bg-[#444444] mt-2" />
-                <div className="h-2 w-36 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded mt-2" />
-                <div className="h-2 w-20 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded mt-1" />
+                <div className="h-px w-full bg-surface-border dark:bg-dark-border mt-2" />
+                <div className="h-2 w-36 bg-surface-border dark:bg-dark-border animate-pulse rounded mt-2" />
+                <div className="h-2 w-20 bg-surface-border dark:bg-dark-border animate-pulse rounded mt-1" />
               </div>
             </div>
           )}
 
           {messages.length === 0 && !briefingLoading && !streaming && (
             <div className="flex flex-col gap-2 px-1 py-1">
-              <p className="text-[11px] text-[#9CA3AF] px-2">Try asking</p>
+              <p className="text-[11px] text-muted-foreground px-2">Try asking</p>
               <div className="flex flex-wrap gap-1.5 px-1">
                 {getStarterPrompts().map((prompt) => (
                   <button
                     key={prompt}
                     onClick={() => handleSend(prompt)}
-                    className="text-[11px] font-medium px-3 py-1.5 rounded-full border border-[#C8CDD6] dark:border-[#484848] text-[#1F3148] dark:text-[#EDEEF0] bg-white dark:bg-[#2D2D2D] hover:border-[#4A7FA5] hover:text-[#4A7FA5] transition-colors"
+                    className="text-[11px] font-medium px-3 py-1.5 rounded-full border border-surface-border dark:border-dark-border text-brand dark:text-foreground bg-white dark:bg-dark-page hover:border-brand-light hover:text-brand-light transition-colors"
                   >
                     {prompt}
                   </button>
@@ -1177,21 +1177,21 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
             <div key={i}>
             <div className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} items-start gap-2`}>
               {msg.role === 'concierge' && (
-                <div className="flex-shrink-0 w-6 h-6 rounded-full bg-[#1F3148] flex items-center justify-center mt-1">
+                <div className="flex-shrink-0 w-6 h-6 rounded-full bg-concierge flex items-center justify-center mt-1">
                   <span className="text-[9px] font-medium text-white">JC</span>
                 </div>
               )}
               <div
-                className={`text-[13px] leading-[1.6] px-3 py-2 rounded-[12px] max-w-[75%] ${msg.role === 'user' ? 'text-white' : 'bg-[#E4E6EA] dark:bg-[#2D2D2D] text-[#1F3148] dark:text-[#EDEEF0]'}`}
+                className={`text-[13px] leading-[1.6] px-3 py-2 rounded-[12px] max-w-[75%] ${msg.role === 'user' ? 'text-white' : 'bg-surface-page dark:bg-dark-page text-brand dark:text-foreground'}`}
                 style={msg.role === 'user' ? { background: '#1F3148', color: '#FFFFFF' } : undefined}
               >
                 {msg.content ? (
-                  <div className={`prose prose-sm max-w-none text-[13px] ${msg.role === 'user' ? 'text-white' : 'text-[#374151] dark:text-[#EDEEF0]'}`}>
+                  <div className={`prose prose-sm max-w-none text-[13px] ${msg.role === 'user' ? 'text-white' : 'text-foreground'}`}>
                     <ReactMarkdown
                       components={{
-                        h2: ({node, ...props}) => <h2 className="text-[13px] font-semibold text-[#1F3148] dark:text-[#EDEEF0] mt-3 mb-1 first:mt-0" {...props} />,
-                        h3: ({node, ...props}) => <h3 className="text-[12px] font-semibold text-[#4A7FA5] uppercase tracking-wide mt-2.5 mb-1" {...props} />,
-                        hr: ({node, ...props}) => <hr className="border-t border-[#C8CDD6] dark:border-[#484848] my-2" />,
+                        h2: ({node, ...props}) => <h2 className="text-[13px] font-semibold font-display text-brand dark:text-foreground mt-3 mb-1 first:mt-0" {...props} />,
+                        h3: ({node, ...props}) => <h3 className="text-[12px] font-semibold text-brand-light uppercase tracking-wide mt-2.5 mb-1" {...props} />,
+                        hr: ({node, ...props}) => <hr className="border-t border-surface-border dark:border-dark-border my-2" />,
                         ul: ({node, ...props}) => <ul className="list-disc list-outside ml-4 my-1 space-y-0.5" {...props} />,
                         ol: ({node, ...props}) => <ol className="list-decimal list-outside ml-4 my-1 space-y-0.5" {...props} />,
                         li: ({node, ...props}) => <li className="leading-snug" {...props} />,
@@ -1204,14 +1204,14 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
                           return (
                             <strong
                               {...props}
-                              className={`font-medium text-[#1F3148] dark:text-[#EDEEF0]${isOption ? ' cursor-pointer underline decoration-dotted underline-offset-2 hover:text-[#4A7FA5] dark:hover:text-[#4A7FA5] transition-colors' : ''}`}
+                              className={`font-display font-medium text-brand dark:text-foreground${isOption ? ' cursor-pointer underline decoration-dotted underline-offset-2 hover:text-brand-light dark:hover:text-brand-light transition-colors' : ''}`}
                               onClick={isOption ? () => void handleSend(text) : undefined}
                             >
                               {children}
                             </strong>
                           )
                         },
-                        em: ({node, ...props}) => <em className="not-italic text-[11px] text-[#6B7280]" {...props} />,
+                        em: ({node, ...props}) => <em className="not-italic text-[11px] text-muted-foreground" {...props} />,
                       }}
                     >
                       {!msg.skipReveal && i === messages.length - 1 && revealedWordCount < msg.content.split(/\s+/).filter(Boolean).length
@@ -1220,7 +1220,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
                     </ReactMarkdown>
                   </div>
                 ) : (streaming && i === messages.length - 1) ? (
-                  <span className="text-[13px] text-[#6B7280] animate-pulse">Thinking...</span>
+                  <span className="text-[13px] text-concierge animate-pulse">Thinking...</span>
                 ) : null}
                 {msg.isBriefing && (
                   <div className="mt-2">
@@ -1408,7 +1408,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
                           setIsDownloading(false)
                         }
                       }}
-                      className="flex items-center gap-1.5 text-[11px] text-[#6B7280] hover:text-brand transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="flex items-center gap-1.5 text-[11px] text-muted-foreground hover:text-brand transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {isDownloading ? (
                         <span>Generating PDF...</span>
@@ -1426,7 +1426,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
                   </div>
                 )}
                 {msg.actionConfirm && (
-                  <p className="text-[11px] text-[#6B7280] mt-1 italic">{msg.actionConfirm}</p>
+                  <p className="text-[11px] text-muted-foreground mt-1 italic">{msg.actionConfirm}</p>
                 )}
               </div>
             </div>
@@ -1435,8 +1435,8 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
               const currentContent = editingDraftContent[draftKey] ?? draft.content
               const isBatch = (msg.drafts?.length ?? 0) > 1
               return (
-                <div key={draftIdx} className="ml-8 mt-2 rounded-[8px] bg-[#F0F4F8] dark:bg-[#1a2a3a] border border-[0.5px] border-[#C8CDD6] dark:border-[#3a4a5a] px-3 py-2.5">
-                  <p className="text-[10px] text-[#6B7280] dark:text-[#9CA3AF] mb-1.5 font-medium uppercase tracking-wide">
+                <div key={draftIdx} className="ml-8 mt-2 rounded-[8px] bg-surface-card dark:bg-dark-card border border-[0.5px] border-surface-border dark:border-dark-border px-3 py-2.5">
+                  <p className="text-[10px] text-muted-foreground mb-1.5 font-medium uppercase tracking-wide">
                     {draft.type === 'CLIENT_EMAIL' ? 'Draft email' :
                      draft.type === 'INVOICE_ITEMS' ? 'Draft invoice' :
                      draft.type === 'STAFF_REASSIGN' ? 'Suggested reassignment' :
@@ -1448,10 +1448,10 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
                     value={currentContent}
                     onChange={(e) => setEditingDraftContent((prev) => ({ ...prev, [draftKey]: e.target.value }))}
                     rows={Math.min(8, Math.max(3, currentContent.split('\n').length + 1))}
-                    className="w-full text-[12px] leading-[1.5] text-[#374151] dark:text-[#D1D5DB] bg-white dark:bg-[#2D2D2D] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] rounded-[6px] px-2 py-1.5 resize-none focus:outline-none focus:border-[#4A7FA5]"
+                    className="w-full text-[12px] leading-[1.5] text-foreground bg-white dark:bg-dark-page border border-[0.5px] border-surface-border dark:border-dark-border rounded-[6px] px-2 py-1.5 resize-none focus:outline-none focus:border-brand-light"
                   />
                   {draft.source && (
-                    <p className="text-[10px] text-[#9CA3AF] mt-1.5 italic">
+                    <p className="text-[10px] text-muted-foreground mt-1.5 italic">
                       Based on: {draft.source}
                     </p>
                   )}
@@ -1463,7 +1463,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
                           setTimeout(() => setCopiedId(null), 2000)
                         }).catch(() => {})
                       }}
-                      className="text-[11px] font-medium px-2.5 py-1 rounded-[4px] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] text-[#6B7280] dark:text-[#9CA3AF] hover:border-[#4A7FA5] hover:text-[#4A7FA5] transition-colors"
+                      className="text-[11px] font-medium px-2.5 py-1 rounded-[4px] border border-[0.5px] border-surface-border dark:border-dark-border text-muted-foreground hover:border-brand-light hover:text-brand-light transition-colors"
                     >
                       {copiedId === `msg-${draftKey}` ? 'Copied' : 'Copy'}
                     </button>
@@ -1528,7 +1528,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
 
                         window.alert('No specific client was identified for this draft. Open the client record directly and use the Messages tab to send it.')
                       }}
-                      className="text-[11px] font-medium px-2.5 py-1 rounded-[4px] bg-[#1F3148] text-white hover:bg-[#2a4060] transition-colors"
+                      className="text-[11px] font-medium px-2.5 py-1 rounded-[4px] bg-brand text-white hover:opacity-90 transition-colors"
                     >
                       {draft.type === 'STAFF_REASSIGN' ? 'Open engagement' :
                        draft.type === 'INVOICE_ITEMS' ? 'Open billing' :
@@ -1544,7 +1544,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
                   <button
                     key={s}
                     onClick={() => handleSuggestion(s)}
-                    className="text-[11px] font-medium px-3 py-1.5 rounded-full border border-[#C8CDD6] dark:border-[#484848] text-[#1F3148] dark:text-[#EDEEF0] bg-white dark:bg-[#2D2D2D] hover:border-[#4A7FA5] hover:text-[#4A7FA5] transition-colors"
+                    className="text-[11px] font-medium px-3 py-1.5 rounded-full border border-surface-border dark:border-dark-border text-brand dark:text-foreground bg-white dark:bg-dark-page hover:border-brand-light hover:text-brand-light transition-colors"
                   >
                     {s}
                   </button>
@@ -1557,7 +1557,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
                   <button
                     key={opt}
                     onClick={() => void handleSend(opt)}
-                    className="text-[11px] font-medium px-3 py-1.5 rounded-[6px] border border-[#4A7FA5] text-[#4A7FA5] bg-white dark:bg-[#2D2D2D] hover:bg-[#4A7FA5] hover:text-white transition-colors"
+                    className="text-[11px] font-medium px-3 py-1.5 rounded-[6px] border border-brand-light text-brand-light bg-white dark:bg-dark-page hover:bg-brand-light hover:text-white transition-colors"
                   >
                     {opt}
                   </button>
@@ -1567,7 +1567,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
             </div>
           ))}
           <p
-            className={`text-[11px] text-[#6B7280] text-center transition-opacity duration-500 ${statusMessage ? 'opacity-100' : 'opacity-0'}`}
+            className={`text-[11px] text-muted-foreground text-center transition-opacity duration-500 ${statusMessage ? 'opacity-100' : 'opacity-0'}`}
             style={{ minHeight: 16 }}
           >
             {statusMessage}
@@ -1577,23 +1577,23 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
 
         {currentPage && (
           <div className="px-3 pt-2 pb-0">
-            <span className="inline-flex items-center gap-1 text-[10px] font-medium text-[#6B7280] dark:text-[#9CA3AF]">
-              <span className="w-1.5 h-1.5 rounded-full bg-[#4A7FA5]" />
+            <span className="inline-flex items-center gap-1 text-[10px] font-medium text-muted-foreground">
+              <span className="w-1.5 h-1.5 rounded-full bg-concierge" />
               You are on: {currentPage}
             </span>
           </div>
         )}
         {/* Smart Paste form -- slides in above input when clipboard icon is clicked */}
         {pasteFormOpen && (
-          <div className="px-4 pb-3 border-t border-[0.5px] border-[#C8CDD6] dark:border-[#484848] pt-3 flex-shrink-0 bg-white dark:bg-[#2D2D2D]">
+          <div className="px-4 pb-3 border-t border-[0.5px] border-surface-border dark:border-dark-border pt-3 flex-shrink-0 bg-white dark:bg-dark-page">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-[11px] font-medium text-[#4A7FA5]">Add a client</span>
+              <span className="text-[11px] font-medium text-brand-light">Add a client</span>
               <button
                 onClick={() => {
                   setPasteFormOpen(false)
                   setPasteForm({ name: '', email: '', phone: '', entity_type: '' })
                 }}
-                className="text-[#6B7280] hover:text-[#1F3148] dark:hover:text-[#EDEEF0] transition-colors"
+                className="text-muted-foreground hover:text-brand dark:hover:text-foreground transition-colors"
               >
                 <X className="h-3.5 w-3.5" />
               </button>
@@ -1604,26 +1604,26 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
                 placeholder="Full name (required)"
                 value={pasteForm.name}
                 onChange={(e) => setPasteForm((prev) => ({ ...prev, name: e.target.value }))}
-                className="w-full rounded-[6px] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] bg-[#F7F7F8] dark:bg-[#2D2D2D] text-[12px] text-[#374151] dark:text-[#9CA3AF] placeholder:text-[#9CA3AF] px-2.5 py-1.5 focus:outline-none focus:border-[#4A7FA5]"
+                className="w-full rounded-[6px] border border-[0.5px] border-surface-border dark:border-dark-border bg-surface-input dark:bg-dark-page text-[12px] text-foreground dark:text-muted-foreground placeholder:text-muted-foreground px-2.5 py-1.5 focus:outline-none focus:border-brand-light"
               />
               <input
                 type="email"
                 placeholder="Email address"
                 value={pasteForm.email}
                 onChange={(e) => setPasteForm((prev) => ({ ...prev, email: e.target.value }))}
-                className="w-full rounded-[6px] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] bg-[#F7F7F8] dark:bg-[#2D2D2D] text-[12px] text-[#374151] dark:text-[#9CA3AF] placeholder:text-[#9CA3AF] px-2.5 py-1.5 focus:outline-none focus:border-[#4A7FA5]"
+                className="w-full rounded-[6px] border border-[0.5px] border-surface-border dark:border-dark-border bg-surface-input dark:bg-dark-page text-[12px] text-foreground dark:text-muted-foreground placeholder:text-muted-foreground px-2.5 py-1.5 focus:outline-none focus:border-brand-light"
               />
               <input
                 type="tel"
                 placeholder="Phone number"
                 value={pasteForm.phone}
                 onChange={(e) => setPasteForm((prev) => ({ ...prev, phone: e.target.value }))}
-                className="w-full rounded-[6px] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] bg-[#F7F7F8] dark:bg-[#2D2D2D] text-[12px] text-[#374151] dark:text-[#9CA3AF] placeholder:text-[#9CA3AF] px-2.5 py-1.5 focus:outline-none focus:border-[#4A7FA5]"
+                className="w-full rounded-[6px] border border-[0.5px] border-surface-border dark:border-dark-border bg-surface-input dark:bg-dark-page text-[12px] text-foreground dark:text-muted-foreground placeholder:text-muted-foreground px-2.5 py-1.5 focus:outline-none focus:border-brand-light"
               />
               <select
                 value={pasteForm.entity_type}
                 onChange={(e) => setPasteForm((prev) => ({ ...prev, entity_type: e.target.value }))}
-                className="w-full rounded-[6px] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] bg-[#F7F7F8] dark:bg-[#2D2D2D] text-[12px] text-[#374151] dark:text-[#9CA3AF] px-2.5 py-1.5 focus:outline-none focus:border-[#4A7FA5]"
+                className="w-full rounded-[6px] border border-[0.5px] border-surface-border dark:border-dark-border bg-surface-input dark:bg-dark-page text-[12px] text-foreground dark:text-muted-foreground px-2.5 py-1.5 focus:outline-none focus:border-brand-light"
               >
                 <option value="">Entity type (optional)</option>
                 <option value="individual">Individual</option>
@@ -1634,7 +1634,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
               <button
                 onClick={handlePasteFormSubmit}
                 disabled={!pasteForm.name.trim()}
-                className="w-full rounded-[6px] bg-[#1F3148] text-white text-[12px] font-medium py-1.5 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-[#2a4060] transition-colors"
+                className="w-full rounded-[6px] bg-brand text-white text-[12px] font-medium py-1.5 disabled:opacity-40 disabled:cursor-not-allowed hover:opacity-90 transition-colors"
               >
                 Add Client
               </button>
@@ -1642,7 +1642,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
           </div>
         )}
         {/* Input area */}
-        <div className="p-4 border-t border-[0.5px] border-[#C8CDD6] dark:border-[#484848] flex-shrink-0">
+        <div className="p-4 border-t border-[0.5px] border-surface-border dark:border-dark-border flex-shrink-0">
           <div className="flex items-end gap-2">
             <textarea
               ref={textareaRef}
@@ -1653,14 +1653,14 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
               placeholder="Ask anything about JAMM PX..."
               rows={1}
               disabled={streaming}
-              className="flex-1 rounded-[6px] border border-[0.5px] border-[#C8CDD6] focus:border-[#4A7FA5] focus:outline-none bg-[#F7F7F8] dark:bg-[#2D2D2D] text-[13px] text-[#374151] dark:text-[#9CA3AF] placeholder:text-[#9CA3AF] p-2.5 resize-none transition-colors disabled:opacity-60"
+              className="flex-1 rounded-[6px] border border-[0.5px] border-surface-border focus:border-brand-light focus:outline-none bg-surface-input dark:bg-dark-page text-[13px] text-foreground dark:text-muted-foreground placeholder:text-muted-foreground p-2.5 resize-none transition-colors disabled:opacity-60"
               style={{ minHeight: 36, maxHeight: 96, overflowY: 'auto' }}
             />
             <button
               onClick={() => setPasteFormOpen((prev) => !prev)}
               aria-label="Add client"
               title="Add a client"
-              className="h-9 w-9 rounded-[6px] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] flex items-center justify-center transition-all flex-shrink-0 bg-white dark:bg-[#2D2D2D] hover:border-[#4A7FA5] text-[#6B7280] hover:text-[#4A7FA5]"
+              className="h-9 w-9 rounded-[6px] border border-[0.5px] border-surface-border dark:border-dark-border flex items-center justify-center transition-all flex-shrink-0 bg-white dark:bg-dark-page hover:border-brand-light text-muted-foreground hover:text-brand-light"
               style={pasteFormOpen ? { borderColor: '#4A7FA5', color: '#4A7FA5' } : {}}
             >
               <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -1672,7 +1672,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
               onClick={() => handleSend()}
               disabled={!input.trim() || streaming}
               aria-label="Send message"
-              className="h-9 w-9 rounded-[6px] bg-[#1F3148] flex items-center justify-center transition-opacity disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0"
+              className="h-9 w-9 rounded-[6px] bg-brand flex items-center justify-center transition-opacity disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0"
             >
               <Send className="h-4 w-4 text-white" />
             </button>
