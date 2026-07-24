@@ -321,6 +321,7 @@ _TOPIC_KEYWORDS: dict[str, set[str]] = {
         "accounts receivable", "send invoice", "invoice status",
         "partial payment", "payment receipt", "invoice line", "bill",
         "unbilled", "collect payment", "paid", "unpaid", "owes", "owe", "money",
+        "balance", "outstanding",
     },
     "time_tracking": {
         "time", "time entry", "time entries", "hours", "billable", "non-billable",
