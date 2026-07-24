@@ -11,7 +11,8 @@ const config: Config = {
   theme: {
     extend: {
       fontFamily: {
-        sans: ['var(--font-inter)', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'sans-serif'],
+        sans: ['var(--font-plus-jakarta-sans)', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'sans-serif'],
+        display: ['var(--font-lora)', 'Georgia', '"Times New Roman"', 'serif'],
       },
       colors: {
         brand: {
@@ -21,16 +22,20 @@ const config: Config = {
           dark: '#1A2535',
           btn: '#3A6A94',
         },
+        concierge: {
+          DEFAULT: '#BF9640',
+          muted: '#D4B06A',
+        },
         surface: {
-          page: '#E4E6EA',
-          card: '#EDEEF0',
-          border: '#C8CDD6',
-          input: '#F7F7F8',
+          page: '#E7E6E0',
+          card: '#F0EFE9',
+          border: '#C6C4BA',
+          input: '#F7F6F2',
         },
         dark: {
-          page: '#2D2D2D',
-          card: '#383838',
-          border: '#484848',
+          page: '#272620',
+          card: '#32312A',
+          border: '#47453C',
           sidebar: '#1A2535',
         },
         status: {

@@ -1,16 +1,23 @@
 // frontend/src/app/layout.tsx
 import type { Metadata } from 'next'
-import { Inter } from 'next/font/google'
+import { Lora, Plus_Jakarta_Sans } from 'next/font/google'
 import './globals.css'
 import { ThemeProvider } from '@/providers/theme-provider'
 import { AuthProvider } from '@/lib/hooks/useAuth'
 import { QueryProvider } from '@/providers/QueryProvider'
 import { Toaster } from '@/components/ui/sonner'
 
-const inter = Inter({
+const lora = Lora({
   subsets: ['latin'],
-  weight: ['400', '500'],
-  variable: '--font-inter',
+  weight: ['400', '500', '600', '700'],
+  style: ['normal', 'italic'],
+  variable: '--font-lora',
+})
+
+const plusJakartaSans = Plus_Jakarta_Sans({
+  subsets: ['latin'],
+  weight: ['300', '400', '500', '600', '700'],
+  variable: '--font-plus-jakarta-sans',
 })
 
 export const metadata: Metadata = {
@@ -29,7 +36,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={`${inter.variable} font-sans`} suppressHydrationWarning>
+      <body className={`${lora.variable} ${plusJakartaSans.variable} font-sans`} suppressHydrationWarning>
         <QueryProvider>
           <AuthProvider>
             <ThemeProvider
