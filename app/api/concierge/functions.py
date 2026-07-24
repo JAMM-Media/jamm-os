@@ -484,6 +484,20 @@ def get_client_full_snapshot(
                 "amount": float(r.total_amount or 0),
                 "status": str(r.status),
                 "due": r.due_date.isoformat() if r.due_date else None,
+                "is_overdue": (
+                    r.status in ("sent", "overdue")
+                    and r.due_date is not None
+                    and r.due_date < date.today()
+                ),
+                "days_overdue": (
+                    (date.today() - r.due_date).days
+                    if (
+                        r.due_date is not None
+                        and r.status in ("sent", "overdue")
+                        and r.due_date < date.today()
+                    )
+                    else None
+                ),
             }
             for r in invoices
         ],
