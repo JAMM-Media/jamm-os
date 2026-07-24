@@ -31,11 +31,15 @@ interface MetricCardProps {
   value: string
   subtext?: string
   valueClassName?: string
+  variant?: 'alert'
 }
 
-function MetricCard({ label, value, subtext, valueClassName }: MetricCardProps) {
+function MetricCard({ label, value, subtext, valueClassName, variant }: MetricCardProps) {
+  const cardClass = variant === 'alert'
+    ? 'bg-status-red dark:bg-status-red-text/10 rounded-[8px] p-5 border border-status-red-text/30 dark:border-status-red-text/40 shadow-sm flex flex-col gap-1'
+    : 'bg-surface-card dark:bg-dark-card rounded-[8px] p-5 border border-surface-border dark:border-dark-border shadow-sm flex flex-col gap-1'
   return (
-    <div className="bg-surface-card dark:bg-dark-card rounded-[8px] p-5 border border-surface-border dark:border-dark-border shadow-sm flex flex-col gap-1">
+    <div className={cardClass}>
       <span className="text-[12px] text-muted-foreground">{label}</span>
       <span className={`text-[28px] font-display font-medium leading-none ${valueClassName ?? 'text-brand dark:text-foreground'}`}>
         {value}
@@ -562,6 +566,7 @@ export default function DashboardPage() {
               <MetricCard
                 label="Overdue Engagements"
                 value={String(visibleOverdue.length)}
+                variant={visibleOverdue.length > 0 ? 'alert' : undefined}
                 valueClassName={
                   visibleOverdue.length > 0
                     ? 'text-[#DC2626]'
