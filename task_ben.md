@@ -54,62 +54,57 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Redesign Dashboard onto the new token system and typography, fix layout cutoff if confirmed real, and unify empty-state tone
+TASK: Redesign the client detail page and its four embedded tab components onto the token system, one coordinated visual unit
 
 USE: Fable 5
 
 VERIFY BEFORE ACT:
-grep -c "bg-\[#\|text-\[#\|border-\[#" /home/corby/jamm-os/frontend/src/app/\(app\)/dashboard/page.tsx
-sed -n '1,100p' /home/corby/jamm-os/frontend/src/app/\(app\)/dashboard/page.tsx
-grep -n "No deadlines\|No unbilled\|No documents\|Your runway" /home/corby/jamm-os/frontend/src/app/\(app\)/dashboard/page.tsx
-grep -rn "mr-\[400px\]\|width.*400\|ConciergePanel" /home/corby/jamm-os/frontend/src/app/\(app\)/layout.tsx
+grep -c "bg-\[#\|text-\[#\|border-\[#" /home/corby/jamm-os/frontend/src/app/\(app\)/clients/\[id\]/page.tsx /home/corby/jamm-os/frontend/src/components/notes/NotesPanel.tsx /home/corby/jamm-os/frontend/src/components/clients/IrsAuthTab.tsx /home/corby/jamm-os/frontend/src/components/clients/DocumentExpirySection.tsx /home/corby/jamm-os/frontend/src/components/clients/PortalPreview.tsx
 
-Read the entire 610 line file in full before changing anything. This page pulls real, live data, stat cards, staff utilization bars, an overdue engagements table with real action buttons, an awaiting signature list. This task must not touch any data fetching, any state, any calculation, any conditional logic, only visual presentation and static empty-state copy text. If unsure whether something is presentational or logical, treat it as logical and leave it untouched.
+Read all five files completely in full before changing anything. This is the single highest daily-traffic page in the entire application outside the Dashboard, carrying genuine business critical functionality: client contact information, engagement lists, document requests, IRS authorization status and expiry tracking, portal access and preview, notes, tax organizer data, and billing detail. This task must not touch any data fetching, any React Query usage, any state, any conditional logic, any API call, any function body, only visual presentation, class names, and static JSX structure. If unsure whether something is presentational or logical, treat it as logical and leave it untouched.
 
 WHAT THIS IS:
 
-Phase 1 and phase 2 of the visual redesign replaced generic Inter typography with a distinctive serif and sans pairing, refined the color tokens toward a warmer palette, and gave the Concierge panel real visual identity, confirmed working with no regressions. This page, the actual homepage every firm owner sees first every single day, was never touched and still hardcodes 58 raw hex values, meaning it still looks exactly like the old design. Confirmed directly, side by side in the same screenshot, the Concierge panel and this page now visually read as two different products, which looks unfinished rather than intentional. Separately, this page's empty state copy is inconsistent in tone: the upcoming deadlines empty state, no deadlines in the next 14 days, your runway is clear, keep it that way, sounds like a person and matches the warm, buddy-like tone this product is aiming for, while the unbilled work and awaiting signature empty states are flat and generic by comparison, an inconsistency, not a case of every empty state needing invented personality from nothing.
+Confirmed via a complete, systematic audit of the entire application: this page and its four embedded tab components, NotesPanel, IrsAuthTab, DocumentExpirySection, and PortalPreview, together account for roughly 207 hardcoded raw hex color values, meaning this entire page still looks exactly like the pre-redesign application while the Dashboard and Concierge panel have already been updated. Treating the parent page and its own tabs as one coordinated task is deliberate, fixing the page shell while leaving its own tabs on the old palette would simply move the inconsistency one click deeper rather than resolve it.
 
 CHANGE INSTRUCTIONS:
 
-Replace hardcoded hex values throughout this file with the equivalent real design tokens already established, matching the same migration pattern already proven on ConciergePanel.tsx, brand, surface, dark, status colors, and font-sans and font-display where appropriate.
+Replace hardcoded hex values across all five files with the equivalent real design tokens already established and already proven on ConciergePanel.tsx and the Dashboard, brand, surface, dark, status, concierge where contextually appropriate, and font-sans, font-display.
 
-Apply the display serif specifically to the large key figures on the stat cards, the dollar amounts and counts such as revenue this month, outstanding AR, unbilled WIP, and overdue engagements count, so a firm owner's eye is drawn to the numbers that actually matter first, matching the same treatment already applied to key figures inside Concierge responses.
+Apply the display serif specifically to the client's name as the page's main heading, and to any key figures shown on this page such as outstanding balances, invoice amounts, or engagement counts, matching the same treatment already established for key figures elsewhere.
 
-Give the stat cards and section panels genuine visual separation from the page background, real elevation or a more considered surface treatment, rather than the current flat, barely distinguishable card boundaries.
+Give the tab navigation, cards, and panels on this page the same real visual separation and elevation treatment already established on the Dashboard, rather than the current flat, barely distinguished boundaries.
 
-Rewrite the unbilled work and awaiting signature empty state copy to match the tone already established and working well in the upcoming deadlines empty state, warm, human, specific to what is actually true, not generic. Do not change the deadlines empty state copy itself, it already works, use it purely as the tone reference for the other two.
+Ensure the IrsAuthBadge and StatusBadge components, and any status-driven color coding such as overdue, active, or expiring soon indicators, continue to use the correct semantic status tokens and remain immediately distinguishable by color, this information genuinely needs to stay scannable at a glance, do not let a broad token migration accidentally flatten meaningful status color distinctions into visually identical tones.
 
-If the verify step confirms the Concierge panel's fixed width is not accounted for anywhere in this page's or the surrounding layout's width or margin calculations, add the appropriate spacing so real dashboard content is never cut off or hidden behind the panel when it is open. If the verify step shows this is already handled correctly and the earlier screenshot was simply a narrow window, do not change anything here and state clearly in your summary that this was checked and found not to be a real issue.
-
-Do not change the underlying data these components display, do not change the staff utilization bar calculations, do not change the overdue engagements table's action buttons or their behavior, only their visual styling.
+Do not change any prop, any function, any API call, any React Query key or configuration, any conditional rendering logic, any state variable, in any of the five files. Every single change in this task must be limited to className strings, static JSX text for non-dynamic labels, and the addition of the font-display utility class, nothing else.
 
 VERIFY AFTER ACT:
 
-grep -c "bg-\[#\|text-\[#\|border-\[#" /home/corby/jamm-os/frontend/src/app/\(app\)/dashboard/page.tsx
+grep -c "bg-\[#\|text-\[#\|border-\[#" /home/corby/jamm-os/frontend/src/app/\(app\)/clients/\[id\]/page.tsx /home/corby/jamm-os/frontend/src/components/notes/NotesPanel.tsx /home/corby/jamm-os/frontend/src/components/clients/IrsAuthTab.tsx /home/corby/jamm-os/frontend/src/components/clients/DocumentExpirySection.tsx /home/corby/jamm-os/frontend/src/components/clients/PortalPreview.tsx
 
-Expected: significantly lower than 58, ideally at or near zero.
+Expected: dramatically lower across all five files, ideally at or near zero in each.
 
 npm run build in frontend, expected zero TypeScript errors.
 
-Confirm the stat card values, the staff utilization percentages, and the overdue engagements table rows are computed identically before and after by comparing the relevant calculation code directly, not just visually, paste this confirmation explicitly.
+Explicitly confirm, by direct comparison of the relevant code before and after, that every React Query hook, every API call, every prop passed into NotesPanel, IrsAuthTab, DocumentExpirySection, and PortalPreview, and every conditional branch remain byte for byte unchanged. Paste this confirmation explicitly, do not simply assert it.
 
 MANUAL VERIFICATION:
 
 Full kill, .next wipe, restart both servers.
 
-Load the Dashboard in light mode, confirm it now visually matches the warm palette and typography already established in the Concierge panel, no longer reading as two different products side by side. Switch to dark mode, confirm the same and confirm full readability, this is the most important check given how much effort dark mode contrast took earlier tonight.
+Open a real client's detail page in light mode. Confirm the page now visually matches the warm palette and typography already established elsewhere, no longer reading as a different, older product. Switch to dark mode, confirm the same and confirm full readability throughout, including inside every tab.
 
-Confirm every real number on the page, revenue, outstanding AR, unbilled WIP, overdue engagement count, staff utilization percentages, and the overdue engagements table contents, are completely unchanged from before this task, only their visual presentation changed.
+Click through every tab on this page individually, Overview, Notes, IRS Authorizations, Documents, Portal, and confirm each one still displays real, correct data exactly as before, and confirm no interactive element, button, or form within any tab is broken or non-functional.
 
-Confirm the three empty states, deadlines, unbilled work, and awaiting signature, now read with a consistent, warm tone.
+Specifically confirm status indicators, an overdue or expiring IRS authorization, an active engagement, remain immediately visually distinguishable by color, not flattened into indistinguishable tones by the token migration.
 
-If the Concierge panel cutoff was confirmed as a real issue and fixed, open the panel and confirm real dashboard content, including the overdue engagements count card, is now fully visible, not hidden behind the panel.
+Confirm creating or viewing a note, if testable, still works correctly. Confirm the portal preview still renders correctly. Confirm opening a new engagement modal from this page, if present, still works correctly.
 
-Report pass or fail individually for light mode, dark mode, data accuracy, empty state tone, and the panel cutoff fix if applicable.
+Report pass or fail individually for light mode, dark mode, each tab's data accuracy, status color distinguishability, and functional interactivity, with screenshots of at least three different tabs in both light and dark mode.
 
 GIT:
 git add -A
-git commit -m "redesign Dashboard onto the established token system and typography from phases 1 and 2, apply the display serif to key stat figures, give cards real visual separation, and unify empty state copy tone to match the already-working deadlines empty state, with zero changes to any underlying data, calculation, or interactive logic"
+git commit -m "redesign the client detail page and its four embedded tab components, notes, IRS authorizations, document expiry, and portal preview, onto the established token system and typography as one coordinated unit, since this is the highest daily traffic page in the application outside the Dashboard, with zero changes to any data fetching, state, or interactive logic across all five files"
 git pull --rebase origin main
 git push origin main
