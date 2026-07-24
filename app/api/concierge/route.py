@@ -501,15 +501,16 @@ def concierge_chat(
                 f"[BRIEFING AGAIN BYPASS] deterministic bypass firing for firm {current_firm.id}"
             )
             try:
-                _context_data = get_firm_context_detail(current_firm.id, db)
-                _detail_client = anthropic.Anthropic(api_key=get_settings().ANTHROPIC_API_KEY)
-                _detail_response = _detail_client.messages.create(
+                from app.api.concierge.context import get_firm_context
+                _context_data = get_firm_context(current_firm.id, db)
+                _briefing_client = anthropic.Anthropic(api_key=get_settings().ANTHROPIC_API_KEY)
+                _briefing_response = _briefing_client.messages.create(
                     model="claude-haiku-4-5-20251001",
-                    max_tokens=2000,
-                    system=MORNING_BRIEFING_DETAIL_PROMPT,
-                    messages=[{"role": "user", "content": f"Firm data:\n{_context_data}\n\nReturn a comprehensive plain-text briefing report. Be exhaustive. Include every client, engagement, and item. No truncation."}],
+                    max_tokens=600,
+                    system=MORNING_BRIEFING_PROMPT,
+                    messages=[{"role": "user", "content": f"Firm data:\n{_context_data}\n\nReturn structured markdown only. Use the exact format specified. No prose."}],
                 )
-                _briefing_text = _detail_response.content[0].text.strip()
+                _briefing_text = _briefing_response.content[0].text.strip()
                 _full_response = f"Here's your briefing again:\n{_briefing_text}\nCONCIERGE_ACTION: {{\"type\":\"show_briefing_again\"}}"
 
                 def generate_briefing_again_bypass():
