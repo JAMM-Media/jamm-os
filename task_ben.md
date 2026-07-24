@@ -54,55 +54,62 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Replace generic Inter typography and refine the core color tokens, foundational visual redesign phase 1 of 2
+TASK: Refactor ConciergePanel.tsx onto the token system and give it real visual identity, phase 2 of 2 visual redesign
 
 USE: Fable 5
 
 VERIFY BEFORE ACT:
+grep -c "bg-\[#\|text-\[#\|border-\[#" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 cat /home/corby/jamm-os/frontend/src/app/globals.css
-cat /home/corby/jamm-os/frontend/tailwind.config.ts
-sed -n '1,20p' /home/corby/jamm-os/frontend/src/app/layout.tsx
+grep -n "revealedWordCount\|revealSession\|_STAFF_CONCIERGE\|parsedDraft\|msg.options\|stripTrailingMarkers" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx | wc -l
 
-Read all of this in full before changing anything. This is the foundational layer every other page in the app builds on, mistakes here have the widest possible blast radius of anything touched tonight.
+Read the entire file in full before changing a single line. This file has been through many separate, hard-won fixes tonight: the reveal animation system, four separate trailing marker types, batch drafting, staff role scoping, dark mode contrast. This task must not touch any state, any logic, any function body, any conditional behavior, only visual presentation, class names, and static JSX structure. If you are unsure whether something is presentational or logical, treat it as logical and do not touch it.
 
 WHAT THIS IS:
 
-The app currently uses Inter as its only font, loaded at only weights 400 and 500, meaning anything using font-semibold or heavier has been relying on the browser synthesizing bold rather than a real bold weight being loaded at all. Inter is also explicitly one of the most overused, generic typefaces in software right now, contributing to the product currently reading as a templated, forgettable SaaS admin panel rather than something considered and distinctive, confirmed as a real, specific problem worth fixing, not just a vague feeling. Separately, the existing color tokens are well organized structurally, properly split between light and dark mode, but the actual chosen values are extremely conventional, a navy brand color and cool gray surfaces, and the one accent color, brand-light at #4A7FA5, is used so evenly across every interactive element that nothing feels special or specifically JAMM.
-
-This is phase 1 of 2, deliberately scoped to only the central design tokens and font loading, not any individual component. A separate, later task will refactor ConciergePanel.tsx specifically to actually use these updated tokens and receive real visual hero treatment, since that file currently bypasses the token system with hardcoded hex values throughout and needs its own careful, isolated pass given how many separate fixes it has gone through tonight.
+Phase 1 replaced the app's generic Inter typography with a distinctive serif and sans pairing, Lora and Plus Jakarta Sans, and refined the core color tokens toward a warmer palette, confirmed working cleanly across the rest of the app with no regressions. This file was deliberately excluded from phase 1 because it hardcodes a large number of raw hex color values directly in its className strings, bypassing the token system entirely, confirmed by the count returned in the first verify command. This means phase 1's changes never reached this file at all, it still looks exactly as it did before. This task has two goals: refactor these hardcoded hex values to reference the real design tokens so this panel is finally consistent with the rest of the redesigned app, and give the panel deliberate visual identity as the smart, differentiated layer of the product, using the concierge accent color token added in phase 1 specifically for this purpose and not used anywhere else yet.
 
 CHANGE INSTRUCTIONS:
 
-Replace the Inter font entirely. Load two fonts via next/font/google in layout.tsx: a distinctive serif or slab serif with real character, appropriate for a professional financial product, something considered and warm rather than decorative or playful, used for headings, page titles, and key figures such as dollar amounts, and a clean, warmer humanist sans serif, not Inter, Roboto, or Arial, and not Space Grotesk, used for body text and UI labels. Load real weight ranges for both, including genuine bold weights, not just 400 and 500. Make a real, considered choice for both fonts rather than defaulting to the first plausible option, this should feel deliberately chosen for a trust focused financial product, not generic.
+Replace hardcoded hex values throughout this file with the equivalent real token classes already defined in globals.css and tailwind.config.ts, such as bg-surface-card, text-brand, bg-dark-card, and so on, matching each hardcoded value to its closest real token rather than inventing new arbitrary values. Where light and dark mode variants both currently exist as separate hardcoded hex pairs, they should become a single token class that already handles both modes correctly through the existing dark variant system, do not keep them as two separate arbitrary hex values.
 
-Update the --font-sans token in globals.css and the fontFamily entry in tailwind.config.ts to reference the new sans serif font's CSS variable. Add a new --font-serif or --font-display token following the same pattern, referencing the new serif font's CSS variable, and add a matching fontFamily entry in tailwind.config.ts so it is usable as a Tailwind utility class such as font-serif or font-display throughout the app going forward.
+Apply the new display serif font, using the font-display utility class added in phase 1, to the panel's own header title, to bolded key figures inside message content such as dollar amounts and counts, currently rendered through the existing strong markdown renderer, and to the JC avatar initials, so the panel's own voice reads as distinctly considered rather than sharing the exact same typography as plain UI chrome elsewhere.
 
-Refine the actual color values, keeping the existing token structure and naming exactly as is, brand, surface, dark, status, only changing the underlying hex and hsl values. Deepen the neutral surface colors in both light and dark mode away from flat, generic cool gray toward something warmer and richer with more depth, while maintaining strong, accessible contrast in both modes. Keep the navy brand color as the primary brand identity, it is appropriate for this audience, but introduce one new, genuinely distinctive secondary accent color, used deliberately and sparingly rather than repeated everywhere the way brand-light currently is, intended specifically for moments that should feel special or specifically tied to the Concierge's own identity, to be applied in the phase 2 task, not this one. Update both the @theme token block and the shadcn-style HSL variable block in :root and .dark to stay consistent with each other, since components elsewhere in the app depend on both systems being in sync.
+Use the concierge accent color token, added specifically for this purpose in phase 1, deliberately and sparingly, not as a wholesale color replacement. Good candidates: the avatar circle's background or a ring around it, a subtle border or accent line on the panel's own container distinguishing it visually from a plain flat page panel, and the streaming pulse or thinking indicator. Do not apply this accent color broadly across every button or every interactive element, it should read as special specifically because it appears rarely and deliberately.
 
-Do not touch any component file in this task, not ConciergePanel.tsx, not any page under frontend/src/app, not any file under frontend/src/components. This task only touches globals.css, tailwind.config.ts, and layout.tsx.
+Give the panel real elevation and visual weight distinguishing it from a flat, generic side panel, such as a genuine shadow, a subtle background treatment distinct from the surrounding page background, or a considered border treatment, appropriate to a refined, non-maximalist aesthetic given this is a trust focused financial product, not a loud or decorative one.
+
+Do not change the avatar's actual content logic, only its visual styling. Do not change any spacing or layout structure in a way that could affect where the reveal animation's word count boundary falls or how draft cards, option buttons, or the suggestion chip row are positioned relative to their messages, only update their color and typography treatment.
 
 VERIFY AFTER ACT:
 
+grep -c "bg-\[#\|text-\[#\|border-\[#" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+
+Expected: a significantly lower count than the number found in the before check, ideally at or near zero, confirming real token migration happened, not just a few changes.
+
 npm run build in frontend, expected zero TypeScript errors.
 
-grep -n "font-serif\|font-display" /home/corby/jamm-os/frontend/tailwind.config.ts
-
-Expected: present, confirming the new font utility is actually usable.
+diff the actual logic sections against what they were before by confirming these specific patterns are byte for byte unchanged: the tick function inside the reveal animation effect, the stripTrailingMarkers function, the parseDraftFromResponse function, and the _STAFF_CONCIERGE_TOOLS related conditional rendering if any exists client side. Paste a diff or explicit confirmation that these specific logic blocks were not touched.
 
 MANUAL VERIFICATION:
 
 Full kill, .next wipe, restart both servers.
 
-Load the app in light mode, visually confirm the new fonts are actually rendering, not falling back to a system font silently, check a page title and check body text specifically. Switch to dark mode, confirm the same, and confirm text remains clearly readable with strong contrast in dark mode, this was a real, hard-won fix earlier tonight and must not regress.
+This is a full regression sweep of every major feature this file has carried tonight, not just a visual check. Go through every one of these and report pass or fail individually, do not summarize:
 
-Navigate through at least four or five different real pages, Dashboard, Clients, Engagements, Billing, Staff, and visually confirm nothing looks broken, misaligned, or illegible as a result of the token value changes, since roughly half the app's pages already correctly use these tokens and will visually change immediately.
+1. Ask a longer question and confirm the word by word reveal animation still works smoothly, not instant, not blank, not stuck.
+2. Ask which clients have overdue invoices right now, confirm the clickable client option buttons still render correctly and are still clickable.
+3. Click one of those options, confirm a real, correctly personalized draft still generates with no placeholder text.
+4. Ask for drafts for all qualifying clients, confirm multiple distinct draft cards still render correctly, not merged or broken.
+5. Click Open to send on a draft, confirm the confirmation modal still appears correctly with accurate content.
+6. Ask a question that should produce a topic suggestion chip, confirm it still appears correctly positioned below its message, not above.
+7. Switch to dark mode, confirm all of the above still look correct and remain fully readable, this is the single most important check given how much effort dark mode contrast took to get right earlier tonight.
+8. Confirm the panel now visually looks distinctly different from a flat generic page panel, with real identity, not just recolored.
 
-Open the Concierge panel specifically and confirm it still functions correctly, sends messages, receives responses, since this task should not have touched its logic at all, only confirm no visual regression occurred as a side effect of the shared token changes, deeper visual treatment for this panel specifically is intentionally deferred to phase 2.
-
-Report pass or fail for light mode rendering, dark mode rendering and contrast, the five page visual sweep, and the Concierge panel functioning correctly with no regressions.
+Report pass or fail individually for all eight, with a screenshot of the panel in both light and dark mode.
 
 GIT:
 git add -A
-git commit -m "phase 1 of 2 visual redesign: replace generic Inter typography with a distinctive serif and sans pairing loaded at real weight ranges, and refine the core color token values toward a warmer, more considered palette while preserving the existing token structure, scoped deliberately to only globals.css, tailwind.config.ts, and layout.tsx, no component files touched, phase 2 will refactor ConciergePanel.tsx specifically to use these tokens and receive real visual hero treatment"
+git commit -m "phase 2 of 2 visual redesign: refactor ConciergePanel.tsx off hardcoded hex values onto the real design token system established in phase 1, apply the new display serif to the panel's own headers and key figures, and introduce the reserved concierge accent color deliberately and sparingly for the panel's visual identity, giving it real elevation and presence as the product's differentiated smart layer, with zero changes to any state, logic, or function body, confirmed through full regression testing of the reveal animation, draft generation, batch drafting, option buttons, and dark mode contrast"
 git pull --rebase origin main
 git push origin main
