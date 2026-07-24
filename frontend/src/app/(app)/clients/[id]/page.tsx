@@ -324,7 +324,7 @@ function ClientDetailContent() {
   if (clientLoading) {
     return (
         <div className="flex flex-col items-center justify-center h-full gap-3 p-6">
-          <div className="h-6 w-48 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+          <div className="h-6 w-48 bg-surface-border dark:bg-dark-border animate-pulse rounded" />
         </div>
     )
   }
@@ -332,12 +332,12 @@ function ClientDetailContent() {
   if (!client) {
     return (
         <div className="flex flex-col items-center justify-center h-full gap-3 p-6">
-          <p className="text-[13px] font-medium text-brand dark:text-[#EDEEF0]">
+          <p className="text-[13px] font-medium text-brand dark:text-foreground">
             Client not found
           </p>
           <button
             onClick={() => router.push('/clients')}
-            className="text-[12px] text-[#6B7280] hover:text-brand dark:hover:text-[#EDEEF0] flex items-center gap-1 transition-colors"
+            className="text-[12px] text-muted-foreground hover:text-brand dark:hover:text-foreground flex items-center gap-1 transition-colors"
           >
             <ArrowLeft className="h-3 w-3" /> Back to Clients
           </button>
@@ -357,7 +357,7 @@ function ClientDetailContent() {
         {/* Client header */}
         <div className="flex items-start justify-between mb-6">
           <div>
-            <h1 className="text-2xl font-medium text-brand dark:text-[#EDEEF0] mb-1 flex items-center gap-3">
+            <h1 className="text-2xl font-display font-medium text-brand dark:text-foreground mb-1 flex items-center gap-3">
               {client.name}
               <HealthDot clientId={clientId} showLabel />
             </h1>
@@ -368,10 +368,10 @@ function ClientDetailContent() {
                 onClick={() => setActiveTab('irs-auth')}
               />
               {client.entityType && (
-                <span className="text-[12px] text-[#6B7280]">{formatEntityType(client.entityType)}</span>
+                <span className="text-[12px] text-muted-foreground">{formatEntityType(client.entityType)}</span>
               )}
               {client.entitySubtype && (
-                <span className="text-[12px] text-[#6B7280]">{formatEntitySubtype(client.entitySubtype)}</span>
+                <span className="text-[12px] text-muted-foreground">{formatEntitySubtype(client.entitySubtype)}</span>
               )}
             </div>
           </div>
@@ -395,8 +395,8 @@ function ClientDetailContent() {
               className={cn(
                 'px-4 py-2.5 text-[13px] transition-colors relative flex items-center gap-1.5',
                 activeTab === tab.key
-                  ? 'text-brand dark:text-[#4A7FA5] font-medium'
-                  : 'text-[#6B7280] hover:text-brand dark:hover:text-[#EDEEF0] font-normal',
+                  ? 'text-brand dark:text-brand-light font-medium'
+                  : 'text-muted-foreground hover:text-brand dark:hover:text-foreground font-normal',
               )}
             >
               {tab.label}
@@ -417,7 +417,7 @@ function ClientDetailContent() {
                 </span>
               )}
               {activeTab === tab.key && (
-                <span className="absolute bottom-0 left-0 right-0 h-[2px] bg-brand dark:bg-[#4A7FA5]" />
+                <span className="absolute bottom-0 left-0 right-0 h-[2px] bg-brand dark:bg-brand-light" />
               )}
             </button>
           ))}
@@ -432,7 +432,7 @@ function ClientDetailContent() {
                 ref={portalLinkRef}
                 onClick={handleSendPortalLink}
                 disabled={sendingPortalLink}
-                className={`flex items-center gap-1.5 h-8 px-3 text-[12px] font-medium text-[#1F3148] dark:text-[#EDEEF0] border border-[0.5px] rounded-md bg-transparent hover:bg-surface-card dark:hover:bg-dark-card transition-colors disabled:opacity-60 ${portalLinkHighlight ? 'border-[#3A6A94] ring-2 ring-[#3A6A94]/40 animate-pulse' : 'border-[#C8CDD6] dark:border-[#484848]'}`}
+                className={`flex items-center gap-1.5 h-8 px-3 text-[12px] font-medium text-foreground border border-[0.5px] rounded-md bg-transparent hover:bg-surface-card dark:hover:bg-dark-card transition-colors disabled:opacity-60 ${portalLinkHighlight ? 'border-brand-btn ring-2 ring-[#3A6A94]/40 animate-pulse' : 'border-surface-border dark:border-dark-border'}`}
               >
                 {sendingPortalLink ? (
                   <Loader2 className="h-[14px] w-[14px] animate-spin" />
@@ -445,7 +445,7 @@ function ClientDetailContent() {
             <button
               onClick={handleViewPortal}
               disabled={viewingPortal}
-              className="flex items-center gap-1.5 h-8 px-3 text-[12px] font-medium text-[#1F3148] dark:text-[#EDEEF0] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] rounded-md bg-transparent hover:bg-surface-card dark:hover:bg-dark-card transition-colors disabled:opacity-60"
+              className="flex items-center gap-1.5 h-8 px-3 text-[12px] font-medium text-foreground border border-[0.5px] border-surface-border dark:border-dark-border rounded-md bg-transparent hover:bg-surface-card dark:hover:bg-dark-card transition-colors disabled:opacity-60"
             >
               {viewingPortal ? (
                 <Loader2 className="h-[14px] w-[14px] animate-spin" />
@@ -459,26 +459,26 @@ function ClientDetailContent() {
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
             {/* Contact info card */}
             <div className="bg-surface-card dark:bg-dark-card rounded-card p-4">
-              <h2 className="text-[13px] font-medium text-brand dark:text-[#EDEEF0] mb-3">
+              <h2 className="text-[13px] font-medium text-brand dark:text-foreground mb-3">
                 Contact Information
               </h2>
               <div className="space-y-2.5">
                 <div className="flex items-center gap-2.5">
-                  <Mail className="h-4 w-4 text-[#6B7280] flex-shrink-0" />
-                  <span className="text-[12px] text-[#374151] dark:text-[#9CA3AF]">
+                  <Mail className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                  <span className="text-[12px] text-foreground dark:text-muted-foreground">
                     {client.email ?? '—'}
                   </span>
                 </div>
                 <div className="flex items-center gap-2.5">
-                  <Phone className="h-4 w-4 text-[#6B7280] flex-shrink-0" />
-                  <span className="text-[12px] text-[#374151] dark:text-[#9CA3AF]">
+                  <Phone className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                  <span className="text-[12px] text-foreground dark:text-muted-foreground">
                     {client.phone ?? '—'}
                   </span>
                 </div>
                 {(client.addressLine1 || client.city || client.state) && (
                   <div className="flex items-center gap-2.5">
-                    <MapPin className="h-4 w-4 text-[#6B7280] flex-shrink-0" />
-                    <span className="text-[12px] text-[#374151] dark:text-[#9CA3AF]">
+                    <MapPin className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                    <span className="text-[12px] text-foreground dark:text-muted-foreground">
                       {[client.addressLine1, client.city, client.state, client.postalCode]
                         .filter(Boolean)
                         .join(', ')}
@@ -500,19 +500,19 @@ function ClientDetailContent() {
               </div>
               {qboLoading ? (
                 <div className="space-y-2">
-                  <div className="h-6 w-32 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
-                  <div className="h-4 w-48 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+                  <div className="h-6 w-32 bg-surface-border dark:bg-dark-border animate-pulse rounded" />
+                  <div className="h-4 w-48 bg-surface-border dark:bg-dark-border animate-pulse rounded" />
                 </div>
               ) : qboError || !qboAr ? (
-                <p className="text-[12px] text-[#6B7280]">QBO data unavailable</p>
+                <p className="text-[12px] text-muted-foreground">QBO data unavailable</p>
               ) : !qboAr.connected ? (
-                <p className="text-[12px] text-[#6B7280]">Not connected to QuickBooks</p>
+                <p className="text-[12px] text-muted-foreground">Not connected to QuickBooks</p>
               ) : (
                 <div className="space-y-1">
                   <p className={`text-[14px] font-medium ${(qboAr.outstanding_balance ?? 0) > 0 ? 'text-status-amber-text' : 'text-status-green-text'}`}>
                     {new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(qboAr.outstanding_balance ?? 0)} outstanding
                   </p>
-                  <p className="text-[11px] text-[#6B7280]">
+                  <p className="text-[11px] text-muted-foreground">
                     {qboAr.last_payment_date
                       ? `Last payment: ${new Date(qboAr.last_payment_date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`
                       : 'No payments recorded'}
@@ -537,14 +537,14 @@ function ClientDetailContent() {
             {/* QuickBooks Customer ID card */}
             {(user?.role === 'firm_owner' || user?.role === 'manager') && (
               <div className="bg-surface-card dark:bg-dark-card rounded-card p-4">
-                <p className="text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em] mb-2">QuickBooks Customer ID</p>
+                <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-[0.05em] mb-2">QuickBooks Customer ID</p>
                 {qboEditMode ? (
                   <div className="flex items-center gap-2">
                     <input
                       type="text"
                       value={qboEditValue}
                       onChange={(e) => setQboEditValue(e.target.value)}
-                      className="flex-1 rounded-[6px] border border-surface-border dark:border-dark-border bg-surface-page dark:bg-dark-page text-[13px] text-brand dark:text-[#EDEEF0] px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-brand"
+                      className="flex-1 rounded-[6px] border border-surface-border dark:border-dark-border bg-surface-page dark:bg-dark-page text-[13px] text-brand dark:text-foreground px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-brand"
                       placeholder="e.g. 123456"
                       autoFocus
                     />
@@ -556,19 +556,19 @@ function ClientDetailContent() {
                     </button>
                     <button
                       onClick={() => setQboEditMode(false)}
-                      className="px-3 py-1.5 text-[12px] text-[#6B7280] hover:text-brand"
+                      className="px-3 py-1.5 text-[12px] text-muted-foreground hover:text-brand"
                     >
                       Cancel
                     </button>
                   </div>
                 ) : (
                   <div className="flex items-center gap-2">
-                    <span className={`text-[13px] ${client.quickbooksCustomerId ? 'text-brand dark:text-[#EDEEF0]' : 'text-[#9CA3AF]'}`}>
+                    <span className={`text-[13px] ${client.quickbooksCustomerId ? 'text-brand dark:text-foreground' : 'text-muted-foreground'}`}>
                       {client.quickbooksCustomerId ?? 'Not linked'}
                     </span>
                     <button
                       onClick={() => { setQboEditValue(client.quickbooksCustomerId ?? ''); setQboEditMode(true) }}
-                      className="p-1 rounded text-[#6B7280] hover:text-brand hover:bg-[#F3F4F6] dark:hover:bg-[#2A2A2A]"
+                      className="p-1 rounded text-muted-foreground hover:text-brand hover:bg-surface-input dark:hover:bg-dark-page"
                       title="Edit QuickBooks Customer ID"
                     >
                       <Pencil className="h-3.5 w-3.5" />
@@ -587,7 +587,7 @@ function ClientDetailContent() {
                           }
                         }}
                         disabled={qboDeepLinkLoading}
-                        className="flex items-center gap-1 text-[12px] text-[#6B7280] hover:text-brand transition-colors disabled:opacity-60"
+                        className="flex items-center gap-1 text-[12px] text-muted-foreground hover:text-brand transition-colors disabled:opacity-60"
                       >
                         {qboDeepLinkLoading ? (
                           <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -604,17 +604,17 @@ function ClientDetailContent() {
 
             {/* Engagement summary card */}
             <div className="bg-surface-card dark:bg-dark-card rounded-card p-4 xl:col-span-2">
-              <h2 className="text-[13px] font-medium text-brand dark:text-[#EDEEF0] mb-3">
+              <h2 className="text-[13px] font-medium text-brand dark:text-foreground mb-3">
                 Recent Engagements
               </h2>
               {engagementsLoading ? (
                 <div className="space-y-2">
                   {Array.from({ length: 3 }).map((_, i) => (
-                    <div key={i} className="h-10 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+                    <div key={i} className="h-10 bg-surface-border dark:bg-dark-border animate-pulse rounded" />
                   ))}
                 </div>
               ) : engagements.length === 0 ? (
-                <p className="text-[12px] text-[#6B7280]">No engagements yet.</p>
+                <p className="text-[12px] text-muted-foreground">No engagements yet.</p>
               ) : (
                 <div className="space-y-2">
                   {engagements.slice(0, 3).map((eng) => (
@@ -623,11 +623,11 @@ function ClientDetailContent() {
                       className="flex items-center justify-between py-2 border-b border-[0.5px] border-surface-border dark:border-dark-border last:border-0"
                     >
                       <div>
-                        <p className="text-[12px] font-medium text-brand dark:text-[#EDEEF0]">
+                        <p className="text-[12px] font-medium text-brand dark:text-foreground">
                           {eng.name}
                         </p>
                         {eng.endDate && (
-                          <p className="text-[11px] text-[#6B7280]">
+                          <p className="text-[11px] text-muted-foreground">
                             Due {eng.endDate}
                           </p>
                         )}
@@ -652,11 +652,11 @@ function ClientDetailContent() {
           <div className="rounded-modal border border-[0.5px] border-surface-border dark:border-dark-border overflow-hidden">
             <table className="w-full border-collapse">
               <thead>
-                <tr className="bg-surface-card dark:bg-[#252525]">
+                <tr className="bg-surface-card dark:bg-dark-page">
                   {['Engagement', 'Type', 'Due Date', 'Status'].map((col) => (
                     <th
                       key={col}
-                      className="px-4 py-2.5 text-left text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em]"
+                      className="px-4 py-2.5 text-left text-[11px] font-medium text-muted-foreground uppercase tracking-[0.05em]"
                     >
                       {col}
                     </th>
@@ -668,13 +668,13 @@ function ClientDetailContent() {
                   Array.from({ length: 3 }).map((_, i) => (
                     <tr key={i}>
                       <td colSpan={4} className="px-4 py-3">
-                        <div className="h-4 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+                        <div className="h-4 bg-surface-border dark:bg-dark-border animate-pulse rounded" />
                       </td>
                     </tr>
                   ))
                 ) : engagements.length === 0 ? (
                   <tr>
-                    <td colSpan={4} className="px-4 py-8 text-center text-[12px] text-[#6B7280]">
+                    <td colSpan={4} className="px-4 py-8 text-center text-[12px] text-muted-foreground">
                       No engagements yet.
                     </td>
                   </tr>
@@ -684,24 +684,24 @@ function ClientDetailContent() {
                       key={eng.id}
                       onClick={() => router.push(`/engagements/${eng.id}`)}
                       className={[
-                        'bg-surface-page dark:bg-dark-page hover:bg-[#DDDFE3] dark:hover:bg-[#323232] transition-colors cursor-pointer',
+                        'bg-surface-page dark:bg-dark-page hover:bg-surface-border dark:hover:bg-dark-card transition-colors cursor-pointer',
                         i !== engagements.length - 1
-                          ? 'border-b border-[0.5px] border-[#D5D8DE] dark:border-dark-card'
+                          ? 'border-b border-[0.5px] border-surface-border dark:border-dark-card'
                           : '',
                       ].join(' ')}
                     >
                       <td className="px-4 py-3">
-                        <span className="text-[12px] font-medium text-brand dark:text-[#EDEEF0]">
+                        <span className="text-[12px] font-medium text-brand dark:text-foreground">
                           {eng.name}
                         </span>
                       </td>
                       <td className="px-4 py-3">
-                        <span className="text-[12px] text-[#374151] dark:text-[#9CA3AF]">
+                        <span className="text-[12px] text-foreground dark:text-muted-foreground">
                           {formatEngagementType(eng.engagementType)}
                         </span>
                       </td>
                       <td className="px-4 py-3">
-                        <span className="text-[12px] text-[#374151] dark:text-[#9CA3AF]">
+                        <span className="text-[12px] text-foreground dark:text-muted-foreground">
                           {eng.endDate ?? '—'}
                         </span>
                       </td>
@@ -724,9 +724,9 @@ function ClientDetailContent() {
               {docsLoading ? (
                 <div className="rounded-modal border border-[0.5px] border-surface-border dark:border-dark-border overflow-hidden">
                   {Array.from({ length: 3 }).map((_, i) => (
-                    <div key={i} className="flex gap-4 px-4 py-3 border-b border-[0.5px] border-[#D5D8DE] dark:border-dark-card last:border-0">
+                    <div key={i} className="flex gap-4 px-4 py-3 border-b border-[0.5px] border-surface-border dark:border-dark-card last:border-0">
                       {Array.from({ length: 4 }).map((_, j) => (
-                        <div key={j} className="h-4 flex-1 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+                        <div key={j} className="h-4 flex-1 bg-surface-border dark:bg-dark-border animate-pulse rounded" />
                       ))}
                     </div>
                   ))}
@@ -736,29 +736,29 @@ function ClientDetailContent() {
                   <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-surface-card dark:bg-dark-card border border-[0.5px] border-surface-border dark:border-dark-border">
                     <span className="text-[18px]">📄</span>
                   </div>
-                  <p className="text-[13px] font-medium text-brand dark:text-[#EDEEF0]">
+                  <p className="text-[13px] font-medium text-brand dark:text-foreground">
                     No documents yet
                   </p>
-                  <p className="text-[12px] text-[#6B7280]">
+                  <p className="text-[12px] text-muted-foreground">
                     Documents uploaded by this client will appear here.
                   </p>
                 </div>
               ) : (
                 <>
                   {activeDocs.length === 0 ? (
-                    <p className="text-[12px] text-[#6B7280]">All documents are archived</p>
+                    <p className="text-[12px] text-muted-foreground">All documents are archived</p>
                   ) : (
                     <DocumentTable documents={activeDocs} />
                   )}
                   {archivedDocs.length > 0 && (
                     <div className="flex flex-col gap-2">
                       <div className="flex items-center gap-2">
-                        <span className="text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em]">
+                        <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-[0.05em]">
                           Archived ({archivedDocs.length})
                         </span>
                         <button
                           onClick={() => setShowArchived((v) => !v)}
-                          className="p-0.5 rounded text-[#6B7280] hover:text-brand"
+                          className="p-0.5 rounded text-muted-foreground hover:text-brand"
                         >
                           {showArchived ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
                         </button>
@@ -781,7 +781,7 @@ function ClientDetailContent() {
           <div className="flex items-center justify-end">
             <button
               onClick={() => setBillingDetailOpen(true)}
-              className="h-8 px-3 text-[12px] font-medium text-brand dark:text-[#EDEEF0] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] rounded-md bg-transparent hover:bg-surface-card dark:hover:bg-dark-card transition-colors"
+              className="h-8 px-3 text-[12px] font-medium text-brand dark:text-foreground border border-[0.5px] border-surface-border dark:border-dark-border rounded-md bg-transparent hover:bg-surface-card dark:hover:bg-dark-card transition-colors"
             >
               Billing Detail
             </button>
@@ -789,9 +789,9 @@ function ClientDetailContent() {
           {invoicesLoading ? (
             <div className="rounded-modal border border-[0.5px] border-surface-border dark:border-dark-border overflow-auto">
               {Array.from({ length: 3 }).map((_, i) => (
-                <div key={i} className="flex gap-4 px-4 py-3 border-b border-[0.5px] border-[#D5D8DE] dark:border-dark-card last:border-0">
+                <div key={i} className="flex gap-4 px-4 py-3 border-b border-[0.5px] border-surface-border dark:border-dark-card last:border-0">
                   {Array.from({ length: 5 }).map((_, j) => (
-                    <div key={j} className="h-4 flex-1 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+                    <div key={j} className="h-4 flex-1 bg-surface-border dark:bg-dark-border animate-pulse rounded" />
                   ))}
                 </div>
               ))}
@@ -801,10 +801,10 @@ function ClientDetailContent() {
               <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-surface-card dark:bg-dark-card border border-[0.5px] border-surface-border dark:border-dark-border">
                 <span className="text-[18px]">💳</span>
               </div>
-              <p className="text-[13px] font-medium text-brand dark:text-[#EDEEF0]">
+              <p className="text-[13px] font-medium text-brand dark:text-foreground">
                 No invoices yet
               </p>
-              <p className="text-[12px] text-[#6B7280]">
+              <p className="text-[12px] text-muted-foreground">
                 Invoices for this client will appear here.
               </p>
             </div>
@@ -812,9 +812,9 @@ function ClientDetailContent() {
             <div className="rounded-modal border border-[0.5px] border-surface-border dark:border-dark-border overflow-auto">
               <table className="w-full border-collapse">
                 <thead>
-                  <tr className="bg-surface-card dark:bg-[#252525]">
+                  <tr className="bg-surface-card dark:bg-dark-page">
                     {['Invoice', 'Amount', 'Due', 'Status'].map((col) => (
-                      <th key={col} className="px-4 py-2.5 text-left text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em] whitespace-nowrap">
+                      <th key={col} className="px-4 py-2.5 text-left text-[11px] font-medium text-muted-foreground uppercase tracking-[0.05em] whitespace-nowrap">
                         {col}
                       </th>
                     ))}
@@ -826,20 +826,20 @@ function ClientDetailContent() {
                       key={inv.id}
                       onClick={() => router.push(`/billing/${inv.id}`)}
                       className={[
-                        'cursor-pointer transition-colors bg-surface-page dark:bg-dark-page hover:bg-[#DDDFE3] dark:hover:bg-[#323232]',
-                        i !== clientInvoices.length - 1 ? 'border-b border-[0.5px] border-[#D5D8DE] dark:border-dark-card' : '',
+                        'cursor-pointer transition-colors bg-surface-page dark:bg-dark-page hover:bg-surface-border dark:hover:bg-dark-card',
+                        i !== clientInvoices.length - 1 ? 'border-b border-[0.5px] border-surface-border dark:border-dark-card' : '',
                       ].join(' ')}
                     >
                       <td className="px-4 py-3">
-                        <span className="text-[12px] font-medium text-brand dark:text-[#EDEEF0]">{inv.invoiceNumber}</span>
+                        <span className="text-[12px] font-medium text-brand dark:text-foreground">{inv.invoiceNumber}</span>
                       </td>
                       <td className="px-4 py-3">
-                        <span className="text-[12px] font-medium text-brand dark:text-[#EDEEF0]">
+                        <span className="text-[12px] font-medium text-brand dark:text-foreground">
                           {new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(inv.totalAmount)}
                         </span>
                       </td>
                       <td className="px-4 py-3">
-                        <span className="text-[12px] text-[#374151] dark:text-[#9CA3AF]">{inv.dueDate ?? '—'}</span>
+                        <span className="text-[12px] text-foreground dark:text-muted-foreground">{inv.dueDate ?? '—'}</span>
                       </td>
                       <td className="px-4 py-3">
                         <StatusBadge variant={inv.status as Parameters<typeof StatusBadge>[0]['variant']} />
@@ -870,12 +870,12 @@ function ClientDetailContent() {
           <div>
             {emailsNoIntegration ? (
               <div className="flex flex-col items-center justify-center py-16 gap-3 text-center">
-                <p className="text-[13px] text-[#374151] dark:text-[#9CA3AF]">
+                <p className="text-[13px] text-foreground dark:text-muted-foreground">
                   Connect your email in My Integrations to see client email threads.
                 </p>
                 <a
                   href="/settings?tab=my_integrations"
-                  className="text-[12px] font-medium text-[#4A7FA5] hover:underline"
+                  className="text-[12px] font-medium text-brand-light hover:underline"
                 >
                   Go to My Integrations
                 </a>
@@ -883,16 +883,16 @@ function ClientDetailContent() {
             ) : emailsLoading ? (
               <div className="space-y-0 animate-pulse">
                 {[...Array(4)].map((_, i) => (
-                  <div key={i} className="px-0 py-3 border-b border-[#C8CDD6] dark:border-[#484848]">
-                    <div className="h-2.5 bg-[#D5D8DE] dark:bg-[#444444] rounded w-2/5 mb-1.5" />
-                    <div className="h-2 bg-[#D5D8DE] dark:bg-[#444444] rounded w-full" />
+                  <div key={i} className="px-0 py-3 border-b border-surface-border dark:border-dark-border">
+                    <div className="h-2.5 bg-surface-border dark:bg-dark-border rounded w-2/5 mb-1.5" />
+                    <div className="h-2 bg-surface-border dark:bg-dark-border rounded w-full" />
                   </div>
                 ))}
               </div>
             ) : clientEmailThreads.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-16 gap-2">
-                <p className="text-[13px] font-medium text-brand dark:text-[#EDEEF0]">No email threads found</p>
-                <p className="text-[12px] text-[#6B7280]">
+                <p className="text-[13px] font-medium text-brand dark:text-foreground">No email threads found</p>
+                <p className="text-[12px] text-muted-foreground">
                   Emails involving this client's address will appear here.
                 </p>
               </div>
@@ -906,23 +906,23 @@ function ClientDetailContent() {
                       api.post('/api/v1/inbox/events', { event_type: 'client.email_thread_clicked', client_id: clientId, thread_id: thread.thread_id, provider: thread.provider }).catch(() => {})
                     }}
                     className={[
-                      'flex items-start gap-3 px-4 py-3 transition-colors bg-surface-page dark:bg-dark-page hover:bg-[#F3F4F6] dark:hover:bg-[#323232]',
-                      i !== clientEmailThreads.length - 1 ? 'border-b border-[0.5px] border-[#D5D8DE] dark:border-dark-card' : '',
+                      'flex items-start gap-3 px-4 py-3 transition-colors bg-surface-page dark:bg-dark-page hover:bg-surface-input dark:hover:bg-dark-card',
+                      i !== clientEmailThreads.length - 1 ? 'border-b border-[0.5px] border-surface-border dark:border-dark-card' : '',
                     ].join(' ')}
                   >
                     {thread.unread && (
-                      <div className="w-1.5 h-1.5 rounded-full bg-[#4A7FA5] mt-1.5 flex-shrink-0" />
+                      <div className="w-1.5 h-1.5 rounded-full bg-brand-light mt-1.5 flex-shrink-0" />
                     )}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between gap-2 mb-0.5">
-                        <span className={`text-[12px] truncate ${thread.unread ? 'font-semibold text-[#1F3148] dark:text-[#EDEEF0]' : 'font-normal text-[#374151] dark:text-[#9CA3AF]'}`}>
+                        <span className={`text-[12px] truncate ${thread.unread ? 'font-semibold text-foreground' : 'font-normal text-foreground dark:text-muted-foreground'}`}>
                           {thread.subject || '(no subject)'}
                         </span>
-                        <span className="text-[11px] text-[#6B7280] flex-shrink-0">
+                        <span className="text-[11px] text-muted-foreground flex-shrink-0">
                           {thread.date ? new Date(thread.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : ''}
                         </span>
                       </div>
-                      <p className="text-[11px] text-[#6B7280] truncate">{thread.snippet}</p>
+                      <p className="text-[11px] text-muted-foreground truncate">{thread.snippet}</p>
                     </div>
                   </a>
                 ))}
@@ -937,15 +937,15 @@ function ClientDetailContent() {
             <div className="overflow-y-auto px-4 py-4 space-y-3" style={{ minHeight: 300 }}>
               {messagesLoading ? (
                 <div className="flex items-center justify-center py-8">
-                  <Loader2 className="h-5 w-5 animate-spin text-[#6B7280]" />
+                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
                 </div>
               ) : clientMessages.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-16 gap-2">
                   <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-surface-card dark:bg-dark-card border border-[0.5px] border-surface-border dark:border-dark-border">
                     <span className="text-[18px]">💬</span>
                   </div>
-                  <p className="text-[13px] font-medium text-brand dark:text-[#EDEEF0]">No messages yet</p>
-                  <p className="text-[12px] text-[#6B7280]">Send the first message below.</p>
+                  <p className="text-[13px] font-medium text-brand dark:text-foreground">No messages yet</p>
+                  <p className="text-[12px] text-muted-foreground">Send the first message below.</p>
                 </div>
               ) : (
                 clientMessages.map((msg) => {
@@ -955,17 +955,17 @@ function ClientDetailContent() {
                       <div
                         className={`max-w-[70%] px-3 py-2 rounded-xl text-[13px] leading-relaxed ${
                           isStaff
-                            ? 'bg-[#1F3148] text-white rounded-br-sm'
-                            : 'bg-surface-card dark:bg-dark-card text-[#374151] dark:text-[#EDEEF0] rounded-bl-sm border border-[#C8CDD6] dark:border-[#484848]'
+                            ? 'bg-brand text-white rounded-br-sm'
+                            : 'bg-surface-card dark:bg-dark-card text-foreground dark:text-foreground rounded-bl-sm border border-surface-border dark:border-dark-border'
                         }`}
                       >
                         {parseMessage(msg.body)}
                       </div>
                       <div className="flex items-center gap-1.5">
-                        <span className="text-[11px] text-[#6B7280]">
+                        <span className="text-[11px] text-muted-foreground">
                           {msg.senderName ?? (isStaff ? 'You' : 'Client')}
                         </span>
-                        <span className="text-[11px] text-[#9CA3AF]">
+                        <span className="text-[11px] text-muted-foreground">
                           {new Date(msg.createdAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
                         </span>
                       </div>
@@ -976,7 +976,7 @@ function ClientDetailContent() {
             </div>
 
             {/* Compose box */}
-            <div className="flex-shrink-0 border-t border-[#C8CDD6] dark:border-[#484848] px-4 pt-2 pb-3 relative">
+            <div className="flex-shrink-0 border-t border-surface-border dark:border-dark-border px-4 pt-2 pb-3 relative">
               <div className="flex gap-2 items-end">
                 <textarea
                   ref={messageComposeRef}
@@ -995,13 +995,13 @@ function ClientDetailContent() {
                   }}
                   placeholder="Send a message to this client..."
                   rows={1}
-                  className="flex-1 resize-none bg-surface-input dark:bg-dark-page border border-[#C8CDD6] dark:border-[#484848] focus:border-[#4A7FA5] dark:focus:border-[#4A7FA5] rounded-lg px-3 py-2 text-[13px] text-[#374151] dark:text-[#9CA3AF] placeholder:text-[#9CA3AF] outline-none transition-colors"
+                  className="flex-1 resize-none bg-surface-input dark:bg-dark-page border border-surface-border dark:border-dark-border focus:border-brand-light dark:focus:border-brand-light rounded-lg px-3 py-2 text-[13px] text-foreground dark:text-muted-foreground placeholder:text-muted-foreground outline-none transition-colors"
                   style={{ minHeight: 36, maxHeight: 120 }}
                 />
                 <button
                   onClick={handleSendMessage}
                   disabled={!messageCompose.trim() || messageSending}
-                  className="flex-shrink-0 h-9 w-9 flex items-center justify-center rounded-lg bg-[#1F3148] text-white hover:bg-[#3A6A94] disabled:opacity-40 transition-colors"
+                  className="flex-shrink-0 h-9 w-9 flex items-center justify-center rounded-lg bg-brand text-white hover:bg-brand-btn disabled:opacity-40 transition-colors"
                 >
                   {messageSending ? (
                     <Loader2 className="h-4 w-4 animate-spin" />

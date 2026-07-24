@@ -93,7 +93,7 @@ function SendAuthModal({ clientId, onClose, onSuccess }: SendModalProps) {
           <button
             type="button"
             onClick={onClose}
-            className="h-8 px-3 rounded-[6px] text-[12px] font-medium text-[#6B7280] hover:text-brand dark:hover:text-[#EDEEF0] transition-colors"
+            className="h-8 px-3 rounded-[6px] text-[12px] font-medium text-muted-foreground hover:text-brand dark:hover:text-foreground transition-colors"
           >
             Cancel
           </button>
@@ -111,8 +111,8 @@ function SendAuthModal({ clientId, onClose, onSuccess }: SendModalProps) {
       <div className="flex flex-col gap-4">
         {/* Form type */}
         <div className="flex flex-col gap-1.5">
-          <span className="text-[12px] font-medium text-brand dark:text-[#EDEEF0]">
-            Form Type <span className="text-[#991B1B]">*</span>
+          <span className="text-[12px] font-medium text-brand dark:text-foreground">
+            Form Type <span className="text-status-red-text">*</span>
           </span>
           <div className="flex flex-col gap-2">
             {(
@@ -133,7 +133,7 @@ function SendAuthModal({ clientId, onClose, onSuccess }: SendModalProps) {
                   onChange={() => setFormType(opt.value)}
                   className="accent-brand"
                 />
-                <span className="text-[12px] text-[#374151] dark:text-[#9CA3AF]">
+                <span className="text-[12px] text-foreground dark:text-muted-foreground">
                   {opt.label}
                 </span>
               </label>
@@ -143,7 +143,7 @@ function SendAuthModal({ clientId, onClose, onSuccess }: SendModalProps) {
 
         {/* Tax years */}
         <div className="flex flex-col gap-1.5">
-          <span className="text-[12px] font-medium text-brand dark:text-[#EDEEF0]">
+          <span className="text-[12px] font-medium text-brand dark:text-foreground">
             Tax Years
           </span>
           <input
@@ -151,36 +151,36 @@ function SendAuthModal({ clientId, onClose, onSuccess }: SendModalProps) {
             value={taxYearsInput}
             onChange={(e) => setTaxYearsInput(e.target.value)}
             placeholder="e.g. 2022, 2023, 2024"
-            className="h-8 px-2.5 rounded-[6px] border border-[0.5px] border-surface-border dark:border-dark-border bg-surface-page dark:bg-dark-page text-[12px] text-brand dark:text-[#EDEEF0] placeholder:text-[#9CA3AF] focus:outline-none focus:ring-1 focus:ring-brand"
+            className="h-8 px-2.5 rounded-[6px] border border-[0.5px] border-surface-border dark:border-dark-border bg-surface-page dark:bg-dark-page text-[12px] text-brand dark:text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-brand"
           />
-          <span className="text-[11px] text-[#6B7280]">
+          <span className="text-[11px] text-muted-foreground">
             Enter the tax years this authorization covers.
           </span>
         </div>
 
         {/* Valid from */}
         <div className="flex flex-col gap-1.5">
-          <span className="text-[12px] font-medium text-brand dark:text-[#EDEEF0]">
-            Valid From <span className="text-[11px] font-normal text-[#6B7280]">(optional)</span>
+          <span className="text-[12px] font-medium text-brand dark:text-foreground">
+            Valid From <span className="text-[11px] font-normal text-muted-foreground">(optional)</span>
           </span>
           <input
             type="date"
             value={validFrom}
             onChange={(e) => setValidFrom(e.target.value)}
-            className="h-8 px-2.5 rounded-[6px] border border-[0.5px] border-surface-border dark:border-dark-border bg-surface-page dark:bg-dark-page text-[12px] text-brand dark:text-[#EDEEF0] focus:outline-none focus:ring-1 focus:ring-brand"
+            className="h-8 px-2.5 rounded-[6px] border border-[0.5px] border-surface-border dark:border-dark-border bg-surface-page dark:bg-dark-page text-[12px] text-brand dark:text-foreground focus:outline-none focus:ring-1 focus:ring-brand"
           />
         </div>
 
         {/* Valid until */}
         <div className="flex flex-col gap-1.5">
-          <span className="text-[12px] font-medium text-brand dark:text-[#EDEEF0]">
-            Valid Until <span className="text-[11px] font-normal text-[#6B7280]">(optional)</span>
+          <span className="text-[12px] font-medium text-brand dark:text-foreground">
+            Valid Until <span className="text-[11px] font-normal text-muted-foreground">(optional)</span>
           </span>
           <input
             type="date"
             value={validUntil}
             onChange={(e) => setValidUntil(e.target.value)}
-            className="h-8 px-2.5 rounded-[6px] border border-[0.5px] border-surface-border dark:border-dark-border bg-surface-page dark:bg-dark-page text-[12px] text-brand dark:text-[#EDEEF0] focus:outline-none focus:ring-1 focus:ring-brand"
+            className="h-8 px-2.5 rounded-[6px] border border-[0.5px] border-surface-border dark:border-dark-border bg-surface-page dark:bg-dark-page text-[12px] text-brand dark:text-foreground focus:outline-none focus:ring-1 focus:ring-brand"
           />
         </div>
       </div>
@@ -224,7 +224,7 @@ export function IrsAuthTab({ clientId }: IrsAuthTabProps) {
       <div className="flex items-center justify-between mb-4">
         <span
           style={{ fontSize: 16, fontWeight: 500 }}
-          className="text-brand dark:text-[#EDEEF0]"
+          className="text-brand dark:text-foreground"
         >
           IRS Authorizations
         </span>
@@ -233,7 +233,7 @@ export function IrsAuthTab({ clientId }: IrsAuthTabProps) {
             type="button"
             onClick={() => setShowModal(true)}
             style={{ height: 32, borderRadius: 6, fontSize: 12, fontWeight: 500 }}
-            className="px-3 bg-[#1F3148] text-white hover:opacity-90 transition-opacity"
+            className="px-3 bg-brand text-white hover:opacity-90 transition-opacity"
           >
             + Send Authorization
           </button>
@@ -246,7 +246,7 @@ export function IrsAuthTab({ clientId }: IrsAuthTabProps) {
           {Array.from({ length: 2 }).map((_, i) => (
             <div
               key={i}
-              className="h-24 rounded-[8px] bg-[#D5D8DE] dark:bg-[#444444] animate-pulse"
+              className="h-24 rounded-[8px] bg-surface-border dark:bg-dark-border animate-pulse"
             />
           ))}
         </div>
@@ -254,12 +254,12 @@ export function IrsAuthTab({ clientId }: IrsAuthTabProps) {
         /* Empty state */
         <div className="flex flex-col items-center justify-center py-24 gap-[10px]">
           <div className="flex items-center justify-center w-10 h-10 rounded-[10px] bg-surface-card dark:bg-dark-card border border-[0.5px] border-surface-border dark:border-dark-border">
-            <ShieldCheck className="h-[18px] w-[18px] text-[#6B7280]" />
+            <ShieldCheck className="h-[18px] w-[18px] text-muted-foreground" />
           </div>
-          <p className="text-[13px] font-medium text-brand dark:text-[#EDEEF0]">
+          <p className="text-[13px] font-medium text-brand dark:text-foreground">
             No IRS authorizations on file
           </p>
-          <p className="text-[12px] text-[#6B7280] text-center max-w-xs">
+          <p className="text-[12px] text-muted-foreground text-center max-w-xs">
             Send a Form 8821 or 2848 to authorize this firm to represent this client
             with the IRS.
           </p>
@@ -268,7 +268,7 @@ export function IrsAuthTab({ clientId }: IrsAuthTabProps) {
               type="button"
               onClick={() => setShowModal(true)}
               style={{ height: 32, borderRadius: 6, fontSize: 12, fontWeight: 500 }}
-              className="mt-1 px-3 bg-[#1F3148] text-white hover:opacity-90 transition-opacity"
+              className="mt-1 px-3 bg-brand text-white hover:opacity-90 transition-opacity"
             >
               + Send Authorization
             </button>
@@ -282,13 +282,13 @@ export function IrsAuthTab({ clientId }: IrsAuthTabProps) {
               <div
                 key={rec.id}
                 style={{ borderRadius: 8, padding: '12px 14px' }}
-                className="bg-[#EDEEF0] dark:bg-[#383838]"
+                className="bg-surface-card dark:bg-dark-card"
               >
                 {/* Top row */}
                 <div className="flex items-center justify-between mb-1.5">
                   <span
                     style={{ fontSize: 14, fontWeight: 500 }}
-                    className="text-[#1F3148] dark:text-[#EDEEF0]"
+                    className="text-brand dark:text-foreground"
                   >
                     Form {rec.form_type}
                   </span>
@@ -310,7 +310,7 @@ export function IrsAuthTab({ clientId }: IrsAuthTabProps) {
                 </div>
 
                 {/* Second row */}
-                <p style={{ fontSize: 12 }} className="text-[#6B7280] mb-0.5">
+                <p style={{ fontSize: 12 }} className="text-muted-foreground mb-0.5">
                   Tax years:{' '}
                   {rec.tax_years && rec.tax_years.length > 0
                     ? rec.tax_years.join(', ')
@@ -318,14 +318,14 @@ export function IrsAuthTab({ clientId }: IrsAuthTabProps) {
                 </p>
 
                 {/* Third row */}
-                <p style={{ fontSize: 12 }} className="text-[#6B7280] mb-0.5">
+                <p style={{ fontSize: 12 }} className="text-muted-foreground mb-0.5">
                   {rec.valid_from || rec.valid_until
                     ? `Valid ${fmtDate(rec.valid_from)} → ${fmtDate(rec.valid_until)}`
                     : 'Validity dates not set'}
                 </p>
 
                 {/* Fourth row */}
-                <p style={{ fontSize: 11 }} className="text-[#9CA3AF]">
+                <p style={{ fontSize: 11 }} className="text-muted-foreground">
                   Sent {fmtDate(rec.created_at)}
                 </p>
               </div>
