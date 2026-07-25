@@ -3,6 +3,7 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { usePathname } from 'next/navigation'
+import { onConciergeAction } from '@/lib/events/conciergeEvents'
 import { Sidebar } from './Sidebar'
 import { ConciergePanel } from '@/components/concierge/ConciergePanel'
 
@@ -47,6 +48,15 @@ export function AppShell({ children }: AppShellProps) {
     main.addEventListener('scroll', handleScroll)
     return () => main.removeEventListener('scroll', handleScroll)
   }, [pathname])
+
+  useEffect(() => {
+    return onConciergeAction((action) => {
+      if (action.type === 'open-panel') {
+        sessionStorage.setItem('jamm_concierge_open', 'true')
+        setConciergeOpen(true)
+      }
+    })
+  }, [])
 
   function handleConciergeOpen() {
     sessionStorage.setItem('jamm_concierge_open', 'true')

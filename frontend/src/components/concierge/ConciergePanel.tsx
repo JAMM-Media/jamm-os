@@ -8,10 +8,12 @@ import ReactMarkdown from 'react-markdown'
 import jsPDF from 'jspdf'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { useConfirm } from '@/lib/hooks/useConfirm'
+import { useAlert } from '@/lib/hooks/useAlert'
 import { useConciergeContext } from '@/lib/hooks/useConciergeContext'
 import api from '@/lib/api'
 import {
   emitConciergeAction,
+  onConciergeAction,
   type ConciergeAction,
 } from '@/lib/events/conciergeEvents'
 import { assembleSSELines } from '@/lib/concierge/assembleSSEStream'
@@ -92,6 +94,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
   }
   const { user, isLoading } = useAuth()
   const { confirm, ConfirmDialog } = useConfirm()
+  const { alert, AlertDialog } = useAlert()
   const uiContext = useConciergeContext()
   const currentPage = uiContext.entity_name
     ? uiContext.entity_name
@@ -255,6 +258,14 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
     const timer = setTimeout(() => setStatusMessage(''), 2000)
     return () => clearTimeout(timer)
   }, [statusMessage])
+
+  useEffect(() => {
+    return onConciergeAction((action) => {
+      if (action.type === 'open-panel' && action.expandNotifications) {
+        setNotificationsExpanded(true)
+      }
+    })
+  }, [])
 
   const fetchNotifications = useCallback(async () => {
     try {
@@ -875,6 +886,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
   return (
     <>
       {ConfirmDialog}
+      {AlertDialog}
       {hasMounted && isOpen && (
         <div
           style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.25)', zIndex: 39, pointerEvents: 'none' }}
@@ -1042,7 +1054,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
                             const notifClientId = typeof n.metadata?.client_id === 'string' ? n.metadata.client_id : null
                             const targetClientId = notifClientId ?? (uiContext.entity_type === 'client' ? uiContext.entity_id : null)
                             if (!targetClientId) {
-                              window.alert('No client record could be identified for this draft. Open the client directly and use the Messages tab to send it.')
+                              alert('No client record could be identified for this draft. Open the client directly and use the Messages tab to send it.')
                               return
                             }
                             const confirmed = await confirm(
@@ -1475,11 +1487,11 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
                           } catch {
                             // fall through to fallback
                           }
-                          window.alert(`Could not find a client named "${draftClientName}" to open directly. Search for them in Clients and use the Messages tab to send this draft.`)
+                          alert(`Could not find a client named "${draftClientName}" to open directly. Search for them in Clients and use the Messages tab to send this draft.`)
                           return
                         }
 
-                        window.alert('No specific client was identified for this draft. Open the client record directly and use the Messages tab to send it.')
+                        alert('No specific client was identified for this draft. Open the client record directly and use the Messages tab to send it.')
                       }}
                       className="text-[11px] font-medium px-2.5 py-1 rounded-[4px] bg-brand text-white hover:opacity-90 transition-colors"
                     >
