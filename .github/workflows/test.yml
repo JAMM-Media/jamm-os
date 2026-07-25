@@ -24,7 +24,7 @@ jobs:
           --health-retries 5
 
     env:
-      DATABASE_URL: postgresql://user:pass@localhost:5432/test_db
+      DATABASE_URL: postgresql+psycopg://user:pass@localhost:5432/test_db
       SECRET_KEY: super-secret-ci-key
       ALGORITHM: HS256
 
