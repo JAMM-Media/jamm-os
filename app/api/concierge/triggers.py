@@ -193,8 +193,8 @@ def evaluate_triggers(firm_id: UUID, db: Session) -> list[dict]:
                 "trigger_type": "stalled_work",
                 "urgency_rank": 4,
                 "message": (
-                    f"{stalled['stalled_count']} engagements have not been updated in over 14 days: "
-                    f"{names}{suffix}. Want to review what is blocking them?"
+                    f"It looks like {stalled['stalled_count']} of your engagements haven't moved in over two weeks: "
+                    f"{names}{suffix}. Want to review what's holding them up?"
                 ),
                 "metadata": {"stalled_count": stalled["stalled_count"], "engagements": stalled["engagements"][:5]},
             })

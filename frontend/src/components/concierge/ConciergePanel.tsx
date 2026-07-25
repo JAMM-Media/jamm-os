@@ -512,7 +512,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
                 return
               }
               if (res.status === 200 && res.data?.cooldown) {
-                setMessages([{ role: 'concierge', content: "Already checked in with your morning briefing earlier today. Ask me anytime if you'd like to see it again, or let me know if anything's changed or if you need help with something specific.", skipReveal: true }])
+                setMessages([{ role: 'concierge', content: "You're all caught up for today. I can pull up your briefing again anytime if you need it. What else is on your mind?", skipReveal: true }])
                 hasInitialized.current = true
                 setBriefingLoading(false)
                 return
