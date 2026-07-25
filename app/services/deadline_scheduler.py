@@ -44,6 +44,14 @@ def check_approaching_deadlines() -> dict:
         today = date.today()
         window_end = today + timedelta(days=DEADLINE_WARNING_DAYS)
 
+        # The server runs on UTC while every US firm operates on a timezone
+        # behind UTC. During part of the UTC day, the server's calendar date
+        # is already one day ahead of every firm's local calendar date. A one
+        # day buffer guarantees a deadline is genuinely in the past in every
+        # US timezone before a miss is declared. This buffer is deliberate
+        # and must not be removed.
+        safe_today = today - timedelta(days=1)
+
         # Query active engagements that have a filing or extended deadline
         stmt = (
             select(Engagement)
@@ -81,7 +89,7 @@ def check_approaching_deadlines() -> dict:
                     )
                     alerts_emitted += 1
 
-            misses_emitted += _detect_deadline_misses(db, eng, today)
+            misses_emitted += _detect_deadline_misses(db, eng, safe_today)
 
         return {"checked": checked, "alerts_emitted": alerts_emitted, "misses_emitted": misses_emitted}
 
@@ -89,11 +97,12 @@ def check_approaching_deadlines() -> dict:
         db.close()
 
 
-def _deadline_miss_already_logged(db, engagement_id, deadline_type: str) -> bool:
+def _deadline_miss_already_logged(db, firm_id, engagement_id, deadline_type: str) -> bool:
     row = db.execute(
         select(BehavioralEvent.event_id)
         .where(
             BehavioralEvent.event_type == "engagement.deadline_missed",
+            BehavioralEvent.firm_id == firm_id,
             BehavioralEvent.entity_id == engagement_id,
             BehavioralEvent.extra_metadata["deadline_type"].astext == deadline_type,
         )
@@ -102,7 +111,7 @@ def _deadline_miss_already_logged(db, engagement_id, deadline_type: str) -> bool
     return row is not None
 
 
-def _detect_deadline_misses(db, eng: Engagement, today: date) -> int:
+def _detect_deadline_misses(db, eng: Engagement, safe_today: date) -> int:
     """
     Gated on the operative deadline (extended if set, else original) actually
     being in the past -- an extension filed ahead of its own due date must
@@ -111,18 +120,18 @@ def _detect_deadline_misses(db, eng: Engagement, today: date) -> int:
     passed fires (idempotently) against that track specifically.
     """
     operative_deadline = eng.extended_deadline or eng.filing_deadline
-    if operative_deadline is None or operative_deadline >= today:
+    if operative_deadline is None or operative_deadline >= safe_today:
         return 0
 
     fired = 0
     tracks = []
-    if eng.filing_deadline is not None and eng.filing_deadline < today:
+    if eng.filing_deadline is not None and eng.filing_deadline < safe_today:
         tracks.append(("original", eng.filing_deadline))
-    if eng.extended_deadline is not None and eng.extended_deadline < today:
+    if eng.extended_deadline is not None and eng.extended_deadline < safe_today:
         tracks.append(("extended", eng.extended_deadline))
 
     for deadline_type, deadline_date in tracks:
-        if _deadline_miss_already_logged(db, eng.id, deadline_type):
+        if _deadline_miss_already_logged(db, eng.firm_id, eng.id, deadline_type):
             continue
         log_event(
             firm_id=eng.firm_id,
@@ -134,7 +143,7 @@ def _detect_deadline_misses(db, eng: Engagement, today: date) -> int:
             metadata={
                 "deadline_type": deadline_type,
                 "deadline_date": deadline_date.isoformat(),
-                "days_overdue": (today - deadline_date).days,
+                "days_overdue": (safe_today - deadline_date).days,
                 "form_type": eng.engagement_type,
                 "client_id": str(eng.client_id),
             },
