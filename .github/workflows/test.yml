@@ -27,6 +27,7 @@ jobs:
       DATABASE_URL: postgresql+psycopg://user:pass@localhost:5432/test_db
       SECRET_KEY: super-secret-ci-key
       ALGORITHM: HS256
+      STRIPE_WEBHOOK_SECRET: whsec_dummy_value_for_ci_only
 
     steps:
       - uses: actions/checkout@v3
