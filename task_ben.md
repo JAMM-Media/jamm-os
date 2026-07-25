@@ -54,52 +54,55 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Add a deterministic backend check for show briefing again requests, guaranteeing the required action marker always fires regardless of exact phrasing
+TASK: Shift the core surface palette from warm to cool toned, matching a validated financial-trust research finding
 
 USE: Fable 5
 
 VERIFY BEFORE ACT:
-sed -n '460,500p' /home/corby/jamm-os/app/api/concierge/route.py
-grep -n "def morning_briefing_detail" -A 25 /home/corby/jamm-os/app/api/concierge/route.py
-sed -n '1320,1340p' /home/corby/jamm-os/app/api/concierge/prompts.py
-grep -n "show_briefing_again" -A 15 /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+cat /home/corby/jamm-os/frontend/src/app/globals.css
+grep -rl "bg-surface-page\|bg-surface-card\|bg-dark-page\|bg-dark-card" /home/corby/jamm-os/frontend/src --include="*.tsx" | wc -l
 
-Read the full __OPEN__ bypass block in route.py completely, and the full morning_briefing_detail endpoint completely, before writing anything. This task's whole point is removing model discretion from a structural requirement, matching the same pattern already proven correct for the __OPEN__ sentinel in this exact file.
+Read the full token file completely. The second command shows roughly how many files across the whole application will be affected by this change purely through the token system, with zero individual file edits required, confirming this is the real payoff of migrating ConciergePanel.tsx, the Dashboard, and the client detail page onto tokens earlier tonight rather than leaving them hardcoded.
 
 WHAT THIS IS:
 
-Confirmed live tonight: asking can I see the morning briefing again did not trigger the real show_briefing_again flow at all. The backend log showed Tool executed: get_daily_brief, an entirely different, ordinary tool call, with no show_briefing_again marker generated anywhere. The model answered as a normal conversational question and, having seen the required exact opening phrase Here's your briefing again in its own system prompt instructions, appears to have reused that phrase inappropriately without generating the required CONCIERGE_ACTION marker that the frontend depends on to actually fetch the real briefing detail and enable the download button. This is the exact same reliability failure mode already found and fixed twice tonight for the OPTIONS marker and for get_overdue_invoices, a natural language instruction, no matter how explicitly worded, cannot guarantee compliance for a case that must never fail. The fix pattern that already worked for those cases is a deterministic backend check that removes the model's discretion entirely, not a third rewording of the same prompt instruction.
+Tonight's redesign originally shifted the core surface palette warmer, based on instinct rather than research. A controlled study on cyber-banking interface trust, Kim and Moon, found the highest measured trust scores came from a specific, different combination: pastel, low brightness, cool toned color, set against a colored, non-white or non-neutral-gray background, not a warm palette. A live audit of the shipped warm palette separately described it as reading sterile rather than considered, which in hindsight likely was not actually a temperature problem, flat, low-saturation gray fails on either side of warm versus cool, the real fix is genuine color and adequate separation between page and card surfaces, which this change should achieve regardless of hue. A real side by side comparison of the current warm palette against a cool alternative was built and reviewed directly, and the cool alternative was the clear, deliberate choice, not a guess.
 
 CHANGE INSTRUCTIONS:
 
-Add a deterministic intent check in concierge_chat, following the same structural pattern as the existing __OPEN__ sentinel bypass immediately above it in this file. Detect whether the user's most recent message is asking to see the morning briefing again, using a reasonably broad keyword match, such as containing briefing together with again, show, or see, in any order or combination, so real phrasing variety is covered, not just one exact string.
+In globals.css, replace the light mode surface tokens with these specific target values, adjusting only as needed for accessible contrast, not for taste: color-surface-page around #D6DEE6, color-surface-card around #E9EEF3, color-surface-border around #C2CDD8, color-surface-input a touch lighter than card. These were already reviewed and approved directly against the current warm palette in a real side by side comparison, use them as the actual target, not just inspiration. In HSL terms, this means a hue in the 205 to 215 range, saturation in the 20 to 30 percent range, and lightness in the 82 to 90 percent range for the page and card tones, genuinely cool and pastel, not neutral gray with no hue at all.
 
-When this intent is detected and the firm has already received a briefing today, confirmed via current_firm.briefing_sent_at being set to today's date, bypass the main conversational model's own discretion for the structural parts of this response. Reuse the exact same underlying content generation already used by the morning_briefing_detail endpoint to produce the real, live briefing content, do not duplicate this logic in a second place. Construct the final response deterministically in code: the fixed line Here's your briefing again, then the real generated briefing content, then the required marker line, CONCIERGE_ACTION: {"type":"show_briefing_again"}, exactly matching the frontend's existing expected format, on its own final line, every single time, regardless of the model's own judgment.
+For dark mode, apply the same cool hue family, roughly 205 to 215, at appropriately low lightness for a dark theme, replacing the current warm charcoal tokens, color-dark-page, color-dark-card, color-dark-border, color-dark-sidebar, with genuinely cool-toned dark equivalents rather than warm ones, while preserving strong, accessible contrast against light text.
 
-If the firm has not received a briefing yet today, or briefing_sent_at is not set at all, do not trigger this bypass, let the conversation proceed normally, since there is no prior briefing to show again in that case.
+Update the corresponding shadcn style HSL variables in the root and dark blocks to these same real values, keeping both systems in sync exactly as was done previously tonight.
 
-Log a clear, distinct line, similar in spirit to the existing Tool executed logging, whenever this deterministic bypass fires, so this exact flow can be directly confirmed working from the backend log going forward, the same way tool execution already can be.
+Update tailwind.config.ts surface and dark color values to match exactly, byte for byte consistent with globals.css.
+
+Do not change the brand navy tokens, the concierge accent gold token, or any of the status tokens, red, green, blue, amber. This task is scoped only to the neutral surface palette.
+
+Do not touch any component file directly. This change must work entirely through the token system, proving the migration work done earlier tonight on ConciergePanel.tsx, the Dashboard, and the client detail page was worth doing.
 
 VERIFY AFTER ACT:
 
-python3 -c "from app.main import app; print('OK')"
+npm run build in frontend, expected zero TypeScript errors.
+
+Confirm real, calculated contrast ratios between the new page and card background values, and between text and background pairings, meet at minimum WCAG AA standards in both light and dark mode, paste the actual computed ratios, do not simply assert they look fine.
 
 MANUAL VERIFICATION:
 
-Restart backend, keep terminal visible.
+Full kill, .next wipe, restart both servers.
 
-Ensure a briefing has already been shown today for the test firm, resetting and retriggering it first if needed. Ask can I see the morning briefing again, exactly the phrasing that failed live tonight, confirm the backend log now shows the new deterministic bypass log line firing, confirm the response correctly begins with Here's your briefing again, confirm real briefing content follows, and confirm the required CONCIERGE_ACTION marker line is present, not just implied.
+This is a real regression sweep across everything already migrated onto the token system tonight, not a fresh build, report pass or fail individually for each:
 
-Ask at least two different rephrasings, such as show me my briefing again and can I see today's briefing once more, confirm the same deterministic behavior holds for each, not just the one exact phrase that was originally tested.
+1. The Concierge panel, light and dark mode, confirm the gold accent bar, avatar, and elevation still read correctly against the new cool background.
+2. The Dashboard, light and dark mode, confirm all four stat cards including the Overdue Engagements alert-tinted card remain clearly legible and appropriately distinct from the new background.
+3. The client detail page and all five of its tabs, Overview, Notes, IRS Authorizations, Documents, Portal, light and dark mode, confirm full legibility and confirm status color coding remains clearly distinguishable against the new surface tones.
+4. Navigate through at least three other real pages not yet individually redesigned, and confirm the automatic token cascade did not produce any illegible or badly contrasted result anywhere, since these pages will also inherit the new values automatically.
 
-Confirm the download briefing button actually becomes available and functional after this flow, since that is the real, functional consequence of the marker being present or absent, not just a cosmetic detail.
-
-Separately, confirm a normal question unrelated to the briefing, such as which clients have overdue invoices right now, is completely unaffected and does not accidentally trigger this new bypass.
-
-Report pass or fail individually for all three rephrasings, the download button functionality, and the unrelated-question regression check.
+Report pass or fail individually for all four checks, with screenshots of the Concierge panel and the Dashboard in both light and dark mode at minimum.
 
 GIT:
 git add -A
-git commit -m "add deterministic backend bypass for show briefing again requests, matching the same pattern already proven correct for the __OPEN__ sentinel, since confirmed live tonight the model failed to generate the required CONCIERGE_ACTION marker for a real, natural phrasing of this request, silently disabling the briefing download feature, the third confirmed instance tonight of a natural language instruction alone failing to guarantee compliance for a case that must never fail"
+git commit -m "shift the core surface palette from warm to cool toned, pastel, and low brightness, implementing a validated financial-trust research finding directly, replacing an earlier warm palette choice that was based on instinct rather than evidence, verified with real computed contrast ratios and a full regression sweep across every surface already migrated onto the token system"
 git pull --rebase origin main
 git push origin main

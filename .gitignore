@@ -48,3 +48,5 @@ task_ben.md
 codebase_snapshot.txt
 frontend/frontend_snapshot.txt
 frontend_snapshot.txt
+.playwright-mcp/
+*.png
