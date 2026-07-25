@@ -396,6 +396,11 @@ _MULTI_CLIENT_TOOL_EXTRACTORS: dict[str, object] = {
         for inv in result.get("invoices", [])
         if inv.get("client_name")
     }),
+    "get_stalled_engagements": lambda result: list({
+        eng["client_name"]
+        for eng in result.get("engagements", [])
+        if eng.get("client_name")
+    }),
 }
 
 
@@ -474,7 +479,15 @@ def concierge_chat(
                 "3. Advisory and planning"
             )
         else:
-            open_text = "Let's get ready to work. I'm ready to help with anything you need."
+            firm_type = current_firm.firm_type
+            if firm_type == "tax_prep":
+                open_text = "Got it. Returns, deadlines, and getting clients filed on time are where I'll be most useful. What are you working on?"
+            elif firm_type == "bookkeeping":
+                open_text = "Got it. Clean books, smooth closes, and keeping everything reconciled. What do you need to get done?"
+            elif firm_type == "advisory":
+                open_text = "Got it. Client work, planning, and keeping engagements moving forward. What's on your mind?"
+            else:
+                open_text = "Got it. Client work, planning, and keeping engagements moving forward. What's on your mind?"
 
         def generate_open_bypass():
             for line in open_text.split("\n"):
