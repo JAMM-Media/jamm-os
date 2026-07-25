@@ -54,55 +54,49 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Shift the core surface palette from warm to cool toned, matching a validated financial-trust research finding
+TASK: Build a Dashboard home screen widget surfacing the most actionable Concierge notification, no panel required
 
 USE: Fable 5
 
 VERIFY BEFORE ACT:
-cat /home/corby/jamm-os/frontend/src/app/globals.css
-grep -rl "bg-surface-page\|bg-surface-card\|bg-dark-page\|bg-dark-card" /home/corby/jamm-os/frontend/src --include="*.tsx" | wc -l
+sed -n '980,1075p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+sed -n '1437,1470p' /home/corby/jamm-os/app/api/concierge/route.py
+grep -n "class ConciergeNotification" -A 15 /home/corby/jamm-os/app/models/concierge_notification.py
 
-Read the full token file completely. The second command shows roughly how many files across the whole application will be affected by this change purely through the token system, with zero individual file edits required, confirming this is the real payoff of migrating ConciergePanel.tsx, the Dashboard, and the client detail page onto tokens earlier tonight rather than leaving them hardcoded.
+Read the full existing notification rendering block in ConciergePanel.tsx completely, including the Copy and Open to send button logic and the client routing behavior, before writing anything new. This task must reuse this exact logic, not reimplement a second, divergent version of it.
 
 WHAT THIS IS:
 
-Tonight's redesign originally shifted the core surface palette warmer, based on instinct rather than research. A controlled study on cyber-banking interface trust, Kim and Moon, found the highest measured trust scores came from a specific, different combination: pastel, low brightness, cool toned color, set against a colored, non-white or non-neutral-gray background, not a warm palette. A live audit of the shipped warm palette separately described it as reading sterile rather than considered, which in hindsight likely was not actually a temperature problem, flat, low-saturation gray fails on either side of warm versus cool, the real fix is genuine color and adequate separation between page and card surfaces, which this change should achieve regardless of hue. A real side by side comparison of the current warm palette against a cool alternative was built and reviewed directly, and the cool alternative was the clear, deliberate choice, not a guess.
+External research on B2B AI feature adoption found that capabilities living in a separate panel a user has to remember to open see meaningfully lower long term engagement than the same capability surfaced directly in a primary workflow view. A live audit separately praised the existing alert tray specifically for surfacing a genuinely useful, ready to send draft and an internal reminder without being asked, calling this the strongest engagement pull observed in the whole product. This task surfaces that same real value directly on the Dashboard itself, visible the moment a firm owner lands there, without requiring the Concierge panel to be opened at all. This is deliberately scoped as a real but contained test of whether panel placement is actually limiting engagement, not a full redesign of how the Concierge is positioned in the product.
 
 CHANGE INSTRUCTIONS:
 
-In globals.css, replace the light mode surface tokens with these specific target values, adjusting only as needed for accessible contrast, not for taste: color-surface-page around #D6DEE6, color-surface-card around #E9EEF3, color-surface-border around #C2CDD8, color-surface-input a touch lighter than card. These were already reviewed and approved directly against the current warm palette in a real side by side comparison, use them as the actual target, not just inspiration. In HSL terms, this means a hue in the 205 to 215 range, saturation in the 20 to 30 percent range, and lightness in the 82 to 90 percent range for the page and card tones, genuinely cool and pastel, not neutral gray with no hue at all.
+Add a new widget section to the Dashboard page, positioned prominently, near the top of the page alongside or just below the existing stat cards. It should call the existing GET /concierge/notifications endpoint, already used by the panel's alert tray, do not create a second endpoint or duplicate this logic.
 
-For dark mode, apply the same cool hue family, roughly 205 to 215, at appropriately low lightness for a dark theme, replacing the current warm charcoal tokens, color-dark-page, color-dark-card, color-dark-border, color-dark-sidebar, with genuinely cool-toned dark equivalents rather than warm ones, while preserving strong, accessible contrast against light text.
+From the returned notifications, select the single most actionable one to feature: prioritize any notification whose metadata contains a real draft field over ones that do not, and among those, select the most recently created one. If no notification with a draft exists, fall back to featuring the single most recent notification of any kind, shown as a plain informational item without draft actions. If there are zero notifications at all, the widget should not render anything, not even an empty state, it should simply not appear on the page.
 
-Update the corresponding shadcn style HSL variables in the root and dark blocks to these same real values, keeping both systems in sync exactly as was done previously tonight.
+Render the featured item using the exact same visual pattern already established for notifications inside the panel, the message text, and if a draft exists, the same Draft label box with Copy and Open to send buttons, reusing the exact same click behavior already implemented in ConciergePanel.tsx for both actions, including the same confirmation dialog before navigating to a client's Messages tab with the draft prefilled. Do not write new logic for these two buttons, extract or directly reuse what already exists.
 
-Update tailwind.config.ts surface and dark color values to match exactly, byte for byte consistent with globals.css.
+Apply the design language already established for the rest of the redesigned Dashboard, using the real tokens, the display serif for the client name if one is associated with the notification, and the concierge accent color for this widget's own visual identity, consistent with how the Concierge's identity was established elsewhere tonight.
 
-Do not change the brand navy tokens, the concierge accent gold token, or any of the status tokens, red, green, blue, amber. This task is scoped only to the neutral surface palette.
-
-Do not touch any component file directly. This change must work entirely through the token system, proving the migration work done earlier tonight on ConciergePanel.tsx, the Dashboard, and the client detail page was worth doing.
+Do not change anything in ConciergePanel.tsx itself, its own alert tray must continue working exactly as it does today, completely unaffected by this addition. Do not change the notifications endpoint or the ConciergeNotification model.
 
 VERIFY AFTER ACT:
 
 npm run build in frontend, expected zero TypeScript errors.
 
-Confirm real, calculated contrast ratios between the new page and card background values, and between text and background pairings, meet at minimum WCAG AA standards in both light and dark mode, paste the actual computed ratios, do not simply assert they look fine.
+Confirm by direct code comparison that the Copy and Open to send button logic in the new widget is either directly reused from or byte for byte identical to the existing panel implementation, not a divergent reimplementation, paste this confirmation explicitly.
 
 MANUAL VERIFICATION:
 
-Full kill, .next wipe, restart both servers.
+Full kill, .next wipe, restart both servers. Do not use Playwright or any browser automation tool to self verify this, at all, for any reason, including taking screenshots. All manual and visual verification is done by the user directly in the browser, reported back in chat.
 
-This is a real regression sweep across everything already migrated onto the token system tonight, not a fresh build, report pass or fail individually for each:
+Confirm a real notification with a draft currently exists for the test firm, if not, trigger one through whatever means already exists tonight for generating one. Load the Dashboard without opening the Concierge panel at all, confirm the widget appears showing this real draft, with working Copy and Open to send buttons that behave identically to the existing panel version. Confirm the existing panel alert tray still works completely normally and independently. Confirm the widget does not appear at all if there are zero notifications, rather than showing an empty or broken state.
 
-1. The Concierge panel, light and dark mode, confirm the gold accent bar, avatar, and elevation still read correctly against the new cool background.
-2. The Dashboard, light and dark mode, confirm all four stat cards including the Overdue Engagements alert-tinted card remain clearly legible and appropriately distinct from the new background.
-3. The client detail page and all five of its tabs, Overview, Notes, IRS Authorizations, Documents, Portal, light and dark mode, confirm full legibility and confirm status color coding remains clearly distinguishable against the new surface tones.
-4. Navigate through at least three other real pages not yet individually redesigned, and confirm the automatic token cascade did not produce any illegible or badly contrasted result anywhere, since these pages will also inherit the new values automatically.
-
-Report pass or fail individually for all four checks, with screenshots of the Concierge panel and the Dashboard in both light and dark mode at minimum.
+Report pass or fail individually for the widget rendering and content accuracy, the Copy button, the Open to send button and its confirmation dialog, and the existing panel remaining unaffected.
 
 GIT:
 git add -A
-git commit -m "shift the core surface palette from warm to cool toned, pastel, and low brightness, implementing a validated financial-trust research finding directly, replacing an earlier warm palette choice that was based on instinct rather than evidence, verified with real computed contrast ratios and a full regression sweep across every surface already migrated onto the token system"
+git commit -m "add a Dashboard home screen widget surfacing the single most actionable Concierge notification, including its real draft with working Copy and Open to send actions reused directly from the existing panel implementation, allowing the Concierge's most valuable proactive output to be seen and acted on without requiring the panel to be opened at all, as a contained, real test of whether panel placement itself is limiting engagement before considering any larger architectural change"
 git pull --rebase origin main
 git push origin main
