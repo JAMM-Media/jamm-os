@@ -28,6 +28,7 @@ jobs:
       SECRET_KEY: super-secret-ci-key
       ALGORITHM: HS256
       STRIPE_WEBHOOK_SECRET: whsec_dummy_value_for_ci_only
+      STRIPE_SECRET_KEY: sk_test_dummy_value_for_ci_only
 
     steps:
       - uses: actions/checkout@v3
