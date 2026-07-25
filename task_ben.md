@@ -54,49 +54,70 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Build a Dashboard home screen widget surfacing the most actionable Concierge notification, no panel required
+TASK: Style the alert dialog to match the design system, and make the Dashboard widget a real doorway into the panel with a minimize option
 
 USE: Fable 5
 
 VERIFY BEFORE ACT:
-sed -n '980,1075p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
-sed -n '1437,1470p' /home/corby/jamm-os/app/api/concierge/route.py
-grep -n "class ConciergeNotification" -A 15 /home/corby/jamm-os/app/models/concierge_notification.py
+cat /home/corby/jamm-os/frontend/src/lib/hooks/useConfirm.tsx
+cat /home/corby/jamm-os/frontend/src/components/ui/Modal.tsx
+cat /home/corby/jamm-os/frontend/src/lib/events/conciergeEvents.ts
+sed -n '1,40p' /home/corby/jamm-os/frontend/src/components/layout/AppShell.tsx
+cat /home/corby/jamm-os/frontend/src/components/dashboard/ConciergeSpotlight.tsx
+grep -n "window.alert\|notificationsExpanded" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-Read the full existing notification rendering block in ConciergePanel.tsx completely, including the Copy and Open to send button logic and the client routing behavior, before writing anything new. This task must reuse this exact logic, not reimplement a second, divergent version of it.
+Read all of this completely before changing anything, including the full useConfirm hook, since the new alert hook must mirror its exact structural pattern, not invent a different one. This task touches the shared event system used across the panel, the widget, and the app shell. The reveal animation and every existing panel behavior verified earlier tonight must not regress.
 
-WHAT THIS IS:
+WHAT THIS IS, PART ONE, THE ALERT DIALOG:
 
-External research on B2B AI feature adoption found that capabilities living in a separate panel a user has to remember to open see meaningfully lower long term engagement than the same capability surfaced directly in a primary workflow view. A live audit separately praised the existing alert tray specifically for surfacing a genuinely useful, ready to send draft and an internal reminder without being asked, calling this the strongest engagement pull observed in the whole product. This task surfaces that same real value directly on the Dashboard itself, visible the moment a firm owner lands there, without requiring the Concierge panel to be opened at all. This is deliberately scoped as a real but contained test of whether panel placement is actually limiting engagement, not a full redesign of how the Concierge is positioned in the product.
+Confirmed live: clicking Open to send on a notification with no identifiable single client, such as a multi client internal reminder, correctly falls back to a raw, unstyled native browser alert dialog, a plain black box reading localhost:3000 says, clashing completely with the considered design work done everywhere else in this product tonight. This exact same window.alert call exists in four places total, three already inside ConciergePanel.tsx from before tonight, one newly duplicated into ConciergeSpotlight.tsx. All four need the same fix.
 
-CHANGE INSTRUCTIONS:
+CHANGE INSTRUCTIONS, PART ONE:
 
-Add a new widget section to the Dashboard page, positioned prominently, near the top of the page alongside or just below the existing stat cards. It should call the existing GET /concierge/notifications endpoint, already used by the panel's alert tray, do not create a second endpoint or duplicate this logic.
+Build a new useAlert hook, in the same file location pattern as the existing useConfirm hook, following its exact structural approach, returning an alert function and an AlertDialog element to render. Internally, this should use the existing Modal component from ui/Modal.tsx directly, do not build a new modal shell from scratch, passing the message as the modal body and a single OK button as the footer, no cancel option, since this is informational only. Replace all four window.alert calls, three in ConciergePanel.tsx and one in ConciergeSpotlight.tsx, with this new hook, preserving the exact existing message text in each of the four cases.
 
-From the returned notifications, select the single most actionable one to feature: prioritize any notification whose metadata contains a real draft field over ones that do not, and among those, select the most recently created one. If no notification with a draft exists, fall back to featuring the single most recent notification of any kind, shown as a plain informational item without draft actions. If there are zero notifications at all, the widget should not render anything, not even an empty state, it should simply not appear on the page.
+WHAT THIS IS, PART TWO, THE WIDGET AS A DOORWAY:
 
-Render the featured item using the exact same visual pattern already established for notifications inside the panel, the message text, and if a draft exists, the same Draft label box with Copy and Open to send buttons, reusing the exact same click behavior already implemented in ConciergePanel.tsx for both actions, including the same confirmation dialog before navigating to a client's Messages tab with the draft prefilled. Do not write new logic for these two buttons, extract or directly reuse what already exists.
+The Dashboard widget currently functions as a second, disconnected surface rather than a genuine entry point into the Concierge. Clicking anywhere on the widget, outside its own Copy and Open to send buttons specifically, should open the real Concierge panel and automatically expand its notification tray to reveal this same notification already in view, turning the widget into a real shortcut into the assistant rather than a competing, separate experience. Separately, the widget needs its own minimize control, so it does not permanently occupy Dashboard space once seen, while remaining easy to bring back.
 
-Apply the design language already established for the rest of the redesigned Dashboard, using the real tokens, the display serif for the client name if one is associated with the notification, and the concierge accent color for this widget's own visual identity, consistent with how the Concierge's identity was established elsewhere tonight.
+CHANGE INSTRUCTIONS, PART TWO:
 
-Do not change anything in ConciergePanel.tsx itself, its own alert tray must continue working exactly as it does today, completely unaffected by this addition. Do not change the notifications endpoint or the ConciergeNotification model.
+Add a new action type to the ConciergeAction type in conciergeEvents.ts, open-panel, with an optional expandNotifications boolean field, matching the existing style of that type definition exactly.
+
+In AppShell.tsx, add a new listener using the existing onConciergeAction subscription pattern, listening for this open-panel action type, calling the existing setConciergeOpen(true) when received. AppShell currently has no such listener at all, this is new.
+
+In ConciergePanel.tsx, add handling so that when this open-panel action arrives with expandNotifications true, the existing local notificationsExpanded state is set to true, so the alert tray auto-expands to reveal the relevant notification the moment the panel opens.
+
+In ConciergeSpotlight.tsx, add an onClick handler to the outer container div that calls emitConciergeAction with type open-panel and expandNotifications true. Add stopPropagation to the Copy and Open to send buttons' own click handlers so clicking either of them does not also trigger the outer container's click-to-open behavior, these two actions must remain fully independent of the new doorway behavior. Add appropriate hover styling to the outer container signaling it is clickable, such as a subtle border or background shift on hover, consistent with the existing design language, not a heavy or jarring change.
+
+Add a minimize control to the widget, a small button in its header row, toggling a local minimized state. When minimized, render a condensed single line version showing only the notification's core message text with no draft box, no buttons, and a way to expand back to the full view, persisting this minimized preference in sessionStorage using a key such as jamm_concierge_spotlight_minimized so it does not reset every time the Dashboard reloads within the same session, but does reset for a genuinely new session.
+
+Do not change anything about how the widget selects which notification to feature, that logic is already correct and unrelated to this task.
 
 VERIFY AFTER ACT:
 
 npm run build in frontend, expected zero TypeScript errors.
 
-Confirm by direct code comparison that the Copy and Open to send button logic in the new widget is either directly reused from or byte for byte identical to the existing panel implementation, not a divergent reimplementation, paste this confirmation explicitly.
+grep -n "window.alert" across the frontend src directory, expected zero remaining matches anywhere.
 
 MANUAL VERIFICATION:
 
 Full kill, .next wipe, restart both servers. Do not use Playwright or any browser automation tool to self verify this, at all, for any reason, including taking screenshots. All manual and visual verification is done by the user directly in the browser, reported back in chat.
 
-Confirm a real notification with a draft currently exists for the test firm, if not, trigger one through whatever means already exists tonight for generating one. Load the Dashboard without opening the Concierge panel at all, confirm the widget appears showing this real draft, with working Copy and Open to send buttons that behave identically to the existing panel version. Confirm the existing panel alert tray still works completely normally and independently. Confirm the widget does not appear at all if there are zero notifications, rather than showing an empty or broken state.
+Trigger the exact same no-client-identified case that produced the raw browser alert earlier, confirm it now shows a properly styled modal matching the rest of the product instead.
 
-Report pass or fail individually for the widget rendering and content accuracy, the Copy button, the Open to send button and its confirmation dialog, and the existing panel remaining unaffected.
+On the Dashboard, with the panel closed, click somewhere on the widget outside its buttons, confirm the real Concierge panel opens and its notification tray is already expanded showing this same notification, without needing to click the alert bell separately.
+
+Confirm clicking Copy and clicking Open to send on the widget still work exactly as before and do not also trigger the panel to open as a side effect.
+
+Click the new minimize control, confirm the widget collapses to a condensed single line, confirm it can be expanded back, and confirm the minimized state persists across a page reload within the same session.
+
+Confirm the existing panel's own alert tray, its expand and collapse behavior, and every draft action inside the panel itself still work exactly as they did before this task, completely unaffected.
+
+Report pass or fail individually for the styled alert dialog, the click-to-open-and-expand behavior, the button click isolation, the minimize and persistence behavior, and the existing panel regression check.
 
 GIT:
 git add -A
-git commit -m "add a Dashboard home screen widget surfacing the single most actionable Concierge notification, including its real draft with working Copy and Open to send actions reused directly from the existing panel implementation, allowing the Concierge's most valuable proactive output to be seen and acted on without requiring the panel to be opened at all, as a contained, real test of whether panel placement itself is limiting engagement before considering any larger architectural change"
+git commit -m "replace all four raw native browser alert dialogs with a new styled useAlert hook built on the existing Modal component, and turn the Dashboard Concierge widget into a real doorway into the panel, clicking it opens the panel with its notification tray already expanded to the same item, while Copy and Open to send remain fully independent actions, and add a minimize control so the widget does not permanently occupy Dashboard space, persisted for the session"
 git pull --rebase origin main
 git push origin main
