@@ -27,15 +27,15 @@ const config: Config = {
           muted: '#D4B06A',
         },
         surface: {
-          page: '#E7E6E0',
-          card: '#F0EFE9',
-          border: '#C6C4BA',
-          input: '#F7F6F2',
+          page: '#D6DEE6',
+          card: '#E9EEF3',
+          border: '#C2CDD8',
+          input: '#EFF3F7',
         },
         dark: {
-          page: '#272620',
-          card: '#32312A',
-          border: '#47453C',
+          page: '#1D232A',
+          card: '#272D35',
+          border: '#3B444F',
           sidebar: '#1A2535',
         },
         status: {
