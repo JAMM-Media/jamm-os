@@ -1,6 +1,7 @@
 # app/api/concierge/route.py
 
 import logging
+import re
 from datetime import datetime, timezone, timedelta
 from typing import Any
 from uuid import UUID
@@ -53,12 +54,22 @@ from app.api.concierge.functions import (
     get_time_tracking_detail,
     get_signature_envelope_status,
     get_firm_settings,
+    get_my_tasks,
 )
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/concierge", tags=["concierge"])
 router.include_router(context_router)
+
+SSN_PATTERN = re.compile(r'\b\d{3}-\d{2}-\d{4}\b')
+EIN_PATTERN = re.compile(r'\b\d{2}-\d{7}\b')
+
+
+def redact_sensitive_patterns(text: str) -> str:
+    text = SSN_PATTERN.sub("[REDACTED]", text)
+    text = EIN_PATTERN.sub("[REDACTED]", text)
+    return text
 
 
 # ---------------------------------------------------------------------------
@@ -235,6 +246,14 @@ _CONCIERGE_TOOLS = [
     },
 ]
 
+_STAFF_CONCIERGE_TOOLS = [
+    {
+        "name": "get_my_tasks",
+        "description": "Returns all incomplete tasks currently assigned to you, with client name, engagement name, due date, status, and overdue flag per task, plus the distinct engagement names those tasks belong to. Call this when you are asked what are my tasks, what am I working on, what is assigned to me, what engagements am I on, or any question about your own current work and assignments.",
+        "input_schema": {"type": "object", "properties": {}, "required": []},
+    },
+]
+
 _OPERATIONAL_KEYWORDS = {
     "attention", "urgent", "focus", "today", "stalled", "stuck", "idle",
     "unbilled", "invoiced", "billed", "overdue", "owes", "owe", "outstanding",
@@ -259,6 +278,8 @@ _OPERATIONAL_KEYWORDS = {
     "notification preferences", "notifications", "firm settings", "portal domain", "sending domain",
     "quickbooks connected", "stripe connected", "dropbox sign",
     "auth policy", "timesheet approval",
+    "my tasks", "my work", "working on", "assigned to me", "my assignments",
+    "what am i", "what's my", "what are my", "my engagements",
 }
 
 def _is_operational_question(message: str) -> bool:
@@ -300,6 +321,7 @@ _TOPIC_KEYWORDS: dict[str, set[str]] = {
         "accounts receivable", "send invoice", "invoice status",
         "partial payment", "payment receipt", "invoice line", "bill",
         "unbilled", "collect payment", "paid", "unpaid", "owes", "owe", "money",
+        "balance", "outstanding",
     },
     "time_tracking": {
         "time", "time entry", "time entries", "hours", "billable", "non-billable",
@@ -424,10 +446,10 @@ def concierge_chat(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    if current_user.role == UserRole.client_portal_user:
+    if current_user.role == "client_portal_user":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied.",
+            detail="Concierge access is currently limited to firm owners and managers.",
         )
     if not current_firm.concierge_active:
         raise HTTPException(
@@ -615,6 +637,8 @@ Respond with exactly one word: SAFE or UNSAFE. Nothing else.""",
                 result = get_signature_envelope_status(current_firm.id, db, client_id=_cid)
             elif tool_name == "get_firm_settings":
                 result = get_firm_settings(current_firm.id, db)
+            elif tool_name == "get_my_tasks":
+                result = get_my_tasks(current_firm.id, current_user.id, db)
             else:
                 result = {"error": f"Unknown tool: {tool_name}"}
             logger.info(f"Tool executed: {tool_name} -- firm {current_firm.id}")
@@ -720,10 +744,6 @@ Respond with exactly one word: SAFE or UNSAFE. Nothing else.""",
     except Exception:
         _firm_context = None
 
-    import re
-
-    SSN_PATTERN = re.compile(r'\b\d{3}-\d{2}-\d{4}\b')
-    EIN_PATTERN = re.compile(r'\b\d{2}-\d{7}\b')
     SYSTEM_PROMPT_LEAK_PHRASES = [
         "my instructions are",
         "my system prompt",
@@ -738,19 +758,16 @@ Respond with exactly one word: SAFE or UNSAFE. Nothing else.""",
     ]
 
     def filter_output(text: str) -> str:
-        # Redact SSN patterns
+        # Log security events for sensitive patterns detected in model output
         if SSN_PATTERN.search(text):
             logger.error(
                 f"SECURITY: SSN pattern detected in output for firm {current_firm.id}"
             )
-            text = SSN_PATTERN.sub("[REDACTED]", text)
-
-        # Redact EIN patterns
         if EIN_PATTERN.search(text):
             logger.error(
                 f"SECURITY: EIN pattern detected in output for firm {current_firm.id}"
             )
-            text = EIN_PATTERN.sub("[REDACTED]", text)
+        text = redact_sensitive_patterns(text)
 
         # Detect system prompt leakage attempts in output
         lower = text.lower()
@@ -767,8 +784,7 @@ Respond with exactly one word: SAFE or UNSAFE. Nothing else.""",
         # Confirmed leaks (get_overdue_invoices, dashboard data, current firm data,
         # staff capacity check) are purely alphabetic. This is defense in depth
         # alongside the prompt instruction, not a replacement for it.
-        import re as _re
-        text = _re.sub(r'\s*\([A-Za-z_ ]+\)\s*$', '', text.rstrip())
+        text = re.sub(r'\s*\([A-Za-z_ ]+\)\s*$', '', text.rstrip())
 
         return text
 
@@ -858,6 +874,25 @@ Respond with exactly one word: SAFE or UNSAFE. Nothing else.""",
                 "cache_control": {"type": "ephemeral"},
             }
         ]
+        # Staff users get a scoped tool set and an explicit context note so the
+        # model does not imply broader knowledge it does not have in this mode.
+        if current_user.role == "staff":
+            _active_tools = _STAFF_CONCIERGE_TOOLS
+            _system_blocks.append({
+                "type": "text",
+                "text": (
+                    "STAFF SCOPE: You are currently assisting a staff member, not a firm owner. "
+                    "You have access only to the tasks assigned to this specific staff member via get_my_tasks. "
+                    "You do not have access to firm-wide financial data, other staff members' workloads, "
+                    "client invoices, accounts receivable, or any other firm-wide operational data. "
+                    "If asked about anything beyond this staff member's own assigned tasks and the "
+                    "engagements those tasks belong to, say honestly that you can only see their own "
+                    "assigned work in this view and suggest they speak with a firm owner or manager "
+                    "for firm-wide information."
+                ),
+            })
+        else:
+            _active_tools = _CONCIERGE_TOOLS
         tool_messages = list(sanitized_messages)
 
         def generate_with_tools():
@@ -878,7 +913,7 @@ Respond with exactly one word: SAFE or UNSAFE. Nothing else.""",
                     # model's discretion entirely for this one turn.
                     # On all subsequent iterations, revert to auto so the model
                     # can freely choose follow-up tool calls or respond normally.
-                    if _iteration == 0 and _is_overdue_invoices_question(_last_user_msg):
+                    if _iteration == 0 and _active_tools is not _STAFF_CONCIERGE_TOOLS and _is_overdue_invoices_question(_last_user_msg):
                         _tool_choice: dict = {"type": "tool", "name": "get_overdue_invoices"}
                         logger.info(
                             f"[TOOL CHOICE] forcing get_overdue_invoices on iteration 0 "
@@ -895,7 +930,7 @@ Respond with exactly one word: SAFE or UNSAFE. Nothing else.""",
                         model="claude-sonnet-5",
                         max_tokens=8000,
                         system=_system_blocks,
-                        tools=_CONCIERGE_TOOLS,
+                        tools=_active_tools,
                         messages=current_messages,
                         tool_choice=_tool_choice,
                         output_config={"effort": "medium"},

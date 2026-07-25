@@ -14,16 +14,20 @@
   --color-brand-dark: #1A2535;
   --color-brand-btn: #3A6A94;
 
-  /* Surface (light mode) */
-  --color-surface-page: #E4E6EA;
-  --color-surface-card: #EDEEF0;
-  --color-surface-border: #C8CDD6;
-  --color-surface-input: #F7F7F8;
+  /* Concierge accent -- warm brass gold, for Concierge identity moments */
+  --color-concierge: #BF9640;
+  --color-concierge-muted: #D4B06A;
 
-  /* Dark mode surfaces */
-  --color-dark-page: #2D2D2D;
-  --color-dark-card: #383838;
-  --color-dark-border: #484848;
+  /* Surface (light mode) -- warmer, richer than generic cool gray */
+  --color-surface-page: #E7E6E0;
+  --color-surface-card: #F0EFE9;
+  --color-surface-border: #C6C4BA;
+  --color-surface-input: #F7F6F2;
+
+  /* Dark mode surfaces -- warm charcoal, not flat neutral gray */
+  --color-dark-page: #272620;
+  --color-dark-card: #32312A;
+  --color-dark-border: #47453C;
   --color-dark-sidebar: #1A2535;
 
   /* Status colors */
@@ -41,8 +45,9 @@
   --radius-card: 8px;
   --radius-modal: 10px;
 
-  /* Font */
-  --font-sans: var(--font-inter), -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  /* Fonts */
+  --font-sans: var(--font-plus-jakarta-sans), -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-display: var(--font-lora), Georgia, "Times New Roman", serif;
 }
 
 /* shadcn token mappings */
@@ -73,48 +78,48 @@
 
 /* Light mode CSS variables */
 :root {
-  --background: hsl(233, 8%, 90%);
+  --background: hsl(50, 9%, 89%);
   --foreground: hsl(215, 23%, 19%);
-  --card: hsl(220, 8%, 93%);
+  --card: hsl(48, 14%, 93%);
   --card-foreground: hsl(215, 23%, 19%);
-  --popover: hsl(220, 8%, 93%);
+  --popover: hsl(48, 14%, 93%);
   --popover-foreground: hsl(215, 23%, 19%);
   --primary: hsl(215, 40%, 19%);
-  --primary-foreground: hsl(220, 8%, 93%);
-  --secondary: hsl(218, 14%, 79%);
+  --primary-foreground: hsl(48, 14%, 93%);
+  --secondary: hsl(45, 9%, 74%);
   --secondary-foreground: hsl(215, 23%, 19%);
-  --muted: hsl(220, 6%, 80%);
-  --muted-foreground: hsl(220, 9%, 46%);
+  --muted: hsl(45, 9%, 79%);
+  --muted-foreground: hsl(40, 7%, 44%);
   --accent: hsl(210, 37%, 47%);
-  --accent-foreground: hsl(220, 8%, 93%);
+  --accent-foreground: hsl(48, 14%, 93%);
   --destructive: hsl(0, 72%, 51%);
   --destructive-foreground: hsl(0, 0%, 100%);
-  --border: hsl(218, 14%, 79%);
-  --input: hsl(220, 8%, 97%);
+  --border: hsl(45, 9%, 74%);
+  --input: hsl(48, 20%, 96%);
   --ring: hsl(210, 37%, 47%);
   --radius: 0.5rem;
 }
 
 /* Dark mode CSS variables */
 .dark {
-  --background: hsl(0, 0%, 18%);
-  --foreground: hsl(220, 8%, 93%);
-  --card: hsl(0, 0%, 22%);
-  --card-foreground: hsl(220, 8%, 93%);
-  --popover: hsl(0, 0%, 22%);
-  --popover-foreground: hsl(220, 8%, 93%);
+  --background: hsl(48, 8%, 15%);
+  --foreground: hsl(48, 10%, 93%);
+  --card: hsl(46, 9%, 18%);
+  --card-foreground: hsl(48, 10%, 93%);
+  --popover: hsl(46, 9%, 18%);
+  --popover-foreground: hsl(48, 10%, 93%);
   --primary: hsl(210, 43%, 40%);
-  --primary-foreground: hsl(220, 8%, 93%);
-  --secondary: hsl(0, 0%, 28%);
-  --secondary-foreground: hsl(220, 8%, 93%);
-  --muted: hsl(0, 0%, 28%);
-  --muted-foreground: hsl(220, 9%, 62%);
+  --primary-foreground: hsl(48, 10%, 93%);
+  --secondary: hsl(44, 7%, 24%);
+  --secondary-foreground: hsl(48, 10%, 93%);
+  --muted: hsl(44, 7%, 24%);
+  --muted-foreground: hsl(44, 6%, 60%);
   --accent: hsl(210, 37%, 47%);
-  --accent-foreground: hsl(220, 8%, 93%);
+  --accent-foreground: hsl(48, 10%, 93%);
   --destructive: hsl(0, 63%, 31%);
-  --destructive-foreground: hsl(220, 8%, 93%);
-  --border: hsl(0, 0%, 28%);
-  --input: hsl(0, 0%, 22%);
+  --destructive-foreground: hsl(48, 10%, 93%);
+  --border: hsl(44, 7%, 24%);
+  --input: hsl(46, 9%, 18%);
   --ring: hsl(210, 37%, 47%);
 }
 

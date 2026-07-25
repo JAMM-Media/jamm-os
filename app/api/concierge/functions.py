@@ -46,8 +46,8 @@ def get_stalled_engagements(firm_id: uuid.UUID, db: Session, days: int = 14) -> 
         .join(Client, Engagement.client_id == Client.id)
         .where(
             Engagement.firm_id == firm_id,
-            Engagement.status.notin_(["completed", "archived"]),
             Engagement.updated_at < cutoff,
+            Engagement.status.notin_(["completed", "archived"]),
         )
         .order_by(Engagement.updated_at.asc())
         .limit(20)
@@ -361,7 +361,6 @@ def get_daily_brief(firm_id: uuid.UUID, db: Session) -> dict:
             Engagement.firm_id == firm_id,
             Engagement.filing_deadline >= today,
             Engagement.filing_deadline <= in_14_days,
-            Engagement.status.notin_(["completed", "archived"]),
         )
         .order_by(Engagement.filing_deadline.asc())
         .limit(10)
@@ -398,7 +397,10 @@ def resolve_client_by_name(firm_id: uuid.UUID, db: Session, name_query: str) -> 
         select(Client.id, Client.name)
         .where(
             Client.firm_id == firm_id,
-            Client.name.ilike(f"%{name_query}%"),
+            or_(
+                Client.name.ilike(f"%{name_query}%"),
+                Client.business_description.ilike(f"%{name_query}%"),
+            ),
             Client.is_active == True,
         )
         .order_by(Client.name.asc())
@@ -483,6 +485,20 @@ def get_client_full_snapshot(
                 "amount": float(r.total_amount or 0),
                 "status": str(r.status),
                 "due": r.due_date.isoformat() if r.due_date else None,
+                "is_overdue": (
+                    r.status in ("sent", "overdue")
+                    and r.due_date is not None
+                    and r.due_date < date.today()
+                ),
+                "days_overdue": (
+                    (date.today() - r.due_date).days
+                    if (
+                        r.due_date is not None
+                        and r.status in ("sent", "overdue")
+                        and r.due_date < date.today()
+                    )
+                    else None
+                ),
             }
             for r in invoices
         ],
@@ -582,7 +598,6 @@ def get_deadline_calendar(firm_id: uuid.UUID, db: Session, days_ahead: int = 14)
             Engagement.firm_id == firm_id,
             Engagement.filing_deadline >= today,
             Engagement.filing_deadline <= cutoff,
-            Engagement.status.notin_(["completed", "archived"]),
         )
         .order_by(Engagement.filing_deadline.asc())
         .limit(30)
@@ -915,7 +930,6 @@ def get_task_status(firm_id: uuid.UUID, db: Session) -> dict:
         .where(
             Task.firm_id == firm_id,
             Task.is_completed == False,  # noqa: E712
-            Engagement.status.notin_(["completed", "archived"]),
         )
         .order_by(Task.due_date.asc().nullslast())
         .limit(30)
@@ -949,7 +963,6 @@ def get_task_status(firm_id: uuid.UUID, db: Session) -> dict:
         .where(
             QcChecklistItem.firm_id == firm_id,
             QcChecklistItem.is_checked == False,  # noqa: E712
-            Engagement.status.notin_(["completed", "archived"]),
         )
         .order_by(Engagement.name.asc())
         .limit(30)
@@ -995,7 +1008,6 @@ def get_qc_checklist_status(firm_id: uuid.UUID, db: Session) -> dict:
         .where(
             QcChecklistItem.firm_id == firm_id,
             QcChecklistItem.is_checked == False,  # noqa: E712
-            Engagement.status.notin_(["completed", "archived"]),
         )
         .group_by(Engagement.id, Engagement.name, Client.name)
         .order_by(func.count(QcChecklistItem.id).desc())
@@ -1244,4 +1256,54 @@ def get_firm_settings(firm_id: uuid.UUID, db: Session) -> dict:
                 "note": "esign_enabled feature flag only, no live credential record stored",
             },
         },
+    }
+
+
+# ---------------------------------------------------------------------------
+# Function: get_my_tasks
+# Returns all incomplete tasks assigned to a specific staff member, with
+# client name, engagement name, due date, status, and overdue flag per task,
+# plus the distinct engagement names those tasks belong to.
+# ---------------------------------------------------------------------------
+def get_my_tasks(firm_id: uuid.UUID, user_id: uuid.UUID, db: Session) -> dict:
+    today = date.today()
+
+    task_rows = db.execute(
+        select(
+            Task.id,
+            Task.title,
+            Task.status,
+            Task.due_date,
+            Client.name.label("client_name"),
+            Engagement.name.label("engagement_name"),
+        )
+        .join(Client, Task.client_id == Client.id)
+        .join(Engagement, Task.engagement_id == Engagement.id)
+        .where(
+            Task.firm_id == firm_id,
+            Task.assigned_to == user_id,
+            Task.is_completed == False,  # noqa: E712
+        )
+        .order_by(Task.due_date.asc().nullslast())
+    ).fetchall()
+
+    tasks = [
+        {
+            "task_id": str(r.id),
+            "title": r.title,
+            "status": r.status,
+            "client_name": r.client_name,
+            "engagement_name": r.engagement_name,
+            "due_date": r.due_date.isoformat() if r.due_date else None,
+            "overdue": r.due_date is not None and r.due_date < today,
+        }
+        for r in task_rows
+    ]
+
+    engagement_names = list(dict.fromkeys(r.engagement_name for r in task_rows))
+
+    return {
+        "task_count": len(tasks),
+        "tasks": tasks,
+        "engagements_with_my_tasks": engagement_names,
     }

@@ -54,76 +54,42 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Build automatic possible-fabrication detection into the ConciergeQuestionLog, closing the gap where confident fabrications produce no signal at all
+TASK: Give the Overdue Engagements stat card real visual distinction from its neutral peer cards when overdue count is positive
 
-USE: Fable 5
+USE: claude sonnet
 
 VERIFY BEFORE ACT:
-cat /home/corby/jamm-os/app/services/concierge_service.py
-sed -n '795,825p' /home/corby/jamm-os/app/api/concierge/route.py
-sed -n '1040,1065p' /home/corby/jamm-os/app/api/concierge/route.py
-grep -n "def _execute_tool" -A 5 /home/corby/jamm-os/app/api/concierge/route.py
-cat /home/corby/jamm-os/app/models/concierge_question_log.py
-ls /home/corby/jamm-os/migrations/versions/ | tail -5
+sed -n '30,50p' /home/corby/jamm-os/frontend/src/app/\(app\)/dashboard/page.tsx
+sed -n '555,570p' /home/corby/jamm-os/frontend/src/app/\(app\)/dashboard/page.tsx
 
-Read all of this in full before writing any code. This task changes a logging pipeline used by every single real question asked of the Concierge, mistakes here have wide blast radius.
+Confirm the shared MetricCard component and the Overdue Engagements call site exactly as described before editing.
 
 WHAT THIS IS:
 
-Confirmed live, twice tonight: a fully confident, non-hedging fabrication, inventing a nonexistent staff member with specific fake numbers, and separately, inventing specific portal enablement statistics, both went completely undetected by the existing low_confidence flag, which only matches a fixed list of hedge phrases such as i'm not sure or i don't have access. Neither fabrication contained any hedge language at all, both were stated with full confidence, so this existing detection mechanism structurally cannot catch this exact failure mode, no matter how long the hedge phrase list gets.
-
-Both real fabrications found tonight share a genuinely detectable, code level signature in one of two forms. First form, the more reliable one: the question was correctly classified as needing live data, the tool-use path was correctly entered, but no tool actually executed successfully this turn, and the response still contained a substantive, specific-sounding answer. Second form, less reliable but still worth surfacing: the question never entered the tool-use path at all, meaning the classifier missed it, and the response from the plain conversational path contains patterns suggestive of fabricated specific firm data, such as dollar amounts, percentages, or a proper name paired with a specific number.
+An independent live audit specifically flagged that the Overdue Engagements card currently carries the same visual weight as neutral cards like Unbilled WIP, with the audit's specific suggestion being a larger size or a colored card background, not just red value text, which is the only distinction that currently exists. This is the single most urgent, time sensitive metric on the Dashboard when its count is positive, and it should draw the eye before anything else, not compete for attention equally with unrelated neutral stats.
 
 CHANGE INSTRUCTIONS:
 
-Add a new nullable boolean column, possible_fabrication, to the ConciergeQuestionLog model, defaulting to false, with its own index matching the existing pattern already used for the low_confidence column. Write a proper migration for this, matching the naming and structure of the most recent migrations already in this repo.
+Add a new optional prop to MetricCard, something like variant, accepting a value such as alert, defaulting to the existing neutral treatment when not passed. When variant is alert, the card's background and border should use the existing status-red tokens already established elsewhere in this codebase, at a subtlety appropriate for a background tint, not a solid, jarring red fill, still clearly a card, just visually distinct from its neutral siblings.
 
-In the tool-use loop in route.py, add a simple tracking mechanism, a boolean or counter, set to indicate at least one tool executed successfully this turn, updated wherever the existing Tool executed log line already fires, reusing that exact point rather than adding a second separate check.
+At the Overdue Engagements call site specifically, pass this new variant conditionally, only when the real overdue count is greater than zero, using the same visibleOverdue.length > 0 condition already used for the text color. When the count is zero, the card should render with the existing neutral treatment exactly as it does today, this distinction only applies when there is something genuinely urgent to flag.
 
-Update log_question_asked in concierge_service.py to accept two new pieces of information: whether this question was on the tool-use path or the plain path, and whether any tool actually executed this turn if it was on the tool-use path. Compute possible_fabrication as follows: if on the tool-use path and no tool executed and the response is non-trivial in length, mark true, this is the reliable detector. If on the plain path, mark true only if the response contains a dollar sign, a percent sign, or a pattern matching two consecutive capitalized words immediately followed by a number, since this is a heuristic approximation, not a certainty, and should be conservative rather than trigger constantly on legitimate general knowledge answers. Do not mark possible_fabrication true if low_confidence is already true, since that is a different, already-visible category, this new flag exists specifically to catch confident-sounding fabrications that show no hedging at all.
-
-Update both call sites of log_question_asked in route.py to pass through whatever new information is needed for this computation.
-
-Update the /concierge-log endpoint to also return possible_fabrication for each entry, and add a query parameter allowing filtering by it, matching the existing pattern already used for low_confidence_only.
-
-Update the frontend /concierge-log review page to visibly show this new flag on each entry, distinct from the existing low confidence badge, for example a differently colored badge reading possible fabrication, and add its own filter toggle alongside the existing low confidence only toggle.
+Do not change the other three MetricCard call sites, Revenue This Month, Outstanding AR, Unbilled WIP, they keep the existing neutral treatment unconditionally.
 
 VERIFY AFTER ACT:
 
-grep -n "possible_fabrication" /home/corby/jamm-os/app/models/concierge_question_log.py /home/corby/jamm-os/app/services/concierge_service.py /home/corby/jamm-os/app/api/concierge/route.py /home/corby/jamm-os/frontend/src/app/concierge-log/page.tsx
-
-Expected: present in all four locations, or wherever the actual review page file is located if the path differs, confirm the real path first rather than assuming.
-
-Also write and run a standalone test proving the detection logic directly, not just that the code compiles, using realistic fake inputs matching tonight's two real fabrications, and paste the real output:
-
-python3 -c "
-# construct the actual detection function's real inputs here, simulating
-# the tool-use path with zero tools executed and a substantive response,
-# and separately the plain path with a fabricated-looking name and number,
-# confirming both are correctly flagged true, and confirming a normal,
-# real, tool-backed response is correctly flagged false
-"
-
-python3 -c "from app.main import app; print('OK')"
 npm run build in frontend, expected zero TypeScript errors.
-
-Run the actual migration against the real dev database and confirm it applies cleanly:
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/jammpx_dev .venv/bin/alembic upgrade head
 
 MANUAL VERIFICATION:
 
-Restart both servers.
+Full kill, .next wipe, restart both servers.
 
-Ask which employee is being used the most again, now that the classifier fix already makes this correctly call a real tool, confirm possible_fabrication is correctly false for this now-fixed case.
+Confirm in light mode that with overdue engagements present, the Overdue Engagements card now visually stands out from its three neutral neighbors, not just through red text but through the card itself. Confirm the other three cards are completely unchanged. Confirm in dark mode the same distinction holds and remains fully readable, not overly bright or jarring against the dark background.
 
-If there is any way to temporarily and safely simulate the original bug for a real end to end test, such as asking a question using a phrasing deliberately excluded from any keyword list, do so and confirm possible_fabrication comes back true for that response, logged and visible on the /concierge-log page.
-
-Ask a normal, already-working question such as which clients have overdue invoices right now, confirm possible_fabrication is correctly false.
-
-Report pass or fail individually for all three checks, and confirm the review page visibly shows the new flag.
+Report pass or fail for light mode, dark mode, and confirmation the other three cards are unaffected, with a screenshot of the full stat card row in both modes.
 
 GIT:
 git add -A
-git commit -m "add automatic possible_fabrication detection to ConciergeQuestionLog, catching confident non-hedging fabrications that the existing low_confidence hedge-phrase detector structurally cannot catch, since both real fabrications found tonight, an invented staff member and invented portal statistics, contained zero hedge language and were stated with full confidence, closing the gap where this class of failure could previously only be found by a human happening to ask the exact right question"
+git commit -m "give the Overdue Engagements stat card a distinct alert-tinted background when the overdue count is positive, addressing a live audit finding that this, the single most time sensitive metric on the Dashboard, currently carries identical visual weight to neutral stats like Unbilled WIP, with only its value text previously distinguishing it"
 git pull --rebase origin main
 git push origin main

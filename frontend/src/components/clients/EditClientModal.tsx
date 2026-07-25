@@ -57,6 +57,7 @@ interface FormState {
   entity_subtype: string
   company_name: string
   notes: string
+  business_description: string
 }
 
 function toFormState(client: Client): FormState {
@@ -68,6 +69,7 @@ function toFormState(client: Client): FormState {
     entity_subtype: client.entitySubtype ?? '',
     company_name: client.companyName ?? '',
     notes: client.notes ?? '',
+    business_description: client.businessDescription ?? '',
   }
 }
 
@@ -108,6 +110,7 @@ export function EditClientModal({ isOpen, onClose, client, onSuccess }: EditClie
     if (form.entity_subtype !== original.entity_subtype) patch.entity_subtype = form.entity_subtype || null
     if (form.company_name !== original.company_name) patch.company_name = form.company_name || null
     if (form.notes !== original.notes) patch.notes = form.notes || null
+    if (form.business_description !== original.business_description) patch.business_description = form.business_description || null
 
     if (Object.keys(patch).length === 0) {
       onClose()
@@ -200,6 +203,14 @@ export function EditClientModal({ isOpen, onClose, client, onSuccess }: EditClie
             />
           </FormField>
         )}
+
+        <FormField label="What does this client's business do? (optional)">
+          <TextInput
+            placeholder="e.g. landscaping and lawn care services"
+            value={form.business_description}
+            onChange={(e) => handleChange('business_description', e.target.value)}
+          />
+        </FormField>
 
         <FormField label="Company Name">
           <TextInput

@@ -32,6 +32,7 @@ class ClientBase(BaseModel):
     is_active: Optional[bool] = True
     entity_type: Optional[str] = None
     entity_subtype: Optional[str] = None
+    business_description: Optional[str] = None
     referral_source: Optional[ReferralSource] = None
     referring_client_id: Optional[UUID] = None
 
@@ -86,6 +87,7 @@ class ClientUpdate(BaseModel):
     is_active: Optional[bool] = None
     entity_type: Optional[str] = None
     entity_subtype: Optional[str] = None
+    business_description: Optional[str] = None
     referral_source: Optional[ReferralSource] = None
     referring_client_id: Optional[UUID] = None
 

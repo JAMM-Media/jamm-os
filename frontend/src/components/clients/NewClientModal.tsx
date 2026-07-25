@@ -57,6 +57,7 @@ interface FormState {
   phone: string
   entity_type: string
   entity_subtype: string
+  business_description: string
 }
 
 interface FormErrors {
@@ -81,6 +82,7 @@ export function NewClientModal({ open, onClose, onAdd, initialName, initialEmail
     phone: '',
     entity_type: '',
     entity_subtype: '',
+    business_description: '',
   })
 
   useEffect(() => {
@@ -108,7 +110,7 @@ export function NewClientModal({ open, onClose, onAdd, initialName, initialEmail
 
   function handleClose() {
     setFormDirty(false)
-    setForm({ name: '', email: '', phone: '', entity_type: '', entity_subtype: '' })
+    setForm({ name: '', email: '', phone: '', entity_type: '', entity_subtype: '', business_description: '' })
     setErrors({})
     onClose()
   }
@@ -128,6 +130,7 @@ export function NewClientModal({ open, onClose, onAdd, initialName, initialEmail
         phone: form.phone.trim() || undefined,
         entity_type: form.entity_type || undefined,
         entity_subtype: form.entity_subtype || undefined,
+        business_description: form.business_description.trim() || undefined,
       })
       onAdd(newClient)
       handleClose()
@@ -197,6 +200,14 @@ export function NewClientModal({ open, onClose, onAdd, initialName, initialEmail
             />
           </FormField>
         )}
+
+        <FormField label="What does this client's business do? (optional)">
+          <TextInput
+            placeholder="e.g. landscaping and lawn care services"
+            value={form.business_description}
+            onChange={(e) => handleChange('business_description', e.target.value)}
+          />
+        </FormField>
 
         {/* Row 2: Email + Phone */}
         <div className="grid grid-cols-2 gap-3">

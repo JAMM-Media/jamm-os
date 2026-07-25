@@ -31,26 +31,30 @@ interface MetricCardProps {
   value: string
   subtext?: string
   valueClassName?: string
+  variant?: 'alert'
 }
 
-function MetricCard({ label, value, subtext, valueClassName }: MetricCardProps) {
+function MetricCard({ label, value, subtext, valueClassName, variant }: MetricCardProps) {
+  const cardClass = variant === 'alert'
+    ? 'bg-status-red dark:bg-status-red-text/10 rounded-[8px] p-5 border border-status-red-text/30 dark:border-status-red-text/40 shadow-sm flex flex-col gap-1'
+    : 'bg-surface-card dark:bg-dark-card rounded-[8px] p-5 border border-surface-border dark:border-dark-border shadow-sm flex flex-col gap-1'
   return (
-    <div className="bg-white dark:bg-dark-card rounded-[8px] p-5 border border-surface-border dark:border-dark-border flex flex-col gap-1">
-      <span className="text-[12px] text-[#6B7280]">{label}</span>
-      <span className={`text-[28px] font-medium leading-none ${valueClassName ?? 'text-brand dark:text-[#EDEEF0]'}`}>
+    <div className={cardClass}>
+      <span className="text-[12px] text-muted-foreground">{label}</span>
+      <span className={`text-[28px] font-display font-medium leading-none ${valueClassName ?? 'text-brand dark:text-foreground'}`}>
         {value}
       </span>
-      {subtext && <span className="text-[11px] text-[#6B7280] mt-0.5">{subtext}</span>}
+      {subtext && <span className="text-[11px] text-muted-foreground mt-0.5">{subtext}</span>}
     </div>
   )
 }
 
 function MetricCardSkeleton() {
   return (
-    <div className="bg-white dark:bg-dark-card rounded-[8px] p-5 border border-surface-border dark:border-dark-border flex flex-col gap-2">
-      <div className="h-3 w-24 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
-      <div className="h-8 w-32 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
-      <div className="h-3 w-20 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+    <div className="bg-surface-card dark:bg-dark-card rounded-[8px] p-5 border border-surface-border dark:border-dark-border shadow-sm flex flex-col gap-2">
+      <div className="h-3 w-24 bg-surface-border dark:bg-dark-border animate-pulse rounded" />
+      <div className="h-8 w-32 bg-surface-border dark:bg-dark-border animate-pulse rounded" />
+      <div className="h-3 w-20 bg-surface-border dark:bg-dark-border animate-pulse rounded" />
     </div>
   )
 }
@@ -69,24 +73,24 @@ function daysBadge(days: number) {
 
 function UpcomingDeadlinesList({ items }: { items: UpcomingDeadlineItem[] }) {
   return (
-    <div className="bg-white dark:bg-dark-card rounded-[8px] border border-surface-border dark:border-dark-border overflow-hidden">
+    <div className="bg-surface-card dark:bg-dark-card rounded-[8px] border border-surface-border dark:border-dark-border shadow-sm overflow-hidden">
       <div className="px-4 py-3 border-b border-surface-border dark:border-dark-border">
-        <span className="text-[13px] font-medium text-[#111827] dark:text-[#EDEEF0]">Upcoming Deadlines</span>
+        <span className="text-[13px] font-medium text-foreground">Upcoming Deadlines</span>
       </div>
       {items.length === 0 ? (
         <div className="px-4 py-8 text-center">
           <p className="text-[13px] text-green-600 dark:text-green-400 font-medium">No deadlines in the next 14 days.</p>
-          <p className="text-[12px] text-[#6B7280] mt-1">Your runway is clear — keep it that way.</p>
+          <p className="text-[12px] text-muted-foreground mt-1">Your runway is clear — keep it that way.</p>
         </div>
       ) : (
         <div className="divide-y divide-surface-border dark:divide-dark-border">
           {items.map((item) => (
             <div key={item.engagement_id} className="flex items-center px-4 py-2.5 gap-3">
               <div className="flex-1 min-w-0">
-                <p className="text-[13px] font-medium text-[#111827] dark:text-[#EDEEF0] truncate">{item.client_name}</p>
+                <p className="text-[13px] font-medium text-foreground truncate">{item.client_name}</p>
               </div>
-              <p className="text-[12px] text-[#6B7280] truncate flex-shrink-0">{formatEngagementType(item.engagement_type)}</p>
-              <p className="text-[12px] text-[#6B7280] flex-shrink-0 w-24 text-right">{item.deadline}</p>
+              <p className="text-[12px] text-muted-foreground truncate flex-shrink-0">{formatEngagementType(item.engagement_type)}</p>
+              <p className="text-[12px] text-muted-foreground flex-shrink-0 w-24 text-right">{item.deadline}</p>
               <div className="flex-shrink-0">{daysBadge(item.days_until)}</div>
             </div>
           ))}
@@ -103,15 +107,15 @@ function UpcomingDeadlinesList({ items }: { items: UpcomingDeadlineItem[] }) {
 
 function UpcomingDeadlinesSkeleton() {
   return (
-    <div className="bg-white dark:bg-dark-card rounded-[8px] border border-surface-border dark:border-dark-border overflow-hidden">
+    <div className="bg-surface-card dark:bg-dark-card rounded-[8px] border border-surface-border dark:border-dark-border shadow-sm overflow-hidden">
       <div className="px-4 py-3 border-b border-surface-border dark:border-dark-border">
-        <div className="h-4 w-36 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+        <div className="h-4 w-36 bg-surface-border dark:bg-dark-border animate-pulse rounded" />
       </div>
       <div className="divide-y divide-surface-border dark:divide-dark-border">
         {Array.from({ length: 4 }).map((_, i) => (
           <div key={i} className="flex items-center px-4 py-3 gap-3">
-            <div className="flex-1 h-4 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
-            <div className="h-4 w-20 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+            <div className="flex-1 h-4 bg-surface-border dark:bg-dark-border animate-pulse rounded" />
+            <div className="h-4 w-20 bg-surface-border dark:bg-dark-border animate-pulse rounded" />
           </div>
         ))}
       </div>
@@ -131,23 +135,23 @@ function utilizationBarColor(pct: number) {
 
 function StaffUtilizationPanel({ items }: { items: StaffUtilizationItem[] }) {
   return (
-    <div className="bg-white dark:bg-dark-card rounded-[8px] border border-surface-border dark:border-dark-border overflow-hidden">
+    <div className="bg-surface-card dark:bg-dark-card rounded-[8px] border border-surface-border dark:border-dark-border shadow-sm overflow-hidden">
       <div className="px-4 py-3 border-b border-surface-border dark:border-dark-border">
-        <span className="text-[13px] font-medium text-[#111827] dark:text-[#EDEEF0]">Staff Utilization</span>
+        <span className="text-[13px] font-medium text-foreground">Staff Utilization</span>
       </div>
       {items.length === 0 ? (
         <div className="px-4 py-8 text-center">
-          <p className="text-[12px] text-[#6B7280]">No time logged this week.</p>
+          <p className="text-[12px] text-muted-foreground">No time logged this week.</p>
         </div>
       ) : (
         <div className="px-4 py-3 flex flex-col gap-3">
           {items.map((item) => (
             <div key={item.user_id}>
               <div className="flex justify-between mb-1">
-                <span className="text-[12px] text-[#111827] dark:text-[#EDEEF0]">{item.full_name}</span>
-                <span className="text-[12px] text-[#6B7280]">{Math.round(item.utilization_pct)}%</span>
+                <span className="text-[12px] text-foreground">{item.full_name}</span>
+                <span className="text-[12px] text-muted-foreground">{Math.round(item.utilization_pct)}%</span>
               </div>
-              <div className="h-2 w-full bg-[#E5E7EB] dark:bg-[#333333] rounded-full overflow-hidden">
+              <div className="h-2 w-full bg-surface-border dark:bg-dark-border rounded-full overflow-hidden">
                 <div
                   className={`h-full rounded-full transition-all ${utilizationBarColor(item.utilization_pct)}`}
                   style={{ width: `${Math.min(item.utilization_pct, 100)}%` }}
@@ -163,15 +167,15 @@ function StaffUtilizationPanel({ items }: { items: StaffUtilizationItem[] }) {
 
 function StaffUtilizationSkeleton() {
   return (
-    <div className="bg-white dark:bg-dark-card rounded-[8px] border border-surface-border dark:border-dark-border overflow-hidden">
+    <div className="bg-surface-card dark:bg-dark-card rounded-[8px] border border-surface-border dark:border-dark-border shadow-sm overflow-hidden">
       <div className="px-4 py-3 border-b border-surface-border dark:border-dark-border">
-        <div className="h-4 w-32 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+        <div className="h-4 w-32 bg-surface-border dark:bg-dark-border animate-pulse rounded" />
       </div>
       <div className="px-4 py-3 flex flex-col gap-4">
         {Array.from({ length: 3 }).map((_, i) => (
           <div key={i}>
-            <div className="h-3 w-28 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded mb-2" />
-            <div className="h-2 w-full bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded-full" />
+            <div className="h-3 w-28 bg-surface-border dark:bg-dark-border animate-pulse rounded mb-2" />
+            <div className="h-2 w-full bg-surface-border dark:bg-dark-border animate-pulse rounded-full" />
           </div>
         ))}
       </div>
@@ -206,9 +210,9 @@ function OverdueEngagementsTable({
   }
 
   return (
-    <div className="bg-white dark:bg-dark-card rounded-[8px] border border-surface-border dark:border-dark-border overflow-hidden">
+    <div className="bg-surface-card dark:bg-dark-card rounded-[8px] border border-surface-border dark:border-dark-border shadow-sm overflow-hidden">
       <div className="px-4 py-3 border-b border-surface-border dark:border-dark-border flex items-center gap-2">
-        <span className="text-[13px] font-medium text-[#111827] dark:text-[#EDEEF0]">Overdue Engagements</span>
+        <span className="text-[13px] font-medium text-foreground">Overdue Engagements</span>
         {items.length > 0 && (
           <span className="text-[11px] font-medium px-1.5 py-0.5 rounded bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">
             {items.length}
@@ -224,7 +228,7 @@ function OverdueEngagementsTable({
         <div className="overflow-x-auto">
           <table className="w-full text-[12px]">
             <thead>
-              <tr className="border-b border-surface-border dark:border-dark-border text-[#6B7280]">
+              <tr className="border-b border-surface-border dark:border-dark-border text-muted-foreground">
                 <th className="px-4 py-2 text-left font-medium">Client</th>
                 <th className="px-4 py-2 text-left font-medium">Engagement Type</th>
                 <th className="px-4 py-2 text-left font-medium">Deadline</th>
@@ -236,18 +240,18 @@ function OverdueEngagementsTable({
             <tbody className="divide-y divide-surface-border dark:divide-dark-border">
               {items.map((item) => (
                 <tr key={item.engagement_id}>
-                  <td className="px-4 py-2.5 font-medium text-[#111827] dark:text-[#EDEEF0]">{item.client_name}</td>
-                  <td className="px-4 py-2.5 text-[#6B7280]">{formatEngagementType(item.engagement_type)}</td>
-                  <td className="px-4 py-2.5 text-[#6B7280]">{item.deadline}</td>
+                  <td className="px-4 py-2.5 font-medium text-foreground">{item.client_name}</td>
+                  <td className="px-4 py-2.5 text-muted-foreground">{formatEngagementType(item.engagement_type)}</td>
+                  <td className="px-4 py-2.5 text-muted-foreground">{item.deadline}</td>
                   <td className="px-4 py-2.5">
                     <span className="font-medium text-[#DC2626]">{item.days_overdue}d</span>
                   </td>
-                  <td className="px-4 py-2.5 text-[#6B7280]">{item.assigned_staff_name ?? '—'}</td>
+                  <td className="px-4 py-2.5 text-muted-foreground">{item.assigned_staff_name ?? '—'}</td>
                   <td className="px-4 py-2.5">
                     <button
                       onClick={() => handleComplete(item.engagement_id)}
                       disabled={completing === item.engagement_id}
-                      className="text-[11px] font-medium px-2.5 py-1 rounded border border-surface-border dark:border-dark-border text-[#374151] dark:text-[#D1D5DB] hover:bg-[#F9FAFB] dark:hover:bg-[#2A2A2A] disabled:opacity-50 transition-colors"
+                      className="text-[11px] font-medium px-2.5 py-1 rounded border border-surface-border dark:border-dark-border text-foreground hover:bg-surface-input dark:hover:bg-dark-page disabled:opacity-50 transition-colors"
                     >
                       {completing === item.engagement_id ? 'Saving…' : 'Mark Complete'}
                     </button>
@@ -303,12 +307,12 @@ function UnsignedDocumentsTable({
 
   function renderStatusCell(item: UnsignedDocumentItem) {
     if (item.reminder_state === 'ready_first') {
-      return <span className="text-[11px] text-[#6B7280]">Awaiting first follow-up</span>
+      return <span className="text-[11px] text-muted-foreground">Awaiting first follow-up</span>
     }
     if (item.reminder_state === 'ready_second') {
-      return <span className="text-[11px] text-[#92400E]">Needs second reminder</span>
+      return <span className="text-[11px] text-status-amber-text">Needs second reminder</span>
     }
-    return <span className="text-[11px] text-[#991B1B]">No response</span>
+    return <span className="text-[11px] text-status-red-text">No response</span>
   }
 
   function renderActionCell(item: UnsignedDocumentItem) {
@@ -349,9 +353,9 @@ function UnsignedDocumentsTable({
   }
 
   return (
-    <div className="bg-white dark:bg-dark-card rounded-[8px] border border-surface-border dark:border-dark-border overflow-hidden">
+    <div className="bg-surface-card dark:bg-dark-card rounded-[8px] border border-surface-border dark:border-dark-border shadow-sm overflow-hidden">
       <div className="px-4 py-3 border-b border-surface-border dark:border-dark-border flex items-center gap-2">
-        <span className="text-[13px] font-medium text-[#111827] dark:text-[#EDEEF0]">Awaiting Signature</span>
+        <span className="text-[13px] font-medium text-foreground">Awaiting Signature</span>
         {items.length > 0 && (
           <span className="text-[11px] font-medium px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
             {items.length}
@@ -360,13 +364,14 @@ function UnsignedDocumentsTable({
       </div>
       {items.length === 0 ? (
         <div className="px-4 py-8 text-center">
-          <p className="text-[12px] text-[#6B7280]">No documents awaiting signature.</p>
+          <p className="text-[13px] text-green-600 dark:text-green-400 font-medium">All signatures are in.</p>
+          <p className="text-[12px] text-muted-foreground mt-1">No envelopes are sitting unsigned across your clients.</p>
         </div>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-[12px]">
             <thead>
-              <tr className="border-b border-surface-border dark:border-dark-border text-[#6B7280]">
+              <tr className="border-b border-surface-border dark:border-dark-border text-muted-foreground">
                 <th className="px-4 py-2 text-left font-medium">Client</th>
                 <th className="px-4 py-2 text-left font-medium">Document</th>
                 <th className="px-4 py-2 text-left font-medium">Sent</th>
@@ -378,7 +383,7 @@ function UnsignedDocumentsTable({
             <tbody className="divide-y divide-surface-border dark:divide-dark-border">
               {items.map((item) => (
                 <tr key={item.envelope_id}>
-                  <td className="px-4 py-2.5 font-medium text-[#111827] dark:text-[#EDEEF0]">
+                  <td className="px-4 py-2.5 font-medium text-foreground">
                     <span>{item.client_name}</span>
                     {item.reminder_state === 'escalated' && (
                       <span
@@ -389,9 +394,9 @@ function UnsignedDocumentsTable({
                       </span>
                     )}
                   </td>
-                  <td className="px-4 py-2.5 text-[#6B7280]">{item.document_title || '—'}</td>
-                  <td className="px-4 py-2.5 text-[#6B7280]">{new Date(item.sent_at).toLocaleDateString()}</td>
-                  <td className="px-4 py-2.5 text-[#6B7280]">{item.days_waiting}d</td>
+                  <td className="px-4 py-2.5 text-muted-foreground">{item.document_title || '—'}</td>
+                  <td className="px-4 py-2.5 text-muted-foreground">{new Date(item.sent_at).toLocaleDateString()}</td>
+                  <td className="px-4 py-2.5 text-muted-foreground">{item.days_waiting}d</td>
                   <td className="px-4 py-2.5">{renderStatusCell(item)}</td>
                   <td className="px-4 py-2.5">{renderActionCell(item)}</td>
                 </tr>
@@ -416,50 +421,51 @@ function WIPWidget() {
   })
 
   return (
-    <div className="bg-white dark:bg-dark-card rounded-[8px] border border-surface-border dark:border-dark-border overflow-hidden">
+    <div className="bg-surface-card dark:bg-dark-card rounded-[8px] border border-surface-border dark:border-dark-border shadow-sm overflow-hidden">
       <div className="px-4 py-3 border-b border-surface-border dark:border-dark-border flex items-start justify-between">
-        <span className="text-[13px] font-medium text-[#111827] dark:text-[#EDEEF0]">Work in Progress</span>
+        <span className="text-[13px] font-medium text-foreground">Work in Progress</span>
         {isLoading ? (
           <div className="flex flex-col items-end gap-1">
-            <div className="h-7 w-28 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
-            <div className="h-3 w-20 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+            <div className="h-7 w-28 bg-surface-border dark:bg-dark-border animate-pulse rounded" />
+            <div className="h-3 w-20 bg-surface-border dark:bg-dark-border animate-pulse rounded" />
           </div>
         ) : !isError && data ? (
           <div className="text-right">
-            <p className="text-[22px] font-medium text-brand dark:text-[#EDEEF0] leading-none">{formatCurrency(data?.totalWipValue ?? 0)}</p>
-            <p className="text-[11px] text-[#6B7280] mt-0.5">{data?.totalHours ?? 0} hrs unbilled</p>
+            <p className="text-[22px] font-display font-medium text-brand dark:text-foreground leading-none">{formatCurrency(data?.totalWipValue ?? 0)}</p>
+            <p className="text-[11px] text-muted-foreground mt-0.5">{data?.totalHours ?? 0} hrs unbilled</p>
           </div>
         ) : null}
       </div>
       {isLoading ? (
-        <div className="divide-y divide-[#E5E7EB] dark:divide-[#333333]">
+        <div className="divide-y divide-surface-border dark:divide-dark-border">
           {Array.from({ length: 3 }).map((_, i) => (
             <div key={i} className="flex items-center justify-between px-4 py-2.5">
               <div className="flex flex-col gap-1 flex-1">
-                <div className="h-3.5 w-40 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
-                <div className="h-3 w-24 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+                <div className="h-3.5 w-40 bg-surface-border dark:bg-dark-border animate-pulse rounded" />
+                <div className="h-3 w-24 bg-surface-border dark:bg-dark-border animate-pulse rounded" />
               </div>
-              <div className="h-4 w-16 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+              <div className="h-4 w-16 bg-surface-border dark:bg-dark-border animate-pulse rounded" />
             </div>
           ))}
         </div>
       ) : isError ? (
         <div className="px-4 py-8 text-center">
-          <p className="text-[12px] text-[#6B7280]">WIP data unavailable.</p>
+          <p className="text-[12px] text-muted-foreground">WIP data unavailable.</p>
         </div>
       ) : !data || (data?.topEngagements ?? []).length === 0 ? (
         <div className="px-4 py-8 text-center">
-          <p className="text-[12px] text-[#6B7280]">No unbilled work in progress.</p>
+          <p className="text-[13px] text-green-600 dark:text-green-400 font-medium">All billable work is accounted for.</p>
+          <p className="text-[12px] text-muted-foreground mt-1">Nothing sitting uninvoiced right now.</p>
         </div>
       ) : (
-        <div className="divide-y divide-[#E5E7EB] dark:divide-[#333333]">
+        <div className="divide-y divide-surface-border dark:divide-dark-border">
           {(data?.topEngagements ?? []).slice(0, 5).map((eng) => (
             <div key={eng.engagementId} className="flex items-center justify-between px-4 py-2.5">
               <div className="min-w-0 flex-1">
-                <p className="text-[13px] font-medium text-[#111827] dark:text-[#EDEEF0] truncate">{eng.engagementName}</p>
-                <p className="text-[11px] text-[#6B7280] truncate">{eng.clientName}</p>
+                <p className="text-[13px] font-medium text-foreground truncate">{eng.engagementName}</p>
+                <p className="text-[11px] text-muted-foreground truncate">{eng.clientName}</p>
               </div>
-              <span className="text-[13px] font-medium text-[#92400E] dark:text-amber-400 ml-4 flex-shrink-0">
+              <span className="text-[13px] font-display font-medium text-status-amber-text dark:text-amber-400 ml-4 flex-shrink-0">
                 {formatCurrency(eng.wipValue)}
               </span>
             </div>
@@ -501,7 +507,7 @@ export default function DashboardPage() {
     return (
         <div className="p-6 flex items-center justify-center min-h-[400px]">
           <div className="text-center">
-            <p className="text-[14px] text-[#374151] dark:text-[#D1D5DB] mb-3">Failed to load dashboard metrics.</p>
+            <p className="text-[14px] text-foreground mb-3">Failed to load dashboard metrics.</p>
             <button
               onClick={() => refetch()}
               className="text-[13px] font-medium px-4 py-2 rounded-[6px] bg-brand text-white hover:opacity-90 transition-opacity"
@@ -526,8 +532,8 @@ export default function DashboardPage() {
 
         {/* Page header */}
         <div>
-          <h1 className="text-2xl font-medium text-brand dark:text-[#EDEEF0]">Dashboard</h1>
-          <p className="text-[12px] text-[#6B7280] mt-0.5">Priority work across all clients</p>
+          <h1 className="text-2xl font-display font-medium text-brand dark:text-foreground">Dashboard</h1>
+          <p className="text-[12px] text-muted-foreground mt-0.5">Priority work across all clients</p>
         </div>
 
         {/* ROW 1 — Stat cards */}
@@ -560,10 +566,11 @@ export default function DashboardPage() {
               <MetricCard
                 label="Overdue Engagements"
                 value={String(visibleOverdue.length)}
+                variant={visibleOverdue.length > 0 ? 'alert' : undefined}
                 valueClassName={
                   visibleOverdue.length > 0
                     ? 'text-[#DC2626]'
-                    : 'text-brand dark:text-[#EDEEF0]'
+                    : 'text-brand dark:text-foreground'
                 }
               />
             </>

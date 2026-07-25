@@ -81,9 +81,10 @@ def log_question_asked(
             is_low_confidence=is_low_confidence,
         )
 
+        from app.api.concierge.route import redact_sensitive_patterns
         log_entry = ConciergeQuestionLog(
             firm_id=firm_id,
-            question_text=last_user_text[:2000],
+            question_text=redact_sensitive_patterns(last_user_text[:2000]),
             response_summary=response_text[:500],
             low_confidence=is_low_confidence,
             possible_fabrication=is_possible_fabrication,

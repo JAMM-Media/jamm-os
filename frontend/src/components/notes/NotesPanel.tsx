@@ -47,7 +47,7 @@ function renderNoteBody(body: string): React.ReactNode {
     found = true
     if (match.index > last) parts.push(<span key={last}>{body.slice(last, match.index)}</span>)
     parts.push(
-      <span key={match.index} className="font-semibold text-[#1F3148] dark:text-[#EDEEF0]">
+      <span key={match.index} className="font-semibold text-brand dark:text-foreground">
         {match[1]}
       </span>
     )
@@ -69,8 +69,8 @@ function NoteCard({
   const [hovered, setHovered] = useState(false)
 
   const cardBg = note.isPrivate
-    ? 'bg-[#FEF9EC] dark:bg-[#2D2A1E]'
-    : 'bg-[#E4E6EA] dark:bg-[#2D2D2D]'
+    ? 'bg-status-amber dark:bg-[#2D2A1E]'
+    : 'bg-surface-page dark:bg-dark-page'
 
   return (
     <div
@@ -88,17 +88,17 @@ function NoteCard({
               />
             </svg>
           )}
-          <span className="text-[12px] font-medium text-brand dark:text-[#EDEEF0]">
+          <span className="text-[12px] font-medium text-brand dark:text-foreground">
             {note.authorName}
           </span>
         </div>
         <div className="flex items-center gap-1.5">
-          <span className="text-[11px] text-[#6B7280]">{formatTimestamp(note.createdAt)}</span>
+          <span className="text-[11px] text-muted-foreground">{formatTimestamp(note.createdAt)}</span>
           {canDelete && hovered && (
             <button
               onClick={() => onDelete(note.id)}
               aria-label="Delete note"
-              className="text-[#6B7280] hover:text-[#E24B4A] transition-colors"
+              className="text-muted-foreground hover:text-[#E24B4A] transition-colors"
             >
               <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
                 <path
@@ -110,7 +110,7 @@ function NoteCard({
           )}
         </div>
       </div>
-      <p className="text-[13px] text-[#374151] dark:text-[#9CA3AF] leading-[1.6]">
+      <p className="text-[13px] text-foreground dark:text-muted-foreground leading-[1.6]">
         {renderNoteBody(note.body)}
       </p>
     </div>
@@ -259,11 +259,11 @@ export function NotesPanel({
           display: 'flex',
           flexDirection: 'column',
         }}
-        className="bg-[#EDEEF0] dark:bg-[#383838] border-l border-[0.5px] border-[#C8CDD6] dark:border-[#484848]"
+        className="bg-surface-card dark:bg-dark-card border-l border-[0.5px] border-surface-border dark:border-dark-border shadow-xl"
       >
         {/* Header */}
         <div
-          className="flex items-center justify-between px-4 border-b border-[0.5px] border-[#C8CDD6] dark:border-[#484848]"
+          className="flex items-center justify-between px-4 border-b border-[0.5px] border-surface-border dark:border-dark-border"
           style={{ height: 48, flexShrink: 0 }}
         >
           <div className="flex items-center gap-2">
@@ -271,17 +271,17 @@ export function NotesPanel({
               <path
                 d="M11.013 1.427a1.75 1.75 0 0 1 2.474 2.474L4.92 12.467l-3.468.462.462-3.468L11.013 1.427Zm1.06 1.414-.707-.707-9.2 9.2-.23 1.73 1.73-.23 8.407-8.993Z"
                 fill="currentColor"
-                className="text-[#1F3148] dark:text-[#EDEEF0]"
+                className="text-brand dark:text-foreground"
               />
             </svg>
-            <span className="text-[13px] font-medium text-brand dark:text-[#EDEEF0]">
+            <span className="text-[13px] font-medium text-brand dark:text-foreground">
               Notes — {contextLabel}
             </span>
           </div>
           <button
             onClick={onClose}
             aria-label="Close notes panel"
-            className="text-[#6B7280] hover:text-brand dark:hover:text-[#EDEEF0] transition-colors"
+            className="text-muted-foreground hover:text-brand dark:hover:text-foreground transition-colors"
           >
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
               <path
@@ -299,7 +299,7 @@ export function NotesPanel({
               {[1, 2, 3].map((i) => (
                 <div
                   key={i}
-                  className="rounded-[6px] p-[10px_12px] bg-[#D5D8DE] dark:bg-[#444444] animate-pulse"
+                  className="rounded-[6px] p-[10px_12px] bg-surface-border dark:bg-dark-border animate-pulse"
                   style={{ height: 72 }}
                 />
               ))}
@@ -307,7 +307,7 @@ export function NotesPanel({
           ) : notes.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full gap-[10px]">
               <div
-                className="flex items-center justify-center rounded-lg bg-[#EDEEF0] dark:bg-[#383838] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848]"
+                className="flex items-center justify-center rounded-lg bg-surface-card dark:bg-dark-card border border-[0.5px] border-surface-border dark:border-dark-border"
                 style={{ width: 40, height: 40 }}
               >
                 <svg width="18" height="18" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -317,10 +317,10 @@ export function NotesPanel({
                   />
                 </svg>
               </div>
-              <p className="text-[13px] font-medium text-brand dark:text-[#EDEEF0]">
+              <p className="text-[13px] font-medium text-brand dark:text-foreground">
                 No notes yet
               </p>
-              <p className="text-[12px] text-[#6B7280]">Add the first note below.</p>
+              <p className="text-[12px] text-muted-foreground">Add the first note below.</p>
             </div>
           ) : (
             notes.map((note) => (
@@ -336,14 +336,14 @@ export function NotesPanel({
 
         {/* Compose box */}
         <div
-          className="p-4 border-t border-[0.5px] border-[#C8CDD6] dark:border-[#484848]"
+          className="p-4 border-t border-[0.5px] border-surface-border dark:border-dark-border"
           style={{ flexShrink: 0 }}
         >
           <div className="relative">
             {/* @mention popover */}
             {showMentionPopover && filteredStaff.length > 0 && (
               <div
-                className="absolute bottom-full left-0 right-0 mb-1 bg-surface-card dark:bg-dark-card border border-[#C8CDD6] dark:border-[#484848] rounded-lg overflow-y-auto shadow-md z-10"
+                className="absolute bottom-full left-0 right-0 mb-1 bg-surface-card dark:bg-dark-card border border-surface-border dark:border-dark-border rounded-lg overflow-y-auto shadow-md z-10"
                 style={{ maxHeight: '200px' }}
               >
                 {filteredStaff.map((staff, idx) => (
@@ -354,10 +354,10 @@ export function NotesPanel({
                       handleMentionSelect(staff)
                     }}
                     onMouseEnter={() => setMentionIndex(idx)}
-                    className={`flex items-center gap-2 w-full px-3 py-2 text-[13px] text-[#374151] dark:text-[#9CA3AF] transition-colors text-left ${
+                    className={`flex items-center gap-2 w-full px-3 py-2 text-[13px] text-foreground dark:text-muted-foreground transition-colors text-left ${
                       idx === mentionIndex
-                        ? 'bg-[#D5D8DE] dark:bg-[#444444]'
-                        : 'hover:bg-[#D5D8DE] dark:hover:bg-[#444444]'
+                        ? 'bg-surface-border dark:bg-dark-border'
+                        : 'hover:bg-surface-border dark:hover:bg-dark-border'
                     }`}
                   >
                     <div
@@ -378,7 +378,7 @@ export function NotesPanel({
               onChange={handleBodyChange}
               onKeyDown={handleKeyDown}
               placeholder="Add a note..."
-              className="w-full rounded-[6px] border border-[0.5px] border-[#C8CDD6] focus:border-[#4A7FA5] focus:outline-none bg-[#F7F7F8] dark:bg-[#2D2D2D] text-[13px] text-[#374151] dark:text-[#9CA3AF] placeholder:text-[#9CA3AF] p-2.5 resize-none transition-colors"
+              className="w-full rounded-[6px] border border-[0.5px] border-surface-border focus:border-brand-light focus:outline-none bg-surface-input dark:bg-dark-page text-[13px] text-foreground dark:text-muted-foreground placeholder:text-muted-foreground p-2.5 resize-none transition-colors"
               style={{ minHeight: 72 }}
             />
           </div>
@@ -389,9 +389,9 @@ export function NotesPanel({
                 type="checkbox"
                 checked={isPrivate}
                 onChange={(e) => setIsPrivate(e.target.checked)}
-                className="rounded border-[#C8CDD6]"
+                className="rounded border-surface-border"
               />
-              <span className="text-[11px] text-[#6B7280]">Private note</span>
+              <span className="text-[11px] text-muted-foreground">Private note</span>
             </label>
             <button
               onClick={handleSubmit}
