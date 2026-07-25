@@ -9,16 +9,212 @@ BehavioralEvent rows directly and never inserts via raw SQL.
 
 Usage:
     python scripts/seed_demo_firm.py                # full 12-month seed
-    python scripts/seed_demo_firm.py --months 1      # dry run, trailing 1 month
+    python scripts/seed_demo_firm.py --months 1      # smaller real run, trailing 1
+                                                      # month only (roughly 1/12th the
+                                                      # volume). NOT a dry run: it
+                                                      # writes real rows and triggers
+                                                      # every real side effect the full
+                                                      # run does.
     python scripts/seed_demo_firm.py --teardown      # wipe the demo firm and exit
 """
 
 import argparse
+import os
+import sys
+import urllib.parse
+
+# --- Environment guard (fail closed) ----------------------------------------
+# This is the first executable statement in the file after the four stdlib
+# imports it needs (argparse, os, sys, urllib.parse). Nothing else -- no
+# other stdlib import, no third-party import, no app.* import -- may precede
+# it. A production run once died on `from freezegun import freeze_time`
+# before any "Target database host" line ever printed, because at that time
+# an import capable of failing sat above the guard. The fix is structural,
+# not "be more careful": every remaining stdlib import this script needs
+# (asyncio, io, random, time, traceback, uuid, datetime), the JAMM_TESTING
+# env default, the sys.path repo-root fix, and all third-party/app imports
+# now live below the guard block, after it has already either aborted the
+# process or positively confirmed the target host.
+#
+# This also runs before any app.* import for a second reason: app.db.session
+# builds a real SQLAlchemy engine from Settings().DATABASE_URL at import
+# time, and Settings.DATABASE_URL has no default -- if it were missing,
+# pydantic would raise and crash the process before any guard placed later
+# (e.g. inside main()) ever ran. Reading the raw sources directly here, before
+# that import happens, is what lets a missing DATABASE_URL be handled by this
+# guard instead of by an unhandled ValidationError.
+#
+# Written as "refuse unless positively proven non-production", not "refuse if
+# production": the allowlist below is the only way to proceed normally. Every
+# other case -- unrecognized host, missing DATABASE_URL, unparseable
+# DATABASE_URL -- is treated as production and needs both --allow-production
+# and a typed confirmation. Nothing here reads an ENVIRONMENT/env variable.
+ALLOWLISTED_DB_HOSTS = {"localhost", "127.0.0.1"}
+
+
+def _resolve_database_host(database_url: str | None) -> str:
+    """Return a printable host token. Missing or unparseable input resolves to
+    an explicit sentinel string rather than None, so the guard always has a
+    concrete token to print and to require back as the typed confirmation."""
+    if not database_url:
+        return "(DATABASE_URL not set)"
+    try:
+        hostname = urllib.parse.urlparse(database_url).hostname
+    except Exception:
+        hostname = None
+    if not hostname:
+        return "(DATABASE_URL unparseable)"
+    return hostname
+
+
+def _database_url_from_dotenv_files() -> tuple[str | None, str | None]:
+    """Reproduces Settings.model_config's env_file=('.env.local', '.env')
+    resolution exactly: pydantic-settings loads .env.local first, then loads
+    .env, and a key defined in .env overrides the same key from .env.local
+    (confirmed empirically -- later files in the tuple win on conflict, not
+    earlier ones). Both files are read relative to the current working
+    directory, exactly like pydantic-settings itself -- there is no
+    module-relative resolution here or in Settings.
+
+    Returns (value, source_label), where source_label is exactly '.env' or
+    '.env.local' -- whichever file the value actually came from -- so the
+    guard can report it. Uses python-dotenv directly, which is already a
+    project dependency (see tests/conftest.py), so this never has to import
+    app.* just to see what host the app is about to connect to."""
+    from dotenv import dotenv_values
+
+    env_values = dotenv_values(".env")
+    if env_values.get("DATABASE_URL"):
+        return env_values["DATABASE_URL"], ".env"
+
+    local_values = dotenv_values(".env.local")
+    if local_values.get("DATABASE_URL"):
+        return local_values["DATABASE_URL"], ".env.local"
+
+    return None, None
+
+
+def _resolve_effective_database_url() -> tuple[str | None, str | None, str | None]:
+    """Returns (env_var_value, dotenv_value, dotenv_source_label) separately,
+    unmerged, so the guard can detect disagreement between the shell
+    environment and a dotenv file instead of silently trusting whichever
+    pydantic-settings would pick, and can report exactly which dotenv file a
+    value came from."""
+    dotenv_value, dotenv_source = _database_url_from_dotenv_files()
+    return os.environ.get("DATABASE_URL"), dotenv_value, dotenv_source
+
+
+def _enforce_environment_guard(allow_production_flag: bool) -> None:
+    env_var_url, dotenv_url, dotenv_source = _resolve_effective_database_url()
+    cwd = os.getcwd()
+
+    # Compare resolved HOSTS, not raw URLs: a dev .env and a shell-injected
+    # DATABASE_URL (e.g. from .env.test, loaded by the test runner) routinely
+    # differ in port, database name, or credentials while pointing at the
+    # exact same, safe host -- that's expected, not a safety-relevant
+    # disagreement, and would otherwise abort every test run with a false
+    # positive. A host mismatch is the actual danger: it means this guard
+    # can't be sure which database traffic will really hit. This check is
+    # unconditional -- it runs, and can abort, regardless of --allow-production.
+    if env_var_url and dotenv_url:
+        env_var_host = _resolve_database_host(env_var_url)
+        dotenv_host = _resolve_database_host(dotenv_url)
+        if env_var_host != dotenv_host:
+            print(
+                "ABORT: DATABASE_URL resolves to different hosts in the shell "
+                "environment vs a dotenv file. Refusing to guess which one the "
+                "application will actually use."
+            )
+            print(f"  shell environment host: {env_var_host}")
+            print(f"  {dotenv_source} host:   {dotenv_host}")
+            print(f"  working directory: {cwd}")
+            sys.exit(1)
+
+    # Real process env vars take priority over both dotenv files in
+    # pydantic-settings (confirmed empirically), so this is the same value
+    # Settings().DATABASE_URL will actually resolve to.
+    if env_var_url:
+        database_url, source_label = env_var_url, "shell environment"
+    elif dotenv_url:
+        database_url, source_label = dotenv_url, dotenv_source
+    else:
+        database_url, source_label = None, None
+
+    host = _resolve_database_host(database_url)
+    if source_label:
+        print(f"Target database host: {host} (source: {source_label})")
+    else:
+        print(f"Target database host: {host}")
+    print(f"Working directory: {cwd}")
+
+    if host in ALLOWLISTED_DB_HOSTS:
+        return
+
+    if not sys.stdin.isatty():
+        print(
+            f"ABORT: host '{host}' is not on the local allowlist "
+            f"({sorted(ALLOWLISTED_DB_HOSTS)}) and stdin is not a TTY, so there is "
+            "no operator available to type a confirmation. Refusing to proceed."
+        )
+        sys.exit(1)
+
+    if not allow_production_flag:
+        print(
+            f"ABORT: host '{host}' is not on the local allowlist "
+            f"({sorted(ALLOWLISTED_DB_HOSTS)}). Re-run with --allow-production and "
+            "be ready to type the host back exactly to proceed."
+        )
+        sys.exit(1)
+
+    print(f"This run targets '{host}', which is not a recognized local database.")
+    typed = input(f"Type the host exactly to confirm ({host}): ")
+    if typed != host:
+        print("ABORT: typed confirmation did not match the target host.")
+        sys.exit(1)
+
+    print(f"Confirmed. Proceeding against '{host}'.")
+
+
+# The argv parse and the guard invocation itself only run when this file is
+# executed as a script, not when it (or its helper functions above) is
+# imported by a test module -- argparse.parse_args() with no explicit args
+# reads real sys.argv, which under a test runner is the test runner's own
+# argv, not this script's. main() (defined below) reads ARGS as a global and
+# is itself only ever invoked from the __main__ block at the bottom of this
+# file, so ARGS is guaranteed to exist by the time it is read.
+if __name__ == "__main__":
+    _arg_parser = argparse.ArgumentParser()
+    _arg_parser.add_argument(
+        "--months",
+        type=int,
+        default=12,
+        help=(
+            "Trailing N months to seed. This is a smaller REAL run, not a dry run -- "
+            "it writes real rows and triggers every real side effect (minus outbound "
+            "email/webhook, which this script always suppresses) that a full run does, "
+            "just at roughly N/12th the volume."
+        ),
+    )
+    _arg_parser.add_argument("--teardown", action="store_true", help="Wipe the demo firm and exit.")
+    _arg_parser.add_argument(
+        "--allow-production",
+        action="store_true",
+        help=(
+            "Required, together with a typed host confirmation, to run against any "
+            "database host not on the local allowlist (localhost, 127.0.0.1)."
+        ),
+    )
+    ARGS = _arg_parser.parse_args()
+
+    _enforce_environment_guard(ARGS.allow_production)
+
+# Everything below this line is safe to import: when run as a script, the
+# guard above has already either aborted the process or positively confirmed
+# the target host.
+
 import asyncio
 import io
-import os
 import random
-import sys
 import time as _time_module
 import traceback
 import uuid
@@ -150,6 +346,77 @@ def _upload_fileobj_with_real_time_for_aws(*args, **kwargs):
 
 
 _s3_service_module.upload_fileobj = _upload_fileobj_with_real_time_for_aws
+
+
+# --- Harness-only outbound-network suppression ------------------------------
+# Two real outbound HTTP paths are reachable from a seed run (see Phase 1
+# inventory): Postmark email sends and automation webhook_post calls. Both
+# must never leave this machine, regardless of which Postmark token or which
+# firm webhook config .env happens to carry.
+#
+# Same technique as the S3 patch above: reassign the attribute on the real
+# class/module object so every caller sees the patched version at call time,
+# no matter how or when that caller imported it. This is scoped to this
+# script only and must never appear in application code.
+#
+# EmailService._send is the lowest layer that touches the network (raw
+# requests.post to Postmark) -- every send_* helper and _send_raw funnels
+# through it, so patching here still exercises template rendering, recipient
+# resolution, and behavioral event logging for real; only the actual POST is
+# intercepted. It is a @staticmethod, so the replacement is wrapped in
+# staticmethod() to preserve that semantics if ever invoked through an
+# instance instead of the class. The real _send returns None on success and
+# raises on failure (never returns a falsy-but-not-None value), and no caller
+# anywhere branches on its return value -- every send_* wrapper ignores it and
+# unconditionally returns True itself -- so _suppressed_send returning None
+# (its implicit no-op return) already matches the real success contract
+# exactly.
+#
+# automation_actions._handle_webhook_post is a real httpx.post to a
+# firm-configured URL. No automation preset currently reaches it (confirmed
+# by inventory of every preset's action type), but that is safety by
+# inventory, not by guard -- patching it directly makes the guarantee hold
+# regardless of future preset changes.
+#
+# Installation is wrapped in a function and called from main(), not executed
+# at module import time: EmailService and automation_actions are shared,
+# process-wide objects, so a module-scope assignment here would mutate them
+# for the entire pytest process the instant any test file imports this
+# module (as tests/test_seed_demo_firm_guard.py and
+# tests/test_seed_demo_firm_suppression.py both do) -- long before, and
+# regardless of whether, a seed ever actually runs. Attribute lookup happens
+# at call time, so installing from inside main(), immediately before any
+# seeding work begins, is exactly as effective as installing at import time.
+SUPPRESSED_SEND_COUNTS = {"email": 0, "webhook": 0}
+
+
+def _suppressed_send(
+    to_email,
+    subject,
+    html_body,
+    from_name,
+    reply_to=None,
+    display_name=None,
+    sending_domain=None,
+) -> None:
+    SUPPRESSED_SEND_COUNTS["email"] += 1
+
+
+def _suppressed_handle_webhook_post(config, payload, db) -> str:
+    SUPPRESSED_SEND_COUNTS["webhook"] += 1
+    url = config.get("url")
+    return f"webhook_post suppressed (seed run): would have posted to {url}"
+
+
+def _install_network_suppression() -> None:
+    SUPPRESSED_SEND_COUNTS["email"] = 0
+    SUPPRESSED_SEND_COUNTS["webhook"] = 0
+
+    from app.services.email_service import EmailService
+    import app.services.automation_actions as automation_actions_module
+
+    EmailService._send = staticmethod(_suppressed_send)
+    automation_actions_module._handle_webhook_post = _suppressed_handle_webhook_post
 
 
 FORM_TYPE_BY_ENGAGEMENT_TYPE = {
@@ -1199,10 +1466,9 @@ def run_month(db, firm, staff, channel, all_records, y, m, window_end):
 
 def main():
     global MISS_RATE
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--months", type=int, default=12)
-    parser.add_argument("--teardown", action="store_true")
-    args = parser.parse_args()
+    args = ARGS
+
+    _install_network_suppression()
 
     seed = int.from_bytes(os.urandom(4), "little")
     random.seed(seed)
@@ -1297,6 +1563,9 @@ def main():
             print(f"  {event_type}: {count}")
             total_events += count
         print(f"TOTAL events: {total_events}")
+
+        print(f"Suppressed email sends: {SUPPRESSED_SEND_COUNTS['email']}")
+        print(f"Suppressed webhook posts: {SUPPRESSED_SEND_COUNTS['webhook']}")
 
     finally:
         db.close()
