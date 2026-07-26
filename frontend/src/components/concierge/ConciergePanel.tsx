@@ -117,12 +117,12 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
   useEffect(() => {
     setHasMounted(true)
   }, [])
-  const [autopilotOn, setAutopilotOn] = useState(() => {
-    if (typeof window !== 'undefined') {
-      return sessionStorage.getItem('jamm_concierge_autopilot') === 'true'
+  const [autopilotOn, setAutopilotOn] = useState(false)
+  useEffect(() => {
+    if (sessionStorage.getItem('jamm_concierge_autopilot') === 'true') {
+      setAutopilotOn(true)
     }
-    return false
-  })
+  }, [])
   const [suggestions, setSuggestions] = useState<string[]>([])
   const [formDirty, setFormDirtyState] = useState(false)
   const [statusMessage, setStatusMessage] = useState('')
