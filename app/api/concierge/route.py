@@ -1321,12 +1321,15 @@ def resolve_client_by_name(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied.",
         )
-    client = db.execute(
-        select(Client).where(
-            Client.firm_id == current_firm.id,
-            func.lower(Client.name).like(f"%{name.lower()}%"),
-        ).limit(1)
-    ).scalar_one_or_none()
+    def _norm(s: str) -> str:
+        s = re.sub(r"[^\w\s]", " ", s, flags=re.UNICODE)
+        return re.sub(r"\s+", " ", s).strip().lower()
+
+    norm_query = _norm(name)
+    rows = db.execute(
+        select(Client).where(Client.firm_id == current_firm.id)
+    ).scalars().all()
+    client = next((c for c in rows if norm_query in _norm(c.name)), None)
     if client is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Client not found")
     return {"id": str(client.id), "name": client.name}
