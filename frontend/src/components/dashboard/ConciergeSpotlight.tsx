@@ -82,12 +82,12 @@ export function ConciergeSpotlight() {
       {AlertDialog}
       <div
         onClick={handleContainerClick}
-        className="flex flex-col border border-[0.5px] border-surface-border dark:border-dark-border border-l-[3px] border-l-[#BF9640] rounded-[8px] bg-surface-card dark:bg-dark-card shadow-sm overflow-hidden cursor-pointer hover:shadow-md transition-shadow"
+        className="flex flex-col border border-[0.5px] border-surface-border dark:border-dark-border border-l-[3px] border-l-concierge rounded-[8px] bg-surface-card dark:bg-dark-card shadow-sm overflow-hidden cursor-pointer hover:shadow-md transition-shadow"
       >
         {/* Header row */}
         <div className="px-3 py-2 border-b border-surface-border dark:border-dark-border flex items-center gap-1.5">
-          <span className="w-1.5 h-1.5 rounded-full bg-[#BF9640] flex-shrink-0" />
-          <span className="text-[10px] font-semibold uppercase tracking-wide text-[#BF9640] flex-1">
+          <span className="w-1.5 h-1.5 rounded-full bg-concierge flex-shrink-0" />
+          <span className="text-[10px] font-semibold uppercase tracking-wide text-concierge flex-1">
             JAMM Concierge
           </span>
           {minimized && (
