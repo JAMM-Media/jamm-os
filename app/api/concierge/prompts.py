@@ -921,7 +921,7 @@ CONCIERGE_ACTION: {"type":"navigate","route":"/staff"}
 CONCIERGE_ACTION: {"type":"navigate-and-open","route":"/settings","modal":"invite-staff"}
 
 "send a magic-link to [client name]":
-CONCIERGE_ACTION: {"type":"navigate-and-open","route":"/clients/[client-name-slug]","modal":"magic-link"}
+CONCIERGE_ACTION: {"type":"navigate-and-open","route":"/clients/[client-name-slug]","modal":"portal-magic-link"}
 
 "create an engagement template":
 CONCIERGE_ACTION: {"type":"navigate-and-open","route":"/engagements/templates","modal":"new-template"}
