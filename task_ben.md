@@ -54,54 +54,50 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Write distinct per-firm-type opening greetings, and extend the OPTIONS clickable-names safety net to stalled engagements
+TASK: Stop the Concierge from claiming a send/create action is complete when a navigate-and-open CONCIERGE_ACTION only navigates and opens a modal
 
 USE: claude sonnet
 
 VERIFY BEFORE ACT:
-sed -n '325,368p' /home/corby/jamm-os/app/api/concierge/prompts.py
-sed -n '460,485p' /home/corby/jamm-os/app/api/concierge/route.py
-grep -n "def get_stalled_engagements" -A 20 /home/corby/jamm-os/app/api/concierge/functions.py
-grep -n "_MULTI_CLIENT_TOOL_EXTRACTORS" -A 10 /home/corby/jamm-os/app/api/concierge/route.py
 
-Confirm all four match exactly what is described below before editing.
+sed -n '900,940p' /home/corby/jamm-os/app/api/concierge/prompts.py
 
-WHAT THIS IS, PART ONE:
+Confirm the CONCIERGE_ACTION rules section currently has no instruction governing what the required human-readable sentence (line 938's rule) is allowed to claim about the action's completion status, before editing.
 
-The very first message a firm ever sees from the Concierge, immediately after choosing whether they are tax prep, bookkeeping, or advisory, is word for word identical regardless of which one they picked, both in the model's own few shot examples in prompts.py and in the hardcoded fallback in route.py. The onboarding question is asked but nothing about the answer actually shapes what the firm owner sees next, and the text itself, let's get ready to work, I'm ready to help with anything you need, was flagged directly as robotic.
+WHAT THIS IS:
 
-CHANGE INSTRUCTIONS, PART ONE:
+Confirmed live: with Autopilot on, asking the Concierge to send a client their portal link produced the response "Sending Robert & Carol Tanner their portal magic-link now." The actual navigate-and-open action for modal magic-link (being fixed separately, in a different task, to portal-magic-link) only switches tabs, highlights the send button for 3 seconds, and scrolls it into view. It never calls a send API. No CONCIERGE_ACTION type in this system performs a send, create, or any other business action directly, confirmed by reading every handled action.type case in the frontend. The required human-readable sentence before every CONCIERGE_ACTION (rule at line 938) has no constraint on what it may claim, so the model reasonably but incorrectly phrased a navigation action using send-completed language, because the trigger phrase itself was "send a magic-link." This is a systemic gap, not specific to the magic-link case, since the same rule applies to every navigate-and-open example in this section (new-client, new-engagement, invite-staff, new-template).
 
-In prompts.py, replace the three identical intake_example assistant responses, and the three identical if firm_type is X blocks, with three genuinely distinct greetings, one for tax_prep, one for bookkeeping, one for advisory, each nodding specifically to that kind of work, returns and deadlines for tax prep, the books and the close for bookkeeping, client work and planning for advisory, while keeping the exact same warm, plain register already established elsewhere tonight. Preserve the exact CONCIERGE_ACTION marker line and JSON shape following each greeting exactly as it currently is, only the greeting text itself changes.
+CHANGE INSTRUCTIONS:
 
-In route.py, update the hardcoded open_text fallback in the same bypass block so it also branches on current_firm.firm_type, using the same three distinct greetings just written in prompts.py, word for word identical to what the model would say for that firm type, so the deterministic fallback and the model's own few shot behavior never diverge from each other.
-
-WHAT THIS IS, PART TWO:
-
-Confirmed live: asking how many stalled engagements do I have produced a real, correct, multi client answer with no clickable option buttons at all, unlike the equivalent overdue invoices question, which reliably produces clickable buttons every time. The root cause is confirmed: the OPTIONS marker safety net, _MULTI_CLIENT_TOOL_EXTRACTORS, built specifically because prompt only compliance for this exact behavior was already proven unreliable once tonight, only ever covered get_overdue_invoices and was never extended to any other multi client tool, including get_stalled_engagements, leaving it just as unreliable as the original problem this safety net was built to solve.
-
-CHANGE INSTRUCTIONS, PART TWO:
-
-Add a new entry to _MULTI_CLIENT_TOOL_EXTRACTORS for get_stalled_engagements, matching the exact existing style of the get_overdue_invoices entry, extracting the distinct set of real client names from that tool's actual returned data shape, confirmed by the verify step above, not assumed.
+In the "Rules for emitting CONCIERGE_ACTION" section, add one new rule stating plainly that the required human-readable sentence must describe what is about to happen (taking the user to the right place, opening the right modal or form) and must never claim that a send, creation, save, or any other business action has already completed, since navigate-and-open only navigates and opens, it never performs the underlying action itself. Do not rewrite any of the existing few-shot examples' CONCIERGE_ACTION JSON lines, this task only adds a new prose rule governing the sentence that precedes them. Do not change the set_firm_type exception rule already present at line 939.
 
 VERIFY AFTER ACT:
 
-grep -n "_MULTI_CLIENT_TOOL_EXTRACTORS" -A 15 /home/corby/jamm-os/app/api/concierge/route.py
+grep -n "never claim\|already completed\|about to happen" /home/corby/jamm-os/app/api/concierge/prompts.py
 
-Expected: both get_overdue_invoices and get_stalled_engagements present.
+Expected: the new rule is present and readable in context.
 
 python3 -c "from app.main import app; print('OK')"
 
 MANUAL VERIFICATION:
 
-Restart both servers. If possible, reset onboarding state for a fresh firm type selection, or otherwise confirm by direct reading that the three greetings in prompts.py and the three in route.py are now genuinely distinct from each other and match each other exactly per firm type.
+Restart the backend.
 
-Ask how many stalled engagements do I have, confirm clickable client name option buttons now appear, matching the same reliable behavior already confirmed for overdue invoices.
+With Autopilot on, ask the Concierge to send a specific client their portal link.
 
-Report pass or fail for both, pasting the actual three greeting texts and the actual chat response for the stalled engagements question.
+Read the human-readable sentence before the action fires. Confirm it describes navigating to or opening the right place, not that a link has already been sent. Note: the ring highlight itself will still not fire yet, since that fix is separate and not yet applied — this check is only about the wording of the sentence.
+
+Separately, ask the Concierge to create a new client, confirming the same corrected phrasing pattern holds for a second, different navigate-and-open example, not just the one that was directly tested.
+
+Report the exact response text for both, pass or fail on whether either one overclaims completion.
 
 GIT:
+
 git add -A
-git commit -m "write three genuinely distinct opening greetings for tax prep, bookkeeping, and advisory firm types, replacing identical robotic text that made the onboarding question feel decorative rather than meaningful, keeping the deterministic route.py fallback and the model's own few shot examples in sync, and extend the OPTIONS marker safety net to get_stalled_engagements, since it was confirmed live to lack the same reliable clickable client names already working for get_overdue_invoices, the safety net having never been generalized past the one tool it was originally built for"
+
+git commit -m "add a rule governing the required human-readable sentence before every CONCIERGE_ACTION, so the Concierge stops claiming a send, create, or save action is already complete when the action itself only navigates and opens a modal, confirmed live tonight with the portal magic-link case claiming a link was sent when nothing was ever sent"
+
 git pull --rebase origin main
+
 git push origin main
