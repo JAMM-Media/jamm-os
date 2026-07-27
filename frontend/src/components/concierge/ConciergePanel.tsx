@@ -823,6 +823,18 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
             }
             const capitalized = (data.name ?? name).replace(/\b\w/g, c => c.toUpperCase())
             const resolvedRoute = `/clients/${data.id}${queryString}`
+            const alreadyOnClientRoute = pathname.startsWith(`/clients/${data.id}`)
+            if (alreadyOnClientRoute) {
+              emitConciergeAction(action)
+              const clientModalLabel: Record<string, string> = {
+                'new-client': 'Opened New Client drawer',
+                'new-engagement': 'Opened New Engagement drawer',
+                'invite-staff': 'Opened Invite Staff modal',
+                'new-template': 'Opened New Template drawer',
+              }
+              setStatusMessage(clientModalLabel[action.modal ?? ''] ?? 'Opened modal')
+              return
+            }
             if (formDirty) {
               const ok = await confirm('You have unsaved changes. Navigate away?')
               if (!ok) return
