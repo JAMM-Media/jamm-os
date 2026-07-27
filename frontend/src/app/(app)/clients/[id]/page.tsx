@@ -94,6 +94,15 @@ function ClientDetailContent() {
         if (action.prefill?.engagementType) setInitialEngagementType(action.prefill.engagementType)
         setNewEngagementOpen(true)
       }
+      if (action.modal === 'portal-magic-link') {
+        sessionStorage.removeItem('jamm_concierge_pending')
+        setActiveTab('overview')
+        setPortalLinkHighlight(true)
+        setTimeout(() => {
+          portalLinkRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        }, 100)
+        setTimeout(() => setPortalLinkHighlight(false), 3000)
+      }
     } catch {
       sessionStorage.removeItem('jamm_concierge_pending')
     }
