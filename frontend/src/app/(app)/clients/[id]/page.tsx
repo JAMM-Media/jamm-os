@@ -74,6 +74,7 @@ function ClientDetailContent() {
   const [initialEngagementType, setInitialEngagementType] = useState<string | undefined>()
   const [portalLinkHighlight, setPortalLinkHighlight] = useState(false)
   const portalLinkRef = useRef<HTMLButtonElement>(null)
+  const portalLinkTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const messageComposeRef = useRef<HTMLTextAreaElement>(null)
   const [qboEditMode, setQboEditMode] = useState(false)
   const [qboEditValue, setQboEditValue] = useState('')
@@ -101,7 +102,8 @@ function ClientDetailContent() {
         setTimeout(() => {
           portalLinkRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
         }, 100)
-        setTimeout(() => setPortalLinkHighlight(false), 3000)
+        if (portalLinkTimeoutRef.current) clearTimeout(portalLinkTimeoutRef.current)
+        portalLinkTimeoutRef.current = setTimeout(() => setPortalLinkHighlight(false), 5000)
       }
     } catch {
       sessionStorage.removeItem('jamm_concierge_pending')
@@ -121,7 +123,8 @@ function ClientDetailContent() {
         setTimeout(() => {
           portalLinkRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
         }, 100)
-        setTimeout(() => setPortalLinkHighlight(false), 3000)
+        if (portalLinkTimeoutRef.current) clearTimeout(portalLinkTimeoutRef.current)
+        portalLinkTimeoutRef.current = setTimeout(() => setPortalLinkHighlight(false), 5000)
       }
       if (action.type === 'prefill-message' && action.prefillMessage) {
         setActiveTab('messages')
