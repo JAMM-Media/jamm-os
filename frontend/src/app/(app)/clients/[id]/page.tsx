@@ -103,7 +103,7 @@ function ClientDetailContent() {
           portalLinkRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
         }, 100)
         if (portalLinkTimeoutRef.current) clearTimeout(portalLinkTimeoutRef.current)
-        portalLinkTimeoutRef.current = setTimeout(() => setPortalLinkHighlight(false), 5000)
+        portalLinkTimeoutRef.current = setTimeout(() => setPortalLinkHighlight(false), 7000)
       }
     } catch {
       sessionStorage.removeItem('jamm_concierge_pending')
@@ -124,7 +124,7 @@ function ClientDetailContent() {
           portalLinkRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
         }, 100)
         if (portalLinkTimeoutRef.current) clearTimeout(portalLinkTimeoutRef.current)
-        portalLinkTimeoutRef.current = setTimeout(() => setPortalLinkHighlight(false), 5000)
+        portalLinkTimeoutRef.current = setTimeout(() => setPortalLinkHighlight(false), 7000)
       }
       if (action.type === 'prefill-message' && action.prefillMessage) {
         setActiveTab('messages')
