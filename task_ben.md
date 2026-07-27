@@ -54,29 +54,35 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Stop the Concierge from claiming a send/create action is complete when a navigate-and-open CONCIERGE_ACTION only navigates and opens a modal
+TASK: Fix client name resolution failing for client names containing an ampersand, breaking any Concierge action that navigates to a specific client's page
 
 USE: claude sonnet
 
 VERIFY BEFORE ACT:
 
-sed -n '900,940p' /home/corby/jamm-os/app/api/concierge/prompts.py
+sed -n '1308,1330p' /home/corby/jamm-os/app/api/concierge/route.py
 
-Confirm the CONCIERGE_ACTION rules section currently has no instruction governing what the required human-readable sentence (line 938's rule) is allowed to claim about the action's completion status, before editing.
+Confirm the client match query currently does a plain func.lower(Client.name).like(f"%{name.lower()}%") with no normalization of special characters, before editing.
 
 WHAT THIS IS:
 
-Confirmed live: with Autopilot on, asking the Concierge to send a client their portal link produced the response "Sending Robert & Carol Tanner their portal magic-link now." The actual navigate-and-open action for modal magic-link (being fixed separately, in a different task, to portal-magic-link) only switches tabs, highlights the send button for 3 seconds, and scrolls it into view. It never calls a send API. No CONCIERGE_ACTION type in this system performs a send, create, or any other business action directly, confirmed by reading every handled action.type case in the frontend. The required human-readable sentence before every CONCIERGE_ACTION (rule at line 938) has no constraint on what it may claim, so the model reasonably but incorrectly phrased a navigation action using send-completed language, because the trigger phrase itself was "send a magic-link." This is a systemic gap, not specific to the magic-link case, since the same rule applies to every navigate-and-open example in this section (new-client, new-engagement, invite-staff, new-template).
+Confirmed live: asking the Concierge to send Robert & Carol Tanner their portal link, with autopilot on, correctly triggered the navigate-and-open action, but the app never navigated away from the current page. Root cause: the CONCIERGE_ACTION route uses a slug placeholder like /clients/[client-name-slug], which the frontend decodes by replacing dashes with spaces to recover a searchable name. Client names containing an ampersand, like "Robert & Carol Tanner", lose the ampersand somewhere in the slugification and decoding round trip, producing a search string like "robert carol tanner" with no ampersand. The backend's /clients/resolve endpoint does a plain substring match against the real client name "Robert & Carol Tanner", which does not contain "robert carol tanner" as a substring because of the ampersand and surrounding spacing sitting between the two names, so the match fails, the endpoint 404s, and the frontend silently shows "Could not find client" and never navigates, while the Concierge's own response text had already said it was navigating. This will affect every client whose name contains an ampersand or any other punctuation that does not survive the slug round trip cleanly, not just this one client.
 
 CHANGE INSTRUCTIONS:
 
-In the "Rules for emitting CONCIERGE_ACTION" section, add one new rule stating plainly that the required human-readable sentence must describe what is about to happen (taking the user to the right place, opening the right modal or form) and must never claim that a send, creation, save, or any other business action has already completed, since navigate-and-open only navigates and opens, it never performs the underlying action itself. Do not rewrite any of the existing few-shot examples' CONCIERGE_ACTION JSON lines, this task only adds a new prose rule governing the sentence that precedes them. Do not change the set_firm_type exception rule already present at line 939.
+In the /clients/resolve endpoint, normalize both the incoming name query and the stored Client.name before comparing, stripping or ignoring ampersands and any other punctuation that is not a letter, number, or space, and collapsing repeated spaces, so that "robert carol tanner" and "Robert & Carol Tanner" match correctly regardless of how the slug was decoded. Do this as a real, deterministic normalization applied symmetrically to both sides of the comparison, not as a special case for the ampersand specifically, since other punctuation could cause the same class of failure. Do not change resolve_client_by_name in functions.py, the tool used by the model to answer questions, this task is scoped only to the /clients/resolve endpoint used for navigation.
 
 VERIFY AFTER ACT:
 
-grep -n "never claim\|already completed\|about to happen" /home/corby/jamm-os/app/api/concierge/prompts.py
+python3 -c "
+import sys
+sys.path.insert(0, '/home/corby/jamm-os')
+from app.api.concierge.route import resolve_client_by_name
+"
 
-Expected: the new rule is present and readable in context.
+grep -n "def resolve_client_by_name" -A 20 /home/corby/jamm-os/app/api/concierge/route.py
+
+Confirm the normalization logic is present and applied to both sides of the comparison.
 
 python3 -c "from app.main import app; print('OK')"
 
@@ -84,19 +90,21 @@ MANUAL VERIFICATION:
 
 Restart the backend.
 
-With Autopilot on, ask the Concierge to send a specific client their portal link.
+With autopilot on, ask the Concierge to send Robert & Carol Tanner their portal link.
 
-Read the human-readable sentence before the action fires. Confirm it describes navigating to or opening the right place, not that a link has already been sent. Note: the ring highlight itself will still not fire yet, since that fix is separate and not yet applied — this check is only about the wording of the sentence.
+Confirm the app actually navigates to Robert & Carol Tanner's page this time, not just that the response text claims it.
 
-Separately, ask the Concierge to create a new client, confirming the same corrected phrasing pattern holds for a second, different navigate-and-open example, not just the one that was directly tested.
+Confirm the portal-link button's ring highlight fires within about a second of arriving on the page.
 
-Report the exact response text for both, pass or fail on whether either one overclaims completion.
+Separately, test with a client whose name has no punctuation at all, to confirm the fix did not break the normal case.
+
+Report pass or fail for all three checks individually.
 
 GIT:
 
 git add -A
 
-git commit -m "add a rule governing the required human-readable sentence before every CONCIERGE_ACTION, so the Concierge stops claiming a send, create, or save action is already complete when the action itself only navigates and opens a modal, confirmed live tonight with the portal magic-link case claiming a link was sent when nothing was ever sent"
+git commit -m "normalize punctuation, specifically ampersands, on both sides of the client name comparison in the /clients/resolve endpoint, fixing navigation silently failing for any client whose name contains an ampersand or similar punctuation that does not survive the slug encode/decode round trip, confirmed live tonight with Robert and Carol Tanner never being navigated to despite the Concierge claiming it was"
 
 git pull --rebase origin main
 
