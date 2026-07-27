@@ -54,31 +54,29 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Add the missing portal-magic-link branch to the mount-time pending action reader on the client detail page
+TASK: Make the portal-link ring highlight reliably re-trigger on every request and extend its duration to 5 seconds
 
 USE: claude sonnet
 
 VERIFY BEFORE ACT:
 
-sed -n '83,99p' /home/corby/jamm-os/frontend/src/app/\(app\)/clients/\[id\]/page.tsx
+sed -n '95,120p' /home/corby/jamm-os/frontend/src/app/\(app\)/clients/\[id\]/page.tsx
 
-sed -n '100,118p' /home/corby/jamm-os/frontend/src/app/\(app\)/clients/\[id\]/page.tsx
-
-Confirm the mount-time effect at 83-99 currently only checks action.modal === 'new-engagement', while the separate live onConciergeAction listener at 100-118 already correctly handles action.modal === 'portal-magic-link' by setting the active tab to overview, setting portalLinkHighlight true, scrolling the button into view after a short delay, and clearing the highlight after 3000ms. Confirm this asymmetry exists before editing.
+Confirm both the mount-time branch and the live listener branch currently call setPortalLinkHighlight(true) followed by a bare setTimeout(() => setPortalLinkHighlight(false), 3000), with no ref tracking or clearing of any prior pending timeout, before editing.
 
 WHAT THIS IS:
 
-Confirmed live: with the client name resolution bug now fixed separately, asking the Concierge to send a client their portal link from a different page now correctly resolves the client and navigates to their page, but the ring highlight on the portal-link button still never fires. Root cause confirmed by direct comparison of the two places in this file that read a pending Concierge action: the live onConciergeAction listener, which only receives events while the panel is already mounted and processing in real time, correctly handles the portal-magic-link modal. The separate mount-time effect, which reads the pending action left in sessionStorage by executeAction right before a fresh page navigation, only checks for new-engagement. Since navigating to a different client's page is a fresh mount, only the mount-time reader ever runs, the live listener never fires because no live event is emitted during a cross-page navigation, and the highlight logic is simply never reached.
+Confirmed live: asking the Concierge to send a client's portal link a second time, while already on that client's page, did not restart the ring highlight. Confirmed live separately: the highlight visibly lasted closer to 2 seconds than the coded 3000ms in at least one observed case. Both symptoms point to the same root cause. Every time the highlight is triggered, a new setTimeout is scheduled to turn it off in 3000ms, but no reference to that timeout is kept and no prior pending timeout is ever cleared. If the highlight is triggered a second time while an earlier timeout from a previous trigger is still pending, the earlier timeout still fires on its own original schedule and turns the highlight off early or immediately, regardless of when the second trigger happened. There is no code path that fails to set portalLinkHighlight to true on a second request, the state is being set correctly each time, but an old, uncleared timer from a previous trigger is turning it back off unpredictably.
 
 CHANGE INSTRUCTIONS:
 
-In the mount-time effect at lines 83-99, add a new condition alongside the existing new-engagement check, for action.modal === 'portal-magic-link'. Inside it, call sessionStorage.removeItem('jamm_concierge_pending'), then reproduce the exact same three effects the live listener already performs for this modal: set the active tab to overview, set portalLinkHighlight to true, scroll portalLinkRef into view after a short delay, and clear the highlight after 3000ms. Match the live listener's timing values exactly rather than inventing new ones. Do not change the existing new-engagement branch in this effect, do not change the live onConciergeAction listener at all, and do not touch the third pending-action effect further down that handles prefillMessage.
+Add a ref, near portalLinkHighlight's own useState declaration, to hold the current pending timeout id. In both the mount-time branch and the live listener branch where the highlight is currently triggered, before scheduling the new setTimeout to clear the highlight, check if the ref already holds a pending timeout id and call clearTimeout on it first if so. Then schedule the new setTimeout, store its id in the ref, and change the duration from 3000 to 5000. Apply this identically in both places, since they currently duplicate the same triggering logic and must stay in sync with each other. Do not change the scrollIntoView behavior or its own separate 100ms delay, only the highlight-clearing timeout.
 
 VERIFY AFTER ACT:
 
-grep -n "portal-magic-link" /home/corby/jamm-os/frontend/src/app/\(app\)/clients/\[id\]/page.tsx
+grep -n "portalLinkTimeoutRef\|5000" /home/corby/jamm-os/frontend/src/app/\(app\)/clients/\[id\]/page.tsx
 
-Expected: now appears in both the mount-time effect and the live listener, two occurrences total where there was previously one.
+Expected: a new ref is declared and used in both branches, and 5000 appears in place of the old 3000 in both places.
 
 npx tsc --noEmit
 
@@ -86,19 +84,19 @@ MANUAL VERIFICATION:
 
 Restart the frontend.
 
-From a page other than this client's own page, for example the Dashboard or another client's page, with Autopilot on, ask the Concierge to send Robert & Carol Tanner their portal link.
+While already on a client's page with the panel open, ask the Concierge to send that client's portal link. Confirm the ring highlight fires and lasts a full 5 seconds, timing it if possible.
 
-Confirm the app navigates to Robert & Carol Tanner's page, the Overview tab is active, and the portal-link button shows a visible ring highlight within about a second of arriving, without needing a manual page reset first.
+Immediately after it fades, ask again for the same client. Confirm it fires again for a full 5 seconds.
 
-Separately, while already on a client's own page with the panel open, ask it to send that same client's portal link, confirming the live listener path still works correctly and was not broken by this change.
+Ask a third time while the highlight from the second request is still visibly active, partway through its 5 seconds. Confirm the highlight restarts cleanly rather than cutting off early or behaving unpredictably.
 
-Report pass or fail for both checks individually.
+Report pass or fail for all three checks individually, noting the actual observed duration each time.
 
 GIT:
 
 git add -A
 
-git commit -m "add the missing portal-magic-link branch to the mount-time pending action reader on the client detail page, matching the same handling already present in the live onConciergeAction listener, fixing the ring highlight never firing when the Concierge navigates to a client's page from somewhere else, since a fresh page mount only ever reads the pending action from sessionStorage and never receives a live event"
+git commit -m "fix the portal-link ring highlight not reliably re-triggering on repeated requests and extend its duration from 3 to 5 seconds, root cause confirmed as an uncleared prior setTimeout turning the highlight off early or unpredictably whenever it was triggered more than once without the previous timer being cancelled first"
 
 git pull --rebase origin main
 
