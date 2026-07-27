@@ -54,57 +54,51 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Fix client name resolution failing for client names containing an ampersand, breaking any Concierge action that navigates to a specific client's page
+TASK: Add the missing portal-magic-link branch to the mount-time pending action reader on the client detail page
 
 USE: claude sonnet
 
 VERIFY BEFORE ACT:
 
-sed -n '1308,1330p' /home/corby/jamm-os/app/api/concierge/route.py
+sed -n '83,99p' /home/corby/jamm-os/frontend/src/app/\(app\)/clients/\[id\]/page.tsx
 
-Confirm the client match query currently does a plain func.lower(Client.name).like(f"%{name.lower()}%") with no normalization of special characters, before editing.
+sed -n '100,118p' /home/corby/jamm-os/frontend/src/app/\(app\)/clients/\[id\]/page.tsx
+
+Confirm the mount-time effect at 83-99 currently only checks action.modal === 'new-engagement', while the separate live onConciergeAction listener at 100-118 already correctly handles action.modal === 'portal-magic-link' by setting the active tab to overview, setting portalLinkHighlight true, scrolling the button into view after a short delay, and clearing the highlight after 3000ms. Confirm this asymmetry exists before editing.
 
 WHAT THIS IS:
 
-Confirmed live: asking the Concierge to send Robert & Carol Tanner their portal link, with autopilot on, correctly triggered the navigate-and-open action, but the app never navigated away from the current page. Root cause: the CONCIERGE_ACTION route uses a slug placeholder like /clients/[client-name-slug], which the frontend decodes by replacing dashes with spaces to recover a searchable name. Client names containing an ampersand, like "Robert & Carol Tanner", lose the ampersand somewhere in the slugification and decoding round trip, producing a search string like "robert carol tanner" with no ampersand. The backend's /clients/resolve endpoint does a plain substring match against the real client name "Robert & Carol Tanner", which does not contain "robert carol tanner" as a substring because of the ampersand and surrounding spacing sitting between the two names, so the match fails, the endpoint 404s, and the frontend silently shows "Could not find client" and never navigates, while the Concierge's own response text had already said it was navigating. This will affect every client whose name contains an ampersand or any other punctuation that does not survive the slug round trip cleanly, not just this one client.
+Confirmed live: with the client name resolution bug now fixed separately, asking the Concierge to send a client their portal link from a different page now correctly resolves the client and navigates to their page, but the ring highlight on the portal-link button still never fires. Root cause confirmed by direct comparison of the two places in this file that read a pending Concierge action: the live onConciergeAction listener, which only receives events while the panel is already mounted and processing in real time, correctly handles the portal-magic-link modal. The separate mount-time effect, which reads the pending action left in sessionStorage by executeAction right before a fresh page navigation, only checks for new-engagement. Since navigating to a different client's page is a fresh mount, only the mount-time reader ever runs, the live listener never fires because no live event is emitted during a cross-page navigation, and the highlight logic is simply never reached.
 
 CHANGE INSTRUCTIONS:
 
-In the /clients/resolve endpoint, normalize both the incoming name query and the stored Client.name before comparing, stripping or ignoring ampersands and any other punctuation that is not a letter, number, or space, and collapsing repeated spaces, so that "robert carol tanner" and "Robert & Carol Tanner" match correctly regardless of how the slug was decoded. Do this as a real, deterministic normalization applied symmetrically to both sides of the comparison, not as a special case for the ampersand specifically, since other punctuation could cause the same class of failure. Do not change resolve_client_by_name in functions.py, the tool used by the model to answer questions, this task is scoped only to the /clients/resolve endpoint used for navigation.
+In the mount-time effect at lines 83-99, add a new condition alongside the existing new-engagement check, for action.modal === 'portal-magic-link'. Inside it, call sessionStorage.removeItem('jamm_concierge_pending'), then reproduce the exact same three effects the live listener already performs for this modal: set the active tab to overview, set portalLinkHighlight to true, scroll portalLinkRef into view after a short delay, and clear the highlight after 3000ms. Match the live listener's timing values exactly rather than inventing new ones. Do not change the existing new-engagement branch in this effect, do not change the live onConciergeAction listener at all, and do not touch the third pending-action effect further down that handles prefillMessage.
 
 VERIFY AFTER ACT:
 
-python3 -c "
-import sys
-sys.path.insert(0, '/home/corby/jamm-os')
-from app.api.concierge.route import resolve_client_by_name
-"
+grep -n "portal-magic-link" /home/corby/jamm-os/frontend/src/app/\(app\)/clients/\[id\]/page.tsx
 
-grep -n "def resolve_client_by_name" -A 20 /home/corby/jamm-os/app/api/concierge/route.py
+Expected: now appears in both the mount-time effect and the live listener, two occurrences total where there was previously one.
 
-Confirm the normalization logic is present and applied to both sides of the comparison.
-
-python3 -c "from app.main import app; print('OK')"
+npx tsc --noEmit
 
 MANUAL VERIFICATION:
 
-Restart the backend.
+Restart the frontend.
 
-With autopilot on, ask the Concierge to send Robert & Carol Tanner their portal link.
+From a page other than this client's own page, for example the Dashboard or another client's page, with Autopilot on, ask the Concierge to send Robert & Carol Tanner their portal link.
 
-Confirm the app actually navigates to Robert & Carol Tanner's page this time, not just that the response text claims it.
+Confirm the app navigates to Robert & Carol Tanner's page, the Overview tab is active, and the portal-link button shows a visible ring highlight within about a second of arriving, without needing a manual page reset first.
 
-Confirm the portal-link button's ring highlight fires within about a second of arriving on the page.
+Separately, while already on a client's own page with the panel open, ask it to send that same client's portal link, confirming the live listener path still works correctly and was not broken by this change.
 
-Separately, test with a client whose name has no punctuation at all, to confirm the fix did not break the normal case.
-
-Report pass or fail for all three checks individually.
+Report pass or fail for both checks individually.
 
 GIT:
 
 git add -A
 
-git commit -m "normalize punctuation, specifically ampersands, on both sides of the client name comparison in the /clients/resolve endpoint, fixing navigation silently failing for any client whose name contains an ampersand or similar punctuation that does not survive the slug encode/decode round trip, confirmed live tonight with Robert and Carol Tanner never being navigated to despite the Concierge claiming it was"
+git commit -m "add the missing portal-magic-link branch to the mount-time pending action reader on the client detail page, matching the same handling already present in the live onConciergeAction listener, fixing the ring highlight never firing when the Concierge navigates to a client's page from somewhere else, since a fresh page mount only ever reads the pending action from sessionStorage and never receives a live event"
 
 git pull --rebase origin main
 
