@@ -54,51 +54,75 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Make the client-slug navigation branch skip re-navigation and fire the live listener directly when already on the target client's page
+TASK: Build the reusable inline AI component kit as an isolated, standalone layer, not wired into any real page yet
 
-USE: claude sonnet
+USE: Fable 5
 
 VERIFY BEFORE ACT:
 
-sed -n '795,860p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+sed -n '1,40p' /home/corby/jamm-os/frontend/src/components/ui/card.tsx
 
-Confirm the non-UUID client-slug branch currently always calls router.push(resolvedRoute), stores a pending action in sessionStorage, and returns, with no check anywhere in that branch for whether pathname already matches the resolved client route. Confirm the alreadyOnRoute check that exists later in the function, for the non-client-slug modal case, is structurally unreachable from this branch since this branch always returns first. Confirm this before editing.
+sed -n '1,20p' /home/corby/jamm-os/frontend/src/lib/events/conciergeEvents.ts
+
+sed -n '1452,1481p' /home/corby/jamm-os/app/api/concierge/route.py
+
+sed -n '75,120p' /home/corby/jamm-os/frontend/src/components/dashboard/ConciergeSpotlight.tsx
+
+Confirm the Card primitive in ui/card.tsx, the ConciergeAction event system in conciergeEvents.ts, the real shape of GET /concierge/notifications (id, trigger_type, message, created_at, metadata), and ConciergeSpotlight's existing click-to-open-panel pattern all match what is described below before building anything.
 
 WHAT THIS IS:
 
-Confirmed live via the browser Network tab, checking the raw CONCIERGE_ACTION JSON across three consecutive identical requests: the model consistently and correctly emits the same modal value, portal-magic-link, every time. The bug is not in the model's output. The bug is that the client-slug resolution branch in executeAction has no concept of "already on this client's page." Every time this branch runs, regardless of current location, it resolves the client's id, calls router.push to that client's route, and stores the action as pending in sessionStorage for the next mount to pick up, then returns immediately. When already on that exact client's page, router.push to the same pathname is a no-op in Next.js, no remount occurs, the mount-time pending-action reader never re-runs since it only runs once per real mount, and the live onConciergeAction listener is never invoked either since emitConciergeAction was never called on this code path. The pending action is written to sessionStorage and never read by anything, and the highlight silently never fires. This exact same class of already-on-route handling already exists later in this function for the non-client-slug modal case, using pathname.startsWith(normalizedRoute) to decide between emitConciergeAction directly versus storing a pending action for later, but the client-slug branch was never given the equivalent check.
+This is the first step of a larger, deliberate redesign of how the Concierge is positioned in the product, informed by real research done tonight: features embedded in a separate panel a user has to remember to open see meaningfully lower long-term engagement than the same capability embedded directly in the primary workflow. The long-term goal is an "always embedded" Concierge, similar in spirit to how Apple Intelligence or Superhuman surface AI inline rather than behind a chat window that must be deliberately opened. This is explicitly NOT a 72 hour, pre-launch task. It is the deliberate first phase of a project that begins after launch. Tonight's task is scoped narrowly and safely: build a small set of reusable, presentational components in isolation, wire zero of them into any real page, and change no existing page's behavior. A real notifications data source already exists and already works, GET /concierge/notifications, currently consumed only by the side panel's alert tray. This task does not change that endpoint or what triggers a notification, it only builds new ways to eventually display that same real data elsewhere.
 
 CHANGE INSTRUCTIONS:
 
-Inside the non-UUID client-slug branch, after resolvedRoute is computed and before the formDirty check and router.push call, add a check for whether the browser is already on that resolved client's route, using the same style already established later in this function, pathname starting with the client's resolved path ignoring any query string. If already on that route, skip the formDirty check, skip router.push, skip writing jamm_concierge_pending to sessionStorage, and instead call emitConciergeAction(action) directly, then set the status message using the same modalLabel lookup pattern already used later in this function for the modal case, falling back to a generic opened-modal message if the action's modal value is not in that lookup. If not already on that route, preserve all existing behavior in this branch exactly as it is now. Do not change the later, already-correct alreadyOnRoute block used for non-client-slug modal actions, and do not change the UUID branch of this same client-slug check.
+Create a new directory, frontend/src/components/concierge-inline, for this component kit, kept fully separate from the existing ConciergePanel.tsx so nothing about the current, working panel is touched or put at risk.
+
+Build five components:
+
+1. SuggestionCard: takes a notification object matching the real shape from GET /concierge/notifications (id, trigger_type, message, created_at, metadata) plus an optional primary action label and an onAction callback, plus an onDismiss callback. Build on top of the existing Card primitive from ui/card.tsx rather than duplicating its styling. Visually deferential per tonight's research, a quiet card, not a loud banner, using the concierge gold accent token already established tonight, consistent with ConciergeSpotlight's existing visual treatment.
+
+2. ContextualBanner: takes a message, a count, a primary action label, and an onAction callback, styled using the existing status-green or status-amber tokens depending on a passed tone prop, matching the visual pattern of Intuit-style "ready to post" banners, for the eventual high-confidence batch action case.
+
+3. GhostTextField: a thin wrapper component around a standard text input or textarea that accepts a suggestedCompletion string prop and renders it as faint placeholder-style text ahead of the cursor, with no live AI wiring yet, purely the visual and interaction shell for a future select-to-act or ghost-completion feature.
+
+4. PersistentEntryButton: a small, always-visible button component styled with the existing brand-btn token, accepting an onClick callback, intended eventually to be the persistent, repositionable gateway into the full Concierge panel, replacing the current less discoverable entry point, but not wired to replace anything yet in this task.
+
+5. ContextLoadedChatPreview: a small header component intended to sit at the top of the existing ConciergePanel when it is opened via a hand-off from one of the inline components above, accepting an openedFromLabel string prop and rendering it as a small "opened from: [label]" line. Build this as a new, separate, optional component. Do not modify ConciergePanel.tsx itself in this task, only build this new piece in isolation so it can be integrated later without touching the panel's existing logic tonight.
+
+Build a single new internal route, frontend/src/app/(app)/dev/concierge-kit/page.tsx, rendering all five components with realistic mock data including at least one real-shaped notification object, so they can be viewed and reviewed directly in the browser without needing to touch or risk any real page. This route is temporary scaffolding for review, not a permanent part of the product.
+
+Do not change ConciergePanel.tsx, ConciergeSpotlight.tsx, the notifications endpoint, or any existing page. Do not wire emitConciergeAction or any real event into these new components yet, they should be fully self-contained and driven only by props for this task.
 
 VERIFY AFTER ACT:
 
-grep -n "alreadyOnRoute\|alreadyOnClientRoute" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+find /home/corby/jamm-os/frontend/src/components/concierge-inline -type f
 
-Expected: a new already-on-route style check now appears inside the client-slug branch, in addition to the existing one further down.
+Expected: five new component files.
 
 npx tsc --noEmit
+
+git diff --stat
+
+Expected: only new files under concierge-inline/ and the new dev route, zero existing files modified.
 
 MANUAL VERIFICATION:
 
 Restart the frontend.
 
-While already on Robert & Carol Tanner's page with the panel open, ask the Concierge to send that client's portal link. Confirm the ring highlight fires immediately, without the page navigating away and back.
+Visit /dev/concierge-kit directly in the browser. Confirm all five components render with the mock data, in both light and dark mode, using real tokens, not placeholder colors.
 
-Ask the exact same question again immediately after. Confirm the highlight fires again.
+Confirm no existing page's behavior changed, spot check the Dashboard and a client detail page load exactly as they did before this task.
 
-Ask a third time while the highlight from the second request is still visibly active. Confirm it restarts cleanly.
+Do not use Playwright or any browser automation for this check, verify visually yourself.
 
-Separately, from the Dashboard, ask the Concierge to send Robert & Carol Tanner their portal link, confirming the cross-page navigation case, which was already working, still works correctly and was not broken by this change.
-
-Report pass or fail for all four checks individually, noting actual observed highlight duration.
+Report pass or fail for each of the five components individually, plus confirmation that no existing page changed.
 
 GIT:
 
 git add -A
 
-git commit -m "fix the client-slug navigation branch in executeAction never checking whether the browser is already on the target client's page, confirmed via the raw network response that the model consistently emits correct CONCIERGE_ACTION JSON on every request while the frontend's router.push to an identical pathname produced a no-op remount, silently stranding the pending action in sessionStorage and preventing the portal-link ring highlight from ever firing on repeated same-page requests"
+git commit -m "build the first phase of the inline Concierge redesign: five reusable, presentational components (SuggestionCard, ContextualBanner, GhostTextField, PersistentEntryButton, ContextLoadedChatPreview) built in full isolation under a new concierge-inline directory with a temporary dev review route, wiring nothing into any real page and changing no existing file, informed by tonight's research on panel versus inline AI assistant engagement, explicitly scoped as post-launch foundational work rather than a pre-launch change"
 
 git pull --rebase origin main
 
