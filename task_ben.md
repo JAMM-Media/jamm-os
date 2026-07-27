@@ -54,29 +54,29 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Make the portal-link ring highlight reliably re-trigger on every request and extend its duration to 5 seconds
+TASK: Make the client-slug navigation branch skip re-navigation and fire the live listener directly when already on the target client's page
 
 USE: claude sonnet
 
 VERIFY BEFORE ACT:
 
-sed -n '95,120p' /home/corby/jamm-os/frontend/src/app/\(app\)/clients/\[id\]/page.tsx
+sed -n '795,860p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-Confirm both the mount-time branch and the live listener branch currently call setPortalLinkHighlight(true) followed by a bare setTimeout(() => setPortalLinkHighlight(false), 3000), with no ref tracking or clearing of any prior pending timeout, before editing.
+Confirm the non-UUID client-slug branch currently always calls router.push(resolvedRoute), stores a pending action in sessionStorage, and returns, with no check anywhere in that branch for whether pathname already matches the resolved client route. Confirm the alreadyOnRoute check that exists later in the function, for the non-client-slug modal case, is structurally unreachable from this branch since this branch always returns first. Confirm this before editing.
 
 WHAT THIS IS:
 
-Confirmed live: asking the Concierge to send a client's portal link a second time, while already on that client's page, did not restart the ring highlight. Confirmed live separately: the highlight visibly lasted closer to 2 seconds than the coded 3000ms in at least one observed case. Both symptoms point to the same root cause. Every time the highlight is triggered, a new setTimeout is scheduled to turn it off in 3000ms, but no reference to that timeout is kept and no prior pending timeout is ever cleared. If the highlight is triggered a second time while an earlier timeout from a previous trigger is still pending, the earlier timeout still fires on its own original schedule and turns the highlight off early or immediately, regardless of when the second trigger happened. There is no code path that fails to set portalLinkHighlight to true on a second request, the state is being set correctly each time, but an old, uncleared timer from a previous trigger is turning it back off unpredictably.
+Confirmed live via the browser Network tab, checking the raw CONCIERGE_ACTION JSON across three consecutive identical requests: the model consistently and correctly emits the same modal value, portal-magic-link, every time. The bug is not in the model's output. The bug is that the client-slug resolution branch in executeAction has no concept of "already on this client's page." Every time this branch runs, regardless of current location, it resolves the client's id, calls router.push to that client's route, and stores the action as pending in sessionStorage for the next mount to pick up, then returns immediately. When already on that exact client's page, router.push to the same pathname is a no-op in Next.js, no remount occurs, the mount-time pending-action reader never re-runs since it only runs once per real mount, and the live onConciergeAction listener is never invoked either since emitConciergeAction was never called on this code path. The pending action is written to sessionStorage and never read by anything, and the highlight silently never fires. This exact same class of already-on-route handling already exists later in this function for the non-client-slug modal case, using pathname.startsWith(normalizedRoute) to decide between emitConciergeAction directly versus storing a pending action for later, but the client-slug branch was never given the equivalent check.
 
 CHANGE INSTRUCTIONS:
 
-Add a ref, near portalLinkHighlight's own useState declaration, to hold the current pending timeout id. In both the mount-time branch and the live listener branch where the highlight is currently triggered, before scheduling the new setTimeout to clear the highlight, check if the ref already holds a pending timeout id and call clearTimeout on it first if so. Then schedule the new setTimeout, store its id in the ref, and change the duration from 3000 to 5000. Apply this identically in both places, since they currently duplicate the same triggering logic and must stay in sync with each other. Do not change the scrollIntoView behavior or its own separate 100ms delay, only the highlight-clearing timeout.
+Inside the non-UUID client-slug branch, after resolvedRoute is computed and before the formDirty check and router.push call, add a check for whether the browser is already on that resolved client's route, using the same style already established later in this function, pathname starting with the client's resolved path ignoring any query string. If already on that route, skip the formDirty check, skip router.push, skip writing jamm_concierge_pending to sessionStorage, and instead call emitConciergeAction(action) directly, then set the status message using the same modalLabel lookup pattern already used later in this function for the modal case, falling back to a generic opened-modal message if the action's modal value is not in that lookup. If not already on that route, preserve all existing behavior in this branch exactly as it is now. Do not change the later, already-correct alreadyOnRoute block used for non-client-slug modal actions, and do not change the UUID branch of this same client-slug check.
 
 VERIFY AFTER ACT:
 
-grep -n "portalLinkTimeoutRef\|5000" /home/corby/jamm-os/frontend/src/app/\(app\)/clients/\[id\]/page.tsx
+grep -n "alreadyOnRoute\|alreadyOnClientRoute" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-Expected: a new ref is declared and used in both branches, and 5000 appears in place of the old 3000 in both places.
+Expected: a new already-on-route style check now appears inside the client-slug branch, in addition to the existing one further down.
 
 npx tsc --noEmit
 
@@ -84,19 +84,21 @@ MANUAL VERIFICATION:
 
 Restart the frontend.
 
-While already on a client's page with the panel open, ask the Concierge to send that client's portal link. Confirm the ring highlight fires and lasts a full 5 seconds, timing it if possible.
+While already on Robert & Carol Tanner's page with the panel open, ask the Concierge to send that client's portal link. Confirm the ring highlight fires immediately, without the page navigating away and back.
 
-Immediately after it fades, ask again for the same client. Confirm it fires again for a full 5 seconds.
+Ask the exact same question again immediately after. Confirm the highlight fires again.
 
-Ask a third time while the highlight from the second request is still visibly active, partway through its 5 seconds. Confirm the highlight restarts cleanly rather than cutting off early or behaving unpredictably.
+Ask a third time while the highlight from the second request is still visibly active. Confirm it restarts cleanly.
 
-Report pass or fail for all three checks individually, noting the actual observed duration each time.
+Separately, from the Dashboard, ask the Concierge to send Robert & Carol Tanner their portal link, confirming the cross-page navigation case, which was already working, still works correctly and was not broken by this change.
+
+Report pass or fail for all four checks individually, noting actual observed highlight duration.
 
 GIT:
 
 git add -A
 
-git commit -m "fix the portal-link ring highlight not reliably re-triggering on repeated requests and extend its duration from 3 to 5 seconds, root cause confirmed as an uncleared prior setTimeout turning the highlight off early or unpredictably whenever it was triggered more than once without the previous timer being cancelled first"
+git commit -m "fix the client-slug navigation branch in executeAction never checking whether the browser is already on the target client's page, confirmed via the raw network response that the model consistently emits correct CONCIERGE_ACTION JSON on every request while the frontend's router.push to an identical pathname produced a no-op remount, silently stranding the pending action in sessionStorage and preventing the portal-link ring highlight from ever firing on repeated same-page requests"
 
 git pull --rebase origin main
 
