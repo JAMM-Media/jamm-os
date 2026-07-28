@@ -6,18 +6,28 @@ interface ContextualBannerProps {
   count: number
   actionLabel: string
   onAction: () => void
-  tone: 'green' | 'amber'
+  tone: 'green' | 'amber' | 'red'
 }
 
 export function ContextualBanner({ message, count, actionLabel, onAction, tone }: ContextualBannerProps) {
-  const isGreen = tone === 'green'
-  const wrapperClass = isGreen
-    ? 'bg-status-green border-status-green-text'
-    : 'bg-status-amber border-status-amber-text'
-  const textClass = isGreen ? 'text-status-green-text' : 'text-status-amber-text'
-  const buttonClass = isGreen
-    ? 'bg-status-green-text text-white hover:opacity-90'
-    : 'bg-status-amber-text text-white hover:opacity-90'
+  const styles = {
+    green: {
+      wrapper: 'bg-status-green border-status-green-text',
+      text: 'text-status-green-text',
+      button: 'bg-status-green-text text-white hover:opacity-90',
+    },
+    amber: {
+      wrapper: 'bg-status-amber border-status-amber-text',
+      text: 'text-status-amber-text',
+      button: 'bg-status-amber-text text-white hover:opacity-90',
+    },
+    red: {
+      wrapper: 'bg-status-red border-status-red-text',
+      text: 'text-status-red-text',
+      button: 'bg-status-red-text text-white hover:opacity-90',
+    },
+  }
+  const { wrapper: wrapperClass, text: textClass, button: buttonClass } = styles[tone]
 
   return (
     <div className={`flex items-center gap-3 px-4 py-2.5 rounded-[8px] border border-[0.5px] ${wrapperClass}`}>

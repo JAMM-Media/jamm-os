@@ -264,6 +264,9 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
       if (action.type === 'open-panel' && action.expandNotifications) {
         setNotificationsExpanded(true)
       }
+      if (action.type === 'prefill-message' && action.prefillMessage) {
+        setInput(action.prefillMessage)
+      }
     })
   }, [])
 
