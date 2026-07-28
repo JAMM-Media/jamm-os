@@ -7,6 +7,7 @@ import { onConciergeAction } from '@/lib/events/conciergeEvents'
 import { Sidebar } from './Sidebar'
 import { ConciergePanel } from '@/components/concierge/ConciergePanel'
 import { PersistentEntryButton } from '@/components/concierge-inline/PersistentEntryButton'
+import { useConciergeNotifications } from '@/lib/hooks/useConciergeNotifications'
 
 interface AppShellProps {
   children: React.ReactNode
@@ -27,6 +28,7 @@ export function AppShell({ children }: AppShellProps) {
   // from sessionStorage AFTER mount instead, inside an effect -- this is the
   // standard SSR-safe pattern for state that depends on browser-only storage.
   const [conciergeOpen, setConciergeOpen] = useState(false)
+  const { notifications } = useConciergeNotifications()
 
   useEffect(() => {
     const saved = sessionStorage.getItem('jamm_concierge_open') === 'true'
@@ -92,7 +94,7 @@ export function AppShell({ children }: AppShellProps) {
         <div className="fixed bottom-6 right-6 z-40">
           <PersistentEntryButton
             onClick={handleConciergeOpen}
-            hasSuggestion={false}
+            hasSuggestion={notifications.length > 0}
           />
         </div>
       )}

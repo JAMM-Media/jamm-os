@@ -10,6 +10,7 @@ import { useAuth } from '@/lib/hooks/useAuth'
 import { useConfirm } from '@/lib/hooks/useConfirm'
 import { useAlert } from '@/lib/hooks/useAlert'
 import { useConciergeContext } from '@/lib/hooks/useConciergeContext'
+import { useConciergeNotifications, type ConciergeNotification } from '@/lib/hooks/useConciergeNotifications'
 import api from '@/lib/api'
 import {
   emitConciergeAction,
@@ -28,13 +29,7 @@ interface Message {
   options?: string[]
 }
 
-interface Notification {
-  id: string
-  trigger_type: string
-  message: string
-  created_at: string
-  metadata?: Record<string, unknown> | null
-}
+type Notification = ConciergeNotification
 
 interface ConciergePanelProps {
   isOpen: boolean
@@ -104,7 +99,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
     user?.full_name?.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase() ?? '?'
 
   const [messages, setMessages] = useState<Message[]>([])
-  const [notifications, setNotifications] = useState<Notification[]>([])
+  const { notifications, dismissNotification: dismissNotificationFromHook, refetch: refetchNotifications } = useConciergeNotifications()
   const [notificationsExpanded, setNotificationsExpanded] = useState(false)
   const [input, setInput] = useState('')
   const [streaming, setStreaming] = useState(false)
@@ -270,28 +265,8 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
     })
   }, [])
 
-  const fetchNotifications = useCallback(async () => {
-    try {
-      const res = await api.get('/concierge/notifications')
-      setNotifications((prev) => {
-        const existing = new Set(prev.map((n) => n.id))
-        const incoming = (res.data.items ?? []) as Notification[]
-        const fresh = incoming.filter((n) => !existing.has(n.id))
-        return fresh.length > 0 ? [...prev, ...fresh] : prev
-      })
-    } catch {
-      // non-fatal
-    }
-  }, [])
-
-  const dismissNotification = useCallback(async (id: string) => {
-    setNotifications((prev) => prev.filter((n) => n.id !== id))
-    try {
-      await api.patch(`/concierge/notifications/${id}/read`)
-    } catch {
-      // already removed from UI
-    }
-  }, [])
+  const dismissNotification = dismissNotificationFromHook
+  const fetchNotifications = refetchNotifications
 
   function stripTrailingMarkers(text: string, partial = false): string {
     let result = text
@@ -545,16 +520,8 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
     }
   }, [isOpen, sendMessages, fetchNotifications, user])
 
-  // 60-second context refresh -- polls trigger check while panel is open
-  useEffect(() => {
-    if (!isOpen) return
-    const interval = setInterval(() => {
-      api.post('/concierge/trigger-check')
-        .then(() => fetchNotifications())
-        .catch(() => {})
-    }, 60_000)
-    return () => clearInterval(interval)
-  }, [isOpen, fetchNotifications])
+  // Polling is now handled by useConciergeNotifications (60s, always-on).
+  // Trigger-check on panel open is still called explicitly for immediate refresh.
 
   async function handleClearConversation() {
     const confirmed = await confirm({ message: 'Clear this conversation? This cannot be undone.', confirmLabel: 'Clear', destructive: true })
