@@ -1323,8 +1323,6 @@ export default function SettingsPage() {
           {/* Migration tab */}
           {activeTab === 'migration' && canSeeMigration && <MigrationTab />}
 
-        </div>
-
         {isFirmOwner && (
           <div className="mt-8 pt-4 border-t border-[0.5px] border-[#E5E7EB] dark:border-[#3D3D3D] max-w-lg">
             <a
@@ -1335,6 +1333,8 @@ export default function SettingsPage() {
             </a>
           </div>
         )}
+
+        </div>
       </div>
 
       <EditStaffModal
