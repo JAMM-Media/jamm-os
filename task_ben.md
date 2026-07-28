@@ -54,67 +54,47 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Add a SuggestionCard to the client detail page's Overview tab for clients who have never been sent a portal invite, wired into tonight's already-hardened portal-magic-link flow
+TASK: Fix the client detail page's portal-invite SuggestionCard to only appear when it's genuinely informative, not a redundant restatement of the always-visible Send Portal Link button
 
-USE: Fable 5
+USE: claude sonnet
 
 VERIFY BEFORE ACT:
 
-grep -n "portal_invite_sent_at" /home/corby/jamm-os/app/models/client.py
+sed -n '440,455p' /home/corby/jamm-os/frontend/src/app/\(app\)/clients/\[id\]/page.tsx
 
-grep -n "portal_invite_sent_at" /home/corby/jamm-os/app/schemas/client.py
+grep -n "createdAt" /home/corby/jamm-os/frontend/src/lib/api/clients.ts
 
-sed -n '124,131p' /home/corby/jamm-os/app/schemas/client.py
-
-sed -n '83,118p' /home/corby/jamm-os/frontend/src/app/\(app\)/clients/\[id\]/page.tsx
-
-grep -n "'open-panel'" /home/corby/jamm-os/frontend/src/components/layout/AppShell.tsx
-
-sed -n '1,25p' /home/corby/jamm-os/frontend/src/components/concierge-inline/SuggestionCard.tsx
-
-Confirm portal_invite_sent_at exists as a nullable datetime field on the Client model but is currently absent from ClientOut, meaning it is not currently returned to the frontend at all. Confirm the client detail page already has a working live onConciergeAction listener that correctly handles a navigate-and-open action with modal portal-magic-link, setting the active tab to overview, setting portalLinkHighlight true, scrolling the button into view, and clearing the highlight after 7000ms, fixed and verified earlier tonight. Confirm open-panel is handled in AppShell.tsx, which owns the conciergeOpen boolean passed into ConciergePanel as isOpen. Confirm SuggestionCard's real prop shape from the Phase 1 kit before using it. Confirm all of this before making any change.
+Confirm the SuggestionCard currently renders whenever portalInviteSentAt is null, with no time threshold at all, meaning it appears immediately for a client created moments ago just as much as one created months ago, and confirm createdAt is already available on the client object in ISO string form. Confirm this before editing.
 
 WHAT THIS IS:
 
-This is the second real, live page of the inline Concierge redesign, following the Billing overdue-invoices banner built and verified earlier tonight. This one is lower risk in one specific way: instead of building a new hand-off mechanism, it reuses the portal-magic-link action pipeline that this session already spent significant effort hardening end to end tonight, the modal string match, the never-claim-completed phrasing rule, the ampersand-safe client name resolution, the hydration fix, the missing mount-time branch fix, and the 7 second highlight duration. The only new thing this task adds is a real, visible entry point into that already-proven pipeline, directly on the client detail page itself, for any client who has never been sent a portal invite at all, which is not something the product currently surfaces anywhere.
+Confirmed live and directly by the person using it tonight: this card, as originally built, provides no real information the page did not already show, since a Send Portal Link button already sits permanently visible just below it regardless of state. The feedback was specific and correct: the card should only appear when it is surfacing something the firm owner might genuinely not have noticed, not simply restating an always-available manual control. The real, meaningful signal here is time: a client who was added recently and has not yet been invited is completely normal and not worth flagging, but a client who has existed for a while with no portal invite ever sent is a real thing that could easily go unnoticed among everything else on a busy owner's plate. This is also a deliberate first real test of a broader pattern the person wants across the product: information the assistant surfaces directly in context because it is genuinely worth noticing, not a duplicate call to action for something already visible.
 
 CHANGE INSTRUCTIONS:
 
-Backend: add portal_invite_sent_at as an optional datetime field to ClientOut in schemas/client.py, matching the exact type and style of the other optional fields already present. Do not add any new endpoint, this field will now simply be included automatically in the existing GET /clients/{id} response already used by this page. Do not change the Client model itself, it already has this field, only expose it.
-
-Frontend: on the client detail page's Overview tab, when the fetched client's portal_invite_sent_at is null, render a SuggestionCard above the existing content, using the concierge-inline kit's real prop shape, with a message stating this client has not been sent a portal invite yet, and a primary action labeled something like Send portal invite. The onAction callback should call emitConciergeAction twice in sequence, first with type open-panel, then with type navigate-and-open, route set to this client's own current route, and modal set to portal-magic-link, exactly matching the shape the model itself already emits for this action, so this reuses the exact same, already-fixed live listener path on this page rather than introducing any new logic. Do not write any new highlight, tab-switching, or scrolling logic in this task, all of that already exists and already works. Do not change the SuggestionCard component itself unless its existing props genuinely cannot express this use case, in which case state clearly what was missing before extending it.
+Compute the number of days between the client's createdAt and the current date. Only render the SuggestionCard when portalInviteSentAt is null AND this computed age is 10 or more days. Update the card's message to state the real, specific fact driving the suggestion, for example stating the client's name and that it has been over a specified number of days since they were added with no portal invite sent yet, using real computed values, not a static string. Keep the existing onAction behavior exactly as it is, still only opening the panel and highlighting the existing Send Portal Link button, never sending anything automatically. Do not change the 10 day threshold to any other number without it being stated explicitly as a real, deliberate choice, and do not change how portalInviteSentAt itself is computed or fetched.
 
 VERIFY AFTER ACT:
 
-grep -n "portal_invite_sent_at" /home/corby/jamm-os/app/schemas/client.py
-
-grep -n "SuggestionCard" /home/corby/jamm-os/frontend/src/app/\(app\)/clients/\[id\]/page.tsx
-
-grep -n "portal-magic-link" /home/corby/jamm-os/frontend/src/app/\(app\)/clients/\[id\]/page.tsx
-
-Expected: portal_invite_sent_at now present in ClientOut, SuggestionCard now imported and rendered conditionally, and a third occurrence of portal-magic-link now exists on this page in addition to the two already confirmed earlier tonight.
-
-python3 -c "from app.main import app; print('OK')"
+grep -n "10\|daysSince\|createdAt" /home/corby/jamm-os/frontend/src/app/\(app\)/clients/\[id\]/page.tsx | grep -i portal
 
 npx tsc --noEmit
 
 MANUAL VERIFICATION:
 
-Restart both servers.
+Restart the frontend.
 
-Find or create a client whose portal_invite_sent_at is null, confirm the SuggestionCard appears on their Overview tab with the correct message.
+Find or create a client added within the last few days with no portal invite sent. Confirm the SuggestionCard does NOT appear for them, since this is normal and not yet worth flagging.
 
-Click the card's action. Confirm the panel opens, switches to Overview if not already there, and the portal-link button highlights for the full 7 seconds, matching the already-verified behavior from earlier tonight.
+Confirm the card DOES still appear for Robert & Carol Tanner or another client old enough to cross the 10 day threshold with no invite ever sent, and confirm the message now states the real, specific number of days and the client's real name rather than generic text.
 
-Separately, open a client who has already been sent a portal invite, confirm the SuggestionCard does not appear for them.
-
-Report pass or fail for all three checks individually.
+Report pass or fail for both checks individually, including the actual message text shown.
 
 GIT:
 
 git add -A
 
-git commit -m "add the second real page of the inline Concierge redesign, a SuggestionCard on the client detail page's Overview tab for clients who have never been sent a portal invite, wired directly into the already-hardened portal-magic-link action pipeline built and verified earlier tonight rather than introducing any new hand-off logic, and expose the previously backend-only portal_invite_sent_at field on ClientOut so the frontend can read it"
+git commit -m "add a real 10 day age threshold to the client detail page's portal-invite SuggestionCard, fixing direct feedback tonight that the card as originally built provided no information beyond what the always-visible Send Portal Link button already showed, now only surfacing when a client has genuinely gone unnoticed for a meaningful length of time with no invite ever sent, with the card's message stating the real computed values rather than static text"
 
 git pull --rebase origin main
 
