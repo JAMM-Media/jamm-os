@@ -54,45 +54,39 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Extract notification fetching into a shared, reusable hook so AppShell can know the real notification count without duplicating ConciergePanel's logic
+TASK: Remove the now-redundant "JAMM Concierge" sidebar navigation item, since it duplicates the new persistent entry button
 
-USE: Fable 5
+USE: claude sonnet
 
 VERIFY BEFORE ACT:
 
-cat /home/corby/jamm-os/frontend/src/lib/hooks/useConciergeContext.ts
+sed -n '50,65p' /home/corby/jamm-os/frontend/src/components/layout/Sidebar.tsx
 
-sed -n '100,115p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+sed -n '225,238p' /home/corby/jamm-os/frontend/src/components/layout/Sidebar.tsx
 
-sed -n '270,300p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+sed -n '75,90p' /home/corby/jamm-os/frontend/src/components/layout/AppShell.tsx
 
-sed -n '540,558p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
-
-grep -n "notifications\|fetchNotifications\|dismissNotification" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
-
-Confirm useConciergeContext.ts's exact pattern: a standalone hook, not a React Context provider, using a module-level Map as a shared cache with a TTL, called independently by any component that needs it. Confirm ConciergePanel.tsx currently owns notifications state, fetchNotifications, dismissNotification, and mark-as-read entirely locally, with fetching gated behind isOpen, plus a 60 second polling interval also gated behind isOpen. Confirm this exact current behavior before changing anything.
+Confirm onConciergeOpen is declared in SidebarProps, used in exactly one place inside Sidebar.tsx (the Concierge nav button), and passed in from AppShell.tsx as a prop alongside the new PersistentEntryButton added earlier tonight. Confirm both entry points currently call the identical underlying open function before removing either.
 
 WHAT THIS IS:
 
-The persistent entry button added earlier tonight has a hasSuggestion prop ready to use, but nothing currently wires it to anything real, because notification data only exists inside ConciergePanel.tsx's own local state, unreachable from AppShell.tsx where the button lives. This task follows the same pattern already established and working in this codebase for exactly this kind of cross-component data need, useConciergeContext.ts, rather than introducing a new, different pattern like React Context. This is real, live surgery on the single most heavily used and most tested file from this entire session, so the scope here is deliberately narrow: extract existing logic into a new hook, do not change what that logic does or how the panel behaves.
+Direct product decision made tonight, live, after seeing both entry points on screen side by side: the sidebar's "JAMM Concierge" navigation item and the new floating PersistentEntryButton both do the exact same thing, open the same panel, with no distinct behavior between them. Rather than leave two identical entry points, remove the older, less distinct sidebar item now that the new persistent, glow-capable button exists as the primary way to open the Concierge.
 
 CHANGE INSTRUCTIONS:
 
-Create a new hook, frontend/src/lib/hooks/useConciergeNotifications.ts, following the exact structural pattern of useConciergeContext.ts: a plain function-based hook, not a Context provider, with a module-level cache so multiple components calling this hook share fetched data rather than each independently polling the API. Move the notification fetching logic (the GET to /concierge/notifications, and the trigger-check POST currently combined with it) into this new hook. The hook should independently manage its own polling on a 60 second interval, not gated behind any panel-open state, since the entry point using it needs to know about notifications even when the panel has never been opened. Expose notifications, a loading or ready state, and a way to mark one as read or refetch, matching what ConciergePanel currently needs.
+In Sidebar.tsx, remove the entire Concierge button block, including its comment. Remove onConciergeOpen from the SidebarProps interface and from the function's destructured parameters. Do not change the Settings button, the dark mode toggle, or any other item in this file, only remove the Concierge-specific block and its now-unused prop.
 
-In ConciergePanel.tsx, replace its own local notifications state, fetchNotifications function, and the two isOpen-gated effects that call it, with a call to this new hook instead. Do not change any of the JSX that renders the alert tray, the dismiss button, the mark-as-read behavior, or the draft cards inside notifications, only change where the underlying data comes from. The panel's own trigger-check-on-open behavior can remain as an explicit refetch call into the new hook when the panel opens, if that preserves the existing immediate-refresh-on-open behavior, state clearly if this changes any existing timing.
-
-In AppShell.tsx, call the new hook and pass hasSuggestion as notifications.length greater than zero into PersistentEntryButton, replacing the hardcoded false from earlier tonight.
-
-Do not change PersistentEntryButton.tsx itself, its hasSuggestion prop already exists and works correctly. Do not change the dismiss-all or mark-as-read backend endpoints. Do not change trigger-check's own backend logic.
+In AppShell.tsx, remove the onConciergeOpen prop being passed into Sidebar. Do not remove handleConciergeOpen itself if it is still used elsewhere, such as by the new PersistentEntryButton, only stop passing it into Sidebar specifically.
 
 VERIFY AFTER ACT:
 
-grep -n "useConciergeNotifications" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx /home/corby/jamm-os/frontend/src/components/layout/AppShell.tsx
+grep -n "onConciergeOpen\|JAMM Concierge" /home/corby/jamm-os/frontend/src/components/layout/Sidebar.tsx
 
-grep -n "hasSuggestion" /home/corby/jamm-os/frontend/src/components/layout/AppShell.tsx
+Expected: zero results.
 
-Expected: hasSuggestion no longer hardcoded to false, now driven by real notification count.
+grep -n "onConciergeOpen" /home/corby/jamm-os/frontend/src/components/layout/AppShell.tsx
+
+Expected: no longer passed into Sidebar, but still present wherever PersistentEntryButton uses it.
 
 npx tsc --noEmit
 
@@ -100,21 +94,17 @@ MANUAL VERIFICATION:
 
 Restart the frontend.
 
-With a real, unread notification present for the firm, confirm the persistent entry button in the corner now shows the gold glow even before the panel has ever been opened this session.
+Confirm the sidebar no longer shows a Concierge entry, and that Settings and dark mode toggle still render and work correctly directly below where it used to be.
 
-Open the panel, confirm the alert tray still shows the same notification, still dismissible, still mark-as-readable, exactly as it worked before this task.
+Confirm the floating PersistentEntryButton in the bottom-right corner still opens the panel correctly, unaffected by this change.
 
-Dismiss the notification from inside the panel, confirm the button's glow correctly turns off once the count reaches zero, without needing to close and reopen the panel.
-
-Reload the page entirely, confirm notification state loads correctly fresh, both in the button and in the panel, with no console errors.
-
-Report pass or fail for all four checks individually, since this task touches the most sensitive file from tonight's entire session and deserves the most careful verification of anything built so far.
+Report pass or fail for both checks.
 
 GIT:
 
 git add -A
 
-git commit -m "extract ConciergePanel's notification fetching into a new, shared useConciergeNotifications hook, following the exact standalone-hook-with-module-level-cache pattern already established by useConciergeContext, so AppShell can now drive the persistent entry button's real gold glow from actual notification data instead of a hardcoded false, with ConciergePanel's own alert tray, dismiss, and mark-as-read behavior fully preserved and now sourced from the shared hook instead of local state"
+git commit -m "remove the sidebar's JAMM Concierge navigation item, a direct product decision made after seeing it rendered side by side with the new persistent entry button tonight and confirming both did the exact same thing with no distinct behavior, leaving the new floating, glow-capable button as the single entry point into the Concierge panel"
 
 git pull --rebase origin main
 

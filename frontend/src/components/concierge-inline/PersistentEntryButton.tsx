@@ -13,7 +13,7 @@ export function PersistentEntryButton({ onClick, label = 'Ask Concierge', hasSug
   return (
     <button
       onClick={onClick}
-      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[6px] bg-brand-btn text-white text-[12px] font-medium hover:opacity-90 transition-opacity shadow-sm ${hasSuggestion ? 'ring-2 ring-concierge animate-pulse' : ''}`}
+      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[6px] bg-brand-btn text-white text-[12px] font-medium hover:opacity-90 transition-opacity shadow-sm ${hasSuggestion ? 'ring-2 ring-concierge' : ''}`}
     >
       <Sparkles className="h-3.5 w-3.5" />
       {label}
