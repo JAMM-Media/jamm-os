@@ -440,24 +440,28 @@ function ClientDetailContent() {
         {/* Tab content */}
         {activeTab === 'overview' && (
           <div>
-          {client && !client.portalInviteSentAt && !portalSuggestionDismissed && (
-            <div className="mb-4">
-              <SuggestionCard
-                notification={{
-                  id: `portal-invite-suggestion-${client.id}`,
-                  trigger_type: 'portal_invite_missing',
-                  message: `${client.name} has not been sent a portal invite yet.`,
-                  created_at: new Date().toISOString(),
-                }}
-                actionLabel="Send portal invite"
-                onAction={() => {
-                  emitConciergeAction({ type: 'open-panel' })
-                  emitConciergeAction({ type: 'navigate-and-open', route: `/clients/${client.id}`, modal: 'portal-magic-link' })
-                }}
-                onDismiss={() => setPortalSuggestionDismissed(true)}
-              />
-            </div>
-          )}
+          {client && !client.portalInviteSentAt && !portalSuggestionDismissed && (() => {
+            const daysSince = Math.floor((Date.now() - new Date(client.createdAt).getTime()) / (1000 * 60 * 60 * 24))
+            if (daysSince < 10) return null
+            return (
+              <div className="mb-4">
+                <SuggestionCard
+                  notification={{
+                    id: `portal-invite-suggestion-${client.id}`,
+                    trigger_type: 'portal_invite_missing',
+                    message: `${client.name} was added ${daysSince} days ago and has never been sent a portal invite.`,
+                    created_at: new Date().toISOString(),
+                  }}
+                  actionLabel="Send portal invite"
+                  onAction={() => {
+                    emitConciergeAction({ type: 'open-panel' })
+                    emitConciergeAction({ type: 'navigate-and-open', route: `/clients/${client.id}`, modal: 'portal-magic-link' })
+                  }}
+                  onDismiss={() => setPortalSuggestionDismissed(true)}
+                />
+              </div>
+            )
+          })()}
           <div className="flex items-center justify-end gap-2 mb-4">
             {(user?.role === 'firm_owner' || user?.role === 'manager') && (
               <button
