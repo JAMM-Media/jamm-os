@@ -28,6 +28,7 @@ export function AppShell({ children }: AppShellProps) {
   // from sessionStorage AFTER mount instead, inside an effect -- this is the
   // standard SSR-safe pattern for state that depends on browser-only storage.
   const [conciergeOpen, setConciergeOpen] = useState(false)
+  const [conciergePosition, setConciergePosition] = useState<'left' | 'right'>('right')
   const { notifications } = useConciergeNotifications()
 
   useEffect(() => {
@@ -61,6 +62,18 @@ export function AppShell({ children }: AppShellProps) {
     })
   }, [])
 
+  useEffect(() => {
+    const stored = localStorage.getItem('jamm_concierge_position') as 'left' | 'right' | null
+    if (stored === 'left' || stored === 'right') setConciergePosition(stored)
+
+    const handler = (e: Event) => {
+      const pos = (e as CustomEvent<{ position: 'left' | 'right' }>).detail.position
+      if (pos === 'left' || pos === 'right') setConciergePosition(pos)
+    }
+    window.addEventListener('jamm:concierge-position-changed', handler)
+    return () => window.removeEventListener('jamm:concierge-position-changed', handler)
+  }, [])
+
   function handleConciergeOpen() {
     sessionStorage.setItem('jamm_concierge_open', 'true')
     setConciergeOpen(true)
@@ -90,7 +103,7 @@ export function AppShell({ children }: AppShellProps) {
           hasSuggestion is false here because notification state lives inside ConciergePanel.
           Real notification-awareness wiring is a future task. */}
       {!conciergeOpen && (
-        <div className="fixed bottom-6 right-6 z-40">
+        <div className={`fixed bottom-6 z-40 ${conciergePosition === 'left' ? 'left-6' : 'right-6'}`}>
           <PersistentEntryButton
             onClick={handleConciergeOpen}
             hasSuggestion={notifications.length > 0}
