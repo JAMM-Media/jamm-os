@@ -54,29 +54,35 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Fix the client detail page's portal-invite SuggestionCard to only appear when it's genuinely informative, not a redundant restatement of the always-visible Send Portal Link button
+TASK: Add a dismissible glow state to PersistentEntryButton using the concierge gold token, and wire it into AppShell as the always-visible, real entry point into the Concierge
 
 USE: claude sonnet
 
 VERIFY BEFORE ACT:
 
-sed -n '440,455p' /home/corby/jamm-os/frontend/src/app/\(app\)/clients/\[id\]/page.tsx
+cat /home/corby/jamm-os/frontend/src/components/concierge-inline/PersistentEntryButton.tsx
 
-grep -n "createdAt" /home/corby/jamm-os/frontend/src/lib/api/clients.ts
+grep -n "conciergeOpen\|handleConciergeClose\|ConciergePanel" /home/corby/jamm-os/frontend/src/components/layout/AppShell.tsx
 
-Confirm the SuggestionCard currently renders whenever portalInviteSentAt is null, with no time threshold at all, meaning it appears immediately for a client created moments ago just as much as one created months ago, and confirm createdAt is already available on the client object in ISO string form. Confirm this before editing.
+grep -n "@keyframes\|animate-pulse\|animate-glow" /home/corby/jamm-os/frontend/tailwind.config.ts
+
+Confirm PersistentEntryButton currently has no glow/highlight state at all, only onClick and an optional label, styled with a static bg-brand-btn class. Confirm AppShell.tsx owns conciergeOpen and currently has no visible always-on entry point into the panel besides whatever currently opens it. Confirm whether any pulse/glow animation utility already exists in the tailwind config before deciding whether to reuse one or add a new one.
 
 WHAT THIS IS:
 
-Confirmed live and directly by the person using it tonight: this card, as originally built, provides no real information the page did not already show, since a Send Portal Link button already sits permanently visible just below it regardless of state. The feedback was specific and correct: the card should only appear when it is surfacing something the firm owner might genuinely not have noticed, not simply restating an always-available manual control. The real, meaningful signal here is time: a client who was added recently and has not yet been invited is completely normal and not worth flagging, but a client who has existed for a while with no portal invite ever sent is a real thing that could easily go unnoticed among everything else on a busy owner's plate. This is also a deliberate first real test of a broader pattern the person wants across the product: information the assistant surfaces directly in context because it is genuinely worth noticing, not a duplicate call to action for something already visible.
+Following tonight's research and a direct product decision: instead of a full-page glowing border (rejected as too dominant, borrowing Apple's real-time-listening visual language for a meaning it does not have, and risking the same alert-fatigue problem the research flagged), the decision was to add a small, contained glow specifically to the persistent entry button built earlier in Phase 1 of the inline redesign, using the concierge gold token already established as this feature's reserved brand color everywhere else tonight, not the brand-btn blue used for the portal-link ring, to keep gold consistently meaning "the Concierge has something to say" across the whole product. This button has existed only in isolation inside the Phase 1 dev review route until now; this task is also the first time it is wired into a real, permanent location in the app.
 
 CHANGE INSTRUCTIONS:
 
-Compute the number of days between the client's createdAt and the current date. Only render the SuggestionCard when portalInviteSentAt is null AND this computed age is 10 or more days. Update the card's message to state the real, specific fact driving the suggestion, for example stating the client's name and that it has been over a specified number of days since they were added with no portal invite sent yet, using real computed values, not a static string. Keep the existing onAction behavior exactly as it is, still only opening the panel and highlighting the existing Send Portal Link button, never sending anything automatically. Do not change the 10 day threshold to any other number without it being stated explicitly as a real, deliberate choice, and do not change how portalInviteSentAt itself is computed or fetched.
+Extend PersistentEntryButtonProps with a new optional boolean prop, hasSuggestion, defaulting to false. When true, apply a visible but restrained glow effect using the concierge gold token, for example a soft box-shadow or ring in the concierge color with a gentle pulse animation, applied only to this button, not to any surrounding page content. Keep the glow subtle enough to notice in peripheral vision without being distracting, consistent with the deference principle from tonight's research. When hasSuggestion is false, the button should render exactly as it does today, no visual change.
+
+In AppShell.tsx, render PersistentEntryButton as a new, fixed-position, always-visible element (for example fixed to a corner of the viewport, not blocking the main content), wired to call setConciergeOpen(true) on click, the same mechanism the open-panel action already uses. This becomes a second, always-visible way to open the panel, in addition to however it currently opens; do not remove or change the existing entry point. For this task, hasSuggestion can be wired to a simple, real placeholder condition, true whenever notifications.length is greater than zero if that state is reachable from AppShell, or false otherwise if it is not, stating clearly which case applies rather than guessing. A more complete, cross-page notification-awareness wiring is a separate, future task, not this one.
 
 VERIFY AFTER ACT:
 
-grep -n "10\|daysSince\|createdAt" /home/corby/jamm-os/frontend/src/app/\(app\)/clients/\[id\]/page.tsx | grep -i portal
+grep -n "hasSuggestion" /home/corby/jamm-os/frontend/src/components/concierge-inline/PersistentEntryButton.tsx
+
+grep -n "PersistentEntryButton" /home/corby/jamm-os/frontend/src/components/layout/AppShell.tsx
 
 npx tsc --noEmit
 
@@ -84,17 +90,19 @@ MANUAL VERIFICATION:
 
 Restart the frontend.
 
-Find or create a client added within the last few days with no portal invite sent. Confirm the SuggestionCard does NOT appear for them, since this is normal and not yet worth flagging.
+Confirm the persistent entry button now appears in a fixed, always-visible position on at least two different pages, for example Dashboard and a client detail page, confirming it is genuinely app-wide and not page-specific.
 
-Confirm the card DOES still appear for Robert & Carol Tanner or another client old enough to cross the 10 day threshold with no invite ever sent, and confirm the message now states the real, specific number of days and the client's real name rather than generic text.
+Confirm clicking it opens the Concierge panel correctly.
 
-Report pass or fail for both checks individually, including the actual message text shown.
+If hasSuggestion could be wired to a real condition, confirm the glow visibly appears when that condition is true and is absent when false. If it could not be wired to a real condition in AppShell, confirm the button at minimum renders correctly with no glow, and report clearly that the glow trigger itself still needs real wiring in a future task.
+
+Report pass or fail for each check individually.
 
 GIT:
 
 git add -A
 
-git commit -m "add a real 10 day age threshold to the client detail page's portal-invite SuggestionCard, fixing direct feedback tonight that the card as originally built provided no information beyond what the always-visible Send Portal Link button already showed, now only surfacing when a client has genuinely gone unnoticed for a meaningful length of time with no invite ever sent, with the card's message stating the real computed values rather than static text"
+git commit -m "add a dismissible, concierge-gold glow state to PersistentEntryButton and wire it into AppShell as a new, always-visible, app-wide entry point into the Concierge panel, chosen over an earlier full-page glow concept per direct product feedback and tonight's deference-focused research, keeping gold consistently reserved for 'the Concierge has something to say' rather than reusing the blue already used for the portal-link ring"
 
 git pull --rebase origin main
 
