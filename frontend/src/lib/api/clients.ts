@@ -22,6 +22,7 @@ export interface Client {
   createdAt: string
   updatedAt: string
   quickbooksCustomerId: string | null
+  portalInviteSentAt: string | null
 }
 
 export interface ClientDetail extends Client {}
@@ -71,6 +72,7 @@ function mapClient(raw: Record<string, unknown>): Client {
     createdAt: String(raw.created_at ?? ''),
     updatedAt: String(raw.updated_at ?? ''),
     quickbooksCustomerId: raw.quickbooks_customer_id ? String(raw.quickbooks_customer_id) : null,
+    portalInviteSentAt: raw.portal_invite_sent_at ? String(raw.portal_invite_sent_at) : null,
   }
 }
 

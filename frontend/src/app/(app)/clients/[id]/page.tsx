@@ -26,7 +26,8 @@ import { HealthDot } from '@/components/clients/HealthDot'
 import { EditClientModal } from '@/components/clients/EditClientModal'
 import TaxOrganizerTab from '@/components/tax-organizer/TaxOrganizerTab'
 import { NewEngagementModal } from '@/components/engagements/NewEngagementModal'
-import { onConciergeAction } from '@/lib/events/conciergeEvents'
+import { onConciergeAction, emitConciergeAction } from '@/lib/events/conciergeEvents'
+import { SuggestionCard } from '@/components/concierge-inline/SuggestionCard'
 import type { Engagement } from '@/lib/api'
 import type { Document } from '@/lib/api/documents'
 import { DocumentTable } from '@/components/documents/DocumentTable'
@@ -73,6 +74,7 @@ function ClientDetailContent() {
   const [newEngagementOpen, setNewEngagementOpen] = useState(false)
   const [initialEngagementType, setInitialEngagementType] = useState<string | undefined>()
   const [portalLinkHighlight, setPortalLinkHighlight] = useState(false)
+  const [portalSuggestionDismissed, setPortalSuggestionDismissed] = useState(false)
   const portalLinkRef = useRef<HTMLButtonElement>(null)
   const portalLinkTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const messageComposeRef = useRef<HTMLTextAreaElement>(null)
@@ -438,6 +440,24 @@ function ClientDetailContent() {
         {/* Tab content */}
         {activeTab === 'overview' && (
           <div>
+          {client && !client.portalInviteSentAt && !portalSuggestionDismissed && (
+            <div className="mb-4">
+              <SuggestionCard
+                notification={{
+                  id: `portal-invite-suggestion-${client.id}`,
+                  trigger_type: 'portal_invite_missing',
+                  message: `${client.name} has not been sent a portal invite yet.`,
+                  created_at: new Date().toISOString(),
+                }}
+                actionLabel="Send portal invite"
+                onAction={() => {
+                  emitConciergeAction({ type: 'open-panel' })
+                  emitConciergeAction({ type: 'navigate-and-open', route: `/clients/${client.id}`, modal: 'portal-magic-link' })
+                }}
+                onDismiss={() => setPortalSuggestionDismissed(true)}
+              />
+            </div>
+          )}
           <div className="flex items-center justify-end gap-2 mb-4">
             {(user?.role === 'firm_owner' || user?.role === 'manager') && (
               <button
