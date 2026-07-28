@@ -54,57 +54,69 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Remove the now-redundant "JAMM Concierge" sidebar navigation item, since it duplicates the new persistent entry button
+TASK: Replace the left/right corner position setting with a real Sidebar-vs-Floating entry mode choice, restoring the original sidebar Concierge nav item as one of the two modes
 
-USE: claude sonnet
+USE: Fable 5
 
 VERIFY BEFORE ACT:
 
-sed -n '50,65p' /home/corby/jamm-os/frontend/src/components/layout/Sidebar.tsx
+sed -n '53,62p' /home/corby/jamm-os/frontend/src/components/layout/Sidebar.tsx
 
-sed -n '225,238p' /home/corby/jamm-os/frontend/src/components/layout/Sidebar.tsx
+sed -n '500,560p' /home/corby/jamm-os/frontend/src/app/\(app\)/settings/page.tsx
 
-sed -n '75,90p' /home/corby/jamm-os/frontend/src/components/layout/AppShell.tsx
+sed -n '895,930p' /home/corby/jamm-os/frontend/src/app/\(app\)/settings/page.tsx
 
-Confirm onConciergeOpen is declared in SidebarProps, used in exactly one place inside Sidebar.tsx (the Concierge nav button), and passed in from AppShell.tsx as a prop alongside the new PersistentEntryButton added earlier tonight. Confirm both entry points currently call the identical underlying open function before removing either.
+sed -n '95,115p' /home/corby/jamm-os/frontend/src/components/layout/AppShell.tsx
+
+cat /tmp/sidebar_before_removal.tsx | sed -n '225,239p'
+
+Confirm Sidebar.tsx currently has no Concierge nav item and no onConciergeOpen prop at all, confirm the exact original code for that removed button is preserved in /tmp/sidebar_before_removal.tsx from git history, confirm Settings currently stores concierge_button_position as left or right inside the firm settings JSON blob and uses it purely to position the floating button in a screen corner, and confirm AppShell currently always renders PersistentEntryButton unconditionally. Confirm all of this before changing anything.
 
 WHAT THIS IS:
 
-Direct product decision made tonight, live, after seeing both entry points on screen side by side: the sidebar's "JAMM Concierge" navigation item and the new floating PersistentEntryButton both do the exact same thing, open the same panel, with no distinct behavior between them. Rather than leave two identical entry points, remove the older, less distinct sidebar item now that the new persistent, glow-capable button exists as the primary way to open the Concierge.
+Direct correction of a misunderstanding from earlier tonight. The left/right setting just built was based on a misread of the original request: the person wanted a real choice between two different entry point styles, the original sidebar navigation item that was removed earlier tonight when it was found to be redundant with the new floating button, versus the new floating button itself, not a choice of which screen corner the floating button sits in. The two modes are being named Sidebar and Floating, deliberately not old and new, since one is not simply a legacy version of the other, they are two different, equally valid interaction patterns a firm may prefer.
 
 CHANGE INSTRUCTIONS:
 
-In Sidebar.tsx, remove the entire Concierge button block, including its comment. Remove onConciergeOpen from the SidebarProps interface and from the function's destructured parameters. Do not change the Settings button, the dark mode toggle, or any other item in this file, only remove the Concierge-specific block and its now-unused prop.
+In Sidebar.tsx, restore the exact Concierge nav button code from /tmp/sidebar_before_removal.tsx, including the onConciergeOpen prop in SidebarProps and the function's destructured parameters, placed back in its original position between Dark mode and Settings.
 
-In AppShell.tsx, remove the onConciergeOpen prop being passed into Sidebar. Do not remove handleConciergeOpen itself if it is still used elsewhere, such as by the new PersistentEntryButton, only stop passing it into Sidebar specifically.
+In settings/page.tsx, rename the stored setting from concierge_button_position with values left or right, to concierge_entry_mode with values sidebar or floating, defaulting to floating when absent. Update the section's heading and copy to describe choosing between the Sidebar and Floating entry points, no longer screen corner language. Update the two radio options to read Sidebar and Floating instead of Left and Right. Update handleConciergePositionChange, or rename it to something like handleConciergeEntryModeChange, to write concierge_entry_mode into the settings blob instead, and keep the same localStorage plus custom event pattern already established, renaming the storage key and event name to match, for example jamm_concierge_entry_mode and jamm:concierge-entry-mode-changed.
+
+In AppShell.tsx, read this same renamed setting the same way conciergePosition is currently read, and use it to decide which entry point actually renders: when the mode is sidebar, pass onConciergeOpen into Sidebar and do not render PersistentEntryButton at all. When the mode is floating, do not pass onConciergeOpen into Sidebar and do render PersistentEntryButton in its existing fixed bottom-6 right-6 position, since the earlier left or right corner concept is being retired entirely, floating always means the bottom right corner going forward. Default to floating when the setting is absent or not yet loaded, matching the default already used for the current setting.
+
+Do not change ConciergePanel itself, do not change useConciergeNotifications, and do not change the ring or solid-versus-pulsing styling already finalized on PersistentEntryButton earlier tonight, only whether it renders at all.
 
 VERIFY AFTER ACT:
 
-grep -n "onConciergeOpen\|JAMM Concierge" /home/corby/jamm-os/frontend/src/components/layout/Sidebar.tsx
+grep -n "onConciergeOpen" /home/corby/jamm-os/frontend/src/components/layout/Sidebar.tsx
 
-Expected: zero results.
+Expected: present again, matching the restored original.
 
-grep -n "onConciergeOpen" /home/corby/jamm-os/frontend/src/components/layout/AppShell.tsx
+grep -n "concierge_entry_mode\|concierge_button_position" /home/corby/jamm-os/frontend/src/app/\(app\)/settings/page.tsx /home/corby/jamm-os/frontend/src/components/layout/AppShell.tsx
 
-Expected: no longer passed into Sidebar, but still present wherever PersistentEntryButton uses it.
+Expected: concierge_entry_mode present everywhere, concierge_button_position no longer present anywhere.
 
 npx tsc --noEmit
 
 MANUAL VERIFICATION:
 
-Restart the frontend.
+Restart both servers.
 
-Confirm the sidebar no longer shows a Concierge entry, and that Settings and dark mode toggle still render and work correctly directly below where it used to be.
+On Settings, confirm the section now reads Sidebar and Floating, not Left and Right, and confirm the currently saved value shows correctly selected.
 
-Confirm the floating PersistentEntryButton in the bottom-right corner still opens the panel correctly, unaffected by this change.
+Select Sidebar. Confirm the floating button disappears from the corner, and confirm the original JAMM Concierge item reappears in the main left-hand navigation list, in its original position between Dark mode and Settings, and that clicking it opens the panel correctly.
 
-Report pass or fail for both checks.
+Select Floating. Confirm the sidebar nav item disappears again, and the floating button reappears in the bottom right corner, working correctly.
+
+Reload the page entirely after selecting Sidebar, confirm the choice persisted as a real firm setting, not just local UI state, matching the same persistence pattern already proven for the previous version of this setting.
+
+Report pass or fail for all four checks individually.
 
 GIT:
 
 git add -A
 
-git commit -m "remove the sidebar's JAMM Concierge navigation item, a direct product decision made after seeing it rendered side by side with the new persistent entry button tonight and confirming both did the exact same thing with no distinct behavior, leaving the new floating, glow-capable button as the single entry point into the Concierge panel"
+git commit -m "replace the left/right screen corner setting with a real Sidebar-versus-Floating entry mode choice, correcting a misunderstanding of the original request, restoring the exact original sidebar Concierge navigation item from git history as the sidebar mode rather than reconstructing it from memory, and having AppShell render exactly one of the two entry points at a time based on this firm-level setting, defaulting to Floating"
 
 git pull --rebase origin main
 
