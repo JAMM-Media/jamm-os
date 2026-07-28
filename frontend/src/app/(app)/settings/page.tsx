@@ -1326,7 +1326,7 @@ export default function SettingsPage() {
         </div>
 
         {isFirmOwner && (
-          <div className="mt-8 pt-4 border-t border-[0.5px] border-[#E5E7EB] dark:border-[#3D3D3D]">
+          <div className="mt-8 pt-4 border-t border-[0.5px] border-[#E5E7EB] dark:border-[#3D3D3D] max-w-lg">
             <a
               href="/concierge-log"
               className="text-[11px] text-[#6B7280] hover:text-[#4A7FA5] transition-colors"
