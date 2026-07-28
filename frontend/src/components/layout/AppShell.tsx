@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation'
 import { onConciergeAction } from '@/lib/events/conciergeEvents'
 import { Sidebar } from './Sidebar'
 import { ConciergePanel } from '@/components/concierge/ConciergePanel'
+import { PersistentEntryButton } from '@/components/concierge-inline/PersistentEntryButton'
 
 interface AppShellProps {
   children: React.ReactNode
@@ -84,6 +85,17 @@ export function AppShell({ children }: AppShellProps) {
         {children}
       </main>
       <ConciergePanel isOpen={conciergeOpen} onClose={handleConciergeClose} />
+      {/* Persistent Concierge entry -- fixed bottom-right, hidden when panel is open.
+          hasSuggestion is false here because notification state lives inside ConciergePanel.
+          Real notification-awareness wiring is a future task. */}
+      {!conciergeOpen && (
+        <div className="fixed bottom-6 right-6 z-40">
+          <PersistentEntryButton
+            onClick={handleConciergeOpen}
+            hasSuggestion={false}
+          />
+        </div>
+      )}
     </div>
   )
 }
