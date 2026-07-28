@@ -54,63 +54,67 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Fix a real event-name collision where the new Billing banner prefill accidentally also overwrites the Concierge chat input on unrelated draft-to-Messages-tab actions
+TASK: Add a SuggestionCard to the client detail page's Overview tab for clients who have never been sent a portal invite, wired into tonight's already-hardened portal-magic-link flow
 
-USE: claude sonnet
+USE: Fable 5
 
 VERIFY BEFORE ACT:
 
-sed -n '260,270p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+grep -n "portal_invite_sent_at" /home/corby/jamm-os/app/models/client.py
 
-sed -n '1078,1084p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+grep -n "portal_invite_sent_at" /home/corby/jamm-os/app/schemas/client.py
 
-sed -n '1470,1476p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+sed -n '124,131p' /home/corby/jamm-os/app/schemas/client.py
 
-grep -n "prefill-message" /home/corby/jamm-os/frontend/src/app/\(app\)/clients/\[id\]/page.tsx
+sed -n '83,118p' /home/corby/jamm-os/frontend/src/app/\(app\)/clients/\[id\]/page.tsx
 
-Confirm three separate things currently share the exact same ConciergeAction type string, prefill-message: the two pre-existing dispatches inside ConciergePanel.tsx intended only for the client detail page's Messages tab compose box, and the new listener added earlier tonight inside ConciergePanel.tsx itself intended only for the Billing banner's hand-off into the main chat input. Confirm the event bus is a global window event, received by every mounted listener regardless of which component dispatched it, before editing.
+grep -n "'open-panel'" /home/corby/jamm-os/frontend/src/components/layout/AppShell.tsx
+
+sed -n '1,25p' /home/corby/jamm-os/frontend/src/components/concierge-inline/SuggestionCard.tsx
+
+Confirm portal_invite_sent_at exists as a nullable datetime field on the Client model but is currently absent from ClientOut, meaning it is not currently returned to the frontend at all. Confirm the client detail page already has a working live onConciergeAction listener that correctly handles a navigate-and-open action with modal portal-magic-link, setting the active tab to overview, setting portalLinkHighlight true, scrolling the button into view, and clearing the highlight after 7000ms, fixed and verified earlier tonight. Confirm open-panel is handled in AppShell.tsx, which owns the conciergeOpen boolean passed into ConciergePanel as isOpen. Confirm SuggestionCard's real prop shape from the Phase 1 kit before using it. Confirm all of this before making any change.
 
 WHAT THIS IS:
 
-Confirmed by direct code reading: the Billing banner task added earlier tonight gave ConciergePanel.tsx a new listener for the prefill-message action type, intending to catch only the new banner's hand-off. But two pre-existing, unrelated dispatches of that exact same action type already existed in this same file, used specifically to pre-fill a draft into a client's Messages tab compose box on the client detail page, a completely different feature built earlier this session. Because the event system is a single global window event with no scoping by intended destination, ConciergePanel's new listener now also fires on those two pre-existing dispatches, silently overwriting the main Concierge chat input with draft content every time a user sends a notification draft to a client's Messages tab, an action completely unrelated to the Billing banner. This is a real, confirmed regression introduced by reusing an existing event name for a new, different purpose instead of introducing a new one.
+This is the second real, live page of the inline Concierge redesign, following the Billing overdue-invoices banner built and verified earlier tonight. This one is lower risk in one specific way: instead of building a new hand-off mechanism, it reuses the portal-magic-link action pipeline that this session already spent significant effort hardening end to end tonight, the modal string match, the never-claim-completed phrasing rule, the ampersand-safe client name resolution, the hydration fix, the missing mount-time branch fix, and the 7 second highlight duration. The only new thing this task adds is a real, visible entry point into that already-proven pipeline, directly on the client detail page itself, for any client who has never been sent a portal invite at all, which is not something the product currently surfaces anywhere.
 
 CHANGE INSTRUCTIONS:
 
-Add a new ConciergeAction type, prefill-panel-input, to the ConciergeAction interface in conciergeEvents.ts, alongside the existing prefill-message type, not replacing it.
+Backend: add portal_invite_sent_at as an optional datetime field to ClientOut in schemas/client.py, matching the exact type and style of the other optional fields already present. Do not add any new endpoint, this field will now simply be included automatically in the existing GET /clients/{id} response already used by this page. Do not change the Client model itself, it already has this field, only expose it.
 
-In ConciergePanel.tsx's onConciergeAction listener, change the condition added earlier tonight from checking action.type === 'prefill-message' to checking action.type === 'prefill-panel-input', keeping the same setInput(action.prefillMessage) behavior.
-
-In billing/page.tsx, change the banner's onAction callback to emit type prefill-panel-input instead of prefill-message for its second emitConciergeAction call. Do not change the first open-panel call.
-
-Do not touch either of the two pre-existing prefill-message dispatches in ConciergePanel.tsx related to the Messages tab draft feature, and do not touch the client detail page's own prefill-message listener. These should continue working exactly as they did before tonight, completely unaffected by this change.
+Frontend: on the client detail page's Overview tab, when the fetched client's portal_invite_sent_at is null, render a SuggestionCard above the existing content, using the concierge-inline kit's real prop shape, with a message stating this client has not been sent a portal invite yet, and a primary action labeled something like Send portal invite. The onAction callback should call emitConciergeAction twice in sequence, first with type open-panel, then with type navigate-and-open, route set to this client's own current route, and modal set to portal-magic-link, exactly matching the shape the model itself already emits for this action, so this reuses the exact same, already-fixed live listener path on this page rather than introducing any new logic. Do not write any new highlight, tab-switching, or scrolling logic in this task, all of that already exists and already works. Do not change the SuggestionCard component itself unless its existing props genuinely cannot express this use case, in which case state clearly what was missing before extending it.
 
 VERIFY AFTER ACT:
 
-grep -n "prefill-panel-input\|prefill-message" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+grep -n "portal_invite_sent_at" /home/corby/jamm-os/app/schemas/client.py
 
-grep -n "prefill-panel-input\|prefill-message" /home/corby/jamm-os/frontend/src/app/\(app\)/billing/page.tsx
+grep -n "SuggestionCard" /home/corby/jamm-os/frontend/src/app/\(app\)/clients/\[id\]/page.tsx
 
-grep -n "prefill-message" /home/corby/jamm-os/frontend/src/app/\(app\)/clients/\[id\]/page.tsx
+grep -n "portal-magic-link" /home/corby/jamm-os/frontend/src/app/\(app\)/clients/\[id\]/page.tsx
 
-Expected: ConciergePanel.tsx now listens for prefill-panel-input specifically for the chat input, while still containing its two original, untouched prefill-message dispatches for the Messages tab feature. billing/page.tsx now emits prefill-panel-input. The client detail page's prefill-message listener is completely unchanged.
+Expected: portal_invite_sent_at now present in ClientOut, SuggestionCard now imported and rendered conditionally, and a third occurrence of portal-magic-link now exists on this page in addition to the two already confirmed earlier tonight.
+
+python3 -c "from app.main import app; print('OK')"
 
 npx tsc --noEmit
 
 MANUAL VERIFICATION:
 
-Restart the frontend.
+Restart both servers.
 
-On the Billing page, click the overdue invoices banner's action. Confirm the Concierge chat input still correctly gets pre-filled with the overdue invoices question.
+Find or create a client whose portal_invite_sent_at is null, confirm the SuggestionCard appears on their Overview tab with the correct message.
 
-Separately, trigger a notification draft's "open Messages tab with this draft ready to send" action from the Concierge panel's alert tray. Confirm the client's Messages tab compose box still correctly receives the draft, and confirm the Concierge chat's own main input is no longer affected by this action at all.
+Click the card's action. Confirm the panel opens, switches to Overview if not already there, and the portal-link button highlights for the full 7 seconds, matching the already-verified behavior from earlier tonight.
 
-Report pass or fail for both checks individually, since the second check is the one confirming tonight's regression is actually fixed.
+Separately, open a client who has already been sent a portal invite, confirm the SuggestionCard does not appear for them.
+
+Report pass or fail for all three checks individually.
 
 GIT:
 
 git add -A
 
-git commit -m "fix a real event-name collision between the Billing banner's chat-input prefill and the pre-existing Messages-tab draft prefill feature, both of which were using the same prefill-message ConciergeAction type on a global event bus, causing the Concierge chat input to be silently overwritten every time a notification draft was sent to a client's Messages tab, an unrelated action; introduced a distinct prefill-panel-input action type for the Billing banner's use case, leaving the original Messages tab feature completely untouched"
+git commit -m "add the second real page of the inline Concierge redesign, a SuggestionCard on the client detail page's Overview tab for clients who have never been sent a portal invite, wired directly into the already-hardened portal-magic-link action pipeline built and verified earlier tonight rather than introducing any new hand-off logic, and expose the previously backend-only portal_invite_sent_at field on ClientOut so the frontend can read it"
 
 git pull --rebase origin main
 
