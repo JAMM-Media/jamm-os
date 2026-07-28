@@ -77,6 +77,7 @@ def read_users_me(
     user_out = UserOut.model_validate(current_user)
     user_out.firm_type = current_firm.firm_type
     user_out.concierge_active = current_firm.concierge_active
+    user_out.concierge_entry_mode = (current_firm.settings or {}).get('concierge_entry_mode', 'floating')
     return user_out
 
 

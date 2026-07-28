@@ -4,6 +4,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { usePathname } from 'next/navigation'
 import { onConciergeAction } from '@/lib/events/conciergeEvents'
+import { useAuth } from '@/lib/hooks/useAuth'
 import { Sidebar } from './Sidebar'
 import { ConciergePanel } from '@/components/concierge/ConciergePanel'
 import { PersistentEntryButton } from '@/components/concierge-inline/PersistentEntryButton'
@@ -30,6 +31,7 @@ export function AppShell({ children }: AppShellProps) {
   const [conciergeOpen, setConciergeOpen] = useState(false)
   const [conciergeEntryMode, setConciergeEntryMode] = useState<'sidebar' | 'floating'>('floating')
   const { notifications } = useConciergeNotifications()
+  const { user } = useAuth()
 
   useEffect(() => {
     const saved = sessionStorage.getItem('jamm_concierge_open') === 'true'
@@ -73,6 +75,12 @@ export function AppShell({ children }: AppShellProps) {
     window.addEventListener('jamm:concierge-entry-mode-changed', handler)
     return () => window.removeEventListener('jamm:concierge-entry-mode-changed', handler)
   }, [])
+
+  useEffect(() => {
+    if (user?.concierge_entry_mode === 'sidebar' || user?.concierge_entry_mode === 'floating') {
+      setConciergeEntryMode(user.concierge_entry_mode)
+    }
+  }, [user])
 
   function handleConciergeOpen() {
     sessionStorage.setItem('jamm_concierge_open', 'true')

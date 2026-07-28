@@ -36,5 +36,6 @@ class UserOut(UserBase):
     cost_rate: Optional[float] = None
     firm_type: Optional[str] = None
     concierge_active: bool = False
+    concierge_entry_mode: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)

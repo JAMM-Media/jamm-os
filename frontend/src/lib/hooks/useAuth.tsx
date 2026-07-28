@@ -13,6 +13,7 @@ export interface AuthUser {
   totp_enabled?: boolean
   firm_type?: string | null
   concierge_active?: boolean
+  concierge_entry_mode?: string | null
 }
 
 interface AuthContextType {
