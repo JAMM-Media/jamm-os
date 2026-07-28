@@ -397,7 +397,7 @@ export default function SettingsPage() {
   const [firmWebsite, setFirmWebsite] = useState('')
   const [firmContactEmail, setFirmContactEmail] = useState('')
   const [savingContact, setSavingContact] = useState(false)
-  const [conciergePosition, setConciergePosition] = useState<'left' | 'right'>('right')
+  const [conciergeEntryMode, setConciergeEntryMode] = useState<'sidebar' | 'floating'>('floating')
 
   const [googleReviewUrl, setGoogleReviewUrl] = useState('')
   const [reviewEnabled, setReviewEnabled] = useState(false)
@@ -500,8 +500,8 @@ export default function SettingsPage() {
 
   useEffect(() => {
     if (firmData?.settings) {
-      const savedPos = firmData.settings.concierge_button_position as 'left' | 'right' | undefined
-      setConciergePosition(savedPos ?? 'right')
+      const savedMode = firmData.settings.concierge_entry_mode as 'sidebar' | 'floating' | undefined
+      setConciergeEntryMode(savedMode ?? 'floating')
       setEmailReplyTo((firmData.settings.email_reply_to as string) ?? '')
       setEmailDisplayName((firmData.settings.email_display_name as string) ?? '')
       setGoogleReviewUrl((firmData.settings.google_review_url as string) ?? '')
@@ -545,13 +545,13 @@ export default function SettingsPage() {
     }
   }
 
-  async function handleConciergePositionChange(pos: 'left' | 'right') {
-    setConciergePosition(pos)
-    localStorage.setItem('jamm_concierge_position', pos)
-    window.dispatchEvent(new CustomEvent('jamm:concierge-position-changed', { detail: { position: pos } }))
+  async function handleConciergeEntryModeChange(mode: 'sidebar' | 'floating') {
+    setConciergeEntryMode(mode)
+    localStorage.setItem('jamm_concierge_entry_mode', mode)
+    window.dispatchEvent(new CustomEvent('jamm:concierge-entry-mode-changed', { detail: { mode } }))
     try {
-      // concierge_button_position is stored inside the firm settings JSON blob
-      await api.patch('/users/firm/settings', { concierge_button_position: pos })
+      // concierge_entry_mode is stored inside the firm settings JSON blob
+      await api.patch('/users/firm/settings', { concierge_entry_mode: mode })
     } catch {
       // non-fatal
     }
@@ -894,37 +894,37 @@ export default function SettingsPage() {
 
             {/* Concierge Entry Point section */}
             {isFirmOwner && (
-              <div className='bg-surface-card dark:bg-dark-card rounded-[10px] p-4 flex flex-col gap-3 max-w-lg' style={{ marginTop: '12px' }}>
-                <p className='text-[13px] font-medium text-brand dark:text-[#EDEEF0]'>Concierge Entry Point</p>
-                <div className='flex items-start justify-between gap-4'>
-                  <div className='flex-1'>
-                    <p className='text-[13px] text-brand dark:text-[#EDEEF0]'>Screen position</p>
-                    <p className='text-[11px] text-[#6B7280] mt-0.5'>
-                      Choose which corner of the screen shows the Concierge entry button.
+              <div className="bg-surface-card dark:bg-dark-card rounded-[10px] p-4 flex flex-col gap-3 max-w-lg" style={{ marginTop: '12px' }}>
+                <p className="text-[13px] font-medium text-brand dark:text-[#EDEEF0]">Concierge Entry Point</p>
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex-1">
+                    <p className="text-[13px] text-brand dark:text-[#EDEEF0]">Entry style</p>
+                    <p className="text-[11px] text-[#6B7280] mt-0.5">
+                      Sidebar shows the Concierge in the main navigation. Floating shows a persistent button in the bottom-right corner.
                     </p>
                   </div>
-                  <div className='flex gap-4'>
-                    <label className='flex items-center gap-2 cursor-pointer'>
+                  <div className="flex gap-4">
+                    <label className="flex items-center gap-2 cursor-pointer">
                       <input
-                        type='radio'
-                        name='concierge_position'
-                        value='left'
-                        checked={conciergePosition === 'left'}
-                        onChange={() => handleConciergePositionChange('left')}
-                        className='w-4 h-4 accent-brand cursor-pointer'
+                        type="radio"
+                        name="concierge_entry_mode"
+                        value="sidebar"
+                        checked={conciergeEntryMode === 'sidebar'}
+                        onChange={() => handleConciergeEntryModeChange('sidebar')}
+                        className="w-4 h-4 accent-brand cursor-pointer"
                       />
-                      <span className='text-[13px] text-foreground'>Left</span>
+                      <span className="text-[13px] text-foreground">Sidebar</span>
                     </label>
-                    <label className='flex items-center gap-2 cursor-pointer'>
+                    <label className="flex items-center gap-2 cursor-pointer">
                       <input
-                        type='radio'
-                        name='concierge_position'
-                        value='right'
-                        checked={conciergePosition === 'right'}
-                        onChange={() => handleConciergePositionChange('right')}
-                        className='w-4 h-4 accent-brand cursor-pointer'
+                        type="radio"
+                        name="concierge_entry_mode"
+                        value="floating"
+                        checked={conciergeEntryMode === 'floating'}
+                        onChange={() => handleConciergeEntryModeChange('floating')}
+                        className="w-4 h-4 accent-brand cursor-pointer"
                       />
-                      <span className='text-[13px] text-foreground'>Right</span>
+                      <span className="text-[13px] text-foreground">Floating</span>
                     </label>
                   </div>
                 </div>

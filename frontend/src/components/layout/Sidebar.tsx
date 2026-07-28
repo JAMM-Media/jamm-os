@@ -23,6 +23,7 @@ import {
   Bell,
   Clock,
   LayoutTemplate,
+  BotMessageSquare,
   Mail,
   UserCog,
 } from 'lucide-react'
@@ -53,10 +54,11 @@ const settingsItem = { href: '/settings', label: 'Settings', icon: Settings }
 interface SidebarProps {
   collapsed: boolean
   onToggle: () => void
+  onConciergeOpen?: () => void
   locked?: boolean
 }
 
-export function Sidebar({ collapsed, onToggle, locked }: SidebarProps) {
+export function Sidebar({ collapsed, onToggle, onConciergeOpen, locked }: SidebarProps) {
   const pathname = usePathname()
   const { theme, setTheme } = useTheme()
   const [mounted, setMounted] = useState(false)
@@ -222,6 +224,23 @@ export function Sidebar({ collapsed, onToggle, locked }: SidebarProps) {
           )}
         </button>
 
+
+        {onConciergeOpen && (
+          <>
+            {/* Concierge */}
+            <button
+              onClick={onConciergeOpen}
+              className={cn(
+                'w-full flex items-center gap-3 px-2 py-2 rounded text-[13px] text-white/60 hover:text-white hover:bg-white/10 transition-colors',
+                collapsed && 'justify-center px-2'
+              )}
+              title={collapsed ? 'JAMM Concierge' : undefined}
+            >
+              <BotMessageSquare className='h-4 w-4 flex-shrink-0' />
+              {!collapsed && <span className='truncate'>JAMM Concierge</span>}
+            </button>
+          </>
+        )}
 
         {/* Settings */}
         <Link

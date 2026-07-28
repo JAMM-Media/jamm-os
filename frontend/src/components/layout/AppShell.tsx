@@ -28,7 +28,7 @@ export function AppShell({ children }: AppShellProps) {
   // from sessionStorage AFTER mount instead, inside an effect -- this is the
   // standard SSR-safe pattern for state that depends on browser-only storage.
   const [conciergeOpen, setConciergeOpen] = useState(false)
-  const [conciergePosition, setConciergePosition] = useState<'left' | 'right'>('right')
+  const [conciergeEntryMode, setConciergeEntryMode] = useState<'sidebar' | 'floating'>('floating')
   const { notifications } = useConciergeNotifications()
 
   useEffect(() => {
@@ -63,15 +63,15 @@ export function AppShell({ children }: AppShellProps) {
   }, [])
 
   useEffect(() => {
-    const stored = localStorage.getItem('jamm_concierge_position') as 'left' | 'right' | null
-    if (stored === 'left' || stored === 'right') setConciergePosition(stored)
+    const stored = localStorage.getItem('jamm_concierge_entry_mode') as 'sidebar' | 'floating' | null
+    if (stored === 'sidebar' || stored === 'floating') setConciergeEntryMode(stored)
 
     const handler = (e: Event) => {
-      const pos = (e as CustomEvent<{ position: 'left' | 'right' }>).detail.position
-      if (pos === 'left' || pos === 'right') setConciergePosition(pos)
+      const mode = (e as CustomEvent<{ mode: 'sidebar' | 'floating' }>).detail.mode
+      if (mode === 'sidebar' || mode === 'floating') setConciergeEntryMode(mode)
     }
-    window.addEventListener('jamm:concierge-position-changed', handler)
-    return () => window.removeEventListener('jamm:concierge-position-changed', handler)
+    window.addEventListener('jamm:concierge-entry-mode-changed', handler)
+    return () => window.removeEventListener('jamm:concierge-entry-mode-changed', handler)
   }, [])
 
   function handleConciergeOpen() {
@@ -93,17 +93,16 @@ export function AppShell({ children }: AppShellProps) {
           localStorage.setItem('jamm_sidebar_collapsed', String(next))
           return next
         })}
+        onConciergeOpen={conciergeEntryMode === 'sidebar' ? handleConciergeOpen : undefined}
         locked={isSettingsRoute}
       />
       <main ref={mainRef} className={`flex-1 overflow-y-auto transition-[padding] duration-200 ${conciergeOpen ? 'pr-[400px]' : ''}`}>
         {children}
       </main>
       <ConciergePanel isOpen={conciergeOpen} onClose={handleConciergeClose} />
-      {/* Persistent Concierge entry -- fixed bottom-right, hidden when panel is open.
-          hasSuggestion is false here because notification state lives inside ConciergePanel.
-          Real notification-awareness wiring is a future task. */}
-      {!conciergeOpen && (
-        <div className={`fixed bottom-6 z-40 ${conciergePosition === 'left' ? 'left-6' : 'right-6'}`}>
+      {/* Floating entry point -- only rendered in floating mode, hidden when panel is open */}
+      {conciergeEntryMode === 'floating' && !conciergeOpen && (
+        <div className="fixed bottom-6 right-6 z-40">
           <PersistentEntryButton
             onClick={handleConciergeOpen}
             hasSuggestion={notifications.length > 0}
