@@ -54,69 +54,53 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Replace the left/right corner position setting with a real Sidebar-vs-Floating entry mode choice, restoring the original sidebar Concierge nav item as one of the two modes
+TASK: Fix the internal "Concierge question log" link rendering outside the Settings page's main content column, causing it to appear as a stray third flex column on the right side of the screen
 
-USE: Fable 5
+USE: claude sonnet
 
 VERIFY BEFORE ACT:
 
-sed -n '53,62p' /home/corby/jamm-os/frontend/src/components/layout/Sidebar.tsx
+sed -n '670,680p' /home/corby/jamm-os/frontend/src/app/\(app\)/settings/page.tsx
 
-sed -n '500,560p' /home/corby/jamm-os/frontend/src/app/\(app\)/settings/page.tsx
+sed -n '1300,1332p' /home/corby/jamm-os/frontend/src/app/\(app\)/settings/page.tsx
 
-sed -n '895,930p' /home/corby/jamm-os/frontend/src/app/\(app\)/settings/page.tsx
-
-sed -n '95,115p' /home/corby/jamm-os/frontend/src/components/layout/AppShell.tsx
-
-cat /tmp/sidebar_before_removal.tsx | sed -n '225,239p'
-
-Confirm Sidebar.tsx currently has no Concierge nav item and no onConciergeOpen prop at all, confirm the exact original code for that removed button is preserved in /tmp/sidebar_before_removal.tsx from git history, confirm Settings currently stores concierge_button_position as left or right inside the firm settings JSON blob and uses it purely to position the floating button in a screen corner, and confirm AppShell currently always renders PersistentEntryButton unconditionally. Confirm all of this before changing anything.
+Confirm the main content column opens at line 677 with className "flex-1 overflow-y-auto p-6 flex flex-col gap-6", closes at line 1317 with a bare closing div, and that the isFirmOwner block containing the Concierge question log link at lines 1318-1327 currently sits after that closing div, making it a sibling of the content column inside the outer flex h-full row rather than a child of the content column. Confirm this before editing.
 
 WHAT THIS IS:
 
-Direct correction of a misunderstanding from earlier tonight. The left/right setting just built was based on a misread of the original request: the person wanted a real choice between two different entry point styles, the original sidebar navigation item that was removed earlier tonight when it was found to be redundant with the new floating button, versus the new floating button itself, not a choice of which screen corner the floating button sits in. The two modes are being named Sidebar and Floating, deliberately not old and new, since one is not simply a legacy version of the other, they are two different, equally valid interaction patterns a firm may prefer.
+Confirmed live and diagnosed directly from the rendered DOM tonight: the internal Concierge question log link was appearing far on the right side of the Settings page, with the actual settings content squeezed narrow on the left. Root cause confirmed by tracing the actual DOM structure: this is not a missing width or styling issue, an earlier attempted fix adding max-w-lg to this element's wrapper made no visible difference, correctly ruling that out. The real cause is a JSX nesting bug: the main content column's closing div appears one place too early, stranding the isFirmOwner block containing this link as a third sibling in the outer horizontal flex row alongside the settings navigation sidebar and the main content column, instead of being the last item inside the main content column's own vertical stack. Since the outer row is a horizontal flex container, this stray third item claims its own column of horizontal space, visually squeezing the real content column and stranding the link far to the right.
 
 CHANGE INSTRUCTIONS:
 
-In Sidebar.tsx, restore the exact Concierge nav button code from /tmp/sidebar_before_removal.tsx, including the onConciergeOpen prop in SidebarProps and the function's destructured parameters, placed back in its original position between Dark mode and Settings.
-
-In settings/page.tsx, rename the stored setting from concierge_button_position with values left or right, to concierge_entry_mode with values sidebar or floating, defaulting to floating when absent. Update the section's heading and copy to describe choosing between the Sidebar and Floating entry points, no longer screen corner language. Update the two radio options to read Sidebar and Floating instead of Left and Right. Update handleConciergePositionChange, or rename it to something like handleConciergeEntryModeChange, to write concierge_entry_mode into the settings blob instead, and keep the same localStorage plus custom event pattern already established, renaming the storage key and event name to match, for example jamm_concierge_entry_mode and jamm:concierge-entry-mode-changed.
-
-In AppShell.tsx, read this same renamed setting the same way conciergePosition is currently read, and use it to decide which entry point actually renders: when the mode is sidebar, pass onConciergeOpen into Sidebar and do not render PersistentEntryButton at all. When the mode is floating, do not pass onConciergeOpen into Sidebar and do render PersistentEntryButton in its existing fixed bottom-6 right-6 position, since the earlier left or right corner concept is being retired entirely, floating always means the bottom right corner going forward. Default to floating when the setting is absent or not yet loaded, matching the default already used for the current setting.
-
-Do not change ConciergePanel itself, do not change useConciergeNotifications, and do not change the ring or solid-versus-pulsing styling already finalized on PersistentEntryButton earlier tonight, only whether it renders at all.
+Move the entire isFirmOwner block, from the opening {isFirmOwner && ( through its closing )}, currently located immediately after the main content column's closing div, to instead sit immediately before that same closing div, as the last child inside the main content column, directly after the Migration tab line. Do not change the content of the block itself, its className, or the link's href or text. Do not change any other tab or section in this file, this is purely a structural relocation of one existing block to fix its nesting.
 
 VERIFY AFTER ACT:
 
-grep -n "onConciergeOpen" /home/corby/jamm-os/frontend/src/components/layout/Sidebar.tsx
+grep -n "flex-1 overflow-y-auto p-6 flex flex-col gap-6" -A 1 /home/corby/jamm-os/frontend/src/app/\(app\)/settings/page.tsx
 
-Expected: present again, matching the restored original.
+grep -n "Concierge question log" -B 12 /home/corby/jamm-os/frontend/src/app/\(app\)/settings/page.tsx
 
-grep -n "concierge_entry_mode\|concierge_button_position" /home/corby/jamm-os/frontend/src/app/\(app\)/settings/page.tsx /home/corby/jamm-os/frontend/src/components/layout/AppShell.tsx
-
-Expected: concierge_entry_mode present everywhere, concierge_button_position no longer present anywhere.
+Confirm the isFirmOwner block containing the link now appears before the content column's closing div, not after it, by reading the surrounding lines directly.
 
 npx tsc --noEmit
 
 MANUAL VERIFICATION:
 
-Restart both servers.
+Restart the frontend.
 
-On Settings, confirm the section now reads Sidebar and Floating, not Left and Right, and confirm the currently saved value shows correctly selected.
+Reload the Settings page as a firm owner. Confirm the settings content, Profile card, Concierge Entry Point section, Email Settings, etc, now occupies the full expected width of the main content column, not squeezed narrow.
 
-Select Sidebar. Confirm the floating button disappears from the corner, and confirm the original JAMM Concierge item reappears in the main left-hand navigation list, in its original position between Dark mode and Settings, and that clicking it opens the panel correctly.
+Confirm the Concierge question log link now appears directly below the last visible settings section, in the same left-aligned column as everything else, not stranded on the right side of the screen.
 
-Select Floating. Confirm the sidebar nav item disappears again, and the floating button reappears in the bottom right corner, working correctly.
+Confirm the link still navigates correctly to /concierge-log when clicked.
 
-Reload the page entirely after selecting Sidebar, confirm the choice persisted as a real firm setting, not just local UI state, matching the same persistence pattern already proven for the previous version of this setting.
-
-Report pass or fail for all four checks individually.
+Report pass or fail for all three checks individually.
 
 GIT:
 
 git add -A
 
-git commit -m "replace the left/right screen corner setting with a real Sidebar-versus-Floating entry mode choice, correcting a misunderstanding of the original request, restoring the exact original sidebar Concierge navigation item from git history as the sidebar mode rather than reconstructing it from memory, and having AppShell render exactly one of the two entry points at a time based on this firm-level setting, defaulting to Floating"
+git commit -m "fix the internal Concierge question log link rendering as a stray third column in the Settings page's outer horizontal flex layout, root cause confirmed by tracing the live DOM tree: the main content column's closing div appeared one place too early in the JSX, stranding this block as a sibling of the content column instead of its last child, correcting an earlier incorrect assumption that this was a missing width class rather than a nesting bug"
 
 git pull --rebase origin main
 
