@@ -54,75 +54,63 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Build the reusable inline AI component kit as an isolated, standalone layer, not wired into any real page yet
+TASK: Fix a real event-name collision where the new Billing banner prefill accidentally also overwrites the Concierge chat input on unrelated draft-to-Messages-tab actions
 
-USE: Fable 5
+USE: claude sonnet
 
 VERIFY BEFORE ACT:
 
-sed -n '1,40p' /home/corby/jamm-os/frontend/src/components/ui/card.tsx
+sed -n '260,270p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-sed -n '1,20p' /home/corby/jamm-os/frontend/src/lib/events/conciergeEvents.ts
+sed -n '1078,1084p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-sed -n '1452,1481p' /home/corby/jamm-os/app/api/concierge/route.py
+sed -n '1470,1476p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-sed -n '75,120p' /home/corby/jamm-os/frontend/src/components/dashboard/ConciergeSpotlight.tsx
+grep -n "prefill-message" /home/corby/jamm-os/frontend/src/app/\(app\)/clients/\[id\]/page.tsx
 
-Confirm the Card primitive in ui/card.tsx, the ConciergeAction event system in conciergeEvents.ts, the real shape of GET /concierge/notifications (id, trigger_type, message, created_at, metadata), and ConciergeSpotlight's existing click-to-open-panel pattern all match what is described below before building anything.
+Confirm three separate things currently share the exact same ConciergeAction type string, prefill-message: the two pre-existing dispatches inside ConciergePanel.tsx intended only for the client detail page's Messages tab compose box, and the new listener added earlier tonight inside ConciergePanel.tsx itself intended only for the Billing banner's hand-off into the main chat input. Confirm the event bus is a global window event, received by every mounted listener regardless of which component dispatched it, before editing.
 
 WHAT THIS IS:
 
-This is the first step of a larger, deliberate redesign of how the Concierge is positioned in the product, informed by real research done tonight: features embedded in a separate panel a user has to remember to open see meaningfully lower long-term engagement than the same capability embedded directly in the primary workflow. The long-term goal is an "always embedded" Concierge, similar in spirit to how Apple Intelligence or Superhuman surface AI inline rather than behind a chat window that must be deliberately opened. This is explicitly NOT a 72 hour, pre-launch task. It is the deliberate first phase of a project that begins after launch. Tonight's task is scoped narrowly and safely: build a small set of reusable, presentational components in isolation, wire zero of them into any real page, and change no existing page's behavior. A real notifications data source already exists and already works, GET /concierge/notifications, currently consumed only by the side panel's alert tray. This task does not change that endpoint or what triggers a notification, it only builds new ways to eventually display that same real data elsewhere.
+Confirmed by direct code reading: the Billing banner task added earlier tonight gave ConciergePanel.tsx a new listener for the prefill-message action type, intending to catch only the new banner's hand-off. But two pre-existing, unrelated dispatches of that exact same action type already existed in this same file, used specifically to pre-fill a draft into a client's Messages tab compose box on the client detail page, a completely different feature built earlier this session. Because the event system is a single global window event with no scoping by intended destination, ConciergePanel's new listener now also fires on those two pre-existing dispatches, silently overwriting the main Concierge chat input with draft content every time a user sends a notification draft to a client's Messages tab, an action completely unrelated to the Billing banner. This is a real, confirmed regression introduced by reusing an existing event name for a new, different purpose instead of introducing a new one.
 
 CHANGE INSTRUCTIONS:
 
-Create a new directory, frontend/src/components/concierge-inline, for this component kit, kept fully separate from the existing ConciergePanel.tsx so nothing about the current, working panel is touched or put at risk.
+Add a new ConciergeAction type, prefill-panel-input, to the ConciergeAction interface in conciergeEvents.ts, alongside the existing prefill-message type, not replacing it.
 
-Build five components:
+In ConciergePanel.tsx's onConciergeAction listener, change the condition added earlier tonight from checking action.type === 'prefill-message' to checking action.type === 'prefill-panel-input', keeping the same setInput(action.prefillMessage) behavior.
 
-1. SuggestionCard: takes a notification object matching the real shape from GET /concierge/notifications (id, trigger_type, message, created_at, metadata) plus an optional primary action label and an onAction callback, plus an onDismiss callback. Build on top of the existing Card primitive from ui/card.tsx rather than duplicating its styling. Visually deferential per tonight's research, a quiet card, not a loud banner, using the concierge gold accent token already established tonight, consistent with ConciergeSpotlight's existing visual treatment.
+In billing/page.tsx, change the banner's onAction callback to emit type prefill-panel-input instead of prefill-message for its second emitConciergeAction call. Do not change the first open-panel call.
 
-2. ContextualBanner: takes a message, a count, a primary action label, and an onAction callback, styled using the existing status-green or status-amber tokens depending on a passed tone prop, matching the visual pattern of Intuit-style "ready to post" banners, for the eventual high-confidence batch action case.
-
-3. GhostTextField: a thin wrapper component around a standard text input or textarea that accepts a suggestedCompletion string prop and renders it as faint placeholder-style text ahead of the cursor, with no live AI wiring yet, purely the visual and interaction shell for a future select-to-act or ghost-completion feature.
-
-4. PersistentEntryButton: a small, always-visible button component styled with the existing brand-btn token, accepting an onClick callback, intended eventually to be the persistent, repositionable gateway into the full Concierge panel, replacing the current less discoverable entry point, but not wired to replace anything yet in this task.
-
-5. ContextLoadedChatPreview: a small header component intended to sit at the top of the existing ConciergePanel when it is opened via a hand-off from one of the inline components above, accepting an openedFromLabel string prop and rendering it as a small "opened from: [label]" line. Build this as a new, separate, optional component. Do not modify ConciergePanel.tsx itself in this task, only build this new piece in isolation so it can be integrated later without touching the panel's existing logic tonight.
-
-Build a single new internal route, frontend/src/app/(app)/dev/concierge-kit/page.tsx, rendering all five components with realistic mock data including at least one real-shaped notification object, so they can be viewed and reviewed directly in the browser without needing to touch or risk any real page. This route is temporary scaffolding for review, not a permanent part of the product.
-
-Do not change ConciergePanel.tsx, ConciergeSpotlight.tsx, the notifications endpoint, or any existing page. Do not wire emitConciergeAction or any real event into these new components yet, they should be fully self-contained and driven only by props for this task.
+Do not touch either of the two pre-existing prefill-message dispatches in ConciergePanel.tsx related to the Messages tab draft feature, and do not touch the client detail page's own prefill-message listener. These should continue working exactly as they did before tonight, completely unaffected by this change.
 
 VERIFY AFTER ACT:
 
-find /home/corby/jamm-os/frontend/src/components/concierge-inline -type f
+grep -n "prefill-panel-input\|prefill-message" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-Expected: five new component files.
+grep -n "prefill-panel-input\|prefill-message" /home/corby/jamm-os/frontend/src/app/\(app\)/billing/page.tsx
+
+grep -n "prefill-message" /home/corby/jamm-os/frontend/src/app/\(app\)/clients/\[id\]/page.tsx
+
+Expected: ConciergePanel.tsx now listens for prefill-panel-input specifically for the chat input, while still containing its two original, untouched prefill-message dispatches for the Messages tab feature. billing/page.tsx now emits prefill-panel-input. The client detail page's prefill-message listener is completely unchanged.
 
 npx tsc --noEmit
-
-git diff --stat
-
-Expected: only new files under concierge-inline/ and the new dev route, zero existing files modified.
 
 MANUAL VERIFICATION:
 
 Restart the frontend.
 
-Visit /dev/concierge-kit directly in the browser. Confirm all five components render with the mock data, in both light and dark mode, using real tokens, not placeholder colors.
+On the Billing page, click the overdue invoices banner's action. Confirm the Concierge chat input still correctly gets pre-filled with the overdue invoices question.
 
-Confirm no existing page's behavior changed, spot check the Dashboard and a client detail page load exactly as they did before this task.
+Separately, trigger a notification draft's "open Messages tab with this draft ready to send" action from the Concierge panel's alert tray. Confirm the client's Messages tab compose box still correctly receives the draft, and confirm the Concierge chat's own main input is no longer affected by this action at all.
 
-Do not use Playwright or any browser automation for this check, verify visually yourself.
-
-Report pass or fail for each of the five components individually, plus confirmation that no existing page changed.
+Report pass or fail for both checks individually, since the second check is the one confirming tonight's regression is actually fixed.
 
 GIT:
 
 git add -A
 
-git commit -m "build the first phase of the inline Concierge redesign: five reusable, presentational components (SuggestionCard, ContextualBanner, GhostTextField, PersistentEntryButton, ContextLoadedChatPreview) built in full isolation under a new concierge-inline directory with a temporary dev review route, wiring nothing into any real page and changing no existing file, informed by tonight's research on panel versus inline AI assistant engagement, explicitly scoped as post-launch foundational work rather than a pre-launch change"
+git commit -m "fix a real event-name collision between the Billing banner's chat-input prefill and the pre-existing Messages-tab draft prefill feature, both of which were using the same prefill-message ConciergeAction type on a global event bus, causing the Concierge chat input to be silently overwritten every time a notification draft was sent to a client's Messages tab, an unrelated action; introduced a distinct prefill-panel-input action type for the Billing banner's use case, leaving the original Messages tab feature completely untouched"
 
 git pull --rebase origin main
 
