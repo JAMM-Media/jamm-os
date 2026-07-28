@@ -80,7 +80,6 @@ export function AppShell({ children }: AppShellProps) {
           localStorage.setItem('jamm_sidebar_collapsed', String(next))
           return next
         })}
-        onConciergeOpen={handleConciergeOpen}
         locked={isSettingsRoute}
       />
       <main ref={mainRef} className={`flex-1 overflow-y-auto transition-[padding] duration-200 ${conciergeOpen ? 'pr-[400px]' : ''}`}>
