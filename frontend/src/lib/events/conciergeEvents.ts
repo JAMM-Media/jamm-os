@@ -3,7 +3,7 @@
 const CONCIERGE_ACTION_EVENT = 'jamm:concierge-action'
 
 export interface ConciergeAction {
-  type: 'navigate' | 'open-modal' | 'navigate-and-open' | 'set_firm_type' | 'prefill-message' | 'show_briefing_again' | 'open-panel'
+  type: 'navigate' | 'open-modal' | 'navigate-and-open' | 'set_firm_type' | 'prefill-message' | 'prefill-panel-input' | 'show_briefing_again' | 'open-panel'
   route?: string
   modal?: string
   prefill?: Record<string, string>

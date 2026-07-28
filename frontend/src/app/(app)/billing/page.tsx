@@ -153,7 +153,7 @@ export default function BillingPage() {
             actionLabel='Ask Concierge'
             onAction={() => {
               emitConciergeAction({ type: 'open-panel' })
-              emitConciergeAction({ type: 'prefill-message', prefillMessage: 'How many overdue invoices do I have?' })
+              emitConciergeAction({ type: 'prefill-panel-input', prefillMessage: 'How many overdue invoices do I have?' })
             }}
           />
         )}
