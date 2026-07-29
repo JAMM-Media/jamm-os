@@ -54,53 +54,65 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Fix the internal "Concierge question log" link rendering outside the Settings page's main content column, causing it to appear as a stray third flex column on the right side of the screen
+TASK: Fix concierge_entry_mode being read from per-browser localStorage instead of the real, server-persisted firm setting, causing a new browser or device to show the wrong entry point
 
-USE: claude sonnet
+USE: Fable 5
 
 VERIFY BEFORE ACT:
 
-sed -n '670,680p' /home/corby/jamm-os/frontend/src/app/\(app\)/settings/page.tsx
+sed -n '68,79p' /home/corby/jamm-os/app/api/users.py
 
-sed -n '1300,1332p' /home/corby/jamm-os/frontend/src/app/\(app\)/settings/page.tsx
+grep -n "firm_type" /home/corby/jamm-os/app/schemas/user.py
 
-Confirm the main content column opens at line 677 with className "flex-1 overflow-y-auto p-6 flex flex-col gap-6", closes at line 1317 with a bare closing div, and that the isFirmOwner block containing the Concierge question log link at lines 1318-1327 currently sits after that closing div, making it a sibling of the content column inside the outer flex h-full row rather than a child of the content column. Confirm this before editing.
+grep -n "AuthUser\|firm_type" /home/corby/jamm-os/frontend/src/lib/hooks/useAuth.tsx
+
+grep -n "conciergeEntryMode\|jamm_concierge_entry_mode" /home/corby/jamm-os/frontend/src/components/layout/AppShell.tsx
+
+Confirm GET /users/me already copies firm_type and concierge_active from the current firm onto the user response, following an established pattern of selectively exposing specific firm fields on the user object. Confirm this endpoint is called once per page load via AuthProvider's effect, and that AppShell currently has no access to firm data or this endpoint at all, instead reading conciergeEntryMode purely from localStorage. Confirm this before editing.
 
 WHAT THIS IS:
 
-Confirmed live and diagnosed directly from the rendered DOM tonight: the internal Concierge question log link was appearing far on the right side of the Settings page, with the actual settings content squeezed narrow on the left. Root cause confirmed by tracing the actual DOM structure: this is not a missing width or styling issue, an earlier attempted fix adding max-w-lg to this element's wrapper made no visible difference, correctly ruling that out. The real cause is a JSX nesting bug: the main content column's closing div appears one place too early, stranding the isFirmOwner block containing this link as a third sibling in the outer horizontal flex row alongside the settings navigation sidebar and the main content column, instead of being the last item inside the main content column's own vertical stack. Since the outer row is a horizontal flex container, this stray third item claims its own column of horizontal space, visually squeezing the real content column and stranding the link far to the right.
+Confirmed live tonight: setting the Concierge entry mode to Sidebar in Settings correctly persisted to the firm's real settings in the database, confirmed by Settings correctly showing Sidebar selected in a brand new incognito session. But the actual floating button still appeared in that same incognito session, because AppShell reads its rendering decision from localStorage, which is empty on a fresh browser, and defaults to floating regardless of what the firm's real, saved setting is. This is the same class of bug flagged and intentionally deferred earlier tonight when this setting was first built, and was not caught during the later sidebar-versus-floating rename because that task's instructions explicitly preserved the existing localStorage mechanism rather than fixing it. The correct fix follows the exact pattern already proven correct in this codebase for firm_type and concierge_active: GET /users/me already selectively copies specific firm fields onto the user response, and AuthProvider already fetches this once on every page load, so AppShell can get the real, correct value for free through the existing useAuth hook rather than adding a new network call or reading unreliable per-browser storage.
 
 CHANGE INSTRUCTIONS:
 
-Move the entire isFirmOwner block, from the opening {isFirmOwner && ( through its closing )}, currently located immediately after the main content column's closing div, to instead sit immediately before that same closing div, as the last child inside the main content column, directly after the Migration tab line. Do not change the content of the block itself, its className, or the link's href or text. Do not change any other tab or section in this file, this is purely a structural relocation of one existing block to fix its nesting.
+Add concierge_entry_mode as an optional string field to UserOut in schemas/user.py, matching the exact style of the existing firm_type field.
+
+In GET /users/me in users.py, add one more line following the exact same pattern as the two existing lines, setting user_out.concierge_entry_mode from current_firm.settings, defaulting to floating if the key is absent from the settings JSON blob or if settings itself is null.
+
+In useAuth.tsx, add concierge_entry_mode as an optional field on the AuthUser interface, matching the style of the existing firm_type field.
+
+In AppShell.tsx, import and call useAuth, and use user.concierge_entry_mode as the primary source of truth for which entry point to render, defaulting to floating if the user object has not loaded yet or the field is absent. Keep the existing localStorage read and the jamm:concierge-entry-mode-changed event listener as a same-session, same-tab responsiveness mechanism so the UI still updates immediately after a user changes the setting in Settings without needing a full reload, but the value from useAuth's user object should be what a fresh page load or a different browser starts from, not localStorage. Do not change Settings page's own logic for saving the setting, this task only changes how AppShell decides which entry point to render.
 
 VERIFY AFTER ACT:
 
-grep -n "flex-1 overflow-y-auto p-6 flex flex-col gap-6" -A 1 /home/corby/jamm-os/frontend/src/app/\(app\)/settings/page.tsx
+grep -n "concierge_entry_mode" /home/corby/jamm-os/app/schemas/user.py /home/corby/jamm-os/app/api/users.py /home/corby/jamm-os/frontend/src/lib/hooks/useAuth.tsx /home/corby/jamm-os/frontend/src/components/layout/AppShell.tsx
 
-grep -n "Concierge question log" -B 12 /home/corby/jamm-os/frontend/src/app/\(app\)/settings/page.tsx
+Expected: present in all four files.
 
-Confirm the isFirmOwner block containing the link now appears before the content column's closing div, not after it, by reading the surrounding lines directly.
+python3 -c "from app.main import app; print('OK')"
 
 npx tsc --noEmit
 
 MANUAL VERIFICATION:
 
-Restart the frontend.
+Restart both servers.
 
-Reload the Settings page as a firm owner. Confirm the settings content, Profile card, Concierge Entry Point section, Email Settings, etc, now occupies the full expected width of the main content column, not squeezed narrow.
+In your normal browser, confirm the Settings page still shows Sidebar selected and the sidebar entry point still renders correctly.
 
-Confirm the Concierge question log link now appears directly below the last visible settings section, in the same left-aligned column as everything else, not stranded on the right side of the screen.
+Open a brand new incognito or private window, log in as the same firm owner. Confirm the sidebar nav item appears correctly on first load, and the floating button does not appear, without needing to visit Settings first or do anything else.
 
-Confirm the link still navigates correctly to /concierge-log when clicked.
+Back in Settings, switch to Floating, confirm it updates immediately in the current tab without a reload, matching the existing same-session behavior.
 
-Report pass or fail for all three checks individually.
+Open a second, different incognito window, log in fresh, confirm it now correctly shows Floating on first load, matching the most recently saved real setting.
+
+Report pass or fail for all four checks individually, since this is the second time this exact class of bug has been found tonight and deserves real, careful confirmation.
 
 GIT:
 
 git add -A
 
-git commit -m "fix the internal Concierge question log link rendering as a stray third column in the Settings page's outer horizontal flex layout, root cause confirmed by tracing the live DOM tree: the main content column's closing div appeared one place too early in the JSX, stranding this block as a sibling of the content column instead of its last child, correcting an earlier incorrect assumption that this was a missing width class rather than a nesting bug"
+git commit -m "fix concierge_entry_mode being sourced from per-browser localStorage instead of the real, server-persisted firm setting, causing a new browser or device to always default to floating regardless of what was actually saved, confirmed live tonight via a fresh incognito session showing Sidebar correctly selected in Settings while the floating button still rendered; fixed by threading the real value through GET /users/me the same way firm_type and concierge_active already are, so AppShell reads it via the existing useAuth hook instead of localStorage, keeping localStorage only as a same-tab responsiveness layer after a live change"
 
 git pull --rebase origin main
 
