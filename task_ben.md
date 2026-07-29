@@ -54,7 +54,7 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Redesign SuggestionCard's visual treatment to match the "glanceable, honest, information-first" pattern, de-emphasizing its action button
+TASK: Give SuggestionCard a real, visible glow instead of a barely-perceptible ring, and fix the portal-invite card's button label to stop restating the always-visible Send Portal Link button
 
 USE: claude sonnet
 
@@ -62,31 +62,27 @@ VERIFY BEFORE ACT:
 
 cat /home/corby/jamm-os/frontend/src/components/concierge-inline/SuggestionCard.tsx
 
-sed -n '440,465p' /home/corby/jamm-os/frontend/src/app/\(app\)/clients/\[id\]/page.tsx
+sed -n '443,462p' /home/corby/jamm-os/frontend/src/app/\(app\)/clients/\[id\]/page.tsx
 
-Confirm SuggestionCard currently uses a left-side color stripe (border-l-[3px] border-l-concierge) rather than a full ring around the card, has no honest low-commitment label above the message, and renders its action button at full visual weight, the same bold concierge-colored fill as its identity dot. Confirm actionLabel and onAction are already optional, meaning a pure information, no-button card is already possible today by simply not passing them. Confirm the one real, live usage of this component, the client detail page's portal-invite card, before editing.
+Confirm SuggestionCard currently uses ring-1 ring-concierge/30 with no glow/shadow effect, and confirm the client detail page's portal-invite card currently passes actionLabel="Send portal invite", the same wording as the always-visible Send Portal Link button rendered just below it on the same page. Confirm this before editing.
 
 WHAT THIS IS:
 
-Direct product decision, refining the SuggestionCard pattern first built earlier this session. The reference point is the "Maybe Important" pattern from Apple's own lock-screen AI notifications: a soft gradient ring around the card's edge, an honest, low-commitment label signaling this might be worth noticing rather than a command, and the actual content as the real headline. The decision made was to keep the action button rather than remove it entirely, since JAMM PX's Concierge has real, specific next steps to offer that a generic OS notification does not, but to visually de-emphasize it so the information itself reads as the primary element and the button reads as a quiet, secondary option, not the loudest thing on the card.
+Direct, live feedback tonight on the real, live portal-invite card: the ring is too subtle to read as intentional, nothing like the soft visible glow from the Apple reference image discussed earlier, and the button label "Send portal invite" still reads as a duplicate of the always-visible "Send Portal Link" button directly below it on the same page, even after the earlier fix that made the card only appear for genuinely aged, unnoticed clients. The card's actual behavior has never been to send anything itself, its onAction only opens the panel and highlights the real button, so its label should describe that, not restate the destination button's own wording.
 
 CHANGE INSTRUCTIONS:
 
-Replace the left-side border stripe with a full, soft ring around the entire card, using the concierge token at a low opacity, for example a ring-1 with the concierge color at roughly 30 to 40 percent opacity, removing the border-l-[3px] treatment entirely. Keep the existing header bar with the dot and JAMM CONCIERGE label and dismiss button exactly as they are.
+In SuggestionCard.tsx, add a real, soft glow effect to the card, using a box-shadow in the concierge color at low opacity, layered with the existing ring, for example combining ring-1 ring-concierge/40 with a shadow-[0_0_16px_rgba(191,150,64,0.35)] or equivalent Tailwind arbitrary value, tuned so the glow is genuinely visible at a glance in both light and dark mode without being harsh or oversaturated. Confirm the concierge token's real hex value before hardcoding an rgba value, rather than guessing.
 
-Add a new optional prop, honestLabel, a short string defaulting to "Might be worth a look" when not provided. Render it as a small, muted line directly above the message text, visually distinct from and smaller than the message itself.
+On the client detail page, change the portal-invite card's actionLabel from "Send portal invite" to something that describes what the card itself does, not what the destination button does, for example "Show me" or "Take me there", since the card only opens the panel and highlights the real Send Portal Link button, it does not send anything on its own.
 
-Reduce the visual weight of the action button when present: change it from a solid concierge-colored fill to a lighter treatment, for example an outlined or ghost-style button using the concierge color for its text and border rather than as a solid background fill, and reduce its font weight or size slightly relative to the message text above it, so the information is clearly the primary element and the button is clearly secondary.
-
-Update the one real usage of this component, the client detail page's portal-invite card, passing an honestLabel value if the default does not fit this specific case, otherwise leave it using the new default.
-
-Do not change onDismiss behavior, and do not add any new required props, everything new must be optional with a sensible default so this remains a safe, backward compatible change.
+Do not change onDismiss, do not change honestLabel's default text, and do not change any other prop or the header bar.
 
 VERIFY AFTER ACT:
 
-grep -n "honestLabel\|ring-concierge\|border-l-\[3px\]" /home/corby/jamm-os/frontend/src/components/concierge-inline/SuggestionCard.tsx
+grep -n "shadow-\[\|ring-concierge" /home/corby/jamm-os/frontend/src/components/concierge-inline/SuggestionCard.tsx
 
-Expected: honestLabel present, ring-concierge present, border-l-[3px] absent.
+grep -n "actionLabel=" /home/corby/jamm-os/frontend/src/app/\(app\)/clients/\[id\]/page.tsx
 
 npx tsc --noEmit
 
@@ -94,21 +90,17 @@ MANUAL VERIFICATION:
 
 Restart the frontend.
 
-Visit the dev review route (/dev/concierge-kit) and confirm SuggestionCard now shows a full soft ring instead of a left stripe, in both light and dark mode.
+Visit /dev/concierge-kit, confirm the SuggestionCard examples now show a genuinely visible soft glow around the card, in both light and dark mode, not just a thin faint line.
 
-Confirm the honest label appears above the message text, using the default text when not explicitly set.
+Visit Robert & Carol Tanner's client page, confirm the real portal-invite card shows the same visible glow, and confirm its button now reads the new label instead of Send portal invite.
 
-Confirm the action button is now visibly smaller and quieter than the message text, not the loudest element on the card.
-
-Visit a client old enough to trigger the real portal-invite card (for example Robert & Carol Tanner), confirm the real, live card reflects all of the same changes correctly.
-
-Report pass or fail for each of the four checks individually.
+Report pass or fail for both checks, describing what the glow actually looks like.
 
 GIT:
 
 git add -A
 
-git commit -m "redesign SuggestionCard's visual treatment: replace the left-side color stripe with a full soft ring around the card, add an optional honestLabel prop defaulting to 'Might be worth a look' for a low-commitment framing above the message, and de-emphasize the action button's visual weight so the information itself reads as the card's primary element, keeping the button rather than removing it since this Concierge has real, specific next steps a generic OS notification pattern does not"
+git commit -m "give SuggestionCard a real, visible soft glow using a box-shadow in the concierge color layered with the existing ring, replacing a ring that was too subtle to register as intentional per direct live feedback tonight, and change the portal-invite card's button label from Send portal invite to language describing what the card itself does, since the card only opens the panel and highlights the real Send Portal Link button rather than sending anything itself, removing the last piece of wording that duplicated the always-visible button below it"
 
 git pull --rebase origin main
 
