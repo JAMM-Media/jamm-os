@@ -54,65 +54,61 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Fix concierge_entry_mode being read from per-browser localStorage instead of the real, server-persisted firm setting, causing a new browser or device to show the wrong entry point
+TASK: Redesign SuggestionCard's visual treatment to match the "glanceable, honest, information-first" pattern, de-emphasizing its action button
 
-USE: Fable 5
+USE: claude sonnet
 
 VERIFY BEFORE ACT:
 
-sed -n '68,79p' /home/corby/jamm-os/app/api/users.py
+cat /home/corby/jamm-os/frontend/src/components/concierge-inline/SuggestionCard.tsx
 
-grep -n "firm_type" /home/corby/jamm-os/app/schemas/user.py
+sed -n '440,465p' /home/corby/jamm-os/frontend/src/app/\(app\)/clients/\[id\]/page.tsx
 
-grep -n "AuthUser\|firm_type" /home/corby/jamm-os/frontend/src/lib/hooks/useAuth.tsx
-
-grep -n "conciergeEntryMode\|jamm_concierge_entry_mode" /home/corby/jamm-os/frontend/src/components/layout/AppShell.tsx
-
-Confirm GET /users/me already copies firm_type and concierge_active from the current firm onto the user response, following an established pattern of selectively exposing specific firm fields on the user object. Confirm this endpoint is called once per page load via AuthProvider's effect, and that AppShell currently has no access to firm data or this endpoint at all, instead reading conciergeEntryMode purely from localStorage. Confirm this before editing.
+Confirm SuggestionCard currently uses a left-side color stripe (border-l-[3px] border-l-concierge) rather than a full ring around the card, has no honest low-commitment label above the message, and renders its action button at full visual weight, the same bold concierge-colored fill as its identity dot. Confirm actionLabel and onAction are already optional, meaning a pure information, no-button card is already possible today by simply not passing them. Confirm the one real, live usage of this component, the client detail page's portal-invite card, before editing.
 
 WHAT THIS IS:
 
-Confirmed live tonight: setting the Concierge entry mode to Sidebar in Settings correctly persisted to the firm's real settings in the database, confirmed by Settings correctly showing Sidebar selected in a brand new incognito session. But the actual floating button still appeared in that same incognito session, because AppShell reads its rendering decision from localStorage, which is empty on a fresh browser, and defaults to floating regardless of what the firm's real, saved setting is. This is the same class of bug flagged and intentionally deferred earlier tonight when this setting was first built, and was not caught during the later sidebar-versus-floating rename because that task's instructions explicitly preserved the existing localStorage mechanism rather than fixing it. The correct fix follows the exact pattern already proven correct in this codebase for firm_type and concierge_active: GET /users/me already selectively copies specific firm fields onto the user response, and AuthProvider already fetches this once on every page load, so AppShell can get the real, correct value for free through the existing useAuth hook rather than adding a new network call or reading unreliable per-browser storage.
+Direct product decision, refining the SuggestionCard pattern first built earlier this session. The reference point is the "Maybe Important" pattern from Apple's own lock-screen AI notifications: a soft gradient ring around the card's edge, an honest, low-commitment label signaling this might be worth noticing rather than a command, and the actual content as the real headline. The decision made was to keep the action button rather than remove it entirely, since JAMM PX's Concierge has real, specific next steps to offer that a generic OS notification does not, but to visually de-emphasize it so the information itself reads as the primary element and the button reads as a quiet, secondary option, not the loudest thing on the card.
 
 CHANGE INSTRUCTIONS:
 
-Add concierge_entry_mode as an optional string field to UserOut in schemas/user.py, matching the exact style of the existing firm_type field.
+Replace the left-side border stripe with a full, soft ring around the entire card, using the concierge token at a low opacity, for example a ring-1 with the concierge color at roughly 30 to 40 percent opacity, removing the border-l-[3px] treatment entirely. Keep the existing header bar with the dot and JAMM CONCIERGE label and dismiss button exactly as they are.
 
-In GET /users/me in users.py, add one more line following the exact same pattern as the two existing lines, setting user_out.concierge_entry_mode from current_firm.settings, defaulting to floating if the key is absent from the settings JSON blob or if settings itself is null.
+Add a new optional prop, honestLabel, a short string defaulting to "Might be worth a look" when not provided. Render it as a small, muted line directly above the message text, visually distinct from and smaller than the message itself.
 
-In useAuth.tsx, add concierge_entry_mode as an optional field on the AuthUser interface, matching the style of the existing firm_type field.
+Reduce the visual weight of the action button when present: change it from a solid concierge-colored fill to a lighter treatment, for example an outlined or ghost-style button using the concierge color for its text and border rather than as a solid background fill, and reduce its font weight or size slightly relative to the message text above it, so the information is clearly the primary element and the button is clearly secondary.
 
-In AppShell.tsx, import and call useAuth, and use user.concierge_entry_mode as the primary source of truth for which entry point to render, defaulting to floating if the user object has not loaded yet or the field is absent. Keep the existing localStorage read and the jamm:concierge-entry-mode-changed event listener as a same-session, same-tab responsiveness mechanism so the UI still updates immediately after a user changes the setting in Settings without needing a full reload, but the value from useAuth's user object should be what a fresh page load or a different browser starts from, not localStorage. Do not change Settings page's own logic for saving the setting, this task only changes how AppShell decides which entry point to render.
+Update the one real usage of this component, the client detail page's portal-invite card, passing an honestLabel value if the default does not fit this specific case, otherwise leave it using the new default.
+
+Do not change onDismiss behavior, and do not add any new required props, everything new must be optional with a sensible default so this remains a safe, backward compatible change.
 
 VERIFY AFTER ACT:
 
-grep -n "concierge_entry_mode" /home/corby/jamm-os/app/schemas/user.py /home/corby/jamm-os/app/api/users.py /home/corby/jamm-os/frontend/src/lib/hooks/useAuth.tsx /home/corby/jamm-os/frontend/src/components/layout/AppShell.tsx
+grep -n "honestLabel\|ring-concierge\|border-l-\[3px\]" /home/corby/jamm-os/frontend/src/components/concierge-inline/SuggestionCard.tsx
 
-Expected: present in all four files.
-
-python3 -c "from app.main import app; print('OK')"
+Expected: honestLabel present, ring-concierge present, border-l-[3px] absent.
 
 npx tsc --noEmit
 
 MANUAL VERIFICATION:
 
-Restart both servers.
+Restart the frontend.
 
-In your normal browser, confirm the Settings page still shows Sidebar selected and the sidebar entry point still renders correctly.
+Visit the dev review route (/dev/concierge-kit) and confirm SuggestionCard now shows a full soft ring instead of a left stripe, in both light and dark mode.
 
-Open a brand new incognito or private window, log in as the same firm owner. Confirm the sidebar nav item appears correctly on first load, and the floating button does not appear, without needing to visit Settings first or do anything else.
+Confirm the honest label appears above the message text, using the default text when not explicitly set.
 
-Back in Settings, switch to Floating, confirm it updates immediately in the current tab without a reload, matching the existing same-session behavior.
+Confirm the action button is now visibly smaller and quieter than the message text, not the loudest element on the card.
 
-Open a second, different incognito window, log in fresh, confirm it now correctly shows Floating on first load, matching the most recently saved real setting.
+Visit a client old enough to trigger the real portal-invite card (for example Robert & Carol Tanner), confirm the real, live card reflects all of the same changes correctly.
 
-Report pass or fail for all four checks individually, since this is the second time this exact class of bug has been found tonight and deserves real, careful confirmation.
+Report pass or fail for each of the four checks individually.
 
 GIT:
 
 git add -A
 
-git commit -m "fix concierge_entry_mode being sourced from per-browser localStorage instead of the real, server-persisted firm setting, causing a new browser or device to always default to floating regardless of what was actually saved, confirmed live tonight via a fresh incognito session showing Sidebar correctly selected in Settings while the floating button still rendered; fixed by threading the real value through GET /users/me the same way firm_type and concierge_active already are, so AppShell reads it via the existing useAuth hook instead of localStorage, keeping localStorage only as a same-tab responsiveness layer after a live change"
+git commit -m "redesign SuggestionCard's visual treatment: replace the left-side color stripe with a full soft ring around the card, add an optional honestLabel prop defaulting to 'Might be worth a look' for a low-commitment framing above the message, and de-emphasize the action button's visual weight so the information itself reads as the card's primary element, keeping the button rather than removing it since this Concierge has real, specific next steps a generic OS notification pattern does not"
 
 git pull --rebase origin main
 
