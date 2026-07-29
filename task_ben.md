@@ -54,39 +54,27 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Fix the duplicate invoice count on the Billing overdue banner, and make prefill-panel-input auto-send instead of waiting for a manual send click
+TASK: Fix the count-to-message spacing on ContextualBanner so the count reads as part of the sentence instead of a disconnected element
 
 USE: claude sonnet
 
 VERIFY BEFORE ACT:
 
-sed -n '148,157p' /home/corby/jamm-os/frontend/src/app/\(app\)/billing/page.tsx
+cat /home/corby/jamm-os/frontend/src/components/concierge-inline/ContextualBanner.tsx
 
-sed -n '258,266p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
-
-grep -n "async function handleSend" -A 5 /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
-
-Confirm the Billing banner's message string currently begins with the same overdue_count number that ContextualBanner also renders separately as its own bold count element, producing a visible duplicate number. Confirm the prefill-panel-input handler currently calls setInput(action.prefillMessage), only filling the text box, and confirm handleSend already accepts an optional text argument and is already used this way elsewhere in this file, for example for notification drafts and starter prompts. Confirm both of these before editing, they are two separate, unrelated fixes bundled into one task only because both are small and low risk.
+Confirm the outer flex container currently applies gap-3 equally between the count span, the message paragraph, and the button, causing the count and message to appear as visually disconnected as the message and button, even though the count and message are meant to read together as one sentence.
 
 WHAT THIS IS:
 
-Fix one, confirmed live tonight: the Billing overdue banner shows the invoice count twice, once as ContextualBanner's own bold count badge, and again as the leading number inside the message string itself, since the message was originally written to be a complete, standalone sentence before the count badge existed as a separate visual element.
-
-Fix two, a direct product decision made tonight: clicking a card or banner that prefills a question into the Concierge's input, such as the Billing banner's Ask Concierge action, currently only fills the input and waits for a manual send. The decision was made to have this auto-send immediately instead, since clicking the button already represents clear, deliberate intent, and sending a question to the Concierge has no real-world consequence, unlike the irreversible actions the human-in-the-loop principle exists to guard against, such as emailing a client or posting an invoice. This distinction, asking a question versus taking a consequential action, means auto-sending here does not conflict with that existing principle.
+Direct, live feedback tonight: with the earlier duplicate-count fix removing the leading number from the message text, the bold count badge now sits with a visibly oversized gap before the message text, making "4" and "overdue invoices totaling $4,750.00" look like two disconnected pieces rather than one flowing phrase. The person specifically said they like the bold count but not the spacing. The button correctly needs its own separation from the text, that part should not change.
 
 CHANGE INSTRUCTIONS:
 
-In billing/page.tsx, remove the leading overdue_count number and its following text from the start of the message string, so it no longer duplicates the count badge, while keeping the rest of the message grammatically correct and still stating the real total dollar amount clearly.
-
-In ConciergePanel.tsx, change the prefill-panel-input handler to call handleSend(action.prefillMessage) instead of setInput(action.prefillMessage), so the message is sent immediately rather than only filling the input box. Do not change any other action type's handler, and do not change handleSend itself.
+Wrap the count span and message paragraph together in a new inner div using flex items-baseline gap-1.5 and flex-1, so they sit close together as one phrase. Move flex-1 from the message paragraph onto this new wrapping div instead. Keep the outer container's existing gap-3 as the separation between this new wrapped group and the button, so the button's spacing is unaffected. Do not change any tone's colors, the button styling, or anything else in this file.
 
 VERIFY AFTER ACT:
 
-grep -n "overdue_count" /home/corby/jamm-os/frontend/src/app/\(app\)/billing/page.tsx
-
-grep -n "prefill-panel-input" -A 2 /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
-
-Expected: the message string no longer starts with a raw count number, and the handler now calls handleSend instead of setInput.
+grep -n "items-baseline gap-1.5" /home/corby/jamm-os/frontend/src/components/concierge-inline/ContextualBanner.tsx
 
 npx tsc --noEmit
 
@@ -94,17 +82,17 @@ MANUAL VERIFICATION:
 
 Restart the frontend.
 
-Visit Billing with a real overdue invoice present. Confirm the banner's count badge shows the number once, and the message text no longer repeats it, while still clearly stating the real dollar total.
+Visit Billing with a real overdue invoice present. Confirm the count and message now sit close together reading naturally as one sentence, for example "4 overdue invoices totaling $4,750.00" with normal word-level spacing, while the Ask Concierge button still sits clearly separated on the right.
 
-Click Ask Concierge on the banner. Confirm the panel opens and the question is sent immediately, with a real response appearing, rather than just sitting in the input box waiting for a manual send.
+Visit /dev/concierge-kit, confirm the green and amber ContextualBanner examples show the same tightened spacing.
 
-Report pass or fail for both checks individually.
+Report pass or fail for both checks.
 
 GIT:
 
 git add -A
 
-git commit -m "fix the Billing overdue banner showing its invoice count twice, once as the bold count badge and again as the leading number in the message text, and change prefill-panel-input to auto-send immediately via the existing handleSend function instead of only filling the input box, a direct product decision made tonight since clicking a button that prefills a question already signals clear intent and asking the Concierge a question carries no real-world consequence, unlike the irreversible actions the human-in-the-loop principle is meant to guard against"
+git commit -m "fix ContextualBanner's count-to-message spacing so the bold count reads as part of the sentence instead of a disconnected element, wrapping the count and message together with tight baseline spacing while keeping the button's separate spacing from the text unchanged, per direct feedback tonight after the duplicate-count fix left an oversized gap between the count badge and the message text"
 
 git pull --rebase origin main
 
