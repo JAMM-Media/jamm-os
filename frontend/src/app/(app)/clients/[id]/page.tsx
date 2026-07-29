@@ -454,7 +454,6 @@ function ClientDetailContent() {
                   }}
                   actionLabel="Show me"
                   onAction={() => {
-                    emitConciergeAction({ type: 'open-panel' })
                     emitConciergeAction({ type: 'navigate-and-open', route: `/clients/${client.id}`, modal: 'portal-magic-link' })
                   }}
                   onDismiss={() => setPortalSuggestionDismissed(true)}
