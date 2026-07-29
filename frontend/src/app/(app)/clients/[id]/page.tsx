@@ -467,7 +467,7 @@ function ClientDetailContent() {
                 ref={portalLinkRef}
                 onClick={handleSendPortalLink}
                 disabled={sendingPortalLink}
-                className={`flex items-center gap-1.5 h-8 px-3 text-[12px] font-medium text-foreground border border-[0.5px] rounded-md bg-transparent hover:bg-surface-card dark:hover:bg-dark-card transition-colors disabled:opacity-60 ${portalLinkHighlight ? 'border-brand-btn ring-2 ring-brand-btn/40 animate-pulse' : 'border-surface-border dark:border-dark-border'}`}
+                className={`flex items-center gap-1.5 h-8 px-3 text-[12px] font-medium text-foreground border border-[0.5px] rounded-md bg-transparent hover:bg-surface-card dark:hover:bg-dark-card transition-colors disabled:opacity-60 ${portalLinkHighlight ? 'border-brand-btn ring-2 ring-brand-btn/40 shadow-[0_0_20px_rgba(58,106,148,0.45)] animate-pulse' : 'border-surface-border dark:border-dark-border'}`}
               >
                 {sendingPortalLink ? (
                   <Loader2 className="h-[14px] w-[14px] animate-spin" />
