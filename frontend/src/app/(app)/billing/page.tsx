@@ -149,7 +149,7 @@ export default function BillingPage() {
           <ContextualBanner
             tone='red'
             count={overdueData!.overdue_count}
-            message={`${overdueData!.overdue_count} overdue invoice${overdueData!.overdue_count === 1 ? '' : 's'} totaling $${overdueData!.total_overdue_amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+            message={`overdue invoice${overdueData!.overdue_count === 1 ? '' : 's'} totaling $${overdueData!.total_overdue_amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
             actionLabel='Ask Concierge'
             onAction={() => {
               emitConciergeAction({ type: 'open-panel' })

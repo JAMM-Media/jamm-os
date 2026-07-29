@@ -260,7 +260,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
         setNotificationsExpanded(true)
       }
       if (action.type === 'prefill-panel-input' && action.prefillMessage) {
-        setInput(action.prefillMessage)
+        handleSend(action.prefillMessage)
       }
     })
   }, [])
