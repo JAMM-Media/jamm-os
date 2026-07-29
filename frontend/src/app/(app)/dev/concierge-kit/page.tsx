@@ -86,14 +86,14 @@ export default function ConciergeKitPage() {
         <ContextualBanner
           tone="green"
           count={4}
-          message="4 bookkeeping entries are ready to post to QuickBooks."
+          message="bookkeeping entries are ready to post to QuickBooks."
           actionLabel="Post all"
           onAction={() => alert('Post all clicked')}
         />
         <ContextualBanner
           tone="amber"
           count={2}
-          message="2 client invoices are past due by more than 30 days."
+          message="client invoices are past due by more than 30 days."
           actionLabel="Review"
           onAction={() => alert('Review clicked')}
         />
