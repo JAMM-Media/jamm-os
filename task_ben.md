@@ -54,35 +54,39 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Bring ContextualBanner's visual weight in line with SuggestionCard's ring-and-glow treatment, keeping its confident, factual tone
+TASK: Fix the duplicate invoice count on the Billing overdue banner, and make prefill-panel-input auto-send instead of waiting for a manual send click
 
 USE: claude sonnet
 
 VERIFY BEFORE ACT:
 
-cat /home/corby/jamm-os/frontend/src/components/concierge-inline/ContextualBanner.tsx
+sed -n '148,157p' /home/corby/jamm-os/frontend/src/app/\(app\)/billing/page.tsx
 
-cat /home/corby/jamm-os/frontend/src/components/concierge-inline/SuggestionCard.tsx
+sed -n '258,266p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-sed -n '145,158p' /home/corby/jamm-os/frontend/src/app/\(app\)/billing/page.tsx
+grep -n "async function handleSend" -A 5 /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-grep -n "color-status-red\|color-status-green\|color-status-amber" /home/corby/jamm-os/frontend/src/app/globals.css
-
-Confirm ContextualBanner currently uses a solid status-color background fill with a solid-fill button, no ring or glow, and confirm SuggestionCard's current ring-1 plus shadow-[] glow pattern and its outlined, de-emphasized button style. Confirm the real hex values for status-red-text, status-green-text, and status-amber-text before hardcoding any rgba glow values. Confirm the live Billing usage passes a real, factual, non-speculative message (a real overdue invoice count and dollar total), not a suggestion, before editing.
+Confirm the Billing banner's message string currently begins with the same overdue_count number that ContextualBanner also renders separately as its own bold count element, producing a visible duplicate number. Confirm the prefill-panel-input handler currently calls setInput(action.prefillMessage), only filling the text box, and confirm handleSend already accepts an optional text argument and is already used this way elsewhere in this file, for example for notification drafts and starter prompts. Confirm both of these before editing, they are two separate, unrelated fixes bundled into one task only because both are small and low risk.
 
 WHAT THIS IS:
 
-Direct product decision to bring ContextualBanner visually in line with the ring-and-glow treatment just finished on SuggestionCard, so both inline Concierge components read as the same visual family. This is explicitly not a copy of SuggestionCard's honest, low-commitment label pattern ("Might be worth a look"), since ContextualBanner represents a confident, factual, ready-to-act state, a real overdue invoice count and total, not a speculative suggestion, and using speculative framing here would misrepresent it. Only the visual weight is being harmonized: a softer background instead of a solid color fill, a ring and soft glow in the banner's own tone color instead of a hard border, and a de-emphasized, outlined button instead of a solid-fill button, matching the restraint already established for SuggestionCard.
+Fix one, confirmed live tonight: the Billing overdue banner shows the invoice count twice, once as ContextualBanner's own bold count badge, and again as the leading number inside the message string itself, since the message was originally written to be a complete, standalone sentence before the count badge existed as a separate visual element.
+
+Fix two, a direct product decision made tonight: clicking a card or banner that prefills a question into the Concierge's input, such as the Billing banner's Ask Concierge action, currently only fills the input and waits for a manual send. The decision was made to have this auto-send immediately instead, since clicking the button already represents clear, deliberate intent, and sending a question to the Concierge has no real-world consequence, unlike the irreversible actions the human-in-the-loop principle exists to guard against, such as emailing a client or posting an invoice. This distinction, asking a question versus taking a consequential action, means auto-sending here does not conflict with that existing principle.
 
 CHANGE INSTRUCTIONS:
 
-For each of the three tones, green, amber, and red, replace the current solid wrapperClass background fill with a lighter background tint using the same status color at low opacity (for example bg-status-red/15 instead of bg-status-red), combine it with a ring-1 in the tone's -text color at moderate opacity, and add a soft box-shadow glow using the tone's real confirmed hex value at roughly 25 to 35 percent opacity, sized similarly to the glow already used on SuggestionCard and the portal-link highlight. Change each tone's button from a solid color fill to an outlined, ghost-style button, using the tone's -text color for text and border with a transparent or near-transparent background, matching the exact treatment already used for SuggestionCard's button. Keep the bold count number exactly as it is, this is a real, confident data point and should stay visually prominent, not softened. Do not add any honest-label style text, do not change the compact horizontal layout, do not add a header bar or identity dot, this banner should stay visually distinct in shape from SuggestionCard while matching its restraint and glow language.
+In billing/page.tsx, remove the leading overdue_count number and its following text from the start of the message string, so it no longer duplicates the count badge, while keeping the rest of the message grammatically correct and still stating the real total dollar amount clearly.
+
+In ConciergePanel.tsx, change the prefill-panel-input handler to call handleSend(action.prefillMessage) instead of setInput(action.prefillMessage), so the message is sent immediately rather than only filling the input box. Do not change any other action type's handler, and do not change handleSend itself.
 
 VERIFY AFTER ACT:
 
-grep -n "shadow-\[\|ring-1\|bg-status-red$\|bg-status-green$\|bg-status-amber$" /home/corby/jamm-os/frontend/src/components/concierge-inline/ContextualBanner.tsx
+grep -n "overdue_count" /home/corby/jamm-os/frontend/src/app/\(app\)/billing/page.tsx
 
-Expected: no bare bg-status-red, bg-status-green, or bg-status-amber remain as solid fills, and shadow-[ and ring-1 now appear.
+grep -n "prefill-panel-input" -A 2 /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+
+Expected: the message string no longer starts with a raw count number, and the handler now calls handleSend instead of setInput.
 
 npx tsc --noEmit
 
@@ -90,19 +94,17 @@ MANUAL VERIFICATION:
 
 Restart the frontend.
 
-Visit /dev/concierge-kit, confirm ContextualBanner's green and amber examples now show a softer tinted background with a visible ring and glow, in both light and dark mode, and confirm their buttons are now outlined rather than solid fill.
+Visit Billing with a real overdue invoice present. Confirm the banner's count badge shows the number once, and the message text no longer repeats it, while still clearly stating the real dollar total.
 
-Visit Billing with at least one real overdue invoice present, confirm the live red banner shows the same updated treatment, still states the real count and dollar total clearly, and the count number is still bold and prominent.
+Click Ask Concierge on the banner. Confirm the panel opens and the question is sent immediately, with a real response appearing, rather than just sitting in the input box waiting for a manual send.
 
-Confirm clicking Ask Concierge on the live banner still correctly opens the panel and prefills the overdue invoices question, unaffected by the visual change.
-
-Report pass or fail for each of the three checks individually.
+Report pass or fail for both checks individually.
 
 GIT:
 
 git add -A
 
-git commit -m "bring ContextualBanner's visual weight in line with SuggestionCard's ring-and-glow treatment across all three tones, replacing solid color fills with softer tinted backgrounds plus a ring and soft glow, and de-emphasizing each tone's button to an outlined style matching SuggestionCard's button, while deliberately keeping the bold count number, compact horizontal layout, and confident factual tone intact, since ContextualBanner represents a ready-to-act state rather than a speculative suggestion and should not carry SuggestionCard's low-commitment honest-label framing"
+git commit -m "fix the Billing overdue banner showing its invoice count twice, once as the bold count badge and again as the leading number in the message text, and change prefill-panel-input to auto-send immediately via the existing handleSend function instead of only filling the input box, a direct product decision made tonight since clicking a button that prefills a question already signals clear intent and asking the Concierge a question carries no real-world consequence, unlike the irreversible actions the human-in-the-loop principle is meant to guard against"
 
 git pull --rebase origin main
 
