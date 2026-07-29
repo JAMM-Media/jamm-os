@@ -452,7 +452,7 @@ function ClientDetailContent() {
                     message: `${client.name} was added ${daysSince} days ago and has never been sent a portal invite.`,
                     created_at: new Date().toISOString(),
                   }}
-                  actionLabel="Send portal invite"
+                  actionLabel="Show me"
                   onAction={() => {
                     emitConciergeAction({ type: 'open-panel' })
                     emitConciergeAction({ type: 'navigate-and-open', route: `/clients/${client.id}`, modal: 'portal-magic-link' })

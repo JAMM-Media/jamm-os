@@ -27,7 +27,7 @@ export function SuggestionCard({
   onDismiss,
 }: SuggestionCardProps) {
   return (
-    <div className="flex flex-col ring-1 ring-concierge/30 rounded-[8px] bg-surface-card dark:bg-dark-card overflow-hidden">
+    <div className="flex flex-col ring-1 ring-concierge/40 shadow-[0_0_16px_rgba(191,150,64,0.30)] rounded-[8px] bg-surface-card dark:bg-dark-card overflow-hidden">
       <div className="px-3 py-2 border-b border-[0.5px] border-surface-border dark:border-dark-border flex items-center gap-1.5">
         <span className="w-1.5 h-1.5 rounded-full bg-concierge flex-shrink-0" />
         <span className="text-[10px] font-semibold uppercase tracking-wide text-concierge flex-1">
