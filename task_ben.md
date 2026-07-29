@@ -54,35 +54,29 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Give SuggestionCard a real, visible glow instead of a barely-perceptible ring, and fix the portal-invite card's button label to stop restating the always-visible Send Portal Link button
+TASK: Give the portal-link highlight a real, visible glow instead of a subtle small ring, so it's catchable across the width of the screen
 
 USE: claude sonnet
 
 VERIFY BEFORE ACT:
 
-cat /home/corby/jamm-os/frontend/src/components/concierge-inline/SuggestionCard.tsx
+grep -n "portalLinkHighlight ?" /home/corby/jamm-os/frontend/src/app/\(app\)/clients/\[id\]/page.tsx
 
-sed -n '443,462p' /home/corby/jamm-os/frontend/src/app/\(app\)/clients/\[id\]/page.tsx
+grep -n "color-brand-btn" /home/corby/jamm-os/frontend/src/app/globals.css
 
-Confirm SuggestionCard currently uses ring-1 ring-concierge/30 with no glow/shadow effect, and confirm the client detail page's portal-invite card currently passes actionLabel="Send portal invite", the same wording as the always-visible Send Portal Link button rendered just below it on the same page. Confirm this before editing.
+Confirm the current highlight is ring-2 ring-brand-btn/40 with animate-pulse, no glow/shadow, and confirm the real hex value of brand-btn before hardcoding an rgba value.
 
 WHAT THIS IS:
 
-Direct, live feedback tonight on the real, live portal-invite card: the ring is too subtle to read as intentional, nothing like the soft visible glow from the Apple reference image discussed earlier, and the button label "Send portal invite" still reads as a duplicate of the always-visible "Send Portal Link" button directly below it on the same page, even after the earlier fix that made the card only appear for genuinely aged, unnoticed clients. The card's actual behavior has never been to send anything itself, its onAction only opens the panel and highlights the real button, so its label should describe that, not restate the destination button's own wording.
+Direct, live feedback tonight: the Concierge suggestion card sits on the left side of the client detail page, while the button it's meant to draw attention to, Send Portal Link, sits on the right side of the same page. The current highlight, a small ring at 40 percent opacity, is not visually loud enough to catch attention across that distance, especially in peripheral vision, since the person's eyes are on the card when they click "Show me," not on the button. Earlier tonight the exact same underlying problem, a highlight too subtle to register, was fixed for SuggestionCard by adding a real box-shadow glow layered with its ring. This task applies that same proven pattern to the portal-link button's highlight, using the button's own existing brand-btn blue rather than inventing a new color.
 
 CHANGE INSTRUCTIONS:
 
-In SuggestionCard.tsx, add a real, soft glow effect to the card, using a box-shadow in the concierge color at low opacity, layered with the existing ring, for example combining ring-1 ring-concierge/40 with a shadow-[0_0_16px_rgba(191,150,64,0.35)] or equivalent Tailwind arbitrary value, tuned so the glow is genuinely visible at a glance in both light and dark mode without being harsh or oversaturated. Confirm the concierge token's real hex value before hardcoding an rgba value, rather than guessing.
-
-On the client detail page, change the portal-invite card's actionLabel from "Send portal invite" to something that describes what the card itself does, not what the destination button does, for example "Show me" or "Take me there", since the card only opens the panel and highlights the real Send Portal Link button, it does not send anything on its own.
-
-Do not change onDismiss, do not change honestLabel's default text, and do not change any other prop or the header bar.
+Add a box-shadow glow in the brand-btn color at moderate opacity, layered with the existing ring-2 ring-brand-btn/40 and animate-pulse, sized generously enough to be clearly visible without needing to look directly at the button, for example a shadow-[0_0_20px_rgba(58,106,148,0.45)] or equivalent tuned value. Keep animate-pulse as-is, the combination of the existing pulse animation and the new glow should make the highlight genuinely catch the eye across the width of the screen. Do not change the highlight's 7 second duration, the scrollIntoView behavior, or anything else about when or how the highlight is triggered, this is purely a stronger visual treatment for the highlighted state itself.
 
 VERIFY AFTER ACT:
 
-grep -n "shadow-\[\|ring-concierge" /home/corby/jamm-os/frontend/src/components/concierge-inline/SuggestionCard.tsx
-
-grep -n "actionLabel=" /home/corby/jamm-os/frontend/src/app/\(app\)/clients/\[id\]/page.tsx
+grep -n "shadow-\[\|ring-brand-btn" /home/corby/jamm-os/frontend/src/app/\(app\)/clients/\[id\]/page.tsx
 
 npx tsc --noEmit
 
@@ -90,17 +84,15 @@ MANUAL VERIFICATION:
 
 Restart the frontend.
 
-Visit /dev/concierge-kit, confirm the SuggestionCard examples now show a genuinely visible soft glow around the card, in both light and dark mode, not just a thin faint line.
+On Robert & Carol Tanner's page, click "Show me" on the portal-invite card. Confirm the Send Portal Link button now shows a genuinely noticeable glow, catchable without staring directly at it, lasting the same 7 seconds as before.
 
-Visit Robert & Carol Tanner's client page, confirm the real portal-invite card shows the same visible glow, and confirm its button now reads the new label instead of Send portal invite.
-
-Report pass or fail for both checks, describing what the glow actually looks like.
+Report pass or fail, describing whether it's actually catchable in peripheral vision now.
 
 GIT:
 
 git add -A
 
-git commit -m "give SuggestionCard a real, visible soft glow using a box-shadow in the concierge color layered with the existing ring, replacing a ring that was too subtle to register as intentional per direct live feedback tonight, and change the portal-invite card's button label from Send portal invite to language describing what the card itself does, since the card only opens the panel and highlights the real Send Portal Link button rather than sending anything itself, removing the last piece of wording that duplicated the always-visible button below it"
+git commit -m "add a real box-shadow glow to the portal-link highlight, using the button's existing brand-btn blue, reusing the same glow pattern that fixed SuggestionCard's visibility problem earlier tonight, since direct feedback confirmed the previous small ring at 40 percent opacity was not catchable across the horizontal distance between the suggestion card on the left and the Send Portal Link button on the right of the same page"
 
 git pull --rebase origin main
 
