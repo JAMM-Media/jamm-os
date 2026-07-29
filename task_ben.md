@@ -54,45 +54,59 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Fix the count-to-message spacing on ContextualBanner so the count reads as part of the sentence instead of a disconnected element
+TASK: Wire the third real page of the inline Concierge redesign — a stalled-engagements banner on the Engagements page
 
-USE: claude sonnet
+USE: Fable 5
 
 VERIFY BEFORE ACT:
 
+sed -n '36,68p' /home/corby/jamm-os/app/api/concierge/functions.py
+
+grep -n "@router.get\|require_staff_or_above" /home/corby/jamm-os/app/api/engagements.py | head -10
+
+sed -n '1,25p' /home/corby/jamm-os/frontend/src/app/\(app\)/engagements/page.tsx
+
 cat /home/corby/jamm-os/frontend/src/components/concierge-inline/ContextualBanner.tsx
 
-Confirm the outer flex container currently applies gap-3 equally between the count span, the message paragraph, and the button, causing the count and message to appear as visually disconnected as the message and button, even though the count and message are meant to read together as one sentence.
+Confirm get_stalled_engagements in functions.py is the single real source of truth for the stalled business rule (updated_at older than 14 days, status not completed or archived). Confirm engagements.py has no existing stalled-specific route and its read endpoints are gated with require_staff_or_above, matching the same pattern already used for invoices.py. Confirm the engagements page currently has no awareness of a stalled-specific endpoint. Confirm ContextualBanner's current real shape, including its already-fixed count-to-message spacing, before using it.
 
 WHAT THIS IS:
 
-Direct, live feedback tonight: with the earlier duplicate-count fix removing the leading number from the message text, the bold count badge now sits with a visibly oversized gap before the message text, making "4" and "overdue invoices totaling $4,750.00" look like two disconnected pieces rather than one flowing phrase. The person specifically said they like the bold count but not the spacing. The button correctly needs its own separation from the text, that part should not change.
+This is the third real, live page of the inline Concierge redesign, following the same pattern already proven twice tonight on Billing and the client detail page. Stalled engagements is a strong fit because the underlying data and the chat question that answers it, how many stalled engagements do I have, were both specifically hardened earlier tonight, the OPTIONS marker safety net was extended to this exact tool after it was found live to lack the same reliable clickable client name buttons already working for overdue invoices. This task reuses that already-proven, already-reliable question rather than inventing new behavior.
 
 CHANGE INSTRUCTIONS:
 
-Wrap the count span and message paragraph together in a new inner div using flex items-baseline gap-1.5 and flex-1, so they sit close together as one phrase. Move flex-1 from the message paragraph onto this new wrapping div instead. Keep the outer container's existing gap-3 as the separation between this new wrapped group and the button, so the button's spacing is unaffected. Do not change any tone's colors, the button styling, or anything else in this file.
+Backend: add a new GET /stalled endpoint in engagements.py, gated with require_staff_or_above matching the existing style in this file, calling get_stalled_engagements from concierge/functions.py directly with the current firm's id and the db session, returning its result as-is. Do not duplicate or reimplement the stalled business rule, only call the existing function, so there is exactly one definition of what counts as stalled anywhere in the codebase. Do not modify get_stalled_engagements itself.
+
+Frontend: add a new useFetch call to the new GET /engagements/stalled endpoint on the Engagements page, matching the existing style of other useFetch calls already in this file. If the returned stalled count is greater than zero, render a ContextualBanner above the existing engagement list or table, with tone amber, a message stating the real count with correct singular or plural wording and no leading duplicate number, matching the fix already applied to the Billing banner, and an action label of Ask Concierge. The onAction callback should call emitConciergeAction twice in sequence, first with type open-panel, then with type prefill-panel-input and prefillMessage set to the exact literal text How many stalled engagements do I have, so this reuses the existing tool_choice-forced, already-hardened path and the already-implemented auto-send behavior rather than inventing new behavior. Do not change the existing engagement table or card views, their data fetching, or any filtering logic already on this page.
 
 VERIFY AFTER ACT:
 
-grep -n "items-baseline gap-1.5" /home/corby/jamm-os/frontend/src/components/concierge-inline/ContextualBanner.tsx
+grep -n "@router.get(\"/stalled\"" /home/corby/jamm-os/app/api/engagements.py
+
+grep -n "stalled" /home/corby/jamm-os/frontend/src/app/\(app\)/engagements/page.tsx
+
+python3 -c "from app.main import app; print('OK')"
 
 npx tsc --noEmit
 
 MANUAL VERIFICATION:
 
-Restart the frontend.
+Restart both servers.
 
-Visit Billing with a real overdue invoice present. Confirm the count and message now sit close together reading naturally as one sentence, for example "4 overdue invoices totaling $4,750.00" with normal word-level spacing, while the Ask Concierge button still sits clearly separated on the right.
+Visit the Engagements page with at least one real stalled engagement present. Confirm the amber banner appears above the list, showing the real count and correct wording, with the count and message reading as one sentence, not duplicated.
 
-Visit /dev/concierge-kit, confirm the green and amber ContextualBanner examples show the same tightened spacing.
+Click Ask Concierge on the banner. Confirm the panel opens and the stalled engagements question sends immediately, with a real response showing clickable client name buttons, matching the already-verified reliable behavior from earlier tonight.
 
-Report pass or fail for both checks.
+Confirm the existing engagement table and card views still work exactly as before, unaffected by this change.
+
+Report pass or fail for each check individually.
 
 GIT:
 
 git add -A
 
-git commit -m "fix ContextualBanner's count-to-message spacing so the bold count reads as part of the sentence instead of a disconnected element, wrapping the count and message together with tight baseline spacing while keeping the button's separate spacing from the text unchanged, per direct feedback tonight after the duplicate-count fix left an oversized gap between the count badge and the message text"
+git commit -m "wire the third real page of the inline Concierge redesign, an amber ContextualBanner on the Engagements page showing real stalled engagement data from a new endpoint that reuses the existing get_stalled_engagements function as its single source of truth, with the banner's action reusing the exact chat question already hardened earlier tonight with the OPTIONS marker safety net, and the auto-send behavior already established for the Billing banner"
 
 git pull --rebase origin main
 
