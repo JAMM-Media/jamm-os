@@ -31,12 +31,14 @@ export function ContextualBanner({ message, count, actionLabel, onAction, tone }
 
   return (
     <div className={`flex items-center gap-3 px-4 py-2.5 rounded-[8px] ${wrapperClass}`}>
-      <span className={`text-[13px] font-bold flex-shrink-0 ${textClass}`}>
-        {count}
-      </span>
-      <p className={`flex-1 text-[13px] leading-[1.4] ${textClass}`}>
-        {message}
-      </p>
+      <div className={`flex items-baseline gap-1.5 flex-1 ${textClass}`}>
+        <span className="text-[13px] font-bold flex-shrink-0">
+          {count}
+        </span>
+        <p className="text-[13px] leading-[1.4]">
+          {message}
+        </p>
+      </div>
       <button
         onClick={onAction}
         className={`text-[11px] px-3 py-1.5 rounded-[4px] flex-shrink-0 ${buttonClass}`}
