@@ -54,29 +54,35 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Give the portal-link highlight a real, visible glow instead of a subtle small ring, so it's catchable across the width of the screen
+TASK: Bring ContextualBanner's visual weight in line with SuggestionCard's ring-and-glow treatment, keeping its confident, factual tone
 
 USE: claude sonnet
 
 VERIFY BEFORE ACT:
 
-grep -n "portalLinkHighlight ?" /home/corby/jamm-os/frontend/src/app/\(app\)/clients/\[id\]/page.tsx
+cat /home/corby/jamm-os/frontend/src/components/concierge-inline/ContextualBanner.tsx
 
-grep -n "color-brand-btn" /home/corby/jamm-os/frontend/src/app/globals.css
+cat /home/corby/jamm-os/frontend/src/components/concierge-inline/SuggestionCard.tsx
 
-Confirm the current highlight is ring-2 ring-brand-btn/40 with animate-pulse, no glow/shadow, and confirm the real hex value of brand-btn before hardcoding an rgba value.
+sed -n '145,158p' /home/corby/jamm-os/frontend/src/app/\(app\)/billing/page.tsx
+
+grep -n "color-status-red\|color-status-green\|color-status-amber" /home/corby/jamm-os/frontend/src/app/globals.css
+
+Confirm ContextualBanner currently uses a solid status-color background fill with a solid-fill button, no ring or glow, and confirm SuggestionCard's current ring-1 plus shadow-[] glow pattern and its outlined, de-emphasized button style. Confirm the real hex values for status-red-text, status-green-text, and status-amber-text before hardcoding any rgba glow values. Confirm the live Billing usage passes a real, factual, non-speculative message (a real overdue invoice count and dollar total), not a suggestion, before editing.
 
 WHAT THIS IS:
 
-Direct, live feedback tonight: the Concierge suggestion card sits on the left side of the client detail page, while the button it's meant to draw attention to, Send Portal Link, sits on the right side of the same page. The current highlight, a small ring at 40 percent opacity, is not visually loud enough to catch attention across that distance, especially in peripheral vision, since the person's eyes are on the card when they click "Show me," not on the button. Earlier tonight the exact same underlying problem, a highlight too subtle to register, was fixed for SuggestionCard by adding a real box-shadow glow layered with its ring. This task applies that same proven pattern to the portal-link button's highlight, using the button's own existing brand-btn blue rather than inventing a new color.
+Direct product decision to bring ContextualBanner visually in line with the ring-and-glow treatment just finished on SuggestionCard, so both inline Concierge components read as the same visual family. This is explicitly not a copy of SuggestionCard's honest, low-commitment label pattern ("Might be worth a look"), since ContextualBanner represents a confident, factual, ready-to-act state, a real overdue invoice count and total, not a speculative suggestion, and using speculative framing here would misrepresent it. Only the visual weight is being harmonized: a softer background instead of a solid color fill, a ring and soft glow in the banner's own tone color instead of a hard border, and a de-emphasized, outlined button instead of a solid-fill button, matching the restraint already established for SuggestionCard.
 
 CHANGE INSTRUCTIONS:
 
-Add a box-shadow glow in the brand-btn color at moderate opacity, layered with the existing ring-2 ring-brand-btn/40 and animate-pulse, sized generously enough to be clearly visible without needing to look directly at the button, for example a shadow-[0_0_20px_rgba(58,106,148,0.45)] or equivalent tuned value. Keep animate-pulse as-is, the combination of the existing pulse animation and the new glow should make the highlight genuinely catch the eye across the width of the screen. Do not change the highlight's 7 second duration, the scrollIntoView behavior, or anything else about when or how the highlight is triggered, this is purely a stronger visual treatment for the highlighted state itself.
+For each of the three tones, green, amber, and red, replace the current solid wrapperClass background fill with a lighter background tint using the same status color at low opacity (for example bg-status-red/15 instead of bg-status-red), combine it with a ring-1 in the tone's -text color at moderate opacity, and add a soft box-shadow glow using the tone's real confirmed hex value at roughly 25 to 35 percent opacity, sized similarly to the glow already used on SuggestionCard and the portal-link highlight. Change each tone's button from a solid color fill to an outlined, ghost-style button, using the tone's -text color for text and border with a transparent or near-transparent background, matching the exact treatment already used for SuggestionCard's button. Keep the bold count number exactly as it is, this is a real, confident data point and should stay visually prominent, not softened. Do not add any honest-label style text, do not change the compact horizontal layout, do not add a header bar or identity dot, this banner should stay visually distinct in shape from SuggestionCard while matching its restraint and glow language.
 
 VERIFY AFTER ACT:
 
-grep -n "shadow-\[\|ring-brand-btn" /home/corby/jamm-os/frontend/src/app/\(app\)/clients/\[id\]/page.tsx
+grep -n "shadow-\[\|ring-1\|bg-status-red$\|bg-status-green$\|bg-status-amber$" /home/corby/jamm-os/frontend/src/components/concierge-inline/ContextualBanner.tsx
+
+Expected: no bare bg-status-red, bg-status-green, or bg-status-amber remain as solid fills, and shadow-[ and ring-1 now appear.
 
 npx tsc --noEmit
 
@@ -84,15 +90,19 @@ MANUAL VERIFICATION:
 
 Restart the frontend.
 
-On Robert & Carol Tanner's page, click "Show me" on the portal-invite card. Confirm the Send Portal Link button now shows a genuinely noticeable glow, catchable without staring directly at it, lasting the same 7 seconds as before.
+Visit /dev/concierge-kit, confirm ContextualBanner's green and amber examples now show a softer tinted background with a visible ring and glow, in both light and dark mode, and confirm their buttons are now outlined rather than solid fill.
 
-Report pass or fail, describing whether it's actually catchable in peripheral vision now.
+Visit Billing with at least one real overdue invoice present, confirm the live red banner shows the same updated treatment, still states the real count and dollar total clearly, and the count number is still bold and prominent.
+
+Confirm clicking Ask Concierge on the live banner still correctly opens the panel and prefills the overdue invoices question, unaffected by the visual change.
+
+Report pass or fail for each of the three checks individually.
 
 GIT:
 
 git add -A
 
-git commit -m "add a real box-shadow glow to the portal-link highlight, using the button's existing brand-btn blue, reusing the same glow pattern that fixed SuggestionCard's visibility problem earlier tonight, since direct feedback confirmed the previous small ring at 40 percent opacity was not catchable across the horizontal distance between the suggestion card on the left and the Send Portal Link button on the right of the same page"
+git commit -m "bring ContextualBanner's visual weight in line with SuggestionCard's ring-and-glow treatment across all three tones, replacing solid color fills with softer tinted backgrounds plus a ring and soft glow, and de-emphasizing each tone's button to an outlined style matching SuggestionCard's button, while deliberately keeping the bold count number, compact horizontal layout, and confident factual tone intact, since ContextualBanner represents a ready-to-act state rather than a speculative suggestion and should not carry SuggestionCard's low-commitment honest-label framing"
 
 git pull --rebase origin main
 
