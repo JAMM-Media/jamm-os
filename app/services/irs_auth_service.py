@@ -9,6 +9,7 @@ so the end-to-end flow is fully testable.
 """
 
 import io
+import logging
 import uuid
 from datetime import date, datetime, timezone
 from typing import Optional
@@ -17,8 +18,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from uuid import UUID
 
+from app.core.enums import NotificationChannel, NotificationEventType
 from app.crud import irs_authorization as crud_auth
 from app.crud import irs_authorization_warning as crud_warning
+from app.crud import notification_preference as crud_notification_preference
 from app.crud import signature_envelope as crud_envelope
 from app.models.client import Client
 from app.models.firm import Firm
@@ -27,16 +30,116 @@ from app.schemas.irs_authorization import (
     IrsAuthorizationSendRequest,
     IrsAuthorizationUpdate,
 )
+from app.schemas.irs_authorization_warning import IrsAuthorizationWarningCreate
 from app.schemas.signature_envelope import SignatureEnvelopeCreate
 from app.services import s3 as s3_service
 from app.services.audit_service import write_audit_log
 from app.services.behavioral_log import log_event
+from app.services.email_service import EmailService
+
+logger = logging.getLogger(__name__)
 
 
 FORM_DESCRIPTIONS = {
     "8821": "Tax Information Authorization",
     "2848": "Power of Attorney and Declaration of Representative",
 }
+
+
+# Days before valid_until at which a warning fires. 0 is the expiry date
+# itself. Fixed. Not configurable, and never seasonally adjusted. Firm
+# authored per-type schedules are Phase B, and irs_authorization_warnings
+# already has the shape to support them.
+WARNING_TIERS = (60, 30, 7, 0)
+
+
+# AUTHOR-SET. The system never derives a season boundary on its own.
+# Each entry is ((start_month, start_day), (end_month, end_day)), inclusive
+# on both ends. This matches is_tax_season() in app/api/concierge/triggers.py,
+# which is the existing authored definition of filing season in this codebase.
+# Changing these is an editorial decision, not a calculation.
+SEASONAL_WINDOWS = (
+    ((1, 15), (4, 20)),
+)
+
+
+def _is_in_season(as_of: date) -> bool:
+    """True when as_of falls inside an author-set seasonal window."""
+    for (start_month, start_day), (end_month, end_day) in SEASONAL_WINDOWS:
+        start = date(as_of.year, start_month, start_day)
+        end = date(as_of.year, end_month, end_day)
+        if start <= as_of <= end:
+            return True
+    return False
+
+
+def _format_expiry_date(value: date) -> str:
+    """'March 20'. Written out rather than using %-d, which is not portable."""
+    return f"{value:%B} {value.day}"
+
+
+def build_expiry_warning_message(authorization, as_of: date) -> tuple[str, str]:
+    """
+    Build the (title, body) for an expiry warning.
+
+    A function of the authorization and the date, never a hardcoded string
+    and never a dict lookup keyed on tier alone. The same tier produces
+    different copy in season than out of it, and the consequence named at
+    expiry differs by form type.
+
+    Copy rules, which are hard limits:
+      - Calendar fact plus plainly stated judgment. Nothing else.
+      - No percentages, no utilization figures, no volume comparisons, and
+        no cohort or peer language of any kind.
+      - In season the body may name the season and say why acting now is
+        easier than acting later.
+      - Off season it drops to a plain statement of the date and the days
+        remaining.
+    """
+    valid_until = authorization.valid_until
+    days_remaining = (valid_until - as_of).days
+    expiry_date = _format_expiry_date(valid_until)
+    form_label = f"Form {authorization.form_type}"
+
+    # What the firm actually loses. The transcript gate in
+    # transcript_service.request_transcript checks form_type 8821, so
+    # claiming lost transcript access for a 2848 would be wrong.
+    if authorization.form_type == "8821":
+        consequence = "Transcript access for this client stops until a new one is signed."
+    else:
+        consequence = "Representation authority for this client ends until a new one is signed."
+
+    if days_remaining < 0:
+        days_ago = abs(days_remaining)
+        day_word = "day" if days_ago == 1 else "days"
+        title = f"{form_label} has expired"
+        body = (
+            f"This authorization expired {expiry_date}, {days_ago} {day_word} ago. "
+            f"{consequence}"
+        )
+        return title, body
+
+    if days_remaining == 0:
+        title = f"{form_label} expires today"
+        body = f"This authorization expires today, {expiry_date}. {consequence}"
+        return title, body
+
+    day_word = "day" if days_remaining == 1 else "days"
+    title = f"{form_label} expires in {days_remaining} {day_word}"
+
+    if _is_in_season(as_of):
+        body = (
+            f"This authorization expires {expiry_date}, during filing season. "
+            f"Renewing it now, while you have room, avoids chasing a signature "
+            f"in the worst week of the year."
+        )
+    else:
+        body = (
+            f"This authorization expires {expiry_date}, "
+            f"{days_remaining} {day_word} from today."
+        )
+
+    return title, body
 
 
 def generate_auth_stub_pdf(
@@ -244,6 +347,128 @@ def send_irs_authorization(
     }
 
 
+def _deliver_expiry_warning(
+    *,
+    db: Session,
+    authorization,
+    as_of: date,
+) -> bool:
+    """
+    Send one warning to every firm_owner and manager in the firm.
+
+    Returns True if the in-app record was written for at least one recipient,
+    which is what the caller gates the warning row on.
+
+    The sweep delivers directly rather than through the automation engine or
+    the event bus. is_enabled on a preset is a toggle a firm owner can flip,
+    and the two action handlers no-op on this payload anyway. A compliance
+    warning a user can silently switch off, or that fails invisibly on a
+    missing payload key, is not acceptable for this feature.
+    """
+    from app.core.enums import NotificationType, RecipientType
+    from app.crud import user as crud_user
+    from app.services.notification_service import NotificationService
+
+    recipients = crud_user.get_firm_owners_and_managers(db, authorization.firm_id)
+    if not recipients:
+        # Pathological: every firm has an owner. Do not write a warning row
+        # for a tier that reached nobody, even though that means retrying
+        # tomorrow. A row must mean a warning was actually delivered.
+        logger.warning(
+            "IRS expiry warning had no firm_owner or manager recipients: firm=%s auth=%s",
+            authorization.firm_id, authorization.id,
+        )
+        return False
+
+    title, body = build_expiry_warning_message(authorization, as_of)
+
+    delivered_in_app = False
+    for recipient in recipients:
+        # In-app first, and unconditionally. A firm may stop the emails. A
+        # firm may not make the compliance record disappear from the app.
+        NotificationService.create_notification(
+            db=db,
+            firm_id=authorization.firm_id,
+            recipient_id=recipient.id,
+            recipient_type=RecipientType.staff,
+            title=title,
+            body=body,
+            notification_type=NotificationType.irs_auth_expiry,
+            related_entity_type="irs_authorization",
+            related_entity_id=authorization.id,
+            force_in_app=True,
+        )
+        delivered_in_app = True
+
+    if not delivered_in_app:
+        return False
+
+    # Email last, best effort, and it DOES respect the recipient's channel
+    # preference. EmailService._send raises on a Postmark failure and
+    # send_notification_email does not catch it, so one bad address would
+    # otherwise abort every remaining recipient.
+    for recipient in recipients:
+        if not recipient.email:
+            continue
+        try:
+            channel = crud_notification_preference.get_channel_for_event(
+                db,
+                authorization.firm_id,
+                recipient.id,
+                RecipientType.staff,
+                NotificationEventType.irs_auth_expiry,
+            )
+            if channel not in (NotificationChannel.email, NotificationChannel.both):
+                continue
+            EmailService.send_notification_email(
+                to_email=recipient.email,
+                firm_name="",
+                recipient_name=recipient.full_name or "",
+                title=title,
+                body=body,
+            )
+        except Exception:
+            logger.exception(
+                "IRS expiry warning email failed: firm=%s auth=%s recipient=%s",
+                authorization.firm_id, authorization.id, recipient.id,
+            )
+
+    return True
+
+
+def _record_warning_sent(
+    *,
+    db: Session,
+    authorization,
+    threshold_days: int,
+) -> None:
+    """Write the warning row. Only ever called after a successful send."""
+    crud_warning.create_warning(
+        db=db,
+        warning_in=IrsAuthorizationWarningCreate(
+            authorization_id=authorization.id,
+            threshold_days=threshold_days,
+            sent_at=datetime.now(timezone.utc),
+        ),
+        firm_id=authorization.firm_id,
+    )
+    log_event(
+        firm_id=authorization.firm_id,
+        event_type="irs_authorization.expiry_warning_sent",
+        entity_type="irs_authorization",
+        entity_id=authorization.id,
+        actor_type="system",
+        actor_id=None,
+        metadata={
+            "days_until_expiry": (
+                (authorization.valid_until - date.today()).days
+                if authorization.valid_until else None
+            ),
+            "warning_tier": threshold_days,
+        }
+    )
+
+
 def check_expiring_authorizations() -> dict:
     """
     Scheduler function: warn on active authorizations approaching expiry and
@@ -265,46 +490,101 @@ def check_expiring_authorizations() -> dict:
         alerts_emitted = 0
 
         for auth in expiring:
-            days_remaining = (auth.valid_until - today).days
-            emit_event_sync(
-                event=TriggerEvent.irs_authorization_expiry_approaching,
-                payload={
-                    "firm_id": str(auth.firm_id),
-                    "client_id": str(auth.client_id),
-                    "authorization_id": str(auth.id),
-                    "form_type": auth.form_type,
-                    "valid_until": auth.valid_until.isoformat(),
-                    "days_remaining": days_remaining,
-                },
-            )
-            log_event(
-                firm_id=auth.firm_id,
-                event_type="irs_authorization.expiry_warning_sent",
-                entity_type="irs_authorization",
-                entity_id=auth.id,
-                actor_type="system",
-                actor_id=None,
-                metadata={
-                    "days_until_expiry": days_remaining,
-                    "warning_tier": None,
-                }
-            )
-            alerts_emitted += 1
+            # One bad row must never silence every row after it. A nightly
+            # compliance job that aborts halfway is the failure this whole
+            # phase exists to prevent.
+            try:
+                days_remaining = (auth.valid_until - today).days
+
+                # Kept so nothing downstream breaks. Delivery no longer
+                # depends on it.
+                emit_event_sync(
+                    event=TriggerEvent.irs_authorization_expiry_approaching,
+                    payload={
+                        "firm_id": str(auth.firm_id),
+                        "client_id": str(auth.client_id),
+                        "authorization_id": str(auth.id),
+                        "form_type": auth.form_type,
+                        "valid_until": auth.valid_until.isoformat(),
+                        "days_remaining": days_remaining,
+                    },
+                )
+
+                applicable = [t for t in WARNING_TIERS if days_remaining <= t]
+                if not applicable:
+                    continue
+
+                most_urgent = min(applicable)
+
+                # Less urgent tiers are deliberately not backfilled. Because
+                # days_remaining only ever decreases, a tier that never fired
+                # can never become most_urgent again, so stamping it would
+                # only put a false sent_at in the table. An authorization
+                # created 10 days before expiry shows rows for 30, 7 and 0
+                # and none for 60, which is exactly what happened.
+                already_sent = crud_warning.get_warning_for_threshold(
+                    db=db,
+                    firm_id=auth.firm_id,
+                    authorization_id=auth.id,
+                    threshold_days=most_urgent,
+                )
+                if already_sent is not None:
+                    continue
+
+                # Row written only after the send succeeds. If the process
+                # dies mid-sweep, a duplicate warning tomorrow is a minor
+                # annoyance; a silently skipped warning is not.
+                if _deliver_expiry_warning(db=db, authorization=auth, as_of=today):
+                    _record_warning_sent(
+                        db=db, authorization=auth, threshold_days=most_urgent
+                    )
+                    alerts_emitted += 1
+            except Exception:
+                logger.exception(
+                    "IRS expiry warning failed for authorization %s (firm %s)",
+                    auth.id, auth.firm_id,
+                )
+                db.rollback()
 
         # Separate pass. Catches anything that lapsed without being closed
         # out, however long ago. Writing status = "expired" drains this set.
         lapsed = crud_auth.get_lapsed_active_authorizations(db)
+        expired_count = 0
         for auth in lapsed:
-            mark_authorization_expired(
-                db=db,
-                authorization=auth,
-                firm_id=auth.firm_id,
-            )
+            try:
+                # Fire tier 0 if it never went out. An authorization that
+                # lapsed before this feature existed gets one final notice
+                # rather than expiring silently.
+                already_sent = crud_warning.get_warning_for_threshold(
+                    db=db,
+                    firm_id=auth.firm_id,
+                    authorization_id=auth.id,
+                    threshold_days=0,
+                )
+                if already_sent is None:
+                    if _deliver_expiry_warning(db=db, authorization=auth, as_of=today):
+                        _record_warning_sent(
+                            db=db, authorization=auth, threshold_days=0
+                        )
+                        alerts_emitted += 1
+
+                mark_authorization_expired(
+                    db=db,
+                    authorization=auth,
+                    firm_id=auth.firm_id,
+                )
+                expired_count += 1
+            except Exception:
+                logger.exception(
+                    "IRS expiry close-out failed for authorization %s (firm %s)",
+                    auth.id, auth.firm_id,
+                )
+                db.rollback()
 
         return {
             "checked": len(expiring),
             "alerts_emitted": alerts_emitted,
-            "expired": len(lapsed),
+            "expired": expired_count,
         }
     finally:
         db.close()
@@ -498,8 +778,14 @@ def _supersede_prior_active_authorizations(
             authorization_id=prior.id,
         )
 
+        # No commit here on purpose. The caller sets the replacement to
+        # "active" and commits once, so both status writes land in a single
+        # transaction. Committing separately would allow a failure between
+        # the two to leave the prior authorization superseded and the
+        # replacement still pending_signature, which is no active
+        # authorization at all. Nothing would warn about it either, since
+        # both sweep queries filter status == "active".
         prior.status = "superseded"
-        db.commit()
 
         # Days remaining paired with tiers fired is the renewal lead time
         # signal: how much room was left, and how hard the system had

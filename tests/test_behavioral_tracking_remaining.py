@@ -279,9 +279,10 @@ def test_expired_check_fires_in_scheduler_when_past_due():
 
 
 # ---------------------------------------------------------------------------
-# Test 7b -- an authorization still inside the window is warned, not expired
+# Test 7b -- an authorization still inside the window is warned, not expired,
+#            and it is warned at its most urgent applicable tier
 # ---------------------------------------------------------------------------
-def test_warning_window_authorization_is_not_expired():
+def test_warning_window_authorization_is_warned_not_expired():
     upcoming_auth = _mock_authorization(valid_until=date.today() + timedelta(days=30))
 
     mock_db = MagicMock()
@@ -297,10 +298,54 @@ def test_warning_window_authorization_is_not_expired():
          ), \
          patch("app.services.event_bus.emit_event_sync"), \
          patch("app.services.irs_auth_service.log_event"), \
+         patch(
+             "app.services.irs_auth_service.crud_warning.get_warning_for_threshold",
+             return_value=None,
+         ), \
+         patch(
+             "app.services.irs_auth_service._deliver_expiry_warning",
+             return_value=True,
+         ), \
+         patch("app.services.irs_auth_service._record_warning_sent") as mock_record, \
          patch("app.services.irs_auth_service.mark_authorization_expired") as mock_expired:
 
         result = check_expiring_authorizations()
 
     mock_expired.assert_not_called()
-    assert result["alerts_emitted"] == 1
     assert result["expired"] == 0
+
+    # 30 days out: applicable tiers are 60 and 30, most urgent is 30.
+    mock_record.assert_called_once()
+    assert mock_record.call_args.kwargs["threshold_days"] == 30
+    assert result["alerts_emitted"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Test 7c -- a tier already recorded does not fire again
+# ---------------------------------------------------------------------------
+def test_recorded_tier_does_not_fire_again():
+    upcoming_auth = _mock_authorization(valid_until=date.today() + timedelta(days=30))
+
+    mock_db = MagicMock()
+
+    with patch("app.db.session.SessionLocal", return_value=mock_db), \
+         patch(
+             "app.services.irs_auth_service.crud_auth.get_authorizations_in_warning_window",
+             return_value=[upcoming_auth],
+         ), \
+         patch(
+             "app.services.irs_auth_service.crud_auth.get_lapsed_active_authorizations",
+             return_value=[],
+         ), \
+         patch("app.services.event_bus.emit_event_sync"), \
+         patch("app.services.irs_auth_service.log_event"), \
+         patch(
+             "app.services.irs_auth_service.crud_warning.get_warning_for_threshold",
+             return_value=MagicMock(),  # a row already exists for this tier
+         ), \
+         patch("app.services.irs_auth_service._deliver_expiry_warning") as mock_deliver:
+
+        result = check_expiring_authorizations()
+
+    mock_deliver.assert_not_called()
+    assert result["alerts_emitted"] == 0

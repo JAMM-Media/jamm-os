@@ -30,7 +30,11 @@ class NotificationService:
         related_entity_type: Optional[str] = None,
         related_entity_id: Optional[uuid.UUID] = None,
         to_email: Optional[str] = None,
+        force_in_app: bool = False,
     ) -> Optional[Notification]:
+        # force_in_app is for compliance notices the recipient may not opt out
+        # of. A firm may stop the emails; a firm may not make the record
+        # disappear from the app. It never forces an email.
         # NotificationType and NotificationEventType share the same values —
         # convert via value to get the matching NotificationEventType.
         try:
@@ -42,7 +46,7 @@ class NotificationService:
             db, firm_id, recipient_id, recipient_type, event_type
         )
 
-        if channel == NotificationChannel.none:
+        if channel == NotificationChannel.none and not force_in_app:
             logger.info(
                 "Notification suppressed (channel=none): firm=%s recipient=%s type=%s",
                 firm_id, recipient_id, notification_type,
@@ -52,7 +56,7 @@ class NotificationService:
         notification: Optional[Notification] = None
 
         # Create in-app record for in_app and both channels
-        if channel in (NotificationChannel.in_app, NotificationChannel.both):
+        if force_in_app or channel in (NotificationChannel.in_app, NotificationChannel.both):
             data = NotificationCreate(
                 recipient_id=recipient_id,
                 recipient_type=recipient_type,

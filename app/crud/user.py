@@ -1,8 +1,10 @@
 # app/crud/user.py
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 from uuid import UUID
 
+from app.core.enums import UserRole
 from app.models.user import User
 from app.schemas.user import UserCreate, UserUpdate
 from app.core.security import get_password_hash
@@ -10,6 +12,24 @@ from app.core.security import get_password_hash
 
 def get_user_by_email(db: Session, email: str) -> User | None:
     return db.query(User).filter(User.email == email).first()
+
+
+def get_firm_owners_and_managers(db: Session, firm_id: UUID) -> list[User]:
+    """
+    Active firm_owner and manager users for one firm.
+
+    This is the recipient set for firm-level operational and compliance
+    notices. Staff are excluded deliberately rather than incidentally: the
+    IrsAuthorization model's RBAC is firm_owner and manager only, so a staff
+    user cannot open the record a warning points at.
+    """
+    return list(db.execute(
+        select(User).where(
+            User.firm_id == firm_id,
+            User.role.in_([UserRole.firm_owner, UserRole.manager]),
+            User.is_active == True,
+        )
+    ).scalars().all())
 
 
 def get_users_query(db: Session):

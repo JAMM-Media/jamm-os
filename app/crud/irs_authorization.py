@@ -131,6 +131,21 @@ def get_lapsed_active_authorizations(
     get_authorizations_in_warning_window above. Do not add a firm_id
     parameter to this function.
 
+    NO SAFETY MARGIN, ON PURPOSE. Do not change this to
+    valid_until < today - timedelta(days=1). The deadline sweep in
+    deadline_scheduler.py does subtract a day, and it is right to, because
+    its failure mode is a false alarm. This one is inverted. A margin would
+    report an authorization as active for up to a day after it actually
+    lapsed, which keeps get_active_authorization_for_client returning it and
+    keeps request_transcript passing. Blocking a firm a few hours early is
+    an annoyance. Permitting a transcript pull against a dead 8821 tells a
+    firm it holds authority it does not hold, on the one surface where being
+    wrong carries legal weight for them.
+
+    The UTC exposure that motivates a margin elsewhere is handled at run
+    time instead: the sweep is scheduled at an hour when the UTC date is not
+    ahead of any US firm's local date. See the add_job call in app/main.py.
+
     This query drains itself: the sweep writes status = "expired" for
     everything it returns, so a given row is only ever seen once.
     """
