@@ -12,6 +12,8 @@ import { tasksApi, clientsApi, engagementsApi, type Task } from '@/lib/api'
 import { useFetch } from '@/lib/hooks/useFetch'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { Search, X, ChevronDown } from 'lucide-react'
+import { ContextualBanner } from '@/components/concierge-inline/ContextualBanner'
+import { emitConciergeAction } from '@/lib/events/conciergeEvents'
 import api from '@/lib/api'
 
 type ViewMode = 'table' | 'card'
@@ -48,6 +50,7 @@ export default function TasksPage() {
   const { data: clientsData, isLoading: clientsLoading } = useFetch(() => clientsApi.list(0, 100), [])
   const { data: engagementsData, isLoading: engagementsLoading } = useFetch(() => engagementsApi.list(0, 100), [])
   const { data: usersData } = useFetch(() => api.get('/users/').then((r) => r.data), [])
+  const { data: overdueTaskData } = useFetch(() => api.get('/tasks/overdue').then((r) => r.data as { overdue_tasks: number }), [])
   const [tasks, setTasks] = useState<Task[]>([])
 
   const serverTasks = data?.items ?? []
@@ -173,6 +176,19 @@ export default function TasksPage() {
         <h1 className="text-2xl font-medium text-brand dark:text-[#EDEEF0]">
           Tasks
         </h1>
+
+        {(overdueTaskData?.overdue_tasks ?? 0) > 0 && (
+          <ContextualBanner
+            tone='red'
+            count={overdueTaskData!.overdue_tasks}
+            message={`overdue task${overdueTaskData!.overdue_tasks === 1 ? '' : 's'} with a past due date.`}
+            actionLabel='Ask Concierge'
+            onAction={() => {
+              emitConciergeAction({ type: 'open-panel' })
+              emitConciergeAction({ type: 'prefill-panel-input', prefillMessage: 'How many overdue tasks do I have?' })
+            }}
+          />
+        )}
 
         <div className="flex items-center gap-3">
           <div className="relative flex-1">

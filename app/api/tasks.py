@@ -94,6 +94,16 @@ def bulk_update_tasks(
 # ---------------------------------------------------------
 # GET SINGLE TASK
 # ---------------------------------------------------------
+@router.get("/overdue")
+def list_overdue_tasks(
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    _: object = Depends(require_staff_or_above),
+):
+    from app.api.concierge.functions import get_task_status
+    return get_task_status(firm_id=current_firm.id, db=db)
+
+
 @router.get("/{task_id}", response_model=TaskOut)
 def get_task(
     task_id: UUID,

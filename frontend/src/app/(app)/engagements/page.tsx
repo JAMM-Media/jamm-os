@@ -13,6 +13,8 @@ import { AckFileUploader } from '@/components/engagements/AckFileUploader'
 import { engagementsApi, clientsApi, type Engagement, type Client } from '@/lib/api'
 import { useFetch } from '@/lib/hooks/useFetch'
 import { Search, X, ChevronDown, Loader2 } from 'lucide-react'
+import { ContextualBanner } from '@/components/concierge-inline/ContextualBanner'
+import { emitConciergeAction } from '@/lib/events/conciergeEvents'
 import api from '@/lib/api'
 import { useConfirm } from '@/lib/hooks/useConfirm'
 
@@ -66,6 +68,7 @@ export default function EngagementsPage() {
 
   const { data, isLoading, error } = useFetch(() => engagementsApi.list(0, 100), [])
   const { data: clientsData, isLoading: clientsLoading } = useFetch(() => clientsApi.list(0, 100), [])
+  const { data: stalledData } = useFetch(() => api.get('/engagements/stalled').then((r) => r.data as { stalled_count: number; engagements: unknown[] }), [])
   const serverEngagements = data?.items ?? []
   const allEngagements = [...localEngagements, ...serverEngagements].map((e) =>
     statusOverrides[e.id] ? { ...e, status: statusOverrides[e.id] } : e
@@ -185,6 +188,19 @@ export default function EngagementsPage() {
         <h1 className="text-2xl font-medium text-brand dark:text-[#EDEEF0]">
           Engagements
         </h1>
+
+        {(stalledData?.stalled_count ?? 0) > 0 && (
+          <ContextualBanner
+            tone='amber'
+            count={stalledData!.stalled_count}
+            message={`stalled engagement${stalledData!.stalled_count === 1 ? '' : 's'} with no activity in over 2 weeks.`}
+            actionLabel='Ask Concierge'
+            onAction={() => {
+              emitConciergeAction({ type: 'open-panel' })
+              emitConciergeAction({ type: 'prefill-panel-input', prefillMessage: 'How many stalled engagements do I have?' })
+            }}
+          />
+        )}
 
         <div className="flex items-center gap-3">
           <div className="relative flex-1">

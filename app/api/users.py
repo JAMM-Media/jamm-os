@@ -19,7 +19,7 @@ from app.crud import firm as crud_firm
 from app.schemas.firm import FirmOut
 from app.dependencies.auth import get_current_user
 from app.dependencies.tenant import get_current_firm
-from app.dependencies.roles import require_firm_owner, require_staff_or_above
+from app.dependencies.roles import require_firm_owner, require_manager_or_above, require_staff_or_above
 import app.services.user_service as user_service
 
 router = APIRouter(prefix="/users", tags=["users"])
@@ -124,6 +124,21 @@ def update_my_firm_settings(
 
 
 # -------------------------------------------------------------------
+
+
+# -------------------------------------------------------------------
+# GET /users/capacity — Firm-wide staff utilization
+# Gated to manager or above: this returns personnel data for all staff.
+# -------------------------------------------------------------------
+@router.get("/capacity")
+def get_staff_capacity_summary(
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    _: object = Depends(require_manager_or_above),
+):
+    from app.api.concierge.functions import get_staff_capacity
+    return get_staff_capacity(firm_id=current_firm.id, db=db)
+
 # GET /users/{user_id}/workload — Tasks assigned to this user
 # Accessible to any staff member (staff can view their own workload,
 # managers/owners can view anyone's).

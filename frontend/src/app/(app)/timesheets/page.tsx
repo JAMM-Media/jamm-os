@@ -5,6 +5,9 @@ import { useState, useEffect } from 'react'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { cn } from '@/lib/utils'
 import api from '@/lib/api'
+import { useFetch } from '@/lib/hooks/useFetch'
+import { ContextualBanner } from '@/components/concierge-inline/ContextualBanner'
+import { emitConciergeAction } from '@/lib/events/conciergeEvents'
 import DailyTab from './DailyTab'
 import WeeklyTab from './WeeklyTab'
 import BiweeklyTab from './BiweeklyTab'
@@ -39,6 +42,7 @@ export default function TimesheetsPage() {
   const [staffList, setStaffList] = useState<StaffUser[]>([])
   const [engagementList, setEngagementList] = useState<{ id: string; name: string; clientId: string; clientName: string }[]>([])
   const [clientMap, setClientMap] = useState<Record<string, string>>({})
+  const { data: unbilledData } = useFetch(() => api.get('/time-entries/unbilled-summary').then((r) => r.data as { unbilled_billable_hours_this_month_all_engagements: number }), [])
 
   const isManagerOrAbove =
     user?.role === 'firm_owner' || user?.role === 'manager'
@@ -77,6 +81,8 @@ export default function TimesheetsPage() {
   }, [isManagerOrAbove])
 
   if (!user) return null
+
+  const displayHours = Math.round((unbilledData?.unbilled_billable_hours_this_month_all_engagements ?? 0) * 10) / 10
 
   return (
       <div className="flex flex-col p-6 gap-4">
@@ -168,6 +174,19 @@ export default function TimesheetsPage() {
             </button>
           ))}
         </div>
+
+        {displayHours > 0 && (
+          <ContextualBanner
+            tone="amber"
+            count={displayHours}
+            message={`unbilled billable ${displayHours === 1 ? 'hour' : 'hours'} this month across all engagements.`}
+            actionLabel="Ask Concierge"
+            onAction={() => {
+              emitConciergeAction({ type: 'open-panel' })
+              emitConciergeAction({ type: 'prefill-panel-input', prefillMessage: 'How many unbilled hours do I have this month?' })
+            }}
+          />
+        )}
 
         {/* Tab content */}
         {activeTab === 'daily' && (
