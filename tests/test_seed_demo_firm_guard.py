@@ -39,6 +39,58 @@ def test_resolve_database_host_parses_hostname():
     assert _resolve_database_host(PROD_URL) == "prod-db.example.com"
 
 
+LOOPBACK_URL = "postgresql+psycopg://user:pass@127.0.0.1:5432/db"
+DIGITALOCEAN_URL = (
+    "postgresql+psycopg://user:pass@"
+    "app-a1b2c3d4-e5f6-7890-abcd-ef1234567890-do-user-9876543-0.b.db.ondigitalocean.com"
+    ":25060/defaultdb?sslmode=require"
+)
+BARE_HOSTNAME_URL = "db.example.com"
+MALFORMED_IPV6_URL = "postgresql://[::1:5432/db"
+
+
+def test_resolve_database_host_accepts_127_0_0_1():
+    assert _resolve_database_host(LOOPBACK_URL) == "127.0.0.1"
+
+
+def test_resolve_database_host_digitalocean_shaped_hostname():
+    assert _resolve_database_host(DIGITALOCEAN_URL) == (
+        "app-a1b2c3d4-e5f6-7890-abcd-ef1234567890-do-user-9876543-0.b.db.ondigitalocean.com"
+    )
+
+
+def test_resolve_database_host_bare_hostname_no_scheme():
+    """A bare hostname with no scheme (e.g. an operator paste error) has no
+    netloc for urlparse to find a hostname in, so it resolves to the same
+    unparseable sentinel as a non-URL string -- not a name-only host."""
+    assert _resolve_database_host(BARE_HOSTNAME_URL) == "(DATABASE_URL unparseable)"
+
+
+def test_resolve_database_host_malformed_ipv6_brackets():
+    """Broken IPv6 bracket syntax makes urlparse(...).hostname itself raise
+    ValueError inside the function, not just fail to find a hostname -- this
+    exercises the except Exception clause specifically, not just a None
+    hostname."""
+    assert _resolve_database_host(MALFORMED_IPV6_URL) == "(DATABASE_URL unparseable)"
+
+
+def test_resolve_database_host_never_raises_on_malformed_input():
+    """Fail-closed depends on this always returning a sentinel instead of
+    propagating an exception -- an exception here would crash the guard
+    before it could ever print a refusal message. Each case is called with
+    no try/except: an uncaught exception fails this test on its own, and the
+    isinstance check confirms a real string sentinel came back."""
+    for url in (
+        None,
+        "",
+        "not-a-url-at-all",
+        BARE_HOSTNAME_URL,
+        MALFORMED_IPV6_URL,
+        "postgresql://user:pass@localhost:notaport/db",
+    ):
+        assert isinstance(_resolve_database_host(url), str)
+
+
 # --- DATABASE_URL source resolution -----------------------------------------
 # Mirrors pydantic-settings' actual precedence, confirmed empirically (not
 # assumed): a real process env var always wins over both dotenv files, and
@@ -177,6 +229,23 @@ def test_guard_aborts_missing_database_url(monkeypatch, tmp_path, capsys):
     assert exc_info.value.code == 1
     out = capsys.readouterr().out
     assert out.splitlines()[0] == "Target database host: (DATABASE_URL not set)"
+    assert "ABORT" in out
+
+
+def test_guard_aborts_on_unparseable_database_url(monkeypatch, tmp_path, capsys):
+    """Fail-closed at the guard level, not just the resolver: an unparseable
+    DATABASE_URL must refuse and exit non-zero, the same as any other
+    non-allowlisted host, rather than falling through as allowed just
+    because it doesn't match a known-bad shape."""
+    _isolate_cwd(monkeypatch, tmp_path)
+    monkeypatch.setenv("DATABASE_URL", "not-a-url-at-all")
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+
+    with pytest.raises(SystemExit) as exc_info:
+        _enforce_environment_guard(False)
+    assert exc_info.value.code == 1
+    out = capsys.readouterr().out
+    assert out.splitlines()[0] == "Target database host: (DATABASE_URL unparseable) (source: shell environment)"
     assert "ABORT" in out
 
 
