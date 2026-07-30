@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.dependencies.auth import get_current_user
 from app.dependencies.roles import require_manager_or_above, require_staff_or_above
+from app.dependencies.tenant import get_current_firm
 from app.models.engagement import Engagement
 from app.models.firm import Firm
 from app.models.user import User
@@ -175,6 +176,19 @@ def get_timesheet_settings(
     ).scalar_one_or_none()
     approval_required = getattr(firm, "timesheet_approval_required", False) if firm else False
     return {"approval_required": bool(approval_required)}
+
+
+# ---------------------------------------------------------
+# UNBILLED SUMMARY
+# ---------------------------------------------------------
+@router.get("/unbilled-summary")
+def get_unbilled_summary(
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    _: object = Depends(require_staff_or_above),
+):
+    from app.api.concierge.functions import get_time_tracking_detail
+    return get_time_tracking_detail(firm_id=current_firm.id, db=db)
 
 
 # ---------------------------------------------------------
