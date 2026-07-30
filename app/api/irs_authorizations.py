@@ -161,8 +161,7 @@ def update_irs_authorization(
 ):
     """
     Update an IRS authorization record.
-    Used by the webhook handler to mark as active, and by the scheduler
-    to set expiry_notification_sent.
+    Used by the webhook handler to mark as active.
     """
     auth = crud_auth.get_irs_authorization(db, auth_id, current_firm.id)
     if not auth:

@@ -25,6 +25,7 @@ from app.models.retention import DataRetentionPolicy
 from app.models.message import ClientMessage, ClientMessageRead
 from app.models.firm_chat import Channel, ChannelMember, FirmMessage, FirmMessageRead
 from app.models.irs_authorization import IrsAuthorization
+from app.models.irs_authorization_warning import IrsAuthorizationWarning
 from app.models.extension import Extension
 from app.models.tax_organizer import TaxOrganizerTemplate, TaxOrganizer
 from app.models.transcript_request import TranscriptRequest

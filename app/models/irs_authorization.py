@@ -4,7 +4,7 @@ import uuid
 from datetime import date, datetime, timezone
 from typing import Optional
 
-from sqlalchemy import String, Date, DateTime, ForeignKey, JSON, Boolean
+from sqlalchemy import String, Date, DateTime, ForeignKey, JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base_class import Base
@@ -27,6 +27,18 @@ class IrsAuthorization(Base):
     When status is 'pending_signature', a SignatureEnvelope exists with
     the pre-filled PDF. When the webhook fires and the envelope is signed,
     status transitions to 'active' and signed_document_id is populated.
+
+    Status values: pending_signature | active | expired | revoked | superseded
+
+    'expired' and 'superseded' are kept strictly separate and must never be
+    collapsed into one another. 'expired' means the authorization lapsed on
+    its own, unrenewed. 'superseded' means it was replaced by a newer
+    authorization of the same form_type while it was still valid. Those are
+    opposite signals about how well a firm operates.
+
+    A superseded row is never deleted. It keeps its signed_document_id, and
+    transcript_requests.irs_authorization_id is ondelete="RESTRICT", so the
+    database would refuse the delete regardless.
 
     RBAC: firm_owner and manager only. Staff cannot view or create.
     """
@@ -56,7 +68,7 @@ class IrsAuthorization(Base):
         nullable=False,
     )
 
-    # pending_signature | active | expired | revoked
+    # pending_signature | active | expired | revoked | superseded
     status: Mapped[str] = mapped_column(
         String(50),
         nullable=False,
@@ -86,13 +98,6 @@ class IrsAuthorization(Base):
 
     # None = indefinite authorization (common for 8821)
     valid_until: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
-
-    # Prevents duplicate expiry alerts from the scheduler
-    expiry_notification_sent: Mapped[bool] = mapped_column(
-        Boolean,
-        default=False,
-        nullable=False,
-    )
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

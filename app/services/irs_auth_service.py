@@ -271,11 +271,6 @@ def check_expiring_authorizations() -> dict:
                     "days_remaining": days_remaining,
                 },
             )
-            crud_auth.update_irs_authorization(
-                db=db,
-                auth=auth,
-                auth_in=IrsAuthorizationUpdate(expiry_notification_sent=True),
-            )
             log_event(
                 firm_id=auth.firm_id,
                 event_type="irs_authorization.expiry_warning_sent",

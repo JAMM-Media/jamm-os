@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, field_validator
 
 
 VALID_FORM_TYPES = {"8821", "2848"}
-VALID_STATUSES = {"pending_signature", "active", "expired", "revoked"}
+VALID_STATUSES = {"pending_signature", "active", "expired", "revoked", "superseded"}
 
 
 class IrsAuthorizationBase(BaseModel):
@@ -47,7 +47,6 @@ class IrsAuthorizationUpdate(BaseModel):
     valid_until: Optional[date] = None
     signature_envelope_id: Optional[UUID] = None
     signed_document_id: Optional[UUID] = None
-    expiry_notification_sent: Optional[bool] = None
 
     @field_validator("status")
     @classmethod
@@ -66,7 +65,6 @@ class IrsAuthorizationOut(IrsAuthorizationBase):
     status: str
     signature_envelope_id: Optional[UUID] = None
     signed_document_id: Optional[UUID] = None
-    expiry_notification_sent: bool
     created_at: datetime
     updated_at: datetime
 

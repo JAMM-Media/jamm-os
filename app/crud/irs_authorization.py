@@ -93,7 +93,7 @@ def get_authorizations_expiring_soon(
 ) -> list[IrsAuthorization]:
     """
     Returns active authorizations whose valid_until falls within the
-    next N days and where expiry_notification_sent is False.
+    next N days.
     """
     today = date.today()
     window_end = today + timedelta(days=days)
@@ -103,6 +103,5 @@ def get_authorizations_expiring_soon(
             IrsAuthorization.valid_until.isnot(None),
             IrsAuthorization.valid_until <= window_end,
             IrsAuthorization.valid_until >= today,
-            IrsAuthorization.expiry_notification_sent == False,
         )
     ).scalars().all()
