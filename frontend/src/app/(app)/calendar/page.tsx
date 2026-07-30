@@ -8,6 +8,8 @@ import { tasksApi } from '@/lib/api/tasks'
 import { useAuth } from '@/lib/hooks/useAuth'
 import api from '@/lib/api'
 import { ChevronDown, ChevronLeft, ChevronRight, Pencil, Plus, X } from 'lucide-react'
+import { ContextualBanner } from '@/components/concierge-inline/ContextualBanner'
+import { emitConciergeAction } from '@/lib/events/conciergeEvents'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -379,6 +381,14 @@ export default function CalendarPage() {
       return items.filter((u: StaffMember) => u.role !== 'client_portal_user') as StaffMember[]
     },
     enabled: isFirmOwner,
+  })
+
+  const { data: deadlineSummary } = useQuery({
+    queryKey: ['engagement-deadline-summary'],
+    queryFn: async () => {
+      const { data } = await api.get('/api/v1/engagements/deadline-summary')
+      return data as { deadline_count: number }
+    },
   })
 
   const patchSettings = useMutation({
@@ -880,6 +890,21 @@ export default function CalendarPage() {
               ))}
             </div>
           </div>
+
+          {(deadlineSummary?.deadline_count ?? 0) > 0 && (
+            <div className="px-4 pt-2">
+              <ContextualBanner
+                tone="amber"
+                count={deadlineSummary!.deadline_count}
+                message={`filing deadline${deadlineSummary!.deadline_count === 1 ? '' : 's'} in the next 14 days.`}
+                actionLabel="Ask Concierge"
+                onAction={() => {
+                  emitConciergeAction({ type: 'open-panel' })
+                  emitConciergeAction({ type: 'prefill-panel-input', prefillMessage: 'What deadlines are coming up in the next 14 days?' })
+                }}
+              />
+            </div>
+          )}
 
           {/* Calendar view */}
           <div className="flex-1 overflow-hidden flex flex-col" onClick={() => setClickedEvent(null)}>
