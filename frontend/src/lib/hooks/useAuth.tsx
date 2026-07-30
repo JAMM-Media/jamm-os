@@ -28,6 +28,7 @@ interface AuthContextType {
     backup_code?: string
   ) => Promise<{ success: boolean; requires_2fa?: boolean; message?: string }>
   logout: () => Promise<void>
+  refreshUser: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextType | null>(null)
@@ -37,17 +38,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(true)
   const router = useRouter()
 
-  useEffect(() => {
-    fetch('/api/auth/me')
-      .then((res) => res.json())
-      .then((data) => {
-        setUser(data.user ?? null)
-        setIsLoading(false)
-      })
-      .catch(() => {
-        setIsLoading(false)
-      })
+  const refreshUser = useCallback(async () => {
+    try {
+      const res = await fetch('/api/auth/me')
+      const data = await res.json()
+      setUser(data.user ?? null)
+    } catch {
+      // non-fatal: called on initial mount and after settings changes
+    }
   }, [])
+
+  useEffect(() => {
+    refreshUser().finally(() => setIsLoading(false))
+  }, [refreshUser])
 
   const login = useCallback(
     async (
@@ -86,7 +89,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const isAuthenticated = user !== null && !isLoading
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, isAuthenticated, login, logout }}>
+    <AuthContext.Provider value={{ user, isLoading, isAuthenticated, login, logout, refreshUser }}>
       {children}
     </AuthContext.Provider>
   )

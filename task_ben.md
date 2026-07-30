@@ -54,37 +54,35 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Make the floating persistent entry button draggable to anywhere on the main screen, with a persisted personal position and safe boundary clamping
+TASK: Expose a real refreshUser function on the auth context and call it after both Concierge setting changes, fixing the shared user object going stale without a full reload
 
-USE: Fable 5
+USE: claude sonnet
 
 VERIFY BEFORE ACT:
 
-sed -n '105,120p' /home/corby/jamm-os/frontend/src/components/layout/AppShell.tsx
+sed -n '1,50p' /home/corby/jamm-os/frontend/src/lib/hooks/useAuth.tsx
 
-cat /home/corby/jamm-os/frontend/src/components/concierge-inline/PersistentEntryButton.tsx
+sed -n '85,92p' /home/corby/jamm-os/frontend/src/lib/hooks/useAuth.tsx
 
-grep -n "w-12\|w-\[220px\]" /home/corby/jamm-os/frontend/src/components/layout/Sidebar.tsx
+sed -n '550,575p' /home/corby/jamm-os/frontend/src/app/\(app\)/settings/page.tsx
 
-Confirm the button's wrapping div currently uses a fixed bottom-6 right-6 position with no drag capability, confirm PersistentEntryButton's own onClick prop is what currently opens the panel, and confirm the main navigation sidebar is 48px wide when collapsed and 220px wide when expanded, before making any change.
+Confirm AuthContextType currently exposes only user, isLoading, isAuthenticated, login, and logout, with no way for any other component to trigger a refresh of the user object after it has already loaded. Confirm the initial fetch of /api/auth/me happens once, inside a useEffect with an empty dependency array, on mount only. Confirm handleConciergeEntryModeChange and handleConciergeSuggestionsChange in the Settings page both currently write to the backend successfully but never update the shared user object afterward.
 
 WHAT THIS IS:
 
-Direct product decision made tonight, after seeing the floating button block part of the Calendar page's Upcoming panel. The button should become draggable anywhere on the main content area, like a movable widget, so a person can put it wherever it does not get in the way on any given page. This must not allow the button to be dragged onto the main left navigation sidebar, and must not allow it to be dragged into the Concierge panel's own space on the right, which only matters while the panel is open, at which point this button is already hidden. This is a personal, per-browser preference, not a firm-wide setting, since different people may want it in different places depending on their own screen and habits.
+Confirmed live tonight: toggling Concierge Suggestions to Off in Settings correctly saved to the backend, but navigating to Engagements in the same browser session without a full page reload still showed the suggestion banner, because the shared user object read by every gated page comes from AuthProvider, which only ever fetches once on mount and has no way to be told a setting changed elsewhere. This is very likely the same latent gap behind concierge_entry_mode, which was never caught because it was always tested using a fresh incognito window, a genuine new mount, rather than same-session navigation after a change. Both settings need a real fix, not just the one that was caught live.
 
 CHANGE INSTRUCTIONS:
 
-In AppShell.tsx, replace the static fixed bottom-6 right-6 wrapper div with a draggable version. Add a new piece of state holding either a real pixel position, an object with x and y numbers, or null meaning use the original default bottom-right corner position. Initialize this state to null on first render to avoid any server and client mismatch, then read a stored position from localStorage inside a useEffect after mount, the same safe pattern already used elsewhere in this file for other browser-only state.
+In useAuth.tsx, extract the existing fetch-and-setUser logic currently inside the mount-time useEffect into its own named async function, for example refreshUser, that fetches /api/auth/me and calls setUser with the result. Call this same function from inside the mount-time useEffect so the original first-load behavior is unchanged. Add refreshUser to AuthContextType and include it in the object passed to AuthContext.Provider's value prop, so any component using useAuth can now call it directly.
 
-Implement dragging using pointer events, not the native HTML5 drag and drop API, attached to the wrapping div. On pointer down, record the starting pointer position and the button's current position. On pointer move while the pointer is down, update the button's position to follow the pointer, clamped so the button can never go further left than 220 plus 12 pixels from the left edge, never closer than 12 pixels to the top, right, or bottom edges of the viewport, accounting for the button's own real rendered width and height so it never gets clipped off screen. On pointer up, if the total distance moved since pointer down is small, a few pixels or less, treat this as a click and call the button's existing onClick behavior to open the panel. If the distance moved is larger than that, treat it as a completed drag, do not open the panel, and save the final position to localStorage under a new key so it persists across visits in this browser.
-
-When a stored position exists, render the wrapping div using that absolute pixel position instead of the original bottom-6 right-6 classes. When no stored position exists yet, render exactly as it does today, unchanged, so nobody's current experience changes until they actually drag it once.
-
-Do not modify PersistentEntryButton.tsx itself, all drag logic and position state should live in the wrapping div inside AppShell.tsx. Do not change the conciergeEntryMode === 'floating' and !conciergeOpen condition that already correctly decides whether this button renders at all.
+In the Settings page, destructure refreshUser alongside the existing user from useAuth. At the end of handleConciergeEntryModeChange, after its existing PATCH call succeeds, call refreshUser and await it. Do the same at the end of handleConciergeSuggestionsChange, after its existing PATCH call succeeds. Do not change the existing localStorage or custom event logic already present in handleConciergeEntryModeChange, this is an addition, not a replacement, and do not change the PATCH call itself in either function.
 
 VERIFY AFTER ACT:
 
-grep -n "onPointerDown\|onPointerMove\|onPointerUp\|localStorage.*button.*position\|jamm_concierge_button_position" /home/corby/jamm-os/frontend/src/components/layout/AppShell.tsx
+grep -n "refreshUser" /home/corby/jamm-os/frontend/src/lib/hooks/useAuth.tsx /home/corby/jamm-os/frontend/src/app/\(app\)/settings/page.tsx
+
+Expected: refreshUser defined and exposed in useAuth.tsx, and called in both handler functions in the Settings page.
 
 npx tsc --noEmit
 
@@ -92,27 +90,19 @@ MANUAL VERIFICATION:
 
 Restart the frontend.
 
-Confirm the button still appears in its normal default bottom-right position on first load, unchanged from before.
+Without reloading the page at any point, go to Settings, switch Concierge Suggestions to Off, then navigate directly to Engagements, Billing, or the client detail page, wherever a real trigger condition is currently true. Confirm no suggestion or banner appears, with no page reload involved.
 
-Click it normally without dragging, confirm the panel still opens correctly, confirming click behavior was not broken by adding drag support.
+Switch it back to On in Settings, again without reloading, navigate to the same page, confirm the suggestion or banner correctly reappears immediately.
 
-Drag it to the middle of the screen, release, confirm it stays exactly where dropped and does not snap back.
+Separately, without reloading, switch Concierge Entry Point between Sidebar and Floating in Settings, then navigate to a different page and back to Settings, confirm the correct option still shows as selected, confirming this same fix also closed the equivalent gap for that setting.
 
-Reload the page entirely, confirm it remains in the same dragged position, confirming it is a real, persisted preference, not just temporary drag state.
-
-Attempt to drag it far to the left, onto or past where the main navigation sidebar sits, confirm it stops at the boundary and cannot overlap the sidebar.
-
-Attempt to drag it off any edge of the screen entirely, confirm it stays fully visible and clamped within the viewport in all directions.
-
-Visit the Calendar page specifically, confirm it can now be moved away from blocking the Upcoming panel, the real problem that prompted this tonight.
-
-Report pass or fail for each of these six checks individually.
+Report pass or fail for all three checks individually.
 
 GIT:
 
 git add -A
 
-git commit -m "make the floating persistent entry button draggable anywhere on the main screen, addressing it blocking the Calendar page's Upcoming panel tonight, implemented with pointer events and a click-versus-drag distance threshold, clamped so it can never be dragged onto the main navigation sidebar or off any edge of the viewport, with the final position persisted per browser as a personal preference rather than a firm-wide setting"
+git commit -m "expose a real refreshUser function on the auth context, fixing the shared user object going stale after changing either Concierge Suggestions or Concierge Entry Point in Settings without a full page reload, confirmed live tonight when turning suggestions off correctly saved to the backend but the Engagements page still showed a banner in the same session, since AuthProvider previously only ever fetched the user object once on mount with no way for any other component to trigger a refresh"
 
 git pull --rebase origin main
 
