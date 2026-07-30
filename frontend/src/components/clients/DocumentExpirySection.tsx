@@ -52,9 +52,9 @@ const STATUS_BADGE: Record<
   'expired' | 'expiring_soon' | 'active',
   { bg: string; text: string; label: string }
 > = {
-  active: { bg: '#D1FAE5', text: '#065F46', label: 'Active' },
-  expiring_soon: { bg: '#FEF3C7', text: '#92400E', label: 'Expiring Soon' },
-  expired: { bg: '#FEE2E2', text: '#991B1B', label: 'Expired' },
+  active: { bg: 'var(--color-status-green)', text: 'var(--color-status-green-text)', label: 'Active' },
+  expiring_soon: { bg: 'var(--color-status-amber)', text: 'var(--color-status-amber-text)', label: 'Expiring Soon' },
+  expired: { bg: 'var(--color-status-red)', text: 'var(--color-status-red-text)', label: 'Expired' },
 }
 
 interface AddModalProps {

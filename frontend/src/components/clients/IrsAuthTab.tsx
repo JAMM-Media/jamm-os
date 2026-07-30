@@ -19,10 +19,10 @@ const RECORD_STATUS_CONFIG: Record<
   RecordStatus,
   { bg: string; text: string; label: string }
 > = {
-  active: { bg: '#D1FAE5', text: '#065F46', label: 'Active' },
-  pending_signature: { bg: '#DBEAFE', text: '#1E40AF', label: 'Pending' },
-  expired: { bg: '#FEE2E2', text: '#991B1B', label: 'Expired' },
-  revoked: { bg: '#FEE2E2', text: '#991B1B', label: 'Revoked' },
+  active: { bg: 'var(--color-status-green)', text: 'var(--color-status-green-text)', label: 'Active' },
+  pending_signature: { bg: 'var(--color-status-blue)', text: 'var(--color-status-blue-text)', label: 'Pending' },
+  expired: { bg: 'var(--color-status-red)', text: 'var(--color-status-red-text)', label: 'Expired' },
+  revoked: { bg: 'var(--color-status-red)', text: 'var(--color-status-red-text)', label: 'Revoked' },
 }
 
 function fmtDate(d: string | null): string {

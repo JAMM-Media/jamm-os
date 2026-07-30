@@ -26,7 +26,8 @@ import { HealthDot } from '@/components/clients/HealthDot'
 import { EditClientModal } from '@/components/clients/EditClientModal'
 import TaxOrganizerTab from '@/components/tax-organizer/TaxOrganizerTab'
 import { NewEngagementModal } from '@/components/engagements/NewEngagementModal'
-import { onConciergeAction } from '@/lib/events/conciergeEvents'
+import { onConciergeAction, emitConciergeAction } from '@/lib/events/conciergeEvents'
+import { SuggestionCard } from '@/components/concierge-inline/SuggestionCard'
 import type { Engagement } from '@/lib/api'
 import type { Document } from '@/lib/api/documents'
 import { DocumentTable } from '@/components/documents/DocumentTable'
@@ -73,7 +74,9 @@ function ClientDetailContent() {
   const [newEngagementOpen, setNewEngagementOpen] = useState(false)
   const [initialEngagementType, setInitialEngagementType] = useState<string | undefined>()
   const [portalLinkHighlight, setPortalLinkHighlight] = useState(false)
+  const [portalSuggestionDismissed, setPortalSuggestionDismissed] = useState(false)
   const portalLinkRef = useRef<HTMLButtonElement>(null)
+  const portalLinkTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const messageComposeRef = useRef<HTMLTextAreaElement>(null)
   const [qboEditMode, setQboEditMode] = useState(false)
   const [qboEditValue, setQboEditValue] = useState('')
@@ -94,6 +97,16 @@ function ClientDetailContent() {
         if (action.prefill?.engagementType) setInitialEngagementType(action.prefill.engagementType)
         setNewEngagementOpen(true)
       }
+      if (action.modal === 'portal-magic-link') {
+        sessionStorage.removeItem('jamm_concierge_pending')
+        setActiveTab('overview')
+        setPortalLinkHighlight(true)
+        setTimeout(() => {
+          portalLinkRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        }, 100)
+        if (portalLinkTimeoutRef.current) clearTimeout(portalLinkTimeoutRef.current)
+        portalLinkTimeoutRef.current = setTimeout(() => setPortalLinkHighlight(false), 7000)
+      }
     } catch {
       sessionStorage.removeItem('jamm_concierge_pending')
     }
@@ -112,7 +125,8 @@ function ClientDetailContent() {
         setTimeout(() => {
           portalLinkRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
         }, 100)
-        setTimeout(() => setPortalLinkHighlight(false), 3000)
+        if (portalLinkTimeoutRef.current) clearTimeout(portalLinkTimeoutRef.current)
+        portalLinkTimeoutRef.current = setTimeout(() => setPortalLinkHighlight(false), 7000)
       }
       if (action.type === 'prefill-message' && action.prefillMessage) {
         setActiveTab('messages')
@@ -426,13 +440,34 @@ function ClientDetailContent() {
         {/* Tab content */}
         {activeTab === 'overview' && (
           <div>
+          {client && !client.portalInviteSentAt && !portalSuggestionDismissed && (() => {
+            const daysSince = Math.floor((Date.now() - new Date(client.createdAt).getTime()) / (1000 * 60 * 60 * 24))
+            if (daysSince < 10) return null
+            return (
+              <div className="mb-4">
+                <SuggestionCard
+                  notification={{
+                    id: `portal-invite-suggestion-${client.id}`,
+                    trigger_type: 'portal_invite_missing',
+                    message: `${client.name} was added ${daysSince} days ago and has never been sent a portal invite.`,
+                    created_at: new Date().toISOString(),
+                  }}
+                  actionLabel="Show me"
+                  onAction={() => {
+                    emitConciergeAction({ type: 'navigate-and-open', route: `/clients/${client.id}`, modal: 'portal-magic-link' })
+                  }}
+                  onDismiss={() => setPortalSuggestionDismissed(true)}
+                />
+              </div>
+            )
+          })()}
           <div className="flex items-center justify-end gap-2 mb-4">
             {(user?.role === 'firm_owner' || user?.role === 'manager') && (
               <button
                 ref={portalLinkRef}
                 onClick={handleSendPortalLink}
                 disabled={sendingPortalLink}
-                className={`flex items-center gap-1.5 h-8 px-3 text-[12px] font-medium text-foreground border border-[0.5px] rounded-md bg-transparent hover:bg-surface-card dark:hover:bg-dark-card transition-colors disabled:opacity-60 ${portalLinkHighlight ? 'border-brand-btn ring-2 ring-[#3A6A94]/40 animate-pulse' : 'border-surface-border dark:border-dark-border'}`}
+                className={`flex items-center gap-1.5 h-8 px-3 text-[12px] font-medium text-foreground border border-[0.5px] rounded-md bg-transparent hover:bg-surface-card dark:hover:bg-dark-card transition-colors disabled:opacity-60 ${portalLinkHighlight ? 'border-brand-btn ring-2 ring-brand-btn/40 shadow-[0_0_20px_rgba(58,106,148,0.45)] animate-pulse' : 'border-surface-border dark:border-dark-border'}`}
               >
                 {sendingPortalLink ? (
                   <Loader2 className="h-[14px] w-[14px] animate-spin" />

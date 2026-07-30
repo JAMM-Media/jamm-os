@@ -12,6 +12,7 @@ import type { DashboardMetrics, OverdueEngagementItem, UpcomingDeadlineItem, Sta
 import type { WIPSummary } from '@/lib/api/reports'
 import api from '@/lib/api'
 import { formatEngagementType } from '@/lib/utils'
+import { ConciergeSpotlight } from '@/components/dashboard/ConciergeSpotlight'
 
 function formatCurrency(value: number): string {
   return new Intl.NumberFormat('en-US', {
@@ -576,6 +577,9 @@ export default function DashboardPage() {
             </>
           )}
         </div>
+
+        {/* Concierge Spotlight */}
+        <ConciergeSpotlight />
 
         {/* ROW WIP — Work in Progress */}
         <WIPWidget />

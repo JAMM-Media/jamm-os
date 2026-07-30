@@ -8,10 +8,13 @@ import ReactMarkdown from 'react-markdown'
 import jsPDF from 'jspdf'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { useConfirm } from '@/lib/hooks/useConfirm'
+import { useAlert } from '@/lib/hooks/useAlert'
 import { useConciergeContext } from '@/lib/hooks/useConciergeContext'
+import { useConciergeNotifications, type ConciergeNotification } from '@/lib/hooks/useConciergeNotifications'
 import api from '@/lib/api'
 import {
   emitConciergeAction,
+  onConciergeAction,
   type ConciergeAction,
 } from '@/lib/events/conciergeEvents'
 import { assembleSSELines } from '@/lib/concierge/assembleSSEStream'
@@ -26,13 +29,7 @@ interface Message {
   options?: string[]
 }
 
-interface Notification {
-  id: string
-  trigger_type: string
-  message: string
-  created_at: string
-  metadata?: Record<string, unknown> | null
-}
+type Notification = ConciergeNotification
 
 interface ConciergePanelProps {
   isOpen: boolean
@@ -92,6 +89,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
   }
   const { user, isLoading } = useAuth()
   const { confirm, ConfirmDialog } = useConfirm()
+  const { alert, AlertDialog } = useAlert()
   const uiContext = useConciergeContext()
   const currentPage = uiContext.entity_name
     ? uiContext.entity_name
@@ -101,7 +99,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
     user?.full_name?.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase() ?? '?'
 
   const [messages, setMessages] = useState<Message[]>([])
-  const [notifications, setNotifications] = useState<Notification[]>([])
+  const { notifications, dismissNotification: dismissNotificationFromHook, refetch: refetchNotifications } = useConciergeNotifications()
   const [notificationsExpanded, setNotificationsExpanded] = useState(false)
   const [input, setInput] = useState('')
   const [streaming, setStreaming] = useState(false)
@@ -114,12 +112,12 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
   useEffect(() => {
     setHasMounted(true)
   }, [])
-  const [autopilotOn, setAutopilotOn] = useState(() => {
-    if (typeof window !== 'undefined') {
-      return sessionStorage.getItem('jamm_concierge_autopilot') === 'true'
+  const [autopilotOn, setAutopilotOn] = useState(false)
+  useEffect(() => {
+    if (sessionStorage.getItem('jamm_concierge_autopilot') === 'true') {
+      setAutopilotOn(true)
     }
-    return false
-  })
+  }, [])
   const [suggestions, setSuggestions] = useState<string[]>([])
   const [formDirty, setFormDirtyState] = useState(false)
   const [statusMessage, setStatusMessage] = useState('')
@@ -256,28 +254,19 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
     return () => clearTimeout(timer)
   }, [statusMessage])
 
-  const fetchNotifications = useCallback(async () => {
-    try {
-      const res = await api.get('/concierge/notifications')
-      setNotifications((prev) => {
-        const existing = new Set(prev.map((n) => n.id))
-        const incoming = (res.data.items ?? []) as Notification[]
-        const fresh = incoming.filter((n) => !existing.has(n.id))
-        return fresh.length > 0 ? [...prev, ...fresh] : prev
-      })
-    } catch {
-      // non-fatal
-    }
+  useEffect(() => {
+    return onConciergeAction((action) => {
+      if (action.type === 'open-panel' && action.expandNotifications) {
+        setNotificationsExpanded(true)
+      }
+      if (action.type === 'prefill-panel-input' && action.prefillMessage) {
+        handleSend(action.prefillMessage)
+      }
+    })
   }, [])
 
-  const dismissNotification = useCallback(async (id: string) => {
-    setNotifications((prev) => prev.filter((n) => n.id !== id))
-    try {
-      await api.patch(`/concierge/notifications/${id}/read`)
-    } catch {
-      // already removed from UI
-    }
-  }, [])
+  const dismissNotification = dismissNotificationFromHook
+  const fetchNotifications = refetchNotifications
 
   function stripTrailingMarkers(text: string, partial = false): string {
     let result = text
@@ -501,7 +490,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
                 return
               }
               if (res.status === 200 && res.data?.cooldown) {
-                setMessages([{ role: 'concierge', content: "Already checked in with your morning briefing earlier today. Ask me anytime if you'd like to see it again, or let me know if anything's changed or if you need help with something specific.", skipReveal: true }])
+                setMessages([{ role: 'concierge', content: "You're all caught up for today. I can pull up your briefing again anytime if you need it. What else is on your mind?", skipReveal: true }])
                 hasInitialized.current = true
                 setBriefingLoading(false)
                 return
@@ -531,16 +520,8 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
     }
   }, [isOpen, sendMessages, fetchNotifications, user])
 
-  // 60-second context refresh -- polls trigger check while panel is open
-  useEffect(() => {
-    if (!isOpen) return
-    const interval = setInterval(() => {
-      api.post('/concierge/trigger-check')
-        .then(() => fetchNotifications())
-        .catch(() => {})
-    }, 60_000)
-    return () => clearInterval(interval)
-  }, [isOpen, fetchNotifications])
+  // Polling is now handled by useConciergeNotifications (60s, always-on).
+  // Trigger-check on panel open is still called explicitly for immediate refresh.
 
   async function handleClearConversation() {
     const confirmed = await confirm({ message: 'Clear this conversation? This cannot be undone.', confirmLabel: 'Clear', destructive: true })
@@ -812,6 +793,18 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
             }
             const capitalized = (data.name ?? name).replace(/\b\w/g, c => c.toUpperCase())
             const resolvedRoute = `/clients/${data.id}${queryString}`
+            const alreadyOnClientRoute = pathname.startsWith(`/clients/${data.id}`)
+            if (alreadyOnClientRoute) {
+              emitConciergeAction(action)
+              const clientModalLabel: Record<string, string> = {
+                'new-client': 'Opened New Client drawer',
+                'new-engagement': 'Opened New Engagement drawer',
+                'invite-staff': 'Opened Invite Staff modal',
+                'new-template': 'Opened New Template drawer',
+              }
+              setStatusMessage(clientModalLabel[action.modal ?? ''] ?? 'Opened modal')
+              return
+            }
             if (formDirty) {
               const ok = await confirm('You have unsaved changes. Navigate away?')
               if (!ok) return
@@ -875,6 +868,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
   return (
     <>
       {ConfirmDialog}
+      {AlertDialog}
       {hasMounted && isOpen && (
         <div
           style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.25)', zIndex: 39, pointerEvents: 'none' }}
@@ -1042,7 +1036,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
                             const notifClientId = typeof n.metadata?.client_id === 'string' ? n.metadata.client_id : null
                             const targetClientId = notifClientId ?? (uiContext.entity_type === 'client' ? uiContext.entity_id : null)
                             if (!targetClientId) {
-                              window.alert('No client record could be identified for this draft. Open the client directly and use the Messages tab to send it.')
+                              alert('No client record could be identified for this draft. Open the client directly and use the Messages tab to send it.')
                               return
                             }
                             const confirmed = await confirm(
@@ -1475,11 +1469,11 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
                           } catch {
                             // fall through to fallback
                           }
-                          window.alert(`Could not find a client named "${draftClientName}" to open directly. Search for them in Clients and use the Messages tab to send this draft.`)
+                          alert(`Could not find a client named "${draftClientName}" to open directly. Search for them in Clients and use the Messages tab to send this draft.`)
                           return
                         }
 
-                        window.alert('No specific client was identified for this draft. Open the client record directly and use the Messages tab to send it.')
+                        alert('No specific client was identified for this draft. Open the client record directly and use the Messages tab to send it.')
                       }}
                       className="text-[11px] font-medium px-2.5 py-1 rounded-[4px] bg-brand text-white hover:opacity-90 transition-colors"
                     >

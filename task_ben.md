@@ -54,42 +54,46 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Give the Overdue Engagements stat card real visual distinction from its neutral peer cards when overdue count is positive
+TASK: Fix the count-to-message spacing on ContextualBanner so the count reads as part of the sentence instead of a disconnected element
 
 USE: claude sonnet
 
 VERIFY BEFORE ACT:
-sed -n '30,50p' /home/corby/jamm-os/frontend/src/app/\(app\)/dashboard/page.tsx
-sed -n '555,570p' /home/corby/jamm-os/frontend/src/app/\(app\)/dashboard/page.tsx
 
-Confirm the shared MetricCard component and the Overdue Engagements call site exactly as described before editing.
+cat /home/corby/jamm-os/frontend/src/components/concierge-inline/ContextualBanner.tsx
+
+Confirm the outer flex container currently applies gap-3 equally between the count span, the message paragraph, and the button, causing the count and message to appear as visually disconnected as the message and button, even though the count and message are meant to read together as one sentence.
 
 WHAT THIS IS:
 
-An independent live audit specifically flagged that the Overdue Engagements card currently carries the same visual weight as neutral cards like Unbilled WIP, with the audit's specific suggestion being a larger size or a colored card background, not just red value text, which is the only distinction that currently exists. This is the single most urgent, time sensitive metric on the Dashboard when its count is positive, and it should draw the eye before anything else, not compete for attention equally with unrelated neutral stats.
+Direct, live feedback tonight: with the earlier duplicate-count fix removing the leading number from the message text, the bold count badge now sits with a visibly oversized gap before the message text, making "4" and "overdue invoices totaling $4,750.00" look like two disconnected pieces rather than one flowing phrase. The person specifically said they like the bold count but not the spacing. The button correctly needs its own separation from the text, that part should not change.
 
 CHANGE INSTRUCTIONS:
 
-Add a new optional prop to MetricCard, something like variant, accepting a value such as alert, defaulting to the existing neutral treatment when not passed. When variant is alert, the card's background and border should use the existing status-red tokens already established elsewhere in this codebase, at a subtlety appropriate for a background tint, not a solid, jarring red fill, still clearly a card, just visually distinct from its neutral siblings.
-
-At the Overdue Engagements call site specifically, pass this new variant conditionally, only when the real overdue count is greater than zero, using the same visibleOverdue.length > 0 condition already used for the text color. When the count is zero, the card should render with the existing neutral treatment exactly as it does today, this distinction only applies when there is something genuinely urgent to flag.
-
-Do not change the other three MetricCard call sites, Revenue This Month, Outstanding AR, Unbilled WIP, they keep the existing neutral treatment unconditionally.
+Wrap the count span and message paragraph together in a new inner div using flex items-baseline gap-1.5 and flex-1, so they sit close together as one phrase. Move flex-1 from the message paragraph onto this new wrapping div instead. Keep the outer container's existing gap-3 as the separation between this new wrapped group and the button, so the button's spacing is unaffected. Do not change any tone's colors, the button styling, or anything else in this file.
 
 VERIFY AFTER ACT:
 
-npm run build in frontend, expected zero TypeScript errors.
+grep -n "items-baseline gap-1.5" /home/corby/jamm-os/frontend/src/components/concierge-inline/ContextualBanner.tsx
+
+npx tsc --noEmit
 
 MANUAL VERIFICATION:
 
-Full kill, .next wipe, restart both servers.
+Restart the frontend.
 
-Confirm in light mode that with overdue engagements present, the Overdue Engagements card now visually stands out from its three neutral neighbors, not just through red text but through the card itself. Confirm the other three cards are completely unchanged. Confirm in dark mode the same distinction holds and remains fully readable, not overly bright or jarring against the dark background.
+Visit Billing with a real overdue invoice present. Confirm the count and message now sit close together reading naturally as one sentence, for example "4 overdue invoices totaling $4,750.00" with normal word-level spacing, while the Ask Concierge button still sits clearly separated on the right.
 
-Report pass or fail for light mode, dark mode, and confirmation the other three cards are unaffected, with a screenshot of the full stat card row in both modes.
+Visit /dev/concierge-kit, confirm the green and amber ContextualBanner examples show the same tightened spacing.
+
+Report pass or fail for both checks.
 
 GIT:
+
 git add -A
-git commit -m "give the Overdue Engagements stat card a distinct alert-tinted background when the overdue count is positive, addressing a live audit finding that this, the single most time sensitive metric on the Dashboard, currently carries identical visual weight to neutral stats like Unbilled WIP, with only its value text previously distinguishing it"
+
+git commit -m "fix ContextualBanner's count-to-message spacing so the bold count reads as part of the sentence instead of a disconnected element, wrapping the count and message together with tight baseline spacing while keeping the button's separate spacing from the text unchanged, per direct feedback tonight after the duplicate-count fix left an oversized gap between the count badge and the message text"
+
 git pull --rebase origin main
+
 git push origin main

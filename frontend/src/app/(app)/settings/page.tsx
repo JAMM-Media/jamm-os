@@ -397,6 +397,7 @@ export default function SettingsPage() {
   const [firmWebsite, setFirmWebsite] = useState('')
   const [firmContactEmail, setFirmContactEmail] = useState('')
   const [savingContact, setSavingContact] = useState(false)
+  const [conciergeEntryMode, setConciergeEntryMode] = useState<'sidebar' | 'floating'>('floating')
 
   const [googleReviewUrl, setGoogleReviewUrl] = useState('')
   const [reviewEnabled, setReviewEnabled] = useState(false)
@@ -496,8 +497,11 @@ export default function SettingsPage() {
     }
   }, [firmData, approvalRequired])
 
+
   useEffect(() => {
     if (firmData?.settings) {
+      const savedMode = firmData.settings.concierge_entry_mode as 'sidebar' | 'floating' | undefined
+      setConciergeEntryMode(savedMode ?? 'floating')
       setEmailReplyTo((firmData.settings.email_reply_to as string) ?? '')
       setEmailDisplayName((firmData.settings.email_display_name as string) ?? '')
       setGoogleReviewUrl((firmData.settings.google_review_url as string) ?? '')
@@ -538,6 +542,18 @@ export default function SettingsPage() {
       toast.error('Failed to save contact details')
     } finally {
       setSavingContact(false)
+    }
+  }
+
+  async function handleConciergeEntryModeChange(mode: 'sidebar' | 'floating') {
+    setConciergeEntryMode(mode)
+    localStorage.setItem('jamm_concierge_entry_mode', mode)
+    window.dispatchEvent(new CustomEvent('jamm:concierge-entry-mode-changed', { detail: { mode } }))
+    try {
+      // concierge_entry_mode is stored inside the firm settings JSON blob
+      await api.patch('/users/firm/settings', { concierge_entry_mode: mode })
+    } catch {
+      // non-fatal
     }
   }
 
@@ -872,6 +888,45 @@ export default function SettingsPage() {
                       style={{ marginTop: '2px' }}
                     />
                   </button>
+                </div>
+              </div>
+            )}
+
+            {/* Concierge Entry Point section */}
+            {isFirmOwner && (
+              <div className="bg-surface-card dark:bg-dark-card rounded-[10px] p-4 flex flex-col gap-3 max-w-lg" style={{ marginTop: '12px' }}>
+                <p className="text-[13px] font-medium text-brand dark:text-[#EDEEF0]">Concierge Entry Point</p>
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex-1">
+                    <p className="text-[13px] text-brand dark:text-[#EDEEF0]">Entry style</p>
+                    <p className="text-[11px] text-[#6B7280] mt-0.5">
+                      Sidebar shows the Concierge in the main navigation. Floating shows a persistent button in the bottom-right corner.
+                    </p>
+                  </div>
+                  <div className="flex gap-4">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="concierge_entry_mode"
+                        value="sidebar"
+                        checked={conciergeEntryMode === 'sidebar'}
+                        onChange={() => handleConciergeEntryModeChange('sidebar')}
+                        className="w-4 h-4 accent-brand cursor-pointer"
+                      />
+                      <span className="text-[13px] text-foreground">Sidebar</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="concierge_entry_mode"
+                        value="floating"
+                        checked={conciergeEntryMode === 'floating'}
+                        onChange={() => handleConciergeEntryModeChange('floating')}
+                        className="w-4 h-4 accent-brand cursor-pointer"
+                      />
+                      <span className="text-[13px] text-foreground">Floating</span>
+                    </label>
+                  </div>
                 </div>
               </div>
             )}
@@ -1268,10 +1323,8 @@ export default function SettingsPage() {
           {/* Migration tab */}
           {activeTab === 'migration' && canSeeMigration && <MigrationTab />}
 
-        </div>
-
         {isFirmOwner && (
-          <div className="mt-8 pt-4 border-t border-[0.5px] border-[#E5E7EB] dark:border-[#3D3D3D]">
+          <div className="mt-8 pt-4 border-t border-[0.5px] border-[#E5E7EB] dark:border-[#3D3D3D] max-w-lg">
             <a
               href="/concierge-log"
               className="text-[11px] text-[#6B7280] hover:text-[#4A7FA5] transition-colors"
@@ -1280,6 +1333,8 @@ export default function SettingsPage() {
             </a>
           </div>
         )}
+
+        </div>
       </div>
 
       <EditStaffModal

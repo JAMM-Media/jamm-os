@@ -5,7 +5,7 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/* JAMM PX design tokens — Tailwind v4 CSS-based config */
+/* JAMM PX design tokens - Tailwind v4 CSS-based config */
 @theme {
   /* Brand */
   --color-brand: #1F3148;
@@ -18,16 +18,16 @@
   --color-concierge: #BF9640;
   --color-concierge-muted: #D4B06A;
 
-  /* Surface (light mode) -- warmer, richer than generic cool gray */
-  --color-surface-page: #E7E6E0;
-  --color-surface-card: #F0EFE9;
-  --color-surface-border: #C6C4BA;
-  --color-surface-input: #F7F6F2;
+  /* Surface (light mode) -- cool pastel, validated financial-trust palette */
+  --color-surface-page: #D6DEE6;
+  --color-surface-card: #E9EEF3;
+  --color-surface-border: #C2CDD8;
+  --color-surface-input: #EFF3F7;
 
-  /* Dark mode surfaces -- warm charcoal, not flat neutral gray */
-  --color-dark-page: #272620;
-  --color-dark-card: #32312A;
-  --color-dark-border: #47453C;
+  /* Dark mode surfaces -- cool-toned dark, not warm charcoal */
+  --color-dark-page: #1D232A;
+  --color-dark-card: #272D35;
+  --color-dark-border: #3B444F;
   --color-dark-sidebar: #1A2535;
 
   /* Status colors */
@@ -78,48 +78,48 @@
 
 /* Light mode CSS variables */
 :root {
-  --background: hsl(50, 9%, 89%);
+  --background: hsl(210, 24%, 87%);
   --foreground: hsl(215, 23%, 19%);
-  --card: hsl(48, 14%, 93%);
+  --card: hsl(210, 29%, 93%);
   --card-foreground: hsl(215, 23%, 19%);
-  --popover: hsl(48, 14%, 93%);
+  --popover: hsl(210, 29%, 93%);
   --popover-foreground: hsl(215, 23%, 19%);
   --primary: hsl(215, 40%, 19%);
-  --primary-foreground: hsl(48, 14%, 93%);
-  --secondary: hsl(45, 9%, 74%);
+  --primary-foreground: hsl(210, 20%, 96%);
+  --secondary: hsl(210, 18%, 74%);
   --secondary-foreground: hsl(215, 23%, 19%);
-  --muted: hsl(45, 9%, 79%);
-  --muted-foreground: hsl(40, 7%, 44%);
+  --muted: hsl(210, 18%, 79%);
+  --muted-foreground: hsl(210, 10%, 44%);
   --accent: hsl(210, 37%, 47%);
-  --accent-foreground: hsl(48, 14%, 93%);
+  --accent-foreground: hsl(210, 29%, 93%);
   --destructive: hsl(0, 72%, 51%);
   --destructive-foreground: hsl(0, 0%, 100%);
-  --border: hsl(45, 9%, 74%);
-  --input: hsl(48, 20%, 96%);
+  --border: hsl(210, 22%, 80%);
+  --input: hsl(210, 25%, 95%);
   --ring: hsl(210, 37%, 47%);
   --radius: 0.5rem;
 }
 
 /* Dark mode CSS variables */
 .dark {
-  --background: hsl(48, 8%, 15%);
+  --background: hsl(213, 18%, 14%);
   --foreground: hsl(48, 10%, 93%);
-  --card: hsl(46, 9%, 18%);
+  --card: hsl(213, 16%, 18%);
   --card-foreground: hsl(48, 10%, 93%);
-  --popover: hsl(46, 9%, 18%);
+  --popover: hsl(213, 16%, 18%);
   --popover-foreground: hsl(48, 10%, 93%);
   --primary: hsl(210, 43%, 40%);
   --primary-foreground: hsl(48, 10%, 93%);
-  --secondary: hsl(44, 7%, 24%);
+  --secondary: hsl(213, 12%, 24%);
   --secondary-foreground: hsl(48, 10%, 93%);
-  --muted: hsl(44, 7%, 24%);
-  --muted-foreground: hsl(44, 6%, 60%);
+  --muted: hsl(213, 12%, 24%);
+  --muted-foreground: hsl(213, 10%, 60%);
   --accent: hsl(210, 37%, 47%);
   --accent-foreground: hsl(48, 10%, 93%);
   --destructive: hsl(0, 63%, 31%);
   --destructive-foreground: hsl(48, 10%, 93%);
-  --border: hsl(44, 7%, 24%);
-  --input: hsl(46, 9%, 18%);
+  --border: hsl(213, 14%, 27%);
+  --input: hsl(213, 16%, 18%);
   --ring: hsl(210, 37%, 47%);
 }
 

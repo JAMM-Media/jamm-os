@@ -126,6 +126,7 @@ class ClientOut(ClientBase):
     created_at: datetime
     updated_at: datetime
     quickbooks_customer_id: Optional[str] = None
+    portal_invite_sent_at: Optional[datetime] = None
 
     model_config = ConfigDict(from_attributes=True)
 

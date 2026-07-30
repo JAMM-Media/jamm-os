@@ -12,6 +12,9 @@ import { NewInvoiceModal } from '@/components/billing/NewInvoiceModal'
 import { invoicesApi, clientsApi, engagementsApi } from '@/lib/api'
 import { useFetch } from '@/lib/hooks/useFetch'
 import { Search, X } from 'lucide-react'
+import { ContextualBanner } from '@/components/concierge-inline/ContextualBanner'
+import { emitConciergeAction } from '@/lib/events/conciergeEvents'
+import api from '@/lib/api'
 import type { Invoice } from '@/lib/api'
 
 type ViewMode = 'table' | 'card'
@@ -33,6 +36,7 @@ export default function BillingPage() {
   const { data, isLoading, error } = useFetch(() => invoicesApi.list(0, 50), [])
   const { data: clientsData, isLoading: clientsLoading } = useFetch(() => clientsApi.list(0, 100), [])
   const { data: engagementsData } = useFetch(() => engagementsApi.list(0, 100), [])
+  const { data: overdueData } = useFetch(() => api.get('/invoices/overdue').then((r) => r.data as { overdue_count: number; total_overdue_amount: number }), [])
   const serverInvoices = data?.items ?? []
   const invoices = [...localInvoices, ...serverInvoices]
 
@@ -141,6 +145,18 @@ export default function BillingPage() {
         </h1>
 
         {/* Summary bar */}
+        {(overdueData?.overdue_count ?? 0) > 0 && (
+          <ContextualBanner
+            tone='red'
+            count={overdueData!.overdue_count}
+            message={`overdue invoice${overdueData!.overdue_count === 1 ? '' : 's'} totaling $${overdueData!.total_overdue_amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+            actionLabel='Ask Concierge'
+            onAction={() => {
+              emitConciergeAction({ type: 'open-panel' })
+              emitConciergeAction({ type: 'prefill-panel-input', prefillMessage: 'How many overdue invoices do I have?' })
+            }}
+          />
+        )}
         <BillingSummary invoices={invoices} />
 
         {/* Toolbar */}

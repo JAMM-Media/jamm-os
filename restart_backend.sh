@@ -15,4 +15,4 @@ fi
 echo "Port $PORT clear. Starting backend..."
 cd /home/corby/jamm-os
 source .venv/bin/activate
-exec .venv/bin/uvicorn app.main:app --port 8000 --reload
+exec .venv/bin/uvicorn app.main:app --port 8000 --reload --reload-dir app

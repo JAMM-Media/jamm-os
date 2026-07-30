@@ -23,6 +23,7 @@ from app.models.invoice import Invoice
 from app.schemas.invoice import InvoiceCreate, InvoiceOut, InvoiceUpdate, BulkInvoiceUpdate
 from app.schemas.pagination import PaginatedResponse
 from app.core.enums import InvoiceStatus, TriggerEvent
+from app.api.concierge.functions import get_overdue_invoices
 from app.crud import invoice as crud_invoice
 from app.crud import time_entry as crud_time_entry
 from app.services.invoice_renderer import render_invoice_to_pdf
@@ -123,6 +124,14 @@ def bulk_update_invoices(
 # ---------------------------------------------------------
 # GET SINGLE
 # ---------------------------------------------------------
+@router.get("/overdue")
+def list_overdue_invoices(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_staff_or_above),
+):
+    return get_overdue_invoices(firm_id=current_user.firm_id, db=db)
+
+
 @router.get("/{invoice_id}", response_model=InvoiceOut)
 def get_invoice(
     invoice_id: UUID,

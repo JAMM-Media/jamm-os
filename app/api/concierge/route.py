@@ -396,6 +396,11 @@ _MULTI_CLIENT_TOOL_EXTRACTORS: dict[str, object] = {
         for inv in result.get("invoices", [])
         if inv.get("client_name")
     }),
+    "get_stalled_engagements": lambda result: list({
+        eng["client_name"]
+        for eng in result.get("engagements", [])
+        if eng.get("client_name")
+    }),
 }
 
 
@@ -474,13 +479,60 @@ def concierge_chat(
                 "3. Advisory and planning"
             )
         else:
-            open_text = "Let's get ready to work. I'm ready to help with anything you need."
+            firm_type = current_firm.firm_type
+            if firm_type == "tax_prep":
+                open_text = "Got it. Returns, deadlines, and getting clients filed on time are where I'll be most useful. What are you working on?"
+            elif firm_type == "bookkeeping":
+                open_text = "Got it. Clean books, smooth closes, and keeping everything reconciled. What do you need to get done?"
+            elif firm_type == "advisory":
+                open_text = "Got it. Client work, planning, and keeping engagements moving forward. What's on your mind?"
+            else:
+                open_text = "Got it. Client work, planning, and keeping engagements moving forward. What's on your mind?"
 
         def generate_open_bypass():
             for line in open_text.split("\n"):
                 yield f"data: {line}\n\n"
 
         return StreamingResponse(generate_open_bypass(), media_type="text/event-stream")
+
+    # Deterministic briefing-again bypass -- removes model discretion for the structural
+    # requirement that CONCIERGE_ACTION: {"type":"show_briefing_again"} must always fire.
+    # Matches the same bypass pattern as __OPEN__ above.
+    # Triggered when: the message asks to see the briefing again (briefing + again/show/see)
+    # AND the firm has already received a briefing today.
+    _briefing_again_msg = next(
+        (m.content for m in reversed(body.messages) if m.role == "user"),
+        None,
+    )
+    if _briefing_again_msg and current_firm.briefing_sent_at:
+        _msg_lower = _briefing_again_msg.lower()
+        _has_briefing = "briefing" in _msg_lower
+        _has_trigger = any(w in _msg_lower for w in ("again", "show", "see", "once more", "one more"))
+        _briefing_today = current_firm.briefing_sent_at.date() == datetime.now(timezone.utc).date()
+        if _has_briefing and _has_trigger and _briefing_today:
+            logger.info(
+                f"[BRIEFING AGAIN BYPASS] deterministic bypass firing for firm {current_firm.id}"
+            )
+            try:
+                from app.api.concierge.context import get_firm_context
+                _context_data = get_firm_context(current_firm.id, db)
+                _briefing_client = anthropic.Anthropic(api_key=get_settings().ANTHROPIC_API_KEY)
+                _briefing_response = _briefing_client.messages.create(
+                    model="claude-haiku-4-5-20251001",
+                    max_tokens=600,
+                    system=MORNING_BRIEFING_PROMPT,
+                    messages=[{"role": "user", "content": f"Firm data:\n{_context_data}\n\nReturn structured markdown only. Use the exact format specified. No prose."}],
+                )
+                _briefing_text = _briefing_response.content[0].text.strip()
+                _full_response = f"Here's your briefing again:\n{_briefing_text}\nCONCIERGE_ACTION: {{\"type\":\"show_briefing_again\"}}"
+
+                def generate_briefing_again_bypass():
+                    for line in _full_response.split("\n"):
+                        yield f"data: {line}\n\n"
+
+                return StreamingResponse(generate_briefing_again_bypass(), media_type="text/event-stream")
+            except Exception as _e:
+                logger.warning(f"[BRIEFING AGAIN BYPASS] content generation failed for firm {current_firm.id}: {_e}, falling through to normal path")
 
     settings = get_settings()
     api_key = settings.ANTHROPIC_CONCIERGE_KEY
@@ -1269,12 +1321,15 @@ def resolve_client_by_name(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied.",
         )
-    client = db.execute(
-        select(Client).where(
-            Client.firm_id == current_firm.id,
-            func.lower(Client.name).like(f"%{name.lower()}%"),
-        ).limit(1)
-    ).scalar_one_or_none()
+    def _norm(s: str) -> str:
+        s = re.sub(r"[^\w\s]", " ", s, flags=re.UNICODE)
+        return re.sub(r"\s+", " ", s).strip().lower()
+
+    norm_query = _norm(name)
+    rows = db.execute(
+        select(Client).where(Client.firm_id == current_firm.id)
+    ).scalars().all()
+    client = next((c for c in rows if norm_query in _norm(c.name)), None)
     if client is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Client not found")
     return {"id": str(client.id), "name": client.name}
