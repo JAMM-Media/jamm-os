@@ -37,5 +37,6 @@ class UserOut(UserBase):
     firm_type: Optional[str] = None
     concierge_active: bool = False
     concierge_entry_mode: Optional[str] = None
+    concierge_suggestions_enabled: Optional[bool] = None
 
     model_config = ConfigDict(from_attributes=True)

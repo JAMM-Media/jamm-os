@@ -40,7 +40,7 @@ export default function StaffPage() {
   return (
       <div className="flex flex-col p-6 gap-4">
         <h1 className="text-[24px] font-medium text-brand dark:text-[#EDEEF0]">Staff</h1>
-        {overloadedCount > 0 && (
+        {overloadedCount > 0 && user?.concierge_suggestions_enabled !== false && (
           <ContextualBanner
             tone="amber"
             count={overloadedCount}

@@ -8,6 +8,7 @@ import { DocumentCard } from '@/components/documents/DocumentCard'
 import { DocumentEmptyState } from '@/components/documents/DocumentEmptyState'
 import api, { documentsApi, clientsApi } from '@/lib/api'
 import { useFetch } from '@/lib/hooks/useFetch'
+import { useAuth } from '@/lib/hooks/useAuth'
 import { ContextualBanner } from '@/components/concierge-inline/ContextualBanner'
 import { emitConciergeAction } from '@/lib/events/conciergeEvents'
 import { Search } from 'lucide-react'
@@ -15,6 +16,7 @@ import { Search } from 'lucide-react'
 type ViewMode = 'table' | 'card'
 
 export default function DocumentsPage() {
+  const { user } = useAuth()
   const [view, setView] = useState<ViewMode>('table')
   const [search, setSearch] = useState('')
   const [clientFilter, setClientFilter] = useState<string>('all')
@@ -74,7 +76,7 @@ export default function DocumentsPage() {
           Documents
         </h1>
 
-        {(outstandingData?.outstanding_count ?? 0) > 0 && (
+        {(outstandingData?.outstanding_count ?? 0) > 0 && user?.concierge_suggestions_enabled !== false && (
           <ContextualBanner
             tone="amber"
             count={outstandingData!.outstanding_count}

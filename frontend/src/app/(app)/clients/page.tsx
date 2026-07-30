@@ -9,6 +9,7 @@ import { ClientEmptyState } from '@/components/clients/ClientEmptyState'
 import { NewClientModal } from '@/components/clients/NewClientModal'
 import api, { clientsApi, type Client } from '@/lib/api'
 import { useFetch } from '@/lib/hooks/useFetch'
+import { useAuth } from '@/lib/hooks/useAuth'
 import { ContextualBanner } from '@/components/concierge-inline/ContextualBanner'
 import { Search } from 'lucide-react'
 import { onConciergeAction, emitConciergeAction } from '@/lib/events/conciergeEvents'
@@ -16,6 +17,7 @@ import { onConciergeAction, emitConciergeAction } from '@/lib/events/conciergeEv
 type ViewMode = 'table' | 'card'
 
 export default function ClientsPage() {
+  const { user } = useAuth()
   const [view, setView] = useState<ViewMode>('table')
   const [search, setSearch] = useState('')
   const [entityFilter, setEntityFilter] = useState<string>('all')
@@ -97,7 +99,7 @@ export default function ClientsPage() {
           Clients
         </h1>
 
-        {(gapData?.gap_count ?? 0) > 0 && (
+        {(gapData?.gap_count ?? 0) > 0 && user?.concierge_suggestions_enabled !== false && (
           <ContextualBanner
             tone="amber"
             count={gapData!.gap_count}

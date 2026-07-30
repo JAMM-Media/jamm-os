@@ -891,7 +891,7 @@ export default function CalendarPage() {
             </div>
           </div>
 
-          {(deadlineSummary?.deadline_count ?? 0) > 0 && (
+          {(deadlineSummary?.deadline_count ?? 0) > 0 && user?.concierge_suggestions_enabled !== false && (
             <div className="px-4 pt-2">
               <ContextualBanner
                 tone="amber"

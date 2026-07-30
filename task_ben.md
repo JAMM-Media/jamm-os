@@ -54,50 +54,47 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Align get_deadline_calendar with the richer, already-established deadline logic in deadline_watch, then wire the ninth real page of the inline Concierge redesign onto the Calendar page
+TASK: Add a firm-level Concierge Suggestions Off/On setting and gate all nine inline redesign pages behind it
 
 USE: Fable 5
 
 VERIFY BEFORE ACT:
 
-sed -n '106,150p' /home/corby/jamm-os/app/api/engagements.py
+sed -n '68,79p' /home/corby/jamm-os/app/api/users.py
 
-sed -n '581,617p' /home/corby/jamm-os/app/api/concierge/functions.py
+grep -n "concierge_entry_mode" /home/corby/jamm-os/app/schemas/user.py /home/corby/jamm-os/frontend/src/lib/hooks/useAuth.tsx
 
-grep -rn "get_deadline_calendar" /home/corby/jamm-os/app/ --include="*.py"
+sed -n '895,935p' /home/corby/jamm-os/frontend/src/app/\(app\)/settings/page.tsx
 
-sed -n '1,30p' /home/corby/jamm-os/frontend/src/app/\(app\)/calendar/page.tsx
+For each of these nine files, find and read the exact conditional line that currently decides whether to render SuggestionCard or ContextualBanner, do not assume its exact wording, read it directly in each file before changing it:
 
-cat /home/corby/jamm-os/frontend/src/components/concierge-inline/ContextualBanner.tsx
+grep -n "SuggestionCard\|ContextualBanner" /home/corby/jamm-os/frontend/src/app/\(app\)/staff/page.tsx /home/corby/jamm-os/frontend/src/app/\(app\)/tasks/page.tsx /home/corby/jamm-os/frontend/src/app/\(app\)/engagements/page.tsx /home/corby/jamm-os/frontend/src/app/\(app\)/calendar/page.tsx /home/corby/jamm-os/frontend/src/app/\(app\)/timesheets/page.tsx /home/corby/jamm-os/frontend/src/app/\(app\)/clients/\[id\]/page.tsx /home/corby/jamm-os/frontend/src/app/\(app\)/clients/page.tsx /home/corby/jamm-os/frontend/src/app/\(app\)/documents/page.tsx /home/corby/jamm-os/frontend/src/app/\(app\)/billing/page.tsx
 
-Confirm get_deadline_calendar is only ever called from one place in the entire codebase, the tool dispatch in concierge/route.py, meaning its logic can be safely changed without affecting any other caller. Confirm deadline_watch's real, richer logic: it uses extended_deadline when set, falling back to filing_deadline, excludes engagements with status completed or archived, and requires is_active to be true, none of which get_deadline_calendar currently does. Confirm this real discrepancy exists before changing anything.
+Confirm concierge_entry_mode's exact existing pattern in all three places, schemas/user.py, users.py's read_users_me, and useAuth.tsx's AuthUser interface, since this new setting follows that identical, already-proven pattern exactly, not a new mechanism.
 
 WHAT THIS IS:
 
-Two definitions of upcoming deadline currently exist in this codebase. The real one, deadline_watch, already powers the Dashboard's Tax Deadline Watch section, correctly uses the extended deadline when one has been granted, and correctly excludes completed, archived, or inactive engagements. The Concierge's own tool, get_deadline_calendar, uses a simpler, less accurate rule, plain filing_deadline only, no status or active exclusion. This was found while considering whether to add a ninth inline redesign page to the Calendar page tonight, and the decision was made to fix the real inconsistency first, so the Concierge always answers deadline questions using the same real logic the product itself already uses, rather than building a new page on top of a known-inaccurate tool.
+Direct product decision made tonight, after building nine real, live inline suggestion surfaces across the app: a firm owner should be able to turn all of them off entirely, since it is their page and their choice. This is a real, permanent, two-state setting, Off or On, not a slider or a frequency dial. A third, more granular option was discussed and deliberately deferred, since it would require real dismissal-persistence infrastructure that does not exist yet across any of the nine banners, this task only builds the clean two-state version. The setting is named Concierge Suggestions in Settings, with the field labeled Show suggestions on pages, matching the tone and structure of the existing Concierge Entry Point section directly above it. Defaulting to On when the setting has never been explicitly changed, so existing firms keep the behavior they already have unless they deliberately turn it off.
 
 CHANGE INSTRUCTIONS:
 
-In functions.py, update get_deadline_calendar so its per-engagement filtering and effective deadline calculation exactly matches deadline_watch: use extended_deadline when set, otherwise filing_deadline, exclude engagements with status completed or archived, and require is_active to be true. Keep get_deadline_calendar's own function signature, its firm_id and db and days_ahead parameters, and its existing return shape, including deadline_count, exactly as they are, only the underlying business logic changes. Do not touch deadline_watch itself, it is already correct and is the source of truth being matched.
+Backend: add concierge_suggestions_enabled as an optional boolean field to UserOut in schemas/user.py, matching the exact style of the existing concierge_entry_mode field. In GET /users/me in users.py, add one more line following the exact same pattern as the existing concierge_entry_mode line, setting user_out.concierge_suggestions_enabled from current_firm.settings, defaulting to true if the key is absent from the settings JSON blob or if settings itself is null. No new endpoint is needed, this reuses the existing PATCH /users/firm/settings merge-safe endpoint for writing, the same one already used for concierge_entry_mode.
 
-Backend: add a new GET /deadline-summary endpoint in engagements.py, gated with require_staff_or_above matching the existing style in this file, calling the now-corrected get_deadline_calendar directly with the current firm's id, the db session, and a 14 day window, returning its result as-is. Do not duplicate the deadline logic in this new endpoint, only call the function.
+Frontend, useAuth.tsx: add concierge_suggestions_enabled as an optional boolean field on the AuthUser interface, matching the style of the existing concierge_entry_mode field.
 
-Frontend: add a new useFetch call to the new GET /engagements/deadline-summary endpoint on the Calendar page, matching the existing data fetching style already in this file. If the returned deadline_count is greater than zero, render a ContextualBanner near the top of the page, above the calendar grid, with tone amber, a message stating the real count with correct singular or plural wording, for example X filing deadline(s) in the next 14 days, and no leading duplicate number, and an action label of Ask Concierge. The onAction callback should call emitConciergeAction twice in sequence, first with type open-panel, then with type prefill-panel-input and prefillMessage set to a clear, real question such as What deadlines are coming up in the next 14 days, reusing the existing open-panel plus auto-send pattern already established tonight. Do not change the existing calendar grid, its event rendering, or any other logic already on this page.
+Frontend, Settings page: add a new section titled Concierge Suggestions, placed directly below the existing Concierge Entry Point section, with a field labeled Show suggestions on pages and two real radio-style circular controls labeled Off and On, following the exact same visual and interaction pattern already used for the Entry style controls immediately above it. Include a short description line, for example something like Off hides all Concierge suggestion cards and banners across the app. On shows them when something real is worth noticing. Selecting either option immediately calls the existing PATCH /users/firm/settings endpoint with concierge_suggestions_enabled true or false, matching the exact call style already used for concierge_entry_mode. Read the current value from the firm's existing settings object on page load to show the correct option selected, defaulting to On if the key is absent.
+
+Frontend, all nine pages: in each of the nine files listed above, find the exact conditional currently gating whether SuggestionCard or ContextualBanner renders, and add an additional check requiring user?.concierge_suggestions_enabled to not be explicitly false, meaning it should render when the value is true, undefined, or not yet loaded, and should not render only when it is explicitly false. Use the exact same user object from useAuth already available or easily added to each of these files. Do not change any of the real data fetching, trigger thresholds, or business logic already in these nine files, this task only adds one additional gating condition to each existing render check.
 
 VERIFY AFTER ACT:
 
-grep -n "extended_deadline\|is_active" /home/corby/jamm-os/app/api/concierge/functions.py | grep -A 2 -B 2 "584\|deadline_calendar"
+grep -n "concierge_suggestions_enabled" /home/corby/jamm-os/app/schemas/user.py /home/corby/jamm-os/app/api/users.py /home/corby/jamm-os/frontend/src/lib/hooks/useAuth.tsx /home/corby/jamm-os/frontend/src/app/\(app\)/settings/page.tsx
 
-python3 -c "
-import sys
-sys.path.insert(0, '/home/corby/jamm-os')
-from app.api.concierge.functions import get_deadline_calendar
-print('function updated, real check requires live data')
-"
+Expected: present in all four.
 
-grep -n "@router.get(\"/deadline-summary\"" /home/corby/jamm-os/app/api/engagements.py
+grep -n "concierge_suggestions_enabled" /home/corby/jamm-os/frontend/src/app/\(app\)/staff/page.tsx /home/corby/jamm-os/frontend/src/app/\(app\)/tasks/page.tsx /home/corby/jamm-os/frontend/src/app/\(app\)/engagements/page.tsx /home/corby/jamm-os/frontend/src/app/\(app\)/calendar/page.tsx /home/corby/jamm-os/frontend/src/app/\(app\)/timesheets/page.tsx /home/corby/jamm-os/frontend/src/app/\(app\)/clients/\[id\]/page.tsx /home/corby/jamm-os/frontend/src/app/\(app\)/clients/page.tsx /home/corby/jamm-os/frontend/src/app/\(app\)/documents/page.tsx /home/corby/jamm-os/frontend/src/app/\(app\)/billing/page.tsx
 
-grep -n "deadline_count\|deadline-summary" /home/corby/jamm-os/frontend/src/app/\(app\)/calendar/page.tsx
+Expected: present in all nine, confirming none were missed.
 
 python3 -c "from app.main import app; print('OK')"
 
@@ -107,19 +104,21 @@ MANUAL VERIFICATION:
 
 Restart both servers.
 
-Check whether any real engagements currently have a filing or extended deadline within the next 14 days, and whether that number matches what the Dashboard's own Tax Deadline Watch section shows for the same real data, confirming the two are now actually consistent with each other, not just structurally similar.
+On Settings, confirm the new Concierge Suggestions section appears below Concierge Entry Point, with On selected by default.
 
-If real deadlines exist, confirm the amber banner appears on the Calendar page with correct wording, and confirm clicking Ask Concierge opens the panel, sends the question immediately, and produces an accurate response that agrees with what the Dashboard shows.
+Select Off. Visit at least three of the nine pages that currently have real trigger conditions true, for example Billing with a real overdue invoice, Engagements with a real stalled engagement, and the client detail page for a client old enough to trigger the portal invite card. Confirm none of them show any suggestion card or banner, even though their underlying real conditions are still true.
 
-Confirm the existing calendar grid and its events still render exactly as before, unaffected by this change.
+Select On again. Revisit the same three pages, confirm the suggestions reappear correctly with the same real data as before.
 
-Report pass or fail for each check individually, and explicitly confirm whether the Concierge's answer and the Dashboard's own number now agree, since that agreement is the actual point of this task, not just the new banner existing.
+Reload the page entirely after selecting Off, confirm the choice persisted as a real firm setting, not just local UI state.
+
+Report pass or fail for all four checks individually.
 
 GIT:
 
 git add -A
 
-git commit -m "align get_deadline_calendar with the richer, already-correct deadline logic already powering the Dashboard's Tax Deadline Watch, extended deadline fallback, excluding completed, archived, or inactive engagements, fixing a real discrepancy where the Concierge and the product itself could have disagreed on which deadlines are upcoming, then wire the ninth real page of the inline Concierge redesign, an amber ContextualBanner on the Calendar page using this now-corrected, single source of truth"
+git commit -m "add a firm-level Concierge Suggestions Off or On setting, letting a firm owner turn off all nine inline suggestion cards and banners built across the app tonight, following the identical already-proven pattern used for the Concierge Entry Point setting, threaded through GET /users/me and read via useAuth rather than localStorage so it is correct on first load from any browser or device, defaulting to On so existing firms keep current behavior unless they explicitly opt out"
 
 git pull --rebase origin main
 

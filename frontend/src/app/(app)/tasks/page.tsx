@@ -177,7 +177,7 @@ export default function TasksPage() {
           Tasks
         </h1>
 
-        {(overdueTaskData?.overdue_tasks ?? 0) > 0 && (
+        {(overdueTaskData?.overdue_tasks ?? 0) > 0 && user?.concierge_suggestions_enabled !== false && (
           <ContextualBanner
             tone='red'
             count={overdueTaskData!.overdue_tasks}
