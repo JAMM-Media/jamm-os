@@ -386,7 +386,7 @@ export default function CalendarPage() {
   const { data: deadlineSummary } = useQuery({
     queryKey: ['engagement-deadline-summary'],
     queryFn: async () => {
-      const { data } = await api.get('/api/v1/engagements/deadline-summary')
+      const { data } = await api.get('/engagements/deadline-summary')
       return data as { deadline_count: number }
     },
   })
