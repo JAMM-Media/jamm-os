@@ -54,39 +54,37 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Wire the sixth real page of the inline Concierge redesign — an overloaded-staff banner on the Staff page, gated to manager or above
+TASK: Wire the seventh real page of the inline Concierge redesign — an outstanding-document-requests banner on the Documents page
 
 USE: Fable 5
 
 VERIFY BEFORE ACT:
 
-sed -n '187,223p' /home/corby/jamm-os/app/api/concierge/functions.py
+sed -n '815,845p' /home/corby/jamm-os/app/api/concierge/functions.py
 
-sed -n '1,30p' /home/corby/jamm-os/app/api/users.py
+sed -n '1,55p' /home/corby/jamm-os/app/api/document_requests.py
 
-sed -n '1,30p' /home/corby/jamm-os/frontend/src/app/\(app\)/staff/page.tsx
+sed -n '1,25p' /home/corby/jamm-os/frontend/src/app/\(app\)/documents/page.tsx
 
 cat /home/corby/jamm-os/frontend/src/components/concierge-inline/ContextualBanner.tsx
 
-Confirm get_staff_capacity in functions.py already computes overloaded_count as a real, precise count of active staff whose hours this week reach or exceed 100 percent of a 40 hour standard week. Confirm users.py already imports require_staff_or_above, require_firm_owner, and get_current_firm, and confirm there is no require_manager_or_above import yet in this file, it will need to be added. Confirm the Staff page already redirects staff-role users away entirely before any content renders, confirming this page is already restricted to manager and owner roles at the page level.
+Confirm get_outstanding_document_requests in functions.py already computes outstanding_count as a real, precise count of document requests with status pending or partial. Confirm document_requests.py has no existing count-only summary route and its existing read endpoints, including the list endpoint, are gated with require_staff_or_above. Confirm the Documents page's real current structure before adding anything.
 
 WHAT THIS IS:
 
-This is the sixth real, live page of the inline Concierge redesign, following the same proven pattern from Billing, the client detail page, Engagements, Tasks, and Timesheets tonight. This one carries a deliberate access decision: get_staff_capacity returns firm-wide utilization data across every staff member, real hours worked and overload status per person, which is sensitive personnel information. This session already established a real security principle earlier tonight, restricting staff-role Concierge access away from firm-wide financial and personnel data. This new endpoint follows that same principle directly, gated to manager or above rather than the staff-or-above pattern used on every other page tonight, since staff should not be able to query every other staff member's utilization data.
+This is the seventh real, live page of the inline Concierge redesign, following the same proven pattern from Billing, the client detail page, Engagements, Tasks, Timesheets, and Staff tonight. get_outstanding_document_requests already exists and already correctly computes the real outstanding count, this task exposes that same real, tested number on the Documents page itself.
 
 CHANGE INSTRUCTIONS:
 
-Backend: add require_manager_or_above to the existing roles import in users.py. Add a new GET /capacity endpoint in this file, gated with require_manager_or_above, calling get_staff_capacity from concierge/functions.py directly with the current firm's id and the db session, returning its result as-is. Do not duplicate or reimplement the utilization calculation, only call the existing function, so there is exactly one definition of this anywhere in the codebase. Do not modify get_staff_capacity itself.
+Backend: add a new GET /outstanding-summary endpoint in document_requests.py, gated with require_staff_or_above matching the existing style in this file, calling get_outstanding_document_requests from concierge/functions.py directly with the current firm's id and the db session, returning its result as-is. Do not duplicate or reimplement the outstanding business rule, only call the existing function, so there is exactly one definition of what counts as outstanding anywhere in the codebase. Do not modify get_outstanding_document_requests itself.
 
-Frontend: add a new useFetch call to the new GET /users/capacity endpoint on the Staff page, matching the existing style already in this file, and only fire this fetch when the current user's role is manager or firm_owner, matching the access restriction already established on this page, not for the staff role case that redirects away. If the returned overloaded_count is greater than zero, render a ContextualBanner above the existing roster or credentials content, with tone amber, a message stating the real count with correct singular or plural wording, for example X staff member(s) are at or above full capacity this week, and no leading duplicate number, and an action label of Ask Concierge. The onAction callback should call emitConciergeAction twice in sequence, first with type open-panel, then with type prefill-panel-input and prefillMessage set to the literal text Which staff members are overloaded this week, reusing the existing open-panel plus auto-send pattern already established tonight. Do not change the existing Roster or Credentials tab content or their data fetching.
+Frontend: add a new useFetch call to the new GET /document-requests/outstanding-summary endpoint on the Documents page, matching the existing style of other useFetch calls already in this file. If the returned outstanding_count is greater than zero, render a ContextualBanner above the existing document list or table, with tone amber, a message stating the real count with correct singular or plural wording, for example X document request(s) are still outstanding, and no leading duplicate number, and an action label of Ask Concierge. The onAction callback should call emitConciergeAction twice in sequence, first with type open-panel, then with type prefill-panel-input and prefillMessage set to a clear, real question such as What document requests are still outstanding, reusing the existing open-panel plus auto-send pattern already established tonight. Do not change the existing document table or card views, their data fetching, or any filtering logic already on this page.
 
 VERIFY AFTER ACT:
 
-grep -n "require_manager_or_above" /home/corby/jamm-os/app/api/users.py
+grep -n "@router.get(\"/outstanding-summary\"" /home/corby/jamm-os/app/api/document_requests.py
 
-grep -n "@router.get(\"/capacity\"" /home/corby/jamm-os/app/api/users.py
-
-grep -n "overloaded" /home/corby/jamm-os/frontend/src/app/\(app\)/staff/page.tsx
+grep -n "outstanding" /home/corby/jamm-os/frontend/src/app/\(app\)/documents/page.tsx
 
 python3 -c "from app.main import app; print('OK')"
 
@@ -96,19 +94,19 @@ MANUAL VERIFICATION:
 
 Restart both servers.
 
-Since real staff time entries were mostly cleaned up as test data was removed tonight, check whether any active staff member currently has 40 or more hours logged this week. If not, report this clearly rather than guessing, real test data may need to be inserted the same way it was for Timesheets before this can be visually confirmed.
+Check whether any real document requests with status pending or partial currently exist for this firm. If not, report this plainly, real test data may need to be inserted the same way it was for Timesheets and Staff before this can be visually confirmed live.
 
-If a real overloaded staff member exists, confirm the amber banner appears on the Staff page with correct wording, and confirm clicking Ask Concierge opens the panel, sends the question immediately, and produces an accurate response naming the real overloaded staff member.
+If real outstanding requests exist, confirm the amber banner appears on the Documents page with correct wording, and confirm clicking Ask Concierge opens the panel, sends the question immediately, and produces an accurate response.
 
-Log in or switch to the staff-role test account and confirm this page still correctly blocks staff from seeing it at all, unaffected by this change.
+Confirm the existing document table and card views still work exactly as before, unaffected by this change.
 
-Report pass or fail for each check individually, and state plainly whether the banner itself was actually seen live or only confirmed structurally through code, since real data may not currently exist to trigger it.
+Report pass or fail for each check individually, and state plainly whether the banner was seen live or only confirmed structurally.
 
 GIT:
 
 git add -A
 
-git commit -m "wire the sixth real page of the inline Concierge redesign, an amber ContextualBanner on the Staff page showing real overloaded-staff data from a new endpoint that reuses the existing get_staff_capacity function as its single source of truth, deliberately gated to manager or above rather than the staff-or-above pattern used on every other page tonight, since firm-wide staff utilization data is sensitive personnel information and this follows the same staff-data-access principle established earlier tonight"
+git commit -m "wire the seventh real page of the inline Concierge redesign, an amber ContextualBanner on the Documents page showing real outstanding document request data from a new endpoint that reuses the existing get_outstanding_document_requests function as its single source of truth, following the identical pattern already proven six times tonight"
 
 git pull --rebase origin main
 

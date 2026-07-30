@@ -77,6 +77,20 @@ def list_document_requests(
     return PaginatedResponse(total=len(total_items), limit=limit, offset=skip, items=items)
 
 
+
+
+# ---------------------------------------------------------
+# OUTSTANDING SUMMARY
+# ---------------------------------------------------------
+@router.get("/outstanding-summary")
+def get_outstanding_summary(
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    _: object = Depends(require_staff_or_above),
+):
+    from app.api.concierge.functions import get_outstanding_document_requests
+    return get_outstanding_document_requests(firm_id=current_firm.id, db=db)
+
 # ---------------------------------------------------------
 # GET SINGLE
 # ---------------------------------------------------------
