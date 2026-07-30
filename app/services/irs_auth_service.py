@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 from uuid import UUID
 
 from app.crud import irs_authorization as crud_auth
+from app.crud import irs_authorization_warning as crud_warning
 from app.crud import signature_envelope as crud_envelope
 from app.models.client import Client
 from app.models.firm import Firm
@@ -245,9 +246,13 @@ def send_irs_authorization(
 
 def check_expiring_authorizations() -> dict:
     """
-    Scheduler function: find active authorizations expiring within 30 days
-    and emit irs_authorization.expiry_approaching events.
+    Scheduler function: warn on active authorizations approaching expiry and
+    close out any that have already lapsed.
     Creates its own DB session. Safe to call from background tasks.
+
+    The tier ladder and direct delivery arrive in Phase A3. This phase wires
+    the two queries and makes the lapsed branch reachable, which it was not
+    while a single window query filtered out everything already past due.
     """
     from app.db.session import SessionLocal
     from app.services.event_bus import emit_event_sync
@@ -255,11 +260,12 @@ def check_expiring_authorizations() -> dict:
 
     db = SessionLocal()
     try:
-        expiring = crud_auth.get_authorizations_expiring_soon(db, days=30)
+        today = date.today()
+        expiring = crud_auth.get_authorizations_in_warning_window(db, max_days=60)
         alerts_emitted = 0
 
         for auth in expiring:
-            days_remaining = (auth.valid_until - date.today()).days
+            days_remaining = (auth.valid_until - today).days
             emit_event_sync(
                 event=TriggerEvent.irs_authorization_expiry_approaching,
                 payload={
@@ -283,17 +289,91 @@ def check_expiring_authorizations() -> dict:
                     "warning_tier": None,
                 }
             )
-            if auth.valid_until is not None and auth.valid_until < date.today():
-                mark_authorization_expired(
-                    db=db,
-                    authorization=auth,
-                    firm_id=auth.firm_id,
-                )
             alerts_emitted += 1
 
-        return {"checked": len(expiring), "alerts_emitted": alerts_emitted}
+        # Separate pass. Catches anything that lapsed without being closed
+        # out, however long ago. Writing status = "expired" drains this set.
+        lapsed = crud_auth.get_lapsed_active_authorizations(db)
+        for auth in lapsed:
+            mark_authorization_expired(
+                db=db,
+                authorization=auth,
+                firm_id=auth.firm_id,
+            )
+
+        return {
+            "checked": len(expiring),
+            "alerts_emitted": alerts_emitted,
+            "expired": len(lapsed),
+        }
     finally:
         db.close()
+
+
+def update_authorization(
+    *,
+    db: Session,
+    authorization,
+    firm_id: UUID,
+    auth_in: IrsAuthorizationUpdate,
+):
+    """
+    Update an authorization, resetting its warning ladder when the expiry
+    date moves.
+
+    A changed valid_until makes every tier already recorded meaningless,
+    because those tiers were computed against the old date. Clearing the
+    rows lets the ladder recompute from scratch on the next sweep.
+
+    This is the one and only trigger for deleting warning rows. Supersession
+    does not clear them, expiry does not clear them, and revocation does not
+    clear them, because in all three cases the history is the record of what
+    the system did before the outcome.
+
+    Renewals, corrections, and plain typos all resolve through this single
+    mechanism. A mistyped year that gets fixed recomputes the ladder, which
+    is why no separate status value is needed for "entered wrong".
+    """
+    changes = auth_in.model_dump(exclude_unset=True)
+
+    # Only a real change resets the ladder. Rewriting valid_until to the
+    # value it already holds is not a change and must not discard history.
+    valid_until_changing = (
+        "valid_until" in changes
+        and changes["valid_until"] != authorization.valid_until
+    )
+
+    if valid_until_changing:
+        cleared = crud_warning.delete_warnings_for_authorization(
+            db=db,
+            firm_id=firm_id,
+            authorization_id=authorization.id,
+        )
+        log_event(
+            firm_id=firm_id,
+            event_type="irs_authorization.warning_ladder_reset",
+            entity_type="irs_authorization",
+            entity_id=authorization.id,
+            actor_type="staff",
+            actor_id=None,
+            metadata={
+                "previous_valid_until": (
+                    authorization.valid_until.isoformat()
+                    if authorization.valid_until else None
+                ),
+                "new_valid_until": (
+                    changes["valid_until"].isoformat()
+                    if changes["valid_until"] else None
+                ),
+                "warnings_cleared": cleared,
+            }
+        )
+
+    return crud_auth.update_irs_authorization(
+        db=db,
+        auth=authorization,
+        auth_in=auth_in,
+    )
 
 
 def mark_authorization_renewed(
@@ -324,6 +404,33 @@ def mark_authorization_expired(
     authorization,
     firm_id,
 ) -> None:
+    """
+    Close out an authorization that lapsed on its own.
+
+    Writes status = "expired" as real control state rather than only logging.
+    The consequence is intended: get_active_authorization_for_client stops
+    returning this row, so request_transcript raises its existing 400. That
+    gate always existed and was decorative while nothing ever wrote the
+    status. Do not add a bypass.
+
+    Warning rows are NOT deleted here. The ladder history is what the
+    expiry event reports on, and it stays on the row afterwards.
+    """
+    warnings = crud_warning.list_warnings_for_authorization(
+        db=db,
+        firm_id=firm_id,
+        authorization_id=authorization.id,
+    )
+
+    # list_warnings_for_authorization orders by sent_at descending, so the
+    # first row is the most recent warning this authorization received.
+    days_since_expiry_warning = None
+    if warnings:
+        days_since_expiry_warning = (date.today() - warnings[0].sent_at.date()).days
+
+    authorization.status = "expired"
+    db.commit()
+
     log_event(
         firm_id=firm_id,
         event_type="irs_authorization.expired",
@@ -335,9 +442,86 @@ def mark_authorization_expired(
             "form_type": str(authorization.form_type) if hasattr(authorization, "form_type") and authorization.form_type else None,
             "expired_date": authorization.valid_until.isoformat() if hasattr(authorization, "valid_until") and authorization.valid_until else None,
             "client_id": str(authorization.client_id) if hasattr(authorization, "client_id") else None,
-            "days_since_expiry_warning": None,
+            "warning_tiers_fired": len(warnings),
+            "days_since_expiry_warning": days_since_expiry_warning,
         }
     )
+
+
+def _supersede_prior_active_authorizations(
+    *,
+    db: Session,
+    firm_id: UUID,
+    client_id: UUID,
+    form_type: str,
+    replacement_id: UUID,
+) -> int:
+    """
+    Retire any authorization this one replaces, and return how many.
+
+    Scoped to firm AND client AND form_type. This is deliberately NOT "one
+    active authorization per client": a client can hold an 8821 and a 2848
+    at the same time, and get_active_authorization_for_client filters by
+    form type, so retiring the 2848 because an 8821 activated would break
+    transcript access outright.
+
+    Superseded rows are never deleted. They keep their signed_document_id,
+    so the attached document stays where it is in the Documents module, and
+    they keep their full warning history, which is the renewal lead time
+    signal. transcript_requests.irs_authorization_id is ondelete="RESTRICT"
+    so the database would refuse a delete regardless.
+    """
+    from app.models.irs_authorization import IrsAuthorization
+
+    priors = db.execute(
+        select(IrsAuthorization).where(
+            IrsAuthorization.firm_id == firm_id,
+            IrsAuthorization.client_id == client_id,
+            IrsAuthorization.form_type == form_type,
+            IrsAuthorization.status == "active",
+            IrsAuthorization.id != replacement_id,
+        )
+    ).scalars().all()
+
+    if not priors:
+        return 0
+
+    today = date.today()
+    for prior in priors:
+        days_remaining = None
+        if prior.valid_until is not None:
+            days_remaining = (prior.valid_until - today).days
+
+        warnings = crud_warning.list_warnings_for_authorization(
+            db=db,
+            firm_id=firm_id,
+            authorization_id=prior.id,
+        )
+
+        prior.status = "superseded"
+        db.commit()
+
+        # Days remaining paired with tiers fired is the renewal lead time
+        # signal: how much room was left, and how hard the system had
+        # already pushed, at the moment the firm actually renewed.
+        log_event(
+            firm_id=firm_id,
+            event_type="irs_authorization.superseded",
+            entity_type="irs_authorization",
+            entity_id=prior.id,
+            actor_type="system",
+            actor_id=None,
+            metadata={
+                "superseded_authorization_id": str(prior.id),
+                "new_authorization_id": str(replacement_id),
+                "form_type": str(prior.form_type) if prior.form_type else None,
+                "client_id": str(client_id),
+                "days_remaining_at_supersession": days_remaining,
+                "warning_tiers_fired": len(warnings),
+            }
+        )
+
+    return len(priors)
 
 
 def activate_authorization_for_envelope(
@@ -368,6 +552,14 @@ def activate_authorization_for_envelope(
     old_status = auth.status
     if old_status != "pending_signature":
         return
+
+    _supersede_prior_active_authorizations(
+        db=db,
+        firm_id=firm_id,
+        client_id=auth.client_id,
+        form_type=auth.form_type,
+        replacement_id=auth.id,
+    )
 
     auth.status = "active"
     if auth.valid_from is None:

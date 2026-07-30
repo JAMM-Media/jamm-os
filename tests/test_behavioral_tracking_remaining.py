@@ -185,11 +185,17 @@ def test_mark_authorization_renewed_fires_event():
 
 # ---------------------------------------------------------------------------
 # Test 6 -- mark_authorization_expired fires irs_authorization.expired
+#           and writes status, with no warning history on the row
 # ---------------------------------------------------------------------------
 def test_mark_authorization_expired_fires_event():
     mock_auth = _mock_authorization(valid_until=date.today() - timedelta(days=1))
+    mock_auth.status = "active"
 
-    with patch("app.services.irs_auth_service.log_event") as mock_log:
+    with patch("app.services.irs_auth_service.log_event") as mock_log, \
+         patch(
+             "app.services.irs_auth_service.crud_warning.list_warnings_for_authorization",
+             return_value=[],
+         ):
         mark_authorization_expired(
             db=MagicMock(),
             authorization=mock_auth,
@@ -199,23 +205,102 @@ def test_mark_authorization_expired_fires_event():
     assert mock_log.called
     assert mock_log.call_args.kwargs["event_type"] == "irs_authorization.expired"
 
+    # Phase A2: the status is real control state now, not only a log line.
+    assert mock_auth.status == "expired"
+
+    metadata = mock_log.call_args.kwargs["metadata"]
+    assert metadata["warning_tiers_fired"] == 0
+    assert metadata["days_since_expiry_warning"] is None
+
 
 # ---------------------------------------------------------------------------
-# Test 7 -- expired check fires in scheduler when auth is past due
+# Test 6b -- the expiry event reports real warning history when tiers fired
+# ---------------------------------------------------------------------------
+def test_mark_authorization_expired_reports_warning_history():
+    mock_auth = _mock_authorization(valid_until=date.today() - timedelta(days=1))
+    mock_auth.status = "active"
+
+    # Most recent first, matching list_warnings_for_authorization's ordering.
+    recent = MagicMock()
+    recent.sent_at = datetime.now(timezone.utc) - timedelta(days=4)
+    older = MagicMock()
+    older.sent_at = datetime.now(timezone.utc) - timedelta(days=40)
+
+    with patch("app.services.irs_auth_service.log_event") as mock_log, \
+         patch(
+             "app.services.irs_auth_service.crud_warning.list_warnings_for_authorization",
+             return_value=[recent, older],
+         ):
+        mark_authorization_expired(
+            db=MagicMock(),
+            authorization=mock_auth,
+            firm_id=mock_auth.firm_id,
+        )
+
+    metadata = mock_log.call_args.kwargs["metadata"]
+    assert metadata["warning_tiers_fired"] == 2
+    # Computed from the most recent row, not the oldest.
+    assert metadata["days_since_expiry_warning"] == 4
+
+
+# ---------------------------------------------------------------------------
+# Test 7 -- the lapsed query, not the warning window, drives expiry
+#
+# Rewritten in Phase A2. The old version patched
+# get_authorizations_expiring_soon, a single window query that filtered to
+# valid_until >= today and so could never return a lapsed row. That made the
+# expiry branch it asserted on unreachable in production. The sweep now runs
+# two separate queries and this test pins that split.
 # ---------------------------------------------------------------------------
 def test_expired_check_fires_in_scheduler_when_past_due():
     yesterday = date.today() - timedelta(days=1)
-    mock_auth = _mock_authorization(valid_until=yesterday)
+    lapsed_auth = _mock_authorization(valid_until=yesterday)
 
     mock_db = MagicMock()
 
     with patch("app.db.session.SessionLocal", return_value=mock_db), \
-         patch("app.services.irs_auth_service.crud_auth.get_authorizations_expiring_soon", return_value=[mock_auth]), \
+         patch(
+             "app.services.irs_auth_service.crud_auth.get_authorizations_in_warning_window",
+             return_value=[],
+         ), \
+         patch(
+             "app.services.irs_auth_service.crud_auth.get_lapsed_active_authorizations",
+             return_value=[lapsed_auth],
+         ), \
          patch("app.services.event_bus.emit_event_sync"), \
-         patch("app.services.irs_auth_service.crud_auth.update_irs_authorization"), \
          patch("app.services.irs_auth_service.log_event"), \
          patch("app.services.irs_auth_service.mark_authorization_expired") as mock_expired:
 
-        check_expiring_authorizations()
+        result = check_expiring_authorizations()
 
     mock_expired.assert_called_once()
+    assert mock_expired.call_args.kwargs["authorization"] is lapsed_auth
+    assert result["expired"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Test 7b -- an authorization still inside the window is warned, not expired
+# ---------------------------------------------------------------------------
+def test_warning_window_authorization_is_not_expired():
+    upcoming_auth = _mock_authorization(valid_until=date.today() + timedelta(days=30))
+
+    mock_db = MagicMock()
+
+    with patch("app.db.session.SessionLocal", return_value=mock_db), \
+         patch(
+             "app.services.irs_auth_service.crud_auth.get_authorizations_in_warning_window",
+             return_value=[upcoming_auth],
+         ), \
+         patch(
+             "app.services.irs_auth_service.crud_auth.get_lapsed_active_authorizations",
+             return_value=[],
+         ), \
+         patch("app.services.event_bus.emit_event_sync"), \
+         patch("app.services.irs_auth_service.log_event"), \
+         patch("app.services.irs_auth_service.mark_authorization_expired") as mock_expired:
+
+        result = check_expiring_authorizations()
+
+    mock_expired.assert_not_called()
+    assert result["alerts_emitted"] == 1
+    assert result["expired"] == 0

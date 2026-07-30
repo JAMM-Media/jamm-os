@@ -20,7 +20,11 @@ from app.schemas.irs_authorization import (
     IrsAuthorizationSendRequest,
     IrsAuthorizationUpdate,
 )
-from app.services.irs_auth_service import send_irs_authorization, check_expiring_authorizations
+from app.services.irs_auth_service import (
+    send_irs_authorization,
+    check_expiring_authorizations,
+    update_authorization,
+)
 from app.services.event_bus import emit_event
 from app.core.enums import TriggerEvent
 
@@ -162,11 +166,18 @@ def update_irs_authorization(
     """
     Update an IRS authorization record.
     Used by the webhook handler to mark as active.
+    Changing valid_until resets the expiry warning ladder, which is why this
+    goes through the service layer rather than straight to CRUD.
     """
     auth = crud_auth.get_irs_authorization(db, auth_id, current_firm.id)
     if not auth:
         raise HTTPException(status_code=404, detail="IRS authorization not found")
-    return crud_auth.update_irs_authorization(db, auth, payload)
+    return update_authorization(
+        db=db,
+        authorization=auth,
+        firm_id=current_firm.id,
+        auth_in=payload,
+    )
 
 
 @router.post("/run-expiry-check", status_code=200)

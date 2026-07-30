@@ -87,21 +87,58 @@ def get_active_authorization_for_client(
     ).scalars().first()
 
 
-def get_authorizations_expiring_soon(
+def get_authorizations_in_warning_window(
     db: Session,
-    days: int = 30,
+    max_days: int,
 ) -> list[IrsAuthorization]:
     """
-    Returns active authorizations whose valid_until falls within the
-    next N days.
+    Active authorizations that have not yet lapsed but expire within
+    max_days. This is the set the warning ladder walks.
+
+    CROSS-FIRM BY DESIGN. This function takes no firm_id and must not be
+    given one. It backs the nightly sweep, which runs once for the whole
+    installation rather than once per firm, so it relies on the nightly
+    sweep exemption to the tenant isolation rule. Scoping it to a single
+    firm would silently stop expiry warnings for every other firm. The
+    function it replaced, get_authorizations_expiring_soon, relied on the
+    same exemption.
+
+    Notification state is deliberately not filtered here. Which tiers have
+    already fired lives in irs_authorization_warnings, and the sweep checks
+    it per tier.
     """
     today = date.today()
-    window_end = today + timedelta(days=days)
+    window_end = today + timedelta(days=max_days)
     return db.execute(
         select(IrsAuthorization).where(
             IrsAuthorization.status == "active",
             IrsAuthorization.valid_until.isnot(None),
-            IrsAuthorization.valid_until <= window_end,
             IrsAuthorization.valid_until >= today,
+            IrsAuthorization.valid_until <= window_end,
+        )
+    ).scalars().all()
+
+
+def get_lapsed_active_authorizations(
+    db: Session,
+) -> list[IrsAuthorization]:
+    """
+    Authorizations still marked active whose valid_until is already in the
+    past. These are the ones that slipped through, including any that
+    lapsed months ago and were never picked up.
+
+    CROSS-FIRM BY DESIGN. Same nightly sweep exemption as
+    get_authorizations_in_warning_window above. Do not add a firm_id
+    parameter to this function.
+
+    This query drains itself: the sweep writes status = "expired" for
+    everything it returns, so a given row is only ever seen once.
+    """
+    today = date.today()
+    return db.execute(
+        select(IrsAuthorization).where(
+            IrsAuthorization.status == "active",
+            IrsAuthorization.valid_until.isnot(None),
+            IrsAuthorization.valid_until < today,
         )
     ).scalars().all()
