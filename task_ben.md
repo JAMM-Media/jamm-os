@@ -54,61 +54,65 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Wire the sixth real page of the inline Concierge redesign — an overloaded-staff banner on the Staff page, gated to manager or above
+TASK: Make the floating persistent entry button draggable to anywhere on the main screen, with a persisted personal position and safe boundary clamping
 
 USE: Fable 5
 
 VERIFY BEFORE ACT:
 
-sed -n '187,223p' /home/corby/jamm-os/app/api/concierge/functions.py
+sed -n '105,120p' /home/corby/jamm-os/frontend/src/components/layout/AppShell.tsx
 
-sed -n '1,30p' /home/corby/jamm-os/app/api/users.py
+cat /home/corby/jamm-os/frontend/src/components/concierge-inline/PersistentEntryButton.tsx
 
-sed -n '1,30p' /home/corby/jamm-os/frontend/src/app/\(app\)/staff/page.tsx
+grep -n "w-12\|w-\[220px\]" /home/corby/jamm-os/frontend/src/components/layout/Sidebar.tsx
 
-cat /home/corby/jamm-os/frontend/src/components/concierge-inline/ContextualBanner.tsx
-
-Confirm get_staff_capacity in functions.py already computes overloaded_count as a real, precise count of active staff whose hours this week reach or exceed 100 percent of a 40 hour standard week. Confirm users.py already imports require_staff_or_above, require_firm_owner, and get_current_firm, and confirm there is no require_manager_or_above import yet in this file, it will need to be added. Confirm the Staff page already redirects staff-role users away entirely before any content renders, confirming this page is already restricted to manager and owner roles at the page level.
+Confirm the button's wrapping div currently uses a fixed bottom-6 right-6 position with no drag capability, confirm PersistentEntryButton's own onClick prop is what currently opens the panel, and confirm the main navigation sidebar is 48px wide when collapsed and 220px wide when expanded, before making any change.
 
 WHAT THIS IS:
 
-This is the sixth real, live page of the inline Concierge redesign, following the same proven pattern from Billing, the client detail page, Engagements, Tasks, and Timesheets tonight. This one carries a deliberate access decision: get_staff_capacity returns firm-wide utilization data across every staff member, real hours worked and overload status per person, which is sensitive personnel information. This session already established a real security principle earlier tonight, restricting staff-role Concierge access away from firm-wide financial and personnel data. This new endpoint follows that same principle directly, gated to manager or above rather than the staff-or-above pattern used on every other page tonight, since staff should not be able to query every other staff member's utilization data.
+Direct product decision made tonight, after seeing the floating button block part of the Calendar page's Upcoming panel. The button should become draggable anywhere on the main content area, like a movable widget, so a person can put it wherever it does not get in the way on any given page. This must not allow the button to be dragged onto the main left navigation sidebar, and must not allow it to be dragged into the Concierge panel's own space on the right, which only matters while the panel is open, at which point this button is already hidden. This is a personal, per-browser preference, not a firm-wide setting, since different people may want it in different places depending on their own screen and habits.
 
 CHANGE INSTRUCTIONS:
 
-Backend: add require_manager_or_above to the existing roles import in users.py. Add a new GET /capacity endpoint in this file, gated with require_manager_or_above, calling get_staff_capacity from concierge/functions.py directly with the current firm's id and the db session, returning its result as-is. Do not duplicate or reimplement the utilization calculation, only call the existing function, so there is exactly one definition of this anywhere in the codebase. Do not modify get_staff_capacity itself.
+In AppShell.tsx, replace the static fixed bottom-6 right-6 wrapper div with a draggable version. Add a new piece of state holding either a real pixel position, an object with x and y numbers, or null meaning use the original default bottom-right corner position. Initialize this state to null on first render to avoid any server and client mismatch, then read a stored position from localStorage inside a useEffect after mount, the same safe pattern already used elsewhere in this file for other browser-only state.
 
-Frontend: add a new useFetch call to the new GET /users/capacity endpoint on the Staff page, matching the existing style already in this file, and only fire this fetch when the current user's role is manager or firm_owner, matching the access restriction already established on this page, not for the staff role case that redirects away. If the returned overloaded_count is greater than zero, render a ContextualBanner above the existing roster or credentials content, with tone amber, a message stating the real count with correct singular or plural wording, for example X staff member(s) are at or above full capacity this week, and no leading duplicate number, and an action label of Ask Concierge. The onAction callback should call emitConciergeAction twice in sequence, first with type open-panel, then with type prefill-panel-input and prefillMessage set to the literal text Which staff members are overloaded this week, reusing the existing open-panel plus auto-send pattern already established tonight. Do not change the existing Roster or Credentials tab content or their data fetching.
+Implement dragging using pointer events, not the native HTML5 drag and drop API, attached to the wrapping div. On pointer down, record the starting pointer position and the button's current position. On pointer move while the pointer is down, update the button's position to follow the pointer, clamped so the button can never go further left than 220 plus 12 pixels from the left edge, never closer than 12 pixels to the top, right, or bottom edges of the viewport, accounting for the button's own real rendered width and height so it never gets clipped off screen. On pointer up, if the total distance moved since pointer down is small, a few pixels or less, treat this as a click and call the button's existing onClick behavior to open the panel. If the distance moved is larger than that, treat it as a completed drag, do not open the panel, and save the final position to localStorage under a new key so it persists across visits in this browser.
+
+When a stored position exists, render the wrapping div using that absolute pixel position instead of the original bottom-6 right-6 classes. When no stored position exists yet, render exactly as it does today, unchanged, so nobody's current experience changes until they actually drag it once.
+
+Do not modify PersistentEntryButton.tsx itself, all drag logic and position state should live in the wrapping div inside AppShell.tsx. Do not change the conciergeEntryMode === 'floating' and !conciergeOpen condition that already correctly decides whether this button renders at all.
 
 VERIFY AFTER ACT:
 
-grep -n "require_manager_or_above" /home/corby/jamm-os/app/api/users.py
-
-grep -n "@router.get(\"/capacity\"" /home/corby/jamm-os/app/api/users.py
-
-grep -n "overloaded" /home/corby/jamm-os/frontend/src/app/\(app\)/staff/page.tsx
-
-python3 -c "from app.main import app; print('OK')"
+grep -n "onPointerDown\|onPointerMove\|onPointerUp\|localStorage.*button.*position\|jamm_concierge_button_position" /home/corby/jamm-os/frontend/src/components/layout/AppShell.tsx
 
 npx tsc --noEmit
 
 MANUAL VERIFICATION:
 
-Restart both servers.
+Restart the frontend.
 
-Since real staff time entries were mostly cleaned up as test data was removed tonight, check whether any active staff member currently has 40 or more hours logged this week. If not, report this clearly rather than guessing, real test data may need to be inserted the same way it was for Timesheets before this can be visually confirmed.
+Confirm the button still appears in its normal default bottom-right position on first load, unchanged from before.
 
-If a real overloaded staff member exists, confirm the amber banner appears on the Staff page with correct wording, and confirm clicking Ask Concierge opens the panel, sends the question immediately, and produces an accurate response naming the real overloaded staff member.
+Click it normally without dragging, confirm the panel still opens correctly, confirming click behavior was not broken by adding drag support.
 
-Log in or switch to the staff-role test account and confirm this page still correctly blocks staff from seeing it at all, unaffected by this change.
+Drag it to the middle of the screen, release, confirm it stays exactly where dropped and does not snap back.
 
-Report pass or fail for each check individually, and state plainly whether the banner itself was actually seen live or only confirmed structurally through code, since real data may not currently exist to trigger it.
+Reload the page entirely, confirm it remains in the same dragged position, confirming it is a real, persisted preference, not just temporary drag state.
+
+Attempt to drag it far to the left, onto or past where the main navigation sidebar sits, confirm it stops at the boundary and cannot overlap the sidebar.
+
+Attempt to drag it off any edge of the screen entirely, confirm it stays fully visible and clamped within the viewport in all directions.
+
+Visit the Calendar page specifically, confirm it can now be moved away from blocking the Upcoming panel, the real problem that prompted this tonight.
+
+Report pass or fail for each of these six checks individually.
 
 GIT:
 
 git add -A
 
-git commit -m "wire the sixth real page of the inline Concierge redesign, an amber ContextualBanner on the Staff page showing real overloaded-staff data from a new endpoint that reuses the existing get_staff_capacity function as its single source of truth, deliberately gated to manager or above rather than the staff-or-above pattern used on every other page tonight, since firm-wide staff utilization data is sensitive personnel information and this follows the same staff-data-access principle established earlier tonight"
+git commit -m "make the floating persistent entry button draggable anywhere on the main screen, addressing it blocking the Calendar page's Upcoming panel tonight, implemented with pointer events and a click-versus-drag distance threshold, clamped so it can never be dragged onto the main navigation sidebar or off any edge of the viewport, with the final position persisted per browser as a personal preference rather than a firm-wide setting"
 
 git pull --rebase origin main
 

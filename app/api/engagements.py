@@ -269,6 +269,21 @@ def list_stalled_engagements(
     return get_stalled_engagements(firm_id=current_firm.id, db=db)
 
 
+
+
+# ---------------------------------------------------------
+# DEADLINE SUMMARY
+# Must remain before /{engagement_id} route to avoid path conflict.
+# ---------------------------------------------------------
+@router.get("/deadline-summary")
+def get_deadline_summary(
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    _: object = Depends(require_staff_or_above),
+):
+    from app.api.concierge.functions import get_deadline_calendar
+    return get_deadline_calendar(firm_id=current_firm.id, db=db, days_ahead=14)
+
 @router.get("/{engagement_id}", response_model=EngagementOut)
 def get_engagement(
     engagement_id: UUID,

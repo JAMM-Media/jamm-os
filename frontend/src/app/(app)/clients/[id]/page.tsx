@@ -440,7 +440,7 @@ function ClientDetailContent() {
         {/* Tab content */}
         {activeTab === 'overview' && (
           <div>
-          {client && !client.portalInviteSentAt && !portalSuggestionDismissed && (() => {
+          {client && !client.portalInviteSentAt && !portalSuggestionDismissed && user?.concierge_suggestions_enabled !== false && (() => {
             const daysSince = Math.floor((Date.now() - new Date(client.createdAt).getTime()) / (1000 * 60 * 60 * 24))
             if (daysSince < 10) return null
             return (

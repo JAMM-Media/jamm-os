@@ -591,29 +591,35 @@ def get_deadline_calendar(firm_id: uuid.UUID, db: Session, days_ahead: int = 14)
             Engagement.name,
             Engagement.status,
             Engagement.filing_deadline,
+            Engagement.extended_deadline,
             Client.name.label("client_name"),
         )
         .join(Client, Engagement.client_id == Client.id)
         .where(
             Engagement.firm_id == firm_id,
-            Engagement.filing_deadline >= today,
-            Engagement.filing_deadline <= cutoff,
+            Engagement.status.notin_(["completed", "archived"]),
+            Engagement.is_active == True,  # noqa: E712
         )
-        .order_by(Engagement.filing_deadline.asc())
-        .limit(30)
+        .limit(200)
     ).fetchall()
 
-    deadlines = [
-        {
+    deadlines = []
+    for r in rows:
+        effective = r.extended_deadline or r.filing_deadline
+        if not effective:
+            continue
+        if not (today <= effective <= cutoff):
+            continue
+        deadlines.append({
             "engagement_id": str(r.id),
             "engagement_name": r.name,
             "client_name": r.client_name,
             "status": str(r.status),
-            "deadline": r.filing_deadline.isoformat() if r.filing_deadline else None,
-            "days_until": (r.filing_deadline - today).days if r.filing_deadline else None,
-        }
-        for r in rows
-    ]
+            "deadline": effective.isoformat(),
+            "days_until": (effective - today).days,
+        })
+
+    deadlines.sort(key=lambda x: x["deadline"])
 
     return {
         "days_ahead": days_ahead,

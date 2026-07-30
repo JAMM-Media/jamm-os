@@ -78,6 +78,7 @@ def read_users_me(
     user_out.firm_type = current_firm.firm_type
     user_out.concierge_active = current_firm.concierge_active
     user_out.concierge_entry_mode = (current_firm.settings or {}).get('concierge_entry_mode', 'floating')
+    user_out.concierge_suggestions_enabled = (current_firm.settings or {}).get('concierge_suggestions_enabled', True)
     return user_out
 
 

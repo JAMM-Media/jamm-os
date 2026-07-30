@@ -175,7 +175,7 @@ export default function TimesheetsPage() {
           ))}
         </div>
 
-        {displayHours > 0 && (
+        {displayHours > 0 && user?.concierge_suggestions_enabled !== false && (
           <ContextualBanner
             tone="amber"
             count={displayHours}

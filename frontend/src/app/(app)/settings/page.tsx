@@ -398,6 +398,7 @@ export default function SettingsPage() {
   const [firmContactEmail, setFirmContactEmail] = useState('')
   const [savingContact, setSavingContact] = useState(false)
   const [conciergeEntryMode, setConciergeEntryMode] = useState<'sidebar' | 'floating'>('floating')
+  const [conciergeSuggestionsEnabled, setConciergeSuggestionsEnabled] = useState<boolean>(true)
 
   const [googleReviewUrl, setGoogleReviewUrl] = useState('')
   const [reviewEnabled, setReviewEnabled] = useState(false)
@@ -502,6 +503,7 @@ export default function SettingsPage() {
     if (firmData?.settings) {
       const savedMode = firmData.settings.concierge_entry_mode as 'sidebar' | 'floating' | undefined
       setConciergeEntryMode(savedMode ?? 'floating')
+      setConciergeSuggestionsEnabled(firmData.settings.concierge_suggestions_enabled !== false)
       setEmailReplyTo((firmData.settings.email_reply_to as string) ?? '')
       setEmailDisplayName((firmData.settings.email_display_name as string) ?? '')
       setGoogleReviewUrl((firmData.settings.google_review_url as string) ?? '')
@@ -552,6 +554,15 @@ export default function SettingsPage() {
     try {
       // concierge_entry_mode is stored inside the firm settings JSON blob
       await api.patch('/users/firm/settings', { concierge_entry_mode: mode })
+    } catch {
+      // non-fatal
+    }
+  }
+
+  async function handleConciergeSuggestionsChange(enabled: boolean) {
+    setConciergeSuggestionsEnabled(enabled)
+    try {
+      await api.patch('/users/firm/settings', { concierge_suggestions_enabled: enabled })
     } catch {
       // non-fatal
     }
@@ -925,6 +936,45 @@ export default function SettingsPage() {
                         className="w-4 h-4 accent-brand cursor-pointer"
                       />
                       <span className="text-[13px] text-foreground">Floating</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Concierge Suggestions section */}
+            {isFirmOwner && (
+              <div className="bg-surface-card dark:bg-dark-card rounded-[10px] p-4 flex flex-col gap-3 max-w-lg" style={{ marginTop: '12px' }}>
+                <p className="text-[13px] font-medium text-brand dark:text-[#EDEEF0]">Concierge Suggestions</p>
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex-1">
+                    <p className="text-[13px] text-brand dark:text-[#EDEEF0]">Show suggestions on pages</p>
+                    <p className="text-[11px] text-[#6B7280] mt-0.5">
+                      Off hides all Concierge suggestion cards and banners across the app. On shows them when something real is worth noticing.
+                    </p>
+                  </div>
+                  <div className="flex gap-4">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="concierge_suggestions_enabled"
+                        value="false"
+                        checked={!conciergeSuggestionsEnabled}
+                        onChange={() => handleConciergeSuggestionsChange(false)}
+                        className="w-4 h-4 accent-brand cursor-pointer"
+                      />
+                      <span className="text-[13px] text-foreground">Off</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="concierge_suggestions_enabled"
+                        value="true"
+                        checked={conciergeSuggestionsEnabled}
+                        onChange={() => handleConciergeSuggestionsChange(true)}
+                        className="w-4 h-4 accent-brand cursor-pointer"
+                      />
+                      <span className="text-[13px] text-foreground">On</span>
                     </label>
                   </div>
                 </div>

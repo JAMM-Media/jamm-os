@@ -12,6 +12,7 @@ import { SaveAsTemplateModal } from '@/components/engagements/SaveAsTemplateModa
 import { AckFileUploader } from '@/components/engagements/AckFileUploader'
 import { engagementsApi, clientsApi, type Engagement, type Client } from '@/lib/api'
 import { useFetch } from '@/lib/hooks/useFetch'
+import { useAuth } from '@/lib/hooks/useAuth'
 import { Search, X, ChevronDown, Loader2 } from 'lucide-react'
 import { ContextualBanner } from '@/components/concierge-inline/ContextualBanner'
 import { emitConciergeAction } from '@/lib/events/conciergeEvents'
@@ -23,6 +24,7 @@ type ViewMode = 'table' | 'card'
 const ENGAGEMENT_STATUSES = ['planning', 'active', 'in_review', 'completed', 'archived']
 
 export default function EngagementsPage() {
+  const { user } = useAuth()
   const [view, setView] = useState<ViewMode>('table')
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('all')
@@ -189,7 +191,7 @@ export default function EngagementsPage() {
           Engagements
         </h1>
 
-        {(stalledData?.stalled_count ?? 0) > 0 && (
+        {(stalledData?.stalled_count ?? 0) > 0 && user?.concierge_suggestions_enabled !== false && (
           <ContextualBanner
             tone='amber'
             count={stalledData!.stalled_count}

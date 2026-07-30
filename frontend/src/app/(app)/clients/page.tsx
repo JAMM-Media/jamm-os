@@ -7,14 +7,17 @@ import { ClientTable } from '@/components/clients/ClientTable'
 import { ClientCard } from '@/components/clients/ClientCard'
 import { ClientEmptyState } from '@/components/clients/ClientEmptyState'
 import { NewClientModal } from '@/components/clients/NewClientModal'
-import { clientsApi, type Client } from '@/lib/api'
+import api, { clientsApi, type Client } from '@/lib/api'
 import { useFetch } from '@/lib/hooks/useFetch'
+import { useAuth } from '@/lib/hooks/useAuth'
+import { ContextualBanner } from '@/components/concierge-inline/ContextualBanner'
 import { Search } from 'lucide-react'
-import { onConciergeAction } from '@/lib/events/conciergeEvents'
+import { onConciergeAction, emitConciergeAction } from '@/lib/events/conciergeEvents'
 
 type ViewMode = 'table' | 'card'
 
 export default function ClientsPage() {
+  const { user } = useAuth()
   const [view, setView] = useState<ViewMode>('table')
   const [search, setSearch] = useState('')
   const [entityFilter, setEntityFilter] = useState<string>('all')
@@ -61,6 +64,7 @@ export default function ClientsPage() {
   }, [])
 
   const { data, isLoading, error, refetch } = useFetch(() => clientsApi.list(), [])
+  const { data: gapData } = useFetch(() => api.get('/clients/communication-gap-summary').then((r) => r.data as { gap_count: number }), [])
   const clients = [...localClients, ...(data?.items ?? [])]
 
   const filtered = clients.filter((c) => {
@@ -94,6 +98,19 @@ export default function ClientsPage() {
         <h1 className="text-2xl font-medium text-brand dark:text-[#EDEEF0]">
           Clients
         </h1>
+
+        {(gapData?.gap_count ?? 0) > 0 && user?.concierge_suggestions_enabled !== false && (
+          <ContextualBanner
+            tone="amber"
+            count={gapData!.gap_count}
+            message={`active client${gapData!.gap_count === 1 ? '' : 's'} with no contact in over 3 weeks.`}
+            actionLabel="Ask Concierge"
+            onAction={() => {
+              emitConciergeAction({ type: 'open-panel' })
+              emitConciergeAction({ type: 'prefill-panel-input', prefillMessage: "Which clients haven't I contacted recently?" })
+            }}
+          />
+        )}
 
         {/* Toolbar */}
         <div className="flex items-center gap-3">

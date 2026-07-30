@@ -33,6 +33,18 @@ export function AppShell({ children }: AppShellProps) {
   const { notifications } = useConciergeNotifications()
   const { user } = useAuth()
 
+  // Draggable floating button: null = use default bottom-right position
+  const [btnPos, setBtnPos] = useState<{ x: number; y: number } | null>(null)
+  const dragState = useRef<{
+    dragging: boolean
+    startPX: number
+    startPY: number
+    startBX: number
+    startBY: number
+    btnW: number
+    btnH: number
+  } | null>(null)
+
   useEffect(() => {
     const saved = sessionStorage.getItem('jamm_concierge_open') === 'true'
     if (saved) setConciergeOpen(true)
@@ -82,6 +94,16 @@ export function AppShell({ children }: AppShellProps) {
     }
   }, [user])
 
+  // Load persisted button position after mount (SSR-safe: localStorage is browser-only)
+  useEffect(() => {
+    const stored = localStorage.getItem('jamm_concierge_button_position')
+    if (stored) {
+      try {
+        setBtnPos(JSON.parse(stored))
+      } catch { /* ignore malformed stored value */ }
+    }
+  }, [])
+
   function handleConciergeOpen() {
     sessionStorage.setItem('jamm_concierge_open', 'true')
     setConciergeOpen(true)
@@ -90,6 +112,54 @@ export function AppShell({ children }: AppShellProps) {
   function handleConciergeClose() {
     sessionStorage.removeItem('jamm_concierge_open')
     setConciergeOpen(false)
+  }
+
+  function clampBtnPos(x: number, y: number, w: number, h: number) {
+    const SIDEBAR_WIDTH = 220
+    const MARGIN = 12
+    return {
+      x: Math.max(SIDEBAR_WIDTH + MARGIN, Math.min(window.innerWidth - w - MARGIN, x)),
+      y: Math.max(MARGIN, Math.min(window.innerHeight - h - MARGIN, y)),
+    }
+  }
+
+  function handleBtnPointerDown(e: React.PointerEvent<HTMLDivElement>) {
+    e.currentTarget.setPointerCapture(e.pointerId)
+    const rect = e.currentTarget.getBoundingClientRect()
+    dragState.current = {
+      dragging: false,
+      startPX: e.clientX,
+      startPY: e.clientY,
+      startBX: rect.left,
+      startBY: rect.top,
+      btnW: rect.width,
+      btnH: rect.height,
+    }
+  }
+
+  function handleBtnPointerMove(e: React.PointerEvent<HTMLDivElement>) {
+    const ds = dragState.current
+    if (!ds) return
+    const dx = e.clientX - ds.startPX
+    const dy = e.clientY - ds.startPY
+    if (!ds.dragging && Math.abs(dx) < 4 && Math.abs(dy) < 4) return
+    ds.dragging = true
+    setBtnPos(clampBtnPos(ds.startBX + dx, ds.startBY + dy, ds.btnW, ds.btnH))
+  }
+
+  function handleBtnPointerUp(e: React.PointerEvent<HTMLDivElement>) {
+    const ds = dragState.current
+    if (!ds) return
+    dragState.current = null
+    if (!ds.dragging) {
+      handleConciergeOpen()
+      return
+    }
+    const dx = e.clientX - ds.startPX
+    const dy = e.clientY - ds.startPY
+    const pos = clampBtnPos(ds.startBX + dx, ds.startBY + dy, ds.btnW, ds.btnH)
+    setBtnPos(pos)
+    localStorage.setItem('jamm_concierge_button_position', JSON.stringify(pos))
   }
 
   return (
@@ -110,9 +180,15 @@ export function AppShell({ children }: AppShellProps) {
       <ConciergePanel isOpen={conciergeOpen} onClose={handleConciergeClose} />
       {/* Floating entry point -- only rendered in floating mode, hidden when panel is open */}
       {conciergeEntryMode === 'floating' && !conciergeOpen && (
-        <div className="fixed bottom-6 right-6 z-40">
+        <div
+          className={`fixed z-40 cursor-grab active:cursor-grabbing select-none${btnPos ? '' : ' bottom-6 right-6'}`}
+          style={btnPos ? { left: btnPos.x, top: btnPos.y } : undefined}
+          onPointerDown={handleBtnPointerDown}
+          onPointerMove={handleBtnPointerMove}
+          onPointerUp={handleBtnPointerUp}
+        >
           <PersistentEntryButton
-            onClick={handleConciergeOpen}
+            onClick={() => {}}
             hasSuggestion={notifications.length > 0}
           />
         </div>

@@ -6,13 +6,17 @@ import { ViewToggle } from '@/components/ui/ViewToggle'
 import { DocumentTable } from '@/components/documents/DocumentTable'
 import { DocumentCard } from '@/components/documents/DocumentCard'
 import { DocumentEmptyState } from '@/components/documents/DocumentEmptyState'
-import { documentsApi, clientsApi } from '@/lib/api'
+import api, { documentsApi, clientsApi } from '@/lib/api'
 import { useFetch } from '@/lib/hooks/useFetch'
+import { useAuth } from '@/lib/hooks/useAuth'
+import { ContextualBanner } from '@/components/concierge-inline/ContextualBanner'
+import { emitConciergeAction } from '@/lib/events/conciergeEvents'
 import { Search } from 'lucide-react'
 
 type ViewMode = 'table' | 'card'
 
 export default function DocumentsPage() {
+  const { user } = useAuth()
   const [view, setView] = useState<ViewMode>('table')
   const [search, setSearch] = useState('')
   const [clientFilter, setClientFilter] = useState<string>('all')
@@ -23,6 +27,7 @@ export default function DocumentsPage() {
 
   const { data, isLoading, error } = useFetch(() => documentsApi.list(), [])
   const { data: clientsData } = useFetch(() => clientsApi.list(0, 100), [])
+  const { data: outstandingData } = useFetch(() => api.get('/document-requests/outstanding-summary').then((r) => r.data as { outstanding_count: number }), [])
   const documents = data?.items ?? []
   const uniqueEngagements = Array.from(
     new Set(documents.map((d) => d.engagementTitle).filter(Boolean))
@@ -70,6 +75,19 @@ export default function DocumentsPage() {
         <h1 className="text-2xl font-medium text-brand dark:text-[#EDEEF0]">
           Documents
         </h1>
+
+        {(outstandingData?.outstanding_count ?? 0) > 0 && user?.concierge_suggestions_enabled !== false && (
+          <ContextualBanner
+            tone="amber"
+            count={outstandingData!.outstanding_count}
+            message={`document request${outstandingData!.outstanding_count === 1 ? '' : 's'} still outstanding.`}
+            actionLabel="Ask Concierge"
+            onAction={() => {
+              emitConciergeAction({ type: 'open-panel' })
+              emitConciergeAction({ type: 'prefill-panel-input', prefillMessage: 'What document requests are still outstanding?' })
+            }}
+          />
+        )}
 
         {/* Toolbar */}
         <div className="flex items-center gap-3">

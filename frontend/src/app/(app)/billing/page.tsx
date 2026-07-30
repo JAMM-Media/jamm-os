@@ -11,6 +11,7 @@ import { BillingSummary } from '@/components/billing/BillingSummary'
 import { NewInvoiceModal } from '@/components/billing/NewInvoiceModal'
 import { invoicesApi, clientsApi, engagementsApi } from '@/lib/api'
 import { useFetch } from '@/lib/hooks/useFetch'
+import { useAuth } from '@/lib/hooks/useAuth'
 import { Search, X } from 'lucide-react'
 import { ContextualBanner } from '@/components/concierge-inline/ContextualBanner'
 import { emitConciergeAction } from '@/lib/events/conciergeEvents'
@@ -20,6 +21,7 @@ import type { Invoice } from '@/lib/api'
 type ViewMode = 'table' | 'card'
 
 export default function BillingPage() {
+  const { user } = useAuth()
   const [view, setView] = useState<ViewMode>('table')
   const [search, setSearch] = useState('')
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
@@ -145,7 +147,7 @@ export default function BillingPage() {
         </h1>
 
         {/* Summary bar */}
-        {(overdueData?.overdue_count ?? 0) > 0 && (
+        {(overdueData?.overdue_count ?? 0) > 0 && user?.concierge_suggestions_enabled !== false && (
           <ContextualBanner
             tone='red'
             count={overdueData!.overdue_count}
