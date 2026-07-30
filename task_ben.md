@@ -54,37 +54,41 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Wire the seventh real page of the inline Concierge redesign — an outstanding-document-requests banner on the Documents page
+TASK: Wire the eighth and final real page in tonight's Phase 3 scaling pass — a communication-gap banner on the Clients list page
 
 USE: Fable 5
 
 VERIFY BEFORE ACT:
 
-sed -n '815,845p' /home/corby/jamm-os/app/api/concierge/functions.py
+sed -n '239,293p' /home/corby/jamm-os/app/api/concierge/functions.py
 
-sed -n '1,55p' /home/corby/jamm-os/app/api/document_requests.py
+sed -n '1,50p' /home/corby/jamm-os/app/api/clients.py
 
-sed -n '1,25p' /home/corby/jamm-os/frontend/src/app/\(app\)/documents/page.tsx
+sed -n '1,25p' /home/corby/jamm-os/frontend/src/app/\(app\)/clients/page.tsx
 
 cat /home/corby/jamm-os/frontend/src/components/concierge-inline/ContextualBanner.tsx
 
-Confirm get_outstanding_document_requests in functions.py already computes outstanding_count as a real, precise count of document requests with status pending or partial. Confirm document_requests.py has no existing count-only summary route and its existing read endpoints, including the list endpoint, are gated with require_staff_or_above. Confirm the Documents page's real current structure before adding anything.
+Confirm get_client_communication_gap in functions.py already computes gap_count as a real, precise count of active or in_review clients with no outbound event, document request sent, invoice sent, message sent, portal magic link sent, or engagement created, in the last 21 days. Confirm clients.py has GET / and GET /{client_id} both gated with require_staff_or_above, and confirm exactly where GET /{client_id} is declared, since the new route must be placed before it or FastAPI will incorrectly match it as a client id path parameter, the same ordering issue already handled correctly on Engagements and Tasks tonight.
 
 WHAT THIS IS:
 
-This is the seventh real, live page of the inline Concierge redesign, following the same proven pattern from Billing, the client detail page, Engagements, Tasks, Timesheets, and Staff tonight. get_outstanding_document_requests already exists and already correctly computes the real outstanding count, this task exposes that same real, tested number on the Documents page itself.
+This is the eighth and final real, live page in tonight's Phase 3 scaling pass of the inline Concierge redesign, following the identical proven pattern from Billing, the client detail page, Engagements, Tasks, Timesheets, Staff, and Documents. get_client_communication_gap already exists and already correctly computes which active clients have gone quiet, this task exposes that same real, tested number on the Clients list page itself.
 
 CHANGE INSTRUCTIONS:
 
-Backend: add a new GET /outstanding-summary endpoint in document_requests.py, gated with require_staff_or_above matching the existing style in this file, calling get_outstanding_document_requests from concierge/functions.py directly with the current firm's id and the db session, returning its result as-is. Do not duplicate or reimplement the outstanding business rule, only call the existing function, so there is exactly one definition of what counts as outstanding anywhere in the codebase. Do not modify get_outstanding_document_requests itself.
+Backend: add a new GET /communication-gap-summary endpoint in clients.py, placed before the GET /{client_id} route, gated with require_staff_or_above matching the existing style in this file, calling get_client_communication_gap from concierge/functions.py directly with the current firm's id and the db session, returning its result as-is. Do not duplicate or reimplement the gap business rule, only call the existing function, so there is exactly one definition of what counts as a communication gap anywhere in the codebase. Do not modify get_client_communication_gap itself.
 
-Frontend: add a new useFetch call to the new GET /document-requests/outstanding-summary endpoint on the Documents page, matching the existing style of other useFetch calls already in this file. If the returned outstanding_count is greater than zero, render a ContextualBanner above the existing document list or table, with tone amber, a message stating the real count with correct singular or plural wording, for example X document request(s) are still outstanding, and no leading duplicate number, and an action label of Ask Concierge. The onAction callback should call emitConciergeAction twice in sequence, first with type open-panel, then with type prefill-panel-input and prefillMessage set to a clear, real question such as What document requests are still outstanding, reusing the existing open-panel plus auto-send pattern already established tonight. Do not change the existing document table or card views, their data fetching, or any filtering logic already on this page.
+Frontend: add a new useFetch call to the new GET /clients/communication-gap-summary endpoint on the Clients list page, matching the existing style of other useFetch calls already in this file. If the returned gap_count is greater than zero, render a ContextualBanner above the existing client list or table, with tone amber, a message stating the real count with correct singular or plural wording, for example X active client(s) have not been contacted in over 3 weeks, and no leading duplicate number, and an action label of Ask Concierge. The onAction callback should call emitConciergeAction twice in sequence, first with type open-panel, then with type prefill-panel-input and prefillMessage set to a clear, real question such as Which clients haven't I contacted recently, reusing the existing open-panel plus auto-send pattern already established tonight. Do not change the existing client table or card views, their data fetching, or any filtering logic already on this page.
 
 VERIFY AFTER ACT:
 
-grep -n "@router.get(\"/outstanding-summary\"" /home/corby/jamm-os/app/api/document_requests.py
+grep -n "@router.get(\"/communication-gap-summary\"" /home/corby/jamm-os/app/api/clients.py
 
-grep -n "outstanding" /home/corby/jamm-os/frontend/src/app/\(app\)/documents/page.tsx
+grep -n "communication-gap-summary" /home/corby/jamm-os/app/api/clients.py
+
+Confirm the new route appears before the line containing GET /{client_id} in this file, not after.
+
+grep -n "gap_count\|communication" /home/corby/jamm-os/frontend/src/app/\(app\)/clients/page.tsx
 
 python3 -c "from app.main import app; print('OK')"
 
@@ -94,11 +98,11 @@ MANUAL VERIFICATION:
 
 Restart both servers.
 
-Check whether any real document requests with status pending or partial currently exist for this firm. If not, report this plainly, real test data may need to be inserted the same way it was for Timesheets and Staff before this can be visually confirmed live.
+Check whether any real active or in_review clients currently have no outbound event in the last 21 days. If not, report this plainly, real test data may need to be inserted or a real client's engagement status adjusted the same way test data was created for the other pages tonight.
 
-If real outstanding requests exist, confirm the amber banner appears on the Documents page with correct wording, and confirm clicking Ask Concierge opens the panel, sends the question immediately, and produces an accurate response.
+If real gaps exist, confirm the amber banner appears on the Clients list page with correct wording, and confirm clicking Ask Concierge opens the panel, sends the question immediately, and produces an accurate response.
 
-Confirm the existing document table and card views still work exactly as before, unaffected by this change.
+Confirm the existing client table and card views still work exactly as before, unaffected by this change.
 
 Report pass or fail for each check individually, and state plainly whether the banner was seen live or only confirmed structurally.
 
@@ -106,7 +110,7 @@ GIT:
 
 git add -A
 
-git commit -m "wire the seventh real page of the inline Concierge redesign, an amber ContextualBanner on the Documents page showing real outstanding document request data from a new endpoint that reuses the existing get_outstanding_document_requests function as its single source of truth, following the identical pattern already proven six times tonight"
+git commit -m "wire the eighth and final real page in tonight's Phase 3 scaling pass, an amber ContextualBanner on the Clients list page showing real client communication gap data from a new endpoint that reuses the existing get_client_communication_gap function as its single source of truth, placed before the existing GET client_id route to avoid a path matching conflict, completing the same proven pattern applied to seven other pages tonight"
 
 git pull --rebase origin main
 

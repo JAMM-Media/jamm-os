@@ -152,6 +152,21 @@ async def import_clients_csv(
     return ClientImportResult(created=created, skipped=skipped, errors=errors)
 
 
+
+
+# ---------------------------------------------------------
+# COMMUNICATION GAP SUMMARY
+# Must remain before /{client_id} route to avoid path conflict.
+# ---------------------------------------------------------
+@router.get("/communication-gap-summary")
+def get_communication_gap_summary(
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    _: object = Depends(require_staff_or_above),
+):
+    from app.api.concierge.functions import get_client_communication_gap
+    return get_client_communication_gap(firm_id=current_firm.id, db=db)
+
 # ---------------------------------------------------------
 # GET SINGLE
 # ---------------------------------------------------------
