@@ -54,71 +54,65 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Add a firm-level Concierge Suggestions Off/On setting and gate all nine inline redesign pages behind it
+TASK: Make the floating persistent entry button draggable to anywhere on the main screen, with a persisted personal position and safe boundary clamping
 
 USE: Fable 5
 
 VERIFY BEFORE ACT:
 
-sed -n '68,79p' /home/corby/jamm-os/app/api/users.py
+sed -n '105,120p' /home/corby/jamm-os/frontend/src/components/layout/AppShell.tsx
 
-grep -n "concierge_entry_mode" /home/corby/jamm-os/app/schemas/user.py /home/corby/jamm-os/frontend/src/lib/hooks/useAuth.tsx
+cat /home/corby/jamm-os/frontend/src/components/concierge-inline/PersistentEntryButton.tsx
 
-sed -n '895,935p' /home/corby/jamm-os/frontend/src/app/\(app\)/settings/page.tsx
+grep -n "w-12\|w-\[220px\]" /home/corby/jamm-os/frontend/src/components/layout/Sidebar.tsx
 
-For each of these nine files, find and read the exact conditional line that currently decides whether to render SuggestionCard or ContextualBanner, do not assume its exact wording, read it directly in each file before changing it:
-
-grep -n "SuggestionCard\|ContextualBanner" /home/corby/jamm-os/frontend/src/app/\(app\)/staff/page.tsx /home/corby/jamm-os/frontend/src/app/\(app\)/tasks/page.tsx /home/corby/jamm-os/frontend/src/app/\(app\)/engagements/page.tsx /home/corby/jamm-os/frontend/src/app/\(app\)/calendar/page.tsx /home/corby/jamm-os/frontend/src/app/\(app\)/timesheets/page.tsx /home/corby/jamm-os/frontend/src/app/\(app\)/clients/\[id\]/page.tsx /home/corby/jamm-os/frontend/src/app/\(app\)/clients/page.tsx /home/corby/jamm-os/frontend/src/app/\(app\)/documents/page.tsx /home/corby/jamm-os/frontend/src/app/\(app\)/billing/page.tsx
-
-Confirm concierge_entry_mode's exact existing pattern in all three places, schemas/user.py, users.py's read_users_me, and useAuth.tsx's AuthUser interface, since this new setting follows that identical, already-proven pattern exactly, not a new mechanism.
+Confirm the button's wrapping div currently uses a fixed bottom-6 right-6 position with no drag capability, confirm PersistentEntryButton's own onClick prop is what currently opens the panel, and confirm the main navigation sidebar is 48px wide when collapsed and 220px wide when expanded, before making any change.
 
 WHAT THIS IS:
 
-Direct product decision made tonight, after building nine real, live inline suggestion surfaces across the app: a firm owner should be able to turn all of them off entirely, since it is their page and their choice. This is a real, permanent, two-state setting, Off or On, not a slider or a frequency dial. A third, more granular option was discussed and deliberately deferred, since it would require real dismissal-persistence infrastructure that does not exist yet across any of the nine banners, this task only builds the clean two-state version. The setting is named Concierge Suggestions in Settings, with the field labeled Show suggestions on pages, matching the tone and structure of the existing Concierge Entry Point section directly above it. Defaulting to On when the setting has never been explicitly changed, so existing firms keep the behavior they already have unless they deliberately turn it off.
+Direct product decision made tonight, after seeing the floating button block part of the Calendar page's Upcoming panel. The button should become draggable anywhere on the main content area, like a movable widget, so a person can put it wherever it does not get in the way on any given page. This must not allow the button to be dragged onto the main left navigation sidebar, and must not allow it to be dragged into the Concierge panel's own space on the right, which only matters while the panel is open, at which point this button is already hidden. This is a personal, per-browser preference, not a firm-wide setting, since different people may want it in different places depending on their own screen and habits.
 
 CHANGE INSTRUCTIONS:
 
-Backend: add concierge_suggestions_enabled as an optional boolean field to UserOut in schemas/user.py, matching the exact style of the existing concierge_entry_mode field. In GET /users/me in users.py, add one more line following the exact same pattern as the existing concierge_entry_mode line, setting user_out.concierge_suggestions_enabled from current_firm.settings, defaulting to true if the key is absent from the settings JSON blob or if settings itself is null. No new endpoint is needed, this reuses the existing PATCH /users/firm/settings merge-safe endpoint for writing, the same one already used for concierge_entry_mode.
+In AppShell.tsx, replace the static fixed bottom-6 right-6 wrapper div with a draggable version. Add a new piece of state holding either a real pixel position, an object with x and y numbers, or null meaning use the original default bottom-right corner position. Initialize this state to null on first render to avoid any server and client mismatch, then read a stored position from localStorage inside a useEffect after mount, the same safe pattern already used elsewhere in this file for other browser-only state.
 
-Frontend, useAuth.tsx: add concierge_suggestions_enabled as an optional boolean field on the AuthUser interface, matching the style of the existing concierge_entry_mode field.
+Implement dragging using pointer events, not the native HTML5 drag and drop API, attached to the wrapping div. On pointer down, record the starting pointer position and the button's current position. On pointer move while the pointer is down, update the button's position to follow the pointer, clamped so the button can never go further left than 220 plus 12 pixels from the left edge, never closer than 12 pixels to the top, right, or bottom edges of the viewport, accounting for the button's own real rendered width and height so it never gets clipped off screen. On pointer up, if the total distance moved since pointer down is small, a few pixels or less, treat this as a click and call the button's existing onClick behavior to open the panel. If the distance moved is larger than that, treat it as a completed drag, do not open the panel, and save the final position to localStorage under a new key so it persists across visits in this browser.
 
-Frontend, Settings page: add a new section titled Concierge Suggestions, placed directly below the existing Concierge Entry Point section, with a field labeled Show suggestions on pages and two real radio-style circular controls labeled Off and On, following the exact same visual and interaction pattern already used for the Entry style controls immediately above it. Include a short description line, for example something like Off hides all Concierge suggestion cards and banners across the app. On shows them when something real is worth noticing. Selecting either option immediately calls the existing PATCH /users/firm/settings endpoint with concierge_suggestions_enabled true or false, matching the exact call style already used for concierge_entry_mode. Read the current value from the firm's existing settings object on page load to show the correct option selected, defaulting to On if the key is absent.
+When a stored position exists, render the wrapping div using that absolute pixel position instead of the original bottom-6 right-6 classes. When no stored position exists yet, render exactly as it does today, unchanged, so nobody's current experience changes until they actually drag it once.
 
-Frontend, all nine pages: in each of the nine files listed above, find the exact conditional currently gating whether SuggestionCard or ContextualBanner renders, and add an additional check requiring user?.concierge_suggestions_enabled to not be explicitly false, meaning it should render when the value is true, undefined, or not yet loaded, and should not render only when it is explicitly false. Use the exact same user object from useAuth already available or easily added to each of these files. Do not change any of the real data fetching, trigger thresholds, or business logic already in these nine files, this task only adds one additional gating condition to each existing render check.
+Do not modify PersistentEntryButton.tsx itself, all drag logic and position state should live in the wrapping div inside AppShell.tsx. Do not change the conciergeEntryMode === 'floating' and !conciergeOpen condition that already correctly decides whether this button renders at all.
 
 VERIFY AFTER ACT:
 
-grep -n "concierge_suggestions_enabled" /home/corby/jamm-os/app/schemas/user.py /home/corby/jamm-os/app/api/users.py /home/corby/jamm-os/frontend/src/lib/hooks/useAuth.tsx /home/corby/jamm-os/frontend/src/app/\(app\)/settings/page.tsx
-
-Expected: present in all four.
-
-grep -n "concierge_suggestions_enabled" /home/corby/jamm-os/frontend/src/app/\(app\)/staff/page.tsx /home/corby/jamm-os/frontend/src/app/\(app\)/tasks/page.tsx /home/corby/jamm-os/frontend/src/app/\(app\)/engagements/page.tsx /home/corby/jamm-os/frontend/src/app/\(app\)/calendar/page.tsx /home/corby/jamm-os/frontend/src/app/\(app\)/timesheets/page.tsx /home/corby/jamm-os/frontend/src/app/\(app\)/clients/\[id\]/page.tsx /home/corby/jamm-os/frontend/src/app/\(app\)/clients/page.tsx /home/corby/jamm-os/frontend/src/app/\(app\)/documents/page.tsx /home/corby/jamm-os/frontend/src/app/\(app\)/billing/page.tsx
-
-Expected: present in all nine, confirming none were missed.
-
-python3 -c "from app.main import app; print('OK')"
+grep -n "onPointerDown\|onPointerMove\|onPointerUp\|localStorage.*button.*position\|jamm_concierge_button_position" /home/corby/jamm-os/frontend/src/components/layout/AppShell.tsx
 
 npx tsc --noEmit
 
 MANUAL VERIFICATION:
 
-Restart both servers.
+Restart the frontend.
 
-On Settings, confirm the new Concierge Suggestions section appears below Concierge Entry Point, with On selected by default.
+Confirm the button still appears in its normal default bottom-right position on first load, unchanged from before.
 
-Select Off. Visit at least three of the nine pages that currently have real trigger conditions true, for example Billing with a real overdue invoice, Engagements with a real stalled engagement, and the client detail page for a client old enough to trigger the portal invite card. Confirm none of them show any suggestion card or banner, even though their underlying real conditions are still true.
+Click it normally without dragging, confirm the panel still opens correctly, confirming click behavior was not broken by adding drag support.
 
-Select On again. Revisit the same three pages, confirm the suggestions reappear correctly with the same real data as before.
+Drag it to the middle of the screen, release, confirm it stays exactly where dropped and does not snap back.
 
-Reload the page entirely after selecting Off, confirm the choice persisted as a real firm setting, not just local UI state.
+Reload the page entirely, confirm it remains in the same dragged position, confirming it is a real, persisted preference, not just temporary drag state.
 
-Report pass or fail for all four checks individually.
+Attempt to drag it far to the left, onto or past where the main navigation sidebar sits, confirm it stops at the boundary and cannot overlap the sidebar.
+
+Attempt to drag it off any edge of the screen entirely, confirm it stays fully visible and clamped within the viewport in all directions.
+
+Visit the Calendar page specifically, confirm it can now be moved away from blocking the Upcoming panel, the real problem that prompted this tonight.
+
+Report pass or fail for each of these six checks individually.
 
 GIT:
 
 git add -A
 
-git commit -m "add a firm-level Concierge Suggestions Off or On setting, letting a firm owner turn off all nine inline suggestion cards and banners built across the app tonight, following the identical already-proven pattern used for the Concierge Entry Point setting, threaded through GET /users/me and read via useAuth rather than localStorage so it is correct on first load from any browser or device, defaulting to On so existing firms keep current behavior unless they explicitly opt out"
+git commit -m "make the floating persistent entry button draggable anywhere on the main screen, addressing it blocking the Calendar page's Upcoming panel tonight, implemented with pointer events and a click-versus-drag distance threshold, clamped so it can never be dragged onto the main navigation sidebar or off any edge of the viewport, with the final position persisted per browser as a personal preference rather than a firm-wide setting"
 
 git pull --rebase origin main
 
