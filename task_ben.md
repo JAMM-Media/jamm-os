@@ -54,37 +54,39 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Wire the fifth real page of the inline Concierge redesign — an unbilled-hours banner on the Timesheets page
+TASK: Wire the sixth real page of the inline Concierge redesign — an overloaded-staff banner on the Staff page, gated to manager or above
 
 USE: Fable 5
 
 VERIFY BEFORE ACT:
 
-sed -n '1040,1088p' /home/corby/jamm-os/app/api/concierge/functions.py
+sed -n '187,223p' /home/corby/jamm-os/app/api/concierge/functions.py
 
-sed -n '1,55p' /home/corby/jamm-os/app/api/time_entries.py
+sed -n '1,30p' /home/corby/jamm-os/app/api/users.py
 
-sed -n '1,45p' /home/corby/jamm-os/frontend/src/app/\(app\)/timesheets/page.tsx
+sed -n '1,30p' /home/corby/jamm-os/frontend/src/app/\(app\)/staff/page.tsx
 
 cat /home/corby/jamm-os/frontend/src/components/concierge-inline/ContextualBanner.tsx
 
-Confirm get_time_tracking_detail in functions.py already computes unbilled_billable_hours_this_month_all_engagements as a real, precise aggregate, real billable hours not yet billed, dated this month. Confirm time_entries.py has no existing endpoint exposing just this aggregate, and confirm its existing endpoints are gated with require_staff_or_above, matching the pattern already used on every other page tonight. Confirm the Timesheets page's real current structure before adding anything.
+Confirm get_staff_capacity in functions.py already computes overloaded_count as a real, precise count of active staff whose hours this week reach or exceed 100 percent of a 40 hour standard week. Confirm users.py already imports require_staff_or_above, require_firm_owner, and get_current_firm, and confirm there is no require_manager_or_above import yet in this file, it will need to be added. Confirm the Staff page already redirects staff-role users away entirely before any content renders, confirming this page is already restricted to manager and owner roles at the page level.
 
 WHAT THIS IS:
 
-This is the fifth real, live page of the inline Concierge redesign, following the same proven pattern from Billing, the client detail page, Engagements, and Tasks tonight. Unlike those four, this is the first page in the series where the underlying real data was confirmed completely empty in this environment, zero time entries existed for this firm at all, so a real test row was inserted directly by hand tonight specifically to verify this page live, the same way test data has been inserted for other verifications tonight. This is also the first page in the series using a chat question, how many unbilled hours do I have this month, that was not specifically hardened earlier tonight with the tool_choice or OPTIONS marker treatment the way overdue invoices and stalled engagements were, so live testing here deserves real scrutiny, not an assumption that it will behave identically well.
+This is the sixth real, live page of the inline Concierge redesign, following the same proven pattern from Billing, the client detail page, Engagements, Tasks, and Timesheets tonight. This one carries a deliberate access decision: get_staff_capacity returns firm-wide utilization data across every staff member, real hours worked and overload status per person, which is sensitive personnel information. This session already established a real security principle earlier tonight, restricting staff-role Concierge access away from firm-wide financial and personnel data. This new endpoint follows that same principle directly, gated to manager or above rather than the staff-or-above pattern used on every other page tonight, since staff should not be able to query every other staff member's utilization data.
 
 CHANGE INSTRUCTIONS:
 
-Backend: add a new GET /unbilled-summary endpoint in time_entries.py, gated with require_staff_or_above matching the existing style in this file, calling get_time_tracking_detail from concierge/functions.py directly with the current firm's id and the db session, returning its result as-is. Do not duplicate or reimplement the unbilled hours calculation, only call the existing function, so there is exactly one definition of this number anywhere in the codebase. Do not modify get_time_tracking_detail itself.
+Backend: add require_manager_or_above to the existing roles import in users.py. Add a new GET /capacity endpoint in this file, gated with require_manager_or_above, calling get_staff_capacity from concierge/functions.py directly with the current firm's id and the db session, returning its result as-is. Do not duplicate or reimplement the utilization calculation, only call the existing function, so there is exactly one definition of this anywhere in the codebase. Do not modify get_staff_capacity itself.
 
-Frontend: add a new useFetch call to the new GET /time-entries/unbilled-summary endpoint on the Timesheets page, matching the existing style already in this file. If the returned unbilled_billable_hours_this_month_all_engagements value is greater than zero, render a ContextualBanner above the existing tab content, with tone amber, a message stating the real hours value rounded to one decimal place with correct wording, for example X unbilled billable hours this month across all engagements, and no leading duplicate number, and an action label of Ask Concierge. The onAction callback should call emitConciergeAction twice in sequence, first with type open-panel, then with type prefill-panel-input and prefillMessage set to the literal text How many unbilled hours do I have this month, reusing the existing open-panel plus auto-send pattern already established tonight. Do not change any of the existing tab components or their data fetching.
+Frontend: add a new useFetch call to the new GET /users/capacity endpoint on the Staff page, matching the existing style already in this file, and only fire this fetch when the current user's role is manager or firm_owner, matching the access restriction already established on this page, not for the staff role case that redirects away. If the returned overloaded_count is greater than zero, render a ContextualBanner above the existing roster or credentials content, with tone amber, a message stating the real count with correct singular or plural wording, for example X staff member(s) are at or above full capacity this week, and no leading duplicate number, and an action label of Ask Concierge. The onAction callback should call emitConciergeAction twice in sequence, first with type open-panel, then with type prefill-panel-input and prefillMessage set to the literal text Which staff members are overloaded this week, reusing the existing open-panel plus auto-send pattern already established tonight. Do not change the existing Roster or Credentials tab content or their data fetching.
 
 VERIFY AFTER ACT:
 
-grep -n "@router.get(\"/unbilled-summary\"" /home/corby/jamm-os/app/api/time_entries.py
+grep -n "require_manager_or_above" /home/corby/jamm-os/app/api/users.py
 
-grep -n "unbilled" /home/corby/jamm-os/frontend/src/app/\(app\)/timesheets/page.tsx
+grep -n "@router.get(\"/capacity\"" /home/corby/jamm-os/app/api/users.py
+
+grep -n "overloaded" /home/corby/jamm-os/frontend/src/app/\(app\)/staff/page.tsx
 
 python3 -c "from app.main import app; print('OK')"
 
@@ -94,19 +96,19 @@ MANUAL VERIFICATION:
 
 Restart both servers.
 
-Visit the Timesheets page. A real test time entry of 6.5 unbilled billable hours was inserted by hand tonight specifically for this check. Confirm the amber banner appears, showing 6.5 unbilled billable hours this month across all engagements, count and message reading as one sentence, not duplicated.
+Since real staff time entries were mostly cleaned up as test data was removed tonight, check whether any active staff member currently has 40 or more hours logged this week. If not, report this clearly rather than guessing, real test data may need to be inserted the same way it was for Timesheets before this can be visually confirmed.
 
-Click Ask Concierge on the banner. Confirm the panel opens and the question sends immediately. Since this exact question was not specifically hardened tonight, read the actual response carefully rather than assuming it is correct, and report the real response text back exactly as shown, do not summarize or paraphrase it.
+If a real overloaded staff member exists, confirm the amber banner appears on the Staff page with correct wording, and confirm clicking Ask Concierge opens the panel, sends the question immediately, and produces an accurate response naming the real overloaded staff member.
 
-Confirm the existing Timesheets tabs and their data still work exactly as before, unaffected by this change.
+Log in or switch to the staff-role test account and confirm this page still correctly blocks staff from seeing it at all, unaffected by this change.
 
-Report pass or fail for each check individually, and flag anything about the chat response that seems off, since this is the first ungoverned question in tonight's series.
+Report pass or fail for each check individually, and state plainly whether the banner itself was actually seen live or only confirmed structurally through code, since real data may not currently exist to trigger it.
 
 GIT:
 
 git add -A
 
-git commit -m "wire the fifth real page of the inline Concierge redesign, an amber ContextualBanner on the Timesheets page showing real unbilled billable hours from a new endpoint that reuses the existing get_time_tracking_detail function as its single source of truth, tested against a real hand-inserted time entry since this firm had zero time tracking data seeded, and flagged as the first page in tonight's series using a chat question that was not specifically hardened with the tool_choice or OPTIONS marker treatment"
+git commit -m "wire the sixth real page of the inline Concierge redesign, an amber ContextualBanner on the Staff page showing real overloaded-staff data from a new endpoint that reuses the existing get_staff_capacity function as its single source of truth, deliberately gated to manager or above rather than the staff-or-above pattern used on every other page tonight, since firm-wide staff utilization data is sensitive personnel information and this follows the same staff-data-access principle established earlier tonight"
 
 git pull --rebase origin main
 
