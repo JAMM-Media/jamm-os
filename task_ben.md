@@ -54,45 +54,46 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Build real Concierge tool coverage for Notes and Firm Chat, fixing a confirmed live fabrication where the Concierge denied Firm Chat exists and stalled on a Notes question
+TASK: Add the missing Notes and Firm Chat keywords to the operational-question gate, fixing the new tools being unreachable despite being correctly built and registered
 
-USE: Fable 5
+USE: claude sonnet
 
 VERIFY BEFORE ACT:
 
-cat /home/corby/jamm-os/app/models/note.py
+grep -n "\"note\"\|\"notes\"\|\"firm chat\"\|\"channel\"" /home/corby/jamm-os/app/api/concierge/route.py
 
-cat /home/corby/jamm-os/app/models/firm_chat.py
+sed -n '281,308p' /home/corby/jamm-os/app/api/concierge/route.py
 
-sed -n '145,165p' /home/corby/jamm-os/app/api/concierge/route.py
+python3 -c "
+import sys
+sys.path.insert(0, '/home/corby/jamm-os')
+from app.api.concierge.route import _is_operational_question
+print(_is_operational_question(\"What's in the notes for Robert & Carol Tanner?\"))
+print(_is_operational_question(\"Has anyone written any client notes recently?\"))
+print(_is_operational_question(\"What's been said in Firm Chat today?\"))
+print(_is_operational_question(\"Summarize the most recent Firm Chat messages\"))
+"
 
-sed -n '45,55p' /home/corby/jamm-os/app/api/concierge/route.py
-
-grep -n "firm.chat\|firm_chat\|Firm Chat" /home/corby/jamm-os/app/api/concierge/prompts.py /home/corby/jamm-os/app/api/concierge/route.py /home/corby/jamm-os/app/api/concierge/functions.py
-
-Confirm the real fields on Note, firm_id, entity_type, entity_id, author_id, body, is_private, is_deleted, created_at, and on Channel and FirmMessage, firm_id, channel_id, sender_id, body, created_at, is_deleted, with Channel having a name field. Confirm zero existing references to Firm Chat or Notes anywhere in the Concierge's prompts, route, or functions files, confirming this is genuinely new tool coverage, not a routing bug in existing tools.
-
-WHAT THIS IS:
-
-A live browser audit tonight asked the Concierge four real questions about Notes and Firm Chat. One got an honest, correct no-access answer. The other three failed badly: one stalled with "Let me look that up for you" and never delivered an answer, even though the real, correct answer, no notes exist yet for that client, was directly available. Two others flatly denied Firm Chat exists as a feature at all, when it is a real, visible, working page in the same product. This happened because the Concierge has zero tool coverage for either domain, so when asked, it reasons from its own general assumptions rather than real data, and got it wrong with full confidence. This matches the core lesson proven repeatedly tonight: a model with no real data to answer from will eventually guess wrong, and the only real fix is giving it the real data, not a better worded prompt. This task builds two new real, tested tools, matching the exact structure and registration pattern already used for every other tool built tonight.
+Confirm all four print False, and confirm zero note or firm chat related terms currently exist anywhere in _OPERATIONAL_KEYWORDS, before editing. This confirms the exact root cause: get_recent_notes and get_recent_firm_chat_activity were correctly built and registered as real tools earlier tonight, but every one of the four real questions used to test them never reaches the tool-use code path at all, because _is_operational_question gates entry to that path and has no awareness these topics exist, so the model falls back to a plain conversational response with zero tools available, honestly reporting it has no tool access, which is true for that fallback path even though the real tools do exist in the other one.
 
 CHANGE INSTRUCTIONS:
 
-In functions.py, add a new function get_recent_notes(firm_id, db, days=7) that queries the Note table for firm_id matching, is_deleted false, is_private false, created_at within the last N days, ordered newest first, limited to 20. Deliberately exclude private notes entirely, never surface their content or count them, this is a real, deliberate privacy decision, not an oversight. For each note, join to resolve a real author name from the author relationship. When entity_type equals client, attempt to join Client on entity_id to resolve a real client name, matching the exact firm-scoped join pattern already used elsewhere in this file, for example in get_client_document_status. For any other entity_type, return the entity_type and entity_id as-is without a resolved name. Truncate each note's body to a reasonable snippet, for example the first 150 characters, in the returned data, do not return full note bodies. Return a dict with note_count and a list of the notes.
-
-Add a second new function get_recent_firm_chat_activity(firm_id, db, days=7) that queries FirmMessage joined to Channel, filtered to firm_id matching, is_deleted false, created_at within the last N days, ordered newest first, limited to 20. For each message, join to resolve a real sender name and the real channel name. Truncate each message's body to a reasonable snippet, the same style as the notes function. Return a dict with message_count and a list of the messages.
-
-In route.py, import both new functions alongside the existing function imports. Add two new tool schema entries to the tools list, matching the exact style, structure, and description tone of the existing entries, for example get_deadline_calendar's entry, with clear descriptions telling the model when to call each one, for example when the firm owner asks about recent client notes, firm chat activity, team messages, or what has been discussed internally. Add two new elif branches in the tool dispatch matching the exact style of the existing ones, calling each new function with current_firm.id and db.
-
-Do not modify any existing function, tool entry, or dispatch branch, this task only adds two new, additive tool registrations.
+Add a new line to the _OPERATIONAL_KEYWORDS set containing real, specific terms for these two topics, matching the exact existing style, comma-separated short phrases in quotes, for example "note", "notes", "client note", "client notes", "firm chat", "firm-chat", "team chat", "internal chat", "channel", "chat messages". Do not remove or change any existing keyword in this set, this is purely an addition.
 
 VERIFY AFTER ACT:
 
-grep -n "def get_recent_notes\|def get_recent_firm_chat_activity" /home/corby/jamm-os/app/api/concierge/functions.py
+python3 -c "
+import sys
+sys.path.insert(0, '/home/corby/jamm-os')
+from app.api.concierge.route import _is_operational_question
+print(_is_operational_question(\"What's in the notes for Robert & Carol Tanner?\"))
+print(_is_operational_question(\"Has anyone written any client notes recently?\"))
+print(_is_operational_question(\"What's been said in Firm Chat today?\"))
+print(_is_operational_question(\"Summarize the most recent Firm Chat messages\"))
+print(_is_operational_question(\"Which engagements are stalled?\"))
+"
 
-grep -n "get_recent_notes\|get_recent_firm_chat_activity" /home/corby/jamm-os/app/api/concierge/route.py
-
-Expected: both functions present, both imported, both registered as tool schema entries, both present in the dispatch block.
+Expected: the first four now print True, and the fifth, an existing, already-working question, still prints True, confirming the addition did not break anything already working.
 
 python3 -c "from app.main import app; print('OK')"
 
@@ -100,15 +101,13 @@ MANUAL VERIFICATION:
 
 Restart the backend.
 
-Check whether any real notes or real Firm Chat messages currently exist for this firm. If none exist, real test data should be inserted directly, the same careful way test data was inserted for Timesheets, Staff, and Documents earlier tonight, a real note on a real client and a real message in a real or newly created channel, so the new tools have something real to find.
-
-Re-ask the exact four questions from tonight's audit, one at a time, and report each response verbatim:
+Re-ask the exact same four questions from tonight's audit, one at a time, and report each response verbatim:
 "What's in the notes for Robert & Carol Tanner?"
 "Has anyone written any client notes recently?"
 "What's been said in Firm Chat today?"
 "Summarize the most recent Firm Chat messages"
 
-For each, confirm the response now reflects real data if real data exists, or an honest, correct statement that nothing recent exists if it does not, and confirm none of the four responses deny that Firm Chat exists as a feature or stall without delivering an answer.
+Real test data already exists for this check: a real note on Robert & Carol Tanner, and a real Firm Chat message in a channel called general. Confirm the first two questions now return real, accurate answers referencing this real note. Confirm the last two questions now return real, accurate answers referencing the real Firm Chat message, and no longer deny that Firm Chat exists as a feature.
 
 Report pass or fail for each of the four questions individually, quoting the actual response text.
 
@@ -116,7 +115,7 @@ GIT:
 
 git add -A
 
-git commit -m "build real Concierge tool coverage for Notes and Firm Chat, fixing a confirmed live fabrication found by tonight's browser audit where the Concierge flatly denied Firm Chat exists as a feature and stalled without answering a real notes question, adding get_recent_notes and get_recent_firm_chat_activity as real, tested tools following the exact registration pattern used for every other tool tonight, with private notes deliberately and permanently excluded from what the Concierge can ever surface"
+git commit -m "add the missing Notes and Firm Chat keywords to the operational-question gate, fixing the two new tools built earlier tonight, get_recent_notes and get_recent_firm_chat_activity, being completely unreachable because _is_operational_question had no awareness these topics exist, causing every real question about them to fall back to a plain conversational path with zero tools available, confirmed as the exact root cause by directly testing the classifier function against all four of tonight's audit questions before and after this change"
 
 git pull --rebase origin main
 
