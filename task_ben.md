@@ -54,46 +54,42 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Add the missing Notes and Firm Chat keywords to the operational-question gate, fixing the new tools being unreachable despite being correctly built and registered
+TASK: Move get_recent_notes and get_recent_firm_chat_activity from the staff-only tool list to the main tool list, fixing them being unreachable for owner and manager accounts
 
 USE: claude sonnet
 
 VERIFY BEFORE ACT:
 
-grep -n "\"note\"\|\"notes\"\|\"firm chat\"\|\"channel\"" /home/corby/jamm-os/app/api/concierge/route.py
+sed -n '245,280p' /home/corby/jamm-os/app/api/concierge/route.py
 
-sed -n '281,308p' /home/corby/jamm-os/app/api/concierge/route.py
+grep -n "_active_tools = _STAFF_CONCIERGE_TOOLS\|_active_tools = _CONCIERGE_TOOLS" /home/corby/jamm-os/app/api/concierge/route.py
 
-python3 -c "
-import sys
-sys.path.insert(0, '/home/corby/jamm-os')
-from app.api.concierge.route import _is_operational_question
-print(_is_operational_question(\"What's in the notes for Robert & Carol Tanner?\"))
-print(_is_operational_question(\"Has anyone written any client notes recently?\"))
-print(_is_operational_question(\"What's been said in Firm Chat today?\"))
-print(_is_operational_question(\"Summarize the most recent Firm Chat messages\"))
-"
+Confirm get_recent_notes and get_recent_firm_chat_activity are currently defined inside _STAFF_CONCIERGE_TOOLS, immediately after get_my_tasks, and confirm _active_tools is only ever set to _STAFF_CONCIERGE_TOOLS for the staff role, with owner and manager roles receiving _CONCIERGE_TOOLS instead. This confirms these two tools are currently completely unreachable for owner and manager accounts, which is exactly the account type used to test them live tonight, explaining why the model consistently and honestly reported having no access despite the tools being correctly built and the operational keyword gate already being fixed.
 
-Confirm all four print False, and confirm zero note or firm chat related terms currently exist anywhere in _OPERATIONAL_KEYWORDS, before editing. This confirms the exact root cause: get_recent_notes and get_recent_firm_chat_activity were correctly built and registered as real tools earlier tonight, but every one of the four real questions used to test them never reaches the tool-use code path at all, because _is_operational_question gates entry to that path and has no awareness these topics exist, so the model falls back to a plain conversational response with zero tools available, honestly reporting it has no tool access, which is true for that fallback path even though the real tools do exist in the other one.
+WHAT THIS IS:
+
+A mistake made earlier tonight when these two tools were first built: the task instructions said to add them to the tools list without naming which of the two real, separate tool lists in this file, and they were added to the wrong one, _STAFF_CONCIERGE_TOOLS, the narrow, deliberately restricted subset built earlier this session for security reasons, rather than _CONCIERGE_TOOLS, the full list used by owner and manager accounts. This was only caught because live testing tonight, as an owner account, still failed after the operational keyword fix, which led to checking every layer between question classification and the actual tool list sent to the model.
 
 CHANGE INSTRUCTIONS:
 
-Add a new line to the _OPERATIONAL_KEYWORDS set containing real, specific terms for these two topics, matching the exact existing style, comma-separated short phrases in quotes, for example "note", "notes", "client note", "client notes", "firm chat", "firm-chat", "team chat", "internal chat", "channel", "chat messages". Do not remove or change any existing keyword in this set, this is purely an addition.
+Move the get_recent_notes and get_recent_firm_chat_activity tool schema entries out of _STAFF_CONCIERGE_TOOLS and into _CONCIERGE_TOOLS, placed anywhere reasonable among the other entries there, for example near get_stalled_engagements. After moving them, _STAFF_CONCIERGE_TOOLS should contain only get_my_tasks, exactly as it did before these two tools were first added earlier tonight. Do not duplicate the entries into both lists, this is a move, not a copy, staff accounts should not gain access to these two tools as part of this fix, that would be a separate, deliberate decision, not an accidental side effect of correcting this mistake.
 
 VERIFY AFTER ACT:
+
+grep -n "get_recent_notes\|get_recent_firm_chat_activity" /home/corby/jamm-os/app/api/concierge/route.py
 
 python3 -c "
 import sys
 sys.path.insert(0, '/home/corby/jamm-os')
-from app.api.concierge.route import _is_operational_question
-print(_is_operational_question(\"What's in the notes for Robert & Carol Tanner?\"))
-print(_is_operational_question(\"Has anyone written any client notes recently?\"))
-print(_is_operational_question(\"What's been said in Firm Chat today?\"))
-print(_is_operational_question(\"Summarize the most recent Firm Chat messages\"))
-print(_is_operational_question(\"Which engagements are stalled?\"))
+from app.api.concierge.route import _CONCIERGE_TOOLS, _STAFF_CONCIERGE_TOOLS
+concierge_names = [t['name'] for t in _CONCIERGE_TOOLS]
+staff_names = [t['name'] for t in _STAFF_CONCIERGE_TOOLS]
+print('in main list:', 'get_recent_notes' in concierge_names, 'get_recent_firm_chat_activity' in concierge_names)
+print('in staff list:', 'get_recent_notes' in staff_names, 'get_recent_firm_chat_activity' in staff_names)
+print('staff list contents:', staff_names)
 "
 
-Expected: the first four now print True, and the fifth, an existing, already-working question, still prints True, confirming the addition did not break anything already working.
+Expected: both tools show True for being in the main list, False for being in the staff list, and the staff list contents show only get_my_tasks.
 
 python3 -c "from app.main import app; print('OK')"
 
@@ -101,13 +97,13 @@ MANUAL VERIFICATION:
 
 Restart the backend.
 
-Re-ask the exact same four questions from tonight's audit, one at a time, and report each response verbatim:
+Re-ask the exact same four questions from tonight's audit, one at a time, logged in as the firm owner, and report each response verbatim:
 "What's in the notes for Robert & Carol Tanner?"
 "Has anyone written any client notes recently?"
 "What's been said in Firm Chat today?"
 "Summarize the most recent Firm Chat messages"
 
-Real test data already exists for this check: a real note on Robert & Carol Tanner, and a real Firm Chat message in a channel called general. Confirm the first two questions now return real, accurate answers referencing this real note. Confirm the last two questions now return real, accurate answers referencing the real Firm Chat message, and no longer deny that Firm Chat exists as a feature.
+Real test data still exists, a real note on Robert & Carol Tanner and a real Firm Chat message in the general channel. Confirm all four now return real, accurate answers referencing this real data, and none of them deny access or claim the tool does not exist.
 
 Report pass or fail for each of the four questions individually, quoting the actual response text.
 
@@ -115,7 +111,7 @@ GIT:
 
 git add -A
 
-git commit -m "add the missing Notes and Firm Chat keywords to the operational-question gate, fixing the two new tools built earlier tonight, get_recent_notes and get_recent_firm_chat_activity, being completely unreachable because _is_operational_question had no awareness these topics exist, causing every real question about them to fall back to a plain conversational path with zero tools available, confirmed as the exact root cause by directly testing the classifier function against all four of tonight's audit questions before and after this change"
+git commit -m "move get_recent_notes and get_recent_firm_chat_activity from the staff-only tool list to the main tool list, fixing a mistake made when these tools were first built tonight where ambiguous task instructions led to them being added to the wrong of two separate tool lists in this file, making them completely unreachable for owner and manager accounts, the exact account type used to test them live, and confirmed as the real remaining root cause after the operational keyword gate fix alone did not resolve the live failures"
 
 git pull --rebase origin main
 

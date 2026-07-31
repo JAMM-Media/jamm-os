@@ -246,14 +246,6 @@ _CONCIERGE_TOOLS = [
             "required": [],
         },
     },
-]
-
-_STAFF_CONCIERGE_TOOLS = [
-    {
-        "name": "get_my_tasks",
-        "description": "Returns all incomplete tasks currently assigned to you, with client name, engagement name, due date, status, and overdue flag per task, plus the distinct engagement names those tasks belong to. Call this when you are asked what are my tasks, what am I working on, what is assigned to me, what engagements am I on, or any question about your own current work and assignments.",
-        "input_schema": {"type": "object", "properties": {}, "required": []},
-    },
     {
         "name": "get_recent_notes",
         "description": "Returns recent non-private notes written by staff, with author name, a short body snippet, and the client the note is attached to. Private notes are never included. Call this when the firm owner asks about recent notes, what has been written about a client, or whether any notes exist for a specific client or engagement.",
@@ -275,6 +267,14 @@ _STAFF_CONCIERGE_TOOLS = [
             },
             "required": [],
         },
+    },
+]
+
+_STAFF_CONCIERGE_TOOLS = [
+    {
+        "name": "get_my_tasks",
+        "description": "Returns all incomplete tasks currently assigned to you, with client name, engagement name, due date, status, and overdue flag per task, plus the distinct engagement names those tasks belong to. Call this when you are asked what are my tasks, what am I working on, what is assigned to me, what engagements am I on, or any question about your own current work and assignments.",
+        "input_schema": {"type": "object", "properties": {}, "required": []},
     },
 ]
 
