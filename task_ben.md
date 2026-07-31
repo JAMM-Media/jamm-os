@@ -54,35 +54,29 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Expose a real refreshUser function on the auth context and call it after both Concierge setting changes, fixing the shared user object going stale without a full reload
+TASK: Fix the persistent entry button escaping the viewport permanently when a saved position from a wider window is loaded in a narrower one
 
 USE: claude sonnet
 
 VERIFY BEFORE ACT:
 
-sed -n '1,50p' /home/corby/jamm-os/frontend/src/lib/hooks/useAuth.tsx
+sed -n '95,125p' /home/corby/jamm-os/frontend/src/components/layout/AppShell.tsx
 
-sed -n '85,92p' /home/corby/jamm-os/frontend/src/lib/hooks/useAuth.tsx
-
-sed -n '550,575p' /home/corby/jamm-os/frontend/src/app/\(app\)/settings/page.tsx
-
-Confirm AuthContextType currently exposes only user, isLoading, isAuthenticated, login, and logout, with no way for any other component to trigger a refresh of the user object after it has already loaded. Confirm the initial fetch of /api/auth/me happens once, inside a useEffect with an empty dependency array, on mount only. Confirm handleConciergeEntryModeChange and handleConciergeSuggestionsChange in the Settings page both currently write to the backend successfully but never update the shared user object afterward.
+Confirm the mount-time effect that reads jamm_concierge_button_position from localStorage calls setBtnPos directly with the raw parsed value, with no call to clampBtnPos, while clampBtnPos itself is only ever called during active pointer move and pointer up handlers. Confirm this means a position saved on a wider viewport can be loaded and rendered unclamped on a narrower one, placing the button fully off screen with no in-app way to recover it, since a real, live browser audit tonight found the button completely inaccessible for exactly this reason.
 
 WHAT THIS IS:
 
-Confirmed live tonight: toggling Concierge Suggestions to Off in Settings correctly saved to the backend, but navigating to Engagements in the same browser session without a full page reload still showed the suggestion banner, because the shared user object read by every gated page comes from AuthProvider, which only ever fetches once on mount and has no way to be told a setting changed elsewhere. This is very likely the same latent gap behind concierge_entry_mode, which was never caught because it was always tested using a fresh incognito window, a genuine new mount, rather than same-session navigation after a change. Both settings need a real fix, not just the one that was caught live.
+A real, severe bug found tonight by a live browser audit: the floating Concierge entry button's position, once dragged and saved, is loaded back from localStorage exactly as saved, with no revalidation against the current window size. If the browser window is ever smaller than it was when the position was saved, for example a different monitor, a resized window, or an automated testing viewport, the button can render fully outside the visible area, and since its own click handler is what opens the panel, there is no way to recover it without directly editing browser storage. This defeats the entire point of a persistent, always-available entry point.
 
 CHANGE INSTRUCTIONS:
 
-In useAuth.tsx, extract the existing fetch-and-setUser logic currently inside the mount-time useEffect into its own named async function, for example refreshUser, that fetches /api/auth/me and calls setUser with the result. Call this same function from inside the mount-time useEffect so the original first-load behavior is unchanged. Add refreshUser to AuthContextType and include it in the object passed to AuthContext.Provider's value prop, so any component using useAuth can now call it directly.
-
-In the Settings page, destructure refreshUser alongside the existing user from useAuth. At the end of handleConciergeEntryModeChange, after its existing PATCH call succeeds, call refreshUser and await it. Do the same at the end of handleConciergeSuggestionsChange, after its existing PATCH call succeeds. Do not change the existing localStorage or custom event logic already present in handleConciergeEntryModeChange, this is an addition, not a replacement, and do not change the PATCH call itself in either function.
+In the mount-time effect that reads the stored position from localStorage, after successfully parsing it, pass the parsed x and y through clampBtnPos before calling setBtnPos, using the button's real rendered width and height the same way the drag handlers already do, not a guessed or hardcoded size. If the button's real dimensions are not yet knowable at the exact moment this effect runs, use a brief, safe fallback width and height for this one clamp call, clearly commented as a reasonable estimate for the button's typical size, and note in a comment that this is intentionally conservative to guarantee the button is never rendered off screen even before its exact size is measured. Do not change clampBtnPos itself, and do not change the drag handlers, this is purely about applying the same existing clamp logic to the initial load path, which currently skips it entirely.
 
 VERIFY AFTER ACT:
 
-grep -n "refreshUser" /home/corby/jamm-os/frontend/src/lib/hooks/useAuth.tsx /home/corby/jamm-os/frontend/src/app/\(app\)/settings/page.tsx
+grep -n "clampBtnPos" /home/corby/jamm-os/frontend/src/components/layout/AppShell.tsx
 
-Expected: refreshUser defined and exposed in useAuth.tsx, and called in both handler functions in the Settings page.
+Expected: now called in three places, the mount-time load effect, pointer move, and pointer up, where it was previously only called in the latter two.
 
 npx tsc --noEmit
 
@@ -90,19 +84,17 @@ MANUAL VERIFICATION:
 
 Restart the frontend.
 
-Without reloading the page at any point, go to Settings, switch Concierge Suggestions to Off, then navigate directly to Engagements, Billing, or the client detail page, wherever a real trigger condition is currently true. Confirm no suggestion or banner appears, with no page reload involved.
+In the browser console, manually set an out-of-bounds test position to reproduce the exact bug: localStorage.setItem('jamm_concierge_button_position', JSON.stringify({x: 5000, y: 5000})), then reload the page. Confirm the button now appears clamped to a valid, visible position within the current viewport, not off screen, confirming the fix actually resolves the exact failure mode found in tonight's audit.
 
-Switch it back to On in Settings, again without reloading, navigate to the same page, confirm the suggestion or banner correctly reappears immediately.
+Confirm the button can still be dragged normally afterward, and that a normal, valid saved position still loads and renders exactly where it was left, unaffected by this change.
 
-Separately, without reloading, switch Concierge Entry Point between Sidebar and Floating in Settings, then navigate to a different page and back to Settings, confirm the correct option still shows as selected, confirming this same fix also closed the equivalent gap for that setting.
-
-Report pass or fail for all three checks individually.
+Report pass or fail for both checks individually.
 
 GIT:
 
 git add -A
 
-git commit -m "expose a real refreshUser function on the auth context, fixing the shared user object going stale after changing either Concierge Suggestions or Concierge Entry Point in Settings without a full page reload, confirmed live tonight when turning suggestions off correctly saved to the backend but the Engagements page still showed a banner in the same session, since AuthProvider previously only ever fetched the user object once on mount with no way for any other component to trigger a refresh"
+git commit -m "fix the persistent entry button becoming permanently inaccessible when a saved position from a wider viewport is loaded in a narrower one, confirmed as a real, severe bug by a live browser audit tonight that found the button rendered fully off screen with no in-app way to recover it, since the mount-time load path read the stored position directly with no clamp applied, unlike the drag handlers which always clamp correctly"
 
 git pull --rebase origin main
 
