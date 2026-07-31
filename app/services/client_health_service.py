@@ -142,9 +142,7 @@ def compute_client_health(client_id: UUID, firm_id: UUID, db: Session) -> dict:
 
     cutoff = today + timedelta(days=60)
     for auth in irs_auths:
-        if auth.status == "expiring_soon" or (
-            auth.valid_until is not None and auth.valid_until < cutoff
-        ):
+        if auth.valid_until is not None and auth.valid_until < cutoff:
             form = f"Form {auth.form_type}" if auth.form_type else "IRS authorization"
             if auth.valid_until is not None:
                 days_left = (auth.valid_until - today).days

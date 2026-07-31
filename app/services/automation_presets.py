@@ -465,7 +465,15 @@ def _get_preset_rules(firm_id: UUID) -> List[Dict[str, Any]]:
             "description": (
                 "Alerts staff and client when an IRS authorization is approaching expiry."
             ),
-            "is_enabled": True,
+            # Disabled in Phase A. The IRS expiry sweep now warns staff
+            # directly rather than through the automation engine, because
+            # is_enabled here is a toggle a firm owner can flip and a
+            # compliance warning must not be silently switchable. The preset
+            # definition stays in place: Phase B revives it as the
+            # client-facing renewal request, which is what it was trying to
+            # be. Leaving it enabled would duplicate the staff warning and
+            # create a renewal task on every sweep run.
+            "is_enabled": False,
             "trigger_event": TriggerEvent.irs_authorization_expiry_approaching,
             "trigger_conditions": [],
             "actions": [

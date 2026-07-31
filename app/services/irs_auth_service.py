@@ -73,9 +73,37 @@ def _is_in_season(as_of: date) -> bool:
     return False
 
 
-def _format_expiry_date(value: date) -> str:
-    """'March 20'. Written out rather than using %-d, which is not portable."""
+# Warnings at this tier or nearer name what the firm loses. Further out, the
+# date is the message; this close, the stakes are.
+CONSEQUENCE_FROM_DAYS_REMAINING = 7
+
+
+def _format_expiry_date(value: date, as_of: date) -> str:
+    """
+    'March 20', or 'March 20, 2025' when the date is not in the current year.
+
+    The lapsed query has no lower bound by design, so its first run picks up
+    a backlog. "expired September 8, 400 days ago" without a year is a
+    confusing sentence. Written out rather than using %-d, which is not
+    portable to Windows.
+    """
+    if value.year != as_of.year:
+        return f"{value:%B} {value.day}, {value.year}"
     return f"{value:%B} {value.day}"
+
+
+def _build_consequence_sentence(authorization) -> str:
+    """
+    What the firm actually loses. The transcript gate in
+    transcript_service.request_transcript checks form_type 8821, so claiming
+    lost transcript access for a 2848 would simply be false.
+
+    This is JAMM describing its own behavior, not an inference about the
+    firm, which is why it is allowed to appear at all.
+    """
+    if authorization.form_type == "8821":
+        return "Transcript access for this client stops until a new one is signed."
+    return "Representation authority for this client ends until a new one is signed."
 
 
 def build_expiry_warning_message(authorization, as_of: date) -> tuple[str, str]:
@@ -83,62 +111,69 @@ def build_expiry_warning_message(authorization, as_of: date) -> tuple[str, str]:
     Build the (title, body) for an expiry warning.
 
     A function of the authorization and the date, never a hardcoded string
-    and never a dict lookup keyed on tier alone. The same tier produces
-    different copy in season than out of it, and the consequence named at
-    expiry differs by form type.
+    and never a dict lookup keyed on tier alone.
+
+    The body is COMPOSED, not formatted as one string, and that shape is
+    load bearing. It is three slots:
+
+        fact         always renders. Calendar arithmetic only.
+        evidence     always None today. This is the seam.
+        consequence  renders at tier 7 and nearer.
+
+    The evidence slot is where a real, earned observation goes once one
+    exists: firm memory saying how long this firm's last renewals actually
+    took, or cross-firm data on renewal times. Until such data exists the
+    slot stays empty. Do not fill it with a guess, and do not give this
+    function a database session or an evidence provider to fetch one. When
+    the data is real, this becomes a parameter change rather than a rewrite.
 
     Copy rules, which are hard limits:
-      - Calendar fact plus plainly stated judgment. Nothing else.
+      - Calendar fact only. Nothing inferred about the firm.
       - No percentages, no utilization figures, no volume comparisons, and
         no cohort or peer language of any kind.
-      - In season the body may name the season and say why acting now is
-        easier than acting later.
-      - Off season it drops to a plain statement of the date and the days
-        remaining.
+      - No claim about how long a renewal takes or whether there is time to
+        complete one. JAMM has never watched this firm renew anything and
+        has no cross-firm data on renewal times. Asserting that 30 or 60
+        days is "room" is an unearned inference, and a compliance warning is
+        the worst possible venue for one.
+      - Naming the season is allowed. It is pure calendar arithmetic and it
+        tells the owner why the date carries more weight, without claiming
+        anything about their ability to act on it.
     """
     valid_until = authorization.valid_until
     days_remaining = (valid_until - as_of).days
-    expiry_date = _format_expiry_date(valid_until)
+    expiry_date = _format_expiry_date(valid_until, as_of)
     form_label = f"Form {authorization.form_type}"
-
-    # What the firm actually loses. The transcript gate in
-    # transcript_service.request_transcript checks form_type 8821, so
-    # claiming lost transcript access for a 2848 would be wrong.
-    if authorization.form_type == "8821":
-        consequence = "Transcript access for this client stops until a new one is signed."
-    else:
-        consequence = "Representation authority for this client ends until a new one is signed."
+    in_season = _is_in_season(as_of)
+    season_clause = ", during filing season" if in_season else ""
 
     if days_remaining < 0:
         days_ago = abs(days_remaining)
         day_word = "day" if days_ago == 1 else "days"
         title = f"{form_label} has expired"
-        body = (
-            f"This authorization expired {expiry_date}, {days_ago} {day_word} ago. "
-            f"{consequence}"
+        fact = (
+            f"This authorization expired {expiry_date}, "
+            f"{days_ago} {day_word} ago{season_clause}."
         )
-        return title, body
-
-    if days_remaining == 0:
+    elif days_remaining == 0:
         title = f"{form_label} expires today"
-        body = f"This authorization expires today, {expiry_date}. {consequence}"
-        return title, body
-
-    day_word = "day" if days_remaining == 1 else "days"
-    title = f"{form_label} expires in {days_remaining} {day_word}"
-
-    if _is_in_season(as_of):
-        body = (
-            f"This authorization expires {expiry_date}, during filing season. "
-            f"Renewing it now, while you have room, avoids chasing a signature "
-            f"in the worst week of the year."
-        )
+        fact = f"This authorization expires today, {expiry_date}{season_clause}."
     else:
-        body = (
+        day_word = "day" if days_remaining == 1 else "days"
+        title = f"{form_label} expires in {days_remaining} {day_word}"
+        fact = (
             f"This authorization expires {expiry_date}, "
-            f"{days_remaining} {day_word} from today."
+            f"{days_remaining} {day_word} from today{season_clause}."
         )
 
+    # The seam. Stays None until there is a real observation to put here.
+    evidence = None
+
+    consequence = None
+    if days_remaining <= CONSEQUENCE_FROM_DAYS_REMAINING:
+        consequence = _build_consequence_sentence(authorization)
+
+    body = " ".join(part for part in (fact, evidence, consequence) if part)
     return title, body
 
 
@@ -286,9 +321,11 @@ def send_irs_authorization(
         actor_type="staff",
         actor_id=sent_by_user_id,
         metadata={
-            "form_type": str(authorization.form_type) if hasattr(authorization, 'form_type') and authorization.form_type else None,
-            "expiry_date": authorization.expiry_date.isoformat() if hasattr(authorization, 'expiry_date') and authorization.expiry_date else None,
-            "client_id": str(authorization.client_id) if hasattr(authorization, 'client_id') else None,
+            "form_type": str(authorization.form_type) if authorization.form_type else None,
+            # The model field is valid_until. The old hasattr(authorization,
+            # 'expiry_date') guard was always False, so this always logged None.
+            "expiry_date": authorization.valid_until.isoformat() if authorization.valid_until else None,
+            "client_id": str(authorization.client_id),
         }
     )
 
@@ -382,11 +419,21 @@ def _deliver_expiry_warning(
 
     title, body = build_expiry_warning_message(authorization, as_of)
 
+    # send_notification_email builds its subject as "[{firm_name}] {title}",
+    # so an empty firm_name ships "[] Form 8821 expires in 60 days".
+    firm = db.execute(
+        select(Firm).where(Firm.id == authorization.firm_id)
+    ).scalars().first()
+    firm_name = firm.name if firm else ""
+
     delivered_in_app = False
     for recipient in recipients:
         # In-app first, and unconditionally. A firm may stop the emails. A
         # firm may not make the compliance record disappear from the app.
-        NotificationService.create_notification(
+        # The return value is the gate: create_notification is
+        # Optional[Notification] and the warning row may only be written if
+        # a record actually landed, not merely because a call was attempted.
+        notification = NotificationService.create_notification(
             db=db,
             firm_id=authorization.firm_id,
             recipient_id=recipient.id,
@@ -398,9 +445,14 @@ def _deliver_expiry_warning(
             related_entity_id=authorization.id,
             force_in_app=True,
         )
-        delivered_in_app = True
+        if notification is not None:
+            delivered_in_app = True
 
     if not delivered_in_app:
+        logger.warning(
+            "IRS expiry warning wrote no in-app record: firm=%s auth=%s",
+            authorization.firm_id, authorization.id,
+        )
         return False
 
     # Email last, best effort, and it DOES respect the recipient's channel
@@ -422,7 +474,7 @@ def _deliver_expiry_warning(
                 continue
             EmailService.send_notification_email(
                 to_email=recipient.email,
-                firm_name="",
+                firm_name=firm_name,
                 recipient_name=recipient.full_name or "",
                 title=title,
                 body=body,
@@ -704,9 +756,15 @@ def mark_authorization_expired(
 
     # list_warnings_for_authorization orders by sent_at descending, so the
     # first row is the most recent warning this authorization received.
+    #
+    # Both sides of this subtraction are UTC on purpose. sent_at is a
+    # timezone-aware UTC timestamp, so pairing it with date.today(), which is
+    # the server's LOCAL date, mixes two calendars and comes out one day off
+    # whenever the server's local date and its UTC date disagree.
     days_since_expiry_warning = None
     if warnings:
-        days_since_expiry_warning = (date.today() - warnings[0].sent_at.date()).days
+        today_utc = datetime.now(timezone.utc).date()
+        days_since_expiry_warning = (today_utc - warnings[0].sent_at.date()).days
 
     authorization.status = "expired"
     db.commit()
