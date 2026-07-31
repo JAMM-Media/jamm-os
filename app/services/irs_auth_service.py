@@ -493,6 +493,7 @@ def _record_warning_sent(
     db: Session,
     authorization,
     threshold_days: int,
+    as_of: date,
 ) -> None:
     """Write the warning row. Only ever called after a successful send."""
     crud_warning.create_warning(
@@ -513,7 +514,7 @@ def _record_warning_sent(
         actor_id=None,
         metadata={
             "days_until_expiry": (
-                (authorization.valid_until - date.today()).days
+                (authorization.valid_until - as_of).days
                 if authorization.valid_until else None
             ),
             "warning_tier": threshold_days,
@@ -537,8 +538,15 @@ def check_expiring_authorizations() -> dict:
 
     db = SessionLocal()
     try:
-        today = date.today()
-        expiring = crud_auth.get_authorizations_in_warning_window(db, max_days=60)
+        # Computed ONCE and passed to both queries. If the two ran against
+        # different dates, an authorization expiring on the boundary would
+        # fall into neither set and be skipped silently. Correctness lives
+        # here, not in the schedule: this must be right at 4am too.
+        cutoff = crud_auth.compute_expiry_cutoff_date()
+
+        expiring = crud_auth.get_authorizations_in_warning_window(
+            db, max_days=60, as_of=cutoff
+        )
         alerts_emitted = 0
 
         for auth in expiring:
@@ -546,7 +554,7 @@ def check_expiring_authorizations() -> dict:
             # compliance job that aborts halfway is the failure this whole
             # phase exists to prevent.
             try:
-                days_remaining = (auth.valid_until - today).days
+                days_remaining = (auth.valid_until - cutoff).days
 
                 # Kept so nothing downstream breaks. Delivery no longer
                 # depends on it.
@@ -586,9 +594,12 @@ def check_expiring_authorizations() -> dict:
                 # Row written only after the send succeeds. If the process
                 # dies mid-sweep, a duplicate warning tomorrow is a minor
                 # annoyance; a silently skipped warning is not.
-                if _deliver_expiry_warning(db=db, authorization=auth, as_of=today):
+                if _deliver_expiry_warning(db=db, authorization=auth, as_of=cutoff):
                     _record_warning_sent(
-                        db=db, authorization=auth, threshold_days=most_urgent
+                        db=db,
+                        authorization=auth,
+                        threshold_days=most_urgent,
+                        as_of=cutoff,
                     )
                     alerts_emitted += 1
             except Exception:
@@ -600,7 +611,7 @@ def check_expiring_authorizations() -> dict:
 
         # Separate pass. Catches anything that lapsed without being closed
         # out, however long ago. Writing status = "expired" drains this set.
-        lapsed = crud_auth.get_lapsed_active_authorizations(db)
+        lapsed = crud_auth.get_lapsed_active_authorizations(db, as_of=cutoff)
         expired_count = 0
         for auth in lapsed:
             try:
@@ -614,9 +625,12 @@ def check_expiring_authorizations() -> dict:
                     threshold_days=0,
                 )
                 if already_sent is None:
-                    if _deliver_expiry_warning(db=db, authorization=auth, as_of=today):
+                    if _deliver_expiry_warning(db=db, authorization=auth, as_of=cutoff):
                         _record_warning_sent(
-                            db=db, authorization=auth, threshold_days=0
+                            db=db,
+                            authorization=auth,
+                            threshold_days=0,
+                            as_of=cutoff,
                         )
                         alerts_emitted += 1
 

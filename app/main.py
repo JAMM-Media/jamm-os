@@ -21,6 +21,7 @@ from app.services.invoice_service import run_invoice_overdue_sweep
 from app.services.findings_recheck import recheck_failed_findings
 from app.services.deadline_scheduler import check_approaching_deadlines
 from app.services.metric_pipeline import run_nightly_metric_recompute
+from app.services.irs_auth_service import check_expiring_authorizations
 from app.core.scheduler_lock import try_acquire_scheduler_lock, release_scheduler_lock
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
@@ -205,6 +206,30 @@ async def lifespan(app: FastAPI):
             hour=4,
             minute=0,
             id="nightly_metric_recompute",
+            replace_existing=True,
+        )
+        # 10:01 UTC. Hawaii-Aleutian is UTC-10 with no DST, so 10:00 UTC is
+        # the moment the last US timezone rolls onto the server's calendar
+        # date. That puts this at 12:01 am Hawaii, 3:01 am Pacific, 6:01 am
+        # Eastern: outside working hours everywhere in the ICP, with the
+        # warning waiting before anyone sits down.
+        #
+        # timezone is pinned explicitly because BackgroundScheduler()
+        # otherwise resolves the zone through tzlocal from the host, and
+        # nothing in this repo pins the droplet's TZ.
+        #
+        # This is a UX choice about when people get emailed, NOT where
+        # correctness lives. The calendar safety is in
+        # compute_expiry_cutoff_date, so running this sweep off schedule,
+        # including through POST /irs-authorizations/run-expiry-check at four
+        # in the morning, produces the same result.
+        scheduler.add_job(
+            check_expiring_authorizations,
+            trigger="cron",
+            hour=10,
+            minute=1,
+            timezone="UTC",
+            id="irs_authorization_expiry_check",
             replace_existing=True,
         )
         scheduler.start()

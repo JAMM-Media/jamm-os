@@ -283,7 +283,14 @@ def test_expired_check_fires_in_scheduler_when_past_due():
 #            and it is warned at its most urgent applicable tier
 # ---------------------------------------------------------------------------
 def test_warning_window_authorization_is_warned_not_expired():
-    upcoming_auth = _mock_authorization(valid_until=date.today() + timedelta(days=30))
+    # Anchored on the sweep's own reference date, not on date.today().
+    # date.today() is the server's LOCAL date while the sweep reasons in
+    # cutoff terms, so a fixture built from it lands on the wrong tier
+    # whenever the two calendars disagree.
+    from app.crud.irs_authorization import compute_expiry_cutoff_date
+
+    cutoff = compute_expiry_cutoff_date()
+    upcoming_auth = _mock_authorization(valid_until=cutoff + timedelta(days=30))
 
     mock_db = MagicMock()
 
@@ -324,7 +331,10 @@ def test_warning_window_authorization_is_warned_not_expired():
 # Test 7c -- a tier already recorded does not fire again
 # ---------------------------------------------------------------------------
 def test_recorded_tier_does_not_fire_again():
-    upcoming_auth = _mock_authorization(valid_until=date.today() + timedelta(days=30))
+    from app.crud.irs_authorization import compute_expiry_cutoff_date
+
+    cutoff = compute_expiry_cutoff_date()
+    upcoming_auth = _mock_authorization(valid_until=cutoff + timedelta(days=30))
 
     mock_db = MagicMock()
 

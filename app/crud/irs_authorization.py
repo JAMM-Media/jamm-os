@@ -1,6 +1,6 @@
 # app/crud/irs_authorization.py
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 from uuid import UUID
 
@@ -87,13 +87,51 @@ def get_active_authorization_for_client(
     ).scalars().first()
 
 
+# Placeholder until Firm carries a timezone. American Samoa at UTC-11
+# is a known, accepted gap.
+WESTERNMOST_US_UTC_OFFSET_HOURS = 10
+
+
+def compute_expiry_cutoff_date() -> date:
+    """
+    The calendar date the expiry sweep should treat as "today".
+
+    The server runs on UTC. Every US firm is behind it, so for part of each
+    UTC day the server's calendar date is already ahead of the firm's. Using
+    the raw UTC date would mark an authorization expired while it is still
+    valid where the firm actually is, and status = "expired" does not revert.
+
+    Rolling back to the westernmost US offset gives the last calendar date
+    that has arrived for every firm in the ICP. This is not the one-day
+    safety margin rejected during design: that delayed expiry a full day for
+    everyone. This delays it by at most ten hours and produces the identical
+    result to the scheduled run time for a firm in any US zone. The
+    difference is that it also holds when the sweep is triggered manually at
+    four in the morning.
+
+    Correctness lives here rather than in the schedule. See the callers in
+    check_expiring_authorizations: the SAME value must reach both queries.
+    """
+    return (
+        datetime.now(timezone.utc)
+        - timedelta(hours=WESTERNMOST_US_UTC_OFFSET_HOURS)
+    ).date()
+
+
 def get_authorizations_in_warning_window(
     db: Session,
     max_days: int,
+    as_of: date,
 ) -> list[IrsAuthorization]:
     """
     Active authorizations that have not yet lapsed but expire within
     max_days. This is the set the warning ladder walks.
+
+    as_of comes from compute_expiry_cutoff_date and must be the same value
+    passed to get_lapsed_active_authorizations on the same run. If the two
+    disagree, an authorization expiring on the boundary date falls into
+    neither set and is silently skipped, which is the exact class of
+    invisible row this feature exists to eliminate.
 
     CROSS-FIRM BY DESIGN. This function takes no firm_id and must not be
     given one. It backs the nightly sweep, which runs once for the whole
@@ -107,13 +145,12 @@ def get_authorizations_in_warning_window(
     already fired lives in irs_authorization_warnings, and the sweep checks
     it per tier.
     """
-    today = date.today()
-    window_end = today + timedelta(days=max_days)
+    window_end = as_of + timedelta(days=max_days)
     return db.execute(
         select(IrsAuthorization).where(
             IrsAuthorization.status == "active",
             IrsAuthorization.valid_until.isnot(None),
-            IrsAuthorization.valid_until >= today,
+            IrsAuthorization.valid_until >= as_of,
             IrsAuthorization.valid_until <= window_end,
         )
     ).scalars().all()
@@ -121,39 +158,44 @@ def get_authorizations_in_warning_window(
 
 def get_lapsed_active_authorizations(
     db: Session,
+    as_of: date,
 ) -> list[IrsAuthorization]:
     """
-    Authorizations still marked active whose valid_until is already in the
-    past. These are the ones that slipped through, including any that
+    Authorizations still marked active whose valid_until is already past
+    as_of. These are the ones that slipped through, including any that
     lapsed months ago and were never picked up.
+
+    as_of comes from compute_expiry_cutoff_date and must be the same value
+    passed to get_authorizations_in_warning_window on the same run. See the
+    note there about boundary rows falling into neither set.
 
     CROSS-FIRM BY DESIGN. Same nightly sweep exemption as
     get_authorizations_in_warning_window above. Do not add a firm_id
     parameter to this function.
 
-    NO SAFETY MARGIN, ON PURPOSE. Do not change this to
-    valid_until < today - timedelta(days=1). The deadline sweep in
+    NO SAFETY MARGIN BEYOND THE CUTOFF, ON PURPOSE. Do not change this to
+    valid_until < as_of - timedelta(days=1). The deadline sweep in
     deadline_scheduler.py does subtract a day, and it is right to, because
     its failure mode is a false alarm. This one is inverted. A margin would
-    report an authorization as active for up to a day after it actually
-    lapsed, which keeps get_active_authorization_for_client returning it and
-    keeps request_transcript passing. Blocking a firm a few hours early is
-    an annoyance. Permitting a transcript pull against a dead 8821 tells a
-    firm it holds authority it does not hold, on the one surface where being
-    wrong carries legal weight for them.
+    report an authorization as active for a further full day after it
+    actually lapsed, which keeps get_active_authorization_for_client
+    returning it and keeps request_transcript passing. Blocking a firm a few
+    hours early is an annoyance. Permitting a transcript pull against a dead
+    8821 tells a firm it holds authority it does not hold, on the one
+    surface where being wrong carries legal weight for them.
 
-    The UTC exposure that motivates a margin elsewhere is handled at run
-    time instead: the sweep is scheduled at an hour when the UTC date is not
-    ahead of any US firm's local date. See the add_job call in app/main.py.
+    The timezone exposure is already handled by as_of. It is NOT handled by
+    the schedule: the add_job call in app/main.py picks an hour so that
+    warnings arrive before anyone sits down, which is a UX decision. Running
+    this sweep off schedule must be, and is, equally correct.
 
     This query drains itself: the sweep writes status = "expired" for
     everything it returns, so a given row is only ever seen once.
     """
-    today = date.today()
     return db.execute(
         select(IrsAuthorization).where(
             IrsAuthorization.status == "active",
             IrsAuthorization.valid_until.isnot(None),
-            IrsAuthorization.valid_until < today,
+            IrsAuthorization.valid_until < as_of,
         )
     ).scalars().all()
