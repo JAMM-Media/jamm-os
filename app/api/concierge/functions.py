@@ -27,6 +27,8 @@ from app.models.signature_envelope import SignatureEnvelope
 from app.models.firm import Firm
 from app.models.integration import Integration
 from app.models.stripe_connection import StripeConnection
+from app.models.note import Note
+from app.models.firm_chat import FirmMessage, Channel
 
 
 # ---------------------------------------------------------------------------
@@ -1312,4 +1314,102 @@ def get_my_tasks(firm_id: uuid.UUID, user_id: uuid.UUID, db: Session) -> dict:
         "task_count": len(tasks),
         "tasks": tasks,
         "engagements_with_my_tasks": engagement_names,
+    }
+
+# ---------------------------------------------------------------------------
+# Function: get_recent_notes
+# Returns recent non-private notes across the firm with resolved author and
+# client names. Private notes are permanently excluded: never surfaced, never
+# counted. This is a real, deliberate privacy decision, not an oversight.
+# ---------------------------------------------------------------------------
+def get_recent_notes(firm_id: uuid.UUID, db: Session, days: int = 7) -> dict:
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+
+    rows = db.execute(
+        select(
+            Note.id,
+            Note.entity_type,
+            Note.entity_id,
+            Note.body,
+            Note.created_at,
+            User.full_name.label("author_name"),
+        )
+        .join(User, Note.author_id == User.id)
+        .where(
+            Note.firm_id == firm_id,
+            Note.is_deleted == False,  # noqa: E712
+            Note.is_private == False,  # noqa: E712
+            Note.created_at >= cutoff,
+        )
+        .order_by(Note.created_at.desc())
+        .limit(20)
+    ).fetchall()
+
+    notes = []
+    for r in rows:
+        client_name = None
+        if r.entity_type == "client":
+            client_name = db.execute(
+                select(Client.name).where(
+                    Client.id == r.entity_id,
+                    Client.firm_id == firm_id,
+                )
+            ).scalar()
+
+        notes.append({
+            "entity_type": r.entity_type,
+            "entity_id": str(r.entity_id),
+            "client_name": client_name,
+            "author_name": r.author_name,
+            "body_snippet": r.body[:150] if r.body else "",
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+        })
+
+    return {
+        "note_count": len(notes),
+        "days": days,
+        "notes": notes,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Function: get_recent_firm_chat_activity
+# Returns recent Firm Chat messages with sender and channel names.
+# Firm Chat is an internal team messaging feature built into the product.
+# ---------------------------------------------------------------------------
+def get_recent_firm_chat_activity(firm_id: uuid.UUID, db: Session, days: int = 7) -> dict:
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+
+    rows = db.execute(
+        select(
+            FirmMessage.body,
+            FirmMessage.created_at,
+            Channel.name.label("channel_name"),
+            User.full_name.label("sender_name"),
+        )
+        .join(Channel, FirmMessage.channel_id == Channel.id)
+        .join(User, FirmMessage.sender_id == User.id)
+        .where(
+            FirmMessage.firm_id == firm_id,
+            FirmMessage.is_deleted == False,  # noqa: E712
+            FirmMessage.created_at >= cutoff,
+        )
+        .order_by(FirmMessage.created_at.desc())
+        .limit(20)
+    ).fetchall()
+
+    messages = [
+        {
+            "channel_name": r.channel_name,
+            "sender_name": r.sender_name,
+            "body_snippet": r.body[:150] if r.body else "",
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+        }
+        for r in rows
+    ]
+
+    return {
+        "message_count": len(messages),
+        "days": days,
+        "messages": messages,
     }

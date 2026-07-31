@@ -54,47 +54,69 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Fix the persistent entry button escaping the viewport permanently when a saved position from a wider window is loaded in a narrower one
+TASK: Build real Concierge tool coverage for Notes and Firm Chat, fixing a confirmed live fabrication where the Concierge denied Firm Chat exists and stalled on a Notes question
 
-USE: claude sonnet
+USE: Fable 5
 
 VERIFY BEFORE ACT:
 
-sed -n '95,125p' /home/corby/jamm-os/frontend/src/components/layout/AppShell.tsx
+cat /home/corby/jamm-os/app/models/note.py
 
-Confirm the mount-time effect that reads jamm_concierge_button_position from localStorage calls setBtnPos directly with the raw parsed value, with no call to clampBtnPos, while clampBtnPos itself is only ever called during active pointer move and pointer up handlers. Confirm this means a position saved on a wider viewport can be loaded and rendered unclamped on a narrower one, placing the button fully off screen with no in-app way to recover it, since a real, live browser audit tonight found the button completely inaccessible for exactly this reason.
+cat /home/corby/jamm-os/app/models/firm_chat.py
+
+sed -n '145,165p' /home/corby/jamm-os/app/api/concierge/route.py
+
+sed -n '45,55p' /home/corby/jamm-os/app/api/concierge/route.py
+
+grep -n "firm.chat\|firm_chat\|Firm Chat" /home/corby/jamm-os/app/api/concierge/prompts.py /home/corby/jamm-os/app/api/concierge/route.py /home/corby/jamm-os/app/api/concierge/functions.py
+
+Confirm the real fields on Note, firm_id, entity_type, entity_id, author_id, body, is_private, is_deleted, created_at, and on Channel and FirmMessage, firm_id, channel_id, sender_id, body, created_at, is_deleted, with Channel having a name field. Confirm zero existing references to Firm Chat or Notes anywhere in the Concierge's prompts, route, or functions files, confirming this is genuinely new tool coverage, not a routing bug in existing tools.
 
 WHAT THIS IS:
 
-A real, severe bug found tonight by a live browser audit: the floating Concierge entry button's position, once dragged and saved, is loaded back from localStorage exactly as saved, with no revalidation against the current window size. If the browser window is ever smaller than it was when the position was saved, for example a different monitor, a resized window, or an automated testing viewport, the button can render fully outside the visible area, and since its own click handler is what opens the panel, there is no way to recover it without directly editing browser storage. This defeats the entire point of a persistent, always-available entry point.
+A live browser audit tonight asked the Concierge four real questions about Notes and Firm Chat. One got an honest, correct no-access answer. The other three failed badly: one stalled with "Let me look that up for you" and never delivered an answer, even though the real, correct answer, no notes exist yet for that client, was directly available. Two others flatly denied Firm Chat exists as a feature at all, when it is a real, visible, working page in the same product. This happened because the Concierge has zero tool coverage for either domain, so when asked, it reasons from its own general assumptions rather than real data, and got it wrong with full confidence. This matches the core lesson proven repeatedly tonight: a model with no real data to answer from will eventually guess wrong, and the only real fix is giving it the real data, not a better worded prompt. This task builds two new real, tested tools, matching the exact structure and registration pattern already used for every other tool built tonight.
 
 CHANGE INSTRUCTIONS:
 
-In the mount-time effect that reads the stored position from localStorage, after successfully parsing it, pass the parsed x and y through clampBtnPos before calling setBtnPos, using the button's real rendered width and height the same way the drag handlers already do, not a guessed or hardcoded size. If the button's real dimensions are not yet knowable at the exact moment this effect runs, use a brief, safe fallback width and height for this one clamp call, clearly commented as a reasonable estimate for the button's typical size, and note in a comment that this is intentionally conservative to guarantee the button is never rendered off screen even before its exact size is measured. Do not change clampBtnPos itself, and do not change the drag handlers, this is purely about applying the same existing clamp logic to the initial load path, which currently skips it entirely.
+In functions.py, add a new function get_recent_notes(firm_id, db, days=7) that queries the Note table for firm_id matching, is_deleted false, is_private false, created_at within the last N days, ordered newest first, limited to 20. Deliberately exclude private notes entirely, never surface their content or count them, this is a real, deliberate privacy decision, not an oversight. For each note, join to resolve a real author name from the author relationship. When entity_type equals client, attempt to join Client on entity_id to resolve a real client name, matching the exact firm-scoped join pattern already used elsewhere in this file, for example in get_client_document_status. For any other entity_type, return the entity_type and entity_id as-is without a resolved name. Truncate each note's body to a reasonable snippet, for example the first 150 characters, in the returned data, do not return full note bodies. Return a dict with note_count and a list of the notes.
+
+Add a second new function get_recent_firm_chat_activity(firm_id, db, days=7) that queries FirmMessage joined to Channel, filtered to firm_id matching, is_deleted false, created_at within the last N days, ordered newest first, limited to 20. For each message, join to resolve a real sender name and the real channel name. Truncate each message's body to a reasonable snippet, the same style as the notes function. Return a dict with message_count and a list of the messages.
+
+In route.py, import both new functions alongside the existing function imports. Add two new tool schema entries to the tools list, matching the exact style, structure, and description tone of the existing entries, for example get_deadline_calendar's entry, with clear descriptions telling the model when to call each one, for example when the firm owner asks about recent client notes, firm chat activity, team messages, or what has been discussed internally. Add two new elif branches in the tool dispatch matching the exact style of the existing ones, calling each new function with current_firm.id and db.
+
+Do not modify any existing function, tool entry, or dispatch branch, this task only adds two new, additive tool registrations.
 
 VERIFY AFTER ACT:
 
-grep -n "clampBtnPos" /home/corby/jamm-os/frontend/src/components/layout/AppShell.tsx
+grep -n "def get_recent_notes\|def get_recent_firm_chat_activity" /home/corby/jamm-os/app/api/concierge/functions.py
 
-Expected: now called in three places, the mount-time load effect, pointer move, and pointer up, where it was previously only called in the latter two.
+grep -n "get_recent_notes\|get_recent_firm_chat_activity" /home/corby/jamm-os/app/api/concierge/route.py
 
-npx tsc --noEmit
+Expected: both functions present, both imported, both registered as tool schema entries, both present in the dispatch block.
+
+python3 -c "from app.main import app; print('OK')"
 
 MANUAL VERIFICATION:
 
-Restart the frontend.
+Restart the backend.
 
-In the browser console, manually set an out-of-bounds test position to reproduce the exact bug: localStorage.setItem('jamm_concierge_button_position', JSON.stringify({x: 5000, y: 5000})), then reload the page. Confirm the button now appears clamped to a valid, visible position within the current viewport, not off screen, confirming the fix actually resolves the exact failure mode found in tonight's audit.
+Check whether any real notes or real Firm Chat messages currently exist for this firm. If none exist, real test data should be inserted directly, the same careful way test data was inserted for Timesheets, Staff, and Documents earlier tonight, a real note on a real client and a real message in a real or newly created channel, so the new tools have something real to find.
 
-Confirm the button can still be dragged normally afterward, and that a normal, valid saved position still loads and renders exactly where it was left, unaffected by this change.
+Re-ask the exact four questions from tonight's audit, one at a time, and report each response verbatim:
+"What's in the notes for Robert & Carol Tanner?"
+"Has anyone written any client notes recently?"
+"What's been said in Firm Chat today?"
+"Summarize the most recent Firm Chat messages"
 
-Report pass or fail for both checks individually.
+For each, confirm the response now reflects real data if real data exists, or an honest, correct statement that nothing recent exists if it does not, and confirm none of the four responses deny that Firm Chat exists as a feature or stall without delivering an answer.
+
+Report pass or fail for each of the four questions individually, quoting the actual response text.
 
 GIT:
 
 git add -A
 
-git commit -m "fix the persistent entry button becoming permanently inaccessible when a saved position from a wider viewport is loaded in a narrower one, confirmed as a real, severe bug by a live browser audit tonight that found the button rendered fully off screen with no in-app way to recover it, since the mount-time load path read the stored position directly with no clamp applied, unlike the drag handlers which always clamp correctly"
+git commit -m "build real Concierge tool coverage for Notes and Firm Chat, fixing a confirmed live fabrication found by tonight's browser audit where the Concierge flatly denied Firm Chat exists as a feature and stalled without answering a real notes question, adding get_recent_notes and get_recent_firm_chat_activity as real, tested tools following the exact registration pattern used for every other tool tonight, with private notes deliberately and permanently excluded from what the Concierge can ever surface"
 
 git pull --rebase origin main
 
