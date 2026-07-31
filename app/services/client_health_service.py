@@ -144,17 +144,11 @@ def compute_client_health(client_id: UUID, firm_id: UUID, db: Session) -> dict:
     for auth in irs_auths:
         if auth.valid_until is not None and auth.valid_until < cutoff:
             form = f"Form {auth.form_type}" if auth.form_type else "IRS authorization"
-            if auth.valid_until is not None:
-                days_left = (auth.valid_until - today).days
-                needs_attention_reasons.append({
-                    "severity": "needs_attention",
-                    "text": f"{form} expiring in {days_left} day{'s' if days_left != 1 else ''}"
-                })
-            else:
-                needs_attention_reasons.append({
-                    "severity": "needs_attention",
-                    "text": f"{form} expiring soon"
-                })
+            days_left = (auth.valid_until - today).days
+            needs_attention_reasons.append({
+                "severity": "needs_attention",
+                "text": f"{form} expiring in {days_left} day{'s' if days_left != 1 else ''}"
+            })
 
     if not active_engagements:
         any_engagement = db.execute(

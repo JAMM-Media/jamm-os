@@ -63,12 +63,18 @@ SEASONAL_WINDOWS = (
 )
 
 
-def _is_in_season(as_of: date) -> bool:
-    """True when as_of falls inside an author-set seasonal window."""
+def _is_in_season(day: date) -> bool:
+    """
+    True when day falls inside an author-set seasonal window.
+
+    The parameter is deliberately named neutrally. The copy asks whether the
+    EXPIRY date lands in filing season, not whether today does, and naming
+    this as_of is what invited the wrong argument being passed once already.
+    """
     for (start_month, start_day), (end_month, end_day) in SEASONAL_WINDOWS:
-        start = date(as_of.year, start_month, start_day)
-        end = date(as_of.year, end_month, end_day)
-        if start <= as_of <= end:
+        start = date(day.year, start_month, start_day)
+        end = date(day.year, end_month, end_day)
+        if start <= day <= end:
             return True
     return False
 
@@ -144,16 +150,26 @@ def build_expiry_warning_message(authorization, as_of: date) -> tuple[str, str]:
     days_remaining = (valid_until - as_of).days
     expiry_date = _format_expiry_date(valid_until, as_of)
     form_label = f"Form {authorization.form_type}"
-    in_season = _is_in_season(as_of)
-    season_clause = ", during filing season" if in_season else ""
+
+    # The season of the EXPIRY DATE, not of today. The sentence makes a claim
+    # about when the authorization lapses, so asking whether today is in
+    # season would produce a false statement whenever the two differ: an
+    # April 18 warning about a June 17 expiry would say June 17 is in filing
+    # season, and a December 20 warning about a February 18 expiry would say
+    # nothing at all, staying silent exactly when the expiry lands mid-crunch.
+    season_clause = ", during filing season" if _is_in_season(valid_until) else ""
 
     if days_remaining < 0:
         days_ago = abs(days_remaining)
         day_word = "day" if days_ago == 1 else "days"
         title = f"{form_label} has expired"
+        # No season clause once it has lapsed. The season is irrelevant to an
+        # authorization that is already dead, and "expired September 8, 2025,
+        # 400 days ago, during filing season" is a strange sentence whichever
+        # date the clause refers to.
         fact = (
             f"This authorization expired {expiry_date}, "
-            f"{days_ago} {day_word} ago{season_clause}."
+            f"{days_ago} {day_word} ago."
         )
     elif days_remaining == 0:
         title = f"{form_label} expires today"
