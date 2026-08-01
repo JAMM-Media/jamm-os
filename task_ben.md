@@ -54,42 +54,45 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Move get_recent_notes and get_recent_firm_chat_activity from the staff-only tool list to the main tool list, fixing them being unreachable for owner and manager accounts
+TASK: Add missing client-overview keywords to the operational-question gate, fixing get_client_full_snapshot being unreachable for natural client-overview questions
 
 USE: claude sonnet
 
 VERIFY BEFORE ACT:
 
-sed -n '245,280p' /home/corby/jamm-os/app/api/concierge/route.py
+python3 -c "
+import sys
+sys.path.insert(0, '/home/corby/jamm-os')
+from app.api.concierge.route import _is_operational_question
+print(_is_operational_question('Tell me about Robert & Carol Tanner'))
+"
 
-grep -n "_active_tools = _STAFF_CONCIERGE_TOOLS\|_active_tools = _CONCIERGE_TOOLS" /home/corby/jamm-os/app/api/concierge/route.py
+sed -n '281,308p' /home/corby/jamm-os/app/api/concierge/route.py
 
-Confirm get_recent_notes and get_recent_firm_chat_activity are currently defined inside _STAFF_CONCIERGE_TOOLS, immediately after get_my_tasks, and confirm _active_tools is only ever set to _STAFF_CONCIERGE_TOOLS for the staff role, with owner and manager roles receiving _CONCIERGE_TOOLS instead. This confirms these two tools are currently completely unreachable for owner and manager accounts, which is exactly the account type used to test them live tonight, explaining why the model consistently and honestly reported having no access despite the tools being correctly built and the operational keyword gate already being fixed.
+sed -n '139,143p' /home/corby/jamm-os/app/api/concierge/route.py
+
+Confirm this currently prints False, and confirm get_client_full_snapshot is correctly registered inside _CONCIERGE_TOOLS, the main tool list, not the staff-only list, ruling out the tool-list placement mistake found and fixed earlier tonight. This confirms the sole remaining root cause is the operational keyword gate having no awareness of natural client-overview phrasing.
 
 WHAT THIS IS:
 
-A mistake made earlier tonight when these two tools were first built: the task instructions said to add them to the tools list without naming which of the two real, separate tool lists in this file, and they were added to the wrong one, _STAFF_CONCIERGE_TOOLS, the narrow, deliberately restricted subset built earlier this session for security reasons, rather than _CONCIERGE_TOOLS, the full list used by owner and manager accounts. This was only caught because live testing tonight, as an owner account, still failed after the operational keyword fix, which led to checking every layer between question classification and the actual tool list sent to the model.
+Confirmed live tonight, twice, with two different real symptoms that turned out to share one root cause. A live browser audit earlier found that asking "Tell me about Robert & Carol Tanner" produced a response with a wrong filing deadline, off by one day, and a fabricated email address that did not match the real client record. Re-testing live just now, the same question instead produced a stalled non-answer, "Let me pull up the details on Robert & Carol Tanner," with nothing delivered after it. Both symptoms trace to the same cause: _is_operational_question returns False for this phrasing, so the question never enters the tool-use code path and get_client_full_snapshot, which already exists, is already correctly registered, and already returns real, correct, unmodified data straight from the database, is never actually called. With no real data available, the model either stalls or invents plausible-sounding but wrong details, depending on the specific run, which is exactly the same unreliable pattern already proven and fixed for Notes and Firm Chat earlier tonight.
 
 CHANGE INSTRUCTIONS:
 
-Move the get_recent_notes and get_recent_firm_chat_activity tool schema entries out of _STAFF_CONCIERGE_TOOLS and into _CONCIERGE_TOOLS, placed anywhere reasonable among the other entries there, for example near get_stalled_engagements. After moving them, _STAFF_CONCIERGE_TOOLS should contain only get_my_tasks, exactly as it did before these two tools were first added earlier tonight. Do not duplicate the entries into both lists, this is a move, not a copy, staff accounts should not gain access to these two tools as part of this fix, that would be a separate, deliberate decision, not an accidental side effect of correcting this mistake.
+Add a new line to the _OPERATIONAL_KEYWORDS set containing real, specific phrases for asking about a named client's overall status, matching the exact existing style, for example "tell me about", "give me an overview", "client overview", "client summary", "client snapshot", "what's going on with", "summarize this client", "pull up their", "pull up this client". Do not remove or change any existing keyword, this is purely an addition.
 
 VERIFY AFTER ACT:
-
-grep -n "get_recent_notes\|get_recent_firm_chat_activity" /home/corby/jamm-os/app/api/concierge/route.py
 
 python3 -c "
 import sys
 sys.path.insert(0, '/home/corby/jamm-os')
-from app.api.concierge.route import _CONCIERGE_TOOLS, _STAFF_CONCIERGE_TOOLS
-concierge_names = [t['name'] for t in _CONCIERGE_TOOLS]
-staff_names = [t['name'] for t in _STAFF_CONCIERGE_TOOLS]
-print('in main list:', 'get_recent_notes' in concierge_names, 'get_recent_firm_chat_activity' in concierge_names)
-print('in staff list:', 'get_recent_notes' in staff_names, 'get_recent_firm_chat_activity' in staff_names)
-print('staff list contents:', staff_names)
+from app.api.concierge.route import _is_operational_question
+print(_is_operational_question('Tell me about Robert & Carol Tanner'))
+print(_is_operational_question('Give me an overview of Marcus and Diana Webb'))
+print(_is_operational_question('Which engagements are stalled?'))
 "
 
-Expected: both tools show True for being in the main list, False for being in the staff list, and the staff list contents show only get_my_tasks.
+Expected: all three now print True, including the pre-existing stalled-engagements question, confirming nothing already working was broken.
 
 python3 -c "from app.main import app; print('OK')"
 
@@ -97,21 +100,19 @@ MANUAL VERIFICATION:
 
 Restart the backend.
 
-Re-ask the exact same four questions from tonight's audit, one at a time, logged in as the firm owner, and report each response verbatim:
-"What's in the notes for Robert & Carol Tanner?"
-"Has anyone written any client notes recently?"
-"What's been said in Firm Chat today?"
-"Summarize the most recent Firm Chat messages"
+Ask "Tell me about Robert & Carol Tanner" and report the exact response verbatim. Confirm it now delivers a real, complete answer rather than stalling.
 
-Real test data still exists, a real note on Robert & Carol Tanner and a real Firm Chat message in the general channel. Confirm all four now return real, accurate answers referencing this real data, and none of them deny access or claim the tool does not exist.
+Specifically check the email address and the engagement deadline stated in the response against the real values on the actual client record, confirmed a few minutes ago as rtanner@example.com and the real filing deadline shown on the Engagements page. Confirm both now match exactly, with no fabricated or off-by-one values.
 
-Report pass or fail for each of the four questions individually, quoting the actual response text.
+Ask it a second time to confirm the fix is reliable, not just correct once. Report both responses verbatim.
+
+Report pass or fail for each check individually.
 
 GIT:
 
 git add -A
 
-git commit -m "move get_recent_notes and get_recent_firm_chat_activity from the staff-only tool list to the main tool list, fixing a mistake made when these tools were first built tonight where ambiguous task instructions led to them being added to the wrong of two separate tool lists in this file, making them completely unreachable for owner and manager accounts, the exact account type used to test them live, and confirmed as the real remaining root cause after the operational keyword gate fix alone did not resolve the live failures"
+git commit -m "add missing client-overview keywords to the operational-question gate, fixing get_client_full_snapshot being unreachable for natural phrasings like tell me about a client, confirmed as the shared root cause behind two different symptoms found tonight, a stalled non-answer and, separately, a fabricated email address and an off-by-one filing deadline, both occurring because the question never reached the tool-use path and the model had no real data to answer from"
 
 git pull --rebase origin main
 

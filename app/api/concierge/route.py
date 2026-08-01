@@ -305,6 +305,7 @@ _OPERATIONAL_KEYWORDS = {
     "my tasks", "my work", "working on", "assigned to me", "my assignments",
     "what am i", "what's my", "what are my", "my engagements",
     "note", "notes", "client note", "client notes", "firm chat", "firm-chat", "team chat", "internal chat", "channel", "chat messages", "written about",
+    "tell me about", "give me an overview", "client overview", "client summary", "client snapshot", "what's going on with", "summarize this client", "pull up their", "pull up this client",
 }
 
 def _is_operational_question(message: str) -> bool:
