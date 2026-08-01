@@ -55,6 +55,8 @@ from app.api.concierge.functions import (
     get_signature_envelope_status,
     get_firm_settings,
     get_my_tasks,
+    get_recent_notes,
+    get_recent_firm_chat_activity,
 )
 
 logger = logging.getLogger(__name__)
@@ -244,6 +246,28 @@ _CONCIERGE_TOOLS = [
             "required": [],
         },
     },
+    {
+        "name": "get_recent_notes",
+        "description": "Returns recent non-private notes written by staff, with author name, a short body snippet, and the client the note is attached to. Private notes are never included. Call this when the firm owner asks about recent notes, what has been written about a client, or whether any notes exist for a specific client or engagement.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "days": {"type": "integer", "description": "How many days back to look. Default 7.", "default": 7}
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "get_recent_firm_chat_activity",
+        "description": "Returns recent Firm Chat messages with sender name and channel name. Firm Chat is a real internal team messaging feature built into the product. Call this when the firm owner asks what has been said in firm chat, what team messages exist, recent internal discussions, or anything about firm chat activity.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "days": {"type": "integer", "description": "How many days back to look. Default 7.", "default": 7}
+            },
+            "required": [],
+        },
+    },
 ]
 
 _STAFF_CONCIERGE_TOOLS = [
@@ -280,6 +304,7 @@ _OPERATIONAL_KEYWORDS = {
     "auth policy", "timesheet approval",
     "my tasks", "my work", "working on", "assigned to me", "my assignments",
     "what am i", "what's my", "what are my", "my engagements",
+    "note", "notes", "client note", "client notes", "firm chat", "firm-chat", "team chat", "internal chat", "channel", "chat messages", "written about",
 }
 
 def _is_operational_question(message: str) -> bool:
@@ -691,6 +716,10 @@ Respond with exactly one word: SAFE or UNSAFE. Nothing else.""",
                 result = get_firm_settings(current_firm.id, db)
             elif tool_name == "get_my_tasks":
                 result = get_my_tasks(current_firm.id, current_user.id, db)
+            elif tool_name == "get_recent_notes":
+                result = get_recent_notes(current_firm.id, db, days=int(tool_input.get("days", 7)))
+            elif tool_name == "get_recent_firm_chat_activity":
+                result = get_recent_firm_chat_activity(current_firm.id, db, days=int(tool_input.get("days", 7)))
             else:
                 result = {"error": f"Unknown tool: {tool_name}"}
             logger.info(f"Tool executed: {tool_name} -- firm {current_firm.id}")

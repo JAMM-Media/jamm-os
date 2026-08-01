@@ -99,7 +99,11 @@ export function AppShell({ children }: AppShellProps) {
     const stored = localStorage.getItem('jamm_concierge_button_position')
     if (stored) {
       try {
-        setBtnPos(JSON.parse(stored))
+        const parsed = JSON.parse(stored)
+        // Clamp against the current viewport using a conservative button size
+        // estimate (real size not yet measurable at load time) so a position
+        // saved on a wider viewport never renders the button off screen.
+        setBtnPos(clampBtnPos(parsed.x, parsed.y, 150, 36))
       } catch { /* ignore malformed stored value */ }
     }
   }, [])

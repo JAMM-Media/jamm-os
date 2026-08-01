@@ -384,7 +384,7 @@ function formatPhoneNumber(value: string): string {
 
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState('profile')
-  const { user } = useAuth()
+  const { user, refreshUser } = useAuth()
   const [approvalRequired, setApprovalRequired] = useState<boolean | null>(null)
   const [savingApproval, setSavingApproval] = useState(false)
 
@@ -557,6 +557,7 @@ export default function SettingsPage() {
     } catch {
       // non-fatal
     }
+    await refreshUser()
   }
 
   async function handleConciergeSuggestionsChange(enabled: boolean) {
@@ -566,6 +567,7 @@ export default function SettingsPage() {
     } catch {
       // non-fatal
     }
+    await refreshUser()
   }
 
   async function handleSaveReviewSettings() {

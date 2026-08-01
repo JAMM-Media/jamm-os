@@ -54,65 +54,64 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Make the floating persistent entry button draggable to anywhere on the main screen, with a persisted personal position and safe boundary clamping
+TASK: Move get_recent_notes and get_recent_firm_chat_activity from the staff-only tool list to the main tool list, fixing them being unreachable for owner and manager accounts
 
-USE: Fable 5
+USE: claude sonnet
 
 VERIFY BEFORE ACT:
 
-sed -n '105,120p' /home/corby/jamm-os/frontend/src/components/layout/AppShell.tsx
+sed -n '245,280p' /home/corby/jamm-os/app/api/concierge/route.py
 
-cat /home/corby/jamm-os/frontend/src/components/concierge-inline/PersistentEntryButton.tsx
+grep -n "_active_tools = _STAFF_CONCIERGE_TOOLS\|_active_tools = _CONCIERGE_TOOLS" /home/corby/jamm-os/app/api/concierge/route.py
 
-grep -n "w-12\|w-\[220px\]" /home/corby/jamm-os/frontend/src/components/layout/Sidebar.tsx
-
-Confirm the button's wrapping div currently uses a fixed bottom-6 right-6 position with no drag capability, confirm PersistentEntryButton's own onClick prop is what currently opens the panel, and confirm the main navigation sidebar is 48px wide when collapsed and 220px wide when expanded, before making any change.
+Confirm get_recent_notes and get_recent_firm_chat_activity are currently defined inside _STAFF_CONCIERGE_TOOLS, immediately after get_my_tasks, and confirm _active_tools is only ever set to _STAFF_CONCIERGE_TOOLS for the staff role, with owner and manager roles receiving _CONCIERGE_TOOLS instead. This confirms these two tools are currently completely unreachable for owner and manager accounts, which is exactly the account type used to test them live tonight, explaining why the model consistently and honestly reported having no access despite the tools being correctly built and the operational keyword gate already being fixed.
 
 WHAT THIS IS:
 
-Direct product decision made tonight, after seeing the floating button block part of the Calendar page's Upcoming panel. The button should become draggable anywhere on the main content area, like a movable widget, so a person can put it wherever it does not get in the way on any given page. This must not allow the button to be dragged onto the main left navigation sidebar, and must not allow it to be dragged into the Concierge panel's own space on the right, which only matters while the panel is open, at which point this button is already hidden. This is a personal, per-browser preference, not a firm-wide setting, since different people may want it in different places depending on their own screen and habits.
+A mistake made earlier tonight when these two tools were first built: the task instructions said to add them to the tools list without naming which of the two real, separate tool lists in this file, and they were added to the wrong one, _STAFF_CONCIERGE_TOOLS, the narrow, deliberately restricted subset built earlier this session for security reasons, rather than _CONCIERGE_TOOLS, the full list used by owner and manager accounts. This was only caught because live testing tonight, as an owner account, still failed after the operational keyword fix, which led to checking every layer between question classification and the actual tool list sent to the model.
 
 CHANGE INSTRUCTIONS:
 
-In AppShell.tsx, replace the static fixed bottom-6 right-6 wrapper div with a draggable version. Add a new piece of state holding either a real pixel position, an object with x and y numbers, or null meaning use the original default bottom-right corner position. Initialize this state to null on first render to avoid any server and client mismatch, then read a stored position from localStorage inside a useEffect after mount, the same safe pattern already used elsewhere in this file for other browser-only state.
-
-Implement dragging using pointer events, not the native HTML5 drag and drop API, attached to the wrapping div. On pointer down, record the starting pointer position and the button's current position. On pointer move while the pointer is down, update the button's position to follow the pointer, clamped so the button can never go further left than 220 plus 12 pixels from the left edge, never closer than 12 pixels to the top, right, or bottom edges of the viewport, accounting for the button's own real rendered width and height so it never gets clipped off screen. On pointer up, if the total distance moved since pointer down is small, a few pixels or less, treat this as a click and call the button's existing onClick behavior to open the panel. If the distance moved is larger than that, treat it as a completed drag, do not open the panel, and save the final position to localStorage under a new key so it persists across visits in this browser.
-
-When a stored position exists, render the wrapping div using that absolute pixel position instead of the original bottom-6 right-6 classes. When no stored position exists yet, render exactly as it does today, unchanged, so nobody's current experience changes until they actually drag it once.
-
-Do not modify PersistentEntryButton.tsx itself, all drag logic and position state should live in the wrapping div inside AppShell.tsx. Do not change the conciergeEntryMode === 'floating' and !conciergeOpen condition that already correctly decides whether this button renders at all.
+Move the get_recent_notes and get_recent_firm_chat_activity tool schema entries out of _STAFF_CONCIERGE_TOOLS and into _CONCIERGE_TOOLS, placed anywhere reasonable among the other entries there, for example near get_stalled_engagements. After moving them, _STAFF_CONCIERGE_TOOLS should contain only get_my_tasks, exactly as it did before these two tools were first added earlier tonight. Do not duplicate the entries into both lists, this is a move, not a copy, staff accounts should not gain access to these two tools as part of this fix, that would be a separate, deliberate decision, not an accidental side effect of correcting this mistake.
 
 VERIFY AFTER ACT:
 
-grep -n "onPointerDown\|onPointerMove\|onPointerUp\|localStorage.*button.*position\|jamm_concierge_button_position" /home/corby/jamm-os/frontend/src/components/layout/AppShell.tsx
+grep -n "get_recent_notes\|get_recent_firm_chat_activity" /home/corby/jamm-os/app/api/concierge/route.py
 
-npx tsc --noEmit
+python3 -c "
+import sys
+sys.path.insert(0, '/home/corby/jamm-os')
+from app.api.concierge.route import _CONCIERGE_TOOLS, _STAFF_CONCIERGE_TOOLS
+concierge_names = [t['name'] for t in _CONCIERGE_TOOLS]
+staff_names = [t['name'] for t in _STAFF_CONCIERGE_TOOLS]
+print('in main list:', 'get_recent_notes' in concierge_names, 'get_recent_firm_chat_activity' in concierge_names)
+print('in staff list:', 'get_recent_notes' in staff_names, 'get_recent_firm_chat_activity' in staff_names)
+print('staff list contents:', staff_names)
+"
+
+Expected: both tools show True for being in the main list, False for being in the staff list, and the staff list contents show only get_my_tasks.
+
+python3 -c "from app.main import app; print('OK')"
 
 MANUAL VERIFICATION:
 
-Restart the frontend.
+Restart the backend.
 
-Confirm the button still appears in its normal default bottom-right position on first load, unchanged from before.
+Re-ask the exact same four questions from tonight's audit, one at a time, logged in as the firm owner, and report each response verbatim:
+"What's in the notes for Robert & Carol Tanner?"
+"Has anyone written any client notes recently?"
+"What's been said in Firm Chat today?"
+"Summarize the most recent Firm Chat messages"
 
-Click it normally without dragging, confirm the panel still opens correctly, confirming click behavior was not broken by adding drag support.
+Real test data still exists, a real note on Robert & Carol Tanner and a real Firm Chat message in the general channel. Confirm all four now return real, accurate answers referencing this real data, and none of them deny access or claim the tool does not exist.
 
-Drag it to the middle of the screen, release, confirm it stays exactly where dropped and does not snap back.
-
-Reload the page entirely, confirm it remains in the same dragged position, confirming it is a real, persisted preference, not just temporary drag state.
-
-Attempt to drag it far to the left, onto or past where the main navigation sidebar sits, confirm it stops at the boundary and cannot overlap the sidebar.
-
-Attempt to drag it off any edge of the screen entirely, confirm it stays fully visible and clamped within the viewport in all directions.
-
-Visit the Calendar page specifically, confirm it can now be moved away from blocking the Upcoming panel, the real problem that prompted this tonight.
-
-Report pass or fail for each of these six checks individually.
+Report pass or fail for each of the four questions individually, quoting the actual response text.
 
 GIT:
 
 git add -A
 
-git commit -m "make the floating persistent entry button draggable anywhere on the main screen, addressing it blocking the Calendar page's Upcoming panel tonight, implemented with pointer events and a click-versus-drag distance threshold, clamped so it can never be dragged onto the main navigation sidebar or off any edge of the viewport, with the final position persisted per browser as a personal preference rather than a firm-wide setting"
+git commit -m "move get_recent_notes and get_recent_firm_chat_activity from the staff-only tool list to the main tool list, fixing a mistake made when these tools were first built tonight where ambiguous task instructions led to them being added to the wrong of two separate tool lists in this file, making them completely unreachable for owner and manager accounts, the exact account type used to test them live, and confirmed as the real remaining root cause after the operational keyword gate fix alone did not resolve the live failures"
 
 git pull --rebase origin main
 
