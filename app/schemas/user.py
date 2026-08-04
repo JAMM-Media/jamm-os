@@ -1,5 +1,6 @@
 # app/schemas/user.py
 
+from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
@@ -38,5 +39,6 @@ class UserOut(UserBase):
     concierge_active: bool = False
     concierge_entry_mode: Optional[str] = None
     concierge_suggestions_enabled: Optional[bool] = None
+    created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)

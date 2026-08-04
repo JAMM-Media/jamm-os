@@ -54,59 +54,45 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Fix three real, confirmed Dashboard visual issues, safely scoped to Dashboard's own local code without touching shared design tokens
+TASK: Expose the real created_at field on UserOut, fixing the Staff page's Invalid Date bug
 
 USE: claude sonnet
 
 VERIFY BEFORE ACT:
 
-sed -n '30,65p' /home/corby/jamm-os/frontend/src/app/\(app\)/dashboard/page.tsx
+sed -n '145,155p' /home/corby/jamm-os/app/models/user.py
 
-sed -n '515,530p' /home/corby/jamm-os/frontend/src/app/\(app\)/dashboard/page.tsx
+sed -n '30,40p' /home/corby/jamm-os/app/schemas/user.py
 
-grep -n "animate-pulse" /home/corby/jamm-os/frontend/src/components/billing/InvoiceCard.tsx
-
-Confirm MetricCardSkeleton already exists and already uses animate-pulse, but with bg-surface-border dark:bg-dark-border, not matching the bg-[#D5D8DE] dark:bg-[#444444] convention already established in Billing and Engagements. Confirm the actual bare-text loading state, "Loading dashboard...", is a separate, earlier code path that renders when metrics is still null, with no skeleton UI of any kind, and confirm this is the real gap a live audit tonight caught during a rapid navigate-and-screenshot test. Confirm MetricCard's alert variant currently uses dark:bg-status-red-text/10 for the Overdue Engagements card in dark mode, a real, measurably weaker treatment than its light mode equivalent, confirmed by the same audit.
+Confirm User already has a real created_at column, a real Mapped[datetime] field, and confirm UserOut currently has no created_at field at all, despite model_config already being set to ConfigDict(from_attributes=True), meaning this is a pure, safe, additive schema fix, not a data or logic change.
 
 WHAT THIS IS:
 
-Three real, separately confirmed Dashboard visual issues from tonight's audit. First, the Overdue Engagements stat card, the single most urgent metric on the page, has a visibly weaker highlighted treatment in dark mode than in light mode, undermining its intended urgency. Second, the true first-paint loading state shows only plain centered text with no skeleton at all, inconsistent with the real skeleton loading pattern already used on Billing and Engagements. Third, the skeleton that does exist for the stat cards uses a different pulse-bar color than the established convention used elsewhere. All three fixes here are deliberately scoped to Dashboard's own local code and component-level styling only, not to the shared surface-card or dark-card design tokens used throughout the rest of the app, to avoid a wide, hard-to-verify blast radius this late.
+Confirmed by a live browser audit tonight: the Staff page's Member Since column shows the literal text Invalid Date for every single row. Traced directly to its real cause: the frontend calls GET /users, whose response model is UserOut, and passes whatever comes back through new Date(member.created_at).toLocaleDateString(). Since UserOut never exposed created_at at all, the frontend received undefined for every user, and new Date(undefined) produces an Invalid Date object in JavaScript, which renders as the literal string seen in the audit. The real data has existed on the User model the entire time, it was simply never included in this response.
 
 CHANGE INSTRUCTIONS:
 
-In MetricCard, strengthen the alert variant's dark mode treatment from dark:bg-status-red-text/10 to a visibly stronger opacity, for example dark:bg-status-red-text/20, enough to be clearly distinct from the neutral cards without needing to touch any shared token. Separately, strengthen MetricCard's own default, non-alert variant with a slightly more pronounced shadow or a subtle ring, applied only within this component, to improve its visual separation from the page background in both light and dark mode, without changing the surface-card or dark-card background tokens themselves.
-
-In MetricCardSkeleton, change the pulse bar color from bg-surface-border dark:bg-dark-border to bg-[#D5D8DE] dark:bg-[#444444], matching the exact convention already used in Billing and Engagements skeletons.
-
-Replace the bare "Loading dashboard..." text state with a real skeleton layout, reusing MetricCardSkeleton for the four stat card positions exactly as it is already used elsewhere on this page during a narrower loading window, plus simple placeholder skeleton blocks, using the same bg-[#D5D8DE] dark:bg-[#444444] animate-pulse convention, roughly approximating the shape of the page's other major sections below the stat cards, so the true first-paint loading experience is visually consistent with the rest of the app rather than a plain sentence.
+Add created_at: datetime as a new field to UserOut in schemas/user.py, matching the exact style of the other fields already present. Import datetime at the top of this file if it is not already imported. Do not add any manual assignment logic anywhere, since from_attributes is already enabled, this field will be read directly and automatically from the real User model object.
 
 VERIFY AFTER ACT:
 
-grep -n "dark:bg-status-red-text/20\|bg-\[#D5D8DE\] dark:bg-\[#444444\]" /home/corby/jamm-os/frontend/src/app/\(app\)/dashboard/page.tsx
+grep -n "created_at" /home/corby/jamm-os/app/schemas/user.py
 
-grep -n "Loading dashboard" /home/corby/jamm-os/frontend/src/app/\(app\)/dashboard/page.tsx
-
-Expected: the alert opacity change and skeleton color convention both present, and the bare loading text either fully removed or only present as a genuine final fallback behind a real skeleton.
-
-npx tsc --noEmit
+python3 -c "from app.main import app; print('OK')"
 
 MANUAL VERIFICATION:
 
-Restart the frontend.
+Restart the backend.
 
-Visit the Dashboard in dark mode with at least one real overdue engagement present, confirm the Overdue Engagements card now shows a clearly, visibly distinct red-tinted treatment, not a barely-there tint.
+Visit the Staff page. Confirm every row in the Member Since column now shows a real, correctly formatted date instead of Invalid Date.
 
-Force a fresh load of the Dashboard, for example a hard refresh, and try to catch the very first paint, confirming a real skeleton layout appears briefly instead of plain loading text, as close as reasonably catchable given how fast the load may be.
-
-Confirm the stat cards, once loaded, show a visibly stronger separation from the page background in both light and dark mode compared to before, without looking like a different visual style from the rest of the app.
-
-Report pass or fail for each of these three checks individually.
+Report pass or fail.
 
 GIT:
 
 git add -A
 
-git commit -m "fix three real Dashboard visual issues confirmed by tonight's audit: strengthen the Overdue Engagements card's dark mode alert treatment from a barely visible 10 percent tint to a clearly distinct 20 percent tint, replace the bare loading dashboard text state with a real skeleton layout matching the pattern already used on Billing and Engagements, and align the stat card skeleton's pulse bar color to the same established convention, all changes deliberately scoped to Dashboard's own local component styling rather than the shared surface-card or dark-card design tokens used throughout the rest of the app"
+git commit -m "expose the real created_at field on UserOut, fixing the Staff page's Member Since column showing the literal text Invalid Date for every row, confirmed by a live browser audit tonight and traced to the real User.created_at column having existed the entire time but never being included in the GET /users response the Staff page actually calls"
 
 git pull --rebase origin main
 
