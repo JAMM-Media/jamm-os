@@ -1,6 +1,6 @@
-import { formatLocalDate } from '@/lib/utils'
 // frontend/src/components/clients/IrsAuthBadge.tsx
 'use client'
+import { formatLocalDate } from '@/lib/utils'
 
 import { useFetch } from '@/lib/hooks/useFetch'
 import {

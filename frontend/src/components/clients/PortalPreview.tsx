@@ -1,6 +1,6 @@
-import { formatLocalDate } from '@/lib/utils'
 // frontend/src/components/clients/PortalPreview.tsx
 'use client'
+import { formatLocalDate } from '@/lib/utils'
 
 import { useState } from 'react'
 import { useFetch } from '@/lib/hooks/useFetch'

@@ -1,6 +1,6 @@
-import { formatLocalDate } from '@/lib/utils'
 // frontend/src/components/clients/DocumentExpirySection.tsx
 'use client'
+import { formatLocalDate } from '@/lib/utils'
 
 import { useState } from 'react'
 import { toast } from 'sonner'
