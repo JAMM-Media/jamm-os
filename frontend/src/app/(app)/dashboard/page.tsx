@@ -37,8 +37,8 @@ interface MetricCardProps {
 
 function MetricCard({ label, value, subtext, valueClassName, variant }: MetricCardProps) {
   const cardClass = variant === 'alert'
-    ? 'bg-status-red dark:bg-status-red-text/10 rounded-[8px] p-5 border border-status-red-text/30 dark:border-status-red-text/40 shadow-sm flex flex-col gap-1'
-    : 'bg-surface-card dark:bg-dark-card rounded-[8px] p-5 border border-surface-border dark:border-dark-border shadow-sm flex flex-col gap-1'
+    ? 'bg-status-red dark:bg-status-red-text/20 rounded-[8px] p-5 border border-status-red-text/30 dark:border-status-red-text/40 shadow-sm flex flex-col gap-1'
+    : 'bg-surface-card dark:bg-dark-card rounded-[8px] p-5 border border-surface-border dark:border-dark-border shadow-md flex flex-col gap-1'
   return (
     <div className={cardClass}>
       <span className="text-[12px] text-muted-foreground">{label}</span>
@@ -53,9 +53,9 @@ function MetricCard({ label, value, subtext, valueClassName, variant }: MetricCa
 function MetricCardSkeleton() {
   return (
     <div className="bg-surface-card dark:bg-dark-card rounded-[8px] p-5 border border-surface-border dark:border-dark-border shadow-sm flex flex-col gap-2">
-      <div className="h-3 w-24 bg-surface-border dark:bg-dark-border animate-pulse rounded" />
-      <div className="h-8 w-32 bg-surface-border dark:bg-dark-border animate-pulse rounded" />
-      <div className="h-3 w-20 bg-surface-border dark:bg-dark-border animate-pulse rounded" />
+      <div className="h-3 w-24 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+      <div className="h-8 w-32 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+      <div className="h-3 w-20 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
     </div>
   )
 }
@@ -522,8 +522,16 @@ export default function DashboardPage() {
 
   if (!metrics) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <p className="text-sm text-muted-foreground">Loading dashboard...</p>
+      <div className="p-6 flex flex-col gap-6">
+        <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
+          <MetricCardSkeleton />
+          <MetricCardSkeleton />
+          <MetricCardSkeleton />
+          <MetricCardSkeleton />
+        </div>
+        <div className="h-48 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded-[8px]" />
+        <div className="h-64 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded-[8px]" />
+        <div className="h-40 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded-[8px]" />
       </div>
     )
   }

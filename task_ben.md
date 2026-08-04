@@ -54,43 +54,39 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Make the Concierge panel and the client Notes panel mutually exclusive, fixing a real overlap where both share the same fixed right-edge position and z-index
+TASK: Fix three real, confirmed Dashboard visual issues, safely scoped to Dashboard's own local code without touching shared design tokens
 
 USE: claude sonnet
 
 VERIFY BEFORE ACT:
 
-cat /home/corby/jamm-os/frontend/src/lib/events/conciergeEvents.ts
+sed -n '30,65p' /home/corby/jamm-os/frontend/src/app/\(app\)/dashboard/page.tsx
 
-sed -n '60,70p' /home/corby/jamm-os/frontend/src/app/\(app\)/clients/\[id\]/page.tsx
+sed -n '515,530p' /home/corby/jamm-os/frontend/src/app/\(app\)/dashboard/page.tsx
 
-sed -n '1050,1060p' /home/corby/jamm-os/frontend/src/app/\(app\)/clients/\[id\]/page.tsx
+grep -n "animate-pulse" /home/corby/jamm-os/frontend/src/components/billing/InvoiceCard.tsx
 
-sed -n '108,120p' /home/corby/jamm-os/frontend/src/components/layout/AppShell.tsx
-
-grep -n "position\|right\|zIndex" /home/corby/jamm-os/frontend/src/components/notes/NotesPanel.tsx | head -10
-
-Confirm NotesPanel uses position fixed, right 0, width 360, and z-index 40, the exact same right-edge anchor and z-index as ConciergePanel, confirmed as a real, live, reported overlap tonight where opening both hides the notes panel behind or beneath the Concierge panel. Confirm notesOpen state lives entirely locally in the client detail page, and conciergeOpen state lives entirely locally in AppShell, with zero existing coordination between them. Confirm the existing emitConciergeAction and onConciergeAction pattern in conciergeEvents.ts as the established, working style for cross-component signaling already used extensively tonight.
+Confirm MetricCardSkeleton already exists and already uses animate-pulse, but with bg-surface-border dark:bg-dark-border, not matching the bg-[#D5D8DE] dark:bg-[#444444] convention already established in Billing and Engagements. Confirm the actual bare-text loading state, "Loading dashboard...", is a separate, earlier code path that renders when metrics is still null, with no skeleton UI of any kind, and confirm this is the real gap a live audit tonight caught during a rapid navigate-and-screenshot test. Confirm MetricCard's alert variant currently uses dark:bg-status-red-text/10 for the Overdue Engagements card in dark mode, a real, measurably weaker treatment than its light mode equivalent, confirmed by the same audit.
 
 WHAT THIS IS:
 
-A real, live-reported bug tonight: the Concierge panel and the client detail page's Notes panel are two independent, fixed-position, right-anchored panels sharing the same screen space and the same z-index, with no awareness of each other. Opening one while the other is already open causes whichever mounts on top to fully hide the other. The decision made was to make them mutually exclusive rather than attempting to offset one by the other's width, since a width-based offset would only work correctly above a certain window size and risks reintroducing the same class of viewport-dependent layout bug already found and fixed once tonight with the draggable entry button. The rule: whichever panel the user explicitly opens should close the other one automatically.
+Three real, separately confirmed Dashboard visual issues from tonight's audit. First, the Overdue Engagements stat card, the single most urgent metric on the page, has a visibly weaker highlighted treatment in dark mode than in light mode, undermining its intended urgency. Second, the true first-paint loading state shows only plain centered text with no skeleton at all, inconsistent with the real skeleton loading pattern already used on Billing and Engagements. Third, the skeleton that does exist for the stat cards uses a different pulse-bar color than the established convention used elsewhere. All three fixes here are deliberately scoped to Dashboard's own local code and component-level styling only, not to the shared surface-card or dark-card design tokens used throughout the rest of the app, to avoid a wide, hard-to-verify blast radius this late.
 
 CHANGE INSTRUCTIONS:
 
-In conciergeEvents.ts, add a new event name constant, a new exported function emitPanelExclusive that accepts a panel argument of type 'concierge' or 'notes' and dispatches a new custom window event carrying that value, and a matching exported onPanelExclusive listener function, following the exact same style, structure, and naming convention already used for emitConciergeAction and onConciergeAction in this same file.
+In MetricCard, strengthen the alert variant's dark mode treatment from dark:bg-status-red-text/10 to a visibly stronger opacity, for example dark:bg-status-red-text/20, enough to be clearly distinct from the neutral cards without needing to touch any shared token. Separately, strengthen MetricCard's own default, non-alert variant with a slightly more pronounced shadow or a subtle ring, applied only within this component, to improve its visual separation from the page background in both light and dark mode, without changing the surface-card or dark-card background tokens themselves.
 
-In AppShell.tsx, inside handleConciergeOpen, call emitPanelExclusive('concierge') alongside the existing setConciergeOpen(true) call, so every path that opens the Concierge panel, the floating button, the sidebar nav item, and any open-panel action, is covered by this one function. Add a new effect, using onPanelExclusive, that closes the Concierge panel, calling the same logic already used in handleConciergeClose, whenever it receives an event where the panel value is 'notes'.
+In MetricCardSkeleton, change the pulse bar color from bg-surface-border dark:bg-dark-border to bg-[#D5D8DE] dark:bg-[#444444], matching the exact convention already used in Billing and Engagements skeletons.
 
-In the client detail page, inside the NotesTab's onClick handler, which currently only calls setNotesOpen(true), also call emitPanelExclusive('notes') alongside it. Add a new effect, using onPanelExclusive, that calls setNotesOpen(false) whenever it receives an event where the panel value is 'concierge'.
-
-Do not change NotesPanel's or ConciergePanel's own internal positioning, width, or z-index, and do not change any other existing behavior of either panel, this task only adds the mutual-exclusivity coordination between them.
+Replace the bare "Loading dashboard..." text state with a real skeleton layout, reusing MetricCardSkeleton for the four stat card positions exactly as it is already used elsewhere on this page during a narrower loading window, plus simple placeholder skeleton blocks, using the same bg-[#D5D8DE] dark:bg-[#444444] animate-pulse convention, roughly approximating the shape of the page's other major sections below the stat cards, so the true first-paint loading experience is visually consistent with the rest of the app rather than a plain sentence.
 
 VERIFY AFTER ACT:
 
-grep -n "emitPanelExclusive\|onPanelExclusive" /home/corby/jamm-os/frontend/src/lib/events/conciergeEvents.ts /home/corby/jamm-os/frontend/src/components/layout/AppShell.tsx /home/corby/jamm-os/frontend/src/app/\(app\)/clients/\[id\]/page.tsx
+grep -n "dark:bg-status-red-text/20\|bg-\[#D5D8DE\] dark:bg-\[#444444\]" /home/corby/jamm-os/frontend/src/app/\(app\)/dashboard/page.tsx
 
-Expected: the new functions defined once in conciergeEvents.ts, and both emit and listen usage present in both AppShell.tsx and the client detail page.
+grep -n "Loading dashboard" /home/corby/jamm-os/frontend/src/app/\(app\)/dashboard/page.tsx
+
+Expected: the alert opacity change and skeleton color convention both present, and the bare loading text either fully removed or only present as a genuine final fallback behind a real skeleton.
 
 npx tsc --noEmit
 
@@ -98,11 +94,11 @@ MANUAL VERIFICATION:
 
 Restart the frontend.
 
-On a client detail page, open the Concierge panel first, using the floating button or sidebar entry point, confirm it opens normally. Then click the Notes tab's trigger. Confirm the Concierge panel closes automatically and the Notes panel opens and is fully visible, not hidden.
+Visit the Dashboard in dark mode with at least one real overdue engagement present, confirm the Overdue Engagements card now shows a clearly, visibly distinct red-tinted treatment, not a barely-there tint.
 
-Reverse the order: open Notes first, confirm it opens normally, then open the Concierge panel. Confirm the Notes panel closes automatically and the Concierge panel opens and is fully visible.
+Force a fresh load of the Dashboard, for example a hard refresh, and try to catch the very first paint, confirming a real skeleton layout appears briefly instead of plain loading text, as close as reasonably catchable given how fast the load may be.
 
-Confirm opening and closing either panel on its own, with the other never having been opened, still works exactly as it did before this change, with no unexpected closing or interference.
+Confirm the stat cards, once loaded, show a visibly stronger separation from the page background in both light and dark mode compared to before, without looking like a different visual style from the rest of the app.
 
 Report pass or fail for each of these three checks individually.
 
@@ -110,7 +106,7 @@ GIT:
 
 git add -A
 
-git commit -m "make the Concierge panel and the client detail page's Notes panel mutually exclusive, fixing a real, live-reported overlap tonight where both are independently fixed-position, right-anchored, and share the same z-index, causing whichever opens second to fully hide the other; added a small, focused emitPanelExclusive and onPanelExclusive event pair following the exact same established cross-component signaling pattern already used throughout tonight, chosen over a width-based offset to avoid reintroducing the same viewport-dependent layout risk already found and fixed once tonight with the draggable entry button"
+git commit -m "fix three real Dashboard visual issues confirmed by tonight's audit: strengthen the Overdue Engagements card's dark mode alert treatment from a barely visible 10 percent tint to a clearly distinct 20 percent tint, replace the bare loading dashboard text state with a real skeleton layout matching the pattern already used on Billing and Engagements, and align the stat card skeleton's pulse bar color to the same established convention, all changes deliberately scoped to Dashboard's own local component styling rather than the shared surface-card or dark-card design tokens used throughout the rest of the app"
 
 git pull --rebase origin main
 
