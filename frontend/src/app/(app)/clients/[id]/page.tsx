@@ -15,7 +15,7 @@ import { parseMessage } from '@/lib/entityLinkParser'
 import { NotesTab, NotesPanel } from '@/components/notes'
 import { useNotes } from '@/components/notes'
 import { useUnreadMessages } from '@/components/messaging/useUnreadMessages'
-import { cn, formatEngagementType, formatEntityType, formatEntitySubtype } from '@/lib/utils'
+import { cn, formatEngagementType, formatEntityType, formatEntitySubtype, formatLocalDate } from '@/lib/utils'
 import api from '@/lib/api'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { IrsAuthBadge } from '@/components/clients/IrsAuthBadge'
@@ -549,7 +549,7 @@ function ClientDetailContent() {
                   </p>
                   <p className="text-[11px] text-muted-foreground">
                     {qboAr.last_payment_date
-                      ? `Last payment: ${new Date(qboAr.last_payment_date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`
+                      ? `Last payment: ${formatLocalDate(qboAr.last_payment_date, { month: 'long', day: 'numeric', year: 'numeric' })}`
                       : 'No payments recorded'}
                   </p>
                   {client.quickbooksCustomerId && (

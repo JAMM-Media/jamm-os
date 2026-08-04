@@ -1,3 +1,4 @@
+import { formatLocalDate } from '@/lib/utils'
 // frontend/src/components/engagements/EngagementTable.tsx
 'use client'
 
@@ -33,15 +34,7 @@ function formatTypeDisplay(engagementType: string | null | undefined): string {
 function formatDeadline(eng: Engagement): string {
   const raw = eng.extendedDeadline ?? eng.filingDeadline ?? eng.endDate
   if (!raw) return '—'
-  try {
-    return new Date(raw).toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-    })
-  } catch {
-    return raw
-  }
+  return formatLocalDate(raw, { month: 'short', day: 'numeric', year: 'numeric' }, raw)
 }
 
 interface EngagementTableProps {

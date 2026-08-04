@@ -54,65 +54,74 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Add missing client-overview keywords to the operational-question gate, fixing get_client_full_snapshot being unreachable for natural client-overview questions
+TASK: Build a shared, timezone-safe date formatter and apply it to every confirmed date-only field across the app, fixing the systemic off-by-one display bug found tonight
 
-USE: claude sonnet
+USE: Fable 5
 
 VERIFY BEFORE ACT:
 
-python3 -c "
-import sys
-sys.path.insert(0, '/home/corby/jamm-os')
-from app.api.concierge.route import _is_operational_question
-print(_is_operational_question('Tell me about Robert & Carol Tanner'))
-"
+psql postgresql://postgres:postgres@localhost:5432/jammpx_dev -c "SELECT id, name, filing_deadline, extended_deadline FROM engagements WHERE client_id = 'e6e6c68f-2b47-42dd-bbcd-b17594c4b687' AND name LIKE '%2026 Individual%';"
 
-sed -n '281,308p' /home/corby/jamm-os/app/api/concierge/route.py
+Confirm the real, raw stored filing_deadline for this engagement is 2027-04-15, and confirm EngagementTable.tsx currently displays this as Apr 14, 2027, one day earlier than the real value, because new Date(raw) parses a plain YYYY-MM-DD string as UTC midnight, which then renders one day earlier in any browser timezone behind UTC when passed to toLocaleDateString. This is the confirmed, real root cause of a live fabrication finding from tonight's audit, later found to actually be a real, separate frontend bug rather than a Concierge fabrication once the underlying database value was checked directly.
 
-sed -n '139,143p' /home/corby/jamm-os/app/api/concierge/route.py
+Here are the 18 real call sites in the codebase using this same new Date(...).toLocaleDateString or toLocaleString pattern, found by a live grep tonight. For every single one of these, before changing anything, find and read the actual backend Pydantic schema or SQLAlchemy model field feeding the value, to determine whether it is a real DATE-only field, vulnerable to this exact bug, or a real DATETIME or TIMESTAMPTZ field, which already carries explicit time and is not vulnerable to this specific bug. Do not assume based on variable naming alone, confirm each one against the real backend type.
 
-Confirm this currently prints False, and confirm get_client_full_snapshot is correctly registered inside _CONCIERGE_TOOLS, the main tool list, not the staff-only list, ruling out the tool-list placement mistake found and fixed earlier tonight. This confirms the sole remaining root cause is the operational keyword gate having no awareness of natural client-overview phrasing.
+/home/corby/jamm-os/frontend/src/app/(app)/clients/[id]/page.tsx:552 (qboAr.last_payment_date)
+/home/corby/jamm-os/frontend/src/app/(app)/clients/[id]/page.tsx:957 (thread.date)
+/home/corby/jamm-os/frontend/src/app/(app)/concierge-log/page.tsx:18 (iso)
+/home/corby/jamm-os/frontend/src/app/(app)/dashboard/page.tsx:399 (item.sent_at)
+/home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx:1191 (new Date() with no argument, today's date)
+/home/corby/jamm-os/frontend/src/components/engagements/SendEngagementLetterModal.tsx:255 (displayDate)
+/home/corby/jamm-os/frontend/src/components/engagements/SendEngagementLetterModal.tsx:336 (new Date() with no argument, today's date)
+/home/corby/jamm-os/frontend/src/components/engagements/EngagementTable.tsx:37 (raw, confirmed vulnerable, filing_deadline or extended_deadline)
+/home/corby/jamm-os/frontend/src/components/settings/AutomationsTab.tsx:119 (rule.last_executed_at)
+/home/corby/jamm-os/frontend/src/components/portal/PortalInvoices.tsx:29 (dateStr)
+/home/corby/jamm-os/frontend/src/components/portal/PortalOrganizer.tsx:337 (activeOrganizer.submitted_at)
+/home/corby/jamm-os/frontend/src/components/portal/PortalTodo.tsx:26 (iso)
+/home/corby/jamm-os/frontend/src/components/portal/PortalBillingDetail.tsx:100 (report.created_at)
+/home/corby/jamm-os/frontend/src/components/clients/IrsAuthBadge.tsx:65 (dateStr)
+/home/corby/jamm-os/frontend/src/components/clients/PortalPreview.tsx:27 (iso)
+/home/corby/jamm-os/frontend/src/components/clients/PortalPreview.tsx:35 (iso, uses toLocaleString not toLocaleDateString)
+/home/corby/jamm-os/frontend/src/components/clients/DocumentExpirySection.tsx:44 (d, likely expires_on)
+/home/corby/jamm-os/frontend/src/components/clients/IrsAuthTab.tsx:30 (d, likely an expiry date)
 
 WHAT THIS IS:
 
-Confirmed live tonight, twice, with two different real symptoms that turned out to share one root cause. A live browser audit earlier found that asking "Tell me about Robert & Carol Tanner" produced a response with a wrong filing deadline, off by one day, and a fabricated email address that did not match the real client record. Re-testing live just now, the same question instead produced a stalled non-answer, "Let me pull up the details on Robert & Carol Tanner," with nothing delivered after it. Both symptoms trace to the same cause: _is_operational_question returns False for this phrasing, so the question never enters the tool-use code path and get_client_full_snapshot, which already exists, is already correctly registered, and already returns real, correct, unmodified data straight from the database, is never actually called. With no real data available, the model either stalls or invents plausible-sounding but wrong details, depending on the specific run, which is exactly the same unreliable pattern already proven and fixed for Notes and Firm Chat earlier tonight.
+A live browser audit tonight flagged what looked like a Concierge fabrication, a filing deadline stated as one day different from what the Engagements page showed. Direct investigation proved the Concierge was actually correct, the real database value is 2027-04-15, and the Engagements page itself has a real, confirmed, systemic frontend bug: any plain date-only string like 2027-04-15, passed directly to new Date(), gets interpreted as UTC midnight by the JavaScript Date constructor, then rendered in the browser's local timezone, shifting the displayed date backward by one day for any user in a timezone behind UTC. A grep tonight found this same unsafe pattern at 18 real call sites across the app. Bare new Date() calls with no argument, and any date field carrying a real time component like a created_at or sent_at timestamp, are not vulnerable to this specific bug and must not be touched, only genuine date-only fields are at risk.
 
 CHANGE INSTRUCTIONS:
 
-Add a new line to the _OPERATIONAL_KEYWORDS set containing real, specific phrases for asking about a named client's overall status, matching the exact existing style, for example "tell me about", "give me an overview", "client overview", "client summary", "client snapshot", "what's going on with", "summarize this client", "pull up their", "pull up this client". Do not remove or change any existing keyword, this is purely an addition.
+Create a new shared utility function, for example formatLocalDate, in a sensible shared location such as frontend/src/lib/utils.ts if date utilities do not already have a dedicated file, or a new frontend/src/lib/dateUtils.ts if they do not. This function should accept a date-only string in YYYY-MM-DD form and a set of Intl.DateTimeFormat-style formatting options, and safely construct a Date object using the year, month, and day components extracted directly from the string, passed to the multi-argument Date constructor, which is always interpreted in local time by JavaScript and never shifts across a UTC boundary, then call toLocaleDateString on that safely-constructed date with the given options. This avoids the entire class of bug at its root rather than patching each call site with a different workaround.
+
+For each of the 18 call sites listed above, after confirming the real backend field type: if the field is a genuine date-only field, replace the unsafe new Date(value).toLocaleDateString(...) call with a call to the new formatLocalDate utility, preserving the exact same formatting options already used at that call site so the visual output format does not change, only the correctness of which day is shown. If the field is confirmed to be a real datetime or timestamp field, or if the call has no argument at all, leave it completely unchanged and note in your final report that it was checked and confirmed safe, do not modify it.
 
 VERIFY AFTER ACT:
 
-python3 -c "
-import sys
-sys.path.insert(0, '/home/corby/jamm-os')
-from app.api.concierge.route import _is_operational_question
-print(_is_operational_question('Tell me about Robert & Carol Tanner'))
-print(_is_operational_question('Give me an overview of Marcus and Diana Webb'))
-print(_is_operational_question('Which engagements are stalled?'))
-"
+grep -n "formatLocalDate" /home/corby/jamm-os/frontend/src/lib/*.ts
 
-Expected: all three now print True, including the pre-existing stalled-engagements question, confirming nothing already working was broken.
+Expected: the new utility function defined, and imported in every file where a genuine date-only field was fixed.
 
-python3 -c "from app.main import app; print('OK')"
+npx tsc --noEmit
+
+Provide a full written report listing all 18 original call sites, stating for each one whether it was confirmed as a real date-only field and fixed, or confirmed as a safe datetime or no-argument call and left unchanged, with the real backend field type cited as evidence for each classification, not assumed.
 
 MANUAL VERIFICATION:
 
-Restart the backend.
+Restart the frontend.
 
-Ask "Tell me about Robert & Carol Tanner" and report the exact response verbatim. Confirm it now delivers a real, complete answer rather than stalling.
+Visit the Engagements page, confirm Robert & Carol Tanner's 2026 Individual Tax Return now correctly shows April 15, 2027, matching the real database value, not April 14.
 
-Specifically check the email address and the engagement deadline stated in the response against the real values on the actual client record, confirmed a few minutes ago as rtanner@example.com and the real filing deadline shown on the Engagements page. Confirm both now match exactly, with no fabricated or off-by-one values.
+Spot check at least three other pages among the ones actually changed, for example a client's IRS Authorizations tab, Document Expiry tracking, and the client portal invoices view if reachable, confirming dates there now display correctly and did not silently shift in the opposite direction or break formatting.
 
-Ask it a second time to confirm the fix is reliable, not just correct once. Report both responses verbatim.
+Confirm at least one of the pages deliberately left unchanged, for example the Dashboard's sent_at timestamp display, still renders exactly as it did before, confirming the fix was correctly scoped only to genuine date-only fields.
 
-Report pass or fail for each check individually.
+Report pass or fail for each of these checks individually.
 
 GIT:
 
 git add -A
 
-git commit -m "add missing client-overview keywords to the operational-question gate, fixing get_client_full_snapshot being unreachable for natural phrasings like tell me about a client, confirmed as the shared root cause behind two different symptoms found tonight, a stalled non-answer and, separately, a fabricated email address and an off-by-one filing deadline, both occurring because the question never reached the tool-use path and the model had no real data to answer from"
+git commit -m "fix a systemic off-by-one date display bug found while investigating what a live audit tonight initially flagged as a Concierge fabrication, which turned out to actually be a real, correct answer from the Concierge and a genuine frontend bug instead: plain date-only values were being parsed as UTC midnight by the JavaScript Date constructor and then rendered in local time, shifting the displayed date back by one day for any user behind UTC; added a shared, timezone-safe formatLocalDate utility and applied it to every confirmed genuine date-only field among 18 real call sites found across the app, leaving real datetime and timestamp fields, which were never vulnerable to this specific bug, untouched"
 
 git pull --rebase origin main
 

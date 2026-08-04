@@ -1,3 +1,4 @@
+import { formatLocalDate } from '@/lib/utils'
 // frontend/src/components/clients/IrsAuthBadge.tsx
 'use client'
 
@@ -62,11 +63,7 @@ function deriveStatus(res: IrsAuthStatusResponse | null): CompositeStatus {
 }
 
 function fmtDate(dateStr: string): string {
-  return new Date(dateStr).toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  })
+  return formatLocalDate(dateStr, { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
 function daysUntil(dateStr: string): number {

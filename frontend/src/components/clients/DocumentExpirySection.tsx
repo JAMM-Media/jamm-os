@@ -1,3 +1,4 @@
+import { formatLocalDate } from '@/lib/utils'
 // frontend/src/components/clients/DocumentExpirySection.tsx
 'use client'
 
@@ -41,11 +42,7 @@ function getDaysLeft(expiresOn: string): number {
 }
 
 function fmtDate(d: string): string {
-  return new Date(d).toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  })
+  return formatLocalDate(d, { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
 const STATUS_BADGE: Record<

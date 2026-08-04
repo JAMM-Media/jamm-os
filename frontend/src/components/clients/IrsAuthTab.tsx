@@ -1,3 +1,4 @@
+import { formatLocalDate } from '@/lib/utils'
 // frontend/src/components/clients/IrsAuthTab.tsx
 'use client'
 
@@ -320,7 +321,7 @@ export function IrsAuthTab({ clientId }: IrsAuthTabProps) {
                 {/* Third row */}
                 <p style={{ fontSize: 12 }} className="text-muted-foreground mb-0.5">
                   {rec.valid_from || rec.valid_until
-                    ? `Valid ${fmtDate(rec.valid_from)} → ${fmtDate(rec.valid_until)}`
+                    ? `Valid ${formatLocalDate(rec.valid_from, { month: 'short', day: 'numeric', year: 'numeric' })} → ${formatLocalDate(rec.valid_until, { month: 'short', day: 'numeric', year: 'numeric' })}`
                     : 'Validity dates not set'}
                 </p>
 

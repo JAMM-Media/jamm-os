@@ -1,3 +1,4 @@
+import { formatLocalDate } from '@/lib/utils'
 // frontend/src/components/clients/PortalPreview.tsx
 'use client'
 
@@ -197,7 +198,7 @@ export function PortalPreview({ clientId, clientName }: PortalPreviewProps) {
                         </span>
                         {req.due_date && (
                           <span style={{ fontSize: 11 }} className="text-muted-foreground">
-                            Due {formatDate(req.due_date)}
+                            Due {formatLocalDate(req.due_date, { month: 'short', day: 'numeric', year: 'numeric' })}
                           </span>
                         )}
                       </div>
@@ -282,7 +283,7 @@ export function PortalPreview({ clientId, clientName }: PortalPreviewProps) {
                     </span>
                     {inv.due_date && (
                       <span style={{ fontSize: 11 }} className="text-muted-foreground">
-                        Due {formatDate(inv.due_date)}
+                        Due {formatLocalDate(inv.due_date, { month: 'short', day: 'numeric', year: 'numeric' })}
                       </span>
                     )}
                   </div>

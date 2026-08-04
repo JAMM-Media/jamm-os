@@ -1,3 +1,4 @@
+import { formatLocalDate } from '@/lib/utils'
 // frontend/src/components/engagements/SendEngagementLetterModal.tsx
 'use client'
 
@@ -252,7 +253,7 @@ export function SendEngagementLetterModal({
 
   const displayDate = filingDeadline || endDate
   const formattedDate = displayDate
-    ? new Date(displayDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+    ? formatLocalDate(displayDate, { month: 'long', day: 'numeric', year: 'numeric' })
     : '—'
 
   const templateOptions = templates.map((t) => ({

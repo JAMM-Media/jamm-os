@@ -1,3 +1,4 @@
+import { formatLocalDate } from '@/lib/utils'
 // frontend/src/components/portal/PortalInvoices.tsx
 'use client'
 
@@ -25,12 +26,7 @@ function formatCurrency(amount: number): string {
 }
 
 function formatDate(dateStr: string | null): string {
-  if (!dateStr) return '—'
-  return new Date(dateStr).toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  })
+  return formatLocalDate(dateStr, { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
 function StatusBadge({ status }: { status: PortalInvoiceItem['status'] }) {
