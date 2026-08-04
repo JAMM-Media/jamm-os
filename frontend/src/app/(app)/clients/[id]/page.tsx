@@ -26,7 +26,7 @@ import { HealthDot } from '@/components/clients/HealthDot'
 import { EditClientModal } from '@/components/clients/EditClientModal'
 import TaxOrganizerTab from '@/components/tax-organizer/TaxOrganizerTab'
 import { NewEngagementModal } from '@/components/engagements/NewEngagementModal'
-import { onConciergeAction, emitConciergeAction } from '@/lib/events/conciergeEvents'
+import { onConciergeAction, emitConciergeAction, emitPanelExclusive, onPanelExclusive } from '@/lib/events/conciergeEvents'
 import { SuggestionCard } from '@/components/concierge-inline/SuggestionCard'
 import type { Engagement } from '@/lib/api'
 import type { Document } from '@/lib/api/documents'
@@ -132,6 +132,12 @@ function ClientDetailContent() {
         setActiveTab('messages')
         setMessageCompose(action.prefillMessage)
       }
+    })
+  }, [])
+
+  useEffect(() => {
+    return onPanelExclusive((panel) => {
+      if (panel === 'concierge') setNotesOpen(false)
     })
   }, [])
 
@@ -1051,7 +1057,7 @@ function ClientDetailContent() {
 
       </div>
 
-      <NotesTab unreadCount={unreadNotes} onClick={() => setNotesOpen(true)} />
+      <NotesTab unreadCount={unreadNotes} onClick={() => { setNotesOpen(true); emitPanelExclusive('notes') }} />
       <NotesPanel
         isOpen={notesOpen}
         onClose={() => setNotesOpen(false)}

@@ -3,7 +3,7 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { usePathname } from 'next/navigation'
-import { onConciergeAction } from '@/lib/events/conciergeEvents'
+import { onConciergeAction, emitPanelExclusive, onPanelExclusive } from '@/lib/events/conciergeEvents'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { Sidebar } from './Sidebar'
 import { ConciergePanel } from '@/components/concierge/ConciergePanel'
@@ -77,6 +77,12 @@ export function AppShell({ children }: AppShellProps) {
   }, [])
 
   useEffect(() => {
+    return onPanelExclusive((panel) => {
+      if (panel === 'notes') handleConciergeClose()
+    })
+  }, [])
+
+  useEffect(() => {
     const stored = localStorage.getItem('jamm_concierge_entry_mode') as 'sidebar' | 'floating' | null
     if (stored === 'sidebar' || stored === 'floating') setConciergeEntryMode(stored)
 
@@ -111,6 +117,7 @@ export function AppShell({ children }: AppShellProps) {
   function handleConciergeOpen() {
     sessionStorage.setItem('jamm_concierge_open', 'true')
     setConciergeOpen(true)
+    emitPanelExclusive('concierge')
   }
 
   function handleConciergeClose() {
