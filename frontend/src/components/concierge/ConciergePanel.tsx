@@ -687,6 +687,16 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
     return text
   }
 
+  const _NAVIGATE_OPEN_MESSAGES: Record<string, string> = {
+    'new-client': 'Navigating to Clients and opening the new client form.',
+    'new-engagement': 'Navigating to Engagements and opening the new engagement form.',
+    'invite-staff': 'Navigating to Settings and opening the invite staff dialog.',
+    'new-template': 'Navigating to Settings and opening the new template form.',
+    'portal-magic-link': 'Navigating to the client page and opening the magic-link dialog.',
+    'quickbooks-scroll': 'Navigating to your QuickBooks integration settings.',
+    'stripe-scroll': 'Navigating to your Stripe integration settings.',
+  }
+
   function handleConciergeAction(raw: string): string {
     const ACTION_MARKER = 'CONCIERGE_ACTION:'
     const actionIndex = raw.indexOf(ACTION_MARKER)
@@ -715,10 +725,15 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
       return beforeAction || 'To navigate, turn on Autopilot using the toggle above.'
     }
 
+    let parsedAction: ConciergeAction | null = null
     try {
-      const action: ConciergeAction = JSON.parse(actionLine)
-      pendingActionRef.current = action
+      parsedAction = JSON.parse(actionLine)
+      pendingActionRef.current = parsedAction
     } catch {}
+
+    if (parsedAction?.type === 'navigate-and-open' && parsedAction.modal) {
+      return _NAVIGATE_OPEN_MESSAGES[parsedAction.modal] ?? 'Opening that for you now.'
+    }
 
     return beforeAction || ''
   }

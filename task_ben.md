@@ -54,74 +54,51 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Build a shared, timezone-safe date formatter and apply it to every confirmed date-only field across the app, fixing the systemic off-by-one display bug found tonight
+TASK: Deterministically override the pre-action message for navigate-and-open actions, ending the model's discretion over claims of completion
 
-USE: Fable 5
+USE: claude sonnet
 
 VERIFY BEFORE ACT:
 
-psql postgresql://postgres:postgres@localhost:5432/jammpx_dev -c "SELECT id, name, filing_deadline, extended_deadline FROM engagements WHERE client_id = 'e6e6c68f-2b47-42dd-bbcd-b17594c4b687' AND name LIKE '%2026 Individual%';"
+sed -n '685,724p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-Confirm the real, raw stored filing_deadline for this engagement is 2027-04-15, and confirm EngagementTable.tsx currently displays this as Apr 14, 2027, one day earlier than the real value, because new Date(raw) parses a plain YYYY-MM-DD string as UTC midnight, which then renders one day earlier in any browser timezone behind UTC when passed to toLocaleDateString. This is the confirmed, real root cause of a live fabrication finding from tonight's audit, later found to actually be a real, separate frontend bug rather than a Concierge fabrication once the underlying database value was checked directly.
+grep -n "modalLabel\b" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-Here are the 18 real call sites in the codebase using this same new Date(...).toLocaleDateString or toLocaleString pattern, found by a live grep tonight. For every single one of these, before changing anything, find and read the actual backend Pydantic schema or SQLAlchemy model field feeding the value, to determine whether it is a real DATE-only field, vulnerable to this exact bug, or a real DATETIME or TIMESTAMPTZ field, which already carries explicit time and is not vulnerable to this specific bug. Do not assume based on variable naming alone, confirm each one against the real backend type.
-
-/home/corby/jamm-os/frontend/src/app/(app)/clients/[id]/page.tsx:552 (qboAr.last_payment_date)
-/home/corby/jamm-os/frontend/src/app/(app)/clients/[id]/page.tsx:957 (thread.date)
-/home/corby/jamm-os/frontend/src/app/(app)/concierge-log/page.tsx:18 (iso)
-/home/corby/jamm-os/frontend/src/app/(app)/dashboard/page.tsx:399 (item.sent_at)
-/home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx:1191 (new Date() with no argument, today's date)
-/home/corby/jamm-os/frontend/src/components/engagements/SendEngagementLetterModal.tsx:255 (displayDate)
-/home/corby/jamm-os/frontend/src/components/engagements/SendEngagementLetterModal.tsx:336 (new Date() with no argument, today's date)
-/home/corby/jamm-os/frontend/src/components/engagements/EngagementTable.tsx:37 (raw, confirmed vulnerable, filing_deadline or extended_deadline)
-/home/corby/jamm-os/frontend/src/components/settings/AutomationsTab.tsx:119 (rule.last_executed_at)
-/home/corby/jamm-os/frontend/src/components/portal/PortalInvoices.tsx:29 (dateStr)
-/home/corby/jamm-os/frontend/src/components/portal/PortalOrganizer.tsx:337 (activeOrganizer.submitted_at)
-/home/corby/jamm-os/frontend/src/components/portal/PortalTodo.tsx:26 (iso)
-/home/corby/jamm-os/frontend/src/components/portal/PortalBillingDetail.tsx:100 (report.created_at)
-/home/corby/jamm-os/frontend/src/components/clients/IrsAuthBadge.tsx:65 (dateStr)
-/home/corby/jamm-os/frontend/src/components/clients/PortalPreview.tsx:27 (iso)
-/home/corby/jamm-os/frontend/src/components/clients/PortalPreview.tsx:35 (iso, uses toLocaleString not toLocaleDateString)
-/home/corby/jamm-os/frontend/src/components/clients/DocumentExpirySection.tsx:44 (d, likely expires_on)
-/home/corby/jamm-os/frontend/src/components/clients/IrsAuthTab.tsx:30 (d, likely an expiry date)
+Confirm handleConciergeAction's final return path, reached when Autopilot is on and the action is not set_firm_type or show_briefing_again, currently returns beforeAction, the model's own generated prose, completely unmodified, as the actual displayed chat message. Confirm this is the exact code path responsible for messages like "Sending a magic-link to Robert & Carol Tanner now," confirmed live tonight by a browser audit to still occur roughly one in three times despite an existing prompt rule explicitly forbidding this phrasing. Confirm the existing modalLabel lookup pattern already used elsewhere in this file for status messages, to match its exact style for the new lookup table.
 
 WHAT THIS IS:
 
-A live browser audit tonight flagged what looked like a Concierge fabrication, a filing deadline stated as one day different from what the Engagements page showed. Direct investigation proved the Concierge was actually correct, the real database value is 2027-04-15, and the Engagements page itself has a real, confirmed, systemic frontend bug: any plain date-only string like 2027-04-15, passed directly to new Date(), gets interpreted as UTC midnight by the JavaScript Date constructor, then rendered in the browser's local timezone, shifting the displayed date backward by one day for any user in a timezone behind UTC. A grep tonight found this same unsafe pattern at 18 real call sites across the app. Bare new Date() calls with no argument, and any date field carrying a real time component like a created_at or sent_at timestamp, are not vulnerable to this specific bug and must not be touched, only genuine date-only fields are at risk.
+This is the fourth attempt at this exact problem tonight, and the first three, all prompt wording changes, have now been proven insufficient by direct live evidence: a live browser audit found the model still claiming a send action was actively happening even after the existing rule was added earlier this session. This matches the core lesson proven repeatedly tonight, a natural language instruction cannot guarantee compliance for anything that must never fail. The fix is to stop trusting the model's own wording for this specific, narrow case entirely. The model continues to reliably decide what action to take and what modal to open, that part already works correctly, but the human-readable sentence describing a navigate-and-open action will now be deterministically substituted from a fixed, honest, pre-written lookup table, removing the model's discretion over the one part of its response that has repeatedly proven unreliable.
 
 CHANGE INSTRUCTIONS:
 
-Create a new shared utility function, for example formatLocalDate, in a sensible shared location such as frontend/src/lib/utils.ts if date utilities do not already have a dedicated file, or a new frontend/src/lib/dateUtils.ts if they do not. This function should accept a date-only string in YYYY-MM-DD form and a set of Intl.DateTimeFormat-style formatting options, and safely construct a Date object using the year, month, and day components extracted directly from the string, passed to the multi-argument Date constructor, which is always interpreted in local time by JavaScript and never shifts across a UTC boundary, then call toLocaleDateString on that safely-constructed date with the given options. This avoids the entire class of bug at its root rather than patching each call site with a different workaround.
+Add a new constant near the top of this file or directly above handleConciergeAction, for example _NAVIGATE_OPEN_MESSAGES, a lookup table keyed by modal name, matching the exact object-literal style already used for modalLabel elsewhere in this file. Include real, honest, specific entries for every modal value already used in this codebase: new-client, new-engagement, invite-staff, new-template, and portal-magic-link, each describing only what is about to happen, navigating and opening the right place, never claiming a send, creation, or save has occurred. For portal-magic-link specifically, do not attempt to interpolate a client name into the sentence, keep it generic but honest, for example "Navigating to the client's page and opening the magic-link dialog." Include a safe, generic fallback string for any modal not present in the table, for example "Opening that for you now," never a claim of completion.
 
-For each of the 18 call sites listed above, after confirming the real backend field type: if the field is a genuine date-only field, replace the unsafe new Date(value).toLocaleDateString(...) call with a call to the new formatLocalDate utility, preserving the exact same formatting options already used at that call site so the visual output format does not change, only the correctness of which day is shown. If the field is confirmed to be a real datetime or timestamp field, or if the call has no argument at all, leave it completely unchanged and note in your final report that it was checked and confirmed safe, do not modify it.
+In handleConciergeAction's final return path, the one currently returning beforeAction unconditionally after autopilot is confirmed on, change this so that when action.type equals navigate-and-open and action.modal is present, the function returns the corresponding entry from the new lookup table instead of beforeAction, completely discarding the model's own generated text for this specific case. When action.type is navigate-and-open but action.modal is absent, meaning a plain navigation with no modal, or when action.type is anything else entirely, continue returning beforeAction exactly as today, this override applies only to the specific case that has proven unreliable. Do not change the set_firm_type or show_briefing_again branches, and do not change the autopilot-off branch, both are already correct and unaffected by this problem.
 
 VERIFY AFTER ACT:
 
-grep -n "formatLocalDate" /home/corby/jamm-os/frontend/src/lib/*.ts
-
-Expected: the new utility function defined, and imported in every file where a genuine date-only field was fixed.
+grep -n "_NAVIGATE_OPEN_MESSAGES" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
 npx tsc --noEmit
-
-Provide a full written report listing all 18 original call sites, stating for each one whether it was confirmed as a real date-only field and fixed, or confirmed as a safe datetime or no-argument call and left unchanged, with the real backend field type cited as evidence for each classification, not assumed.
 
 MANUAL VERIFICATION:
 
 Restart the frontend.
 
-Visit the Engagements page, confirm Robert & Carol Tanner's 2026 Individual Tax Return now correctly shows April 15, 2027, matching the real database value, not April 14.
+With Autopilot on, ask the Concierge to send a specific client's portal link three times in a row, the same repeated test used earlier tonight. Confirm all three responses now show the exact same deterministic sentence from the lookup table, word for word identical each time, never a claim that anything was sent, created, or saved.
 
-Spot check at least three other pages among the ones actually changed, for example a client's IRS Authorizations tab, Document Expiry tracking, and the client portal invoices view if reachable, confirming dates there now display correctly and did not silently shift in the opposite direction or break formatting.
+Separately, ask it to create a new client, confirming a second, different navigate-and-open case also now shows its correct, fixed, honest sentence, not the model's own generated text.
 
-Confirm at least one of the pages deliberately left unchanged, for example the Dashboard's sent_at timestamp display, still renders exactly as it did before, confirming the fix was correctly scoped only to genuine date-only fields.
+Confirm the set_firm_type onboarding flow, the show_briefing_again flow, and any plain navigation with no modal, for example asking it to go to the Billing page, all still work and display exactly as they did before this change, confirming the override is correctly scoped only to the one failure case.
 
-Report pass or fail for each of these checks individually.
+Report pass or fail for each of these checks individually, since this is meant to permanently close a problem that has already survived three prior attempts tonight, and deserves real confidence before being called done.
 
 GIT:
 
 git add -A
 
-git commit -m "fix a systemic off-by-one date display bug found while investigating what a live audit tonight initially flagged as a Concierge fabrication, which turned out to actually be a real, correct answer from the Concierge and a genuine frontend bug instead: plain date-only values were being parsed as UTC midnight by the JavaScript Date constructor and then rendered in local time, shifting the displayed date back by one day for any user behind UTC; added a shared, timezone-safe formatLocalDate utility and applied it to every confirmed genuine date-only field among 18 real call sites found across the app, leaving real datetime and timestamp fields, which were never vulnerable to this specific bug, untouched"
+git commit -m "deterministically override the pre-action message for navigate-and-open actions, ending the model's discretion over the one part of its response proven unreliable three separate times tonight, claims that a send, creation, or save has already completed; a live browser audit tonight confirmed this still occurred roughly one in three times despite an existing prompt rule forbidding it, so the fixed, honest sentence is now pulled from a deterministic lookup table by modal name instead of ever trusting the model's own generated wording for this specific, narrow case, while the model continues to reliably control which action and modal actually fire"
 
 git pull --rebase origin main
 
