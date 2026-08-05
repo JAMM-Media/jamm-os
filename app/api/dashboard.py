@@ -448,8 +448,7 @@ def get_widget_catalog(
     current_user: User = Depends(require_manager_or_above),
 ):
     """Returns all widget types whose role_requirement is satisfied by the caller."""
-    role = str(current_user.role)
-    is_manager_or_above = role in ("firm_owner", "manager")
+    is_manager_or_above = current_user.role in (UserRole.firm_owner, UserRole.manager)
     return [
         w for w in WIDGET_REGISTRY
         if w["role_requirement"] == "manager_or_above" and is_manager_or_above
