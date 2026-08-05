@@ -76,6 +76,16 @@ export interface DashboardStats {
   awaitingDocs: number
 }
 
+export interface DashboardWidgetInstance {
+  instance_id: string
+  type_key: string
+  grid_x: number
+  grid_y: number
+  size: 'small' | 'medium' | 'large'
+  minimized: boolean
+  config: Record<string, unknown>
+}
+
 function mapTaskItem(raw: Record<string, unknown>): DashboardItem {
   return {
     id: String(raw.id),
@@ -144,5 +154,15 @@ export const dashboardApi = {
       overdue: Number(tasks.data.total_count ?? tasks.data.total ?? 0),
       awaitingDocs: Number(invoices.data.total_count ?? invoices.data.total ?? 0),
     }
+  },
+
+  getLayout: async (): Promise<DashboardWidgetInstance[]> => {
+    const { data } = await api.get('/dashboard/layout')
+    return (data as { widgets: DashboardWidgetInstance[] }).widgets
+  },
+
+  getWidgetData: async (typeKey: string): Promise<Record<string, unknown>> => {
+    const { data } = await api.get(`/dashboard/widgets/${typeKey}/data`)
+    return data as Record<string, unknown>
   },
 }

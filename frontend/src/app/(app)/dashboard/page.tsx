@@ -6,13 +6,22 @@ import Link from 'next/link'
 import { useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { CheckCircle } from 'lucide-react'
+import { GridLayout, useContainerWidth } from 'react-grid-layout'
 import { dashboardApi } from '@/lib/api/dashboard'
 import { reportsApi } from '@/lib/api/reports'
-import type { DashboardMetrics, OverdueEngagementItem, UpcomingDeadlineItem, StaffUtilizationItem, UnsignedDocumentItem } from '@/lib/api/dashboard'
+import type { DashboardWidgetInstance, OverdueEngagementItem, UpcomingDeadlineItem, StaffUtilizationItem, UnsignedDocumentItem } from '@/lib/api/dashboard'
 import type { WIPSummary } from '@/lib/api/reports'
 import api from '@/lib/api'
 import { formatEngagementType } from '@/lib/utils'
 import { ConciergeSpotlight } from '@/components/dashboard/ConciergeSpotlight'
+
+// Size -> grid span mapping (4-column grid, rowHeight 80px).
+// Row heights are a first visual pass and may need adjustment.
+const SIZE_TO_SPAN: Record<string, { w: number; h: number }> = {
+  small:  { w: 1, h: 2 },
+  medium: { w: 2, h: 5 },
+  large:  { w: 4, h: 7 },
+}
 
 function formatCurrency(value: number): string {
   return new Intl.NumberFormat('en-US', {
@@ -37,8 +46,8 @@ interface MetricCardProps {
 
 function MetricCard({ label, value, subtext, valueClassName, variant }: MetricCardProps) {
   const cardClass = variant === 'alert'
-    ? 'bg-status-red dark:bg-status-red-text/20 rounded-[8px] p-5 border border-status-red-text/30 dark:border-status-red-text/40 shadow-sm flex flex-col gap-1'
-    : 'bg-surface-card dark:bg-dark-card rounded-[8px] p-5 border border-surface-border dark:border-dark-border shadow-md flex flex-col gap-1'
+    ? 'bg-status-red dark:bg-status-red-text/20 rounded-[8px] p-5 border border-status-red-text/30 dark:border-status-red-text/40 shadow-sm flex flex-col gap-1 h-full'
+    : 'bg-surface-card dark:bg-dark-card rounded-[8px] p-5 border border-surface-border dark:border-dark-border shadow-md flex flex-col gap-1 h-full'
   return (
     <div className={cardClass}>
       <span className="text-[12px] text-muted-foreground">{label}</span>
@@ -52,7 +61,7 @@ function MetricCard({ label, value, subtext, valueClassName, variant }: MetricCa
 
 function MetricCardSkeleton() {
   return (
-    <div className="bg-surface-card dark:bg-dark-card rounded-[8px] p-5 border border-surface-border dark:border-dark-border shadow-sm flex flex-col gap-2">
+    <div className="bg-surface-card dark:bg-dark-card rounded-[8px] p-5 border border-surface-border dark:border-dark-border shadow-sm flex flex-col gap-2 h-full">
       <div className="h-3 w-24 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
       <div className="h-8 w-32 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
       <div className="h-3 w-20 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
@@ -74,17 +83,17 @@ function daysBadge(days: number) {
 
 function UpcomingDeadlinesList({ items }: { items: UpcomingDeadlineItem[] }) {
   return (
-    <div className="bg-surface-card dark:bg-dark-card rounded-[8px] border border-surface-border dark:border-dark-border shadow-sm overflow-hidden">
-      <div className="px-4 py-3 border-b border-surface-border dark:border-dark-border">
+    <div className="bg-surface-card dark:bg-dark-card rounded-[8px] border border-surface-border dark:border-dark-border shadow-sm overflow-hidden h-full flex flex-col">
+      <div className="px-4 py-3 border-b border-surface-border dark:border-dark-border flex-shrink-0">
         <span className="text-[13px] font-medium text-foreground">Upcoming Deadlines</span>
       </div>
       {items.length === 0 ? (
-        <div className="px-4 py-8 text-center">
+        <div className="px-4 py-8 text-center flex-1">
           <p className="text-[13px] text-green-600 dark:text-green-400 font-medium">No deadlines in the next 14 days.</p>
           <p className="text-[12px] text-muted-foreground mt-1">Your runway is clear — keep it that way.</p>
         </div>
       ) : (
-        <div className="divide-y divide-surface-border dark:divide-dark-border">
+        <div className="divide-y divide-surface-border dark:divide-dark-border overflow-y-auto flex-1">
           {items.map((item) => (
             <div key={item.engagement_id} className="flex items-center px-4 py-2.5 gap-3">
               <div className="flex-1 min-w-0">
@@ -97,7 +106,7 @@ function UpcomingDeadlinesList({ items }: { items: UpcomingDeadlineItem[] }) {
           ))}
           <div className="px-4 py-2.5 flex justify-end">
             <Link href="/calendar" className="text-[12px] text-brand-light hover:underline">
-              View full calendar →
+              View full calendar &rarr;
             </Link>
           </div>
         </div>
@@ -108,7 +117,7 @@ function UpcomingDeadlinesList({ items }: { items: UpcomingDeadlineItem[] }) {
 
 function UpcomingDeadlinesSkeleton() {
   return (
-    <div className="bg-surface-card dark:bg-dark-card rounded-[8px] border border-surface-border dark:border-dark-border shadow-sm overflow-hidden">
+    <div className="bg-surface-card dark:bg-dark-card rounded-[8px] border border-surface-border dark:border-dark-border shadow-sm overflow-hidden h-full">
       <div className="px-4 py-3 border-b border-surface-border dark:border-dark-border">
         <div className="h-4 w-36 bg-surface-border dark:bg-dark-border animate-pulse rounded" />
       </div>
@@ -136,16 +145,16 @@ function utilizationBarColor(pct: number) {
 
 function StaffUtilizationPanel({ items }: { items: StaffUtilizationItem[] }) {
   return (
-    <div className="bg-surface-card dark:bg-dark-card rounded-[8px] border border-surface-border dark:border-dark-border shadow-sm overflow-hidden">
-      <div className="px-4 py-3 border-b border-surface-border dark:border-dark-border">
+    <div className="bg-surface-card dark:bg-dark-card rounded-[8px] border border-surface-border dark:border-dark-border shadow-sm overflow-hidden h-full flex flex-col">
+      <div className="px-4 py-3 border-b border-surface-border dark:border-dark-border flex-shrink-0">
         <span className="text-[13px] font-medium text-foreground">Staff Utilization</span>
       </div>
       {items.length === 0 ? (
-        <div className="px-4 py-8 text-center">
+        <div className="px-4 py-8 text-center flex-1">
           <p className="text-[12px] text-muted-foreground">No time logged this week.</p>
         </div>
       ) : (
-        <div className="px-4 py-3 flex flex-col gap-3">
+        <div className="px-4 py-3 flex flex-col gap-3 overflow-y-auto flex-1">
           {items.map((item) => (
             <div key={item.user_id}>
               <div className="flex justify-between mb-1">
@@ -168,7 +177,7 @@ function StaffUtilizationPanel({ items }: { items: StaffUtilizationItem[] }) {
 
 function StaffUtilizationSkeleton() {
   return (
-    <div className="bg-surface-card dark:bg-dark-card rounded-[8px] border border-surface-border dark:border-dark-border shadow-sm overflow-hidden">
+    <div className="bg-surface-card dark:bg-dark-card rounded-[8px] border border-surface-border dark:border-dark-border shadow-sm overflow-hidden h-full">
       <div className="px-4 py-3 border-b border-surface-border dark:border-dark-border">
         <div className="h-4 w-32 bg-surface-border dark:bg-dark-border animate-pulse rounded" />
       </div>
@@ -211,8 +220,8 @@ function OverdueEngagementsTable({
   }
 
   return (
-    <div className="bg-surface-card dark:bg-dark-card rounded-[8px] border border-surface-border dark:border-dark-border shadow-sm overflow-hidden">
-      <div className="px-4 py-3 border-b border-surface-border dark:border-dark-border flex items-center gap-2">
+    <div className="bg-surface-card dark:bg-dark-card rounded-[8px] border border-surface-border dark:border-dark-border shadow-sm overflow-hidden h-full flex flex-col">
+      <div className="px-4 py-3 border-b border-surface-border dark:border-dark-border flex items-center gap-2 flex-shrink-0">
         <span className="text-[13px] font-medium text-foreground">Overdue Engagements</span>
         {items.length > 0 && (
           <span className="text-[11px] font-medium px-1.5 py-0.5 rounded bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">
@@ -221,12 +230,12 @@ function OverdueEngagementsTable({
         )}
       </div>
       {items.length === 0 ? (
-        <div className="px-4 py-8 text-center flex flex-col items-center gap-2">
+        <div className="px-4 py-8 text-center flex flex-col items-center gap-2 flex-1">
           <CheckCircle className="w-5 h-5 text-green-500" />
           <p className="text-[13px] text-green-600 dark:text-green-400 font-medium">Nothing overdue. Good work.</p>
         </div>
       ) : (
-        <div className="overflow-x-auto">
+        <div className="overflow-auto flex-1">
           <table className="w-full text-[12px]">
             <thead>
               <tr className="border-b border-surface-border dark:border-dark-border text-muted-foreground">
@@ -354,8 +363,8 @@ function UnsignedDocumentsTable({
   }
 
   return (
-    <div className="bg-surface-card dark:bg-dark-card rounded-[8px] border border-surface-border dark:border-dark-border shadow-sm overflow-hidden">
-      <div className="px-4 py-3 border-b border-surface-border dark:border-dark-border flex items-center gap-2">
+    <div className="bg-surface-card dark:bg-dark-card rounded-[8px] border border-surface-border dark:border-dark-border shadow-sm overflow-hidden h-full flex flex-col">
+      <div className="px-4 py-3 border-b border-surface-border dark:border-dark-border flex items-center gap-2 flex-shrink-0">
         <span className="text-[13px] font-medium text-foreground">Awaiting Signature</span>
         {items.length > 0 && (
           <span className="text-[11px] font-medium px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
@@ -364,12 +373,12 @@ function UnsignedDocumentsTable({
         )}
       </div>
       {items.length === 0 ? (
-        <div className="px-4 py-8 text-center">
+        <div className="px-4 py-8 text-center flex-1">
           <p className="text-[13px] text-green-600 dark:text-green-400 font-medium">All signatures are in.</p>
           <p className="text-[12px] text-muted-foreground mt-1">No envelopes are sitting unsigned across your clients.</p>
         </div>
       ) : (
-        <div className="overflow-x-auto">
+        <div className="overflow-auto flex-1">
           <table className="w-full text-[12px]">
             <thead>
               <tr className="border-b border-surface-border dark:border-dark-border text-muted-foreground">
@@ -411,7 +420,7 @@ function UnsignedDocumentsTable({
 }
 
 // ---------------------------------------------------------------------------
-// WIP Widget
+// WIP Widget (fetches its own data via reportsApi internally, unchanged)
 // ---------------------------------------------------------------------------
 
 function WIPWidget() {
@@ -422,8 +431,8 @@ function WIPWidget() {
   })
 
   return (
-    <div className="bg-surface-card dark:bg-dark-card rounded-[8px] border border-surface-border dark:border-dark-border shadow-sm overflow-hidden">
-      <div className="px-4 py-3 border-b border-surface-border dark:border-dark-border flex items-start justify-between">
+    <div className="bg-surface-card dark:bg-dark-card rounded-[8px] border border-surface-border dark:border-dark-border shadow-sm overflow-hidden h-full flex flex-col">
+      <div className="px-4 py-3 border-b border-surface-border dark:border-dark-border flex items-start justify-between flex-shrink-0">
         <span className="text-[13px] font-medium text-foreground">Work in Progress</span>
         {isLoading ? (
           <div className="flex flex-col items-end gap-1">
@@ -438,7 +447,7 @@ function WIPWidget() {
         ) : null}
       </div>
       {isLoading ? (
-        <div className="divide-y divide-surface-border dark:divide-dark-border">
+        <div className="divide-y divide-surface-border dark:divide-dark-border flex-1">
           {Array.from({ length: 3 }).map((_, i) => (
             <div key={i} className="flex items-center justify-between px-4 py-2.5">
               <div className="flex flex-col gap-1 flex-1">
@@ -450,16 +459,16 @@ function WIPWidget() {
           ))}
         </div>
       ) : isError ? (
-        <div className="px-4 py-8 text-center">
+        <div className="px-4 py-8 text-center flex-1">
           <p className="text-[12px] text-muted-foreground">WIP data unavailable.</p>
         </div>
       ) : !data || (data?.topEngagements ?? []).length === 0 ? (
-        <div className="px-4 py-8 text-center">
+        <div className="px-4 py-8 text-center flex-1">
           <p className="text-[13px] text-green-600 dark:text-green-400 font-medium">All billable work is accounted for.</p>
           <p className="text-[12px] text-muted-foreground mt-1">Nothing sitting uninvoiced right now.</p>
         </div>
       ) : (
-        <div className="divide-y divide-surface-border dark:divide-dark-border">
+        <div className="divide-y divide-surface-border dark:divide-dark-border overflow-y-auto flex-1">
           {(data?.topEngagements ?? []).slice(0, 5).map((eng) => (
             <div key={eng.engagementId} className="flex items-center justify-between px-4 py-2.5">
               <div className="min-w-0 flex-1">
@@ -478,56 +487,162 @@ function WIPWidget() {
 }
 
 // ---------------------------------------------------------------------------
+// Widget Skeleton
+// ---------------------------------------------------------------------------
+
+function WidgetSkeleton({ typeKey }: { typeKey: string }) {
+  if (['revenue_this_month', 'outstanding_ar', 'unbilled_wip_stat', 'overdue_engagements_count'].includes(typeKey)) {
+    return <MetricCardSkeleton />
+  }
+  if (typeKey === 'upcoming_deadlines') return <UpcomingDeadlinesSkeleton />
+  if (typeKey === 'staff_utilization') return <StaffUtilizationSkeleton />
+  return <div className="h-full bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded-[8px]" />
+}
+
+// ---------------------------------------------------------------------------
+// Widget Renderer — fetches its own data and delegates to the right component.
+// All hooks are called unconditionally before any early returns.
+// ---------------------------------------------------------------------------
+
+function WidgetRenderer({ widget }: { widget: DashboardWidgetInstance }) {
+  const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set())
+
+  const isWIP = widget.type_key === 'work_in_progress'
+
+  const { data, isLoading, isError, refetch } = useQuery({
+    queryKey: ['dashboard-widget-data', widget.type_key, widget.instance_id],
+    queryFn: () => dashboardApi.getWidgetData(widget.type_key),
+    staleTime: 60 * 1000,
+    enabled: !isWIP,
+  })
+
+  // WIPWidget handles its own fetching via reportsApi
+  if (isWIP) return <WIPWidget />
+
+  if (isLoading) return <WidgetSkeleton typeKey={widget.type_key} />
+
+  if (isError || !data) {
+    return (
+      <div className="flex items-center justify-center h-full bg-surface-card dark:bg-dark-card rounded-[8px] border border-surface-border dark:border-dark-border">
+        <p className="text-[12px] text-muted-foreground">Data unavailable.</p>
+      </div>
+    )
+  }
+
+  const d = data as Record<string, unknown>
+
+  switch (widget.type_key) {
+    case 'revenue_this_month': {
+      const mrr = Number(d.mrr ?? 0)
+      const count = Number(d.mrr_invoice_count ?? 0)
+      return (
+        <MetricCard
+          label="Revenue This Month"
+          value={formatCurrency(mrr)}
+          subtext={`${count} invoice${count !== 1 ? 's' : ''} paid`}
+        />
+      )
+    }
+    case 'outstanding_ar': {
+      const ar = Number(d.outstanding_ar ?? 0)
+      const arCount = Number(d.outstanding_ar_count ?? 0)
+      const oldestDays = d.oldest_overdue_days != null ? Number(d.oldest_overdue_days) : null
+      return (
+        <Link href="/billing" className="block h-full hover:opacity-90 transition-opacity">
+          <MetricCard
+            label="Outstanding AR"
+            value={formatCurrency(ar)}
+            subtext={oldestDays != null ? `${arCount} unpaid · Oldest: ${oldestDays}d` : `${arCount} unpaid`}
+          />
+        </Link>
+      )
+    }
+    case 'unbilled_wip_stat': {
+      const wip = Number(d.wip_value ?? 0)
+      const hours = Number(d.wip_hours ?? 0)
+      return (
+        <MetricCard
+          label="Unbilled WIP"
+          value={formatCurrency(wip)}
+          subtext={`${hours.toFixed(1)} hours`}
+        />
+      )
+    }
+    case 'overdue_engagements_count': {
+      const count = Number(d.overdue_engagement_count ?? 0)
+      return (
+        <MetricCard
+          label="Overdue Engagements"
+          value={String(count)}
+          variant={count > 0 ? 'alert' : undefined}
+          valueClassName={count > 0 ? 'text-[#DC2626]' : 'text-brand dark:text-foreground'}
+        />
+      )
+    }
+    case 'upcoming_deadlines': {
+      const items = (d.upcoming_deadlines ?? []) as UpcomingDeadlineItem[]
+      return <UpcomingDeadlinesList items={items} />
+    }
+    case 'staff_utilization': {
+      const items = (d.staff_utilization ?? []) as StaffUtilizationItem[]
+      return <StaffUtilizationPanel items={items} />
+    }
+    case 'overdue_engagements_table': {
+      const all = (d.overdue_engagements ?? []) as OverdueEngagementItem[]
+      const visible = all.filter((e) => !dismissedIds.has(e.engagement_id))
+      return (
+        <OverdueEngagementsTable
+          items={visible}
+          onComplete={(id) => setDismissedIds((prev) => new Set([...prev, id]))}
+        />
+      )
+    }
+    case 'awaiting_signature': {
+      const items = (d.unsigned_documents ?? []) as UnsignedDocumentItem[]
+      return <UnsignedDocumentsTable items={items} onActionComplete={() => void refetch()} />
+    }
+    default:
+      return (
+        <div className="flex items-center justify-center h-full bg-surface-card dark:bg-dark-card rounded-[8px] border border-surface-border dark:border-dark-border">
+          <p className="text-[12px] text-muted-foreground">Unknown widget: {widget.type_key}</p>
+        </div>
+      )
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Page
 // ---------------------------------------------------------------------------
 
 export default function DashboardPage() {
+  const { width, containerRef, mounted } = useContainerWidth()
+
   const {
-    data: metrics,
-    isLoading,
-    isError,
-    refetch,
-  } = useQuery<DashboardMetrics>({
-    queryKey: ['dashboard-metrics'],
-    queryFn: () => dashboardApi.getMetrics(),
+    data: widgets,
+    isLoading: layoutLoading,
+    isError: layoutError,
+  } = useQuery<DashboardWidgetInstance[]>({
+    queryKey: ['dashboard-layout'],
+    queryFn: () => dashboardApi.getLayout(),
     staleTime: 60 * 1000,
   })
 
-  // Track engagements that have been optimistically removed
-  const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set())
-
-  function handleEngagementComplete(id: string) {
-    setDismissedIds((prev) => new Set([...prev, id]))
-  }
-
-  const visibleOverdue = (metrics?.overdue_engagements ?? []).filter(
-    (e) => !dismissedIds.has(e.engagement_id)
-  )
-
-  if (isError) {
+  if (layoutError) {
     return (
-        <div className="p-6 flex items-center justify-center min-h-[400px]">
-          <div className="text-center">
-            <p className="text-[14px] text-foreground mb-3">Failed to load dashboard metrics.</p>
-            <button
-              onClick={() => refetch()}
-              className="text-[13px] font-medium px-4 py-2 rounded-[6px] bg-brand text-white hover:opacity-90 transition-opacity"
-            >
-              Retry
-            </button>
-          </div>
+      <div className="p-6 flex items-center justify-center min-h-[400px]">
+        <div className="text-center">
+          <p className="text-[14px] text-foreground mb-3">Failed to load dashboard layout.</p>
         </div>
+      </div>
     )
   }
 
-  if (!metrics) {
+  if (layoutLoading || !widgets) {
     return (
       <div className="p-6 flex flex-col gap-6">
-        <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
-          <MetricCardSkeleton />
-          <MetricCardSkeleton />
-          <MetricCardSkeleton />
-          <MetricCardSkeleton />
+        <div>
+          <h1 className="text-2xl font-display font-medium text-brand dark:text-foreground">Dashboard</h1>
+          <p className="text-[12px] text-muted-foreground mt-0.5">Priority work across all clients</p>
         </div>
         <div className="h-48 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded-[8px]" />
         <div className="h-64 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded-[8px]" />
@@ -536,94 +651,42 @@ export default function DashboardPage() {
     )
   }
 
+  const layout = widgets.map((w) => ({
+    i: w.instance_id,
+    x: w.grid_x,
+    y: w.grid_y,
+    ...(SIZE_TO_SPAN[w.size] ?? SIZE_TO_SPAN.medium),
+  }))
+
   return (
-      <div className="p-6 flex flex-col gap-6">
-
-        {/* Page header */}
-        <div>
-          <h1 className="text-2xl font-display font-medium text-brand dark:text-foreground">Dashboard</h1>
-          <p className="text-[12px] text-muted-foreground mt-0.5">Priority work across all clients</p>
-        </div>
-
-        {/* ROW 1 — Stat cards */}
-        <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
-          {isLoading ? (
-            Array.from({ length: 4 }).map((_, i) => <MetricCardSkeleton key={i} />)
-          ) : (
-            <>
-              <MetricCard
-                label="Revenue This Month"
-                value={formatCurrency(metrics?.mrr)}
-                subtext={`${metrics?.mrr_invoice_count} invoice${metrics?.mrr_invoice_count !== 1 ? 's' : ''} paid`}
-              />
-              <Link href="/billing" className="block hover:opacity-90 transition-opacity">
-                <MetricCard
-                  label="Outstanding AR"
-                  value={formatCurrency(metrics?.outstanding_ar)}
-                  subtext={
-                    metrics?.oldest_overdue_days != null
-                      ? `${metrics?.outstanding_ar_count} unpaid · Oldest: ${metrics?.oldest_overdue_days}d`
-                      : `${metrics?.outstanding_ar_count} unpaid`
-                  }
-                />
-              </Link>
-              <MetricCard
-                label="Unbilled WIP"
-                value={formatCurrency(metrics?.wip_value)}
-                subtext={`${metrics?.wip_hours.toFixed(1)} hours`}
-              />
-              <MetricCard
-                label="Overdue Engagements"
-                value={String(visibleOverdue.length)}
-                variant={visibleOverdue.length > 0 ? 'alert' : undefined}
-                valueClassName={
-                  visibleOverdue.length > 0
-                    ? 'text-[#DC2626]'
-                    : 'text-brand dark:text-foreground'
-                }
-              />
-            </>
-          )}
-        </div>
-
-        {/* Concierge Spotlight */}
-        <ConciergeSpotlight />
-
-        {/* ROW WIP — Work in Progress */}
-        <WIPWidget />
-
-        {/* ROW 2 — Upcoming Deadlines + Staff Utilization */}
-        <div className="flex gap-4">
-          <div className="flex-[3]">
-            {isLoading
-              ? <UpcomingDeadlinesSkeleton />
-              : <UpcomingDeadlinesList items={metrics?.upcoming_deadlines} />
-            }
-          </div>
-          <div className="flex-[2]">
-            {isLoading
-              ? <StaffUtilizationSkeleton />
-              : <StaffUtilizationPanel items={metrics?.staff_utilization} />
-            }
-          </div>
-        </div>
-
-        {/* ROW 3 — Overdue Engagements */}
-        {!isLoading && (
-          <OverdueEngagementsTable
-            items={visibleOverdue}
-            onComplete={handleEngagementComplete}
-          />
-        )}
-
-        {/* ROW 4 — Awaiting Signature */}
-        {!isLoading && (
-          <UnsignedDocumentsTable
-            items={metrics?.unsigned_documents ?? []}
-            onActionComplete={() => refetch()}
-          />
-        )}
-
+    <div className="p-6 flex flex-col gap-4">
+      {/* Page header */}
+      <div>
+        <h1 className="text-2xl font-display font-medium text-brand dark:text-foreground">Dashboard</h1>
+        <p className="text-[12px] text-muted-foreground mt-0.5">Priority work across all clients</p>
       </div>
+
+      {/* Concierge Spotlight — fixed above the grid, not part of the canvas */}
+      <ConciergeSpotlight />
+
+      {/* Widget canvas — view-only, no drag/resize in this batch */}
+      <div ref={containerRef}>
+        {mounted && (
+          <GridLayout
+            width={width}
+            layout={layout}
+            gridConfig={{ cols: 4, rowHeight: 80, margin: [16, 16], containerPadding: [0, 0] }}
+            dragConfig={{ enabled: false }}
+            resizeConfig={{ enabled: false }}
+          >
+            {widgets.map((widget) => (
+              <div key={widget.instance_id} style={{ overflow: 'hidden' }}>
+                <WidgetRenderer widget={widget} />
+              </div>
+            ))}
+          </GridLayout>
+        )}
+      </div>
+    </div>
   )
 }
