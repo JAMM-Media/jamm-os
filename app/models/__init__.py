@@ -47,3 +47,4 @@ from app.models.metric_registry import MetricRegistry
 from app.models.metric_value import MetricValue
 from app.models.metric_run_log import MetricRunLog
 from app.models.finding import Finding
+from app.models.dashboard_layout import DashboardLayout, FirmDefaultDashboardLayout
