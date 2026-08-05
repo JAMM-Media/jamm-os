@@ -852,7 +852,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
       'new-template': 'Opened New Template drawer',
     }
     if (action.modal && action.route) {
-      const alreadyOnRoute = pathname.startsWith(normalizedRoute)
+      const alreadyOnRoute = pathname === normalizedRoute
       if (alreadyOnRoute) {
         emitConciergeAction(action)
       } else {

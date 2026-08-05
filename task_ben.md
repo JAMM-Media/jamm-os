@@ -54,39 +54,35 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Fix three real topic-chip issues found by tonight's audit: an imprecise Staff chip label, suppressed nav chips when per-client options are present, and missing chips for client-overview questions
+TASK: Fix the last two real findings from tonight's final launch-readiness audit -- a stale-route bug preventing modals from opening after navigation, and confusing wording when portal access and portal invite status disagree
 
-USE: Fable 5
+USE: claude sonnet
 
 VERIFY BEFORE ACT:
 
-sed -n '415,440p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+sed -n '838,860p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-sed -n '560,575p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+sed -n '138,145p' /home/corby/jamm-os/app/api/concierge/route.py
 
-sed -n '317,323p' /home/corby/jamm-os/app/api/concierge/route.py
+grep -n "portal_access\|portal access" /home/corby/jamm-os/app/api/concierge/prompts.py
 
-Confirm 'Go to Staff': '/staff' already exists and works correctly in the chip-to-route mapping table, and confirm TOPIC_CHIPS currently maps the staff topic to 'Go to Dashboard' instead, meaning the correct destination already exists and is simply never used for this topic. Confirm the current suggestion-suppression condition is parsedResult || parsedOptions.length > 0, meaning topic chips are hidden any time real per-client option buttons are present, not only when a full draft exists. Confirm _TOPIC_KEYWORDS["clients"] in route.py currently has no phrases matching general client-overview questions like tell me about a client.
+Confirm the generic route-plus-modal branch in executeAction, the one used for actions like navigate-and-open with route /clients and modal new-client, currently calls router.push(normalizedRoute) unconditionally first, then separately computes alreadyOnRoute using pathname.startsWith(normalizedRoute), a prefix match rather than an exact match. Confirm this means being on any sub-route beginning with /clients, such as a specific client's own detail page, incorrectly satisfies this check for the plain /clients list route, causing the action to be dispatched live into a page that is mid-navigation-away instead of being safely persisted for the new page to read after it mounts. Confirm the real, current wording of get_client_full_snapshot's tool description, and confirm whether prompts.py currently has any guidance on reconciling portal_access_enabled and portal_invite_sent_at when they present a seemingly contradictory picture.
 
 WHAT THIS IS:
 
-Three real, separately confirmed topic-chip issues from a live browser audit tonight. First, the staff topic's chip says Go to Dashboard even though a real, correct Go to Staff destination already exists and works, simply never referenced. Second, asking about overdue invoices or stalled engagements produces real, correct per-client option buttons but no Go to Billing or Go to Engagements chip at all, because the current logic treats any presence of per-client options the same as a full draft and suppresses topic chips entirely, when in reality a general navigation chip and specific per-client action buttons serve different purposes and can reasonably coexist. Third, asking to tell me about a specific client produces no chip at all, because this phrasing is not recognized by the same topic classification system already used for chip selection, so it falls into the general topic, which intentionally has no chips.
+Two real, separately confirmed findings from a final, broad pre-launch audit tonight. First, asking the Concierge to create a new client while on a page other than the exact Clients list page, for example a specific client's own detail page, correctly navigates to Clients but the New Client form never actually opens, because the stale pathname check at the moment of navigation is a prefix match rather than an exact match, causing this specific case to take the wrong internal branch. Second, the Concierge told the truth about two real, different fields, portal_access_enabled and portal_invite_sent_at, for a client where these two facts point in different directions, but stated only one of them, portal access enabled, without acknowledging the invite itself was never sent, reading as a contradiction next to the on-page suggestion card that already correctly flags the missing invite. This is not a fabrication, both facts are real, it is a clarity gap worth closing before launch.
 
 CHANGE INSTRUCTIONS:
 
-In ConciergePanel.tsx, change TOPIC_CHIPS's staff entry from ['Go to Dashboard'] to ['Go to Staff'], since the correct route mapping already exists and works.
+In ConciergePanel.tsx's executeAction, in the generic route-plus-modal branch, change the alreadyOnRoute check from pathname.startsWith(normalizedRoute) to an exact match, pathname === normalizedRoute, so only being litarally on the exact target route counts as already there, not any sub-route beginning with the same path segment. Do not change the client-slug-specific branch earlier in this function, and do not change any other logic in executeAction.
 
-In the same file, change the suggestion-suppression condition from parsedResult || parsedOptions.length > 0 to just parsedResult, so topic chips continue to be suppressed when a full draft is present, since taking an action mid-draft is a different case, but are no longer suppressed just because per-client option buttons are present, allowing a real navigation chip and specific per-client options to appear together.
-
-In route.py, add the same real client-overview phrases already added earlier tonight to _OPERATIONAL_KEYWORDS, for example tell me about, give me an overview, client overview, client summary, client snapshot, what's going on with, summarize this client, pull up their, pull up this client, to _TOPIC_KEYWORDS["clients"] as well, matching the exact existing style of that set, so these questions are now classified into the clients topic and receive the existing Go to Clients chip instead of no chip at all.
+In prompts.py, add a short, specific instruction near or within the general formatting or tool-use guidance, stating that when a client snapshot shows portal_access_enabled as true but portal_invite_sent_at is null or absent, the response must state both facts together, for example noting that portal access is enabled for the client but they have not yet been sent their actual invite link, rather than stating only one of these two real facts in isolation, since doing so can read as contradictory next to other parts of the product that correctly surface the missing invite.
 
 VERIFY AFTER ACT:
 
-grep -n "staff: \['Go to Staff'\]" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+grep -n "pathname === normalizedRoute" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-grep -n "parsedResult ? \[\] : \|setSuggestions(parsedResult ?" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
-
-grep -n "tell me about" /home/corby/jamm-os/app/api/concierge/route.py
+grep -n "portal_access_enabled\|portal access is enabled" /home/corby/jamm-os/app/api/concierge/prompts.py
 
 npx tsc --noEmit
 
@@ -96,21 +92,19 @@ MANUAL VERIFICATION:
 
 Restart both servers.
 
-Ask "Which staff members are overloaded?" Confirm the chip now reads Go to Staff and correctly navigates to the Staff page, not Dashboard.
+While on a specific client's detail page, not the Clients list page, ask the Concierge to create a new client. Confirm it navigates to the Clients page and the New Client form now actually opens, not just the correct wording claiming it would.
 
-Ask "How many overdue invoices do I have?" Confirm the response still shows real, correct per-client option buttons, and now also shows a Go to Billing chip alongside them.
+Ask the Concierge to tell you about Robert & Carol Tanner again. Confirm the response now explicitly reconciles both facts, mentioning that portal access is enabled but the invite itself has never been sent, rather than stating only one of these two real facts.
 
-Ask "Which engagements are stalled?" Confirm the response still shows real, correct per-client option buttons, and now also shows a Go to Engagements chip alongside them, without needing to click into a client first.
+Confirm asking to create a new client while already on the exact Clients list page still works exactly as it did before, unaffected by this change.
 
-Ask "Tell me about Robert & Carol Tanner." Confirm a Go to Clients chip now appears where none did before.
-
-Report pass or fail for each of these four checks individually.
+Report pass or fail for each of these three checks individually.
 
 GIT:
 
 git add -A
 
-git commit -m "fix three real topic-chip issues confirmed by tonight's audit: correct the staff topic's chip label from Go to Dashboard to Go to Staff, since the correct route mapping already existed and was simply never used; stop suppressing topic navigation chips whenever per-client option buttons are present, since a general navigation chip and specific per-client actions serve different purposes and can coexist, only a full draft should suppress the chip; and add the same client-overview phrases already added to the operational keyword gate earlier tonight to the separate topic classification keywords, so questions like tell me about a client now correctly receive a Go to Clients chip instead of none at all"
+git commit -m "fix the last two real findings from tonight's final pre-launch audit: correct a stale-route bug in executeAction where a prefix match on the current pathname incorrectly treated being on any client sub-route as already being on the plain Clients list page, causing the New Client modal to silently never open after navigating there from elsewhere, now fixed to an exact route match; and add explicit guidance so the Concierge states both portal_access_enabled and portal_invite_sent_at together when they present a seemingly contradictory picture, rather than stating one real fact in isolation in a way that reads as inaccurate next to other correct parts of the product"
 
 git pull --rebase origin main
 
