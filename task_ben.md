@@ -54,57 +54,54 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Fix the last two real findings from tonight's final launch-readiness audit -- a stale-route bug preventing modals from opening after navigation, and confusing wording when portal access and portal invite status disagree
+TASK: Add a deterministic, pre-computed portal status field to get_client_full_snapshot, ending the model's reliance on prose instructions to reconcile portal access facts it never actually had
 
 USE: claude sonnet
 
 VERIFY BEFORE ACT:
 
-sed -n '838,860p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+sed -n '426,480p' /home/corby/jamm-os/app/api/concierge/functions.py
 
-sed -n '138,145p' /home/corby/jamm-os/app/api/concierge/route.py
+sed -n '385,390p' /home/corby/jamm-os/app/api/concierge/prompts.py
 
-grep -n "portal_access\|portal access" /home/corby/jamm-os/app/api/concierge/prompts.py
-
-Confirm the generic route-plus-modal branch in executeAction, the one used for actions like navigate-and-open with route /clients and modal new-client, currently calls router.push(normalizedRoute) unconditionally first, then separately computes alreadyOnRoute using pathname.startsWith(normalizedRoute), a prefix match rather than an exact match. Confirm this means being on any sub-route beginning with /clients, such as a specific client's own detail page, incorrectly satisfies this check for the plain /clients list route, causing the action to be dispatched live into a page that is mid-navigation-away instead of being safely persisted for the new page to read after it mounts. Confirm the real, current wording of get_client_full_snapshot's tool description, and confirm whether prompts.py currently has any guidance on reconciling portal_access_enabled and portal_invite_sent_at when they present a seemingly contradictory picture.
+Confirm get_client_full_snapshot's real, current return dict includes portal_access, sourced from client.portal_access_enabled, but does not include portal_invite_sent_at anywhere in the returned data at all. Confirm the reconciliation instruction added earlier tonight in prompts.py asks the model to reconcile these two facts, but the underlying fact, portal_invite_sent_at, was never actually present in the tool's own output for the model to reason about, meaning the earlier fix could never have worked reliably no matter how the prompt was worded, since the real data was missing at the source.
 
 WHAT THIS IS:
 
-Two real, separately confirmed findings from a final, broad pre-launch audit tonight. First, asking the Concierge to create a new client while on a page other than the exact Clients list page, for example a specific client's own detail page, correctly navigates to Clients but the New Client form never actually opens, because the stale pathname check at the moment of navigation is a prefix match rather than an exact match, causing this specific case to take the wrong internal branch. Second, the Concierge told the truth about two real, different fields, portal_access_enabled and portal_invite_sent_at, for a client where these two facts point in different directions, but stated only one of them, portal access enabled, without acknowledging the invite itself was never sent, reading as a contradiction next to the on-page suggestion card that already correctly flags the missing invite. This is not a fabrication, both facts are real, it is a clarity gap worth closing before launch.
+Live testing tonight, after the backend was correctly restarted, showed the earlier prompt-only reconciliation instruction still failed, the response mentioned portal access being enabled without any mention of the invite never being sent. Investigation found the real, deeper cause: portal_invite_sent_at was never included in this tool's returned data in the first place, so the model had no real fact to reconcile in the first place, no prompt wording could have fixed this reliably. This matches the core lesson proven repeatedly tonight, and the correct fix here goes one step further than usual: not only must the real data be included, but the reconciliation itself should be computed deterministically in Python and handed to the model as a ready-made, already-correct fact, rather than trusting the model to correctly combine two raw fields into the right sentence on every single call.
 
 CHANGE INSTRUCTIONS:
 
-In ConciergePanel.tsx's executeAction, in the generic route-plus-modal branch, change the alreadyOnRoute check from pathname.startsWith(normalizedRoute) to an exact match, pathname === normalizedRoute, so only being litarally on the exact target route counts as already there, not any sub-route beginning with the same path segment. Do not change the client-slug-specific branch earlier in this function, and do not change any other logic in executeAction.
+In get_client_full_snapshot, add portal_invite_sent_at to the returned dict, formatted the same isoformat-or-None style already used for other date fields in this function. Also add a new field, portal_status_note, computed deterministically with plain Python conditional logic before the return statement: if portal_access_enabled is true and portal_invite_sent_at is null, set this to the exact sentence "Portal access is enabled, but this client has never been sent their invite link." If portal_access_enabled is true and portal_invite_sent_at is set, set it to a sentence confirming both access and that the invite was sent. If portal_access_enabled is false, set it to a sentence stating portal access has not been enabled for this client. Include this new field in the returned dict alongside the existing portal_access field.
 
-In prompts.py, add a short, specific instruction near or within the general formatting or tool-use guidance, stating that when a client snapshot shows portal_access_enabled as true but portal_invite_sent_at is null or absent, the response must state both facts together, for example noting that portal access is enabled for the client but they have not yet been sent their actual invite link, rather than stating only one of these two real facts in isolation, since doing so can read as contradictory next to other parts of the product that correctly surface the missing invite.
+In prompts.py, update the reconciliation instruction added earlier tonight to tell the model to use the value of portal_status_note directly when describing a client's portal status, rather than attempting to reconcile portal_access and portal_invite_sent_at itself, since this is now pre-computed and guaranteed correct.
 
 VERIFY AFTER ACT:
 
-grep -n "pathname === normalizedRoute" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+grep -n "portal_status_note\|portal_invite_sent_at" /home/corby/jamm-os/app/api/concierge/functions.py
 
-grep -n "portal_access_enabled\|portal access is enabled" /home/corby/jamm-os/app/api/concierge/prompts.py
-
-npx tsc --noEmit
+python3 -c "
+import sys
+sys.path.insert(0, '/home/corby/jamm-os')
+from app.api.concierge.functions import get_client_full_snapshot
+print('function updated, real check requires live data')
+"
 
 python3 -c "from app.main import app; print('OK')"
 
 MANUAL VERIFICATION:
 
-Restart both servers.
+Restart the backend.
 
-While on a specific client's detail page, not the Clients list page, ask the Concierge to create a new client. Confirm it navigates to the Clients page and the New Client form now actually opens, not just the correct wording claiming it would.
+Ask the Concierge to tell you about Robert & Carol Tanner three times in a row. Confirm all three responses now correctly and consistently mention that portal access is enabled but the invite has never been sent, not just once but reliably every time, since this is no longer dependent on the model's own discretion.
 
-Ask the Concierge to tell you about Robert & Carol Tanner again. Confirm the response now explicitly reconciles both facts, mentioning that portal access is enabled but the invite itself has never been sent, rather than stating only one of these two real facts.
-
-Confirm asking to create a new client while already on the exact Clients list page still works exactly as it did before, unaffected by this change.
-
-Report pass or fail for each of these three checks individually.
+Report pass or fail, quoting all three responses verbatim, since this is meant to permanently close a problem that has now failed twice tonight with prompt-only approaches.
 
 GIT:
 
 git add -A
 
-git commit -m "fix the last two real findings from tonight's final pre-launch audit: correct a stale-route bug in executeAction where a prefix match on the current pathname incorrectly treated being on any client sub-route as already being on the plain Clients list page, causing the New Client modal to silently never open after navigating there from elsewhere, now fixed to an exact route match; and add explicit guidance so the Concierge states both portal_access_enabled and portal_invite_sent_at together when they present a seemingly contradictory picture, rather than stating one real fact in isolation in a way that reads as inaccurate next to other correct parts of the product"
+git commit -m "add a deterministic, pre-computed portal_status_note field to get_client_full_snapshot, ending reliance on a prose instruction to reconcile portal_access_enabled and portal_invite_sent_at, since the earlier prompt-only fix still failed live tonight after a correct restart, and investigation found the deeper cause, portal_invite_sent_at was never actually included in this tool's returned data at all, meaning no prompt wording could have worked reliably since the real fact was missing at the source; the reconciliation is now computed once in deterministic Python and handed to the model as a ready-made, guaranteed-correct fact instead of being left to the model's own discretion on every call"
 
 git pull --rebase origin main
 

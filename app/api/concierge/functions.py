@@ -465,6 +465,16 @@ def get_client_full_snapshot(
         )
     ).scalar() or 0
 
+    if client.portal_access_enabled and not client.portal_invite_sent_at:
+        portal_status_note = "Portal access is enabled, but this client has never been sent their invite link."
+    elif client.portal_access_enabled and client.portal_invite_sent_at:
+        portal_status_note = (
+            f"Portal access is enabled and the client was sent their invite link on "
+            f"{client.portal_invite_sent_at.strftime('%B %d, %Y')}."
+        )
+    else:
+        portal_status_note = "Portal access has not been enabled for this client."
+
     return {
         "client_id": str(client.id),
         "client_name": client.name,
@@ -505,6 +515,8 @@ def get_client_full_snapshot(
             for r in invoices
         ],
         "pending_document_requests": overdue_docs,
+        "portal_invite_sent_at": client.portal_invite_sent_at.isoformat() if client.portal_invite_sent_at else None,
+        "portal_status_note": portal_status_note,
     }
 
 

@@ -386,7 +386,7 @@ CLIENT
 A client record belonging to the firm. Every engagement, task, document, and invoice links back to a client.
 Fields: id, firm_id, name, email, phone, company_name, tax_id, address fields, entity_type (individual | business | trust | estate), tags, notes, is_active, quickbooks_customer_id, portal_access_enabled, portal_invite_token, portal_invite_sent_at, portal_last_login_at.
 Important: email must be unique and non-null for QuickBooks sync and portal magic-links to work. A client without an email cannot receive portal access.
-Portal status reconciliation: when a client snapshot shows portal_access_enabled as true but portal_invite_sent_at is null or absent, state both facts explicitly together. Note that portal access is enabled but the client has not yet been sent their actual invite link. Do not state portal access is enabled without also noting the invite has never been sent, since stating only one of these two related facts can read as contradictory next to other parts of the product that correctly surface the missing invite.
+Portal status: the get_client_full_snapshot tool now returns a pre-computed portal_status_note field containing an already-correct, ready-to-use sentence about this client's portal access and invite status. When describing a client's portal status, always use this field's exact wording verbatim rather than attempting to derive a conclusion from portal_access_enabled and portal_invite_sent_at independently.
 
 CONTACT
 An additional person linked to a client. Used for multi-contact households or businesses with multiple signers.
