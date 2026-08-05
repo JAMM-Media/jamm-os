@@ -54,45 +54,63 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 # Section 3 - The task
 
-TASK: Expose the real created_at field on UserOut, fixing the Staff page's Invalid Date bug
+TASK: Fix three real topic-chip issues found by tonight's audit: an imprecise Staff chip label, suppressed nav chips when per-client options are present, and missing chips for client-overview questions
 
-USE: claude sonnet
+USE: Fable 5
 
 VERIFY BEFORE ACT:
 
-sed -n '145,155p' /home/corby/jamm-os/app/models/user.py
+sed -n '415,440p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-sed -n '30,40p' /home/corby/jamm-os/app/schemas/user.py
+sed -n '560,575p' /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
 
-Confirm User already has a real created_at column, a real Mapped[datetime] field, and confirm UserOut currently has no created_at field at all, despite model_config already being set to ConfigDict(from_attributes=True), meaning this is a pure, safe, additive schema fix, not a data or logic change.
+sed -n '317,323p' /home/corby/jamm-os/app/api/concierge/route.py
+
+Confirm 'Go to Staff': '/staff' already exists and works correctly in the chip-to-route mapping table, and confirm TOPIC_CHIPS currently maps the staff topic to 'Go to Dashboard' instead, meaning the correct destination already exists and is simply never used for this topic. Confirm the current suggestion-suppression condition is parsedResult || parsedOptions.length > 0, meaning topic chips are hidden any time real per-client option buttons are present, not only when a full draft exists. Confirm _TOPIC_KEYWORDS["clients"] in route.py currently has no phrases matching general client-overview questions like tell me about a client.
 
 WHAT THIS IS:
 
-Confirmed by a live browser audit tonight: the Staff page's Member Since column shows the literal text Invalid Date for every single row. Traced directly to its real cause: the frontend calls GET /users, whose response model is UserOut, and passes whatever comes back through new Date(member.created_at).toLocaleDateString(). Since UserOut never exposed created_at at all, the frontend received undefined for every user, and new Date(undefined) produces an Invalid Date object in JavaScript, which renders as the literal string seen in the audit. The real data has existed on the User model the entire time, it was simply never included in this response.
+Three real, separately confirmed topic-chip issues from a live browser audit tonight. First, the staff topic's chip says Go to Dashboard even though a real, correct Go to Staff destination already exists and works, simply never referenced. Second, asking about overdue invoices or stalled engagements produces real, correct per-client option buttons but no Go to Billing or Go to Engagements chip at all, because the current logic treats any presence of per-client options the same as a full draft and suppresses topic chips entirely, when in reality a general navigation chip and specific per-client action buttons serve different purposes and can reasonably coexist. Third, asking to tell me about a specific client produces no chip at all, because this phrasing is not recognized by the same topic classification system already used for chip selection, so it falls into the general topic, which intentionally has no chips.
 
 CHANGE INSTRUCTIONS:
 
-Add created_at: datetime as a new field to UserOut in schemas/user.py, matching the exact style of the other fields already present. Import datetime at the top of this file if it is not already imported. Do not add any manual assignment logic anywhere, since from_attributes is already enabled, this field will be read directly and automatically from the real User model object.
+In ConciergePanel.tsx, change TOPIC_CHIPS's staff entry from ['Go to Dashboard'] to ['Go to Staff'], since the correct route mapping already exists and works.
+
+In the same file, change the suggestion-suppression condition from parsedResult || parsedOptions.length > 0 to just parsedResult, so topic chips continue to be suppressed when a full draft is present, since taking an action mid-draft is a different case, but are no longer suppressed just because per-client option buttons are present, allowing a real navigation chip and specific per-client options to appear together.
+
+In route.py, add the same real client-overview phrases already added earlier tonight to _OPERATIONAL_KEYWORDS, for example tell me about, give me an overview, client overview, client summary, client snapshot, what's going on with, summarize this client, pull up their, pull up this client, to _TOPIC_KEYWORDS["clients"] as well, matching the exact existing style of that set, so these questions are now classified into the clients topic and receive the existing Go to Clients chip instead of no chip at all.
 
 VERIFY AFTER ACT:
 
-grep -n "created_at" /home/corby/jamm-os/app/schemas/user.py
+grep -n "staff: \['Go to Staff'\]" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+
+grep -n "parsedResult ? \[\] : \|setSuggestions(parsedResult ?" /home/corby/jamm-os/frontend/src/components/concierge/ConciergePanel.tsx
+
+grep -n "tell me about" /home/corby/jamm-os/app/api/concierge/route.py
+
+npx tsc --noEmit
 
 python3 -c "from app.main import app; print('OK')"
 
 MANUAL VERIFICATION:
 
-Restart the backend.
+Restart both servers.
 
-Visit the Staff page. Confirm every row in the Member Since column now shows a real, correctly formatted date instead of Invalid Date.
+Ask "Which staff members are overloaded?" Confirm the chip now reads Go to Staff and correctly navigates to the Staff page, not Dashboard.
 
-Report pass or fail.
+Ask "How many overdue invoices do I have?" Confirm the response still shows real, correct per-client option buttons, and now also shows a Go to Billing chip alongside them.
+
+Ask "Which engagements are stalled?" Confirm the response still shows real, correct per-client option buttons, and now also shows a Go to Engagements chip alongside them, without needing to click into a client first.
+
+Ask "Tell me about Robert & Carol Tanner." Confirm a Go to Clients chip now appears where none did before.
+
+Report pass or fail for each of these four checks individually.
 
 GIT:
 
 git add -A
 
-git commit -m "expose the real created_at field on UserOut, fixing the Staff page's Member Since column showing the literal text Invalid Date for every row, confirmed by a live browser audit tonight and traced to the real User.created_at column having existed the entire time but never being included in the GET /users response the Staff page actually calls"
+git commit -m "fix three real topic-chip issues confirmed by tonight's audit: correct the staff topic's chip label from Go to Dashboard to Go to Staff, since the correct route mapping already existed and was simply never used; stop suppressing topic navigation chips whenever per-client option buttons are present, since a general navigation chip and specific per-client actions serve different purposes and can coexist, only a full draft should suppress the chip; and add the same client-overview phrases already added to the operational keyword gate earlier tonight to the separate topic classification keywords, so questions like tell me about a client now correctly receive a Go to Clients chip instead of none at all"
 
 git pull --rebase origin main
 

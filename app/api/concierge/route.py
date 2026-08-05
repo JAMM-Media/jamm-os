@@ -319,6 +319,9 @@ _TOPIC_KEYWORDS: dict[str, set[str]] = {
         "new client", "add client", "create client", "client record", "client profile",
         "client list", "client search", "archive client", "qbo sync", "quickbooks sync",
         "health indicator", "client health", "client tag",
+        "tell me about", "give me an overview", "client overview", "client summary",
+        "client snapshot", "what's going on with", "summarize this client",
+        "pull up their", "pull up this client",
     },
     "engagements": {
         "engagement", "engagements", "job", "jobs", "work item", "project",

@@ -428,7 +428,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
           time_tracking: ['Go to Timesheets'],
           automations: ['Go to Settings'],
           irs_authorizations: ['Go to Clients'],
-          staff: ['Go to Dashboard'],
+          staff: ['Go to Staff'],
           settings: ['Go to Settings'],
           operational_data: ['Go to Dashboard'],
           qc_checklists: ['Go to Engagements'],
@@ -436,7 +436,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
           general: [],
         }
 
-        setSuggestions(parsedResult || parsedOptions.length > 0 ? [] : (TOPIC_CHIPS[topic] ?? []).slice(0, 3))
+        setSuggestions(parsedResult ? [] : (TOPIC_CHIPS[topic] ?? []).slice(0, 3))
       } catch {
         setMessages((prev) => {
           const updated = [...prev]
