@@ -18,12 +18,13 @@ type RecordStatus = IrsAuthorizationRecord['status']
 
 const RECORD_STATUS_CONFIG: Record<
   RecordStatus,
-  { bg: string; text: string; label: string }
+  { bg: string; text: string; label: string; border?: string }
 > = {
   active: { bg: 'var(--color-status-green)', text: 'var(--color-status-green-text)', label: 'Active' },
   pending_signature: { bg: 'var(--color-status-blue)', text: 'var(--color-status-blue-text)', label: 'Pending' },
   expired: { bg: 'var(--color-status-red)', text: 'var(--color-status-red-text)', label: 'Expired' },
   revoked: { bg: 'var(--color-status-red)', text: 'var(--color-status-red-text)', label: 'Revoked' },
+  superseded: { bg: 'var(--color-status-gray)', text: 'var(--color-status-gray-text)', label: 'Replaced', border: '0.5px solid #1F3148' },
 }
 
 function fmtDate(d: string | null): string {
@@ -302,6 +303,7 @@ export function IrsAuthTab({ clientId }: IrsAuthTabProps) {
                       padding: '0 10px',
                       background: statusCfg.bg,
                       color: statusCfg.text,
+                      border: statusCfg.border ?? 'none',
                       display: 'inline-flex',
                       alignItems: 'center',
                     }}

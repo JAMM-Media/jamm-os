@@ -39,6 +39,8 @@
   --color-status-amber-text: #92400E;
   --color-status-red: #FEE2E2;
   --color-status-red-text: #991B1B;
+  --color-status-gray: #E5E7EB;
+  --color-status-gray-text: #1F3148;
 
   /* Border radius tokens */
   --radius-badge: 9999px;

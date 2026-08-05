@@ -6,11 +6,10 @@ export interface IrsAuthorizationRecord {
   firm_id: string
   client_id: string
   form_type: '8821' | '2848'
-  status: 'pending_signature' | 'active' | 'expired' | 'revoked'
+  status: 'pending_signature' | 'active' | 'expired' | 'revoked' | 'superseded'
   tax_years: number[]
   valid_from: string | null
   valid_until: string | null
-  expiry_notification_sent: boolean
   created_at: string
   updated_at: string
 }
