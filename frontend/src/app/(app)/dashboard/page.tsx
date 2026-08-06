@@ -1546,7 +1546,7 @@ export default function DashboardPage() {
         ) : (
           <div className="flex flex-col divide-y divide-surface-border dark:divide-dark-border">
             {templates.map((tmpl) => (
-              <div key={tmpl.id} className="flex items-center py-2.5 gap-3">
+              <div key={tmpl.id} className="flex items-center py-2.5 gap-3 hover:bg-surface-input dark:hover:bg-dark-page transition-colors">
                 <button
                   onClick={() => handleSelectTemplate(tmpl)}
                   className="flex-1 text-left text-[13px] font-medium text-foreground hover:text-brand transition-colors truncate"

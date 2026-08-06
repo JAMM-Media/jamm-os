@@ -74,7 +74,7 @@ This section exists because a past session confidently claimed specific files we
 
 # Section 3 - The task
 
-TASK: Add save-as-template and load-a-template to Edit Dashboard mode, working on the real full-size canvas, reusing the exact pattern already proven out for Reset to Default. This is functional templates now; the scaled-down mini-grid visual preview is a deliberate separate follow-up, not part of this task.
+TASK: Add a hover highlight to each row in the Load Template list, so it's visually clear which template you're about to select. Small, isolated visual change.
 
 USE: claude sonnet
 
@@ -86,43 +86,37 @@ State plainly that no path in this task resolves against /mnt/c/Users or any Win
 
 VERIFY BEFORE ACT:
 
-grep -n -B 3 -A 25 "handleResetToDefault" "src/app/(app)/dashboard/page.tsx"
+grep -n -B 3 -A 20 "showLoadTemplate" "src/app/(app)/dashboard/page.tsx"
 
-grep -n -B 2 -A 10 "getDefaultLayout" frontend/src/lib/api/dashboard.ts
-
-Paste the real output of both. Confirm the exact real implementation of Reset to Default, since save/load templates should follow this same shape as closely as possible, not invent a new pattern. Confirm the real GET/POST/DELETE /dashboard/templates response shapes already confirmed live in the prior task: POST returns {id, name, widgets, created_at}, GET returns a list of the same shape, DELETE returns 204 with no body.
+Paste the real output. Confirm the exact current JSX structure of each template row in the Load Template modal, specifically the clickable element that calls handleSelectTemplate, so the hover style gets applied to the real clickable row, not a wrapper that doesn't actually respond to the click.
 
 WHAT THIS IS:
 
-Save as Template captures the current editedWidgets arrangement under a name the user provides, calling POST /dashboard/templates, and does not affect the current edit session or require Done, it is a side write, similar in spirit to Save as Firm Default in that it persists immediately on its own, but different in that it is not destructive or shared, it just adds a new personal record, so it does not need the same heavyweight cannot-be-undone confirmation dialog Save as Firm Default required, a simple name-prompt is enough.
-
-Load Template is the mirror of Reset to Default: instead of loading the hardcoded system/firm default into editedWidgets, it loads a chosen saved template's widgets into editedWidgets. Same rule as Reset to Default: loading a template into the edit session does not persist anything by itself, the user still needs to click Done to actually save it as their real dashboard, and Cancel discards the whole thing exactly as it already does for every other edit-mode change.
+Right now the Load Template list rows have no hover feedback, so it's not visually obvious they're clickable or which one the cursor is over. This needs a background color change on hover using the same design tokens already used elsewhere in this file for hoverable rows or buttons, for example hover:bg-surface-input or similar already-established convention, not a new color invented for this.
 
 CHANGE INSTRUCTIONS:
 
-Add getTemplates, createTemplate(name, widgets), and deleteTemplate(templateId) methods to frontend/src/lib/api/dashboard.ts calling the three real /dashboard/templates endpoints.
-
-Add a "Save as Template" button in the edit-mode toolbar, near the existing Reset to Default and Save as Firm Default buttons, styled consistently with them. Clicking it opens a small prompt for a template name (a simple modal or inline input using the existing Modal component, whichever is less code given what's already in this file), and on confirming with a real name, calls createTemplate with that name and the current editedWidgets, shows a success toast using the same sonner pattern already used for Save as Firm Default, and does not exit edit mode or affect Done/Cancel.
-
-Add a "Load Template" button in the same toolbar area. Clicking it fetches the user's templates via getTemplates and shows them in a small list (reuse the Modal component), each with the template's name and a way to select it, plus a delete affordance per template using deleteTemplate, matching whatever list-row-with-delete pattern already exists elsewhere in this file if one does, otherwise a simple small X or trash icon per row. Selecting a template loads its widgets into editedWidgets exactly the way handleResetToDefault does, staying in edit mode, not persisting until Done. If the user has zero templates, show a plain empty state message rather than an empty list with no explanation.
+Add a hover background state to each template row's clickable element, using whatever hover convention is already used elsewhere in this file for similar list rows or buttons, check the existing className patterns before picking a value. Keep the delete X button's own hover state, if it has one, working independently, the row hover should not visually conflict with or obscure the X button.
 
 VERIFY AFTER ACT:
 
 cd /home/corby/jamm-os/frontend
 npm run build
 
-grep -n "Save as Template\|Load Template\|getTemplates\|createTemplate\|deleteTemplate" "src/app/(app)/dashboard/page.tsx" src/lib/api/dashboard.ts
+grep -n "hover:bg" "src/app/(app)/dashboard/page.tsx" | grep -i template
 
-git diff --stat
+git diff --stat "src/app/(app)/dashboard/page.tsx"
+
+This should be a very small, single-line-ish diff.
 
 MANUAL VERIFICATION:
 
-Restart the frontend dev server only, no backend changes were made. Reload /dashboard, enter Edit Dashboard, arrange something recognizable, click Save as Template, name it, confirm a success toast. Click Load Template, confirm the new template appears in the list with the right name. Rearrange the canvas into something different, click Load Template again, select the saved template, confirm the canvas reverts to the saved arrangement, still inside the same edit session, not yet persisted. Click Cancel, confirm the page reverts to whatever the real saved dashboard was before any of this testing, proving loading a template was genuinely undoable. Enter Edit Dashboard again, Load Template, select it again, click Done this time, reload the page, confirm the loaded template's arrangement actually persisted as the real dashboard. Delete the test template via the Load Template list's delete affordance, confirm it's gone from the list. Report back with a screenshot.
+Restart the frontend dev server only. Reload /dashboard, enter Edit Dashboard, click Load Template, hover over a template row, confirm it now highlights, confirm the X button is still separately clickable and its own hover still works. Report back with a screenshot.
 
 GIT:
 
 git add -A
-git commit -m "add save-as-template and load-a-template to Edit Dashboard mode on the real full-size canvas, reusing the exact pattern already proven for Reset to Default: loading a template into the edit session does not persist anything until Done, fully discardable via Cancel. Save as Template persists immediately as a new personal record without affecting the current edit session, similar in spirit to Save as Firm Default but without the heavyweight cannot-be-undone warning since it's additive and personal, not destructive or shared. The scaled-down mini-grid visual preview is a deliberate separate follow-up, not part of this task"
+git commit -m "add a hover highlight to Load Template list rows so it's visually clear which template is about to be selected, using the same hover convention already established elsewhere in this file"
 git pull --rebase origin main
 git push origin main
 git log --oneline -3
