@@ -666,6 +666,7 @@ function RecentFirmChatActivityWidget({ data }: { data: Record<string, unknown> 
 }
 
 function ClientHealthSnapshotWidget({ data }: { data: Record<string, unknown> }) {
+  const clientName = String(data.client_name ?? 'Client Health')
   const status = String(data.status ?? 'unknown')
   const reasons = (data.reasons ?? []) as Array<{ severity: string; text: string }>
   const statusColor = status === 'healthy' ? 'text-green-600 dark:text-green-400' : status === 'at_risk' ? 'text-amber-600 dark:text-amber-400' : 'text-red-600 dark:text-red-400'
@@ -673,7 +674,7 @@ function ClientHealthSnapshotWidget({ data }: { data: Record<string, unknown> })
   return (
     <div className="bg-surface-card dark:bg-dark-card rounded-[8px] border border-surface-border dark:border-dark-border shadow-sm overflow-hidden h-full flex flex-col">
       <div className="px-4 py-3 border-b border-surface-border dark:border-dark-border flex items-center gap-2 flex-shrink-0">
-        <span className="text-[13px] font-medium text-foreground">Client Health</span>
+        <span className="text-[13px] font-medium text-foreground">{clientName}</span>
         <span className={`text-[11px] font-medium ${statusColor}`}>{statusLabel}</span>
       </div>
       <div className="px-4 py-3 flex flex-col gap-2 overflow-y-auto flex-1">

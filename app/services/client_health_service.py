@@ -168,8 +168,8 @@ def compute_client_health(client_id: UUID, firm_id: UUID, db: Session) -> dict:
                 })
 
     if at_risk_reasons:
-        return {"status": "at_risk", "reasons": at_risk_reasons + needs_attention_reasons}
+        return {"client_name": client.name, "status": "at_risk", "reasons": at_risk_reasons + needs_attention_reasons}
     elif needs_attention_reasons:
-        return {"status": "needs_attention", "reasons": needs_attention_reasons}
+        return {"client_name": client.name, "status": "needs_attention", "reasons": needs_attention_reasons}
     else:
-        return {"status": "healthy", "reasons": [{"severity": "healthy", "text": "Everything is on track"}]}
+        return {"client_name": client.name, "status": "healthy", "reasons": [{"severity": "healthy", "text": "Everything is on track"}]}

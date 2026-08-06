@@ -74,7 +74,7 @@ This section exists because a past session confidently claimed specific files we
 
 # Section 3 - The task
 
-TASK: Build a config prompt for the two widgets that require a client_id (client_health_snapshot, single_client_quick_view), so they become addable through the gallery. Currently these two are excluded from the gallery entirely since no config UI exists yet.
+TASK: Fix client_health_snapshot returning no client_name, so the widget always displays generic "Client Health" with no indication of which client it's actually showing. Confirmed real gap: the response shape is { status, reasons[] }, no client identifier at all.
 
 USE: claude sonnet
 
@@ -86,39 +86,42 @@ State plainly that no path in this task resolves against /mnt/c/Users or any Win
 
 VERIFY BEFORE ACT:
 
-grep -n -B 5 -A 60 "function AddWidgetModal" "src/app/(app)/dashboard/page.tsx"
+grep -n -B 5 -A 40 "def compute_client_health" app/services/client_health_service.py
 
-grep -n "config_schema.length === 0" "src/app/(app)/dashboard/page.tsx"
+grep -n -B 5 -A 20 "function.*ClientHealth\|ClientHealthSnapshot" "src/app/(app)/dashboard/page.tsx"
 
-Paste the real output of both. Confirm the exact current gallery filtering logic (from the prior task that added the config_schema.length === 0 disabled-state check) and the real shape of a catalog entry's config_schema field for client_health_snapshot and single_client_quick_view, specifically the field key name expected (client_id) and its type value.
+Paste the real output of both. Confirm compute_client_health already has the Client object loaded in scope somewhere in its body, since it must know which client it's evaluating to compute health at all, and confirm the exact current frontend component so the fix adds a header display without restructuring anything else about it.
 
 WHAT THIS IS:
 
-client_health_snapshot and single_client_quick_view both have a config_schema with one required field for client_id, confirmed in batch 4a. The gallery currently either hides these two entirely or would add them with an empty config object, which would be wrong since the backend requires a real client_id and returns a 400 without one. Right now the app already has a working, real pattern for this exact kind of picker: NewTaskModal fetches clients via clientsApi.list(0, 100), maps items to {value: c.id, label: c.name}, and feeds that into the existing SelectInput component. This task reuses that exact pattern rather than inventing a new client-picker component.
+compute_client_health takes a client_id and returns health status, it necessarily already queries or has access to the Client row to do this. The fix is including client_name in the returned dict, the same low-risk pattern as the earlier assigned_to_name fix tonight, not new business logic, just surfacing a field that's already available internally. The frontend component then displays it in the header the same way single_client_quick_view already shows its client's name, "Acme Consulting LLC" not just "Client Health".
 
 CHANGE INSTRUCTIONS:
 
-In the Add Widget gallery, when a widget with a non-empty config_schema is clicked (currently this is only these 2 widgets, but write this generically keyed off config_schema having entries with type client_picker, not hardcoded to these 2 type_keys by name, so any future widget with the same config field type is automatically handled the same way), instead of adding the widget immediately, open a small second modal prompting for the required field, using the real SelectInput and clientsApi.list(0, 100) pattern from NewTaskModal for a client_id field specifically. On confirming the prompt, append the new widget instance to editedWidgets with config set to {client_id: <the selected value>}, using the same instance_id and positioning logic already used for the no-config gallery entries. Cancelling the prompt returns to the gallery without adding anything.
+In compute_client_health, add client_name to the returned dict, sourced from the same Client row already loaded to compute the health status, do not add a new query if the client object is already available in scope, only add one if it genuinely isn't already loaded.
 
-These two widgets should now actually appear in the gallery, remove whatever exclusion or hiding was previously applied to them, if the current filtering logic already naturally includes them once the config_schema.length === 0 check passes them through to the always-addable branch, confirm that's the case rather than assuming, based on the real VERIFY BEFORE ACT output.
+In the ClientHealthSnapshot frontend component, change the header to show the real client name from the response instead of the generic "Client Health" label, keeping the status badge (Healthy / At Risk) next to it the same way it renders now.
 
 VERIFY AFTER ACT:
 
-cd /home/corby/jamm-os/frontend
+cd /home/corby/jamm-os
+python3 -c "from app.main import app; print('app imports cleanly')"
+
+grep -n "client_name" app/services/client_health_service.py
+
+cd frontend
 npm run build
 
-grep -n "client_picker\|clientsApi" "src/app/(app)/dashboard/page.tsx"
-
-git diff --stat "src/app/(app)/dashboard/page.tsx"
+git diff --stat
 
 MANUAL VERIFICATION:
 
-Restart the frontend dev server only. Reload /dashboard, enter Edit Dashboard, open Add Widget, confirm Client Health Snapshot and Single Client Quick View now appear in the gallery. Click one, confirm a client picker prompt appears with real client names, not empty or broken. Select a real client, confirm it adds to the canvas and renders that specific client's real data, not an error or someone else's data. Add the same widget again with a different client selected, confirm both instances exist independently showing different clients. Click Done, reload, confirm both persisted with the correct client data still showing for each. Report back with a screenshot.
+Restart both the backend and the frontend, since this touches both. Reload /dashboard, confirm the existing Client Health widgets on the canvas now show the real client name in the header instead of generic "Client Health", for both the healthy one and the at-risk one already on the canvas from before this fix. If they still show the old generic header after a restart and reload, the saved widget data may need a fresh fetch, not just a display fix, report that plainly if it happens rather than assuming the fix alone resolves it. Report back with a screenshot.
 
 GIT:
 
 git add -A
-git commit -m "add a client picker config prompt for client_health_snapshot and single_client_quick_view, reusing the existing clientsApi.list and SelectInput pattern already used in NewTaskModal rather than building a new picker component, wired generically off config_schema field type so any future widget needing the same picker is handled the same way, these two widgets now appear and are fully addable in the Add Widget gallery"
+git commit -m "fix client_health_snapshot never returning client_name, so the widget always showed generic Client Health with no indication of which client it was evaluating, despite compute_client_health necessarily already having the client loaded internally to compute the status at all. Widget header now shows the real client name next to the health status badge, matching how single_client_quick_view already displays its client's identity"
 git pull --rebase origin main
 git push origin main
 git log --oneline -3
