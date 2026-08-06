@@ -19,7 +19,7 @@ from app.models.time_entry import TimeEntry
 from app.models.engagement import Engagement
 from app.models.client import Client
 from app.models.signature_envelope import SignatureEnvelope
-from app.models.dashboard_layout import DashboardLayout, FirmDefaultDashboardLayout
+from app.models.dashboard_layout import DashboardLayout, DashboardTemplate, FirmDefaultDashboardLayout
 from app.core.enums import InvoiceStatus, UserRole
 from app.core.dashboard_widgets import WIDGET_REGISTRY, WIDGET_BY_TYPE_KEY
 from app.api.concierge.functions import (
@@ -427,6 +427,11 @@ class LayoutIn(BaseModel):
     widgets: list[WidgetInstanceIn]
 
 
+class TemplateIn(BaseModel):
+    name: str
+    widgets: list[WidgetInstanceIn]
+
+
 # ---------------------------------------------------------------------------
 # Existing endpoint (behavior-preserving, now uses extracted section fns)
 # ---------------------------------------------------------------------------
@@ -597,3 +602,68 @@ def get_widget_data(
     if section_fn is None:
         raise HTTPException(status_code=404, detail=f"No data function for: {type_key}")
     return section_fn(db, current_firm)
+
+
+# ---------------------------------------------------------------------------
+# Dashboard templates
+# ---------------------------------------------------------------------------
+
+@router.get("/templates")
+def get_templates(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_manager_or_above),
+):
+    rows = db.execute(
+        select(DashboardTemplate)
+        .where(DashboardTemplate.user_id == current_user.id)
+        .order_by(DashboardTemplate.created_at.desc())
+    ).scalars().all()
+    return [
+        {
+            "id": str(r.id),
+            "name": r.name,
+            "widgets": r.widgets,
+            "created_at": r.created_at.isoformat(),
+        }
+        for r in rows
+    ]
+
+
+@router.post("/templates", status_code=201)
+def create_template(
+    payload: TemplateIn,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_manager_or_above),
+):
+    row = DashboardTemplate(
+        user_id=current_user.id,
+        name=payload.name,
+        widgets=[w.model_dump() for w in payload.widgets],
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return {
+        "id": str(row.id),
+        "name": row.name,
+        "widgets": row.widgets,
+        "created_at": row.created_at.isoformat(),
+    }
+
+
+@router.delete("/templates/{template_id}", status_code=204)
+def delete_template(
+    template_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_manager_or_above),
+):
+    row = db.execute(
+        select(DashboardTemplate).where(
+            DashboardTemplate.id == template_id,
+            DashboardTemplate.user_id == current_user.id,
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Template not found")
+    db.delete(row)
+    db.commit()

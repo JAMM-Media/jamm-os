@@ -74,7 +74,7 @@ This section exists because a past session confidently claimed specific files we
 
 # Section 3 - The task
 
-TASK: Add a "Save as Firm Default" action to Edit Dashboard mode, visible only to firm owners, that persists the current in-session arrangement as the firm-wide default new managers get seeded with. The backend endpoint (PUT /dashboard/firm-default-layout, gated require_firm_owner) already exists and has never been wired to any frontend action.
+TASK: Build the backend for personal dashboard templates: a new table, and endpoints to list, create, and delete a user's own saved templates. This is backend only, no mini-grid UI yet, that is a follow-up task.
 
 USE: claude sonnet
 
@@ -86,45 +86,55 @@ State plainly that no path in this task resolves against /mnt/c/Users or any Win
 
 VERIFY BEFORE ACT:
 
-grep -n -B 3 -A 15 "@router.put(\"/firm-default-layout\")" app/api/dashboard.py
+grep -n -B 3 -A 20 "class DashboardLayout" app/models/dashboard_layout.py
 
-grep -n "useAuth" "src/app/(app)/dashboard/page.tsx"
+.venv/bin/alembic heads
 
-grep -n -B 2 -A 10 "Reset to Default\|handleResetToDefault" "src/app/(app)/dashboard/page.tsx"
-
-Paste the real output of all three. Confirm the exact real request body shape PUT /firm-default-layout expects, confirm whether useAuth is already imported in the dashboard page or needs adding, and confirm the real Reset to Default implementation from earlier tonight so this new action follows the same established pattern rather than inventing a new one.
+Paste the real output. Confirm the exact real conventions already used for DashboardLayout (Base import, Mapped/mapped_column style, JSONB widgets column, timestamp pattern) since dashboard_templates follows the identical pattern, just with a name column added and no uniqueness constraint on user_id, since one user can have many templates, unlike dashboard_layouts which is one row per user. Confirm alembic heads shows exactly one head. If more than one, stop and report back, do not write a migration against branched history.
 
 WHAT THIS IS:
 
-This action is meaningfully different from Done, which saves the current user's own personal layout, and from Reset to Default, which loads a default into the edit session without persisting anything on its own. Save as Firm Default writes directly to the firm-wide default via a dedicated endpoint, separate from the user's own DashboardLayout row entirely. Unlike Reset to Default and every other edit-mode action, this one is not something Cancel can undo once clicked, since it is a direct write to a shared firm record the moment it is clicked, not a change to the local edit session, this needs its own explicit confirmation dialog making that plain, using the same useConfirm pattern already used for Reset to Default's confirmation.
-
-This action does not exit edit mode or affect the current user's own personal Done/Cancel flow at all. Someone can click Save as Firm Default and then still separately click Done or Cancel for their own personal layout exactly as before, these are two independent things happening to two independent records.
+A dashboard template is a named, saved widgets arrangement personal to the user who created it, following Ben's own decision that templates are personal, not firm-shared, since Dashboard access is already manager-or-above only with no broader population to share to. The widgets column holds the exact same shape already used everywhere else in this feature (instance_id, type_key, grid_x, grid_y, size, minimized, config), no new object shape. A user can have any number of templates, this is not a one-row-per-user table like DashboardLayout.
 
 CHANGE INSTRUCTIONS:
 
-Add a putFirmDefaultLayout method to frontend/src/lib/api/dashboard.ts calling PUT /dashboard/firm-default-layout with the real confirmed request body shape.
+Add a new model class, DashboardTemplate, to app/models/dashboard_layout.py, following the exact conventions already used for DashboardLayout in that same file: id, user_id as a ForeignKey to users.id with ondelete="CASCADE" and index=True but NOT unique since one user has many templates, name as a String column, widgets as JSONB with default=list, and the standard created_at and updated_at pattern.
 
-In the dashboard page, get the current user's role from useAuth (import it if not already present). Add a "Save as Firm Default" button in the edit-mode toolbar, visible only when the current user's role is firm_owner, styled as a secondary/lighter action similar to Reset to Default rather than a primary button, since this is an infrequent administrative action, not a routine one.
+Add three endpoints to the existing router in app/api/dashboard.py, all gated require_manager_or_above:
+GET /dashboard/templates — returns all of the current user's templates, ordered by created_at descending, most recent first.
+POST /dashboard/templates — accepts {name, widgets}, creates a new DashboardTemplate row for the current user, returns the created template including its real id.
+DELETE /dashboard/templates/{template_id} — deletes a template, but only if it belongs to the current user, return a 404 if the template_id does not exist or does not belong to the requesting user, do not leak whether a template_id exists for someone else by returning a different error for that case, both cases return the same 404.
 
-Clicking it opens a confirm dialog using the existing useConfirm pattern, with a message plainly stating this immediately sets the firm-wide default for new managers and cannot be undone with Cancel the way other edit-mode changes can. On confirmation, call putFirmDefaultLayout with the current editedWidgets array (the in-session arrangement, whatever the owner has currently arranged, whether or not they've clicked Done for their own personal layout yet), show a toast or equivalent success confirmation using whatever success-notification pattern already exists elsewhere in this file or the app (check for an existing toast/sonner usage before adding a new one), and remain in edit mode afterward exactly as before, not exiting or resetting anything else.
+Write the migration by hand following the same exact structure as the batch 1 migration, sa.Uuid() column type, ondelete='CASCADE', index creation via op.f().
 
 VERIFY AFTER ACT:
 
-cd /home/corby/jamm-os/frontend
-npm run build
+grep -n "class DashboardTemplate" app/models/dashboard_layout.py
 
-grep -n "Save as Firm Default\|putFirmDefaultLayout\|firm_owner" "src/app/(app)/dashboard/page.tsx"
+grep -n "@router.get(\"/templates\")\|@router.post(\"/templates\")\|@router.delete(\"/templates/{template_id}\")" app/api/dashboard.py
 
-git diff --stat
+.venv/bin/alembic heads
+
+python3 -c "
+import sys
+sys.path.insert(0, '/home/corby/jamm-os')
+from app.models.dashboard_layout import DashboardTemplate
+print('model imports cleanly')
+"
+
+cd /home/corby/jamm-os
+python3 -c "from app.main import app; print('app imports cleanly')"
+
+alembic heads must show exactly one head, the new migration's revision id. Run .venv/bin/alembic upgrade head and confirm it applies with no errors.
 
 MANUAL VERIFICATION:
 
-Restart the frontend dev server only, no backend changes were made. Reload /dashboard as owner@riverside-demo.com, enter Edit Dashboard, confirm Save as Firm Default is visible. Log in instead as a manager-role test account if one exists, enter Edit Dashboard, confirm the button does not appear at all for a non-owner. Back as the owner, arrange the dashboard into something recognizable, click Save as Firm Default, confirm the dialog appears with clear undo-warning language, confirm it, confirm a success indicator appears and edit mode stays active. Verify the real result by calling GET /dashboard/reset directly (via curl or /docs) and confirming the returned widgets now match what was just saved, not the old system default. Report back with a screenshot and the real API response.
+Restart the backend. Using a real token as owner@riverside-demo.com, call POST /dashboard/templates with a real name and a small real widgets array (can reuse the current arrangement from GET /dashboard/layout), confirm it returns a real created template with a real id. Call GET /dashboard/templates, confirm the new template appears in the list. Call DELETE /dashboard/templates/{that id}, confirm it succeeds, call GET /dashboard/templates again, confirm it's gone. Try DELETE on a random nonexistent uuid, confirm a real 404, not a 500 or silent success. Report back the real responses from each of these calls.
 
 GIT:
 
 git add -A
-git commit -m "add Save as Firm Default to Edit Dashboard mode, visible only to firm owners, wiring the PUT /dashboard/firm-default-layout endpoint that has existed since batch 1 but was never connected to any frontend action. This is a direct, immediate write to the shared firm-wide default, not undoable via Cancel like every other edit-mode action, so it uses its own explicit confirmation dialog stating that plainly. Independent of the current user's own personal Done/Cancel flow, both can be used separately in the same edit session"
+git commit -m "add the backend for personal dashboard templates: a new dashboard_templates table, one row per saved template rather than one per user, and GET/POST/DELETE endpoints scoped to the current user's own templates, following the exact widgets JSONB shape and model conventions already established for dashboard_layouts. This is backend only, the mini-grid template planning UI is a separate follow-up task, made feasible by confirming react-grid-layout's real exported createScaledStrategy positionStrategy keeps drag and resize coordinate math correct at reduced scale"
 git pull --rebase origin main
 git push origin main
 git log --oneline -3
