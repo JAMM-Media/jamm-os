@@ -945,6 +945,7 @@ def get_task_status(
             Task.status,
             Task.due_date,
             Task.is_completed,
+            Task.assigned_to,
             Client.name.label("client_name"),
             Engagement.name.label("engagement_name"),
             User.full_name.label("assigned_to_name"),
@@ -972,7 +973,8 @@ def get_task_status(
             "status": r.status,
             "client_name": r.client_name,
             "engagement_name": r.engagement_name,
-            "assigned_to": r.assigned_to_name,
+            "assigned_to": str(r.assigned_to) if r.assigned_to else None,
+            "assigned_to_name": r.assigned_to_name,
             "due_date": r.due_date.isoformat() if r.due_date else None,
             "overdue": r.due_date is not None and r.due_date < today,
         }
