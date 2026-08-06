@@ -74,9 +74,9 @@ This section exists because a past session confidently claimed specific files we
 
 # Section 3 - The task
 
-TASK: Add the 7 remaining widget types to the registry and wire GET /dashboard/widgets/{type_key}/data to accept and use per-instance config for the widgets that need it (client_id for the two client-specific widgets, assignee and status filters for My Tasks). This batch is backend only, no frontend gallery yet, that is batch 4b.
+TASK: Diagnose why assigned_to_name comes back None on every task in get_task_status, despite Task.assigned_to holding real, confirmed user UUIDs that match real users. The filtering logic itself is proven correct with real data, this is isolated to the display name field.
 
-USE: claude fable-5
+USE: claude sonnet
 
 ENVIRONMENT SANITY CHECK:
 
@@ -86,58 +86,37 @@ State plainly that no path in this task resolves against /mnt/c/Users or any Win
 
 VERIFY BEFORE ACT:
 
-grep -n -A 30 "def get_task_status" app/api/concierge/functions.py
+grep -n -B 2 -A 5 "class Task" app/models/task.py
 
-grep -n -A 20 "def compute_client_health" app/services/client_health_service.py
+grep -n "assigned_to" app/models/task.py
 
-grep -n -A 10 "def get_client_full_snapshot" app/api/concierge/functions.py
+grep -n -B 2 -A 5 "class User" app/models/user.py | head -10
 
-grep -n -A 10 "def get_outstanding_document_requests\|def get_time_tracking_detail\|def get_recent_firm_chat_activity" app/api/concierge/functions.py
-
-Paste the real output of all four. Confirm the exact current signature of get_task_status, compute_client_health, and get_client_full_snapshot, since these three are the ones that need real parameters added or passed through, not just registered.
+Paste the real output of all three. I want to see the actual column type and definition of Task.assigned_to, and confirm User.id's real type, since a mismatch here, for example assigned_to being stored as a string while User.id is a real UUID column, or the reverse, would make an outerjoin silently match nothing without raising any error, which fully explains real UUIDs being present in the raw data while a join against them returns nothing.
 
 WHAT THIS IS:
 
-Batch 1 built the registry, layout endpoints, and data endpoint for the 9 launch-catalog widgets, all firm-wide with no per-instance configuration. This batch adds the 7 remaining widgets from the spec's fuller catalog: My Tasks, Client Health Snapshot, Client Communication Gap, Outstanding Document Requests, Unbilled Hours, Single Client Quick View, and Recent Firm Chat Activity. Three of these are configurable: Client Health Snapshot and Single Client Quick View both need a client_id, since they show one specific client's data, not firm-wide data, and My Tasks needs an optional assignee filter and an optional status filter.
-
-get_task_status currently has no filter parameters at all, it returns every incomplete task firm-wide. Adding assignee_id and status_filter as new optional parameters to this function is parameterizing existing, already-tested logic, not inventing new business logic, the underlying query and its correctness are unchanged, only which rows get returned changes based on what's passed in. This is different from the client_id case, where compute_client_health and get_client_full_snapshot already require a client_id as a real parameter, since they were built as per-client tools for the Concierge, so those two just need their existing required parameter passed through from the widget's config, no new logic there at all.
-
-The data endpoint itself needs to accept config as query parameters and only apply them to the three widgets that use them, every other widget type ignores any config passed to it, matching a firm-wide fixed view exactly as before.
+Live testing tonight confirmed Task.assigned_to holds real UUIDs matching real users (confirmed directly against GET /tasks/), and confirmed the assignee_id filter in get_task_status correctly narrows results using those same UUIDs. But the outerjoin in the same function that's supposed to resolve assigned_to into a real name via User.full_name returns None for every row, even ones with a confirmed real assignee. A silently failing join, not an error, is the signature of a type or format mismatch between the two sides of the join condition, not a logic bug in the join itself.
 
 CHANGE INSTRUCTIONS:
 
-In app/core/dashboard_widgets.py, add 7 new entries to the registry. my_tasks in category tasks, allowed_sizes medium and large, config_schema with an assignee_id field (type staff_picker, not required, meaning unset shows all staff's tasks) and a status_filter field (type select, not required), role_requirement manager_or_above. client_health_snapshot in category clients, allowed_sizes small and medium, config_schema with a required client_id field (type client_picker), role_requirement manager_or_above. client_communication_gap in category clients, allowed_sizes medium and large, no config_schema, role_requirement manager_or_above. outstanding_document_requests in category documents, allowed_sizes medium and large, no config_schema, role_requirement manager_or_above. unbilled_hours in category billing, allowed_sizes medium and large, no config_schema, role_requirement manager_or_above. single_client_quick_view in category clients, allowed_sizes small and medium, config_schema with a required client_id field, role_requirement manager_or_above. recent_firm_chat_activity in category overview, allowed_sizes medium and large, no config_schema, role_requirement manager_or_above.
-
-Add assignee_id and status_filter as new optional parameters to get_task_status in app/api/concierge/functions.py, defaulting to None, meaning no filtering, so any existing caller of this function that does not pass them gets identical behavior to today. When assignee_id is provided, filter the task rows to that user. When status_filter is provided, filter to that status. Do not change the query's existing joins or the shape of what it returns beyond this filtering, this is not a rewrite.
-
-In the GET /dashboard/widgets/{type_key}/data endpoint in app/api/dashboard.py, accept an optional config query parameter as a JSON-encoded string, or individual optional query parameters for client_id, assignee_id, and status_filter, whichever is simpler given the existing endpoint's real current parameter style, check how other endpoints in this file already accept optional filters before choosing. For my_tasks, pass assignee_id and status_filter through to get_task_status if provided. For client_health_snapshot, require client_id, return a 400 with a clear message if it's missing, and call compute_client_health with it. For single_client_quick_view, require client_id the same way and call get_client_full_snapshot with it. For every other type_key, including all 9 from batch 1 and the 4 new non-configurable ones in this batch, ignore any config parameters entirely, they are not used.
-
-Extend the _WIDGET_DISPATCH mapping to include all 7 new type_keys pointing at their real functions, get_client_communication_gap for client_communication_gap, get_outstanding_document_requests for outstanding_document_requests, get_time_tracking_detail for unbilled_hours, get_recent_firm_chat_activity for recent_firm_chat_activity, compute_client_health for client_health_snapshot, get_client_full_snapshot for single_client_quick_view, get_task_status for my_tasks.
+Based on what the real model definitions show, fix the actual mismatch causing the join to fail. If it's a type mismatch, cast appropriately in the join condition rather than changing either column's underlying type, since changing a column type is a much bigger, riskier change than fixing how one query joins against it. If the real cause turns out to be something other than a type mismatch, for example assigned_to actually storing something other than a raw user id, report the real finding with the specific evidence and stop before applying a fix, rather than guessing a workaround.
 
 VERIFY AFTER ACT:
-
-grep -n "my_tasks\|client_health_snapshot\|client_communication_gap\|outstanding_document_requests\|unbilled_hours\|single_client_quick_view\|recent_firm_chat_activity" app/core/dashboard_widgets.py
-
-python3 -c "
-import sys
-sys.path.insert(0, '/home/corby/jamm-os')
-from app.core.dashboard_widgets import WIDGET_REGISTRY
-print('registry has', len(WIDGET_REGISTRY), 'entries')
-"
-
-This must print 16, the original 9 plus these 7.
 
 cd /home/corby/jamm-os
 python3 -c "from app.main import app; print('app imports cleanly')"
 
+git diff --stat app/api/concierge/functions.py
+
 MANUAL VERIFICATION:
 
-Restart the backend. Using a real token as owner@riverside-demo.com, call GET /dashboard/widget-catalog and confirm all 16 widgets are present. Call GET /dashboard/widgets/client_health_snapshot/data with no client_id and confirm it returns a real 400 error, not a 500 or a silent empty response. Call it again with a real client_id from the Riverside test data and confirm it returns real health data for that specific client. Call GET /dashboard/widgets/my_tasks/data with no config and confirm it returns tasks firm-wide same as before this change, then call it again with an assignee_id for one real staff member and confirm the results are actually filtered to that person.
+Restart the backend. Using a real token as owner@riverside-demo.com, call GET /dashboard/widgets/my_tasks/data?assignee_id=0e5754bd-612f-4fdc-b276-17e86d5890c7 again and confirm assigned_to_name now shows "James Okafor" on the returned tasks instead of None. Report the real response.
 
 GIT:
 
 git add -A
-git commit -m "add the 7 remaining launch-catalog widgets to the registry and wire per-instance config through the widget data endpoint: client_health_snapshot and single_client_quick_view require a client_id and reuse the existing per-client Concierge functions unchanged, my_tasks gained new optional assignee_id and status_filter parameters on get_task_status, parameterizing existing logic rather than inventing new business logic, every other widget type ignores config entirely and remains firm-wide"
+git commit -m "fix assigned_to_name resolving to None on every task in get_task_status despite Task.assigned_to holding real, confirmed user ids, root cause was [fill in the real cause found], the assignee_id filter itself was already correct and unaffected, this only fixes the display name join"
 git pull --rebase origin main
 git push origin main
 
