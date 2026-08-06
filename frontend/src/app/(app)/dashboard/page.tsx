@@ -1,7 +1,7 @@
 // path: frontend/src/app/(app)/dashboard/page.tsx
 'use client'
 
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useMemo, useCallback, useEffect } from 'react'
 import Link from 'next/link'
 import { useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -13,7 +13,8 @@ import { dashboardApi } from '@/lib/api/dashboard'
 import { reportsApi } from '@/lib/api/reports'
 import type { DashboardWidgetInstance, OverdueEngagementItem, UpcomingDeadlineItem, StaffUtilizationItem, UnsignedDocumentItem, WidgetCatalogItem } from '@/lib/api/dashboard'
 import type { WIPSummary } from '@/lib/api/reports'
-import api from '@/lib/api'
+import api, { clientsApi } from '@/lib/api'
+import { SelectInput } from '@/components/ui/SelectInput'
 import { formatEngagementType } from '@/lib/utils'
 import { ConciergeSpotlight } from '@/components/dashboard/ConciergeSpotlight'
 import { useConfirm } from '@/lib/hooks/useConfirm'
@@ -946,12 +947,26 @@ function AddWidgetModal({
   open: boolean
   onClose: () => void
   catalog: WidgetCatalogItem[]
-  onAdd: (entry: WidgetCatalogItem) => void
+  onAdd: (entry: WidgetCatalogItem, config?: Record<string, unknown>) => void
   editedWidgets: DashboardWidgetInstance[]
 }) {
-  const addable = catalog.filter((w) => w.config_schema.every((f) => !f.required))
+  const [pendingEntry, setPendingEntry] = useState<WidgetCatalogItem | null>(null)
+  const [selectedClientId, setSelectedClientId] = useState('')
+  const [clients, setClients] = useState<{ value: string; label: string }[]>([])
+  const [clientsLoading, setClientsLoading] = useState(false)
 
-  const grouped = addable.reduce<Record<string, WidgetCatalogItem[]>>((acc, w) => {
+  useEffect(() => {
+    if (!pendingEntry) return
+    if (!pendingEntry.config_schema.some((f) => f.type === 'client_picker')) return
+    setClientsLoading(true)
+    clientsApi
+      .list(0, 100)
+      .then(({ items }) => setClients(items.map((c) => ({ value: c.id, label: c.name }))))
+      .catch(() => setClients([]))
+      .finally(() => setClientsLoading(false))
+  }, [pendingEntry])
+
+  const grouped = catalog.reduce<Record<string, WidgetCatalogItem[]>>((acc, w) => {
     if (!acc[w.category]) acc[w.category] = []
     acc[w.category].push(w)
     return acc
@@ -959,9 +974,63 @@ function AddWidgetModal({
 
   const categories = Object.keys(grouped).sort()
 
+  function handleEntryClick(entry: WidgetCatalogItem) {
+    if (entry.config_schema.some((f) => f.type === 'client_picker')) {
+      setSelectedClientId('')
+      setClients([])
+      setPendingEntry(entry)
+    } else {
+      onAdd(entry)
+    }
+  }
+
+  function handleConfigConfirm() {
+    if (!pendingEntry || !selectedClientId) return
+    const config: Record<string, unknown> = {}
+    pendingEntry.config_schema.forEach((f) => {
+      if (f.type === 'client_picker') config[f.field] = selectedClientId
+    })
+    onAdd(pendingEntry, config)
+    setPendingEntry(null)
+    setSelectedClientId('')
+  }
+
+  function handleConfigCancel() {
+    setPendingEntry(null)
+    setSelectedClientId('')
+  }
+
+  const modalTitle = pendingEntry ? `Configure ${pendingEntry.display_name}` : 'Add Widget'
+  const modalClose = pendingEntry ? handleConfigCancel : onClose
+
   return (
-    <Modal open={open} onClose={onClose} title="Add Widget" size="lg">
-      {categories.length === 0 ? (
+    <Modal open={open} onClose={modalClose} title={modalTitle} size="lg">
+      {pendingEntry ? (
+        <div className="flex flex-col gap-4">
+          <p className="text-[13px] text-muted-foreground">Select a client for this widget.</p>
+          <SelectInput
+            value={selectedClientId}
+            onChange={(e) => setSelectedClientId(e.target.value)}
+            options={clients}
+            placeholder={clientsLoading ? 'Loading clients...' : 'Select client'}
+          />
+          <div className="flex justify-end gap-2">
+            <button
+              onClick={handleConfigCancel}
+              className="text-[13px] font-medium px-3.5 py-1.5 rounded border border-surface-border dark:border-dark-border text-foreground hover:bg-surface-input dark:hover:bg-dark-page transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleConfigConfirm}
+              disabled={!selectedClientId}
+              className="text-[13px] font-medium px-3.5 py-1.5 rounded bg-brand text-white hover:opacity-90 disabled:opacity-50 transition-opacity"
+            >
+              Add Widget
+            </button>
+          </div>
+        </div>
+      ) : categories.length === 0 ? (
         <p className="text-[13px] text-muted-foreground text-center py-6">No widgets available to add.</p>
       ) : (
         <div className="flex flex-col gap-6">
@@ -987,7 +1056,7 @@ function AddWidgetModal({
                   return (
                     <button
                       key={entry.type_key}
-                      onClick={() => onAdd(entry)}
+                      onClick={() => handleEntryClick(entry)}
                       className="text-left px-3.5 py-3 rounded-[8px] border border-surface-border dark:border-dark-border bg-surface-card dark:bg-dark-card hover:bg-surface-input dark:hover:bg-dark-page transition-colors"
                     >
                       <p className="text-[13px] font-medium text-foreground">{entry.display_name}</p>
@@ -1107,7 +1176,7 @@ export default function DashboardPage() {
     }
   }
 
-  function handleAddWidgetFromGallery(entry: WidgetCatalogItem) {
+  function handleAddWidgetFromGallery(entry: WidgetCatalogItem, config: Record<string, unknown> = {}) {
     const maxBottom = editedWidgets.reduce((acc, w) => {
       const span = SIZE_TO_SPAN[w.size] ?? SIZE_TO_SPAN.medium
       return Math.max(acc, w.grid_y + span.h)
@@ -1119,7 +1188,7 @@ export default function DashboardPage() {
       grid_y: maxBottom,
       size: (entry.allowed_sizes[0] ?? 'medium') as 'small' | 'medium' | 'large',
       minimized: false,
-      config: {},
+      config,
     }
     setEditedWidgets((prev) => [...prev, newWidget])
     setShowAddWidget(false)

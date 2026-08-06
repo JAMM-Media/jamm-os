@@ -74,9 +74,9 @@ This section exists because a past session confidently claimed specific files we
 
 # Section 3 - The task
 
-TASK: Build real frontend rendering for the 7 widget types added to the backend in batch 4a (my_tasks, client_health_snapshot, client_communication_gap, outstanding_document_requests, unbilled_hours, single_client_quick_view, recent_firm_chat_activity). These are currently addable through the gallery and save correctly, but render as literal "Unknown widget: X" text since no frontend component exists for them, the widget-to-component lookup only covers the original 9 launch-catalog types.
+TASK: Build a config prompt for the two widgets that require a client_id (client_health_snapshot, single_client_quick_view), so they become addable through the gallery. Currently these two are excluded from the gallery entirely since no config UI exists yet.
 
-USE: claude fable-5
+USE: claude sonnet
 
 ENVIRONMENT SANITY CHECK:
 
@@ -86,53 +86,39 @@ State plainly that no path in this task resolves against /mnt/c/Users or any Win
 
 VERIFY BEFORE ACT:
 
-grep -n -B 3 -A 15 "Unknown widget" "src/app/(app)/dashboard/page.tsx"
+grep -n -B 5 -A 60 "function AddWidgetModal" "src/app/(app)/dashboard/page.tsx"
 
-grep -n -A 15 "def get_task_status\|def compute_client_health\|def get_client_communication_gap\|def get_outstanding_document_requests\|def get_time_tracking_detail\|def get_client_full_snapshot\|def get_recent_firm_chat_activity" /home/corby/jamm-os/app/api/concierge/functions.py /home/corby/jamm-os/app/services/client_health_service.py
+grep -n "config_schema.length === 0" "src/app/(app)/dashboard/page.tsx"
 
-curl -s -X POST http://localhost:8000/auth/token -H "Content-Type: application/json" -d '{"username": "owner@riverside-demo.com", "password": "Demo2026x"}'
-
-Paste all real output. For the curl, use the returned token to also call each of these 7 live and paste the real JSON response shape for each:
-GET /dashboard/widgets/my_tasks/data
-GET /dashboard/widgets/client_communication_gap/data
-GET /dashboard/widgets/outstanding_document_requests/data
-GET /dashboard/widgets/unbilled_hours/data
-GET /dashboard/widgets/recent_firm_chat_activity/data
-For client_health_snapshot and single_client_quick_view, use client_id=bd01c05c-451f-4704-b5f8-ca69f989fb38 as a real known test client.
-
-Do not write any component against a guessed or assumed response shape, only against what these real calls actually return.
+Paste the real output of both. Confirm the exact current gallery filtering logic (from the prior task that added the config_schema.length === 0 disabled-state check) and the real shape of a catalog entry's config_schema field for client_health_snapshot and single_client_quick_view, specifically the field key name expected (client_id) and its type value.
 
 WHAT THIS IS:
 
-The widget-to-component lookup in the dashboard page currently only has cases for the 9 launch-catalog widgets, falling through to a literal "Unknown widget" message for anything else, which is exactly what's happening for these 7. Each of these widgets already has real, working backend data, confirmed live in this task's own verification step, this is purely a missing frontend rendering problem, not a data problem. Follow the same pattern already established for the 9 existing widgets: a small presentational component per widget type, using the same design tokens (bg-surface-card, rounded-[8px], border-surface-border, skeleton-while-loading convention) already used throughout this file, with an empty state for when there's genuinely nothing to show, matching whatever empty-state phrasing convention is already used on that data's real source page if one exists (documents page, timesheets page, firm chat page), not invented fresh.
+client_health_snapshot and single_client_quick_view both have a config_schema with one required field for client_id, confirmed in batch 4a. The gallery currently either hides these two entirely or would add them with an empty config object, which would be wrong since the backend requires a real client_id and returns a 400 without one. Right now the app already has a working, real pattern for this exact kind of picker: NewTaskModal fetches clients via clientsApi.list(0, 100), maps items to {value: c.id, label: c.name}, and feeds that into the existing SelectInput component. This task reuses that exact pattern rather than inventing a new client-picker component.
 
 CHANGE INSTRUCTIONS:
 
-Add 7 new presentational components to the dashboard page, one per widget type, each rendering the real fields confirmed in VERIFY BEFORE ACT for that endpoint. Keep each one visually consistent with the existing 9, header with the widget's display name, content area below, empty state styled the same as UpcomingDeadlinesList or OverdueEngagementsTable's existing empty states (green checkmark-style success copy for a genuinely empty/good state).
+In the Add Widget gallery, when a widget with a non-empty config_schema is clicked (currently this is only these 2 widgets, but write this generically keyed off config_schema having entries with type client_picker, not hardcoded to these 2 type_keys by name, so any future widget with the same config field type is automatically handled the same way), instead of adding the widget immediately, open a small second modal prompting for the required field, using the real SelectInput and clientsApi.list(0, 100) pattern from NewTaskModal for a client_id field specifically. On confirming the prompt, append the new widget instance to editedWidgets with config set to {client_id: <the selected value>}, using the same instance_id and positioning logic already used for the no-config gallery entries. Cancelling the prompt returns to the gallery without adding anything.
 
-For client_health_snapshot and single_client_quick_view specifically, these two require a client_id from config and are not yet addable through the gallery, since the client-picker UI is a separate not-yet-built task, batch 4c. Build their rendering components now anyway so they're ready, but it's expected they won't be reachable through the UI yet, note this plainly in the report rather than trying to work around it.
-
-Add all 7 new type_keys to the existing widget-to-component lookup, replacing the current fallback to "Unknown widget" for these specific keys with their real new components.
+These two widgets should now actually appear in the gallery, remove whatever exclusion or hiding was previously applied to them, if the current filtering logic already naturally includes them once the config_schema.length === 0 check passes them through to the always-addable branch, confirm that's the case rather than assuming, based on the real VERIFY BEFORE ACT output.
 
 VERIFY AFTER ACT:
 
 cd /home/corby/jamm-os/frontend
 npm run build
 
-grep -n "Unknown widget" "src/app/(app)/dashboard/page.tsx"
-
-This should now only match the fallback case itself for genuinely unrecognized type_keys, not any of these 7 by name.
+grep -n "client_picker\|clientsApi" "src/app/(app)/dashboard/page.tsx"
 
 git diff --stat "src/app/(app)/dashboard/page.tsx"
 
 MANUAL VERIFICATION:
 
-Restart the frontend dev server only. Reload /dashboard, enter Edit Dashboard, open Add Widget, add my_tasks and recent_firm_chat_activity (or any 2-3 of the 5 gallery-reachable new widgets), confirm they now render real content, not "Unknown widget" text. Click Done, reload, confirm they persisted with real content still showing. Report back with a screenshot.
+Restart the frontend dev server only. Reload /dashboard, enter Edit Dashboard, open Add Widget, confirm Client Health Snapshot and Single Client Quick View now appear in the gallery. Click one, confirm a client picker prompt appears with real client names, not empty or broken. Select a real client, confirm it adds to the canvas and renders that specific client's real data, not an error or someone else's data. Add the same widget again with a different client selected, confirm both instances exist independently showing different clients. Click Done, reload, confirm both persisted with the correct client data still showing for each. Report back with a screenshot.
 
 GIT:
 
 git add -A
-git commit -m "add real frontend rendering for the 7 batch 4a widget types (my_tasks, client_health_snapshot, client_communication_gap, outstanding_document_requests, unbilled_hours, single_client_quick_view, recent_firm_chat_activity), replacing the Unknown widget fallback these previously hit since only the original 9 launch-catalog widgets had components. client_health_snapshot and single_client_quick_view components are built but not yet reachable through the gallery, pending the client-picker UI in batch 4c"
+git commit -m "add a client picker config prompt for client_health_snapshot and single_client_quick_view, reusing the existing clientsApi.list and SelectInput pattern already used in NewTaskModal rather than building a new picker component, wired generically off config_schema field type so any future widget needing the same picker is handled the same way, these two widgets now appear and are fully addable in the Add Widget gallery"
 git pull --rebase origin main
 git push origin main
 git log --oneline -3
