@@ -74,7 +74,7 @@ This section exists because a past session confidently claimed specific files we
 
 # Section 3 - The task
 
-TASK: Diagnose why assigned_to_name comes back None on every task in get_task_status, despite Task.assigned_to holding real, confirmed user UUIDs that match real users. The filtering logic itself is proven correct with real data, this is isolated to the display name field.
+TASK: Fix mounted being permanently stuck false in useContainerWidth, confirmed with real browser evidence: the debug text read exactly "MOUNTED FALSE width=1280" on every load, meaning the initial synchronous measurement never runs and mounted never flips true, leaving the grid canvas permanently empty.
 
 USE: claude sonnet
 
@@ -86,38 +86,35 @@ State plainly that no path in this task resolves against /mnt/c/Users or any Win
 
 VERIFY BEFORE ACT:
 
-grep -n -B 2 -A 5 "class Task" app/models/task.py
+grep -n -B 5 -A 50 "function useContainerWidth" node_modules/react-grid-layout/dist/*.js
 
-grep -n "assigned_to" app/models/task.py
-
-grep -n -B 2 -A 5 "class User" app/models/user.py | head -10
-
-Paste the real output of all three. I want to see the actual column type and definition of Task.assigned_to, and confirm User.id's real type, since a mismatch here, for example assigned_to being stored as a string while User.id is a real UUID column, or the reverse, would make an outerjoin silently match nothing without raising any error, which fully explains real UUIDs being present in the raw data while a join against them returns nothing.
+Paste the real output. Confirm exactly what condition the hook's internal useEffect checks before calling measureWidth and setting mounted true, and confirm whether that effect depends on containerRef.current already being non-null at the moment it runs.
 
 WHAT THIS IS:
 
-Live testing tonight confirmed Task.assigned_to holds real UUIDs matching real users (confirmed directly against GET /tasks/), and confirmed the assignee_id filter in get_task_status correctly narrows results using those same UUIDs. But the outerjoin in the same function that's supposed to resolve assigned_to into a real name via User.full_name returns None for every row, even ones with a confirmed real assignee. A silently failing join, not an error, is the signature of a type or format mismatch between the two sides of the join condition, not a logic bug in the join itself.
+Real browser evidence confirmed mounted is stuck false with width still at its 1280 default, meaning the hook's own initial measurement effect never successfully ran. The earlier diagnostic report theorized this happens if containerRef.current is null at the moment the effect's measureWidth call runs, which would happen if the ref is attached to a DOM node that does not exist yet on the very first render pass, a common timing issue with refs and effects in React, and the ResizeObserver alone cannot recover from this since based on the same earlier reading, it only calls setWidth, never setMounted.
 
 CHANGE INSTRUCTIONS:
 
-Based on what the real model definitions show, fix the actual mismatch causing the join to fail. If it's a type mismatch, cast appropriately in the join condition rather than changing either column's underlying type, since changing a column type is a much bigger, riskier change than fixing how one query joins against it. If the real cause turns out to be something other than a type mismatch, for example assigned_to actually storing something other than a raw user id, report the real finding with the specific evidence and stop before applying a fix, rather than guessing a workaround.
+Based on what the real hook source shows, apply the smallest correct fix, not a rewrite. If the issue is a ref-not-attached-yet timing problem, the standard correct fix is checking whether measureBeforeMount is even necessary here, since it was added specifically to solve the 1280px stale-render bug, if the hook's default behavior without measureBeforeMount also correctly avoids the stale 1280 render through some other real mechanism confirmed by reading the source, removing measureBeforeMount may be simpler and safer than working around its specific mount-timing behavior. If removing it would reintroduce the original 1280px bug, instead fix the actual timing issue directly, for example by ensuring the container div always exists in the DOM before the hook's effect can run, or by explicitly calling the hook's own remeasure mechanism if the source exposes one, whatever the real source shows is the correct, intended way to recover from this exact situation. State plainly in the report which approach was taken and why, based on what the real source showed, not a guess.
+
+Remove the temporary debug text block from the previous task now that its job is done.
 
 VERIFY AFTER ACT:
 
-cd /home/corby/jamm-os
-python3 -c "from app.main import app; print('app imports cleanly')"
+cd /home/corby/jamm-os/frontend
+npm run build
 
-git diff --stat app/api/concierge/functions.py
+grep -n "MOUNTED" "src/app/(app)/dashboard/page.tsx"
+
+This must return nothing, confirming the debug text was removed.
+
+git diff --stat "src/app/(app)/dashboard/page.tsx"
 
 MANUAL VERIFICATION:
 
-Restart the backend. Using a real token as owner@riverside-demo.com, call GET /dashboard/widgets/my_tasks/data?assignee_id=0e5754bd-612f-4fdc-b276-17e86d5890c7 again and confirm assigned_to_name now shows "James Okafor" on the returned tasks instead of None. Report the real response.
+Restart the frontend dev server. Reload /dashboard fresh. Confirm all 8 real widgets that are known to exist in the saved layout actually render, not a blank canvas. Then reload the page 3 more times in a row, since the original 1280px bug and this blank-canvas bug were both intermittent-feeling issues that did not always reproduce identically, confirm the grid renders correctly and at full width on every one of the 4 total loads, not just the first. Report back with a screenshot after the 4th reload.
 
 GIT:
 
-git add -A
-git commit -m "fix assigned_to_name resolving to None on every task in get_task_status despite Task.assigned_to holding real, confirmed user ids, root cause was [fill in the real cause found], the assignee_id filter itself was already correct and unaffected, this only fixes the display name join"
-git pull --rebase origin main
-git push origin main
-
-If task.md conflicts on the rebase, resolve with --theirs. Any other file conflict, stop and report back.
+Do not commit until Ben confirms all 4 reloads worked in the browser.

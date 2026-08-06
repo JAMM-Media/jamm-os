@@ -5,7 +5,8 @@ import { useState, useMemo, useCallback } from 'react'
 import Link from 'next/link'
 import { useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { CheckCircle, X, Minus, ChevronDown } from 'lucide-react'
+import { CheckCircle, X, Minus, ChevronDown, Plus } from 'lucide-react'
+import { Modal } from '@/components/ui/Modal'
 import { GridLayout, useContainerWidth } from 'react-grid-layout'
 import type { Layout, LayoutItem, EventCallback } from 'react-grid-layout'
 import { dashboardApi } from '@/lib/api/dashboard'
@@ -666,16 +667,88 @@ function CollapsedWidgetHeader({
 }
 
 // ---------------------------------------------------------------------------
+// Add Widget Gallery Modal
+// ---------------------------------------------------------------------------
+
+const CATEGORY_LABELS: Record<string, string> = {
+  overview: "Overview",
+  tasks: "Tasks",
+  clients: "Clients",
+  billing: "Billing",
+  calendar: "Calendar",
+  engagements: "Engagements",
+  documents: "Documents",
+  staff: "Staff",
+}
+
+function AddWidgetModal({
+  open,
+  onClose,
+  catalog,
+  onAdd,
+}: {
+  open: boolean
+  onClose: () => void
+  catalog: WidgetCatalogItem[]
+  onAdd: (entry: WidgetCatalogItem) => void
+}) {
+  const addable = catalog.filter((w) => w.config_schema.every((f) => !f.required))
+
+  const grouped = addable.reduce<Record<string, WidgetCatalogItem[]>>((acc, w) => {
+    if (!acc[w.category]) acc[w.category] = []
+    acc[w.category].push(w)
+    return acc
+  }, {})
+
+  const categories = Object.keys(grouped).sort()
+
+  return (
+    <Modal open={open} onClose={onClose} title="Add Widget" size="lg">
+      {categories.length === 0 ? (
+        <p className="text-[13px] text-muted-foreground text-center py-6">No widgets available to add.</p>
+      ) : (
+        <div className="flex flex-col gap-6">
+          {categories.map((cat) => (
+            <div key={cat}>
+              <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                {CATEGORY_LABELS[cat] ?? cat}
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                {grouped[cat].map((entry) => (
+                  <button
+                    key={entry.type_key}
+                    onClick={() => onAdd(entry)}
+                    className="text-left px-3.5 py-3 rounded-[8px] border border-surface-border dark:border-dark-border bg-surface-card dark:bg-dark-card hover:bg-surface-input dark:hover:bg-dark-page transition-colors"
+                  >
+                    <p className="text-[13px] font-medium text-foreground">{entry.display_name}</p>
+                    {entry.allowed_sizes.length > 0 && (
+                      <p className="text-[11px] text-muted-foreground mt-0.5">
+                        {entry.allowed_sizes.join(", ")}
+                      </p>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </Modal>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Page
 // ---------------------------------------------------------------------------
 
 export default function DashboardPage() {
-  const { width, containerRef, mounted } = useContainerWidth({ measureBeforeMount: true })
+  const { width, containerRef, mounted } = useContainerWidth()
 
 
   const [editMode, setEditMode] = useState(false)
   const [editedWidgets, setEditedWidgets] = useState<DashboardWidgetInstance[]>([])
   const [saving, setSaving] = useState(false)
+  const [showAddWidget, setShowAddWidget] = useState(false)
 
   const {
     data: widgets,
@@ -745,6 +818,24 @@ export default function DashboardPage() {
   function handleCancel() {
     setEditedWidgets([])
     setEditMode(false)
+  }
+
+  function handleAddWidgetFromGallery(entry: WidgetCatalogItem) {
+    const maxBottom = editedWidgets.reduce((acc, w) => {
+      const span = SIZE_TO_SPAN[w.size] ?? SIZE_TO_SPAN.medium
+      return Math.max(acc, w.grid_y + span.h)
+    }, 0)
+    const newWidget: DashboardWidgetInstance = {
+      instance_id: crypto.randomUUID(),
+      type_key: entry.type_key,
+      grid_x: 0,
+      grid_y: maxBottom,
+      size: (entry.allowed_sizes[0] ?? 'medium') as 'small' | 'medium' | 'large',
+      minimized: false,
+      config: {},
+    }
+    setEditedWidgets((prev) => [...prev, newWidget])
+    setShowAddWidget(false)
   }
 
   async function handleDone() {
@@ -850,63 +941,65 @@ export default function DashboardPage() {
     )
   }
 
-  if (layoutLoading || !widgets) {
-    return (
-      <div className="p-6 flex flex-col gap-6">
-        <div>
-          <h1 className="text-2xl font-display font-medium text-brand dark:text-foreground">Dashboard</h1>
-          <p className="text-[12px] text-muted-foreground mt-0.5">Priority work across all clients</p>
-        </div>
-        <div className="h-48 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded-[8px]" />
-        <div className="h-64 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded-[8px]" />
-        <div className="h-40 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded-[8px]" />
-      </div>
-    )
-  }
-
   return (
     <div className="p-6 flex flex-col gap-4">
-        {/* Page header */}
+        {/* Page header - always renders so edit controls are consistent */}
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-display font-medium text-brand dark:text-foreground">Dashboard</h1>
             <p className="text-[12px] text-muted-foreground mt-0.5">Priority work across all clients</p>
           </div>
-          <div className="flex items-center gap-2">
-            {editMode ? (
-              <>
+          {!layoutLoading && widgets && (
+            <div className="flex items-center gap-2">
+              {editMode ? (
+                <>
+                  <button
+                    onClick={() => setShowAddWidget(true)}
+                    className="text-[13px] font-medium px-3.5 py-1.5 rounded border border-surface-border dark:border-dark-border text-foreground hover:bg-surface-input dark:hover:bg-dark-page transition-colors flex items-center gap-1.5"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    Add Widget
+                  </button>
+                  <button
+                    onClick={handleCancel}
+                    disabled={saving}
+                    className="text-[13px] font-medium px-3.5 py-1.5 rounded border border-surface-border dark:border-dark-border text-foreground hover:bg-surface-input dark:hover:bg-dark-page disabled:opacity-50 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => void handleDone()}
+                    disabled={saving}
+                    className="text-[13px] font-medium px-3.5 py-1.5 rounded bg-brand text-white hover:opacity-90 disabled:opacity-50 transition-opacity"
+                  >
+                    {saving ? 'Saving...' : 'Done'}
+                  </button>
+                </>
+              ) : (
                 <button
-                  onClick={handleCancel}
-                  disabled={saving}
-                  className="text-[13px] font-medium px-3.5 py-1.5 rounded border border-surface-border dark:border-dark-border text-foreground hover:bg-surface-input dark:hover:bg-dark-page disabled:opacity-50 transition-colors"
+                  onClick={handleEnterEdit}
+                  className="text-[13px] font-medium px-3.5 py-1.5 rounded border border-surface-border dark:border-dark-border text-foreground hover:bg-surface-input dark:hover:bg-dark-page transition-colors"
                 >
-                  Cancel
+                  Edit Dashboard
                 </button>
-                <button
-                  onClick={() => void handleDone()}
-                  disabled={saving}
-                  className="text-[13px] font-medium px-3.5 py-1.5 rounded bg-brand text-white hover:opacity-90 disabled:opacity-50 transition-opacity"
-                >
-                  {saving ? 'Saving…' : 'Done'}
-                </button>
-              </>
-            ) : (
-              <button
-                onClick={handleEnterEdit}
-                className="text-[13px] font-medium px-3.5 py-1.5 rounded border border-surface-border dark:border-dark-border text-foreground hover:bg-surface-input dark:hover:bg-dark-page transition-colors"
-              >
-                Edit Dashboard
-              </button>
-            )}
-          </div>
+              )}
+            </div>
+          )}
         </div>
 
-        {/* Concierge Spotlight — fixed above the grid */}
-        <ConciergeSpotlight />
+        {/* Concierge Spotlight - only once layout is loaded */}
+        {!layoutLoading && widgets && <ConciergeSpotlight />}
 
-        {/* Widget canvas */}
+        {/* Widget canvas - containerRef always in DOM so useContainerWidth measures on first render.
+            Loading skeleton renders inside this div rather than as a separate early return. */}
         <div ref={containerRef} className="w-full">
-          {mounted && (
+          {layoutLoading || !widgets ? (
+            <div className="flex flex-col gap-6">
+              <div className="h-48 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded-[8px]" />
+              <div className="h-64 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded-[8px]" />
+              <div className="h-40 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded-[8px]" />
+            </div>
+          ) : (
             <GridLayout
               width={width}
               layout={layout}
@@ -949,6 +1042,16 @@ export default function DashboardPage() {
             </GridLayout>
           )}
         </div>
+
+      {/* Add Widget gallery modal */}
+      {editMode && (
+        <AddWidgetModal
+          open={showAddWidget}
+          onClose={() => setShowAddWidget(false)}
+          catalog={catalog}
+          onAdd={handleAddWidgetFromGallery}
+        />
+      )}
     </div>
   )
 }

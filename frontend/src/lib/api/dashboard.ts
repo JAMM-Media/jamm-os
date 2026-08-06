@@ -91,7 +91,7 @@ export interface WidgetCatalogItem {
   display_name: string
   category: string
   allowed_sizes: string[]
-  config_schema: unknown[]
+  config_schema: { field: string; type: string; required: boolean }[]
   role_requirement: string
 }
 
