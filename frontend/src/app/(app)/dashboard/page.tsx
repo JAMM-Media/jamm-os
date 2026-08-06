@@ -489,6 +489,246 @@ function WIPWidget() {
 }
 
 // ---------------------------------------------------------------------------
+// Batch 4a widgets
+// ---------------------------------------------------------------------------
+
+function MyTasksWidget({ data }: { data: Record<string, unknown> }) {
+  const tasks = (data.tasks ?? []) as Array<{ task_id: string; title: string; client_name: string; status: string; due_date: string | null; overdue: boolean }>
+  const incompleteCount = Number(data.incomplete_tasks ?? 0)
+  return (
+    <div className="bg-surface-card dark:bg-dark-card rounded-[8px] border border-surface-border dark:border-dark-border shadow-sm overflow-hidden h-full flex flex-col">
+      <div className="px-4 py-3 border-b border-surface-border dark:border-dark-border flex items-center gap-2 flex-shrink-0">
+        <span className="text-[13px] font-medium text-foreground">My Tasks</span>
+        {incompleteCount > 0 && (
+          <span className="text-[11px] font-medium px-1.5 py-0.5 rounded bg-brand/10 text-brand">{incompleteCount}</span>
+        )}
+      </div>
+      {tasks.length === 0 ? (
+        <div className="px-4 py-8 text-center flex flex-col items-center gap-2 flex-1">
+          <CheckCircle className="w-5 h-5 text-green-500" />
+          <p className="text-[13px] text-green-600 dark:text-green-400 font-medium">All caught up. No incomplete tasks.</p>
+        </div>
+      ) : (
+        <div className="divide-y divide-surface-border dark:divide-dark-border overflow-y-auto flex-1">
+          {tasks.map((task) => (
+            <Link key={task.task_id} href={`/tasks/${task.task_id}`} className="flex items-center px-4 py-2.5 gap-3 hover:bg-surface-input dark:hover:bg-dark-page transition-colors">
+              <div className="flex-1 min-w-0">
+                <p className="text-[13px] font-medium text-foreground truncate">{task.title}</p>
+                <p className="text-[11px] text-muted-foreground truncate">{task.client_name}</p>
+              </div>
+              {task.overdue && (
+                <span className="text-[11px] font-medium px-1.5 py-0.5 rounded bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 flex-shrink-0">Overdue</span>
+              )}
+            </Link>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ClientCommunicationGapWidget({ data }: { data: Record<string, unknown> }) {
+  const clients = (data.clients ?? []) as Array<{ client_id: string; client_name: string; last_outbound: string | null; days_since_contact: number | null }>
+  const gapCount = Number(data.gap_count ?? 0)
+  const threshold = Number(data.threshold_days ?? 21)
+  return (
+    <div className="bg-surface-card dark:bg-dark-card rounded-[8px] border border-surface-border dark:border-dark-border shadow-sm overflow-hidden h-full flex flex-col">
+      <div className="px-4 py-3 border-b border-surface-border dark:border-dark-border flex items-center gap-2 flex-shrink-0">
+        <span className="text-[13px] font-medium text-foreground">Communication Gaps</span>
+        {gapCount > 0 && (
+          <span className="text-[11px] font-medium px-1.5 py-0.5 rounded bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">{gapCount}</span>
+        )}
+      </div>
+      {clients.length === 0 ? (
+        <div className="px-4 py-8 text-center flex flex-col items-center gap-2 flex-1">
+          <CheckCircle className="w-5 h-5 text-green-500" />
+          <p className="text-[13px] text-green-600 dark:text-green-400 font-medium">All clients contacted in the last {threshold} days.</p>
+        </div>
+      ) : (
+        <div className="divide-y divide-surface-border dark:divide-dark-border overflow-y-auto flex-1">
+          {clients.map((c) => (
+            <Link key={c.client_id} href={`/clients/${c.client_id}`} className="flex items-center px-4 py-2.5 gap-3 hover:bg-surface-input dark:hover:bg-dark-page transition-colors">
+              <p className="text-[13px] font-medium text-foreground flex-1 truncate">{c.client_name}</p>
+              <p className="text-[11px] text-muted-foreground flex-shrink-0">
+                {c.days_since_contact != null ? `${c.days_since_contact}d ago` : 'No contact logged'}
+              </p>
+            </Link>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function OutstandingDocumentRequestsWidget({ data }: { data: Record<string, unknown> }) {
+  const requests = (data.requests ?? []) as Array<{ id: string; title: string; status: string; due_date: string | null; client_name: string; engagement_name: string }>
+  const count = Number(data.outstanding_count ?? 0)
+  return (
+    <div className="bg-surface-card dark:bg-dark-card rounded-[8px] border border-surface-border dark:border-dark-border shadow-sm overflow-hidden h-full flex flex-col">
+      <div className="px-4 py-3 border-b border-surface-border dark:border-dark-border flex items-center gap-2 flex-shrink-0">
+        <span className="text-[13px] font-medium text-foreground">Outstanding Document Requests</span>
+        {count > 0 && (
+          <span className="text-[11px] font-medium px-1.5 py-0.5 rounded bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">{count}</span>
+        )}
+      </div>
+      {requests.length === 0 ? (
+        <div className="px-4 py-8 text-center flex flex-col items-center gap-2 flex-1">
+          <CheckCircle className="w-5 h-5 text-green-500" />
+          <p className="text-[13px] text-green-600 dark:text-green-400 font-medium">No outstanding document requests.</p>
+        </div>
+      ) : (
+        <div className="divide-y divide-surface-border dark:divide-dark-border overflow-y-auto flex-1">
+          {requests.map((req) => (
+            <div key={req.id} className="flex items-center px-4 py-2.5 gap-3">
+              <div className="flex-1 min-w-0">
+                <p className="text-[13px] font-medium text-foreground truncate">{req.title}</p>
+                <p className="text-[11px] text-muted-foreground truncate">{req.client_name}</p>
+              </div>
+              {req.due_date && (
+                <p className="text-[11px] text-muted-foreground flex-shrink-0">{req.due_date}</p>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function UnbilledHoursWidget({ data }: { data: Record<string, unknown> }) {
+  const billableThisWeek = Number(data.firm_billable_hours_this_week ?? 0)
+  const unbilledThisMonth = Number(data.unbilled_billable_hours_this_month_all_engagements ?? 0)
+  const staff = (data.staff ?? []) as Array<{ user_id: string; full_name: string; billable: number; non_billable: number }>
+  return (
+    <div className="bg-surface-card dark:bg-dark-card rounded-[8px] border border-surface-border dark:border-dark-border shadow-sm overflow-hidden h-full flex flex-col">
+      <div className="px-4 py-3 border-b border-surface-border dark:border-dark-border flex-shrink-0">
+        <span className="text-[13px] font-medium text-foreground">Unbilled Hours</span>
+      </div>
+      <div className="px-4 py-3 flex gap-6 border-b border-surface-border dark:border-dark-border flex-shrink-0">
+        <div>
+          <p className="text-[11px] text-muted-foreground">Billable this week</p>
+          <p className="text-[20px] font-semibold text-foreground">{billableThisWeek.toFixed(1)}h</p>
+        </div>
+        <div>
+          <p className="text-[11px] text-muted-foreground">Unbilled this month</p>
+          <p className="text-[20px] font-semibold text-foreground">{unbilledThisMonth.toFixed(1)}h</p>
+        </div>
+      </div>
+      {staff.length === 0 ? (
+        <div className="px-4 py-6 text-center flex-1">
+          <p className="text-[12px] text-muted-foreground">No time logged this week.</p>
+        </div>
+      ) : (
+        <div className="divide-y divide-surface-border dark:divide-dark-border overflow-y-auto flex-1">
+          {staff.map((s) => (
+            <div key={s.user_id} className="flex items-center px-4 py-2.5 gap-3">
+              <p className="text-[13px] text-foreground flex-1 truncate">{s.full_name}</p>
+              <p className="text-[12px] text-muted-foreground flex-shrink-0">{Number(s.billable ?? 0).toFixed(1)}h billable</p>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function RecentFirmChatActivityWidget({ data }: { data: Record<string, unknown> }) {
+  const messages = (data.messages ?? []) as Array<{ channel_name: string; sender_name: string; body_snippet: string; created_at: string }>
+  const days = Number(data.days ?? 7)
+  return (
+    <div className="bg-surface-card dark:bg-dark-card rounded-[8px] border border-surface-border dark:border-dark-border shadow-sm overflow-hidden h-full flex flex-col">
+      <div className="px-4 py-3 border-b border-surface-border dark:border-dark-border flex-shrink-0">
+        <span className="text-[13px] font-medium text-foreground">Recent Firm Chat</span>
+      </div>
+      {messages.length === 0 ? (
+        <div className="px-4 py-8 text-center flex-1">
+          <p className="text-[13px] text-green-600 dark:text-green-400 font-medium">No firm chat activity in the last {days} days.</p>
+        </div>
+      ) : (
+        <div className="divide-y divide-surface-border dark:divide-dark-border overflow-y-auto flex-1">
+          {messages.map((msg, i) => (
+            <Link key={i} href="/firm-chat" className="flex flex-col px-4 py-2.5 gap-0.5 hover:bg-surface-input dark:hover:bg-dark-page transition-colors">
+              <div className="flex items-center gap-1.5">
+                <span className="text-[12px] font-medium text-foreground">{msg.sender_name}</span>
+                <span className="text-[11px] text-muted-foreground">#{msg.channel_name}</span>
+              </div>
+              <p className="text-[12px] text-muted-foreground truncate">{msg.body_snippet}</p>
+            </Link>
+          ))}
+          <div className="px-4 py-2.5 flex justify-end">
+            <Link href="/firm-chat" className="text-[12px] text-brand-light hover:underline">Open firm chat &rarr;</Link>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ClientHealthSnapshotWidget({ data }: { data: Record<string, unknown> }) {
+  const status = String(data.status ?? 'unknown')
+  const reasons = (data.reasons ?? []) as Array<{ severity: string; text: string }>
+  const statusColor = status === 'healthy' ? 'text-green-600 dark:text-green-400' : status === 'at_risk' ? 'text-amber-600 dark:text-amber-400' : 'text-red-600 dark:text-red-400'
+  const statusLabel = status === 'healthy' ? 'Healthy' : status === 'at_risk' ? 'At Risk' : status === 'critical' ? 'Critical' : status
+  return (
+    <div className="bg-surface-card dark:bg-dark-card rounded-[8px] border border-surface-border dark:border-dark-border shadow-sm overflow-hidden h-full flex flex-col">
+      <div className="px-4 py-3 border-b border-surface-border dark:border-dark-border flex items-center gap-2 flex-shrink-0">
+        <span className="text-[13px] font-medium text-foreground">Client Health</span>
+        <span className={`text-[11px] font-medium ${statusColor}`}>{statusLabel}</span>
+      </div>
+      <div className="px-4 py-3 flex flex-col gap-2 overflow-y-auto flex-1">
+        {reasons.map((r, i) => (
+          <p key={i} className="text-[12px] text-muted-foreground">{r.text}</p>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function SingleClientQuickViewWidget({ data }: { data: Record<string, unknown> }) {
+  const clientName = String(data.client_name ?? '')
+  const email = String(data.email ?? '')
+  const entityType = String(data.entity_type ?? '')
+  const portalAccess = Boolean(data.portal_access)
+  const engagements = (data.engagements ?? []) as unknown[]
+  const invoices = (data.invoices ?? []) as unknown[]
+  const pendingDocRequests = Number(data.pending_document_requests ?? 0)
+  return (
+    <div className="bg-surface-card dark:bg-dark-card rounded-[8px] border border-surface-border dark:border-dark-border shadow-sm overflow-hidden h-full flex flex-col">
+      <div className="px-4 py-3 border-b border-surface-border dark:border-dark-border flex-shrink-0">
+        <p className="text-[13px] font-medium text-foreground">{clientName || 'Client'}</p>
+        {email && <p className="text-[11px] text-muted-foreground">{email}</p>}
+      </div>
+      <div className="px-4 py-3 flex flex-col gap-2 overflow-y-auto flex-1">
+        {entityType && (
+          <div className="flex justify-between">
+            <span className="text-[12px] text-muted-foreground">Type</span>
+            <span className="text-[12px] text-foreground capitalize">{entityType}</span>
+          </div>
+        )}
+        <div className="flex justify-between">
+          <span className="text-[12px] text-muted-foreground">Engagements</span>
+          <span className="text-[12px] text-foreground">{engagements.length}</span>
+        </div>
+        <div className="flex justify-between">
+          <span className="text-[12px] text-muted-foreground">Invoices</span>
+          <span className="text-[12px] text-foreground">{invoices.length}</span>
+        </div>
+        <div className="flex justify-between">
+          <span className="text-[12px] text-muted-foreground">Pending doc requests</span>
+          <span className="text-[12px] text-foreground">{pendingDocRequests}</span>
+        </div>
+        <div className="flex justify-between">
+          <span className="text-[12px] text-muted-foreground">Portal</span>
+          <span className={`text-[12px] font-medium ${portalAccess ? 'text-green-600 dark:text-green-400' : 'text-muted-foreground'}`}>
+            {portalAccess ? 'Enabled' : 'Not enabled'}
+          </span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Widget Skeleton
 // ---------------------------------------------------------------------------
 
@@ -512,7 +752,7 @@ function WidgetRenderer({ widget }: { widget: DashboardWidgetInstance }) {
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['dashboard-widget-data', widget.type_key, widget.instance_id],
-    queryFn: () => dashboardApi.getWidgetData(widget.type_key),
+    queryFn: () => dashboardApi.getWidgetData(widget.type_key, widget.config),
     staleTime: 60 * 1000,
     enabled: !isWIP,
   })
@@ -600,6 +840,20 @@ function WidgetRenderer({ widget }: { widget: DashboardWidgetInstance }) {
       const items = (d.unsigned_documents ?? []) as UnsignedDocumentItem[]
       return <UnsignedDocumentsTable items={items} onActionComplete={() => void refetch()} />
     }
+    case 'my_tasks':
+      return <MyTasksWidget data={d} />
+    case 'client_communication_gap':
+      return <ClientCommunicationGapWidget data={d} />
+    case 'outstanding_document_requests':
+      return <OutstandingDocumentRequestsWidget data={d} />
+    case 'unbilled_hours':
+      return <UnbilledHoursWidget data={d} />
+    case 'recent_firm_chat_activity':
+      return <RecentFirmChatActivityWidget data={d} />
+    case 'client_health_snapshot':
+      return <ClientHealthSnapshotWidget data={d} />
+    case 'single_client_quick_view':
+      return <SingleClientQuickViewWidget data={d} />
     default:
       return (
         <div className="flex items-center justify-center h-full bg-surface-card dark:bg-dark-card rounded-[8px] border border-surface-border dark:border-dark-border">

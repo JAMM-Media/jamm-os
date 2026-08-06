@@ -74,9 +74,9 @@ This section exists because a past session confidently claimed specific files we
 
 # Section 3 - The task
 
-TASK: Update the Add Widget gallery so widgets with no configuration options at all become disabled/already-added once one instance exists on the canvas, while widgets that have any config fields (required or optional) remain addable multiple times. Currently every widget can be added unlimited times regardless of whether a second instance could ever differ from the first.
+TASK: Build real frontend rendering for the 7 widget types added to the backend in batch 4a (my_tasks, client_health_snapshot, client_communication_gap, outstanding_document_requests, unbilled_hours, single_client_quick_view, recent_firm_chat_activity). These are currently addable through the gallery and save correctly, but render as literal "Unknown widget: X" text since no frontend component exists for them, the widget-to-component lookup only covers the original 9 launch-catalog types.
 
-USE: claude sonnet
+USE: claude fable-5
 
 ENVIRONMENT SANITY CHECK:
 
@@ -86,39 +86,53 @@ State plainly that no path in this task resolves against /mnt/c/Users or any Win
 
 VERIFY BEFORE ACT:
 
-grep -n -B 5 -A 60 "function AddWidgetModal" "src/app/(app)/dashboard/page.tsx"
+grep -n -B 3 -A 15 "Unknown widget" "src/app/(app)/dashboard/page.tsx"
 
-Paste the real output. Confirm the exact current gallery rendering logic, the shape of each catalog entry available at render time (specifically whether config_schema is accessible here), and how editedWidgets is passed into or accessible from this component.
+grep -n -A 15 "def get_task_status\|def compute_client_health\|def get_client_communication_gap\|def get_outstanding_document_requests\|def get_time_tracking_detail\|def get_client_full_snapshot\|def get_recent_firm_chat_activity" /home/corby/jamm-os/app/api/concierge/functions.py /home/corby/jamm-os/app/services/client_health_service.py
+
+curl -s -X POST http://localhost:8000/auth/token -H "Content-Type: application/json" -d '{"username": "owner@riverside-demo.com", "password": "Demo2026x"}'
+
+Paste all real output. For the curl, use the returned token to also call each of these 7 live and paste the real JSON response shape for each:
+GET /dashboard/widgets/my_tasks/data
+GET /dashboard/widgets/client_communication_gap/data
+GET /dashboard/widgets/outstanding_document_requests/data
+GET /dashboard/widgets/unbilled_hours/data
+GET /dashboard/widgets/recent_firm_chat_activity/data
+For client_health_snapshot and single_client_quick_view, use client_id=bd01c05c-451f-4704-b5f8-ca69f989fb38 as a real known test client.
+
+Do not write any component against a guessed or assumed response shape, only against what these real calls actually return.
 
 WHAT THIS IS:
 
-A widget with an empty config_schema shows identical content every time it's added, since there is nothing that could differentiate two instances of it, for example two Revenue This Month cards would always show the exact same number. A widget with any config_schema fields, required or not, like my_tasks with its optional assignee filter, can meaningfully differ between instances, the same way iOS allows two weather widgets for two different cities. The rule is: addable more than once only if config_schema.length > 0. This is not a new concept, config_schema already exists on every catalog entry, this only makes the gallery actually use that field to decide repeatability instead of ignoring it.
+The widget-to-component lookup in the dashboard page currently only has cases for the 9 launch-catalog widgets, falling through to a literal "Unknown widget" message for anything else, which is exactly what's happening for these 7. Each of these widgets already has real, working backend data, confirmed live in this task's own verification step, this is purely a missing frontend rendering problem, not a data problem. Follow the same pattern already established for the 9 existing widgets: a small presentational component per widget type, using the same design tokens (bg-surface-card, rounded-[8px], border-surface-border, skeleton-while-loading convention) already used throughout this file, with an empty state for when there's genuinely nothing to show, matching whatever empty-state phrasing convention is already used on that data's real source page if one exists (documents page, timesheets page, firm chat page), not invented fresh.
 
 CHANGE INSTRUCTIONS:
 
-In the gallery rendering logic, for each catalog entry with an empty config_schema, check whether editedWidgets already contains an instance with that type_key. If it does, render that gallery entry in a visually disabled state, greyed out, not clickable, with a small label indicating it's already added, for example "Added" in place of where the entry would normally be clickable, using whatever muted/disabled text style convention already exists elsewhere in this file or the design tokens, do not invent a new disabled-state style. Entries with a non-empty config_schema remain fully clickable and addable regardless of how many instances already exist, no change to their behavior.
+Add 7 new presentational components to the dashboard page, one per widget type, each rendering the real fields confirmed in VERIFY BEFORE ACT for that endpoint. Keep each one visually consistent with the existing 9, header with the widget's display name, content area below, empty state styled the same as UpcomingDeadlinesList or OverdueEngagementsTable's existing empty states (green checkmark-style success copy for a genuinely empty/good state).
 
-This check needs to be reactive to the current edit session's state, meaning if a widget with no config is removed during the same edit session, its gallery entry should become addable again without needing to close and reopen the modal, since editedWidgets is the live source of truth during editing.
+For client_health_snapshot and single_client_quick_view specifically, these two require a client_id from config and are not yet addable through the gallery, since the client-picker UI is a separate not-yet-built task, batch 4c. Build their rendering components now anyway so they're ready, but it's expected they won't be reachable through the UI yet, note this plainly in the report rather than trying to work around it.
+
+Add all 7 new type_keys to the existing widget-to-component lookup, replacing the current fallback to "Unknown widget" for these specific keys with their real new components.
 
 VERIFY AFTER ACT:
 
 cd /home/corby/jamm-os/frontend
 npm run build
 
-grep -n "config_schema.length\|already added\|Added" "src/app/(app)/dashboard/page.tsx"
+grep -n "Unknown widget" "src/app/(app)/dashboard/page.tsx"
+
+This should now only match the fallback case itself for genuinely unrecognized type_keys, not any of these 7 by name.
 
 git diff --stat "src/app/(app)/dashboard/page.tsx"
 
-This should be a small, targeted diff, just the gallery entry rendering logic, nothing else in the file touched.
-
 MANUAL VERIFICATION:
 
-Restart the frontend dev server only, no backend changes were made. Reload /dashboard, enter Edit Dashboard, click Add Widget, add Revenue This Month, reopen Add Widget and confirm Revenue This Month now shows disabled with an Added label and cannot be clicked again. Add my_tasks, reopen Add Widget and confirm my_tasks remains fully clickable and addable again, since it has config fields. Remove the Revenue This Month instance you just added, reopen Add Widget, confirm it becomes clickable again. Report back with a screenshot showing at least one disabled entry and one still-clickable entry in the same gallery view.
+Restart the frontend dev server only. Reload /dashboard, enter Edit Dashboard, open Add Widget, add my_tasks and recent_firm_chat_activity (or any 2-3 of the 5 gallery-reachable new widgets), confirm they now render real content, not "Unknown widget" text. Click Done, reload, confirm they persisted with real content still showing. Report back with a screenshot.
 
 GIT:
 
 git add -A
-git commit -m "prevent adding a second instance of a widget with no configuration options, since two instances would always show identical content, while widgets with any config fields remain addable multiple times per the iOS multiple-weather-widgets pattern the gallery was originally designed around. Gallery entries for already-added no-config widgets now render disabled with an Added label instead of staying clickable"
+git commit -m "add real frontend rendering for the 7 batch 4a widget types (my_tasks, client_health_snapshot, client_communication_gap, outstanding_document_requests, unbilled_hours, single_client_quick_view, recent_firm_chat_activity), replacing the Unknown widget fallback these previously hit since only the original 9 launch-catalog widgets had components. client_health_snapshot and single_client_quick_view components are built but not yet reachable through the gallery, pending the client-picker UI in batch 4c"
 git pull --rebase origin main
 git push origin main
 git log --oneline -3

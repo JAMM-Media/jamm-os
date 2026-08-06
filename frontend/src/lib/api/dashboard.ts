@@ -170,8 +170,8 @@ export const dashboardApi = {
     return (data as { widgets: DashboardWidgetInstance[] }).widgets
   },
 
-  getWidgetData: async (typeKey: string): Promise<Record<string, unknown>> => {
-    const { data } = await api.get(`/dashboard/widgets/${typeKey}/data`)
+  getWidgetData: async (typeKey: string, config?: Record<string, unknown>): Promise<Record<string, unknown>> => {
+    const { data } = await api.get(`/dashboard/widgets/${typeKey}/data`, { params: config })
     return data as Record<string, unknown>
   },
 
