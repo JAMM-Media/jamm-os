@@ -74,7 +74,7 @@ This section exists because a past session confidently claimed specific files we
 
 # Section 3 - The task
 
-TASK: Fix the same missing-overflow-hidden corner-sliver bug across every custom modal implementation that doesn't use the shared Modal component. Confirmed identical root cause in CreateDocumentRequestModal.tsx: rounded-[10px] on a flex flex-col container with no overflow-hidden, header as the first flex child rendering square into the rounded corners. The shared Modal.tsx component was already fixed separately; this task covers the standalone reimplementations.
+TASK: Remove the "Plan New Template" button and its modal from the visible UI, since 4e-2 is deferred post-launch and currently in an unverified, possibly-broken state. Keep the underlying TemplatePlannerModal component code intact in the file so the work isn't lost, just stop rendering and exposing it to real users.
 
 USE: claude sonnet
 
@@ -86,40 +86,41 @@ State plainly that no path in this task resolves against /mnt/c/Users or any Win
 
 VERIFY BEFORE ACT:
 
-grep -rLn "from '@/components/ui/Modal'" src/components/**/*Modal*.tsx 2>/dev/null
+grep -n "Plan New Template\|showPlanner\|TemplatePlannerModal" "src/app/(app)/dashboard/page.tsx"
 
-For each file returned, run:
-grep -n "rounded-\[10px\]\|rounded-modal" <that file>
-
-Paste the real output for every file. The prior grep for this same list may have missed ConfirmModal.tsx due to a quote-style difference in its import even though it genuinely does use the shared Modal component, confirm for each file in the list individually whether it actually has its own standalone rounded container before assuming it needs this fix, do not apply the fix to a file that turns out to already use the shared component correctly.
+Paste the real output, every line where these appear, so nothing gets missed.
 
 WHAT THIS IS:
 
-Several modals in this codebase were built as standalone components rather than using the shared Modal.tsx, each independently reimplementing the same rounded-container-with-header-as-first-flex-child structure, and each missing the same overflow-hidden that was just added to the shared component. Fixing Modal.tsx only fixed modals that actually use it, these standalone ones need the identical one-line fix applied individually, since they are not actually sharing code, they are copies.
+The mini-planner feature was deferred for post-launch given real time constraints and an unresolved bug status, confirmed by Ben directly. Leaving a visible "Plan New Template" button in the live product right now would let real users open a feature that was never confirmed working, which is worse than not offering it. This task only hides it from view, it does not delete the TemplatePlannerModal component definition or any of its logic, since that work should be resumable later without rebuilding from scratch.
 
 CHANGE INSTRUCTIONS:
 
-For each file confirmed in VERIFY BEFORE ACT to genuinely have its own standalone rounded modal container missing overflow-hidden, add overflow-hidden to that container's className, following the exact same reasoning as the Modal.tsx fix: a rounded flex container needs overflow-hidden for its flex children (typically the header) to be clipped to the rounded corners instead of rendering square into them. Do not change anything else about these files, this is the same single targeted class addition, repeated once per genuinely-affected file.
+Remove the "Plan New Template" button from the edit-mode toolbar JSX. Remove the <TemplatePlannerModal ... /> render call and the showPlanner state and its setter if they are only used for this button and this modal, confirm they aren't used anywhere else in the file before removing them, if they are used elsewhere leave them and only remove the button and the modal's render call. Do not delete the TemplatePlannerModal function/component definition itself, leave that in the file even though it becomes unused, so it isn't lost. If the build reports an unused-variable or unused-component warning as a result, that is expected and acceptable, do not silence it by deleting the component definition.
 
 VERIFY AFTER ACT:
 
 cd /home/corby/jamm-os/frontend
 npm run build
 
-grep -n "overflow-hidden" <each fixed file>
+grep -n "Plan New Template" "src/app/(app)/dashboard/page.tsx"
+
+This must return nothing, confirming the button is gone from the toolbar.
+
+grep -n "function TemplatePlannerModal" "src/app/(app)/dashboard/page.tsx"
+
+This must still return a real match, confirming the component definition itself was not deleted.
 
 git diff --stat
 
-Report exactly which files were actually changed and which were checked but skipped because they turned out to already use the shared Modal component correctly.
-
 MANUAL VERIFICATION:
 
-Restart the frontend dev server only. Open each modal that was actually fixed (likely New Document Request among others), zoom into the top corners, confirm the sliver is gone on each one. Report back with a screenshot of at least one previously-broken standalone modal now fixed.
+Restart the frontend dev server only. Reload /dashboard, enter Edit Dashboard, confirm the toolbar now shows only Add Widget, Reset to Default, Save as Firm Default (if owner), Save as Template, Load Template, Cancel, Done, with no Plan New Template button anywhere. Confirm every remaining button still works exactly as it did before. Report back with a screenshot of the toolbar.
 
 GIT:
 
 git add -A
-git commit -m "fix the same corner-sliver visual bug in every standalone modal component that reimplements the rounded-container-with-header pattern instead of using the shared Modal component, each missing overflow-hidden independently since they are copies, not shared code. The shared Modal.tsx was already fixed separately, this covers the remaining standalone implementations confirmed to have the same real cause"
+git commit -m "hide the Plan New Template button and mini-planner modal from the live UI, deferring batch 4e-2 post-launch per Ben's call given the 10 day timeline and the feature's real unresolved bug history tonight. The TemplatePlannerModal component itself is left intact in the file, unused but not deleted, so this work is resumable later without rebuilding from scratch"
 git pull --rebase origin main
 git push origin main
 git log --oneline -3

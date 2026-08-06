@@ -8,6 +8,7 @@ import { toast } from 'sonner'
 import { CheckCircle, X, Minus, ChevronDown, Plus } from 'lucide-react'
 import { Modal } from '@/components/ui/Modal'
 import { GridLayout, useContainerWidth } from 'react-grid-layout'
+import { transformStrategy, noCompactor } from 'react-grid-layout/core'
 import type { Layout, LayoutItem, EventCallback } from 'react-grid-layout'
 import { dashboardApi } from '@/lib/api/dashboard'
 import { reportsApi } from '@/lib/api/reports'
@@ -1075,6 +1076,202 @@ function AddWidgetModal({
           ))}
         </div>
       )}
+    </Modal>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Template Planner Modal
+// ---------------------------------------------------------------------------
+
+const PLANNER_SCALE = 0.45
+const PLANNER_GRID_WIDTH = 1100
+const PLANNER_ROW_HEIGHT = 80
+const PLANNER_MARGIN: [number, number] = [16, 16]
+const PLANNER_COLS = 4
+const PLANNER_POSITION_STRATEGY = { ...transformStrategy, scale: PLANNER_SCALE }
+
+function TemplatePlannerModal({
+  open,
+  onClose,
+  catalog,
+}: {
+  open: boolean
+  onClose: () => void
+  catalog: WidgetCatalogItem[]
+}) {
+  const [plannerWidgets, setPlannerWidgets] = useState<DashboardWidgetInstance[]>([])
+  const [showPlannerGallery, setShowPlannerGallery] = useState(false)
+  const [showSavePrompt, setShowSavePrompt] = useState(false)
+  const [templateName, setTemplateName] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  const catalogByKey = useMemo(() => new Map(catalog.map((c) => [c.type_key, c])), [catalog])
+
+  const plannerLayout: Layout = plannerWidgets.map((w) => {
+    const span = SIZE_TO_SPAN[w.size] ?? SIZE_TO_SPAN.medium
+    return { i: w.instance_id, x: w.grid_x, y: w.grid_y, ...span, isResizable: false }
+  })
+
+  const maxRow = plannerWidgets.reduce((acc, w) => {
+    const span = SIZE_TO_SPAN[w.size] ?? SIZE_TO_SPAN.medium
+    return Math.max(acc, w.grid_y + span.h)
+  }, 4)
+  const gridFullHeight = maxRow * (PLANNER_ROW_HEIGHT + PLANNER_MARGIN[1]) + PLANNER_MARGIN[1]
+  const displayHeight = Math.max(gridFullHeight * PLANNER_SCALE, 120)
+
+  function handleClose() {
+    setPlannerWidgets([])
+    setShowPlannerGallery(false)
+    setShowSavePrompt(false)
+    setTemplateName('')
+    onClose()
+  }
+
+  function handleAddFromGallery(entry: WidgetCatalogItem, config: Record<string, unknown> = {}) {
+    const maxBottom = plannerWidgets.reduce((acc, w) => {
+      const span = SIZE_TO_SPAN[w.size] ?? SIZE_TO_SPAN.medium
+      return Math.max(acc, w.grid_y + span.h)
+    }, 0)
+    setPlannerWidgets((prev) => [
+      ...prev,
+      {
+        instance_id: crypto.randomUUID(),
+        type_key: entry.type_key,
+        grid_x: 0,
+        grid_y: maxBottom,
+        size: (entry.allowed_sizes[0] ?? 'medium') as 'small' | 'medium' | 'large',
+        minimized: false,
+        config,
+      },
+    ])
+    setShowPlannerGallery(false)
+  }
+
+  function handleRemoveTile(instanceId: string) {
+    setPlannerWidgets((prev) => prev.filter((w) => w.instance_id !== instanceId))
+  }
+
+  function handlePlannerLayoutChange(newLayout: Layout) {
+    setPlannerWidgets((prev) =>
+      prev.map((w) => {
+        const item = newLayout.find((l) => l.i === w.instance_id)
+        return item ? { ...w, grid_x: item.x, grid_y: item.y } : w
+      })
+    )
+  }
+
+  async function handleSave() {
+    if (!templateName.trim()) return
+    setSaving(true)
+    try {
+      await dashboardApi.createTemplate(templateName.trim(), plannerWidgets)
+      toast.success('Template saved')
+      handleClose()
+    } catch {
+      toast.error('Failed to save template')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Modal open={open} onClose={handleClose} title="Plan New Template" size="lg">
+      <div className="flex flex-col gap-3">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowPlannerGallery(true)}
+            className="text-[13px] font-medium px-3.5 py-1.5 rounded border border-surface-border dark:border-dark-border text-foreground hover:bg-surface-input dark:hover:bg-dark-page transition-colors flex items-center gap-1.5"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            Add Widget
+          </button>
+          <div className="flex-1" />
+          {showSavePrompt ? (
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={templateName}
+                onChange={(e) => setTemplateName(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') void handleSave() }}
+                placeholder="Template name"
+                autoFocus
+                className="h-9 w-44 px-3 rounded-[6px] text-[13px] bg-surface-input dark:bg-dark-card border border-[0.5px] border-surface-border dark:border-dark-border text-foreground outline-none focus:border-brand transition-colors"
+              />
+              <button
+                onClick={() => void handleSave()}
+                disabled={!templateName.trim() || saving}
+                className="text-[13px] font-medium px-3.5 py-1.5 rounded bg-brand text-white hover:opacity-90 disabled:opacity-50 transition-opacity"
+              >
+                Save
+              </button>
+              <button
+                onClick={() => { setShowSavePrompt(false); setTemplateName('') }}
+                className="text-[13px] font-medium px-3.5 py-1.5 rounded border border-surface-border dark:border-dark-border text-foreground hover:bg-surface-input dark:hover:bg-dark-page transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setShowSavePrompt(true)}
+              disabled={plannerWidgets.length === 0}
+              className="text-[13px] font-medium px-3.5 py-1.5 rounded bg-brand text-white hover:opacity-90 disabled:opacity-50 transition-opacity"
+            >
+              Save as Template
+            </button>
+          )}
+        </div>
+
+        {plannerWidgets.length === 0 ? (
+          <div className="flex items-center justify-center h-40 border border-dashed border-surface-border dark:border-dark-border rounded-[8px]">
+            <p className="text-[13px] text-muted-foreground">Add widgets to start planning your template.</p>
+          </div>
+        ) : (
+          <div
+            style={{ width: PLANNER_GRID_WIDTH * PLANNER_SCALE, height: displayHeight, overflowX: 'hidden', overflowY: 'auto' }}
+            className="rounded-[8px] border border-surface-border dark:border-dark-border"
+          >
+            <div style={{ transform: `scale(${PLANNER_SCALE})`, transformOrigin: 'top left', width: PLANNER_GRID_WIDTH }}>
+              <GridLayout
+                width={PLANNER_GRID_WIDTH}
+                layout={plannerLayout}
+                gridConfig={{ cols: PLANNER_COLS, rowHeight: PLANNER_ROW_HEIGHT, margin: PLANNER_MARGIN, containerPadding: [0, 0] }}
+                dragConfig={{ enabled: true }}
+                resizeConfig={{ enabled: false }}
+                onLayoutChange={handlePlannerLayoutChange}
+                positionStrategy={PLANNER_POSITION_STRATEGY}
+                compactor={noCompactor}
+              >
+                {plannerWidgets.map((w) => (
+                  <div
+                    key={w.instance_id}
+                    className="bg-surface-card dark:bg-dark-card rounded-[8px] border border-surface-border dark:border-dark-border flex flex-col items-center justify-center relative overflow-hidden"
+                  >
+                    <p className="text-[31px] font-semibold text-foreground text-center px-2 truncate w-full">
+                      {catalogByKey.get(w.type_key)?.display_name ?? w.type_key}
+                    </p>
+                    <button
+                      onClick={() => handleRemoveTile(w.instance_id)}
+                      className="absolute top-1 right-1 text-muted-foreground hover:text-red-500 transition-colors"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ))}
+              </GridLayout>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <AddWidgetModal
+        open={showPlannerGallery}
+        onClose={() => setShowPlannerGallery(false)}
+        catalog={catalog}
+        onAdd={handleAddFromGallery}
+        editedWidgets={plannerWidgets}
+      />
     </Modal>
   )
 }
