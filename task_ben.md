@@ -74,9 +74,9 @@ This section exists because a past session confidently claimed specific files we
 
 # Section 3 - The task
 
-TASK: Find and fix the real width constraint now that runtime evidence confirms it. Browser console showed useContainerWidth measuring exactly 1280px while window.innerWidth was 2048px, a fixed gap unrelated to sidebar width. 1280px is Tailwind's default max-w-7xl (80rem), which strongly suggests a fixed max-width container somewhere in the layout chain above the dashboard page, capping content width regardless of actual screen size.
+TASK: Add the 7 remaining widget types to the registry and wire GET /dashboard/widgets/{type_key}/data to accept and use per-instance config for the widgets that need it (client_id for the two client-specific widgets, assignee and status filters for My Tasks). This batch is backend only, no frontend gallery yet, that is batch 4b.
 
-USE: claude sonnet
+USE: claude fable-5
 
 ENVIRONMENT SANITY CHECK:
 
@@ -86,39 +86,59 @@ State plainly that no path in this task resolves against /mnt/c/Users or any Win
 
 VERIFY BEFORE ACT:
 
-grep -rn "max-w-7xl\|max-w-\[1280\|1280px" src/ --include="*.tsx" --include="*.css"
+grep -n -A 30 "def get_task_status" app/api/concierge/functions.py
 
-grep -n -B 5 -A 15 "export function AppShell\|export default function AppShell" src/components/layout/AppShell.tsx
+grep -n -A 20 "def compute_client_health" app/services/client_health_service.py
 
-grep -rn "className=\"container" src/ --include="*.tsx"
+grep -n -A 10 "def get_client_full_snapshot" app/api/concierge/functions.py
 
-Paste the real output of all three. The prior task's static search for max-w- in AppShell.tsx specifically came up empty, so this constraint may be somewhere else in the chain, a different layout file, a shared wrapper component, or Tailwind's own container class (which defaults to max-w-7xl at the xl breakpoint unless overridden) applied via a plain className="container" rather than an explicit max-w- utility, which the earlier grep would have missed since it only searched for max-w- literally.
+grep -n -A 10 "def get_outstanding_document_requests\|def get_time_tracking_detail\|def get_recent_firm_chat_activity" app/api/concierge/functions.py
+
+Paste the real output of all four. Confirm the exact current signature of get_task_status, compute_client_health, and get_client_full_snapshot, since these three are the ones that need real parameters added or passed through, not just registered.
 
 WHAT THIS IS:
 
-Real browser console output confirmed useContainerWidth measures exactly 1280px while the actual window is 2048px wide, a fixed 768px gap that does not match the sidebar's width (220px expanded, 48px collapsed) at all. 1280px is a very specific, recognizable number, Tailwind's default max-w-7xl and also its xl breakpoint value, which points strongly at a fixed-width container class somewhere between the page root and the dashboard content, most likely inherited from a shared layout wrapper, not something in the dashboard page itself. The previous task's search for max-w- in AppShell.tsx came up empty, so this search needs to be broader, including Tailwind's plain container class and any other layout file in the chain, not just AppShell.
+Batch 1 built the registry, layout endpoints, and data endpoint for the 9 launch-catalog widgets, all firm-wide with no per-instance configuration. This batch adds the 7 remaining widgets from the spec's fuller catalog: My Tasks, Client Health Snapshot, Client Communication Gap, Outstanding Document Requests, Unbilled Hours, Single Client Quick View, and Recent Firm Chat Activity. Three of these are configurable: Client Health Snapshot and Single Client Quick View both need a client_id, since they show one specific client's data, not firm-wide data, and My Tasks needs an optional assignee filter and an optional status filter.
+
+get_task_status currently has no filter parameters at all, it returns every incomplete task firm-wide. Adding assignee_id and status_filter as new optional parameters to this function is parameterizing existing, already-tested logic, not inventing new business logic, the underlying query and its correctness are unchanged, only which rows get returned changes based on what's passed in. This is different from the client_id case, where compute_client_health and get_client_full_snapshot already require a client_id as a real parameter, since they were built as per-client tools for the Concierge, so those two just need their existing required parameter passed through from the widget's config, no new logic there at all.
+
+The data endpoint itself needs to accept config as query parameters and only apply them to the three widgets that use them, every other widget type ignores any config passed to it, matching a firm-wide fixed view exactly as before.
 
 CHANGE INSTRUCTIONS:
 
-Once the real source of the 1280px cap is found with actual grep evidence, not assumed, remove or override it so the dashboard's content area, and therefore containerRef inside it, can measure the true full available width next to the sidebar. If the constraint is a shared layout wrapper used by other pages too, do not remove it globally without flagging that clearly, since other pages may rely on that max width intentionally for readability (long text lines, forms), constrain the fix narrowly to the dashboard page's own container if there's any risk of affecting other pages, rather than changing something shared. Report clearly which of these two situations was actually found.
+In app/core/dashboard_widgets.py, add 7 new entries to the registry. my_tasks in category tasks, allowed_sizes medium and large, config_schema with an assignee_id field (type staff_picker, not required, meaning unset shows all staff's tasks) and a status_filter field (type select, not required), role_requirement manager_or_above. client_health_snapshot in category clients, allowed_sizes small and medium, config_schema with a required client_id field (type client_picker), role_requirement manager_or_above. client_communication_gap in category clients, allowed_sizes medium and large, no config_schema, role_requirement manager_or_above. outstanding_document_requests in category documents, allowed_sizes medium and large, no config_schema, role_requirement manager_or_above. unbilled_hours in category billing, allowed_sizes medium and large, no config_schema, role_requirement manager_or_above. single_client_quick_view in category clients, allowed_sizes small and medium, config_schema with a required client_id field, role_requirement manager_or_above. recent_firm_chat_activity in category overview, allowed_sizes medium and large, no config_schema, role_requirement manager_or_above.
 
-Remove the temporary console.log added in the prior task once the real fix is confirmed working, do not leave debug logging in the committed code.
+Add assignee_id and status_filter as new optional parameters to get_task_status in app/api/concierge/functions.py, defaulting to None, meaning no filtering, so any existing caller of this function that does not pass them gets identical behavior to today. When assignee_id is provided, filter the task rows to that user. When status_filter is provided, filter to that status. Do not change the query's existing joins or the shape of what it returns beyond this filtering, this is not a rewrite.
+
+In the GET /dashboard/widgets/{type_key}/data endpoint in app/api/dashboard.py, accept an optional config query parameter as a JSON-encoded string, or individual optional query parameters for client_id, assignee_id, and status_filter, whichever is simpler given the existing endpoint's real current parameter style, check how other endpoints in this file already accept optional filters before choosing. For my_tasks, pass assignee_id and status_filter through to get_task_status if provided. For client_health_snapshot, require client_id, return a 400 with a clear message if it's missing, and call compute_client_health with it. For single_client_quick_view, require client_id the same way and call get_client_full_snapshot with it. For every other type_key, including all 9 from batch 1 and the 4 new non-configurable ones in this batch, ignore any config parameters entirely, they are not used.
+
+Extend the _WIDGET_DISPATCH mapping to include all 7 new type_keys pointing at their real functions, get_client_communication_gap for client_communication_gap, get_outstanding_document_requests for outstanding_document_requests, get_time_tracking_detail for unbilled_hours, get_recent_firm_chat_activity for recent_firm_chat_activity, compute_client_health for client_health_snapshot, get_client_full_snapshot for single_client_quick_view, get_task_status for my_tasks.
 
 VERIFY AFTER ACT:
 
-cd /home/corby/jamm-os/frontend
-npm run build
+grep -n "my_tasks\|client_health_snapshot\|client_communication_gap\|outstanding_document_requests\|unbilled_hours\|single_client_quick_view\|recent_firm_chat_activity" app/core/dashboard_widgets.py
 
-grep -n "dashboard width" "src/app/(app)/dashboard/page.tsx"
+python3 -c "
+import sys
+sys.path.insert(0, '/home/corby/jamm-os')
+from app.core.dashboard_widgets import WIDGET_REGISTRY
+print('registry has', len(WIDGET_REGISTRY), 'entries')
+"
 
-This must return nothing, confirming the temporary console.log was removed.
+This must print 16, the original 9 plus these 7.
 
-git diff --stat
+cd /home/corby/jamm-os
+python3 -c "from app.main import app; print('app imports cleanly')"
 
 MANUAL VERIFICATION:
 
-Restart the frontend dev server, reload /dashboard, confirm in the browser console (temporarily re-add the log if needed to check, then remove again) or just visually that the grid now extends much closer to the true right edge of the page, not stopping at roughly 1280px regardless of window size. Report back with a full uncropped screenshot at normal browser width, and confirm no other page (billing, engagements, clients) visually changed width, since the fix should be scoped to the dashboard only if the constraint turned out to be shared.
+Restart the backend. Using a real token as owner@riverside-demo.com, call GET /dashboard/widget-catalog and confirm all 16 widgets are present. Call GET /dashboard/widgets/client_health_snapshot/data with no client_id and confirm it returns a real 400 error, not a 500 or a silent empty response. Call it again with a real client_id from the Riverside test data and confirm it returns real health data for that specific client. Call GET /dashboard/widgets/my_tasks/data with no config and confirm it returns tasks firm-wide same as before this change, then call it again with an assignee_id for one real staff member and confirm the results are actually filtered to that person.
 
 GIT:
 
-Do not commit until Ben confirms both the width fix and that no other page regressed.
+git add -A
+git commit -m "add the 7 remaining launch-catalog widgets to the registry and wire per-instance config through the widget data endpoint: client_health_snapshot and single_client_quick_view require a client_id and reuse the existing per-client Concierge functions unchanged, my_tasks gained new optional assignee_id and status_filter parameters on get_task_status, parameterizing existing logic rather than inventing new business logic, every other widget type ignores config entirely and remains firm-wide"
+git pull --rebase origin main
+git push origin main
+
+If task.md conflicts on the rebase, resolve with --theirs. Any other file conflict, stop and report back.
