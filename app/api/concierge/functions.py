@@ -929,11 +929,16 @@ def get_client_document_status(
 # Returns incomplete tasks and unchecked QC checklist items firm-wide,
 # independent of engagement completion status.
 # ---------------------------------------------------------------------------
-def get_task_status(firm_id: uuid.UUID, db: Session) -> dict:
+def get_task_status(
+    firm_id: uuid.UUID,
+    db: Session,
+    assignee_id: uuid.UUID | None = None,
+    status_filter: str | None = None,
+) -> dict:
     today = date.today()
 
     # Incomplete tasks with engagement and client context
-    task_rows = db.execute(
+    task_stmt = (
         select(
             Task.id,
             Task.title,
@@ -953,7 +958,12 @@ def get_task_status(firm_id: uuid.UUID, db: Session) -> dict:
         )
         .order_by(Task.due_date.asc().nullslast())
         .limit(30)
-    ).fetchall()
+    )
+    if assignee_id is not None:
+        task_stmt = task_stmt.where(Task.assigned_to == assignee_id)
+    if status_filter is not None:
+        task_stmt = task_stmt.where(Task.status == status_filter)
+    task_rows = db.execute(task_stmt).fetchall()
 
     tasks = [
         {
