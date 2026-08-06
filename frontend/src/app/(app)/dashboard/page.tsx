@@ -1,22 +1,22 @@
-// path: frontend/src/app/dashboard/page.tsx
+// path: frontend/src/app/(app)/dashboard/page.tsx
 'use client'
 
-import { useState } from 'react'
+import { useState, useMemo, useCallback } from 'react'
 import Link from 'next/link'
 import { useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { CheckCircle } from 'lucide-react'
+import { CheckCircle, X, Minus, ChevronDown } from 'lucide-react'
 import { GridLayout, useContainerWidth } from 'react-grid-layout'
+import type { Layout, LayoutItem, EventCallback } from 'react-grid-layout'
 import { dashboardApi } from '@/lib/api/dashboard'
 import { reportsApi } from '@/lib/api/reports'
-import type { DashboardWidgetInstance, OverdueEngagementItem, UpcomingDeadlineItem, StaffUtilizationItem, UnsignedDocumentItem } from '@/lib/api/dashboard'
+import type { DashboardWidgetInstance, OverdueEngagementItem, UpcomingDeadlineItem, StaffUtilizationItem, UnsignedDocumentItem, WidgetCatalogItem } from '@/lib/api/dashboard'
 import type { WIPSummary } from '@/lib/api/reports'
 import api from '@/lib/api'
 import { formatEngagementType } from '@/lib/utils'
 import { ConciergeSpotlight } from '@/components/dashboard/ConciergeSpotlight'
 
 // Size -> grid span mapping (4-column grid, rowHeight 80px).
-// Row heights are a first visual pass and may need adjustment.
 const SIZE_TO_SPAN: Record<string, { w: number; h: number }> = {
   small:  { w: 1, h: 2 },
   medium: { w: 2, h: 5 },
@@ -500,8 +500,7 @@ function WidgetSkeleton({ typeKey }: { typeKey: string }) {
 }
 
 // ---------------------------------------------------------------------------
-// Widget Renderer — fetches its own data and delegates to the right component.
-// All hooks are called unconditionally before any early returns.
+// Widget Renderer
 // ---------------------------------------------------------------------------
 
 function WidgetRenderer({ widget }: { widget: DashboardWidgetInstance }) {
@@ -516,9 +515,7 @@ function WidgetRenderer({ widget }: { widget: DashboardWidgetInstance }) {
     enabled: !isWIP,
   })
 
-  // WIPWidget handles its own fetching via reportsApi
   if (isWIP) return <WIPWidget />
-
   if (isLoading) return <WidgetSkeleton typeKey={widget.type_key} />
 
   if (isError || !data) {
@@ -611,21 +608,236 @@ function WidgetRenderer({ widget }: { widget: DashboardWidgetInstance }) {
 }
 
 // ---------------------------------------------------------------------------
+// Edit Mode Overlay — rendered on top of each widget during edit mode
+// ---------------------------------------------------------------------------
+
+function WidgetEditOverlay({
+  onRemove,
+  onMinimize,
+}: {
+  onRemove: () => void
+  onMinimize: () => void
+}) {
+  return (
+    <div className="absolute inset-0 z-10 pointer-events-none rounded-[8px]">
+      <div className="absolute top-1.5 right-1.5 flex gap-1 pointer-events-auto">
+        <button
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => { e.stopPropagation(); onMinimize() }}
+          className="w-6 h-6 rounded flex items-center justify-center bg-white dark:bg-dark-card border border-surface-border dark:border-dark-border hover:bg-surface-input dark:hover:bg-dark-page shadow-sm transition-colors"
+          title="Minimize"
+        >
+          <Minus className="w-3.5 h-3.5 text-muted-foreground" />
+        </button>
+        <button
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => { e.stopPropagation(); onRemove() }}
+          className="w-6 h-6 rounded flex items-center justify-center bg-white dark:bg-dark-card border border-surface-border dark:border-dark-border hover:bg-red-50 dark:hover:bg-red-900/20 shadow-sm transition-colors"
+          title="Remove"
+        >
+          <X className="w-3.5 h-3.5 text-muted-foreground" />
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Collapsed Widget Header — shown instead of widget content when minimized
+// ---------------------------------------------------------------------------
+
+function CollapsedWidgetHeader({
+  displayName,
+  onClick,
+}: {
+  displayName: string
+  onClick: () => void
+}) {
+  return (
+    <button
+      onPointerDown={(e) => e.stopPropagation()}
+      onClick={(e) => { e.stopPropagation(); onClick() }}
+      className="w-full h-full bg-surface-card dark:bg-dark-card rounded-[8px] border border-surface-border dark:border-dark-border shadow-sm flex items-center px-4 gap-2 hover:bg-surface-input dark:hover:bg-dark-page text-left transition-colors"
+    >
+      <span className="text-[13px] font-medium text-foreground flex-1 truncate">{displayName}</span>
+      <ChevronDown className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+    </button>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Page
 // ---------------------------------------------------------------------------
 
 export default function DashboardPage() {
   const { width, containerRef, mounted } = useContainerWidth()
 
+  const [editMode, setEditMode] = useState(false)
+  const [editedWidgets, setEditedWidgets] = useState<DashboardWidgetInstance[]>([])
+  const [saving, setSaving] = useState(false)
+
   const {
     data: widgets,
     isLoading: layoutLoading,
     isError: layoutError,
+    refetch: refetchLayout,
   } = useQuery<DashboardWidgetInstance[]>({
     queryKey: ['dashboard-layout'],
     queryFn: () => dashboardApi.getLayout(),
     staleTime: 60 * 1000,
   })
+
+  const { data: catalog = [] } = useQuery<WidgetCatalogItem[]>({
+    queryKey: ['dashboard-widget-catalog'],
+    queryFn: () => dashboardApi.getWidgetCatalog(),
+    staleTime: 30 * 60 * 1000,
+  })
+
+  const catalogByKey = useMemo(
+    () => new Map(catalog.map((c) => [c.type_key, c])),
+    [catalog]
+  )
+
+  const activeWidgets = editMode ? editedWidgets : (widgets ?? [])
+
+  // Build the react-grid-layout layout array from the active widget list
+  const layout = useMemo<Layout>(() => {
+    return activeWidgets.map((w): LayoutItem => {
+      const baseSpan = SIZE_TO_SPAN[w.size] ?? SIZE_TO_SPAN.medium
+      const span = w.minimized ? { w: baseSpan.w, h: 1 } : baseSpan
+      const catalogEntry = catalogByKey.get(w.type_key)
+      const allowedSizes = catalogEntry?.allowed_sizes ?? [w.size]
+      const singleSize = allowedSizes.length <= 1
+
+      const item: LayoutItem = {
+        i: w.instance_id,
+        x: w.grid_x,
+        y: w.grid_y,
+        ...span,
+        isResizable: false,
+      }
+
+      if (editMode && !w.minimized) {
+        if (!singleSize) {
+          const minSpan = SIZE_TO_SPAN[allowedSizes[0]]
+          const maxSpan = SIZE_TO_SPAN[allowedSizes[allowedSizes.length - 1]]
+          if (minSpan && maxSpan) {
+            item.isResizable = true
+            item.minW = minSpan.w
+            item.minH = minSpan.h
+            item.maxW = maxSpan.w
+            item.maxH = maxSpan.h
+          }
+        }
+      }
+
+      return item
+    })
+  }, [activeWidgets, catalogByKey, editMode])
+
+  function handleEnterEdit() {
+    if (!widgets) return
+    setEditedWidgets(widgets.map((w) => ({ ...w })))
+    setEditMode(true)
+  }
+
+  function handleCancel() {
+    setEditedWidgets([])
+    setEditMode(false)
+  }
+
+  async function handleDone() {
+    setSaving(true)
+    try {
+      await dashboardApi.updateLayout(editedWidgets)
+      await refetchLayout()
+      setEditedWidgets([])
+      setEditMode(false)
+    } catch {
+      toast.error('Failed to save layout')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleRemoveWidget = useCallback((instanceId: string) => {
+    setEditedWidgets((prev) => prev.filter((w) => w.instance_id !== instanceId))
+  }, [])
+
+  const handleMinimizeWidget = useCallback((instanceId: string) => {
+    setEditedWidgets((prev) =>
+      prev.map((w) => (w.instance_id === instanceId ? { ...w, minimized: true } : w))
+    )
+  }, [])
+
+  const handleExpandWidget = useCallback(
+    async (instanceId: string) => {
+      if (editMode) {
+        setEditedWidgets((prev) =>
+          prev.map((w) => (w.instance_id === instanceId ? { ...w, minimized: false } : w))
+        )
+        return
+      }
+      if (!widgets) return
+      const updated = widgets.map((w) =>
+        w.instance_id === instanceId ? { ...w, minimized: false } : w
+      )
+      try {
+        await dashboardApi.updateLayout(updated)
+        await refetchLayout()
+      } catch {
+        toast.error('Failed to expand widget')
+      }
+    },
+    [editMode, widgets, refetchLayout]
+  )
+
+  // Sync grid_x / grid_y for all items whenever the grid layout changes (drag/compaction)
+  const handleLayoutChange = useCallback(
+    (newLayout: Layout) => {
+      if (!editMode) return
+      setEditedWidgets((prev) =>
+        prev.map((w) => {
+          const item = newLayout.find((l) => l.i === w.instance_id)
+          if (!item) return w
+          return { ...w, grid_x: item.x, grid_y: item.y }
+        })
+      )
+    },
+    [editMode]
+  )
+
+  // Snap resize to the nearest allowed size on release
+  const handleResizeStop: EventCallback = useCallback(
+    (_layout, _oldItem, newItem) => {
+      if (!editMode || !newItem) return
+      setEditedWidgets((prev) => {
+        const widget = prev.find((w) => w.instance_id === newItem.i)
+        if (!widget) return prev
+        const catalogEntry = catalogByKey.get(widget.type_key)
+        const allowedSizes = catalogEntry?.allowed_sizes ?? [widget.size]
+
+        let closest = allowedSizes[0]
+        let bestDist = Infinity
+        for (const sizeName of allowedSizes) {
+          const span = SIZE_TO_SPAN[sizeName]
+          if (!span) continue
+          const dist = Math.abs(newItem.w - span.w) + Math.abs(newItem.h - span.h)
+          if (dist < bestDist) {
+            bestDist = dist
+            closest = sizeName
+          }
+        }
+
+        return prev.map((w) =>
+          w.instance_id === newItem.i
+            ? { ...w, size: closest as 'small' | 'medium' | 'large' }
+            : w
+        )
+      })
+    },
+    [editMode, catalogByKey]
+  )
 
   if (layoutError) {
     return (
@@ -651,42 +863,91 @@ export default function DashboardPage() {
     )
   }
 
-  const layout = widgets.map((w) => ({
-    i: w.instance_id,
-    x: w.grid_x,
-    y: w.grid_y,
-    ...(SIZE_TO_SPAN[w.size] ?? SIZE_TO_SPAN.medium),
-  }))
-
   return (
     <div className="p-6 flex flex-col gap-4">
-      {/* Page header */}
-      <div>
-        <h1 className="text-2xl font-display font-medium text-brand dark:text-foreground">Dashboard</h1>
-        <p className="text-[12px] text-muted-foreground mt-0.5">Priority work across all clients</p>
-      </div>
+        {/* Page header */}
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-display font-medium text-brand dark:text-foreground">Dashboard</h1>
+            <p className="text-[12px] text-muted-foreground mt-0.5">Priority work across all clients</p>
+          </div>
+          <div className="flex items-center gap-2">
+            {editMode ? (
+              <>
+                <button
+                  onClick={handleCancel}
+                  disabled={saving}
+                  className="text-[13px] font-medium px-3.5 py-1.5 rounded border border-surface-border dark:border-dark-border text-foreground hover:bg-surface-input dark:hover:bg-dark-page disabled:opacity-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => void handleDone()}
+                  disabled={saving}
+                  className="text-[13px] font-medium px-3.5 py-1.5 rounded bg-brand text-white hover:opacity-90 disabled:opacity-50 transition-opacity"
+                >
+                  {saving ? 'Saving…' : 'Done'}
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={handleEnterEdit}
+                className="text-[13px] font-medium px-3.5 py-1.5 rounded border border-surface-border dark:border-dark-border text-foreground hover:bg-surface-input dark:hover:bg-dark-page transition-colors"
+              >
+                Edit Dashboard
+              </button>
+            )}
+          </div>
+        </div>
 
-      {/* Concierge Spotlight — fixed above the grid, not part of the canvas */}
-      <ConciergeSpotlight />
+        {/* Concierge Spotlight — fixed above the grid */}
+        <ConciergeSpotlight />
 
-      {/* Widget canvas — view-only, no drag/resize in this batch */}
-      <div ref={containerRef}>
-        {mounted && (
-          <GridLayout
-            width={width}
-            layout={layout}
-            gridConfig={{ cols: 4, rowHeight: 80, margin: [16, 16], containerPadding: [0, 0] }}
-            dragConfig={{ enabled: false }}
-            resizeConfig={{ enabled: false }}
-          >
-            {widgets.map((widget) => (
-              <div key={widget.instance_id} style={{ overflow: 'hidden' }}>
-                <WidgetRenderer widget={widget} />
-              </div>
-            ))}
-          </GridLayout>
-        )}
-      </div>
+        {/* Widget canvas */}
+        <div ref={containerRef}>
+          {mounted && (
+            <GridLayout
+              width={width}
+              layout={layout}
+              gridConfig={{ cols: 4, rowHeight: 80, margin: [16, 16], containerPadding: [0, 0] }}
+              dragConfig={{ enabled: editMode }}
+              resizeConfig={{ enabled: editMode, handles: ['se'] }}
+              onLayoutChange={handleLayoutChange}
+              onResizeStop={handleResizeStop}
+            >
+              {activeWidgets.map((widget) => (
+                <div key={widget.instance_id}>
+                  <div
+                    style={{
+                      overflow: 'hidden',
+                      position: 'relative',
+                      height: '100%',
+                    }}
+                  >
+                    {widget.minimized ? (
+                      <CollapsedWidgetHeader
+                        displayName={catalogByKey.get(widget.type_key)?.display_name ?? widget.type_key}
+                        onClick={() => void handleExpandWidget(widget.instance_id)}
+                      />
+                    ) : (
+                      <>
+                        <div style={{ pointerEvents: editMode ? 'none' : undefined, height: '100%' }}>
+                          <WidgetRenderer widget={widget} />
+                        </div>
+                        {editMode && (
+                          <WidgetEditOverlay
+                            onRemove={() => handleRemoveWidget(widget.instance_id)}
+                            onMinimize={() => handleMinimizeWidget(widget.instance_id)}
+                          />
+                        )}
+                      </>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </GridLayout>
+          )}
+        </div>
     </div>
   )
 }

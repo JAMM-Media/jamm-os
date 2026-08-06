@@ -86,6 +86,15 @@ export interface DashboardWidgetInstance {
   config: Record<string, unknown>
 }
 
+export interface WidgetCatalogItem {
+  type_key: string
+  display_name: string
+  category: string
+  allowed_sizes: string[]
+  config_schema: unknown[]
+  role_requirement: string
+}
+
 function mapTaskItem(raw: Record<string, unknown>): DashboardItem {
   return {
     id: String(raw.id),
@@ -164,5 +173,14 @@ export const dashboardApi = {
   getWidgetData: async (typeKey: string): Promise<Record<string, unknown>> => {
     const { data } = await api.get(`/dashboard/widgets/${typeKey}/data`)
     return data as Record<string, unknown>
+  },
+
+  getWidgetCatalog: async (): Promise<WidgetCatalogItem[]> => {
+    const { data } = await api.get('/dashboard/widget-catalog')
+    return data as WidgetCatalogItem[]
+  },
+
+  updateLayout: async (widgets: DashboardWidgetInstance[]): Promise<void> => {
+    await api.put('/dashboard/layout', { widgets })
   },
 }

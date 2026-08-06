@@ -20,6 +20,16 @@
 
 ---
 
+# ENVIRONMENT SANITY CHECK — MANDATORY BEFORE ANY OTHER STEP
+This section exists because Claude Code twice reported stale route-conflict files (frontend/src/app/settings/, frontend/src/app/calendar/, frontend/src/app/(dashboard)/) as real, current, build-blocking evidence and asked for permission to delete them. Both times, those files did not exist in the real repo at /home/corby/jamm-os. They existed only on the separate Windows-side checkout at /mnt/c/Users/corby/jamm-os, a pre-rename leftover copy that is for viewing only and is never the source of truth. Some tool call had actually resolved against that path instead of the real WSL repo, and reported what it found there as if it were current.
+
+Before running any other command in this task:
+1. Run: pwd — the output must be exactly /home/corby/jamm-os or a path underneath it. If it is not, stop and cd /home/corby/jamm-os before doing anything else.
+2. State explicitly in the report, as its own line, that no command in this task read, listed, or resolved any path under /mnt/c/Users or any other Windows-side location. This is not optional boilerplate, it is a real claim that must be true.
+3. If at any point a command needs to check whether something exists "on disk," that means the real WSL filesystem under /home/corby/jamm-os, never the Windows copy, even implicitly, even as a fallback.
+
+---
+
 # VERIFY BEFORE ACT — MANDATORY FOR EVERY TASK
 Before making any change to any file:
 1. Run: pwd — confirm output is /home/corby/jamm-os. If it is not, run: cd /home/corby/jamm-os
@@ -52,42 +62,61 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 ---
 
+# REPORTING DISCIPLINE — MANDATORY FOR EVERY TASK
+This section exists because a past session confidently claimed specific files were stale untracked leftovers safe to delete, citing a real commit hash correctly, then drew a false conclusion from it. The files did not exist on disk at all. The commit was real. The conclusion was not. That is the failure mode this section guards against: not sloppy guessing, but a plausible-sounding narrative that outran the actual evidence.
+
+- Quote literal command output verbatim in every summary. Never paraphrase output, never assert a conclusion in place of showing the output it came from. If a claim cannot be backed by pasted, real output in the same message, it does not go in the summary as fact.
+- If evidence is ambiguous, incomplete, contradictory, or simply absent, say so explicitly and stop. Do not fill a gap in the evidence with a story that sounds coherent. An honest "I don't have enough evidence to conclude this" is always the correct output when that is the true state.
+- Never take any action, including deletions, fixes, or refactors, beyond what CHANGE INSTRUCTIONS explicitly names, even if something discovered mid-task seems to obviously justify it. Surface it as a finding in the report and wait for a real instruction. Diagnosis and action are separate steps, not one motion.
+- Before claiming any file doesn't belong, is stale, is dead code, or should be deleted, confirm both that it exists on disk (ls -la) and its real git tracking status (git status --short and git ls-files) in the same message as the claim itself, not as a follow-up only produced if challenged.
+
+---
+
 # Section 3 - The task
 
-TASK: Fix the system-default dashboard layout seed. staff_utilization is seeded at grid_x 1 with size medium (width 2 columns), but upcoming_deadlines is also at grid_x 0 with size medium (width 2 columns), so they overlap in column 1, which is why react-grid-layout's collision handling pushes staff_utilization onto its own row instead of sitting beside upcoming_deadlines as intended.
+TASK: Remove the jiggle animation from Edit Dashboard mode entirely. Ben tested it live and it's too much visually, not what the product needs on this screen.
 
 USE: claude sonnet
 
 VERIFY BEFORE ACT:
 
-grep -n -B 3 -A 30 "system default" app/api/dashboard.py
+pwd
 
-Confirm the exact line where staff_utilization's grid_x is set to 1 in the system-default seed inside get_layout.
+State plainly that no path in this task resolves against /mnt/c/Users or any Windows-side copy.
+
+grep -n -B 3 -A 10 "dashboard-jiggle" "src/app/(app)/dashboard/page.tsx" src/app/globals.css
+
+Paste the real output. Confirm exactly where the keyframe is defined and where it's applied before removing anything.
 
 WHAT THIS IS:
 
-Medium widgets are 2 grid columns wide in this 4-column grid. Two medium widgets sitting side by side need x positions 2 apart, not 1 apart, the same way two 2-inch tiles laid side by side start 2 inches apart, not 1. The seed currently places upcoming_deadlines at x 0 and staff_utilization at x 1, which means they overlap in column 1, not that they're adjacent. This was wrong in the original task instruction, not something introduced during implementation.
+The jiggle was added as an iOS-style visual cue for entering edit mode. Ben tested the real behavior in the browser after the positioning fix and found it too much, not a look this product wants. This is a subtraction, not a redesign, remove the animation and its keyframe definition, leave everything else about edit mode (drag, resize, remove, minimize, Done/Cancel) completely untouched.
 
 CHANGE INSTRUCTIONS:
 
-In the system-default seed inside get_layout in app/api/dashboard.py, change staff_utilization's grid_x from 1 to 2, so upcoming_deadlines occupies columns 0-1 and staff_utilization occupies columns 2-3, correctly adjacent with no overlap.
-
-The Riverside test firm owner already has a saved DashboardLayout row from earlier testing, seeded with the old buggy value, and GET /layout only seeds when no row exists, so fixing the source code alone will not fix what that user already sees. Delete the existing row for owner@riverside-demo.com from the dashboard_layouts table so the next GET /layout call re-seeds it with the corrected position, rather than leaving stale bad data in place.
+Remove the animation: 'dashboard-jiggle 0.4s ease-in-out infinite' style application from the widget wrapper in the dashboard page. Remove the @keyframes dashboard-jiggle definition itself, wherever it's actually defined, do not leave a dead unused keyframe behind. Do not add any replacement visual cue in its place unless something else in this file already relied on that same conditional editMode style branch for another purpose, if so leave that other purpose intact and only strip the jiggle-specific piece.
 
 VERIFY AFTER ACT:
 
-grep -n "grid_x.*2" app/api/dashboard.py
+grep -n "dashboard-jiggle" "src/app/(app)/dashboard/page.tsx" src/app/globals.css
 
-Confirm the Riverside owner's old dashboard_layouts row was actually deleted, not just that the source code changed.
+This must return nothing at all. If anything still matches, the removal is incomplete.
+
+cd /home/corby/jamm-os/frontend
+npm run build
+
+git diff --stat "src/app/(app)/dashboard/page.tsx" src/app/globals.css
+
+The diff should be small, just the animation removal, nothing else.
 
 MANUAL VERIFICATION:
 
-Restart the backend. Call GET /dashboard/layout as owner@riverside-demo.com again and confirm staff_utilization now shows grid_x 2, not 1. Then load /dashboard in the browser and confirm Upcoming Deadlines and Staff Utilization now render side by side in one row, not stacked, and confirm Work in Progress above them still renders correctly since it wasn't affected by this bug. Report back a screenshot or a plain description of what the row now looks like.
+Restart the frontend dev server, reload /dashboard, enter Edit Dashboard, confirm widgets no longer wiggle or animate at all when entering edit mode, and confirm drag and resize still work exactly as they did a moment ago, since nothing about the actual interaction logic should have changed.
 
 GIT:
 
 git add -A
-git commit -m "fix system-default dashboard layout seed: staff_utilization was placed at grid_x 1 with medium width, overlapping upcoming_deadlines at grid_x 0 also medium width, causing collision-driven stacking instead of the intended side by side row, corrected to grid_x 2 and cleared the one stale seeded row already created during testing"
+git commit -m "remove the jiggle animation from Edit Dashboard mode, tested live and found too visually busy for this screen, edit mode now has no entry animation, drag resize remove and minimize interactions are unaffected"
 git pull --rebase origin main
 git push origin main
 
