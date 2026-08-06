@@ -687,11 +687,13 @@ function AddWidgetModal({
   onClose,
   catalog,
   onAdd,
+  editedWidgets,
 }: {
   open: boolean
   onClose: () => void
   catalog: WidgetCatalogItem[]
   onAdd: (entry: WidgetCatalogItem) => void
+  editedWidgets: DashboardWidgetInstance[]
 }) {
   const addable = catalog.filter((w) => w.config_schema.every((f) => !f.required))
 
@@ -715,20 +717,34 @@ function AddWidgetModal({
                 {CATEGORY_LABELS[cat] ?? cat}
               </p>
               <div className="grid grid-cols-2 gap-2">
-                {grouped[cat].map((entry) => (
-                  <button
-                    key={entry.type_key}
-                    onClick={() => onAdd(entry)}
-                    className="text-left px-3.5 py-3 rounded-[8px] border border-surface-border dark:border-dark-border bg-surface-card dark:bg-dark-card hover:bg-surface-input dark:hover:bg-dark-page transition-colors"
-                  >
-                    <p className="text-[13px] font-medium text-foreground">{entry.display_name}</p>
-                    {entry.allowed_sizes.length > 0 && (
-                      <p className="text-[11px] text-muted-foreground mt-0.5">
-                        {entry.allowed_sizes.join(", ")}
-                      </p>
-                    )}
-                  </button>
-                ))}
+                {grouped[cat].map((entry) => {
+                  const alreadyAdded = entry.config_schema.length === 0 && editedWidgets.some((w) => w.type_key === entry.type_key)
+                  if (alreadyAdded) {
+                    return (
+                      <div
+                        key={entry.type_key}
+                        className="text-left px-3.5 py-3 rounded-[8px] border border-surface-border dark:border-dark-border bg-surface-card dark:bg-dark-card opacity-50 cursor-not-allowed"
+                      >
+                        <p className="text-[13px] font-medium text-foreground">{entry.display_name}</p>
+                        <p className="text-[11px] text-muted-foreground mt-0.5">Added</p>
+                      </div>
+                    )
+                  }
+                  return (
+                    <button
+                      key={entry.type_key}
+                      onClick={() => onAdd(entry)}
+                      className="text-left px-3.5 py-3 rounded-[8px] border border-surface-border dark:border-dark-border bg-surface-card dark:bg-dark-card hover:bg-surface-input dark:hover:bg-dark-page transition-colors"
+                    >
+                      <p className="text-[13px] font-medium text-foreground">{entry.display_name}</p>
+                      {entry.allowed_sizes.length > 0 && (
+                        <p className="text-[11px] text-muted-foreground mt-0.5">
+                          {entry.allowed_sizes.join(", ")}
+                        </p>
+                      )}
+                    </button>
+                  )
+                })}
               </div>
             </div>
           ))}
@@ -1074,6 +1090,7 @@ export default function DashboardPage() {
           onClose={() => setShowAddWidget(false)}
           catalog={catalog}
           onAdd={handleAddWidgetFromGallery}
+          editedWidgets={editedWidgets}
         />
       )}
       {ConfirmDialog}

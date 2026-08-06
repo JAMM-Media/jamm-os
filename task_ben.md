@@ -74,7 +74,7 @@ This section exists because a past session confidently claimed specific files we
 
 # Section 3 - The task
 
-TASK: Add a Reset to Default option to Edit Dashboard mode. Clicking it loads the same layout a brand-new user would get (firm default if set, otherwise the system default 9-widget layout) into the current edit session, still requiring Done to actually save, so it stays fully undoable via Cancel like every other edit-mode action.
+TASK: Update the Add Widget gallery so widgets with no configuration options at all become disabled/already-added once one instance exists on the canvas, while widgets that have any config fields (required or optional) remain addable multiple times. Currently every widget can be added unlimited times regardless of whether a second instance could ever differ from the first.
 
 USE: claude sonnet
 
@@ -86,49 +86,41 @@ State plainly that no path in this task resolves against /mnt/c/Users or any Win
 
 VERIFY BEFORE ACT:
 
-grep -n -B 5 -A 40 "def get_layout" app/api/dashboard.py
+grep -n -B 5 -A 60 "function AddWidgetModal" "src/app/(app)/dashboard/page.tsx"
 
-grep -n -B 5 -A 15 "useConfirm" src/components/dashboard/ConciergeSpotlight.tsx frontend/src/lib/hooks/useConfirm.ts 2>/dev/null
-
-Paste the real output of both. Confirm the exact current resolution logic inside get_layout (firm default then system default), since this needs to be reused, not duplicated, and confirm the real useConfirm hook's signature before using it for the reset confirmation prompt.
+Paste the real output. Confirm the exact current gallery rendering logic, the shape of each catalog entry available at render time (specifically whether config_schema is accessible here), and how editedWidgets is passed into or accessible from this component.
 
 WHAT THIS IS:
 
-The resolution logic already exists inside get_layout for a first-time user: check for a saved DashboardLayout row, then a FirmDefaultDashboardLayout row, then fall back to the hardcoded system default. Reset to Default needs that same firm-default-then-system-default resolution, but callable on demand for a user who already has a saved layout, not just on first load. The cleanest way to do this without duplicating the resolution logic is extracting the firm-default-then-system-default portion of get_layout's existing logic into its own small function, then having both get_layout's fallback path and the new reset endpoint call that same function, so there is exactly one place this resolution is defined, not two copies that could drift apart later.
+A widget with an empty config_schema shows identical content every time it's added, since there is nothing that could differentiate two instances of it, for example two Revenue This Month cards would always show the exact same number. A widget with any config_schema fields, required or not, like my_tasks with its optional assignee filter, can meaningfully differ between instances, the same way iOS allows two weather widgets for two different cities. The rule is: addable more than once only if config_schema.length > 0. This is not a new concept, config_schema already exists on every catalog entry, this only makes the gallery actually use that field to decide repeatability instead of ignoring it.
 
 CHANGE INSTRUCTIONS:
 
-In app/api/dashboard.py, extract the firm-default-then-system-default resolution portion of get_layout's existing logic into a standalone function, for example _resolve_default_layout(db, current_firm), returning the widgets list, without changing get_layout's own behavior at all, this is a pure refactor of that one piece.
+In the gallery rendering logic, for each catalog entry with an empty config_schema, check whether editedWidgets already contains an instance with that type_key. If it does, render that gallery entry in a visually disabled state, greyed out, not clickable, with a small label indicating it's already added, for example "Added" in place of where the entry would normally be clickable, using whatever muted/disabled text style convention already exists elsewhere in this file or the design tokens, do not invent a new disabled-state style. Entries with a non-empty config_schema remain fully clickable and addable regardless of how many instances already exist, no change to their behavior.
 
-Add a new endpoint, POST /dashboard/reset, gated require_manager_or_above same as the other layout endpoints, that calls _resolve_default_layout and returns the resulting widgets list. This endpoint does not write to the database at all, it only returns what the default would be, matching the pattern that Done, not this endpoint, is what actually persists anything, consistent with every other edit-mode action.
-
-Add a getDefaultLayout method to frontend/src/lib/api/dashboard.ts calling POST /dashboard/reset.
-
-In the dashboard page, add a "Reset to Default" button, visible only while editMode is true, placed near the existing Edit Dashboard row of controls but visually secondary, a plain text-style button rather than a solid button, since this is a less common, semi-destructive action compared to Done or Cancel. Clicking it opens the existing useConfirm dialog with a clear message explaining this will replace the current arrangement with the default layout, and nothing is saved until Done is clicked afterward. On confirmation, call getDefaultLayout and replace editedWidgets entirely with the returned widgets, staying in edit mode, not auto-saving and not auto-exiting edit mode, so the user can still inspect the result and either click Done to save it or Cancel to discard the whole reset and get back their original arrangement.
+This check needs to be reactive to the current edit session's state, meaning if a widget with no config is removed during the same edit session, its gallery entry should become addable again without needing to close and reopen the modal, since editedWidgets is the live source of truth during editing.
 
 VERIFY AFTER ACT:
 
 cd /home/corby/jamm-os/frontend
 npm run build
 
-cd /home/corby/jamm-os
-python3 -c "from app.main import app; print('app imports cleanly')"
+grep -n "config_schema.length\|already added\|Added" "src/app/(app)/dashboard/page.tsx"
 
-grep -n "_resolve_default_layout\|/dashboard/reset" app/api/dashboard.py
+git diff --stat "src/app/(app)/dashboard/page.tsx"
 
-grep -n "Reset to Default\|getDefaultLayout" "frontend/src/app/(app)/dashboard/page.tsx" frontend/src/lib/api/dashboard.ts
-
-git diff --stat
+This should be a small, targeted diff, just the gallery entry rendering logic, nothing else in the file touched.
 
 MANUAL VERIFICATION:
 
-Restart the backend and the frontend dev server, both are needed since this touches both. Reload /dashboard, enter Edit Dashboard, confirm the current messy arrangement is still there. Click Reset to Default, confirm the dialog appears, confirm it, and confirm the canvas now shows the clean 9-widget default arrangement, 4 stat cards in a row, Work in Progress, Upcoming Deadlines and Staff Utilization side by side, Overdue Engagements table, Awaiting Signature. Click Cancel instead of Done, confirm the original messy arrangement comes back exactly as it was, proving the reset itself was truly undoable. Then repeat, enter Edit Dashboard, click Reset to Default and confirm again, this time click Done, reload the full page, and confirm the clean default persisted for real. Report back with a screenshot after the final reload.
+Restart the frontend dev server only, no backend changes were made. Reload /dashboard, enter Edit Dashboard, click Add Widget, add Revenue This Month, reopen Add Widget and confirm Revenue This Month now shows disabled with an Added label and cannot be clicked again. Add my_tasks, reopen Add Widget and confirm my_tasks remains fully clickable and addable again, since it has config fields. Remove the Revenue This Month instance you just added, reopen Add Widget, confirm it becomes clickable again. Report back with a screenshot showing at least one disabled entry and one still-clickable entry in the same gallery view.
 
 GIT:
 
 git add -A
-git commit -m "add Reset to Default to Edit Dashboard mode, reusing the same firm-default-then-system-default resolution logic already used for first-time layout seeding via a new shared _resolve_default_layout function and a POST /dashboard/reset endpoint that only returns the default without writing anything, keeping Done as the single place any layout change actually persists so a reset stays fully undoable via Cancel like every other edit-mode action. Added after live testing tonight genuinely drifted a real dashboard into a messy state with no way back short of a direct database fix, reversing an earlier decision to defer this out of v1"
+git commit -m "prevent adding a second instance of a widget with no configuration options, since two instances would always show identical content, while widgets with any config fields remain addable multiple times per the iOS multiple-weather-widgets pattern the gallery was originally designed around. Gallery entries for already-added no-config widgets now render disabled with an Added label instead of staying clickable"
 git pull --rebase origin main
 git push origin main
+git log --oneline -3
 
-If task.md conflicts on the rebase, resolve with --theirs. Any other file conflict, stop and report back.
+Paste the real output of git log --oneline -3 showing the new commit hash present next to origin/main. Do not report this as done based on the push command running, confirm the real log output showing origin/main at the new hash.
