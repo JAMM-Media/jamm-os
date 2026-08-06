@@ -74,7 +74,7 @@ This section exists because a past session confidently claimed specific files we
 
 # Section 3 - The task
 
-TASK: Add a hover highlight to each row in the Load Template list, so it's visually clear which template you're about to select. Small, isolated visual change.
+TASK: Diagnose and fix a visible hairline white sliver at the top-left and top-right corners of the Modal component. Confirmed by Ben as universal across the entire app, not isolated to Load Template, it appears on Create Engagement and most other modals too, meaning this lives entirely in the shared Modal.tsx component and one real fix there resolves it everywhere at once.
 
 USE: claude sonnet
 
@@ -86,37 +86,35 @@ State plainly that no path in this task resolves against /mnt/c/Users or any Win
 
 VERIFY BEFORE ACT:
 
-grep -n -B 3 -A 20 "showLoadTemplate" "src/app/(app)/dashboard/page.tsx"
+cat src/components/ui/Modal.tsx
 
-Paste the real output. Confirm the exact current JSX structure of each template row in the Load Template modal, specifically the clickable element that calls handleSelectTemplate, so the hover style gets applied to the real clickable row, not a wrapper that doesn't actually respond to the click.
+Paste the full real file. I want to see every layer of the modal's rendering, the backdrop, any wrapping div, the actual card element, and every border-radius, box-shadow, outline, and ring class applied at each layer. A border-radius mismatch between two stacked elements, for example a square-cornered shadow, ring, or outline sitting behind or around a rounded background, so a sliver of the squared layer peeks out past the rounded one in front, is the leading theory, but this needs to be confirmed against the real code, not assumed, since it's now confirmed to affect every modal in the app and deserves a precise fix, not a guess.
 
 WHAT THIS IS:
 
-Right now the Load Template list rows have no hover feedback, so it's not visually obvious they're clickable or which one the cursor is over. This needs a background color change on hover using the same design tokens already used elsewhere in this file for hoverable rows or buttons, for example hover:bg-surface-input or similar already-established convention, not a new color invented for this.
+A zoomed screenshot shows a thin white/light line right at the modal's top-left and top-right corners, outside the rounded curve of the modal's own background. Confirmed universal across the app by Ben, appearing on Create Engagement, Reset to Default, Save as Firm Default, Save as Template, Load Template, and most other modals, meaning the cause is entirely inside the shared Modal.tsx component itself, not anything specific to tonight's work. Fixing the real cause here fixes it everywhere at once, which is exactly why this is worth diagnosing precisely rather than working around it in any one instance.
 
 CHANGE INSTRUCTIONS:
 
-Add a hover background state to each template row's clickable element, using whatever hover convention is already used elsewhere in this file for similar list rows or buttons, check the existing className patterns before picking a value. Keep the delete X button's own hover state, if it has one, working independently, the row hover should not visually conflict with or obscure the X button.
+Based on what the real Modal.tsx code shows, identify the specific mismatch, most likely two elements at the same corner position with different border-radius values, or a shadow/ring utility that doesn't inherit the same rounded corners as the element it's applied to. State plainly in the report exactly which two layers and which specific classes are responsible, quoting the real lines, before applying a fix. Apply the minimal correct fix, most likely aligning the border-radius value across whichever layers are mismatched, or moving a shadow/ring to the correct element so it clips to the same rounded corners rather than sitting behind it with square corners. Do not add a workaround like overflow-hidden as a first resort if the real cause is a genuine radius mismatch, fix the actual mismatch, only use overflow-hidden if that turns out to be the real, correct fix for what the code actually shows.
 
 VERIFY AFTER ACT:
 
 cd /home/corby/jamm-os/frontend
 npm run build
 
-grep -n "hover:bg" "src/app/(app)/dashboard/page.tsx" | grep -i template
+git diff --stat src/components/ui/Modal.tsx
 
-git diff --stat "src/app/(app)/dashboard/page.tsx"
-
-This should be a very small, single-line-ish diff.
+This should be a small, targeted diff in one shared file.
 
 MANUAL VERIFICATION:
 
-Restart the frontend dev server only. Reload /dashboard, enter Edit Dashboard, click Load Template, hover over a template row, confirm it now highlights, confirm the X button is still separately clickable and its own hover still works. Report back with a screenshot.
+Restart the frontend dev server only. Reload the app, open at least three different modals in different parts of the app, for example Load Template on the dashboard, New Engagement, and any settings modal, zoom in on each modal's top corners the way Ben's screenshot did, confirm the white sliver is gone on all of them, not just one. Report back with a screenshot of at least one modal's corner zoomed in enough to actually see whether it's fixed.
 
 GIT:
 
 git add -A
-git commit -m "add a hover highlight to Load Template list rows so it's visually clear which template is about to be selected, using the same hover convention already established elsewhere in this file"
+git commit -m "fix a hairline visual artifact at the top corners of every modal in the app, caused by [fill in the real cause found in Modal.tsx], confirmed by Ben as universal across Create Engagement, Load Template, Reset to Default, Save as Firm Default, Save as Template, and most other modals, one shared-component fix resolves it everywhere rather than needing per-modal patches"
 git pull --rebase origin main
 git push origin main
 git log --oneline -3
