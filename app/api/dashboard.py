@@ -395,8 +395,8 @@ def _system_default_widgets() -> list:
         {"instance_id": str(uuid.uuid4()), "type_key": "work_in_progress",           "grid_x": 0, "grid_y": 1, "size": "medium", "minimized": False, "config": {}},
         {"instance_id": str(uuid.uuid4()), "type_key": "upcoming_deadlines",         "grid_x": 0, "grid_y": 2, "size": "medium", "minimized": False, "config": {}},
         {"instance_id": str(uuid.uuid4()), "type_key": "staff_utilization",          "grid_x": 2, "grid_y": 2, "size": "medium", "minimized": False, "config": {}},
-        {"instance_id": str(uuid.uuid4()), "type_key": "overdue_engagements_table",  "grid_x": 0, "grid_y": 3, "size": "large",  "minimized": False, "config": {}},
-        {"instance_id": str(uuid.uuid4()), "type_key": "awaiting_signature",         "grid_x": 0, "grid_y": 4, "size": "large",  "minimized": False, "config": {}},
+        {"instance_id": str(uuid.uuid4()), "type_key": "overdue_engagements_table",  "grid_x": 2, "grid_y": 2, "size": "medium", "minimized": False, "config": {}},
+        {"instance_id": str(uuid.uuid4()), "type_key": "awaiting_signature",         "grid_x": 0, "grid_y": 3, "size": "large",  "minimized": False, "config": {}},
     ]
 
 
