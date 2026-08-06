@@ -400,6 +400,15 @@ def _system_default_widgets() -> list:
     ]
 
 
+def _resolve_default_layout(db: Session, current_firm: Firm) -> list:
+    firm_default = db.execute(
+        select(FirmDefaultDashboardLayout).where(
+            FirmDefaultDashboardLayout.firm_id == current_firm.id
+        )
+    ).scalar_one_or_none()
+    return firm_default.widgets if firm_default is not None else _system_default_widgets()
+
+
 # ---------------------------------------------------------------------------
 # Request schemas
 # ---------------------------------------------------------------------------
@@ -483,13 +492,7 @@ def get_layout(
     if row is not None:
         return {"widgets": row.widgets}
 
-    firm_default = db.execute(
-        select(FirmDefaultDashboardLayout).where(
-            FirmDefaultDashboardLayout.firm_id == current_firm.id
-        )
-    ).scalar_one_or_none()
-
-    widgets = firm_default.widgets if firm_default is not None else _system_default_widgets()
+    widgets = _resolve_default_layout(db, current_firm)
 
     new_row = DashboardLayout(
         firm_id=current_firm.id,
@@ -523,6 +526,16 @@ def put_layout(
 
     db.commit()
     return {"widgets": row.widgets}
+
+
+@router.post("/reset")
+def reset_layout(
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    _: object = Depends(require_manager_or_above),
+):
+    """Returns the firm-default-then-system-default layout without writing anything."""
+    return {"widgets": _resolve_default_layout(db, current_firm)}
 
 
 @router.put("/firm-default-layout")

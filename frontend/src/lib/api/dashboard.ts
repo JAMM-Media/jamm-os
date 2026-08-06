@@ -183,4 +183,9 @@ export const dashboardApi = {
   updateLayout: async (widgets: DashboardWidgetInstance[]): Promise<void> => {
     await api.put('/dashboard/layout', { widgets })
   },
+
+  getDefaultLayout: async (): Promise<DashboardWidgetInstance[]> => {
+    const { data } = await api.post('/dashboard/reset')
+    return (data as { widgets: DashboardWidgetInstance[] }).widgets
+  },
 }

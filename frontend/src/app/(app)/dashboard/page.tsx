@@ -16,6 +16,7 @@ import type { WIPSummary } from '@/lib/api/reports'
 import api from '@/lib/api'
 import { formatEngagementType } from '@/lib/utils'
 import { ConciergeSpotlight } from '@/components/dashboard/ConciergeSpotlight'
+import { useConfirm } from '@/lib/hooks/useConfirm'
 
 // Size -> grid span mapping (4-column grid, rowHeight 80px).
 const SIZE_TO_SPAN: Record<string, { w: number; h: number }> = {
@@ -745,6 +746,7 @@ export default function DashboardPage() {
   const { width, containerRef, mounted } = useContainerWidth()
 
 
+  const { confirm, ConfirmDialog } = useConfirm()
   const [editMode, setEditMode] = useState(false)
   const [editedWidgets, setEditedWidgets] = useState<DashboardWidgetInstance[]>([])
   const [saving, setSaving] = useState(false)
@@ -818,6 +820,21 @@ export default function DashboardPage() {
   function handleCancel() {
     setEditedWidgets([])
     setEditMode(false)
+  }
+
+  async function handleResetToDefault() {
+    const confirmed = await confirm({
+      message: 'This will replace your current arrangement with the default layout. Nothing is saved until you click Done.',
+      confirmLabel: 'Reset to Default',
+      destructive: true,
+    })
+    if (!confirmed) return
+    try {
+      const defaultWidgets = await dashboardApi.getDefaultLayout()
+      setEditedWidgets(defaultWidgets)
+    } catch {
+      toast.error('Failed to load default layout')
+    }
   }
 
   function handleAddWidgetFromGallery(entry: WidgetCatalogItem) {
@@ -961,6 +978,13 @@ export default function DashboardPage() {
                     Add Widget
                   </button>
                   <button
+                    onClick={() => void handleResetToDefault()}
+                    disabled={saving}
+                    className="text-[13px] font-medium px-3.5 py-1.5 text-muted-foreground hover:text-foreground disabled:opacity-50 transition-colors"
+                  >
+                    Reset to Default
+                  </button>
+                  <button
                     onClick={handleCancel}
                     disabled={saving}
                     className="text-[13px] font-medium px-3.5 py-1.5 rounded border border-surface-border dark:border-dark-border text-foreground hover:bg-surface-input dark:hover:bg-dark-page disabled:opacity-50 transition-colors"
@@ -1052,6 +1076,7 @@ export default function DashboardPage() {
           onAdd={handleAddWidgetFromGallery}
         />
       )}
+      {ConfirmDialog}
     </div>
   )
 }

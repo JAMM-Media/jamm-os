@@ -74,7 +74,7 @@ This section exists because a past session confidently claimed specific files we
 
 # Section 3 - The task
 
-TASK: Fix mounted being permanently stuck false in useContainerWidth, confirmed with real browser evidence: the debug text read exactly "MOUNTED FALSE width=1280" on every load, meaning the initial synchronous measurement never runs and mounted never flips true, leaving the grid canvas permanently empty.
+TASK: Add a Reset to Default option to Edit Dashboard mode. Clicking it loads the same layout a brand-new user would get (firm default if set, otherwise the system default 9-widget layout) into the current edit session, still requiring Done to actually save, so it stays fully undoable via Cancel like every other edit-mode action.
 
 USE: claude sonnet
 
@@ -86,35 +86,49 @@ State plainly that no path in this task resolves against /mnt/c/Users or any Win
 
 VERIFY BEFORE ACT:
 
-grep -n -B 5 -A 50 "function useContainerWidth" node_modules/react-grid-layout/dist/*.js
+grep -n -B 5 -A 40 "def get_layout" app/api/dashboard.py
 
-Paste the real output. Confirm exactly what condition the hook's internal useEffect checks before calling measureWidth and setting mounted true, and confirm whether that effect depends on containerRef.current already being non-null at the moment it runs.
+grep -n -B 5 -A 15 "useConfirm" src/components/dashboard/ConciergeSpotlight.tsx frontend/src/lib/hooks/useConfirm.ts 2>/dev/null
+
+Paste the real output of both. Confirm the exact current resolution logic inside get_layout (firm default then system default), since this needs to be reused, not duplicated, and confirm the real useConfirm hook's signature before using it for the reset confirmation prompt.
 
 WHAT THIS IS:
 
-Real browser evidence confirmed mounted is stuck false with width still at its 1280 default, meaning the hook's own initial measurement effect never successfully ran. The earlier diagnostic report theorized this happens if containerRef.current is null at the moment the effect's measureWidth call runs, which would happen if the ref is attached to a DOM node that does not exist yet on the very first render pass, a common timing issue with refs and effects in React, and the ResizeObserver alone cannot recover from this since based on the same earlier reading, it only calls setWidth, never setMounted.
+The resolution logic already exists inside get_layout for a first-time user: check for a saved DashboardLayout row, then a FirmDefaultDashboardLayout row, then fall back to the hardcoded system default. Reset to Default needs that same firm-default-then-system-default resolution, but callable on demand for a user who already has a saved layout, not just on first load. The cleanest way to do this without duplicating the resolution logic is extracting the firm-default-then-system-default portion of get_layout's existing logic into its own small function, then having both get_layout's fallback path and the new reset endpoint call that same function, so there is exactly one place this resolution is defined, not two copies that could drift apart later.
 
 CHANGE INSTRUCTIONS:
 
-Based on what the real hook source shows, apply the smallest correct fix, not a rewrite. If the issue is a ref-not-attached-yet timing problem, the standard correct fix is checking whether measureBeforeMount is even necessary here, since it was added specifically to solve the 1280px stale-render bug, if the hook's default behavior without measureBeforeMount also correctly avoids the stale 1280 render through some other real mechanism confirmed by reading the source, removing measureBeforeMount may be simpler and safer than working around its specific mount-timing behavior. If removing it would reintroduce the original 1280px bug, instead fix the actual timing issue directly, for example by ensuring the container div always exists in the DOM before the hook's effect can run, or by explicitly calling the hook's own remeasure mechanism if the source exposes one, whatever the real source shows is the correct, intended way to recover from this exact situation. State plainly in the report which approach was taken and why, based on what the real source showed, not a guess.
+In app/api/dashboard.py, extract the firm-default-then-system-default resolution portion of get_layout's existing logic into a standalone function, for example _resolve_default_layout(db, current_firm), returning the widgets list, without changing get_layout's own behavior at all, this is a pure refactor of that one piece.
 
-Remove the temporary debug text block from the previous task now that its job is done.
+Add a new endpoint, POST /dashboard/reset, gated require_manager_or_above same as the other layout endpoints, that calls _resolve_default_layout and returns the resulting widgets list. This endpoint does not write to the database at all, it only returns what the default would be, matching the pattern that Done, not this endpoint, is what actually persists anything, consistent with every other edit-mode action.
+
+Add a getDefaultLayout method to frontend/src/lib/api/dashboard.ts calling POST /dashboard/reset.
+
+In the dashboard page, add a "Reset to Default" button, visible only while editMode is true, placed near the existing Edit Dashboard row of controls but visually secondary, a plain text-style button rather than a solid button, since this is a less common, semi-destructive action compared to Done or Cancel. Clicking it opens the existing useConfirm dialog with a clear message explaining this will replace the current arrangement with the default layout, and nothing is saved until Done is clicked afterward. On confirmation, call getDefaultLayout and replace editedWidgets entirely with the returned widgets, staying in edit mode, not auto-saving and not auto-exiting edit mode, so the user can still inspect the result and either click Done to save it or Cancel to discard the whole reset and get back their original arrangement.
 
 VERIFY AFTER ACT:
 
 cd /home/corby/jamm-os/frontend
 npm run build
 
-grep -n "MOUNTED" "src/app/(app)/dashboard/page.tsx"
+cd /home/corby/jamm-os
+python3 -c "from app.main import app; print('app imports cleanly')"
 
-This must return nothing, confirming the debug text was removed.
+grep -n "_resolve_default_layout\|/dashboard/reset" app/api/dashboard.py
 
-git diff --stat "src/app/(app)/dashboard/page.tsx"
+grep -n "Reset to Default\|getDefaultLayout" "frontend/src/app/(app)/dashboard/page.tsx" frontend/src/lib/api/dashboard.ts
+
+git diff --stat
 
 MANUAL VERIFICATION:
 
-Restart the frontend dev server. Reload /dashboard fresh. Confirm all 8 real widgets that are known to exist in the saved layout actually render, not a blank canvas. Then reload the page 3 more times in a row, since the original 1280px bug and this blank-canvas bug were both intermittent-feeling issues that did not always reproduce identically, confirm the grid renders correctly and at full width on every one of the 4 total loads, not just the first. Report back with a screenshot after the 4th reload.
+Restart the backend and the frontend dev server, both are needed since this touches both. Reload /dashboard, enter Edit Dashboard, confirm the current messy arrangement is still there. Click Reset to Default, confirm the dialog appears, confirm it, and confirm the canvas now shows the clean 9-widget default arrangement, 4 stat cards in a row, Work in Progress, Upcoming Deadlines and Staff Utilization side by side, Overdue Engagements table, Awaiting Signature. Click Cancel instead of Done, confirm the original messy arrangement comes back exactly as it was, proving the reset itself was truly undoable. Then repeat, enter Edit Dashboard, click Reset to Default and confirm again, this time click Done, reload the full page, and confirm the clean default persisted for real. Report back with a screenshot after the final reload.
 
 GIT:
 
-Do not commit until Ben confirms all 4 reloads worked in the browser.
+git add -A
+git commit -m "add Reset to Default to Edit Dashboard mode, reusing the same firm-default-then-system-default resolution logic already used for first-time layout seeding via a new shared _resolve_default_layout function and a POST /dashboard/reset endpoint that only returns the default without writing anything, keeping Done as the single place any layout change actually persists so a reset stays fully undoable via Cancel like every other edit-mode action. Added after live testing tonight genuinely drifted a real dashboard into a messy state with no way back short of a direct database fix, reversing an earlier decision to defer this out of v1"
+git pull --rebase origin main
+git push origin main
+
+If task.md conflicts on the rebase, resolve with --theirs. Any other file conflict, stop and report back.
