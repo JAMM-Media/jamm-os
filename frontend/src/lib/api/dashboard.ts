@@ -188,4 +188,8 @@ export const dashboardApi = {
     const { data } = await api.post('/dashboard/reset')
     return (data as { widgets: DashboardWidgetInstance[] }).widgets
   },
+
+  putFirmDefaultLayout: async (widgets: DashboardWidgetInstance[]): Promise<void> => {
+    await api.put('/dashboard/firm-default-layout', { widgets })
+  },
 }

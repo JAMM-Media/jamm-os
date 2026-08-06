@@ -74,7 +74,7 @@ This section exists because a past session confidently claimed specific files we
 
 # Section 3 - The task
 
-TASK: Fix client_health_snapshot returning no client_name, so the widget always displays generic "Client Health" with no indication of which client it's actually showing. Confirmed real gap: the response shape is { status, reasons[] }, no client identifier at all.
+TASK: Add a "Save as Firm Default" action to Edit Dashboard mode, visible only to firm owners, that persists the current in-session arrangement as the firm-wide default new managers get seeded with. The backend endpoint (PUT /dashboard/firm-default-layout, gated require_firm_owner) already exists and has never been wired to any frontend action.
 
 USE: claude sonnet
 
@@ -86,42 +86,45 @@ State plainly that no path in this task resolves against /mnt/c/Users or any Win
 
 VERIFY BEFORE ACT:
 
-grep -n -B 5 -A 40 "def compute_client_health" app/services/client_health_service.py
+grep -n -B 3 -A 15 "@router.put(\"/firm-default-layout\")" app/api/dashboard.py
 
-grep -n -B 5 -A 20 "function.*ClientHealth\|ClientHealthSnapshot" "src/app/(app)/dashboard/page.tsx"
+grep -n "useAuth" "src/app/(app)/dashboard/page.tsx"
 
-Paste the real output of both. Confirm compute_client_health already has the Client object loaded in scope somewhere in its body, since it must know which client it's evaluating to compute health at all, and confirm the exact current frontend component so the fix adds a header display without restructuring anything else about it.
+grep -n -B 2 -A 10 "Reset to Default\|handleResetToDefault" "src/app/(app)/dashboard/page.tsx"
+
+Paste the real output of all three. Confirm the exact real request body shape PUT /firm-default-layout expects, confirm whether useAuth is already imported in the dashboard page or needs adding, and confirm the real Reset to Default implementation from earlier tonight so this new action follows the same established pattern rather than inventing a new one.
 
 WHAT THIS IS:
 
-compute_client_health takes a client_id and returns health status, it necessarily already queries or has access to the Client row to do this. The fix is including client_name in the returned dict, the same low-risk pattern as the earlier assigned_to_name fix tonight, not new business logic, just surfacing a field that's already available internally. The frontend component then displays it in the header the same way single_client_quick_view already shows its client's name, "Acme Consulting LLC" not just "Client Health".
+This action is meaningfully different from Done, which saves the current user's own personal layout, and from Reset to Default, which loads a default into the edit session without persisting anything on its own. Save as Firm Default writes directly to the firm-wide default via a dedicated endpoint, separate from the user's own DashboardLayout row entirely. Unlike Reset to Default and every other edit-mode action, this one is not something Cancel can undo once clicked, since it is a direct write to a shared firm record the moment it is clicked, not a change to the local edit session, this needs its own explicit confirmation dialog making that plain, using the same useConfirm pattern already used for Reset to Default's confirmation.
+
+This action does not exit edit mode or affect the current user's own personal Done/Cancel flow at all. Someone can click Save as Firm Default and then still separately click Done or Cancel for their own personal layout exactly as before, these are two independent things happening to two independent records.
 
 CHANGE INSTRUCTIONS:
 
-In compute_client_health, add client_name to the returned dict, sourced from the same Client row already loaded to compute the health status, do not add a new query if the client object is already available in scope, only add one if it genuinely isn't already loaded.
+Add a putFirmDefaultLayout method to frontend/src/lib/api/dashboard.ts calling PUT /dashboard/firm-default-layout with the real confirmed request body shape.
 
-In the ClientHealthSnapshot frontend component, change the header to show the real client name from the response instead of the generic "Client Health" label, keeping the status badge (Healthy / At Risk) next to it the same way it renders now.
+In the dashboard page, get the current user's role from useAuth (import it if not already present). Add a "Save as Firm Default" button in the edit-mode toolbar, visible only when the current user's role is firm_owner, styled as a secondary/lighter action similar to Reset to Default rather than a primary button, since this is an infrequent administrative action, not a routine one.
+
+Clicking it opens a confirm dialog using the existing useConfirm pattern, with a message plainly stating this immediately sets the firm-wide default for new managers and cannot be undone with Cancel the way other edit-mode changes can. On confirmation, call putFirmDefaultLayout with the current editedWidgets array (the in-session arrangement, whatever the owner has currently arranged, whether or not they've clicked Done for their own personal layout yet), show a toast or equivalent success confirmation using whatever success-notification pattern already exists elsewhere in this file or the app (check for an existing toast/sonner usage before adding a new one), and remain in edit mode afterward exactly as before, not exiting or resetting anything else.
 
 VERIFY AFTER ACT:
 
-cd /home/corby/jamm-os
-python3 -c "from app.main import app; print('app imports cleanly')"
-
-grep -n "client_name" app/services/client_health_service.py
-
-cd frontend
+cd /home/corby/jamm-os/frontend
 npm run build
+
+grep -n "Save as Firm Default\|putFirmDefaultLayout\|firm_owner" "src/app/(app)/dashboard/page.tsx"
 
 git diff --stat
 
 MANUAL VERIFICATION:
 
-Restart both the backend and the frontend, since this touches both. Reload /dashboard, confirm the existing Client Health widgets on the canvas now show the real client name in the header instead of generic "Client Health", for both the healthy one and the at-risk one already on the canvas from before this fix. If they still show the old generic header after a restart and reload, the saved widget data may need a fresh fetch, not just a display fix, report that plainly if it happens rather than assuming the fix alone resolves it. Report back with a screenshot.
+Restart the frontend dev server only, no backend changes were made. Reload /dashboard as owner@riverside-demo.com, enter Edit Dashboard, confirm Save as Firm Default is visible. Log in instead as a manager-role test account if one exists, enter Edit Dashboard, confirm the button does not appear at all for a non-owner. Back as the owner, arrange the dashboard into something recognizable, click Save as Firm Default, confirm the dialog appears with clear undo-warning language, confirm it, confirm a success indicator appears and edit mode stays active. Verify the real result by calling GET /dashboard/reset directly (via curl or /docs) and confirming the returned widgets now match what was just saved, not the old system default. Report back with a screenshot and the real API response.
 
 GIT:
 
 git add -A
-git commit -m "fix client_health_snapshot never returning client_name, so the widget always showed generic Client Health with no indication of which client it was evaluating, despite compute_client_health necessarily already having the client loaded internally to compute the status at all. Widget header now shows the real client name next to the health status badge, matching how single_client_quick_view already displays its client's identity"
+git commit -m "add Save as Firm Default to Edit Dashboard mode, visible only to firm owners, wiring the PUT /dashboard/firm-default-layout endpoint that has existed since batch 1 but was never connected to any frontend action. This is a direct, immediate write to the shared firm-wide default, not undoable via Cancel like every other edit-mode action, so it uses its own explicit confirmation dialog stating that plainly. Independent of the current user's own personal Done/Cancel flow, both can be used separately in the same edit session"
 git pull --rebase origin main
 git push origin main
 git log --oneline -3

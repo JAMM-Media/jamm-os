@@ -18,6 +18,7 @@ import { SelectInput } from '@/components/ui/SelectInput'
 import { formatEngagementType } from '@/lib/utils'
 import { ConciergeSpotlight } from '@/components/dashboard/ConciergeSpotlight'
 import { useConfirm } from '@/lib/hooks/useConfirm'
+import { useAuth } from '@/lib/hooks/useAuth'
 
 // Size -> grid span mapping (4-column grid, rowHeight 80px).
 const SIZE_TO_SPAN: Record<string, { w: number; h: number }> = {
@@ -1086,6 +1087,7 @@ export default function DashboardPage() {
   const { width, containerRef, mounted } = useContainerWidth()
 
 
+  const { user } = useAuth()
   const { confirm, ConfirmDialog } = useConfirm()
   const [editMode, setEditMode] = useState(false)
   const [editedWidgets, setEditedWidgets] = useState<DashboardWidgetInstance[]>([])
@@ -1174,6 +1176,21 @@ export default function DashboardPage() {
       setEditedWidgets(defaultWidgets)
     } catch {
       toast.error('Failed to load default layout')
+    }
+  }
+
+  async function handleSaveAsFirmDefault() {
+    const confirmed = await confirm({
+      message: 'This immediately saves the current arrangement as the firm-wide default for new managers. This is a direct write to a shared firm record and cannot be undone with Cancel.',
+      confirmLabel: 'Save as Firm Default',
+      destructive: true,
+    })
+    if (!confirmed) return
+    try {
+      await dashboardApi.putFirmDefaultLayout(editedWidgets)
+      toast.success('Firm default layout saved')
+    } catch {
+      toast.error('Failed to save firm default layout')
     }
   }
 
@@ -1324,6 +1341,15 @@ export default function DashboardPage() {
                   >
                     Reset to Default
                   </button>
+                  {user?.role === 'firm_owner' && (
+                    <button
+                      onClick={() => void handleSaveAsFirmDefault()}
+                      disabled={saving}
+                      className="text-[13px] font-medium px-3.5 py-1.5 text-muted-foreground hover:text-foreground disabled:opacity-50 transition-colors"
+                    >
+                      Save as Firm Default
+                    </button>
+                  )}
                   <button
                     onClick={handleCancel}
                     disabled={saving}
