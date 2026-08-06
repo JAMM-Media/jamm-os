@@ -11,7 +11,7 @@ import { GridLayout, useContainerWidth } from 'react-grid-layout'
 import type { Layout, LayoutItem, EventCallback } from 'react-grid-layout'
 import { dashboardApi } from '@/lib/api/dashboard'
 import { reportsApi } from '@/lib/api/reports'
-import type { DashboardWidgetInstance, OverdueEngagementItem, UpcomingDeadlineItem, StaffUtilizationItem, UnsignedDocumentItem, WidgetCatalogItem } from '@/lib/api/dashboard'
+import type { DashboardWidgetInstance, DashboardTemplateItem, OverdueEngagementItem, UpcomingDeadlineItem, StaffUtilizationItem, UnsignedDocumentItem, WidgetCatalogItem } from '@/lib/api/dashboard'
 import type { WIPSummary } from '@/lib/api/reports'
 import api, { clientsApi } from '@/lib/api'
 import { SelectInput } from '@/components/ui/SelectInput'
@@ -1093,6 +1093,11 @@ export default function DashboardPage() {
   const [editedWidgets, setEditedWidgets] = useState<DashboardWidgetInstance[]>([])
   const [saving, setSaving] = useState(false)
   const [showAddWidget, setShowAddWidget] = useState(false)
+  const [showSaveTemplate, setShowSaveTemplate] = useState(false)
+  const [templateName, setTemplateName] = useState('')
+  const [showLoadTemplate, setShowLoadTemplate] = useState(false)
+  const [templates, setTemplates] = useState<DashboardTemplateItem[]>([])
+  const [templatesLoading, setTemplatesLoading] = useState(false)
 
   const {
     data: widgets,
@@ -1191,6 +1196,50 @@ export default function DashboardPage() {
       toast.success('Firm default layout saved')
     } catch {
       toast.error('Failed to save firm default layout')
+    }
+  }
+
+  function handleOpenSaveTemplate() {
+    setTemplateName('')
+    setShowSaveTemplate(true)
+  }
+
+  async function handleConfirmSaveTemplate() {
+    if (!templateName.trim()) return
+    try {
+      await dashboardApi.createTemplate(templateName.trim(), editedWidgets)
+      toast.success('Template saved')
+      setShowSaveTemplate(false)
+      setTemplateName('')
+    } catch {
+      toast.error('Failed to save template')
+    }
+  }
+
+  async function handleOpenLoadTemplate() {
+    setTemplatesLoading(true)
+    setShowLoadTemplate(true)
+    try {
+      const list = await dashboardApi.getTemplates()
+      setTemplates(list)
+    } catch {
+      toast.error('Failed to load templates')
+    } finally {
+      setTemplatesLoading(false)
+    }
+  }
+
+  function handleSelectTemplate(tmpl: DashboardTemplateItem) {
+    setEditedWidgets(tmpl.widgets)
+    setShowLoadTemplate(false)
+  }
+
+  async function handleDeleteTemplate(templateId: string) {
+    try {
+      await dashboardApi.deleteTemplate(templateId)
+      setTemplates((prev) => prev.filter((t) => t.id !== templateId))
+    } catch {
+      toast.error('Failed to delete template')
     }
   }
 
@@ -1351,6 +1400,20 @@ export default function DashboardPage() {
                     </button>
                   )}
                   <button
+                    onClick={handleOpenSaveTemplate}
+                    disabled={saving}
+                    className="text-[13px] font-medium px-3.5 py-1.5 text-muted-foreground hover:text-foreground disabled:opacity-50 transition-colors"
+                  >
+                    Save as Template
+                  </button>
+                  <button
+                    onClick={() => void handleOpenLoadTemplate()}
+                    disabled={saving}
+                    className="text-[13px] font-medium px-3.5 py-1.5 text-muted-foreground hover:text-foreground disabled:opacity-50 transition-colors"
+                  >
+                    Load Template
+                  </button>
+                  <button
                     onClick={handleCancel}
                     disabled={saving}
                     className="text-[13px] font-medium px-3.5 py-1.5 rounded border border-surface-border dark:border-dark-border text-foreground hover:bg-surface-input dark:hover:bg-dark-page disabled:opacity-50 transition-colors"
@@ -1443,6 +1506,65 @@ export default function DashboardPage() {
           editedWidgets={editedWidgets}
         />
       )}
+
+      {/* Save as Template name prompt */}
+      <Modal open={showSaveTemplate} onClose={() => setShowSaveTemplate(false)} title="Save as Template" size="sm">
+        <div className="flex flex-col gap-4">
+          <input
+            type="text"
+            value={templateName}
+            onChange={(e) => setTemplateName(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') void handleConfirmSaveTemplate() }}
+            placeholder="Template name"
+            autoFocus
+            className="h-9 w-full px-3 rounded-[6px] text-[13px] bg-surface-input dark:bg-dark-card border border-[0.5px] border-surface-border dark:border-dark-border text-foreground outline-none focus:border-brand transition-colors"
+          />
+          <div className="flex justify-end gap-2">
+            <button
+              onClick={() => setShowSaveTemplate(false)}
+              className="text-[13px] font-medium px-3.5 py-1.5 rounded border border-surface-border dark:border-dark-border text-foreground hover:bg-surface-input dark:hover:bg-dark-page transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => void handleConfirmSaveTemplate()}
+              disabled={!templateName.trim()}
+              className="text-[13px] font-medium px-3.5 py-1.5 rounded bg-brand text-white hover:opacity-90 disabled:opacity-50 transition-opacity"
+            >
+              Save
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Load Template list */}
+      <Modal open={showLoadTemplate} onClose={() => setShowLoadTemplate(false)} title="Load Template" size="sm">
+        {templatesLoading ? (
+          <p className="text-[13px] text-muted-foreground text-center py-6">Loading...</p>
+        ) : templates.length === 0 ? (
+          <p className="text-[13px] text-muted-foreground text-center py-6">No saved templates yet. Save the current arrangement as a template to get started.</p>
+        ) : (
+          <div className="flex flex-col divide-y divide-surface-border dark:divide-dark-border">
+            {templates.map((tmpl) => (
+              <div key={tmpl.id} className="flex items-center py-2.5 gap-3">
+                <button
+                  onClick={() => handleSelectTemplate(tmpl)}
+                  className="flex-1 text-left text-[13px] font-medium text-foreground hover:text-brand transition-colors truncate"
+                >
+                  {tmpl.name}
+                </button>
+                <button
+                  onClick={() => void handleDeleteTemplate(tmpl.id)}
+                  className="flex-shrink-0 text-muted-foreground hover:text-red-500 transition-colors"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </Modal>
+
       {ConfirmDialog}
     </div>
   )

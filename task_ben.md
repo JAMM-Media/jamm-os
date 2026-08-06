@@ -74,7 +74,7 @@ This section exists because a past session confidently claimed specific files we
 
 # Section 3 - The task
 
-TASK: Build the backend for personal dashboard templates: a new table, and endpoints to list, create, and delete a user's own saved templates. This is backend only, no mini-grid UI yet, that is a follow-up task.
+TASK: Add save-as-template and load-a-template to Edit Dashboard mode, working on the real full-size canvas, reusing the exact pattern already proven out for Reset to Default. This is functional templates now; the scaled-down mini-grid visual preview is a deliberate separate follow-up, not part of this task.
 
 USE: claude sonnet
 
@@ -86,55 +86,43 @@ State plainly that no path in this task resolves against /mnt/c/Users or any Win
 
 VERIFY BEFORE ACT:
 
-grep -n -B 3 -A 20 "class DashboardLayout" app/models/dashboard_layout.py
+grep -n -B 3 -A 25 "handleResetToDefault" "src/app/(app)/dashboard/page.tsx"
 
-.venv/bin/alembic heads
+grep -n -B 2 -A 10 "getDefaultLayout" frontend/src/lib/api/dashboard.ts
 
-Paste the real output. Confirm the exact real conventions already used for DashboardLayout (Base import, Mapped/mapped_column style, JSONB widgets column, timestamp pattern) since dashboard_templates follows the identical pattern, just with a name column added and no uniqueness constraint on user_id, since one user can have many templates, unlike dashboard_layouts which is one row per user. Confirm alembic heads shows exactly one head. If more than one, stop and report back, do not write a migration against branched history.
+Paste the real output of both. Confirm the exact real implementation of Reset to Default, since save/load templates should follow this same shape as closely as possible, not invent a new pattern. Confirm the real GET/POST/DELETE /dashboard/templates response shapes already confirmed live in the prior task: POST returns {id, name, widgets, created_at}, GET returns a list of the same shape, DELETE returns 204 with no body.
 
 WHAT THIS IS:
 
-A dashboard template is a named, saved widgets arrangement personal to the user who created it, following Ben's own decision that templates are personal, not firm-shared, since Dashboard access is already manager-or-above only with no broader population to share to. The widgets column holds the exact same shape already used everywhere else in this feature (instance_id, type_key, grid_x, grid_y, size, minimized, config), no new object shape. A user can have any number of templates, this is not a one-row-per-user table like DashboardLayout.
+Save as Template captures the current editedWidgets arrangement under a name the user provides, calling POST /dashboard/templates, and does not affect the current edit session or require Done, it is a side write, similar in spirit to Save as Firm Default in that it persists immediately on its own, but different in that it is not destructive or shared, it just adds a new personal record, so it does not need the same heavyweight cannot-be-undone confirmation dialog Save as Firm Default required, a simple name-prompt is enough.
+
+Load Template is the mirror of Reset to Default: instead of loading the hardcoded system/firm default into editedWidgets, it loads a chosen saved template's widgets into editedWidgets. Same rule as Reset to Default: loading a template into the edit session does not persist anything by itself, the user still needs to click Done to actually save it as their real dashboard, and Cancel discards the whole thing exactly as it already does for every other edit-mode change.
 
 CHANGE INSTRUCTIONS:
 
-Add a new model class, DashboardTemplate, to app/models/dashboard_layout.py, following the exact conventions already used for DashboardLayout in that same file: id, user_id as a ForeignKey to users.id with ondelete="CASCADE" and index=True but NOT unique since one user has many templates, name as a String column, widgets as JSONB with default=list, and the standard created_at and updated_at pattern.
+Add getTemplates, createTemplate(name, widgets), and deleteTemplate(templateId) methods to frontend/src/lib/api/dashboard.ts calling the three real /dashboard/templates endpoints.
 
-Add three endpoints to the existing router in app/api/dashboard.py, all gated require_manager_or_above:
-GET /dashboard/templates — returns all of the current user's templates, ordered by created_at descending, most recent first.
-POST /dashboard/templates — accepts {name, widgets}, creates a new DashboardTemplate row for the current user, returns the created template including its real id.
-DELETE /dashboard/templates/{template_id} — deletes a template, but only if it belongs to the current user, return a 404 if the template_id does not exist or does not belong to the requesting user, do not leak whether a template_id exists for someone else by returning a different error for that case, both cases return the same 404.
+Add a "Save as Template" button in the edit-mode toolbar, near the existing Reset to Default and Save as Firm Default buttons, styled consistently with them. Clicking it opens a small prompt for a template name (a simple modal or inline input using the existing Modal component, whichever is less code given what's already in this file), and on confirming with a real name, calls createTemplate with that name and the current editedWidgets, shows a success toast using the same sonner pattern already used for Save as Firm Default, and does not exit edit mode or affect Done/Cancel.
 
-Write the migration by hand following the same exact structure as the batch 1 migration, sa.Uuid() column type, ondelete='CASCADE', index creation via op.f().
+Add a "Load Template" button in the same toolbar area. Clicking it fetches the user's templates via getTemplates and shows them in a small list (reuse the Modal component), each with the template's name and a way to select it, plus a delete affordance per template using deleteTemplate, matching whatever list-row-with-delete pattern already exists elsewhere in this file if one does, otherwise a simple small X or trash icon per row. Selecting a template loads its widgets into editedWidgets exactly the way handleResetToDefault does, staying in edit mode, not persisting until Done. If the user has zero templates, show a plain empty state message rather than an empty list with no explanation.
 
 VERIFY AFTER ACT:
 
-grep -n "class DashboardTemplate" app/models/dashboard_layout.py
+cd /home/corby/jamm-os/frontend
+npm run build
 
-grep -n "@router.get(\"/templates\")\|@router.post(\"/templates\")\|@router.delete(\"/templates/{template_id}\")" app/api/dashboard.py
+grep -n "Save as Template\|Load Template\|getTemplates\|createTemplate\|deleteTemplate" "src/app/(app)/dashboard/page.tsx" src/lib/api/dashboard.ts
 
-.venv/bin/alembic heads
-
-python3 -c "
-import sys
-sys.path.insert(0, '/home/corby/jamm-os')
-from app.models.dashboard_layout import DashboardTemplate
-print('model imports cleanly')
-"
-
-cd /home/corby/jamm-os
-python3 -c "from app.main import app; print('app imports cleanly')"
-
-alembic heads must show exactly one head, the new migration's revision id. Run .venv/bin/alembic upgrade head and confirm it applies with no errors.
+git diff --stat
 
 MANUAL VERIFICATION:
 
-Restart the backend. Using a real token as owner@riverside-demo.com, call POST /dashboard/templates with a real name and a small real widgets array (can reuse the current arrangement from GET /dashboard/layout), confirm it returns a real created template with a real id. Call GET /dashboard/templates, confirm the new template appears in the list. Call DELETE /dashboard/templates/{that id}, confirm it succeeds, call GET /dashboard/templates again, confirm it's gone. Try DELETE on a random nonexistent uuid, confirm a real 404, not a 500 or silent success. Report back the real responses from each of these calls.
+Restart the frontend dev server only, no backend changes were made. Reload /dashboard, enter Edit Dashboard, arrange something recognizable, click Save as Template, name it, confirm a success toast. Click Load Template, confirm the new template appears in the list with the right name. Rearrange the canvas into something different, click Load Template again, select the saved template, confirm the canvas reverts to the saved arrangement, still inside the same edit session, not yet persisted. Click Cancel, confirm the page reverts to whatever the real saved dashboard was before any of this testing, proving loading a template was genuinely undoable. Enter Edit Dashboard again, Load Template, select it again, click Done this time, reload the page, confirm the loaded template's arrangement actually persisted as the real dashboard. Delete the test template via the Load Template list's delete affordance, confirm it's gone from the list. Report back with a screenshot.
 
 GIT:
 
 git add -A
-git commit -m "add the backend for personal dashboard templates: a new dashboard_templates table, one row per saved template rather than one per user, and GET/POST/DELETE endpoints scoped to the current user's own templates, following the exact widgets JSONB shape and model conventions already established for dashboard_layouts. This is backend only, the mini-grid template planning UI is a separate follow-up task, made feasible by confirming react-grid-layout's real exported createScaledStrategy positionStrategy keeps drag and resize coordinate math correct at reduced scale"
+git commit -m "add save-as-template and load-a-template to Edit Dashboard mode on the real full-size canvas, reusing the exact pattern already proven for Reset to Default: loading a template into the edit session does not persist anything until Done, fully discardable via Cancel. Save as Template persists immediately as a new personal record without affecting the current edit session, similar in spirit to Save as Firm Default but without the heavyweight cannot-be-undone warning since it's additive and personal, not destructive or shared. The scaled-down mini-grid visual preview is a deliberate separate follow-up, not part of this task"
 git pull --rebase origin main
 git push origin main
 git log --oneline -3

@@ -86,6 +86,13 @@ export interface DashboardWidgetInstance {
   config: Record<string, unknown>
 }
 
+export interface DashboardTemplateItem {
+  id: string
+  name: string
+  widgets: DashboardWidgetInstance[]
+  created_at: string
+}
+
 export interface WidgetCatalogItem {
   type_key: string
   display_name: string
@@ -191,5 +198,19 @@ export const dashboardApi = {
 
   putFirmDefaultLayout: async (widgets: DashboardWidgetInstance[]): Promise<void> => {
     await api.put('/dashboard/firm-default-layout', { widgets })
+  },
+
+  getTemplates: async (): Promise<DashboardTemplateItem[]> => {
+    const { data } = await api.get('/dashboard/templates')
+    return data as DashboardTemplateItem[]
+  },
+
+  createTemplate: async (name: string, widgets: DashboardWidgetInstance[]): Promise<DashboardTemplateItem> => {
+    const { data } = await api.post('/dashboard/templates', { name, widgets })
+    return data as DashboardTemplateItem
+  },
+
+  deleteTemplate: async (templateId: string): Promise<void> => {
+    await api.delete(`/dashboard/templates/${templateId}`)
   },
 }
