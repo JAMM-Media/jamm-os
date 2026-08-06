@@ -670,7 +670,8 @@ function CollapsedWidgetHeader({
 // ---------------------------------------------------------------------------
 
 export default function DashboardPage() {
-  const { width, containerRef, mounted } = useContainerWidth()
+  const { width, containerRef, mounted } = useContainerWidth({ measureBeforeMount: true })
+
 
   const [editMode, setEditMode] = useState(false)
   const [editedWidgets, setEditedWidgets] = useState<DashboardWidgetInstance[]>([])

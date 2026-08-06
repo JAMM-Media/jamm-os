@@ -74,7 +74,7 @@ This section exists because a past session confidently claimed specific files we
 
 # Section 3 - The task
 
-TASK: Replace the full-width edit-mode strip with small buttons directly in each widget's existing top-right corner, matching what was there before the strip, but fix the one real collision by moving Work in Progress's dollar value out of that corner instead of adding structural space to every widget.
+TASK: Find and fix the real width constraint now that runtime evidence confirms it. Browser console showed useContainerWidth measuring exactly 1280px while window.innerWidth was 2048px, a fixed gap unrelated to sidebar width. 1280px is Tailwind's default max-w-7xl (80rem), which strongly suggests a fixed max-width container somewhere in the layout chain above the dashboard page, capping content width regardless of actual screen size.
 
 USE: claude sonnet
 
@@ -86,39 +86,39 @@ State plainly that no path in this task resolves against /mnt/c/Users or any Win
 
 VERIFY BEFORE ACT:
 
-grep -n -B 5 -A 30 "WidgetEditOverlay" "src/app/(app)/dashboard/page.tsx"
+grep -rn "max-w-7xl\|max-w-\[1280\|1280px" src/ --include="*.tsx" --include="*.css"
 
-grep -n -B 5 -A 20 "function WIPWidget" "src/app/(app)/dashboard/page.tsx"
+grep -n -B 5 -A 15 "export function AppShell\|export default function AppShell" src/components/layout/AppShell.tsx
 
-Paste the real output of both. Confirm the current full-width strip implementation from the prior fix, and confirm the real current header structure of WIPWidget, specifically where the dollar value currently sits relative to the label.
+grep -rn "className=\"container" src/ --include="*.tsx"
+
+Paste the real output of all three. The prior task's static search for max-w- in AppShell.tsx specifically came up empty, so this constraint may be somewhere else in the chain, a different layout file, a shared wrapper component, or Tailwind's own container class (which defaults to max-w-7xl at the xl breakpoint unless overridden) applied via a plain className="container" rather than an explicit max-w- utility, which the earlier grep would have missed since it only searched for max-w- literally.
 
 WHAT THIS IS:
 
-Ben looked at the full-width strip in the browser and it looks like two stacked header bars, not one polished widget. He's right that this was overbuilt: only one of the 9 widgets, Work in Progress, actually has real content in the same top-right corner where the edit buttons need to go. Every other widget's header only has a title on the left with nothing on the right, so the small corner buttons never actually collided with them, the strip was solving a problem that only existed for one widget. The better fix is to remove the strip entirely, put small buttons back in the corner the way they looked before that change, and fix the one real collision by changing Work in Progress's own layout so its dollar value isn't in that corner anymore, moving it below the label instead of beside it, which also brings it in line with how the other stat cards already lay out label-then-value.
+Real browser console output confirmed useContainerWidth measures exactly 1280px while the actual window is 2048px wide, a fixed 768px gap that does not match the sidebar's width (220px expanded, 48px collapsed) at all. 1280px is a very specific, recognizable number, Tailwind's default max-w-7xl and also its xl breakpoint value, which points strongly at a fixed-width container class somewhere between the page root and the dashboard content, most likely inherited from a shared layout wrapper, not something in the dashboard page itself. The previous task's search for max-w- in AppShell.tsx came up empty, so this search needs to be broader, including Tailwind's plain container class and any other layout file in the chain, not just AppShell.
 
 CHANGE INSTRUCTIONS:
 
-Remove the WidgetEditOverlay full-width strip entirely, the flex column restructuring, and the flex: 1 / minHeight: 0 changes made in the prior fix. Replace it with small remove and minimize buttons absolutely positioned in the top-right corner of each widget, similar in size and placement to how they looked in the screenshot before the strip was added, keep them visually light, small icon-only buttons with a subtle background so they read as controls, not as another header bar. Keep pointer-events none on the underlying widget content while editMode is true, that part of the prior fix was correct and should stay.
+Once the real source of the 1280px cap is found with actual grep evidence, not assumed, remove or override it so the dashboard's content area, and therefore containerRef inside it, can measure the true full available width next to the sidebar. If the constraint is a shared layout wrapper used by other pages too, do not remove it globally without flagging that clearly, since other pages may rely on that max width intentionally for readability (long text lines, forms), constrain the fix narrowly to the dashboard page's own container if there's any risk of affecting other pages, rather than changing something shared. Report clearly which of these two situations was actually found.
 
-In WIPWidget, change the header row so the dollar value and hours no longer sit on the right side of the same row as the "Work in Progress" label. Move them to their own row below the label, left-aligned, matching the general pattern already used in MetricCard where a label sits above its value. This is a real layout change to this one component, not a hack, it should look intentional in both edit mode and normal view, not just avoid the overlay collision.
-
-Do not add any special-casing to the overlay logic itself for WIPWidget or any other widget, the overlay positioning stays generic and identical for all 9 widget types, the WIP fix lives entirely inside WIPWidget's own layout.
+Remove the temporary console.log added in the prior task once the real fix is confirmed working, do not leave debug logging in the committed code.
 
 VERIFY AFTER ACT:
 
 cd /home/corby/jamm-os/frontend
 npm run build
 
-grep -n "WidgetEditOverlay" "src/app/(app)/dashboard/page.tsx"
+grep -n "dashboard width" "src/app/(app)/dashboard/page.tsx"
 
-git diff --stat "src/app/(app)/dashboard/page.tsx"
+This must return nothing, confirming the temporary console.log was removed.
 
-Report the real diff stat and confirm no other widget's rendering logic was touched besides WIPWidget's header and the overlay component itself.
+git diff --stat
 
 MANUAL VERIFICATION:
 
-Restart the frontend dev server, reload /dashboard, confirm the normal (non-edit) view of Work in Progress now shows its dollar value below the label rather than beside it, and looks intentional, not broken. Enter Edit Dashboard, confirm every widget now shows small corner buttons directly on the widget, no separate strip, and confirm Work in Progress's value is fully visible with no overlap now that it's no longer in the same corner as the buttons. Report back with a screenshot.
+Restart the frontend dev server, reload /dashboard, confirm in the browser console (temporarily re-add the log if needed to check, then remove again) or just visually that the grid now extends much closer to the true right edge of the page, not stopping at roughly 1280px regardless of window size. Report back with a full uncropped screenshot at normal browser width, and confirm no other page (billing, engagements, clients) visually changed width, since the fix should be scoped to the dashboard only if the constraint turned out to be shared.
 
 GIT:
 
-Do not commit until Ben confirms it actually looks right in the browser.
+Do not commit until Ben confirms both the width fix and that no other page regressed.
