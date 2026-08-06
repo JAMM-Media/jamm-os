@@ -74,50 +74,51 @@ This section exists because a past session confidently claimed specific files we
 
 # Section 3 - The task
 
-TASK: Remove the jiggle animation from Edit Dashboard mode entirely. Ben tested it live and it's too much visually, not what the product needs on this screen.
+TASK: Replace the full-width edit-mode strip with small buttons directly in each widget's existing top-right corner, matching what was there before the strip, but fix the one real collision by moving Work in Progress's dollar value out of that corner instead of adding structural space to every widget.
 
 USE: claude sonnet
 
-VERIFY BEFORE ACT:
+ENVIRONMENT SANITY CHECK:
 
 pwd
 
 State plainly that no path in this task resolves against /mnt/c/Users or any Windows-side copy.
 
-grep -n -B 3 -A 10 "dashboard-jiggle" "src/app/(app)/dashboard/page.tsx" src/app/globals.css
+VERIFY BEFORE ACT:
 
-Paste the real output. Confirm exactly where the keyframe is defined and where it's applied before removing anything.
+grep -n -B 5 -A 30 "WidgetEditOverlay" "src/app/(app)/dashboard/page.tsx"
+
+grep -n -B 5 -A 20 "function WIPWidget" "src/app/(app)/dashboard/page.tsx"
+
+Paste the real output of both. Confirm the current full-width strip implementation from the prior fix, and confirm the real current header structure of WIPWidget, specifically where the dollar value currently sits relative to the label.
 
 WHAT THIS IS:
 
-The jiggle was added as an iOS-style visual cue for entering edit mode. Ben tested the real behavior in the browser after the positioning fix and found it too much, not a look this product wants. This is a subtraction, not a redesign, remove the animation and its keyframe definition, leave everything else about edit mode (drag, resize, remove, minimize, Done/Cancel) completely untouched.
+Ben looked at the full-width strip in the browser and it looks like two stacked header bars, not one polished widget. He's right that this was overbuilt: only one of the 9 widgets, Work in Progress, actually has real content in the same top-right corner where the edit buttons need to go. Every other widget's header only has a title on the left with nothing on the right, so the small corner buttons never actually collided with them, the strip was solving a problem that only existed for one widget. The better fix is to remove the strip entirely, put small buttons back in the corner the way they looked before that change, and fix the one real collision by changing Work in Progress's own layout so its dollar value isn't in that corner anymore, moving it below the label instead of beside it, which also brings it in line with how the other stat cards already lay out label-then-value.
 
 CHANGE INSTRUCTIONS:
 
-Remove the animation: 'dashboard-jiggle 0.4s ease-in-out infinite' style application from the widget wrapper in the dashboard page. Remove the @keyframes dashboard-jiggle definition itself, wherever it's actually defined, do not leave a dead unused keyframe behind. Do not add any replacement visual cue in its place unless something else in this file already relied on that same conditional editMode style branch for another purpose, if so leave that other purpose intact and only strip the jiggle-specific piece.
+Remove the WidgetEditOverlay full-width strip entirely, the flex column restructuring, and the flex: 1 / minHeight: 0 changes made in the prior fix. Replace it with small remove and minimize buttons absolutely positioned in the top-right corner of each widget, similar in size and placement to how they looked in the screenshot before the strip was added, keep them visually light, small icon-only buttons with a subtle background so they read as controls, not as another header bar. Keep pointer-events none on the underlying widget content while editMode is true, that part of the prior fix was correct and should stay.
+
+In WIPWidget, change the header row so the dollar value and hours no longer sit on the right side of the same row as the "Work in Progress" label. Move them to their own row below the label, left-aligned, matching the general pattern already used in MetricCard where a label sits above its value. This is a real layout change to this one component, not a hack, it should look intentional in both edit mode and normal view, not just avoid the overlay collision.
+
+Do not add any special-casing to the overlay logic itself for WIPWidget or any other widget, the overlay positioning stays generic and identical for all 9 widget types, the WIP fix lives entirely inside WIPWidget's own layout.
 
 VERIFY AFTER ACT:
-
-grep -n "dashboard-jiggle" "src/app/(app)/dashboard/page.tsx" src/app/globals.css
-
-This must return nothing at all. If anything still matches, the removal is incomplete.
 
 cd /home/corby/jamm-os/frontend
 npm run build
 
-git diff --stat "src/app/(app)/dashboard/page.tsx" src/app/globals.css
+grep -n "WidgetEditOverlay" "src/app/(app)/dashboard/page.tsx"
 
-The diff should be small, just the animation removal, nothing else.
+git diff --stat "src/app/(app)/dashboard/page.tsx"
+
+Report the real diff stat and confirm no other widget's rendering logic was touched besides WIPWidget's header and the overlay component itself.
 
 MANUAL VERIFICATION:
 
-Restart the frontend dev server, reload /dashboard, enter Edit Dashboard, confirm widgets no longer wiggle or animate at all when entering edit mode, and confirm drag and resize still work exactly as they did a moment ago, since nothing about the actual interaction logic should have changed.
+Restart the frontend dev server, reload /dashboard, confirm the normal (non-edit) view of Work in Progress now shows its dollar value below the label rather than beside it, and looks intentional, not broken. Enter Edit Dashboard, confirm every widget now shows small corner buttons directly on the widget, no separate strip, and confirm Work in Progress's value is fully visible with no overlap now that it's no longer in the same corner as the buttons. Report back with a screenshot.
 
 GIT:
 
-git add -A
-git commit -m "remove the jiggle animation from Edit Dashboard mode, tested live and found too visually busy for this screen, edit mode now has no entry animation, drag resize remove and minimize interactions are unaffected"
-git pull --rebase origin main
-git push origin main
-
-If task.md conflicts on the rebase, resolve with --theirs. Any other file conflict, stop and report back.
+Do not commit until Ben confirms it actually looks right in the browser.

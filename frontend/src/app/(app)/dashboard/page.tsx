@@ -432,15 +432,15 @@ function WIPWidget() {
 
   return (
     <div className="bg-surface-card dark:bg-dark-card rounded-[8px] border border-surface-border dark:border-dark-border shadow-sm overflow-hidden h-full flex flex-col">
-      <div className="px-4 py-3 border-b border-surface-border dark:border-dark-border flex items-start justify-between flex-shrink-0">
+      <div className="px-4 py-3 border-b border-surface-border dark:border-dark-border flex-shrink-0">
         <span className="text-[13px] font-medium text-foreground">Work in Progress</span>
         {isLoading ? (
-          <div className="flex flex-col items-end gap-1">
+          <div className="flex flex-col gap-1 mt-1">
             <div className="h-7 w-28 bg-surface-border dark:bg-dark-border animate-pulse rounded" />
             <div className="h-3 w-20 bg-surface-border dark:bg-dark-border animate-pulse rounded" />
           </div>
         ) : !isError && data ? (
-          <div className="text-right">
+          <div className="mt-1">
             <p className="text-[22px] font-display font-medium text-brand dark:text-foreground leading-none">{formatCurrency(data?.totalWipValue ?? 0)}</p>
             <p className="text-[11px] text-muted-foreground mt-0.5">{data?.totalHours ?? 0} hrs unbilled</p>
           </div>
@@ -624,7 +624,7 @@ function WidgetEditOverlay({
         <button
           onPointerDown={(e) => e.stopPropagation()}
           onClick={(e) => { e.stopPropagation(); onMinimize() }}
-          className="w-6 h-6 rounded flex items-center justify-center bg-white dark:bg-dark-card border border-surface-border dark:border-dark-border hover:bg-surface-input dark:hover:bg-dark-page shadow-sm transition-colors"
+          className="w-6 h-6 rounded flex items-center justify-center bg-white/90 dark:bg-dark-card/90 border border-surface-border dark:border-dark-border hover:bg-surface-input dark:hover:bg-dark-page shadow-sm transition-colors"
           title="Minimize"
         >
           <Minus className="w-3.5 h-3.5 text-muted-foreground" />
@@ -632,7 +632,7 @@ function WidgetEditOverlay({
         <button
           onPointerDown={(e) => e.stopPropagation()}
           onClick={(e) => { e.stopPropagation(); onRemove() }}
-          className="w-6 h-6 rounded flex items-center justify-center bg-white dark:bg-dark-card border border-surface-border dark:border-dark-border hover:bg-red-50 dark:hover:bg-red-900/20 shadow-sm transition-colors"
+          className="w-6 h-6 rounded flex items-center justify-center bg-white/90 dark:bg-dark-card/90 border border-surface-border dark:border-dark-border hover:bg-red-50 dark:hover:bg-red-900/20 shadow-sm transition-colors"
           title="Remove"
         >
           <X className="w-3.5 h-3.5 text-muted-foreground" />
@@ -904,7 +904,7 @@ export default function DashboardPage() {
         <ConciergeSpotlight />
 
         {/* Widget canvas */}
-        <div ref={containerRef}>
+        <div ref={containerRef} className="w-full">
           {mounted && (
             <GridLayout
               width={width}
