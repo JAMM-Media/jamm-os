@@ -74,7 +74,7 @@ This section exists because a past session confidently claimed specific files we
 
 # Section 3 - The task
 
-TASK: Diagnose and fix a visible hairline white sliver at the top-left and top-right corners of the Modal component. Confirmed by Ben as universal across the entire app, not isolated to Load Template, it appears on Create Engagement and most other modals too, meaning this lives entirely in the shared Modal.tsx component and one real fix there resolves it everywhere at once.
+TASK: Fix the same missing-overflow-hidden corner-sliver bug across every custom modal implementation that doesn't use the shared Modal component. Confirmed identical root cause in CreateDocumentRequestModal.tsx: rounded-[10px] on a flex flex-col container with no overflow-hidden, header as the first flex child rendering square into the rounded corners. The shared Modal.tsx component was already fixed separately; this task covers the standalone reimplementations.
 
 USE: claude sonnet
 
@@ -86,35 +86,40 @@ State plainly that no path in this task resolves against /mnt/c/Users or any Win
 
 VERIFY BEFORE ACT:
 
-cat src/components/ui/Modal.tsx
+grep -rLn "from '@/components/ui/Modal'" src/components/**/*Modal*.tsx 2>/dev/null
 
-Paste the full real file. I want to see every layer of the modal's rendering, the backdrop, any wrapping div, the actual card element, and every border-radius, box-shadow, outline, and ring class applied at each layer. A border-radius mismatch between two stacked elements, for example a square-cornered shadow, ring, or outline sitting behind or around a rounded background, so a sliver of the squared layer peeks out past the rounded one in front, is the leading theory, but this needs to be confirmed against the real code, not assumed, since it's now confirmed to affect every modal in the app and deserves a precise fix, not a guess.
+For each file returned, run:
+grep -n "rounded-\[10px\]\|rounded-modal" <that file>
+
+Paste the real output for every file. The prior grep for this same list may have missed ConfirmModal.tsx due to a quote-style difference in its import even though it genuinely does use the shared Modal component, confirm for each file in the list individually whether it actually has its own standalone rounded container before assuming it needs this fix, do not apply the fix to a file that turns out to already use the shared component correctly.
 
 WHAT THIS IS:
 
-A zoomed screenshot shows a thin white/light line right at the modal's top-left and top-right corners, outside the rounded curve of the modal's own background. Confirmed universal across the app by Ben, appearing on Create Engagement, Reset to Default, Save as Firm Default, Save as Template, Load Template, and most other modals, meaning the cause is entirely inside the shared Modal.tsx component itself, not anything specific to tonight's work. Fixing the real cause here fixes it everywhere at once, which is exactly why this is worth diagnosing precisely rather than working around it in any one instance.
+Several modals in this codebase were built as standalone components rather than using the shared Modal.tsx, each independently reimplementing the same rounded-container-with-header-as-first-flex-child structure, and each missing the same overflow-hidden that was just added to the shared component. Fixing Modal.tsx only fixed modals that actually use it, these standalone ones need the identical one-line fix applied individually, since they are not actually sharing code, they are copies.
 
 CHANGE INSTRUCTIONS:
 
-Based on what the real Modal.tsx code shows, identify the specific mismatch, most likely two elements at the same corner position with different border-radius values, or a shadow/ring utility that doesn't inherit the same rounded corners as the element it's applied to. State plainly in the report exactly which two layers and which specific classes are responsible, quoting the real lines, before applying a fix. Apply the minimal correct fix, most likely aligning the border-radius value across whichever layers are mismatched, or moving a shadow/ring to the correct element so it clips to the same rounded corners rather than sitting behind it with square corners. Do not add a workaround like overflow-hidden as a first resort if the real cause is a genuine radius mismatch, fix the actual mismatch, only use overflow-hidden if that turns out to be the real, correct fix for what the code actually shows.
+For each file confirmed in VERIFY BEFORE ACT to genuinely have its own standalone rounded modal container missing overflow-hidden, add overflow-hidden to that container's className, following the exact same reasoning as the Modal.tsx fix: a rounded flex container needs overflow-hidden for its flex children (typically the header) to be clipped to the rounded corners instead of rendering square into them. Do not change anything else about these files, this is the same single targeted class addition, repeated once per genuinely-affected file.
 
 VERIFY AFTER ACT:
 
 cd /home/corby/jamm-os/frontend
 npm run build
 
-git diff --stat src/components/ui/Modal.tsx
+grep -n "overflow-hidden" <each fixed file>
 
-This should be a small, targeted diff in one shared file.
+git diff --stat
+
+Report exactly which files were actually changed and which were checked but skipped because they turned out to already use the shared Modal component correctly.
 
 MANUAL VERIFICATION:
 
-Restart the frontend dev server only. Reload the app, open at least three different modals in different parts of the app, for example Load Template on the dashboard, New Engagement, and any settings modal, zoom in on each modal's top corners the way Ben's screenshot did, confirm the white sliver is gone on all of them, not just one. Report back with a screenshot of at least one modal's corner zoomed in enough to actually see whether it's fixed.
+Restart the frontend dev server only. Open each modal that was actually fixed (likely New Document Request among others), zoom into the top corners, confirm the sliver is gone on each one. Report back with a screenshot of at least one previously-broken standalone modal now fixed.
 
 GIT:
 
 git add -A
-git commit -m "fix a hairline visual artifact at the top corners of every modal in the app, caused by [fill in the real cause found in Modal.tsx], confirmed by Ben as universal across Create Engagement, Load Template, Reset to Default, Save as Firm Default, Save as Template, and most other modals, one shared-component fix resolves it everywhere rather than needing per-modal patches"
+git commit -m "fix the same corner-sliver visual bug in every standalone modal component that reimplements the rounded-container-with-header pattern instead of using the shared Modal component, each missing overflow-hidden independently since they are copies, not shared code. The shared Modal.tsx was already fixed separately, this covers the remaining standalone implementations confirmed to have the same real cause"
 git pull --rebase origin main
 git push origin main
 git log --oneline -3
