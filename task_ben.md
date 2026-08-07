@@ -74,7 +74,7 @@ This section exists because a past session confidently claimed specific files we
 
 # Section 3 - The task
 
-TASK: Two fixes. First, the real resize snap logic itself, now that evidence confirms newItem correctly delivers live drag dimensions (h:6 was observed on release for a widget between medium h:5 and large h:7), meaning the bug is inside handleResizeStop's own size-snapping logic, not upstream in layout recomputation as previously theorized. Second, prevent native browser text selection (the blue highlight drag effect) from triggering during grid drag/resize interactions in edit mode.
+TASK: Constrain resize on two-size widgets so the handle can only move along the real valid line between the two allowed sizes, instead of allowing free 2D dragging that can show an impossible in-between shape. Confirmed real mechanism: react-grid-layout's per-item LayoutConstraint with a constrainSize hook, the same pattern used by the library's own built-in aspectRatio constraint, which derives one dimension purely from the other proposed dimension. This means dragging straight down (width unchanged) will correctly produce no height change at all, since height gets computed from width, not from the raw vertical mouse movement.
 
 USE: claude sonnet
 
@@ -86,41 +86,35 @@ State plainly that no path in this task resolves against /mnt/c/Users or any Win
 
 VERIFY BEFORE ACT:
 
-grep -n -B 3 -A 40 "const handleResizeStop" "src/app/(app)/dashboard/page.tsx"
+grep -n -B 5 -A 30 "activeWidgets, catalogByKey, editMode" "src/app/(app)/dashboard/page.tsx"
 
-Paste the full real output. I need to see the complete snap-to-nearest-size logic: how it compares newItem's w/h against the widget's allowed sizes, and exactly how it calls setEditedWidgets. Real evidence already confirmed: a resize of Work in Progress (allowed sizes medium w:2/h:5 and large w:4/h:7) released with newItem showing w:2, h:6, exactly the midpoint between the two allowed heights. This proves the library is delivering real, live drag data, ruling out the earlier stale-layout theory. The bug must be in what handleResizeStop does with that data.
+Paste the real output, this is the layout useMemo where per-item minW/maxW/minH/maxH are already set for two-size widgets. Confirm the exact current structure so the new constraints field gets added to the same layout item objects, not a separate parallel structure.
 
 WHAT THIS IS:
 
-Given h:6 is genuinely equidistant between 5 and 7, look carefully at whatever distance-comparison logic exists, for example checking absolute difference to each candidate size's height and/or width combined. A subtle bug here, like comparing only height and ignoring width, or a comparison operator that never actually updates state when the values are exactly tied, or picking the correct nearest size but never actually calling setEditedWidgets with it, would explain a resize that receives correct live data but still fails to commit. Find the actual logic error by reading the real code, do not guess a fix without pointing at the specific line doing the wrong thing.
+For a widget with two allowed sizes, say medium (w:2, h:5) and large (w:4, h:7), the resize handle currently allows free movement anywhere within that bounding box, including impossible states like w:2, h:7 (same width as medium, full height of large) which was never a real option, only medium or large exist, nothing in between and nothing off that diagonal. Ben confirmed this reads as misleading: the drag preview implies you can reach any point in that box, when only two real endpoints exist.
+
+The fix: add a per-item constraint, using the real constraints field already supported on each layout item (LayoutItem.constraints, an array of LayoutConstraint), with a constrainSize(item, w, h, handle, context) function that ignores the raw proposed h entirely and instead computes it as a linear interpolation purely from the proposed w, the same way the library's own built-in aspectRatio constraint derives height from width, round the result to the nearest integer grid row. This needs to be built per-widget-instance since minSpan/maxSpan differ per widget type, generated inside the same useMemo that already builds minW/maxW/minH/maxH for two-size widgets.
 
 CHANGE INSTRUCTIONS:
 
-Fix whatever the real logic error turns out to be in handleResizeStop, so that given real w/h values on release, it correctly identifies the nearer of the widget's two allowed sizes (comparing both width and height together, not just one dimension) and calls setEditedWidgets with that widget's size field actually updated to the matching size name.
+In the layout useMemo, for each widget that currently gets isResizable=true with minSpan/maxSpan set, add a constraints array containing one constraint object: name a short descriptive string like `lockToSizeLine-${w.instance_id}`, and a constrainSize function that takes the proposed w, computes t = (w - minSpan.w) / (maxSpan.w - minSpan.w), clamps t between 0 and 1, computes the derived h as minSpan.h + t * (maxSpan.h - minSpan.h), rounds to the nearest integer, and returns { w, h: roundedH }. This means the live resize preview itself, not just the final committed value, will only ever show shapes along the real line between the two allowed sizes, dragging purely vertically will show no height change since w hasn't moved, and dragging purely horizontally will show height moving in lockstep with width.
 
-Separately, add user-select: none (or the Tailwind select-none utility) to the grid item wrapper or the widget content area while editMode is true, so dragging across widget content, like the Staff Utilization list of names, does not trigger native browser text highlighting during a drag or resize gesture. Do not apply this outside of edit mode, normal viewing should still allow text selection if someone wants to copy a client name or number.
-
-Remove the temporary [layout recompute] and [resize stop] console.log statements added in the previous task now that real evidence has been gathered from them.
+Do not remove or change the existing minW/maxW/minH/maxH bounds, keep those as the outer clamp, the new constraints array works alongside them, not instead of them.
 
 VERIFY AFTER ACT:
 
 cd /home/corby/jamm-os/frontend
 npm run build
 
-grep -n "select-none\|user-select" "src/app/(app)/dashboard/page.tsx"
-
-grep -n "\[layout recompute\]\|\[resize stop\]" "src/app/(app)/dashboard/page.tsx"
-
-This last grep must return nothing, confirming the debug logs were removed.
+grep -n "constrainSize\|lockToSizeLine" "src/app/(app)/dashboard/page.tsx"
 
 git diff --stat
 
-Report the real diff and specifically quote the exact logic bug found in handleResizeStop before this fix.
-
 MANUAL VERIFICATION:
 
-Restart the frontend dev server only. Reload /dashboard, enter Edit Dashboard, resize Work in Progress to its other size several times in both directions, confirm it now genuinely commits and stays, not snapping back. Try dragging across widget content like the Staff Utilization list during a drag gesture, confirm no blue text-selection highlighting appears. Report back with a screenshot of each.
+Restart the frontend dev server only. Reload /dashboard, enter Edit Dashboard, grab the resize handle on Work in Progress and try dragging it straight down with no horizontal movement, confirm the preview shows no height change at all, it should feel locked. Then drag diagonally toward the bottom-right corner, confirm the preview now grows in both dimensions together along the real line, and confirm it still correctly commits to large on release. Try shrinking it back the same way. Report back with a screenshot showing the resize handle mid-drag.
 
 GIT:
 
-Do not commit until Ben confirms both are genuinely fixed in the browser.
+Do not commit until Ben confirms the constrained drag feels right in the browser.

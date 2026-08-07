@@ -1349,6 +1349,15 @@ export default function DashboardPage() {
             item.minH = minSpan.h
             item.maxW = maxSpan.w
             item.maxH = maxSpan.h
+            item.constraints = [{
+              name: `lockToSizeLine-${w.instance_id}`,
+              constrainSize: (_item, proposedW, _proposedH, _handle, _context) => {
+                const denomW = maxSpan.w - minSpan.w
+                const t = denomW === 0 ? 0 : Math.max(0, Math.min(1, (proposedW - minSpan.w) / denomW))
+                const derivedH = Math.round(minSpan.h + t * (maxSpan.h - minSpan.h))
+                return { w: proposedW, h: derivedH }
+              }
+            }]
           }
         }
       }
