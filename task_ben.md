@@ -74,7 +74,7 @@ This section exists because a past session confidently claimed specific files we
 
 # Section 3 - The task
 
-TASK: Replace the native browser time inputs for Start Time and End Time on the Daily timesheet tab with a custom text field that parses common typed time formats directly, since native <input type="time"> forces clunky segment-by-segment interaction (separate hour/minute/AM-PM fields) instead of letting someone just type a time and have it work.
+TASK: Three fixes to the Archive page's star column, now that the real cause of the "glitchy" star behavior is confirmed: it was never a bug in most cases, it was the owner correctly getting rejected for trying to star entries in someone else's archive (working as designed per spec, starring belongs to whoever the work is assigned to, not the viewer), just failing completely silently with no explanation. Alongside that, two real independent bugs were also found directly in the code and need fixing regardless.
 
 USE: claude sonnet
 
@@ -86,35 +86,49 @@ State plainly that no path in this task resolves against /mnt/c/Users or any Win
 
 VERIFY BEFORE ACT:
 
-grep -n -B 10 -A 5 "function calcDuration" "src/app/(app)/timesheets/DailyTab.tsx"
+grep -n -B 5 -A 25 "const handleStarToggle" "src/app/(app)/archive/page.tsx"
 
-grep -n "roundToNearest15" "src/app/(app)/timesheets/DailyTab.tsx"
+grep -n -B 5 -A 20 "{/\* Star \*/}" "src/app/(app)/archive/page.tsx"
 
-Paste the real output of both. Confirm the exact real "HH:mm" string format calcDuration and the rest of this form actually expect, and confirm the real roundToNearest15 helper's signature, since the new component needs to produce output in the identical format these existing functions already consume, not a new format that would need every downstream consumer changed too.
+grep -n "toast\." "src/app/(app)/archive/page.tsx" | head -5
+
+Paste the real output of all three. Confirm the current handleStarToggle logic, the current star button JSX, and confirm whether toast is already imported and used elsewhere in this file for the error-message pattern to match.
 
 WHAT THIS IS:
 
-form.startTime and form.endTime are plain "HH:mm" 24-hour strings today, produced by the native time input. This task only changes how that same string gets entered, not what it is or how anything else in this file uses it. A new small component takes free-text input like "10am", "10:00 AM", "3pm", "1500", "15:00", parses it on blur or Enter into the same "HH:mm" format, and calls the exact same onChange the native input currently calls. If what's typed can't be parsed as a real time, show a clear inline error rather than silently accepting garbage or crashing.
+Fix 1, real bug: starredOverrides[entry.task_id] never gets cleared once set, permanently shadowing entry.starred after the first toggle for that row, causing a real, permanent divergence from server truth.
+
+Fix 2, real bug: handleStarToggle calls refetch() unconditionally after every successful toggle, even though the optimistic update already correctly reflects the new state, causing an unnecessary full data reswap and the visual row-shift Ben described.
+
+Fix 3, real UX gap, not a permission bug: when the current user is viewing an archive that is not their own (the selected user in the manager/owner staff-picker differs from the logged-in user's own id), every star in that archive is not actually toggleable, since starring is scoped to whoever the task is assigned to, confirmed correct and intentional per spec section 7's "anyone can star rows in their own archive" and section 3's employee-owned-evidence framing constraint. Right now the star renders as if fully clickable regardless, and a click silently fails with a 403 the UI never surfaces, which reads as a random, unexplained glitch. The star should render visibly disabled (greyed out, not the normal amber/gray toggle colors) with a tooltip explaining why, whenever the archive being viewed does not belong to the current logged-in user, and clicking it in that state should do nothing at all, not attempt the API call.
 
 CHANGE INSTRUCTIONS:
 
-Create a small reusable component, for example TimeTextInput, in a sensible location near DailyTab.tsx or in a shared components folder if this codebase already has a convention for small shared form inputs, check for one before deciding where it lives. It should render a plain text input, hold its own local typed-text state distinct from the committed "HH:mm" value, and on blur or Enter, attempt to parse the typed text. Support at minimum: "h:mma", "h:mm a", "ha", "h a", "HH:mm" 24-hour, and bare hour shorthand like "3pm" or "1500". If parsing succeeds, call the passed-in onChange with the real "HH:mm" value and update the displayed text to a clean, consistent format like "3:00 PM". If parsing fails, keep the invalid text visible and show a small inline error, do not silently clear it or fall back to a default time.
+Remove the refetch() call from handleStarToggle's success path entirely.
 
-Replace both the Start Time and End Time native <input type="time"> elements with this new component, passing the same value and onChange props they already receive, so calcDuration, the payload sent to POST /time-entries/, and the timer-start flow all continue working unchanged, since they only care about the final "HH:mm" string, not how it was entered.
+Do not clear starredOverrides after a successful toggle, let it remain the source of truth for that row going forward within the session, since there is no longer an automatic refetch to reconcile against; this is correct because it will already hold the accurate, current value.
+
+Ensure the toggle direction is computed from the latest state at click time using the functional form of setState, not a value captured in a stale closure, so rapid or repeated clicks each correctly compute their own direction.
+
+Determine whether the currently viewed archive belongs to the logged-in user (compare the archive's target user_id, whatever that variable is called in this file, against the logged-in user's own id from useAuth). When it does not match, render the star button with a disabled/muted style (grey, not the normal amber-filled or outline-gray toggle colors), a title/tooltip attribute explaining "You can only star items in your own archive," and make its onClick a no-op or simply omit the onClick handler entirely in that state, so no API call is attempted at all, not just prevented server-side.
+
+Add a toast.error call in handleStarToggle's catch block, using the exact same toast pattern already used elsewhere in this codebase, surfacing whatever real detail message the API returns (for example the confirmed real "You may only star tasks assigned to you." message) rather than failing with no visible feedback, this is a real safety net for any other unexpected failure beyond the now-prevented case above.
 
 VERIFY AFTER ACT:
 
 cd /home/corby/jamm-os/frontend
 npm run build
 
-grep -n "TimeTextInput" "src/app/(app)/timesheets/DailyTab.tsx"
+grep -n -A 20 "const handleStarToggle" "src/app/(app)/archive/page.tsx"
+
+grep -n "toast.error" "src/app/(app)/archive/page.tsx"
 
 git diff --stat
 
 MANUAL VERIFICATION:
 
-Restart the frontend dev server only. Reload Timesheets, Daily tab. Type "10am" into Start Time, tab or click away, confirm it becomes a clean "10:00 AM" and the underlying value is correct. Try "3:15pm", "1500", and "9" alone, confirm each parses sensibly or shows a clear error if genuinely ambiguous. Confirm the duration calculation between start and end still works correctly once both are set. Submit a real entry with times entered this way, confirm it saves correctly. Report back with a screenshot and confirm which input formats worked and which, if any, showed an error.
+Restart the frontend dev server only. Reload /archive as owner@riverside-demo.com viewing your own archive if you have any real starrable rows, confirm star/unstar toggles cleanly with no row-shift and no stuck state, and persists correctly after a full page reload. Switch to viewing a different user's archive via the staff selector, confirm every star in that view now renders visibly greyed/disabled with a tooltip, and confirm clicking one does nothing, no network request fires at all. Report back with a screenshot of both states, your own archive's active stars and someone else's archive's disabled stars.
 
 GIT:
 
-Do not commit until Ben confirms the typed time entry actually feels right and works correctly in the browser.
+Do not commit until Ben confirms both states look and behave correctly in the browser.
