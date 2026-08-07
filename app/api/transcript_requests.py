@@ -36,8 +36,9 @@ def submit_transcript_request(
     """
     Submit a transcript request for a client.
 
-    Requires an active Form 8821 on file for the client.
-    Returns 400 with a clear message if no active 8821 exists.
+    Requires an active Form 8821 or Form 2848 on file for the client.
+    Both permit transcript access. Returns 400 naming the real state of
+    each form type when neither is active.
 
     The actual IRS API call is stubbed — the request is logged
     and status set to 'pending' until live integration is configured.
@@ -99,11 +100,23 @@ def check_transcript_authorization(
     _: User = Depends(require_manager_or_above),
 ):
     """
-    Check whether a client has an active 8821 on file,
-    and return their existing transcript requests.
+    Whether this client's IRS authorizations permit a transcript request,
+    and their existing requests.
 
-    Used by the frontend to decide whether to show the
-    'Request Transcript' button or an authorization warning.
+    Answers from crud_auth.resolve_authorization_state for BOTH form types.
+    Two defects are fixed here. The old version asked only about form type
+    8821, so a firm holding a valid 2848 was reported as unable to request
+    transcripts, and it collapsed pending, lapsed and revoked records into
+    "not_on_file", which is false whenever a record exists.
+
+    can_request keeps its name and its meaning: true when a transcript
+    request would actually be accepted, which is now either form type
+    resolving to active. authorization_status is the best of the two states,
+    so it still reads "active" when one is active and still reads
+    "not_on_file" only when neither form type has ever existed.
+
+    response_model=dict with an ad hoc literal is left alone deliberately.
+    Giving this endpoint a real schema is a separate cleanup.
     """
     from app.crud import irs_authorization as crud_auth
 
@@ -116,8 +129,34 @@ def check_transcript_authorization(
     if not client:
         raise HTTPException(status_code=404, detail="Client not found")
 
-    active_auth = crud_auth.get_active_authorization_for_client(
+    resolved_8821 = crud_auth.resolve_authorization_state(
         db, current_firm.id, client_id, "8821"
+    )
+    resolved_2848 = crud_auth.resolve_authorization_state(
+        db, current_firm.id, client_id, "2848"
+    )
+
+    # Both forms permit transcript access, so either one being active opens
+    # the gate. 8821 is preferred when both are active only because it is the
+    # form written specifically for information access.
+    granting = next(
+        (
+            resolved
+            for resolved in (resolved_8821, resolved_2848)
+            if resolved.state == crud_auth.AUTH_STATE_ACTIVE
+        ),
+        None,
+    )
+
+    best_state = min(
+        (resolved_8821.state, resolved_2848.state),
+        key=crud_auth.AUTH_STATE_PRECEDENCE_BEST_FIRST.index,
+    )
+    # "not_on_file" is preserved for the one case where it is true. Any other
+    # state reports itself, because telling a firm nothing is on file when a
+    # lapsed authorization is sitting right there is the bug this replaces.
+    authorization_status = (
+        "not_on_file" if best_state == crud_auth.AUTH_STATE_NONE else best_state
     )
 
     requests = crud_transcript.list_transcript_requests(
@@ -128,9 +167,19 @@ def check_transcript_authorization(
 
     return {
         "client_id": str(client_id),
-        "can_request": active_auth is not None,
-        "authorization_status": "active" if active_auth else "not_on_file",
-        "irs_authorization_id": str(active_auth.id) if active_auth else None,
+        "can_request": granting is not None,
+        "authorization_status": authorization_status,
+        "irs_authorization_id": str(granting.record.id) if granting else None,
+        "state_8821": resolved_8821.state,
+        "state_2848": resolved_2848.state,
+        "expires_on_8821": resolved_8821.expires_on,
+        "expires_on_2848": resolved_2848.expires_on,
+        "authorization_id_8821": (
+            str(resolved_8821.record.id) if resolved_8821.record else None
+        ),
+        "authorization_id_2848": (
+            str(resolved_2848.record.id) if resolved_2848.record else None
+        ),
         "existing_requests": [
             TranscriptRequestOut.model_validate(r).model_dump() for r in requests
         ],

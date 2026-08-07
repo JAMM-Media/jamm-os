@@ -232,9 +232,16 @@ def test_lapsed_outside_window_is_caught_and_expired(firm_a_owner):
 
 def test_expired_authorization_closes_the_transcript_gate(firm_a_owner):
     """
-    Once expired, get_active_authorization_for_client returns None and
+    Once past its date, resolve_authorization_state reports a lapse and
     request_transcript raises. The gate always existed and was decorative
     while nothing ever wrote the status.
+
+    Step 8 moved the gate off the status column and onto valid_until, so the
+    row is already lapsed to the resolver BEFORE the sweep runs. The sweep
+    then writes status = "expired" and the resolver keeps saying lapsed, off
+    the same date. The two are consistent at every point, which is the change:
+    this used to report the row as active for as long as it took the sweep to
+    reach it, which held the transcript gate open on a dead authorization.
     """
     from app.crud import irs_authorization as crud_auth
     from app.models.firm import Firm
@@ -251,18 +258,25 @@ def test_expired_authorization_closes_the_transcript_gate(firm_a_owner):
             select(Firm).where(Firm.id == uuid.UUID(firm_id))
         ).scalars().first()
 
-        assert crud_auth.get_active_authorization_for_client(
+        before = crud_auth.resolve_authorization_state(
             db, uuid.UUID(firm_id), cl.id, "8821"
-        ) is not None, "still active before the sweep runs"
+        )
+        assert before.state == crud_auth.AUTH_STATE_LAPSED, (
+            "the date has passed, so it is lapsed even though the column "
+            "still says active and the sweep has not run"
+        )
+        assert before.expires_on == auth.valid_until
 
         _run_sweep()
         db.expire_all()
         db.refresh(auth)
         assert auth.status == "expired"
 
-        assert crud_auth.get_active_authorization_for_client(
+        after = crud_auth.resolve_authorization_state(
             db, uuid.UUID(firm_id), cl.id, "8821"
-        ) is None
+        )
+        assert after.state == crud_auth.AUTH_STATE_LAPSED
+        assert after.expires_on == auth.valid_until
 
         with pytest.raises(ValueError):
             request_transcript(

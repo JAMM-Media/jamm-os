@@ -15,12 +15,15 @@ identical.
 
 Authorization requirement:
   Every transcript request requires an active Form 8821 (Tax Information
-  Authorization) for the client. The 8821 authorizes the firm to receive
-  IRS transcripts on the client's behalf. Attempting to request a
-  transcript without an active 8821 returns a clear 400 error.
+  Authorization) OR an active Form 2848 (Power of Attorney) for the client.
+  Both authorize the firm to receive IRS transcripts on the client's behalf.
+  The gate used to demand an 8821 specifically, which blocked firms holding a
+  perfectly valid 2848. Without an active authorization of either type the
+  request returns a 400 naming the real situation of each form type.
 """
 
 import logging
+from datetime import date
 from uuid import UUID
 
 from sqlalchemy.orm import Session
@@ -36,6 +39,59 @@ from app.services.behavioral_log import log_event
 logger = logging.getLogger(__name__)
 
 
+# What each resolved state actually means, in the firm's words. "lapsed" is
+# absent on purpose: a lapse is described by _describe_form_state, which has
+# to decide whether it can name a date.
+_STATE_CLAUSES = {
+    crud_auth.AUTH_STATE_ACTIVE: "active",
+    crud_auth.AUTH_STATE_PENDING: "sent and awaiting signature",
+    crud_auth.AUTH_STATE_REVOKED: "revoked",
+    crud_auth.AUTH_STATE_NONE: "none on file",
+}
+
+
+def _format_lapse_date(value: date) -> str:
+    """
+    'March 20, 2025'. Written out rather than using %-d, which is not portable
+    to Windows. The year is always shown: a lapse can be years old, and
+    "expired March 20" with no year is a worse sentence than a long one.
+    """
+    return f"{value:%B} {value.day}, {value.year}"
+
+
+def _describe_form_state(resolved) -> str:
+    """
+    One clause describing what actually exists for one form type.
+
+    A lapse names its date when the record carries one. Where valid_until is
+    null the lapse is stated without a date. Nothing is inferred: a firm
+    reading an invented expiry date on a compliance message would have no way
+    to tell it was invented.
+    """
+    if resolved.state == crud_auth.AUTH_STATE_LAPSED:
+        if resolved.expires_on is not None:
+            return f"expired {_format_lapse_date(resolved.expires_on)}"
+        return "expired, with no expiry date on record"
+    return _STATE_CLAUSES[resolved.state]
+
+
+def _build_authorization_error(client, resolved_8821, resolved_2848) -> str:
+    """
+    The 400 body. It must say which situation actually applies to each form
+    type, and it must never say nothing is on file when a record exists in
+    any state. A firm that let an 8821 lapse and is told it never had one
+    goes looking for a problem that is not there.
+    """
+    return (
+        f"IRS transcripts for {client.name} require an active Form 8821 or "
+        f"Form 2848, and neither is active. "
+        f"Form 8821: {_describe_form_state(resolved_8821)}. "
+        f"Form 2848: {_describe_form_state(resolved_2848)}. "
+        f"Send an authorization and collect the signature before requesting "
+        f"transcripts."
+    )
+
+
 def request_transcript(
     db: Session,
     request_in: TranscriptRequestCreate,
@@ -47,7 +103,7 @@ def request_transcript(
     Submit a transcript request for a client.
 
     Steps:
-    1. Verify client has an active Form 8821 on file
+    1. Verify client has an active Form 8821 or Form 2848 on file
     2. Create TranscriptRequest record (status: pending)
     3. Call stub IRS provider (logs request, does nothing else)
     4. Write audit log
@@ -55,23 +111,40 @@ def request_transcript(
 
     Returns: {"request": TranscriptRequest, "authorization_required": False}
 
-    If no active 8821 exists, raises ValueError with a clear message.
-    The caller (API layer) converts this to a 400 response.
+    If neither form type is active, raises ValueError naming the real state
+    of each. The caller (API layer) converts this to a 400 response.
     """
-    # Step 1 — Verify active 8821 on file
-    active_auth = crud_auth.get_active_authorization_for_client(
+    # Step 1. Verify an active authorization of either form type.
+    # Both 8821 and 2848 permit transcript access, so requiring an 8821
+    # specifically blocked firms that hold a valid 2848 and nothing else.
+    resolved_8821 = crud_auth.resolve_authorization_state(
         db=db,
         firm_id=firm.id,
         client_id=client.id,
         form_type="8821",
     )
+    resolved_2848 = crud_auth.resolve_authorization_state(
+        db=db,
+        firm_id=firm.id,
+        client_id=client.id,
+        form_type="2848",
+    )
 
-    if not active_auth:
+    granting = next(
+        (
+            resolved
+            for resolved in (resolved_8821, resolved_2848)
+            if resolved.state == crud_auth.AUTH_STATE_ACTIVE
+        ),
+        None,
+    )
+
+    if granting is None:
         raise ValueError(
-            f"No active Form 8821 (Tax Information Authorization) on file for "
-            f"{client.name}. An active 8821 is required before requesting IRS "
-            f"transcripts. Please send and obtain a signed 8821 first."
+            _build_authorization_error(client, resolved_8821, resolved_2848)
         )
+
+    active_auth = granting.record
 
     # Step 2 — Create transcript request record
     transcript = crud_transcript.create_transcript_request(

@@ -113,9 +113,20 @@ def check_client_authorization_status(
     _: User = Depends(require_manager_or_above),
 ):
     """
-    Quick check: does this client have active 8821 and/or 2848 on file?
-    Returns has_active_8821 and has_active_2848 booleans plus the records.
-    Used by the frontend IRS auth status card on Client detail.
+    What is this client's real authorization situation, per form type?
+
+    Answers from crud_auth.resolve_authorization_state, the one shared
+    resolution function. This used to call a status-only active lookup once
+    per form type, so a pending, lapsed or revoked record never reached the
+    frontend at all and the badge had no way to render anything but
+    "None on File" for it. That lookup has since been deleted.
+
+    has_active_8821 and has_active_2848 keep their exact meaning, and the
+    '8821' and '2848' keys keep their shape. What changed is that those two
+    keys now carry the resolved record whatever its status, alongside the
+    resolved state and expiry date.
+
+    Consumed by IrsAuthBadge on Client detail.
     """
     client = db.execute(
         select(Client).where(
@@ -126,19 +137,28 @@ def check_client_authorization_status(
     if not client:
         raise HTTPException(status_code=404, detail="Client not found")
 
-    auth_8821 = crud_auth.get_active_authorization_for_client(
+    resolved_8821 = crud_auth.resolve_authorization_state(
         db, current_firm.id, client_id, "8821"
     )
-    auth_2848 = crud_auth.get_active_authorization_for_client(
+    resolved_2848 = crud_auth.resolve_authorization_state(
         db, current_firm.id, client_id, "2848"
     )
 
+    def _record(resolved) -> Optional[dict]:
+        if resolved.record is None:
+            return None
+        return IrsAuthorizationOut.model_validate(resolved.record).model_dump()
+
     return {
         "client_id": str(client_id),
-        "8821": IrsAuthorizationOut.model_validate(auth_8821).model_dump() if auth_8821 else None,
-        "2848": IrsAuthorizationOut.model_validate(auth_2848).model_dump() if auth_2848 else None,
-        "has_active_8821": auth_8821 is not None,
-        "has_active_2848": auth_2848 is not None,
+        "8821": _record(resolved_8821),
+        "2848": _record(resolved_2848),
+        "has_active_8821": resolved_8821.state == crud_auth.AUTH_STATE_ACTIVE,
+        "has_active_2848": resolved_2848.state == crud_auth.AUTH_STATE_ACTIVE,
+        "state_8821": resolved_8821.state,
+        "state_2848": resolved_2848.state,
+        "expires_on_8821": resolved_8821.expires_on,
+        "expires_on_2848": resolved_2848.expires_on,
     }
 
 

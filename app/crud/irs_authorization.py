@@ -1,5 +1,6 @@
 # app/crud/irs_authorization.py
 
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 from uuid import UUID
@@ -66,25 +67,181 @@ def update_irs_authorization(
     return auth
 
 
-def get_active_authorization_for_client(
+# get_active_authorization_for_client was deleted in Phase F1 Step 8. It
+# filtered on status == "active" alone, which is the exact bug Step 8 removed:
+# it would hand back an authorization whose valid_until had already passed but
+# which the nightly sweep had not yet flipped. Anything needing to know a
+# client's authorization situation asks resolve_authorization_state below,
+# which reads the date. Do not reintroduce a status-only lookup.
+
+
+# The five states a form type can resolve to. Deliberately NOT the same
+# vocabulary as IrsAuthorization.status:
+#
+#   - "lapsed" is the reported form of status "expired". The word the product
+#     uses to a firm, kept distinct so nobody confuses a resolved state with a
+#     row status.
+#   - "superseded" has no resolved state at all. A superseded row always had a
+#     replacement at the moment it was superseded (see
+#     _supersede_prior_active_authorizations, which only ever runs while
+#     activating that replacement), so resolution reads the replacement and
+#     never reports the retired row.
+#
+# All five already existed on the model. Nothing here invents a state; this
+# stops the two check endpoints collapsing four of them into "none on file",
+# which is a false statement to a firm that let an authorization lapse.
+AUTH_STATE_ACTIVE = "active"
+AUTH_STATE_PENDING = "pending"
+AUTH_STATE_LAPSED = "lapsed"
+AUTH_STATE_REVOKED = "revoked"
+AUTH_STATE_NONE = "none"
+
+
+# Best to worst. For callers that must collapse two form types into a single
+# summary value. The badge in IrsAuthBadge.tsx reads the same ladder in the
+# other direction, because it shows the worst case rather than the best.
+AUTH_STATE_PRECEDENCE_BEST_FIRST = (
+    AUTH_STATE_ACTIVE,
+    AUTH_STATE_PENDING,
+    AUTH_STATE_REVOKED,
+    AUTH_STATE_LAPSED,
+    AUTH_STATE_NONE,
+)
+
+
+def _is_past_its_date(row: IrsAuthorization, as_of: date) -> bool:
+    """
+    Whether this row's own end date has passed, independent of what its status
+    column says.
+
+    A null valid_until never lapses. An 8821 with no end date is normal and
+    valid indefinitely, and guessing an expiry for it would be inventing a
+    fact.
+
+    Strictly less than, and as_of comes from compute_expiry_cutoff_date, so
+    this is the identical test get_lapsed_active_authorizations applies in
+    SQL. The two must agree to the day: if resolution used <= or a different
+    anchor, the badge and the nightly sweep would contradict each other on the
+    boundary date, which is the exact class of contradiction this phase exists
+    to remove. A row expiring exactly on the cutoff is still valid to both,
+    and the sweep treats it as a day-zero warning rather than a lapse.
+    """
+    return row.valid_until is not None and row.valid_until < as_of
+
+
+@dataclass(frozen=True)
+class ResolvedAuthorizationState:
+    """
+    What one form type actually amounts to for one client, right now.
+
+    record is the row the state was read off, and is None only when the state
+    is "none". expires_on is that row's valid_until and may be None even when
+    a record exists: an 8821 with no end date is normal, and a lapsed record
+    with no valid_until is reported as a lapse with no date rather than having
+    a date guessed for it.
+    """
+    state: str
+    record: Optional[IrsAuthorization] = None
+    expires_on: Optional[date] = None
+
+
+def resolve_authorization_state(
     db: Session,
     firm_id: UUID,
     client_id: UUID,
     form_type: str,
-) -> IrsAuthorization | None:
+) -> ResolvedAuthorizationState:
     """
-    Returns the most recent active authorization of the given form_type
-    for a client. Used to verify authorization is on file before
-    allowing transcript requests or automation actions.
+    The single source of truth for "what is this client's Form 8821 (or 2848)
+    situation". Both check endpoints and the transcript gate answer from here.
+
+    Resolution order, applied in exactly this sequence:
+
+      1. Any "active" row whose valid_until has not passed wins outright.
+      2. Otherwise any "pending_signature" row.
+      3. Otherwise, if the most recent row that is not superseded is
+         "revoked".
+      4. Otherwise, if any row has lapsed, that is a lapse, carrying that
+         row's valid_until as the expiry date. A row has lapsed if its status
+         is "expired" OR if it is still marked "active" but its date has
+         passed.
+      5. Otherwise no record has ever existed for this form type.
+
+    THE DATE IS AUTHORITATIVE, NOT THE STATUS COLUMN. status only becomes
+    "expired" when the nightly sweep runs and flips it. Between the moment an
+    authorization actually expires and the moment the sweep reaches it, the
+    row still reads "active". Resolving off the column there shows a green
+    "IRS Auth: Active" badge and opens the transcript gate on a dead
+    authorization. That false green is worse than the false red this phase was
+    built to remove, because it invites the firm to act on authority it does
+    not hold. The column is a nightly opinion about the date. The date is the
+    fact. Do not "fix" this back to reading status alone.
+
+    This is a read and only a read. It never writes, never flips a status
+    column and never fires a background job. The nightly sweep still owns the
+    write, because two systems writing the same column is how they drift.
+
+    pending_signature is deliberately untouched by the date test. A pending
+    authorization has not started, so its end date is not yet meaningful.
+
+    Order matters, and it is not the same as recency. A client who let an 8821
+    lapse and has since signed a new one holds an active authorization, so the
+    active row wins even though the expired row may be newer in some
+    pathological ordering. Equally, a pending renewal does not un-lapse the
+    old record, so "active" is checked before "pending".
+
+    Rows are ordered most recent first, so each pass returns the newest row
+    matching it.
+
+    A form type whose only rows are superseded falls through to "none". That
+    is not reachable today: supersession happens only while a replacement is
+    being activated, so a superseded row always has a live sibling.
+
+    Scoped to firm_id. This is per-client state read on a request path, so
+    the nightly sweep exemption that applies to
+    get_authorizations_in_warning_window does NOT apply here.
     """
-    return db.execute(
+    rows = db.execute(
         select(IrsAuthorization).where(
             IrsAuthorization.firm_id == firm_id,
             IrsAuthorization.client_id == client_id,
             IrsAuthorization.form_type == form_type,
-            IrsAuthorization.status == "active",
         ).order_by(IrsAuthorization.created_at.desc())
-    ).scalars().first()
+    ).scalars().all()
+
+    if not rows:
+        return ResolvedAuthorizationState(AUTH_STATE_NONE)
+
+    # The same anchor the expiry sweep uses, read once so every pass below
+    # judges every row against one calendar date. Never date.today().
+    as_of = compute_expiry_cutoff_date()
+
+    for row in rows:
+        if row.status == "active" and not _is_past_its_date(row, as_of):
+            return ResolvedAuthorizationState(AUTH_STATE_ACTIVE, row, row.valid_until)
+
+    for row in rows:
+        if row.status == "pending_signature":
+            return ResolvedAuthorizationState(AUTH_STATE_PENDING, row, row.valid_until)
+
+    # Revocation is only the answer if it is the firm's latest word on this
+    # form type. A revoked row sitting behind a later expired one is history.
+    live = [row for row in rows if row.status != "superseded"]
+    if live and live[0].status == "revoked":
+        return ResolvedAuthorizationState(AUTH_STATE_REVOKED, live[0], live[0].valid_until)
+
+    # A row still marked "active" that reached this pass is one the sweep has
+    # not caught up with yet. It is reported as the lapse it is, carrying its
+    # own valid_until. Falling through to "none" instead would tell a firm
+    # holding a real record that nothing is on file, which is the other lie
+    # this phase exists to stop.
+    for row in rows:
+        if row.status == "expired" or (
+            row.status == "active" and _is_past_its_date(row, as_of)
+        ):
+            return ResolvedAuthorizationState(AUTH_STATE_LAPSED, row, row.valid_until)
+
+    return ResolvedAuthorizationState(AUTH_STATE_NONE)
 
 
 # Placeholder until Firm carries a timezone. American Samoa at UTC-11
@@ -177,12 +334,17 @@ def get_lapsed_active_authorizations(
     valid_until < as_of - timedelta(days=1). The deadline sweep in
     deadline_scheduler.py does subtract a day, and it is right to, because
     its failure mode is a false alarm. This one is inverted. A margin would
-    report an authorization as active for a further full day after it
-    actually lapsed, which keeps get_active_authorization_for_client
-    returning it and keeps request_transcript passing. Blocking a firm a few
-    hours early is an annoyance. Permitting a transcript pull against a dead
-    8821 tells a firm it holds authority it does not hold, on the one
-    surface where being wrong carries legal weight for them.
+    leave a lapsed authorization carrying status = "active" for a further
+    full day. Blocking a firm a few hours early is an annoyance. Permitting a
+    transcript pull against a dead 8821 tells a firm it holds authority it
+    does not hold, on the one surface where being wrong carries legal weight
+    for them.
+
+    A margin here no longer reaches the transcript gate, because
+    resolve_authorization_state reads valid_until directly against this same
+    anchor rather than trusting the column. It would still put a wrong status
+    on the row, and it would put this query and _is_past_its_date a day apart,
+    so the rule stands.
 
     The timezone exposure is already handled by as_of. It is NOT handled by
     the schedule: the add_job call in app/main.py picks an hour so that

@@ -100,9 +100,16 @@ def _format_expiry_date(value: date, as_of: date) -> str:
 
 def _build_consequence_sentence(authorization) -> str:
     """
-    What the firm actually loses. The transcript gate in
-    transcript_service.request_transcript checks form_type 8821, so claiming
-    lost transcript access for a 2848 would simply be false.
+    What the firm actually loses.
+
+    The transcript gate in transcript_service.request_transcript now passes on
+    either form type, so an expiring 2848 can also cost transcript access,
+    but only when it is the client's sole active authorization. This function
+    is handed one authorization and no session, so it cannot know whether the
+    other form type is still active, and it will not go looking: a warning
+    that asserts lost transcript access when a live 8821 is sitting right
+    there would be false. Each sentence therefore names only what the form
+    itself carries, which is true of that form unconditionally.
 
     This is JAMM describing its own behavior, not an inference about the
     firm, which is why it is allowed to appear at all.
@@ -770,10 +777,15 @@ def mark_authorization_expired(
     Close out an authorization that lapsed on its own.
 
     Writes status = "expired" as real control state rather than only logging.
-    The consequence is intended: get_active_authorization_for_client stops
-    returning this row, so request_transcript raises its existing 400. That
-    gate always existed and was decorative while nothing ever wrote the
+    That gate always existed and was decorative while nothing ever wrote the
     status. Do not add a bypass.
+
+    Since Phase F1 Step 8 this write no longer decides the gate. The gate
+    reads resolve_authorization_state, which judges valid_until against the
+    same cutoff this sweep uses, so the row is already refused from the
+    moment it lapses rather than from the moment this runs. What this write
+    still owns is the row's own status, and it is the only thing that may
+    write it.
 
     Warning rows are NOT deleted here. The ladder history is what the
     expiry event reports on, and it stays on the row afterwards.
@@ -829,9 +841,8 @@ def _supersede_prior_active_authorizations(
 
     Scoped to firm AND client AND form_type. This is deliberately NOT "one
     active authorization per client": a client can hold an 8821 and a 2848
-    at the same time, and get_active_authorization_for_client filters by
-    form type, so retiring the 2848 because an 8821 activated would break
-    transcript access outright.
+    at the same time, and resolution runs once per form type, so retiring the
+    2848 because an 8821 activated would break transcript access outright.
 
     Superseded rows are never deleted. They keep their signed_document_id,
     so the attached document stays where it is in the Documents module, and

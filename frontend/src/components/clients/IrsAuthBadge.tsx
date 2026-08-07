@@ -7,6 +7,7 @@ import {
   irsAuthorizationsApi,
   type IrsAuthStatusResponse,
   type IrsAuthorizationRecord,
+  type IrsAuthResolvedState,
 } from '@/lib/api/irsAuthorizationsApi'
 import {
   Tooltip,
@@ -16,7 +17,13 @@ import {
 } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 
-type CompositeStatus = 'active' | 'expiring_soon' | 'expired' | 'pending' | 'none'
+type CompositeStatus =
+  | 'active'
+  | 'expiring_soon'
+  | 'pending'
+  | 'revoked'
+  | 'expired'
+  | 'none'
 
 const STATUS_CONFIG: Record<
   CompositeStatus,
@@ -25,6 +32,7 @@ const STATUS_CONFIG: Record<
   active: { bg: '#D1FAE5', text: '#065F46', label: 'IRS Auth: Active' },
   expiring_soon: { bg: '#FEF3C7', text: '#92400E', label: 'IRS Auth: Expiring Soon' },
   expired: { bg: '#FEE2E2', text: '#991B1B', label: 'IRS Auth: Expired' },
+  revoked: { bg: '#FEE2E2', text: '#991B1B', label: 'IRS Auth: Revoked' },
   pending: { bg: '#DBEAFE', text: '#1E40AF', label: 'IRS Auth: Pending' },
   none: {
     bg: '#E5E7EB',
@@ -34,32 +42,71 @@ const STATUS_CONFIG: Record<
   },
 }
 
+/** Worst first. Where the two form types disagree, the badge shows the worst. */
+const STATUS_PRECEDENCE_WORST_FIRST: CompositeStatus[] = [
+  'none',
+  'expired',
+  'revoked',
+  'pending',
+  'expiring_soon',
+  'active',
+]
+
+const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000
+
+/**
+ * Collapse one form type's resolved state into a badge status.
+ *
+ * The 'expiring_soon' distinction lives only here, on the client, because it
+ * is a function of the current clock rather than of anything the backend
+ * stored. Everything else is read straight off the resolved state.
+ */
+function statusForForm(
+  state: IrsAuthResolvedState,
+  expiresOn: string | null
+): CompositeStatus {
+  switch (state) {
+    case 'lapsed':
+      return 'expired'
+    case 'revoked':
+      return 'revoked'
+    case 'pending':
+      return 'pending'
+    case 'none':
+      return 'none'
+    case 'active': {
+      if (expiresOn !== null) {
+        const expiry = new Date(expiresOn).getTime()
+        const now = Date.now()
+        if (expiry > now && expiry - now <= THIRTY_DAYS_MS) return 'expiring_soon'
+      }
+      return 'active'
+    }
+  }
+}
+
 function deriveStatus(res: IrsAuthStatusResponse | null): CompositeStatus {
   if (!res) return 'none'
-  const r8821 = res['8821']
-  const r2848 = res['2848']
-  if (!r8821 && !r2848) return 'none'
 
-  const records = [r8821, r2848].filter((r): r is IrsAuthorizationRecord => r !== null)
+  const perForm: CompositeStatus[] = [
+    statusForForm(res.state_8821, res.expires_on_8821),
+    statusForForm(res.state_2848, res.expires_on_2848),
+  ]
 
-  if (records.some((r) => r.status === 'expired' || r.status === 'revoked')) return 'expired'
+  // A form type that has never existed does not drag the badge down. Most
+  // clients only ever hold an 8821, so counting a missing 2848 as the worst
+  // case would label every one of them "None on File" and reintroduce the
+  // exact false statement this badge was fixed to stop making. 'none' is the
+  // badge only when it is true of both form types.
+  const present = perForm.filter((status) => status !== 'none')
+  if (present.length === 0) return 'none'
 
-  const now = Date.now()
-  const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000
-  if (
-    records.some(
-      (r) =>
-        r.status === 'active' &&
-        r.valid_until !== null &&
-        new Date(r.valid_until).getTime() - now <= thirtyDaysMs &&
-        new Date(r.valid_until).getTime() > now
-    )
+  return present.reduce((worst, status) =>
+    STATUS_PRECEDENCE_WORST_FIRST.indexOf(status) <
+    STATUS_PRECEDENCE_WORST_FIRST.indexOf(worst)
+      ? status
+      : worst
   )
-    return 'expiring_soon'
-
-  if (records.some((r) => r.status === 'pending_signature')) return 'pending'
-
-  return 'active'
 }
 
 function fmtDate(dateStr: string): string {
@@ -70,12 +117,40 @@ function daysUntil(dateStr: string): number {
   return Math.ceil((new Date(dateStr).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
 }
 
-function TooltipBody({ res }: { res: IrsAuthStatusResponse | null }) {
-  const records: Array<{ type: '8821' | '2848'; rec: IrsAuthorizationRecord }> = []
-  if (res?.['8821']) records.push({ type: '8821', rec: res['8821'] })
-  if (res?.['2848']) records.push({ type: '2848', rec: res['2848'] })
+const STATE_LABEL: Record<Exclude<IrsAuthResolvedState, 'none'>, string> = {
+  active: 'Active',
+  pending: 'Awaiting signature',
+  lapsed: 'Expired',
+  revoked: 'Revoked',
+}
 
-  if (records.length === 0) {
+interface FormEntry {
+  type: '8821' | '2848'
+  state: Exclude<IrsAuthResolvedState, 'none'>
+  rec: IrsAuthorizationRecord
+  expiresOn: string | null
+}
+
+function collectEntries(res: IrsAuthStatusResponse | null): FormEntry[] {
+  if (!res) return []
+  const entries: FormEntry[] = []
+  const source = [
+    { type: '8821' as const, state: res.state_8821, rec: res['8821'], expiresOn: res.expires_on_8821 },
+    { type: '2848' as const, state: res.state_2848, rec: res['2848'], expiresOn: res.expires_on_2848 },
+  ]
+  for (const item of source) {
+    // state 'none' and a null record are the same condition, but the record
+    // is what the body actually renders, so narrow on it.
+    if (item.state === 'none' || item.rec === null) continue
+    entries.push({ type: item.type, state: item.state, rec: item.rec, expiresOn: item.expiresOn })
+  }
+  return entries
+}
+
+function TooltipBody({ res }: { res: IrsAuthStatusResponse | null }) {
+  const entries = collectEntries(res)
+
+  if (entries.length === 0) {
     return (
       <span style={{ fontSize: 11, color: '#EDEEF0' }}>
         No IRS authorization on file.
@@ -85,19 +160,25 @@ function TooltipBody({ res }: { res: IrsAuthStatusResponse | null }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-      {records.map(({ type, rec }) => (
+      {entries.map(({ type, state, rec, expiresOn }) => (
         <div key={type} style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
           <span style={{ fontSize: 12, fontWeight: 500, color: '#EDEEF0' }}>
             Form {type}
           </span>
-          <span style={{ fontSize: 11, color: '#9CA3AF', textTransform: 'capitalize' }}>
-            {rec.status.replace('_', ' ')}
+          <span style={{ fontSize: 11, color: '#9CA3AF' }}>
+            {STATE_LABEL[state]}
           </span>
-          {rec.valid_until && (
-            <span style={{ fontSize: 11, color: '#9CA3AF' }}>
-              Expires {fmtDate(rec.valid_until)} ({daysUntil(rec.valid_until)} days)
-            </span>
-          )}
+          {expiresOn &&
+            (state === 'lapsed' ? (
+              // Never "(-412 days)". A lapse is stated as a past event.
+              <span style={{ fontSize: 11, color: '#9CA3AF' }}>
+                Expired {fmtDate(expiresOn)}
+              </span>
+            ) : (
+              <span style={{ fontSize: 11, color: '#9CA3AF' }}>
+                Expires {fmtDate(expiresOn)} ({daysUntil(expiresOn)} days)
+              </span>
+            ))}
           {rec.tax_years && rec.tax_years.length > 0 && (
             <span style={{ fontSize: 11, color: '#9CA3AF' }}>
               Tax years: {rec.tax_years.join(', ')}

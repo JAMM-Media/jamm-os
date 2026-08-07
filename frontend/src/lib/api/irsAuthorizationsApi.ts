@@ -14,12 +14,38 @@ export interface IrsAuthorizationRecord {
   updated_at: string
 }
 
+/**
+ * The resolved state of one form type, computed by
+ * crud_auth.resolve_authorization_state on the backend.
+ *
+ * Not the same vocabulary as IrsAuthorizationRecord['status']: 'lapsed' is
+ * the reported form of a record whose status is 'expired', and 'superseded'
+ * has no resolved state at all because resolution reads the replacement
+ * instead of the retired row.
+ */
+export type IrsAuthResolvedState =
+  | 'active'
+  | 'pending'
+  | 'lapsed'
+  | 'revoked'
+  | 'none'
+
 export interface IrsAuthStatusResponse {
   client_id: string
+  /**
+   * The resolved record for this form type, whatever its status. This used
+   * to carry an active record or nothing, which is why the badge could not
+   * tell a lapsed authorization apart from one that never existed.
+   */
   '8821': IrsAuthorizationRecord | null
   '2848': IrsAuthorizationRecord | null
   has_active_8821: boolean
   has_active_2848: boolean
+  state_8821: IrsAuthResolvedState
+  state_2848: IrsAuthResolvedState
+  /** ISO date, or null. Null is normal: an 8821 often has no end date. */
+  expires_on_8821: string | null
+  expires_on_2848: string | null
 }
 
 export interface IrsAuthSendRequest {
