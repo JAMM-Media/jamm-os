@@ -104,7 +104,7 @@ export default function AutomationSimulateModal({ rule, onClose }: Props) {
       onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}
     >
       <div
-        className="w-[480px] max-w-[95vw] flex flex-col rounded-[10px] bg-[#EDEEF0] dark:bg-[#383838]"
+        className="w-[480px] max-w-[95vw] flex flex-col rounded-[10px] bg-[#EDEEF0] dark:bg-[#383838] overflow-hidden"
         style={{ border: '0.5px solid #C8CDD6' }}
       >
         {/* Header */}

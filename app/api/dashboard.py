@@ -2,7 +2,7 @@
 
 import uuid
 from datetime import date, datetime, timezone, timedelta
-from typing import Any
+from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -19,9 +19,18 @@ from app.models.time_entry import TimeEntry
 from app.models.engagement import Engagement
 from app.models.client import Client
 from app.models.signature_envelope import SignatureEnvelope
-from app.models.dashboard_layout import DashboardLayout, FirmDefaultDashboardLayout
+from app.models.dashboard_layout import DashboardLayout, DashboardTemplate, FirmDefaultDashboardLayout
 from app.core.enums import InvoiceStatus, UserRole
 from app.core.dashboard_widgets import WIDGET_REGISTRY, WIDGET_BY_TYPE_KEY
+from app.api.concierge.functions import (
+    get_task_status,
+    get_client_communication_gap,
+    get_outstanding_document_requests,
+    get_time_tracking_detail,
+    get_recent_firm_chat_activity,
+    get_client_full_snapshot,
+)
+from app.services.client_health_service import compute_client_health
 from app.schemas.dashboard import (
     DashboardMetricsOut,
     OverdueEngagementItem,
@@ -365,6 +374,11 @@ _WIDGET_DISPATCH = {
     "staff_utilization": _get_staff_utilization_section,
     "overdue_engagements_table": _get_overdue_engagements_section,
     "awaiting_signature": _get_unsigned_documents_section,
+    # New non-configurable widgets backed by existing Concierge functions
+    "client_communication_gap":      lambda db, firm: get_client_communication_gap(firm.id, db),
+    "outstanding_document_requests": lambda db, firm: get_outstanding_document_requests(firm.id, db),
+    "unbilled_hours":                lambda db, firm: get_time_tracking_detail(firm.id, db),
+    "recent_firm_chat_activity":     lambda db, firm: get_recent_firm_chat_activity(firm.id, db),
 }
 
 
@@ -380,10 +394,19 @@ def _system_default_widgets() -> list:
         {"instance_id": str(uuid.uuid4()), "type_key": "overdue_engagements_count",  "grid_x": 3, "grid_y": 0, "size": "small",  "minimized": False, "config": {}},
         {"instance_id": str(uuid.uuid4()), "type_key": "work_in_progress",           "grid_x": 0, "grid_y": 1, "size": "medium", "minimized": False, "config": {}},
         {"instance_id": str(uuid.uuid4()), "type_key": "upcoming_deadlines",         "grid_x": 0, "grid_y": 2, "size": "medium", "minimized": False, "config": {}},
-        {"instance_id": str(uuid.uuid4()), "type_key": "staff_utilization",          "grid_x": 1, "grid_y": 2, "size": "medium", "minimized": False, "config": {}},
-        {"instance_id": str(uuid.uuid4()), "type_key": "overdue_engagements_table",  "grid_x": 0, "grid_y": 3, "size": "large",  "minimized": False, "config": {}},
-        {"instance_id": str(uuid.uuid4()), "type_key": "awaiting_signature",         "grid_x": 0, "grid_y": 4, "size": "large",  "minimized": False, "config": {}},
+        {"instance_id": str(uuid.uuid4()), "type_key": "staff_utilization",          "grid_x": 2, "grid_y": 2, "size": "medium", "minimized": False, "config": {}},
+        {"instance_id": str(uuid.uuid4()), "type_key": "overdue_engagements_table",  "grid_x": 2, "grid_y": 2, "size": "medium", "minimized": False, "config": {}},
+        {"instance_id": str(uuid.uuid4()), "type_key": "awaiting_signature",         "grid_x": 0, "grid_y": 3, "size": "large",  "minimized": False, "config": {}},
     ]
+
+
+def _resolve_default_layout(db: Session, current_firm: Firm) -> list:
+    firm_default = db.execute(
+        select(FirmDefaultDashboardLayout).where(
+            FirmDefaultDashboardLayout.firm_id == current_firm.id
+        )
+    ).scalar_one_or_none()
+    return firm_default.widgets if firm_default is not None else _system_default_widgets()
 
 
 # ---------------------------------------------------------------------------
@@ -401,6 +424,11 @@ class WidgetInstanceIn(BaseModel):
 
 
 class LayoutIn(BaseModel):
+    widgets: list[WidgetInstanceIn]
+
+
+class TemplateIn(BaseModel):
+    name: str
     widgets: list[WidgetInstanceIn]
 
 
@@ -469,13 +497,7 @@ def get_layout(
     if row is not None:
         return {"widgets": row.widgets}
 
-    firm_default = db.execute(
-        select(FirmDefaultDashboardLayout).where(
-            FirmDefaultDashboardLayout.firm_id == current_firm.id
-        )
-    ).scalar_one_or_none()
-
-    widgets = firm_default.widgets if firm_default is not None else _system_default_widgets()
+    widgets = _resolve_default_layout(db, current_firm)
 
     new_row = DashboardLayout(
         firm_id=current_firm.id,
@@ -511,6 +533,16 @@ def put_layout(
     return {"widgets": row.widgets}
 
 
+@router.post("/reset")
+def reset_layout(
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    _: object = Depends(require_manager_or_above),
+):
+    """Returns the firm-default-then-system-default layout without writing anything."""
+    return {"widgets": _resolve_default_layout(db, current_firm)}
+
+
 @router.put("/firm-default-layout")
 def put_firm_default_layout(
     payload: LayoutIn,
@@ -540,6 +572,9 @@ def put_firm_default_layout(
 @router.get("/widgets/{type_key}/data")
 def get_widget_data(
     type_key: str,
+    client_id: Optional[str] = None,
+    assignee_id: Optional[str] = None,
+    status_filter: Optional[str] = None,
     db: Session = Depends(get_db),
     current_firm: Firm = Depends(get_current_firm),
     _: object = Depends(require_manager_or_above),
@@ -547,7 +582,88 @@ def get_widget_data(
     """Returns live data for a single widget type."""
     if type_key not in WIDGET_BY_TYPE_KEY:
         raise HTTPException(status_code=404, detail=f"Unknown widget type: {type_key}")
+
+    # Configurable widgets that require per-instance config passed as query params
+    if type_key == "my_tasks":
+        assignee_uuid = uuid.UUID(assignee_id) if assignee_id else None
+        return get_task_status(current_firm.id, db, assignee_id=assignee_uuid, status_filter=status_filter)
+
+    if type_key == "client_health_snapshot":
+        if not client_id:
+            raise HTTPException(status_code=400, detail="client_id is required for client_health_snapshot")
+        return compute_client_health(uuid.UUID(client_id), current_firm.id, db)
+
+    if type_key == "single_client_quick_view":
+        if not client_id:
+            raise HTTPException(status_code=400, detail="client_id is required for single_client_quick_view")
+        return get_client_full_snapshot(current_firm.id, uuid.UUID(client_id), db)
+
     section_fn = _WIDGET_DISPATCH.get(type_key)
     if section_fn is None:
         raise HTTPException(status_code=404, detail=f"No data function for: {type_key}")
     return section_fn(db, current_firm)
+
+
+# ---------------------------------------------------------------------------
+# Dashboard templates
+# ---------------------------------------------------------------------------
+
+@router.get("/templates")
+def get_templates(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_manager_or_above),
+):
+    rows = db.execute(
+        select(DashboardTemplate)
+        .where(DashboardTemplate.user_id == current_user.id)
+        .order_by(DashboardTemplate.created_at.desc())
+    ).scalars().all()
+    return [
+        {
+            "id": str(r.id),
+            "name": r.name,
+            "widgets": r.widgets,
+            "created_at": r.created_at.isoformat(),
+        }
+        for r in rows
+    ]
+
+
+@router.post("/templates", status_code=201)
+def create_template(
+    payload: TemplateIn,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_manager_or_above),
+):
+    row = DashboardTemplate(
+        user_id=current_user.id,
+        name=payload.name,
+        widgets=[w.model_dump() for w in payload.widgets],
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return {
+        "id": str(row.id),
+        "name": row.name,
+        "widgets": row.widgets,
+        "created_at": row.created_at.isoformat(),
+    }
+
+
+@router.delete("/templates/{template_id}", status_code=204)
+def delete_template(
+    template_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_manager_or_above),
+):
+    row = db.execute(
+        select(DashboardTemplate).where(
+            DashboardTemplate.id == template_id,
+            DashboardTemplate.user_id == current_user.id,
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Template not found")
+    db.delete(row)
+    db.commit()

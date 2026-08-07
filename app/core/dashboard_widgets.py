@@ -79,6 +79,69 @@ WIDGET_REGISTRY: list[dict[str, Any]] = [
         "config_schema": [],
         "role_requirement": "manager_or_above",
     },
+    {
+        "type_key": "my_tasks",
+        "display_name": "My Tasks",
+        "category": "tasks",
+        "allowed_sizes": ["medium", "large"],
+        "config_schema": [
+            {"field": "assignee_id", "type": "staff_picker", "required": False},
+            {"field": "status_filter", "type": "select", "required": False},
+        ],
+        "role_requirement": "manager_or_above",
+    },
+    {
+        "type_key": "client_health_snapshot",
+        "display_name": "Client Health Snapshot",
+        "category": "clients",
+        "allowed_sizes": ["small", "medium"],
+        "config_schema": [
+            {"field": "client_id", "type": "client_picker", "required": True},
+        ],
+        "role_requirement": "manager_or_above",
+    },
+    {
+        "type_key": "client_communication_gap",
+        "display_name": "Client Communication Gap",
+        "category": "clients",
+        "allowed_sizes": ["medium", "large"],
+        "config_schema": [],
+        "role_requirement": "manager_or_above",
+    },
+    {
+        "type_key": "outstanding_document_requests",
+        "display_name": "Outstanding Document Requests",
+        "category": "documents",
+        "allowed_sizes": ["medium", "large"],
+        "config_schema": [],
+        "role_requirement": "manager_or_above",
+    },
+    {
+        "type_key": "unbilled_hours",
+        "display_name": "Unbilled Hours",
+        "category": "billing",
+        "allowed_sizes": ["medium", "large"],
+        "config_schema": [],
+        "role_requirement": "manager_or_above",
+    },
+    {
+        "type_key": "single_client_quick_view",
+        "display_name": "Single Client Quick View",
+        "category": "clients",
+        "allowed_sizes": ["small", "medium"],
+        "config_schema": [
+            {"field": "client_id", "type": "client_picker", "required": True},
+        ],
+        "role_requirement": "manager_or_above",
+    },
+    {
+        "type_key": "recent_firm_chat_activity",
+        "display_name": "Recent Firm Chat Activity",
+        "category": "overview",
+        "allowed_sizes": ["medium", "large"],
+        "config_schema": [],
+        "role_requirement": "manager_or_above",
+    },
 ]
 
 # Quick lookup by type_key

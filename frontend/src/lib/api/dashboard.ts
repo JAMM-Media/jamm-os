@@ -86,6 +86,22 @@ export interface DashboardWidgetInstance {
   config: Record<string, unknown>
 }
 
+export interface DashboardTemplateItem {
+  id: string
+  name: string
+  widgets: DashboardWidgetInstance[]
+  created_at: string
+}
+
+export interface WidgetCatalogItem {
+  type_key: string
+  display_name: string
+  category: string
+  allowed_sizes: string[]
+  config_schema: { field: string; type: string; required: boolean }[]
+  role_requirement: string
+}
+
 function mapTaskItem(raw: Record<string, unknown>): DashboardItem {
   return {
     id: String(raw.id),
@@ -161,8 +177,40 @@ export const dashboardApi = {
     return (data as { widgets: DashboardWidgetInstance[] }).widgets
   },
 
-  getWidgetData: async (typeKey: string): Promise<Record<string, unknown>> => {
-    const { data } = await api.get(`/dashboard/widgets/${typeKey}/data`)
+  getWidgetData: async (typeKey: string, config?: Record<string, unknown>): Promise<Record<string, unknown>> => {
+    const { data } = await api.get(`/dashboard/widgets/${typeKey}/data`, { params: config })
     return data as Record<string, unknown>
+  },
+
+  getWidgetCatalog: async (): Promise<WidgetCatalogItem[]> => {
+    const { data } = await api.get('/dashboard/widget-catalog')
+    return data as WidgetCatalogItem[]
+  },
+
+  updateLayout: async (widgets: DashboardWidgetInstance[]): Promise<void> => {
+    await api.put('/dashboard/layout', { widgets })
+  },
+
+  getDefaultLayout: async (): Promise<DashboardWidgetInstance[]> => {
+    const { data } = await api.post('/dashboard/reset')
+    return (data as { widgets: DashboardWidgetInstance[] }).widgets
+  },
+
+  putFirmDefaultLayout: async (widgets: DashboardWidgetInstance[]): Promise<void> => {
+    await api.put('/dashboard/firm-default-layout', { widgets })
+  },
+
+  getTemplates: async (): Promise<DashboardTemplateItem[]> => {
+    const { data } = await api.get('/dashboard/templates')
+    return data as DashboardTemplateItem[]
+  },
+
+  createTemplate: async (name: string, widgets: DashboardWidgetInstance[]): Promise<DashboardTemplateItem> => {
+    const { data } = await api.post('/dashboard/templates', { name, widgets })
+    return data as DashboardTemplateItem
+  },
+
+  deleteTemplate: async (templateId: string): Promise<void> => {
+    await api.delete(`/dashboard/templates/${templateId}`)
   },
 }

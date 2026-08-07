@@ -118,7 +118,7 @@ export function CreateDocumentRequestModal({
     >
       <div className="absolute inset-0 bg-black/35" onClick={onClose} />
 
-      <div className="relative z-10 w-full max-w-[560px] bg-[#EDEEF0] dark:bg-[#383838] rounded-[10px] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] shadow-lg flex flex-col max-h-[90vh]">
+      <div className="relative z-10 w-full max-w-[560px] bg-[#EDEEF0] dark:bg-[#383838] rounded-[10px] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] shadow-lg flex flex-col max-h-[90vh] overflow-hidden">
         {/* Header */}
         <div className="h-12 flex items-center justify-between px-4 border-b border-[0.5px] border-[#C8CDD6] dark:border-[#484848] flex-shrink-0">
           <span className="text-[13px] font-medium text-[#1F3148] dark:text-[#EDEEF0]">

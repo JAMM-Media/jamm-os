@@ -20,6 +20,16 @@
 
 ---
 
+# ENVIRONMENT SANITY CHECK — MANDATORY BEFORE ANY OTHER STEP
+This section exists because Claude Code twice reported stale route-conflict files (frontend/src/app/settings/, frontend/src/app/calendar/, frontend/src/app/(dashboard)/) as real, current, build-blocking evidence and asked for permission to delete them. Both times, those files did not exist in the real repo at /home/corby/jamm-os. They existed only on the separate Windows-side checkout at /mnt/c/Users/corby/jamm-os, a pre-rename leftover copy that is for viewing only and is never the source of truth. Some tool call had actually resolved against that path instead of the real WSL repo, and reported what it found there as if it were current.
+
+Before running any other command in this task:
+1. Run: pwd — the output must be exactly /home/corby/jamm-os or a path underneath it. If it is not, stop and cd /home/corby/jamm-os before doing anything else.
+2. State explicitly in the report, as its own line, that no command in this task read, listed, or resolved any path under /mnt/c/Users or any other Windows-side location. This is not optional boilerplate, it is a real claim that must be true.
+3. If at any point a command needs to check whether something exists "on disk," that means the real WSL filesystem under /home/corby/jamm-os, never the Windows copy, even implicitly, even as a fallback.
+
+---
+
 # VERIFY BEFORE ACT — MANDATORY FOR EVERY TASK
 Before making any change to any file:
 1. Run: pwd — confirm output is /home/corby/jamm-os. If it is not, run: cd /home/corby/jamm-os
@@ -52,86 +62,67 @@ If alembic current shows a revision but no tables exist: run alembic stamp base,
 
 ---
 
+# REPORTING DISCIPLINE — MANDATORY FOR EVERY TASK
+This section exists because a past session confidently claimed specific files were stale untracked leftovers safe to delete, citing a real commit hash correctly, then drew a false conclusion from it. The files did not exist on disk at all. The commit was real. The conclusion was not. That is the failure mode this section guards against: not sloppy guessing, but a plausible-sounding narrative that outran the actual evidence.
+
+- Quote literal command output verbatim in every summary. Never paraphrase output, never assert a conclusion in place of showing the output it came from. If a claim cannot be backed by pasted, real output in the same message, it does not go in the summary as fact.
+- If evidence is ambiguous, incomplete, contradictory, or simply absent, say so explicitly and stop. Do not fill a gap in the evidence with a story that sounds coherent. An honest "I don't have enough evidence to conclude this" is always the correct output when that is the true state.
+- Never take any action, including deletions, fixes, or refactors, beyond what CHANGE INSTRUCTIONS explicitly names, even if something discovered mid-task seems to obviously justify it. Surface it as a finding in the report and wait for a real instruction. Diagnosis and action are separate steps, not one motion.
+- Before claiming any file doesn't belong, is stale, is dead code, or should be deleted, confirm both that it exists on disk (ls -la) and its real git tracking status (git status --short and git ls-files) in the same message as the claim itself, not as a follow-up only produced if challenged.
+
+---
+
 # Section 3 - The task
 
-TASK: Replace the fixed-row Dashboard layout with a react-grid-layout canvas that renders the 9 launch-catalog widgets from the real GET /dashboard/layout endpoint, in view-only mode, no drag, no resize, no edit mode yet. This batch proves the grid library integration works with real data and real widget positions before any interaction is added on top in the next batch.
+TASK: Remove the "Plan New Template" button and its modal from the visible UI, since 4e-2 is deferred post-launch and currently in an unverified, possibly-broken state. Keep the underlying TemplatePlannerModal component code intact in the file so the work isn't lost, just stop rendering and exposing it to real users.
 
-USE: claude fable-5
+USE: claude sonnet
+
+ENVIRONMENT SANITY CHECK:
+
+pwd
+
+State plainly that no path in this task resolves against /mnt/c/Users or any Windows-side copy.
 
 VERIFY BEFORE ACT:
 
-cd /home/corby/jamm-os/frontend
-npm view react-grid-layout peerDependencies version
+grep -n "Plan New Template\|showPlanner\|TemplatePlannerModal" "src/app/(app)/dashboard/page.tsx"
 
-grep -n -A 8 "def _get_mrr_section" /home/corby/jamm-os/app/api/dashboard.py
-grep -n -A 8 "def _get_outstanding_ar_section" /home/corby/jamm-os/app/api/dashboard.py
-grep -n -A 12 "def _get_overdue_engagements_section" /home/corby/jamm-os/app/api/dashboard.py
-grep -n -A 8 "def _get_unsigned_documents_section" /home/corby/jamm-os/app/api/dashboard.py
-grep -n "return {" /home/corby/jamm-os/app/api/dashboard.py
-
-Confirm react-grid-layout's peer dependency range allows React 19 (it should show react >= 16.3.0 or similar open range). If it requires an exact older React major, stop and report back before installing anything.
-
-For each of the four grep -A blocks, look at the actual return statement of that function, not just the query. The expected shapes, based on the original DashboardMetricsOut schema in app/schemas/dashboard.py, are: _get_mrr_section returns a dict with keys mrr and mrr_invoice_count. _get_outstanding_ar_section returns a dict with keys outstanding_ar, outstanding_ar_count, and oldest_overdue_days. _get_overdue_engagements_section returns a dict with keys overdue_engagement_count and overdue_engagements, where overdue_engagements is a list of objects each shaped like OverdueEngagementItem in the schema file. _get_unsigned_documents_section returns a dict with keys unsigned_document_count and unsigned_documents, a list shaped like UnsignedDocumentItem. If any of these four functions returns different key names than expected, stop and report back the real shape before writing any frontend code against it, do not silently adapt to a guessed shape.
+Paste the real output, every line where these appear, so nothing gets missed.
 
 WHAT THIS IS:
 
-The current /dashboard page computes everything from one bulk call to GET /dashboard/metrics and lays out 8 sections in fixed JSX rows. The customizable dashboard needs each widget to be independently positioned and independently fetched, since a widget can eventually be added, removed, or resized on its own without affecting the others. This batch switches the page from that fixed layout to a real grid library, react-grid-layout, driven by the real saved layout from GET /dashboard/layout, with each widget instance fetching its own data from GET /dashboard/widgets/{type_key}/data rather than one shared bulk response.
-
-This is deliberately scoped to view-only. No add, remove, resize, drag, or minimize in this batch, those are batch 3. The reason to build this in isolation first is that react-grid-layout is a new dependency this codebase has never used, and wiring a new library to real positions and real data is the part most likely to reveal a real problem. Better to find that now, with a small and reversible batch, than after edit mode is layered on top of it.
-
-Every widget's visual rendering should reuse the exact existing presentational components already in frontend/src/app/(app)/dashboard/page.tsx: MetricCard for the four stat widgets, WIPWidget unchanged for work_in_progress, UpcomingDeadlinesList for upcoming_deadlines, StaffUtilizationPanel for staff_utilization, OverdueEngagementsTable for both overdue_engagements_count and overdue_engagements_table, and UnsignedDocumentsTable for awaiting_signature. None of these need to be rewritten, only re-fed with per-widget data instead of the one bulk metrics response, and placed inside grid items instead of fixed divs. Do not add a second layer of card chrome, border, or header around these components, they already render their own complete visual container, wrapping them in another bordered box would double the border and look wrong.
-
-overdue_engagements_count is the small stat card showing just a number, and overdue_engagements_table is the full table below it, both call the same backend function and both already exist as separate pieces of UI today (the MetricCard labeled Overdue Engagements, and the separate OverdueEngagementsTable section), they just now become two separate widget instances instead of two hardcoded sections.
+The mini-planner feature was deferred for post-launch given real time constraints and an unresolved bug status, confirmed by Ben directly. Leaving a visible "Plan New Template" button in the live product right now would let real users open a feature that was never confirmed working, which is worse than not offering it. This task only hides it from view, it does not delete the TemplatePlannerModal component definition or any of its logic, since that work should be resumable later without rebuilding from scratch.
 
 CHANGE INSTRUCTIONS:
 
-Install react-grid-layout as a real dependency, not a dev dependency, in frontend/package.json. Import its stylesheet, react-grid-layout/css/styles.css, and react-resizable's stylesheet, react-resizable/css/styles.css, as global imports inside frontend/src/app/layout.tsx alongside the existing globals.css import, since Next's App Router only allows global stylesheet imports in the root layout.
-
-Add two new methods to frontend/src/lib/api/dashboard.ts: getLayout, which calls GET /dashboard/layout and returns the widgets array, and getWidgetData, which takes a type_key string and calls GET /dashboard/widgets/{type_key}/data. Type the widgets array using a new DashboardWidgetInstance interface with fields instance_id, type_key, grid_x, grid_y, size, minimized, and config, matching the real shape confirmed in the prior batch's manual verification.
-
-Add a size-to-grid-span mapping as a plain constant, not fetched from the backend: small maps to a width of 1 column, medium to 2 columns, large to 4 columns. This is not a guess, it matches the real seeded positions already confirmed live: the four small stat cards sit side by side at grid_x 0 through 3 in a 4 column grid, and the two medium widgets, upcoming_deadlines and staff_utilization, sit side by side at grid_x 0 and grid_x 1, meaning each medium widget is 2 columns wide, meaning the grid itself is 4 columns total. Use a row height of 80 pixels and a margin of 16 pixels between items as a starting point, with height in grid rows of 2 for small, 5 for medium, and 7 for large, but note in your summary that these row-height numbers are a first visual pass, not a fixed measurement, and Ben should expect to adjust them after actually looking at the page.
-
-In frontend/src/app/(app)/dashboard/page.tsx, replace the fixed JSX rows, the stat card grid, the WIP widget, the upcoming deadlines and staff utilization row, the overdue engagements table, and the awaiting signature table, with a react-grid-layout GridLayout component (not the responsive variant, since this batch is desktop-only view-only) configured with cols set to 4, rowHeight set to 80, and margin set to [16, 16], with isDraggable and isResizable both set to false. Keep the page header and the ConciergeSpotlight component exactly where they are now, above the grid, unchanged, ConciergeSpotlight stays fixed and is not part of the customizable canvas.
-
-Fetch the layout with useQuery calling the new dashboardApi.getLayout, keyed as dashboard-layout. Build the GridLayout's layout prop from the returned widgets array, mapping each widget's instance_id to i, grid_x to x, grid_y to y, and its size through the size-to-grid-span constant to w and h.
-
-For each widget instance, render a small wrapper component that fetches that instance's own data via useQuery calling dashboardApi.getWidgetData with the widget's type_key, keyed as ['dashboard-widget-data', type_key, instance_id], with the same 60 second staleTime already used for the old bulk metrics query. While loading, reuse the existing skeleton components already defined in this file, MetricCardSkeleton, UpcomingDeadlinesSkeleton, StaffUtilizationSkeleton, matched to whichever widget type is loading. On error, show a small inline message consistent with the existing WIPWidget error state pattern in this same file, do not invent a new error UI pattern.
-
-Map each type_key to its existing component: revenue_this_month, outstanding_ar, unbilled_wip_stat, and overdue_engagements_count each render a MetricCard with the label and value pulled from that widget's own fetched data. work_in_progress renders the existing WIPWidget component completely unchanged, still calling reportsApi.getWip() internally exactly as it does today, not consuming this widget's own /dashboard/widgets/work_in_progress/data endpoint. upcoming_deadlines renders UpcomingDeadlinesList with items from the fetched data's upcoming_deadlines field. staff_utilization renders StaffUtilizationPanel with items from the fetched data's staff_utilization field. overdue_engagements_table renders OverdueEngagementsTable with items from the fetched data's overdue_engagements field, keeping its existing onComplete and Mark Complete behavior fully working exactly as it does today, this is real production functionality, not part of what's being deferred to the edit-mode batch. awaiting_signature renders UnsignedDocumentsTable with items from the fetched data's unsigned_documents field, keeping its existing Send Reminder and Create Follow-Up Task buttons fully working.
-
-Remove the now-unused DashboardMetrics bulk useQuery call and the dismissedIds state that lived at the top level of the page, since overdue engagement dismissal now lives inside the overdue_engagements_table widget wrapper's own local state instead of the page level.
+Remove the "Plan New Template" button from the edit-mode toolbar JSX. Remove the <TemplatePlannerModal ... /> render call and the showPlanner state and its setter if they are only used for this button and this modal, confirm they aren't used anywhere else in the file before removing them, if they are used elsewhere leave them and only remove the button and the modal's render call. Do not delete the TemplatePlannerModal function/component definition itself, leave that in the file even though it becomes unused, so it isn't lost. If the build reports an unused-variable or unused-component warning as a result, that is expected and acceptable, do not silence it by deleting the component definition.
 
 VERIFY AFTER ACT:
 
 cd /home/corby/jamm-os/frontend
 npm run build
 
-grep -n "react-grid-layout" package.json
-grep -n "getLayout\|getWidgetData" src/lib/api/dashboard.ts
-grep -n "GridLayout" "src/app/(app)/dashboard/page.tsx"
-grep -n "isDraggable={false}\|isResizable={false}" "src/app/(app)/dashboard/page.tsx"
+grep -n "Plan New Template" "src/app/(app)/dashboard/page.tsx"
 
-The build must complete with no TypeScript errors and no missing-import errors. If it fails, do not work around the failure by loosening types or adding any, fix the real cause and report what it was.
+This must return nothing, confirming the button is gone from the toolbar.
+
+grep -n "function TemplatePlannerModal" "src/app/(app)/dashboard/page.tsx"
+
+This must still return a real match, confirming the component definition itself was not deleted.
+
+git diff --stat
 
 MANUAL VERIFICATION:
 
-Start the frontend dev server and log in as owner@riverside-demo.com / Demo2026x.
-
-Load /dashboard and confirm all 9 widgets appear in the same visual arrangement as before this change, four small stat cards in a row, work in progress below them, upcoming deadlines and staff utilization side by side, overdue engagements table, then awaiting signature. Confirm the actual numbers shown match what you'd expect from the Riverside test data, not blank or zero everywhere.
-
-Click Mark Complete on an overdue engagement if one exists, and confirm it still works and the row disappears, same as it does today.
-
-Confirm nothing is draggable or resizable yet, this batch is intentionally view-only.
-
-Check the browser console for any errors on page load, react-grid-layout is a new dependency and a silent console warning here would be worth catching now rather than after edit mode is built on top of it.
-
-Report back what the row heights actually look like, since the 80 pixel row height and the 2/5/7 row-span numbers were a first estimate, not a measurement, and may need adjusting before batch 3.
+Restart the frontend dev server only. Reload /dashboard, enter Edit Dashboard, confirm the toolbar now shows only Add Widget, Reset to Default, Save as Firm Default (if owner), Save as Template, Load Template, Cancel, Done, with no Plan New Template button anywhere. Confirm every remaining button still works exactly as it did before. Report back with a screenshot of the toolbar.
 
 GIT:
 
 git add -A
-git commit -m "wire the dashboard to react-grid-layout in view-only mode, rendering the 9 launch-catalog widgets from the real GET /dashboard/layout endpoint with each widget instance fetching its own data independently, replacing the fixed-row layout and the single bulk metrics call, existing presentational components and in-widget actions like Mark Complete and Send Reminder are reused unchanged"
+git commit -m "hide the Plan New Template button and mini-planner modal from the live UI, deferring batch 4e-2 post-launch per Ben's call given the 10 day timeline and the feature's real unresolved bug history tonight. The TemplatePlannerModal component itself is left intact in the file, unused but not deleted, so this work is resumable later without rebuilding from scratch"
 git pull --rebase origin main
 git push origin main
+git log --oneline -3
 
-If task.md conflicts on the rebase, resolve with --theirs per standing rule. Any other file conflict, stop and report back rather than resolving automatically.
+Paste the real output of git log --oneline -3 showing the new commit hash present next to origin/main. Do not report this as done based on the push command running, confirm the real log output showing origin/main at the new hash.

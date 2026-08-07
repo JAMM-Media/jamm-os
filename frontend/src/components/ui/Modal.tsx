@@ -59,7 +59,7 @@ export function Modal({
       {/* Modal panel */}
       <div
         className={cn(
-          'relative z-10 w-full bg-surface-card dark:bg-dark-card rounded-modal border border-[0.5px] border-surface-border dark:border-dark-border shadow-lg flex flex-col max-h-[90vh]',
+          'relative z-10 w-full bg-surface-card dark:bg-dark-card rounded-modal border border-[0.5px] border-surface-border dark:border-dark-border shadow-lg flex flex-col max-h-[90vh] overflow-hidden',
           size === 'sm' && 'max-w-sm',
           size === 'md' && 'max-w-lg',
           size === 'lg' && 'max-w-2xl',
