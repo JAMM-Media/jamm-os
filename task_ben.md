@@ -74,7 +74,7 @@ This section exists because a past session confidently claimed specific files we
 
 # Section 3 - The task
 
-TASK: Two small, precise changes to the already-built task selector in DailyTab.tsx, now that the backend accepts task_id (confirmed live tonight). The task picker UI itself is fully built and does not need to be created, only corrected and connected to real validation.
+TASK: Replace the native browser time inputs for Start Time and End Time on the Daily timesheet tab with a custom text field that parses common typed time formats directly, since native <input type="time"> forces clunky segment-by-segment interaction (separate hour/minute/AM-PM fields) instead of letting someone just type a time and have it work.
 
 USE: claude sonnet
 
@@ -86,47 +86,35 @@ State plainly that no path in this task resolves against /mnt/c/Users or any Win
 
 VERIFY BEFORE ACT:
 
-grep -n -B 5 -A 55 "Task \*\|filteredTasks\|Select task" "src/app/(app)/timesheets/DailyTab.tsx"
+grep -n -B 10 -A 5 "function calcDuration" "src/app/(app)/timesheets/DailyTab.tsx"
 
-grep -n -B 5 -A 15 "async function handleAddEntry" "src/app/(app)/timesheets/DailyTab.tsx"
+grep -n "roundToNearest15" "src/app/(app)/timesheets/DailyTab.tsx"
 
-Paste the real output of both. Confirm the exact current task-filtering line (currently filters by assigned_to === currentUserId only, confirmed missing an engagement_id filter) and confirm the exact current validation checks inside handleAddEntry (currently confirmed to check engagementId, activityType, and hours as required, but not taskId).
+Paste the real output of both. Confirm the exact real "HH:mm" string format calcDuration and the rest of this form actually expect, and confirm the real roundToNearest15 helper's signature, since the new component needs to produce output in the identical format these existing functions already consume, not a new format that would need every downstream consumer changed too.
 
 WHAT THIS IS:
 
-This entire task selector UI already exists and works, it was built ahead of the backend actually supporting task_id. Now that time_entries.task_id exists and is confirmed working end to end, this task closes the two real remaining gaps: the task list currently shows all of a person's assigned tasks across every engagement, not filtered to the engagement currently selected in the form, which is confusing and wrong once someone has tasks on multiple engagements. And task selection currently reads and behaves as optional, when Ben's real decision tonight was that it must be required going forward for every new time entry, no exceptions, enforced at the application level since the database column itself must stay nullable for existing historical entries.
+form.startTime and form.endTime are plain "HH:mm" 24-hour strings today, produced by the native time input. This task only changes how that same string gets entered, not what it is or how anything else in this file uses it. A new small component takes free-text input like "10am", "10:00 AM", "3pm", "1500", "15:00", parses it on blur or Enter into the same "HH:mm" format, and calls the exact same onChange the native input currently calls. If what's typed can't be parsed as a real time, show a clear inline error rather than silently accepting garbage or crashing.
 
 CHANGE INSTRUCTIONS:
 
-Add a filter to the task list so it only shows tasks where t.engagement_id === form.engagementId, in addition to the existing t.assigned_to === currentUserId filter, so the dropdown only ever shows tasks that are actually relevant to the engagement currently selected.
+Create a small reusable component, for example TimeTextInput, in a sensible location near DailyTab.tsx or in a shared components folder if this codebase already has a convention for small shared form inputs, check for one before deciding where it lives. It should render a plain text input, hold its own local typed-text state distinct from the committed "HH:mm" value, and on blur or Enter, attempt to parse the typed text. Support at minimum: "h:mma", "h:mm a", "ha", "h a", "HH:mm" 24-hour, and bare hour shorthand like "3pm" or "1500". If parsing succeeds, call the passed-in onChange with the real "HH:mm" value and update the displayed text to a clean, consistent format like "3:00 PM". If parsing fails, keep the invalid text visible and show a small inline error, do not silently clear it or fall back to a default time.
 
-Change the placeholder/label text from "Select task (optional)" to "Select task" (remove "optional" from both places it appears in this button's label logic), and change the field's own label from "Task" to "Task *", matching the same required-field asterisk convention already used on the Engagement label directly above it in this same form.
-
-In handleAddEntry, add a check for form.taskId alongside the existing engagementId, activityType, and hours checks, using the exact same toast.error pattern already used for those, with a clear message like "Task is required." Add task_id: form.taskId to the payload object being built in this same function, alongside the existing engagement_id, so it actually gets sent to the now-working backend.
-
-Do not change anything about the timer-start flow, the edit-existing-entry flow, or any other part of this file beyond these specific changes.
+Replace both the Start Time and End Time native <input type="time"> elements with this new component, passing the same value and onChange props they already receive, so calcDuration, the payload sent to POST /time-entries/, and the timer-start flow all continue working unchanged, since they only care about the final "HH:mm" string, not how it was entered.
 
 VERIFY AFTER ACT:
 
 cd /home/corby/jamm-os/frontend
 npm run build
 
-grep -n "t.engagement_id === form.engagementId\|Task \*\|Task is required" "src/app/(app)/timesheets/DailyTab.tsx"
+grep -n "TimeTextInput" "src/app/(app)/timesheets/DailyTab.tsx"
 
-git diff --stat "src/app/(app)/timesheets/DailyTab.tsx"
-
-This should be a small, targeted diff, not a rewrite of this file.
+git diff --stat
 
 MANUAL VERIFICATION:
 
-Restart the frontend dev server only. Reload the Timesheets page, Daily tab. Select an engagement with more than one task if one exists, or note if the test data only has one task per engagement. Confirm the task dropdown now only shows tasks belonging to that engagement, not tasks from other engagements. Confirm the label now shows an asterisk and the placeholder no longer says optional. Try submitting the form with a task not selected, confirm a clear error appears and it does not submit. Select a task and submit a real entry, confirm it succeeds. Report back with a screenshot of the form and confirm via GET /time-entries/ that the newly created entry has the correct real task_id attached, not null.
+Restart the frontend dev server only. Reload Timesheets, Daily tab. Type "10am" into Start Time, tab or click away, confirm it becomes a clean "10:00 AM" and the underlying value is correct. Try "3:15pm", "1500", and "9" alone, confirm each parses sensibly or shows a clear error if genuinely ambiguous. Confirm the duration calculation between start and end still works correctly once both are set. Submit a real entry with times entered this way, confirm it saves correctly. Report back with a screenshot and confirm which input formats worked and which, if any, showed an error.
 
 GIT:
 
-git add -A
-git commit -m "close the two remaining gaps in the already-built task selector on the Daily timesheet tab: filter tasks to the currently selected engagement instead of showing all of a person's assigned tasks across every engagement, and make task selection genuinely required for new time entries per Ben's real decision tonight, both in the field's label/copy and in actual form validation, now that time_entries.task_id is confirmed working end to end on the backend"
-git pull --rebase origin main
-git push origin main
-git log --oneline -3
-
-Paste the real output of git log --oneline -3 showing the new commit hash present next to origin/main.
+Do not commit until Ben confirms the typed time entry actually feels right and works correctly in the browser.

@@ -6,6 +6,7 @@ import { toast } from 'sonner'
 import { Pencil, Trash2, AlertTriangle, Check, ChevronDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import api from '@/lib/api'
+import { TimeTextInput } from '@/components/ui/TimeTextInput'
 
 export interface DailyTabProps {
   selectedUserId: string | null
@@ -793,10 +794,9 @@ export default function DailyTab({
             {/* Start time */}
             <div className="flex flex-col gap-1.5">
               <label className={labelClass}>Start Time</label>
-              <input
-                type="time"
+              <TimeTextInput
                 value={form.startTime}
-                onChange={(e) => setForm((f) => ({ ...f, startTime: e.target.value }))}
+                onChange={(v) => setForm((f) => ({ ...f, startTime: v }))}
                 className={inputClass}
               />
             </div>
@@ -804,12 +804,9 @@ export default function DailyTab({
             {/* End time */}
             <div className="flex flex-col gap-1.5">
               <label className={labelClass}>End Time</label>
-              <input
-                type="time"
+              <TimeTextInput
                 value={form.endTime}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, endTime: e.target.value, hoursAutoFilled: true }))
-                }
+                onChange={(v) => setForm((f) => ({ ...f, endTime: v, hoursAutoFilled: true }))}
                 className={cn(inputClass, endTimeError ? 'ring-1 ring-red-500 border-red-400' : '')}
               />
               {endTimeError && (
