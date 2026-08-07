@@ -63,6 +63,7 @@ from app.api.transcript_requests import router as transcript_requests_router
 from app.api.reports import router as reports_router
 from app.api.dashboard import router as dashboard_router
 from app.api.archive import router as archive_router
+from app.api.cooperative import router as cooperative_router
 from app.api.settings import router as settings_router
 from app.api.engagement_templates import router as engagement_templates_router
 from app.api.document_expiries import router as document_expiries_router
@@ -313,6 +314,7 @@ app.include_router(transcript_requests_router)
 app.include_router(reports_router)
 app.include_router(dashboard_router, prefix="/dashboard", tags=["dashboard"])
 app.include_router(archive_router, prefix="/archive", tags=["archive"])
+app.include_router(cooperative_router, prefix="/cooperative", tags=["Growth Cooperative"])
 app.include_router(settings_router)
 app.include_router(engagement_templates_router, prefix="/api/v1")
 app.include_router(document_expiries_router)
