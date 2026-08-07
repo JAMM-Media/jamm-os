@@ -88,6 +88,8 @@ def update_task(
 
         completed_statuses = {"completed", "done", "complete"}
         if new_status and new_status.lower() in completed_statuses:
+            updated.is_completed = True
+            db.commit()
             log_event(
                 firm_id=updated.firm_id,
                 event_type="task.completed",
@@ -105,6 +107,9 @@ def update_task(
                     "engagement_id": str(updated.engagement_id) if updated.engagement_id else None,
                 }
             )
+        elif old_status and old_status.lower() in completed_statuses:
+            updated.is_completed = False
+            db.commit()
 
     if old_assigned != new_assigned and payload.model_dump(exclude_none=True).get('assigned_to') is not None:
         event_type = "task.reassigned" if old_assigned else "task.assigned"
