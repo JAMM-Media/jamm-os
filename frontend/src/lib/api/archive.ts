@@ -44,6 +44,7 @@ export interface ArchiveParams {
   engagement_id?: string
   role?: string
   starred?: boolean
+  search?: string
   page?: number
   page_size?: number
 }

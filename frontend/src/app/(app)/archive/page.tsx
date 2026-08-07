@@ -80,6 +80,7 @@ export default function ArchivePage() {
   const [engagementList, setEngagementList] = useState<{ id: string; name: string }[]>([])
 
   const [search, setSearch] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [fromDate, setFromDate] = useState('')
   const [toDate, setToDate] = useState('')
   const [clientFilter, setClientFilter] = useState('all')
@@ -90,6 +91,11 @@ export default function ArchivePage() {
   const [starredOverrides, setStarredOverrides] = useState<Record<string, boolean>>({})
 
   const hasFilters = fromDate !== '' || toDate !== '' || clientFilter !== 'all' || engagementFilter !== 'all' || roleFilter !== 'all' || starredFilter !== 'all'
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(search.trim()), 300)
+    return () => clearTimeout(timer)
+  }, [search])
 
   useEffect(() => {
     if (user?.id) setSelectedUserId(user.id)
@@ -123,10 +129,11 @@ export default function ArchivePage() {
   if (roleFilter !== 'all') params.role = roleFilter
   if (starredFilter === 'starred') params.starred = true
   if (starredFilter === 'unstarred') params.starred = false
+  if (debouncedSearch) params.search = debouncedSearch
 
   const { data, isLoading } = useFetch<ArchiveResponse>(
     () => selectedUserId ? archiveApi.getArchive(selectedUserId, params) : Promise.resolve({ items: [], total: 0, aggregates: { tasks_completed: 0, hours_logged: 0, engagements_touched: 0 } }),
-    [selectedUserId, fromDate, toDate, clientFilter, engagementFilter, roleFilter, starredFilter]
+    [selectedUserId, fromDate, toDate, clientFilter, engagementFilter, roleFilter, starredFilter, debouncedSearch]
   )
 
   const clearFilters = useCallback(() => {
@@ -164,13 +171,6 @@ export default function ArchivePage() {
 
   const items = data?.items ?? []
   const aggregates = data?.aggregates
-
-  const filtered = search.trim()
-    ? items.filter((e) =>
-        e.task_title.toLowerCase().includes(search.trim().toLowerCase()) ||
-        e.client.name.toLowerCase().includes(search.trim().toLowerCase())
-      )
-    : items
 
   const selectClass = 'h-8 px-2 rounded-[6px] border border-[0.5px] border-surface-border dark:border-dark-border bg-surface-page dark:bg-dark-page text-[13px] text-brand dark:text-[#EDEEF0] focus:outline-none'
 
@@ -287,17 +287,17 @@ export default function ArchivePage() {
           <tbody>
             {isLoading ? (
               Array.from({ length: 5 }).map((_, i) => <SkeletonRow key={i} />)
-            ) : filtered.length === 0 ? (
+            ) : items.length === 0 ? (
               <tr>
                 <td colSpan={8}>
-                  {data?.total === 0 && !hasFilters && !search
+                  {data?.total === 0 && !hasFilters && !debouncedSearch
                     ? <EmptyArchive />
                     : <EmptyFiltered onClear={clearFilters} />
                   }
                 </td>
               </tr>
             ) : (
-              filtered.map((entry, i) => {
+              items.map((entry, i) => {
                 const isStarred = starredOverrides[entry.task_id] ?? entry.starred
                 const completedDate = entry.completed_at
                   ? new Date(entry.completed_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
@@ -308,7 +308,7 @@ export default function ArchivePage() {
                     key={entry.task_id}
                     className={[
                       'group bg-surface-page dark:bg-dark-page hover:bg-[#DDDFE3] dark:hover:bg-[#323232] transition-colors',
-                      i !== filtered.length - 1 ? 'border-b border-[0.5px] border-[#D5D8DE] dark:border-dark-card' : '',
+                      i !== items.length - 1 ? 'border-b border-[0.5px] border-[#D5D8DE] dark:border-dark-card' : '',
                     ].join(' ')}
                   >
                     {/* Task */}

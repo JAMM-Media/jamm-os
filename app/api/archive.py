@@ -39,6 +39,7 @@ def get_archive(
     engagement_id: Optional[uuid.UUID] = Query(None),
     role: Optional[str] = Query(None),
     starred: Optional[bool] = Query(None),
+    search: Optional[str] = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(25, ge=1, le=100),
     db: Session = Depends(get_db),
@@ -128,6 +129,8 @@ def get_archive(
         stmt = stmt.where(func.coalesce(completed_sq.c.completed_at, Task.updated_at) <= to_dt)
 
     # Optional filters.
+    if search is not None:
+        stmt = stmt.where(Task.title.ilike(f"%{search}%"))
     if client_id is not None:
         stmt = stmt.where(Task.client_id == client_id)
     if engagement_id is not None:
