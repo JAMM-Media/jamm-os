@@ -74,7 +74,7 @@ This section exists because a past session confidently claimed specific files we
 
 # Section 3 - The task
 
-TASK: Remove the "Plan New Template" button and its modal from the visible UI, since 4e-2 is deferred post-launch and currently in an unverified, possibly-broken state. Keep the underlying TemplatePlannerModal component code intact in the file so the work isn't lost, just stop rendering and exposing it to real users.
+TASK: Two fixes. First, the real resize snap logic itself, now that evidence confirms newItem correctly delivers live drag dimensions (h:6 was observed on release for a widget between medium h:5 and large h:7), meaning the bug is inside handleResizeStop's own size-snapping logic, not upstream in layout recomputation as previously theorized. Second, prevent native browser text selection (the blue highlight drag effect) from triggering during grid drag/resize interactions in edit mode.
 
 USE: claude sonnet
 
@@ -86,43 +86,41 @@ State plainly that no path in this task resolves against /mnt/c/Users or any Win
 
 VERIFY BEFORE ACT:
 
-grep -n "Plan New Template\|showPlanner\|TemplatePlannerModal" "src/app/(app)/dashboard/page.tsx"
+grep -n -B 3 -A 40 "const handleResizeStop" "src/app/(app)/dashboard/page.tsx"
 
-Paste the real output, every line where these appear, so nothing gets missed.
+Paste the full real output. I need to see the complete snap-to-nearest-size logic: how it compares newItem's w/h against the widget's allowed sizes, and exactly how it calls setEditedWidgets. Real evidence already confirmed: a resize of Work in Progress (allowed sizes medium w:2/h:5 and large w:4/h:7) released with newItem showing w:2, h:6, exactly the midpoint between the two allowed heights. This proves the library is delivering real, live drag data, ruling out the earlier stale-layout theory. The bug must be in what handleResizeStop does with that data.
 
 WHAT THIS IS:
 
-The mini-planner feature was deferred for post-launch given real time constraints and an unresolved bug status, confirmed by Ben directly. Leaving a visible "Plan New Template" button in the live product right now would let real users open a feature that was never confirmed working, which is worse than not offering it. This task only hides it from view, it does not delete the TemplatePlannerModal component definition or any of its logic, since that work should be resumable later without rebuilding from scratch.
+Given h:6 is genuinely equidistant between 5 and 7, look carefully at whatever distance-comparison logic exists, for example checking absolute difference to each candidate size's height and/or width combined. A subtle bug here, like comparing only height and ignoring width, or a comparison operator that never actually updates state when the values are exactly tied, or picking the correct nearest size but never actually calling setEditedWidgets with it, would explain a resize that receives correct live data but still fails to commit. Find the actual logic error by reading the real code, do not guess a fix without pointing at the specific line doing the wrong thing.
 
 CHANGE INSTRUCTIONS:
 
-Remove the "Plan New Template" button from the edit-mode toolbar JSX. Remove the <TemplatePlannerModal ... /> render call and the showPlanner state and its setter if they are only used for this button and this modal, confirm they aren't used anywhere else in the file before removing them, if they are used elsewhere leave them and only remove the button and the modal's render call. Do not delete the TemplatePlannerModal function/component definition itself, leave that in the file even though it becomes unused, so it isn't lost. If the build reports an unused-variable or unused-component warning as a result, that is expected and acceptable, do not silence it by deleting the component definition.
+Fix whatever the real logic error turns out to be in handleResizeStop, so that given real w/h values on release, it correctly identifies the nearer of the widget's two allowed sizes (comparing both width and height together, not just one dimension) and calls setEditedWidgets with that widget's size field actually updated to the matching size name.
+
+Separately, add user-select: none (or the Tailwind select-none utility) to the grid item wrapper or the widget content area while editMode is true, so dragging across widget content, like the Staff Utilization list of names, does not trigger native browser text highlighting during a drag or resize gesture. Do not apply this outside of edit mode, normal viewing should still allow text selection if someone wants to copy a client name or number.
+
+Remove the temporary [layout recompute] and [resize stop] console.log statements added in the previous task now that real evidence has been gathered from them.
 
 VERIFY AFTER ACT:
 
 cd /home/corby/jamm-os/frontend
 npm run build
 
-grep -n "Plan New Template" "src/app/(app)/dashboard/page.tsx"
+grep -n "select-none\|user-select" "src/app/(app)/dashboard/page.tsx"
 
-This must return nothing, confirming the button is gone from the toolbar.
+grep -n "\[layout recompute\]\|\[resize stop\]" "src/app/(app)/dashboard/page.tsx"
 
-grep -n "function TemplatePlannerModal" "src/app/(app)/dashboard/page.tsx"
-
-This must still return a real match, confirming the component definition itself was not deleted.
+This last grep must return nothing, confirming the debug logs were removed.
 
 git diff --stat
 
+Report the real diff and specifically quote the exact logic bug found in handleResizeStop before this fix.
+
 MANUAL VERIFICATION:
 
-Restart the frontend dev server only. Reload /dashboard, enter Edit Dashboard, confirm the toolbar now shows only Add Widget, Reset to Default, Save as Firm Default (if owner), Save as Template, Load Template, Cancel, Done, with no Plan New Template button anywhere. Confirm every remaining button still works exactly as it did before. Report back with a screenshot of the toolbar.
+Restart the frontend dev server only. Reload /dashboard, enter Edit Dashboard, resize Work in Progress to its other size several times in both directions, confirm it now genuinely commits and stays, not snapping back. Try dragging across widget content like the Staff Utilization list during a drag gesture, confirm no blue text-selection highlighting appears. Report back with a screenshot of each.
 
 GIT:
 
-git add -A
-git commit -m "hide the Plan New Template button and mini-planner modal from the live UI, deferring batch 4e-2 post-launch per Ben's call given the 10 day timeline and the feature's real unresolved bug history tonight. The TemplatePlannerModal component itself is left intact in the file, unused but not deleted, so this work is resumable later without rebuilding from scratch"
-git pull --rebase origin main
-git push origin main
-git log --oneline -3
-
-Paste the real output of git log --oneline -3 showing the new commit hash present next to origin/main. Do not report this as done based on the push command running, confirm the real log output showing origin/main at the new hash.
+Do not commit until Ben confirms both are genuinely fixed in the browser.

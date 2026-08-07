@@ -28,6 +28,8 @@ const SIZE_TO_SPAN: Record<string, { w: number; h: number }> = {
   large:  { w: 4, h: 7 },
 }
 
+const EMPTY_CATALOG: WidgetCatalogItem[] = []
+
 function formatCurrency(value: number): string {
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
@@ -1307,7 +1309,7 @@ export default function DashboardPage() {
     staleTime: 60 * 1000,
   })
 
-  const { data: catalog = [] } = useQuery<WidgetCatalogItem[]>({
+  const { data: catalog = EMPTY_CATALOG } = useQuery<WidgetCatalogItem[]>({
     queryKey: ['dashboard-widget-catalog'],
     queryFn: () => dashboardApi.getWidgetCatalog(),
     staleTime: 30 * 60 * 1000,
@@ -1535,7 +1537,7 @@ export default function DashboardPage() {
           const span = SIZE_TO_SPAN[sizeName]
           if (!span) continue
           const dist = Math.abs(newItem.w - span.w) + Math.abs(newItem.h - span.h)
-          if (dist < bestDist) {
+          if (dist <= bestDist) {
             bestDist = dist
             closest = sizeName
           }
@@ -1660,7 +1662,7 @@ export default function DashboardPage() {
               onResizeStop={handleResizeStop}
             >
               {activeWidgets.map((widget) => (
-                <div key={widget.instance_id}>
+                <div key={widget.instance_id} className={editMode ? 'select-none' : undefined}>
                   <div
                     style={{
                       overflow: 'hidden',
@@ -1746,7 +1748,7 @@ export default function DashboardPage() {
               <div key={tmpl.id} className="flex items-center px-3 py-2.5 gap-3 border-2 border-transparent hover:border-brand-light dark:hover:border-white transition-colors">
                 <button
                   onClick={() => handleSelectTemplate(tmpl)}
-                  className="flex-1 text-left text-[13px] font-medium text-foreground hover:text-brand transition-colors truncate"
+                  className="flex-1 text-left text-[13px] font-medium text-foreground hover:text-brand dark:hover:text-foreground transition-colors truncate"
                 >
                   {tmpl.name}
                 </button>
