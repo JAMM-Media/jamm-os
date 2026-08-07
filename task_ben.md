@@ -74,7 +74,7 @@ This section exists because a past session confidently claimed specific files we
 
 # Section 3 - The task
 
-TASK: Constrain resize on two-size widgets so the handle can only move along the real valid line between the two allowed sizes, instead of allowing free 2D dragging that can show an impossible in-between shape. Confirmed real mechanism: react-grid-layout's per-item LayoutConstraint with a constrainSize hook, the same pattern used by the library's own built-in aspectRatio constraint, which derives one dimension purely from the other proposed dimension. This means dragging straight down (width unchanged) will correctly produce no height change at all, since height gets computed from width, not from the raw vertical mouse movement.
+TASK: Enforce a 20-widget maximum per canvas in the Add Widget gallery, per Ben's real decision tonight.
 
 USE: claude sonnet
 
@@ -86,35 +86,41 @@ State plainly that no path in this task resolves against /mnt/c/Users or any Win
 
 VERIFY BEFORE ACT:
 
-grep -n -B 5 -A 30 "activeWidgets, catalogByKey, editMode" "src/app/(app)/dashboard/page.tsx"
+grep -n -B 5 -A 30 "function handleAddWidgetFromGallery\|const handleAddWidgetFromGallery" "src/app/(app)/dashboard/page.tsx"
 
-Paste the real output, this is the layout useMemo where per-item minW/maxW/minH/maxH are already set for two-size widgets. Confirm the exact current structure so the new constraints field gets added to the same layout item objects, not a separate parallel structure.
+grep -n -B 5 -A 20 "function AddWidgetModal" "src/app/(app)/dashboard/page.tsx"
+
+Paste the real output of both. Confirm the exact current function that appends a new widget to editedWidgets, and confirm how the gallery modal receives editedWidgets so the cap can be checked and displayed there.
 
 WHAT THIS IS:
 
-For a widget with two allowed sizes, say medium (w:2, h:5) and large (w:4, h:7), the resize handle currently allows free movement anywhere within that bounding box, including impossible states like w:2, h:7 (same width as medium, full height of large) which was never a real option, only medium or large exist, nothing in between and nothing off that diagonal. Ben confirmed this reads as misleading: the drag preview implies you can reach any point in that box, when only two real endpoints exist.
-
-The fix: add a per-item constraint, using the real constraints field already supported on each layout item (LayoutItem.constraints, an array of LayoutConstraint), with a constrainSize(item, w, h, handle, context) function that ignores the raw proposed h entirely and instead computes it as a linear interpolation purely from the proposed w, the same way the library's own built-in aspectRatio constraint derives height from width, round the result to the nearest integer grid row. This needs to be built per-widget-instance since minSpan/maxSpan differ per widget type, generated inside the same useMemo that already builds minW/maxW/minH/maxH for two-size widgets.
+There are currently 16 distinct widget types in the catalog. A cap of 20 total widget instances allows one of every type plus a handful of duplicate instances (multiple My Tasks filtered per staff member, multiple client-specific widgets for different clients) before hitting a real, meaningful ceiling, chosen deliberately to prevent runaway performance issues without being so tight it blocks someone from just having one of everything.
 
 CHANGE INSTRUCTIONS:
 
-In the layout useMemo, for each widget that currently gets isResizable=true with minSpan/maxSpan set, add a constraints array containing one constraint object: name a short descriptive string like `lockToSizeLine-${w.instance_id}`, and a constrainSize function that takes the proposed w, computes t = (w - minSpan.w) / (maxSpan.w - minSpan.w), clamps t between 0 and 1, computes the derived h as minSpan.h + t * (maxSpan.h - minSpan.h), rounds to the nearest integer, and returns { w, h: roundedH }. This means the live resize preview itself, not just the final committed value, will only ever show shapes along the real line between the two allowed sizes, dragging purely vertically will show no height change since w hasn't moved, and dragging purely horizontally will show height moving in lockstep with width.
+In handleAddWidgetFromGallery (or wherever the real append logic lives, per VERIFY BEFORE ACT), before appending a new widget instance, check whether editedWidgets.length is already at or above 20. If so, do not append, and show a clear message (using whatever toast or inline-message pattern already exists elsewhere in this file) explaining the 20-widget limit has been reached, rather than silently doing nothing.
 
-Do not remove or change the existing minW/maxW/minH/maxH bounds, keep those as the outer clamp, the new constraints array works alongside them, not instead of them.
+In the Add Widget gallery itself, when the cap is reached, disable the gallery's clickable entries (the same visual treatment already used for a no-config widget that's already been added, greyed out with a label) with a message indicating the limit, rather than letting someone click through the gallery and have nothing happen with no explanation. This should update reactively if a widget is removed during the same edit session, dropping back below 20, the same way the existing already-added disabled state already updates reactively.
 
 VERIFY AFTER ACT:
 
 cd /home/corby/jamm-os/frontend
 npm run build
 
-grep -n "constrainSize\|lockToSizeLine" "src/app/(app)/dashboard/page.tsx"
+grep -n "20\b" "src/app/(app)/dashboard/page.tsx" | grep -i "widget\|length\|cap\|max"
 
 git diff --stat
 
 MANUAL VERIFICATION:
 
-Restart the frontend dev server only. Reload /dashboard, enter Edit Dashboard, grab the resize handle on Work in Progress and try dragging it straight down with no horizontal movement, confirm the preview shows no height change at all, it should feel locked. Then drag diagonally toward the bottom-right corner, confirm the preview now grows in both dimensions together along the real line, and confirm it still correctly commits to large on release. Try shrinking it back the same way. Report back with a screenshot showing the resize handle mid-drag.
+Restart the frontend dev server only. Reload /dashboard, enter Edit Dashboard, add widgets (duplicating the multi-instance ones like My Tasks or Client Health Snapshot with different configs as needed) until you reach 20 total on the canvas. Confirm the gallery now shows a clear cap-reached state, not just silently failing. Remove one widget, confirm the gallery becomes addable again immediately. Report back with a screenshot of the cap-reached gallery state.
 
 GIT:
 
-Do not commit until Ben confirms the constrained drag feels right in the browser.
+git add -A
+git commit -m "enforce a 20 widget maximum per dashboard canvas per Ben's real decision tonight, chosen since 16 distinct widget types currently exist and a cap below that would block having one of everything with no real justification. The Add Widget gallery now shows a clear cap-reached state with a real message once the limit is hit, rather than silently failing, and updates reactively if a widget is removed during the same edit session"
+git pull --rebase origin main
+git push origin main
+git log --oneline -3
+
+Paste the real output of git log --oneline -3 showing the new commit hash present next to origin/main. Do not report this as done based on the push command running, confirm the real log output showing origin/main at the new hash.

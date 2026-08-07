@@ -978,6 +978,7 @@ function AddWidgetModal({
   }, {})
 
   const categories = Object.keys(grouped).sort()
+  const atCap = editedWidgets.length >= 20
 
   function handleEntryClick(entry: WidgetCatalogItem) {
     if (entry.config_schema.some((f) => f.type === 'client_picker')) {
@@ -1039,6 +1040,11 @@ function AddWidgetModal({
         <p className="text-[13px] text-muted-foreground text-center py-6">No widgets available to add.</p>
       ) : (
         <div className="flex flex-col gap-6">
+          {atCap && (
+            <p className="text-[13px] text-muted-foreground text-center py-2 px-3 rounded-[8px] bg-surface-input dark:bg-dark-card border border-surface-border dark:border-dark-border">
+              20-widget limit reached. Remove a widget from the canvas to add another.
+            </p>
+          )}
           {categories.map((cat) => (
             <div key={cat}>
               <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">
@@ -1055,6 +1061,17 @@ function AddWidgetModal({
                       >
                         <p className="text-[13px] font-medium text-foreground">{entry.display_name}</p>
                         <p className="text-[11px] text-muted-foreground mt-0.5">Added</p>
+                      </div>
+                    )
+                  }
+                  if (atCap) {
+                    return (
+                      <div
+                        key={entry.type_key}
+                        className="text-left px-3.5 py-3 rounded-[8px] border border-surface-border dark:border-dark-border bg-surface-card dark:bg-dark-card opacity-50 cursor-not-allowed"
+                      >
+                        <p className="text-[13px] font-medium text-foreground">{entry.display_name}</p>
+                        <p className="text-[11px] text-muted-foreground mt-0.5">Limit reached</p>
                       </div>
                     )
                   }
@@ -1452,6 +1469,10 @@ export default function DashboardPage() {
   }
 
   function handleAddWidgetFromGallery(entry: WidgetCatalogItem, config: Record<string, unknown> = {}) {
+    if (editedWidgets.length >= 20) {
+      toast.error('Widget limit reached. Remove a widget before adding another.')
+      return
+    }
     const maxBottom = editedWidgets.reduce((acc, w) => {
       const span = SIZE_TO_SPAN[w.size] ?? SIZE_TO_SPAN.medium
       return Math.max(acc, w.grid_y + span.h)
