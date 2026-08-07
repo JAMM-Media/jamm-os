@@ -102,7 +102,8 @@ def get_archive(
             Client.name.label("client_name"),
             Task.engagement_id,
             Engagement.name.label("engagement_name"),
-            completed_sq.c.completed_at,
+            func.coalesce(completed_sq.c.completed_at, Task.updated_at).label("effective_completed_at"),
+            completed_sq.c.completed_at.is_(None).label("completed_at_is_approximate"),
             hours_sq.c.total_hours,
             star_sq.c.task_id.isnot(None).label("starred"),
         )
@@ -118,13 +119,13 @@ def get_archive(
         )
     )
 
-    # Date filters applied against behavioral event's completed_at.
+    # Date filters use the effective date (real event or Task.updated_at fallback).
     if from_date is not None:
         from_dt = datetime.combine(from_date, datetime.min.time()).replace(tzinfo=timezone.utc)
-        stmt = stmt.where(completed_sq.c.completed_at >= from_dt)
+        stmt = stmt.where(func.coalesce(completed_sq.c.completed_at, Task.updated_at) >= from_dt)
     if to_date is not None:
         to_dt = datetime.combine(to_date, datetime.max.time()).replace(tzinfo=timezone.utc)
-        stmt = stmt.where(completed_sq.c.completed_at <= to_dt)
+        stmt = stmt.where(func.coalesce(completed_sq.c.completed_at, Task.updated_at) <= to_dt)
 
     # Optional filters.
     if client_id is not None:
@@ -155,7 +156,8 @@ def get_archive(
             "client": {"id": str(r.client_id), "name": r.client_name},
             "engagement": {"id": str(r.engagement_id), "name": r.engagement_name},
             "role": "performed",
-            "completed_at": r.completed_at.isoformat() if r.completed_at else None,
+            "completed_at": r.effective_completed_at.isoformat() if r.effective_completed_at else None,
+            "completed_at_is_approximate": bool(r.completed_at_is_approximate),
             "revision_count": None,
             "reviewer": None,
             "hours": float(r.total_hours) if r.total_hours is not None else 0.0,
