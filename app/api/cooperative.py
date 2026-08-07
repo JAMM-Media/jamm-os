@@ -47,6 +47,25 @@ def grant_member_access(
 
 
 # ---------------------------------------------------------------------------
+# GET /cooperative/rooms
+# ---------------------------------------------------------------------------
+
+@router.get("/rooms")
+def list_rooms(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    # Gate on active CooperativeMember status.
+    get_active_member(db=db, user_id=current_user.id)
+
+    rooms = db.execute(select(CooperativeRoom)).scalars().all()
+    return {
+        "items": [{"id": str(r.id), "room_type": r.room_type, "name": r.name} for r in rooms],
+        "total": len(rooms),
+    }
+
+
+# ---------------------------------------------------------------------------
 # GET /cooperative/rooms/{room_id}/messages
 # ---------------------------------------------------------------------------
 

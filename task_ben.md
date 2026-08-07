@@ -74,9 +74,9 @@ This section exists because a past session confidently claimed specific files we
 
 # Section 3 - The task
 
-TASK: Fix real UI flicker on the Archive page confirmed by Ben: switching any filter causes a visible flash/flicker because isLoading flips to true on every single refetch (client filter, staff switch, search, anything), and confirmed in code the aggregate row is conditionally hidden whenever !isLoading is false, meaning it disappears and reappears on every filter change even though the underlying data from the previous fetch is still sitting in memory the whole time (useFetch never clears data during a refetch). Also fix the real column-count layout shift when toggling to/from All Staff, which changes the table from 8 to 9 columns.
+TASK: Build the Growth Cooperative's main room frontend: a new page showing the message feed and a compose box, read/post only, no DMs, subgroups, reactions, replies, or mentions yet. This must be a genuinely separate component tree from Firm Chat, not importing its hooks or API client, even though the visual layout is intentionally similar per the spec.
 
-USE: claude sonnet
+USE: claude fable-5
 
 ENVIRONMENT SANITY CHECK:
 
@@ -86,37 +86,49 @@ State plainly that no path in this task resolves against /mnt/c/Users or any Win
 
 VERIFY BEFORE ACT:
 
-grep -n -B 10 -A 30 "Aggregate row\|isLoading" "src/app/(app)/archive/page.tsx"
+grep -n -B 3 -A 30 "@router.get(\"/rooms/{room_id}/messages\")\|@router.post(\"/opt-in\")" app/api/cooperative.py
 
-Paste the real output. Confirm every place isLoading currently gates what's shown (the aggregate row, the table body, any skeleton), so the fix covers every real instance, not just the one already found.
+grep -n -B 5 -A 30 "function.*Layout\|nav" src/components/layout/Sidebar.tsx | head -40
+
+Paste the real output of both. Confirm the exact real response shape of GET/POST messages, the exact real request body POST expects, the exact real 403 shape for a non-member, and the exact real response of POST /cooperative/opt-in, all confirmed live in batch 1 tonight. Confirm the real Sidebar nav item pattern to add a new entry to.
 
 WHAT THIS IS:
 
-useFetch never clears data to null during a refetch, it only replaces it once the new result actually arrives, confirmed directly in its real source tonight. This means the old, still-valid data is available the entire time a refetch is in flight, there is no real need to hide anything just because isLoading briefly becomes true. Real fix: distinguish between a genuine first load (no data has ever arrived yet, a real skeleton is appropriate) and a background refetch of an already-loaded page (data already exists, keep showing it, do not hide it, optionally show a subtle in-place loading indicator instead of hiding content).
+This must be built as an entirely separate component tree from Firm Chat, per the spec's hard requirement confirmed and enforced at the backend layer in batch 1. Do not import useChannels, useMessages, or firmChatApi from the firm-chat directory, even for small pieces, write fresh, parallel versions of any needed logic (date-label formatting, same-day grouping, consecutive-same-author grouping within a short time window, timestamp formatting) directly in the new Cooperative files. These are generic display utilities with no firm-chat-specific coupling in their logic, but importing them from the firm-chat directory would still create an unwanted dependency the spec's isolation principle argues against, write them fresh.
 
-For the column-shift on toggling All Staff, the table structure changing width abruptly is jarring specifically because it happens with no transition and alongside the full-hide flicker described above, fixing the flicker issue should make this feel significantly less jarring on its own, since the column change will happen once cleanly against otherwise-stable content instead of compounding with a full hide-and-reshow.
+Per spec section 14, avatars cannot use initials since members are pseudonymous. Generate a deterministic color from each message's author_handle string (a simple hash of the string mapped into a small fixed palette is sufficient), so the same handle always renders the same color throughout the room, unlike Firm Chat's simpler per-message-index color cycling, which would incorrectly show different colors for the same person across different messages.
+
+The backend's current message response has no is_jamm_team field per message yet, so a JAMM team badge cannot be built accurately in this batch, do not build one, that's real scope for a later batch once the backend actually returns that field per message.
+
+A user hitting this page needs a real membership check, not an assumption they already have access. Call GET /cooperative/rooms/{main room id}/messages first; if it returns a real 403 (confirmed live tonight as {"detail":"You do not have active access to the Growth Cooperative."}), do not show the message feed at all. Instead, show a real access-gate state: if the current user's role is firm_owner, show a genuine opt-in call to action wired to POST /cooperative/opt-in; for any other role, show a message explaining that Growth Cooperative access is granted by the firm owner, with no action available, since only the owner can grant it per spec section 5.
 
 CHANGE INSTRUCTIONS:
 
-Change the aggregate row's condition from aggregates && !isLoading to just aggregates, so it stays visible and simply updates in place once new aggregates arrive, never disappearing just because a refetch is in progress.
+Create frontend/src/lib/api/cooperative.ts, a new, separate API client file, not extending firmChat.ts. Export a CooperativeMessage interface matching the real confirmed response shape (id, room_id, author_handle, body, created_at), and a cooperativeApi object with optIn(), getMessages(roomId), and postMessage(roomId, body).
 
-Find wherever the table body is conditionally replaced with a skeleton based on isLoading, and change that condition to only show the skeleton when there is no data at all yet (the real first load), not on every subsequent refetch where data already exists from before. If a subtle in-place loading cue is wanted for refetches (for example a slight opacity reduction on the existing table while new data loads), that is acceptable and matches common real-world patterns, but do not fully hide or replace already-loaded content with a skeleton again once it has loaded once.
+Fetch the real main room's id, do not hardcode the UUID confirmed live tonight, since that id is environment-specific. If the backend does not yet expose a way to list rooms, add a minimal GET /cooperative/rooms endpoint returning the singleton main room's real id and room_type, gated by the same real membership check as the messages endpoints, confirm whether this already exists before assuming it needs to be added, check the real file.
 
-Do not change useFetch itself, it already behaves correctly (never clearing data), this fix belongs entirely in how the Archive page consumes isLoading and data together.
+Create frontend/src/app/(app)/cooperative/page.tsx. Build the message feed: date dividers between days (fresh logic, not imported), consecutive messages from the same author_handle within a short time window grouped without repeating the avatar/handle header (fresh logic, not imported), each message showing its deterministic-colored circle avatar, the real handle text, the message body, and a formatted timestamp. Build a simple compose box at the bottom posting via cooperativeApi.postMessage, clearing on success, appending the new message to the feed without requiring a full refetch.
+
+Add "Growth Cooperative" as a new nav item in the real Sidebar, following the exact real pattern already used for other nav items there.
 
 VERIFY AFTER ACT:
 
 cd /home/corby/jamm-os/frontend
 npm run build
 
-grep -n "aggregates &&\|isLoading" "src/app/(app)/archive/page.tsx"
+grep -n "cooperativeApi\|CooperativeMessage" src/lib/api/cooperative.ts
+
+grep -rn "useChannels\|useMessages\|firmChatApi" "src/app/(app)/cooperative/page.tsx"
+
+This last grep must return nothing, confirming no accidental import from the firm-chat directory.
 
 git diff --stat
 
 MANUAL VERIFICATION:
 
-Restart the frontend dev server only. Reload /archive, switch between client filters, staff selections, and toggle All Staff on and off several times, confirm the flicker/flash Ben described is genuinely gone or substantially reduced, the aggregate row and table should update smoothly in place rather than disappearing and reappearing. Confirm the very first page load still shows a proper skeleton, this fix should not remove the real first-load skeleton, only the unnecessary repeated ones on every subsequent filter change. Report back with a screenshot and a plain description of whether it now feels smooth.
+Restart the frontend dev server only, backend is already confirmed working from batch 1. Log in as owner@riverside-demo.com, navigate to Growth Cooperative from the sidebar. Since the owner already opted in during batch 1's testing, confirm the real message feed loads showing the real "Hello from the Growth Cooperative!" message with a real handle and a colored avatar, not initials. Post a new message, confirm it appears immediately without a full page reload. Log in as a different real user who has not been granted access, navigate to Growth Cooperative, confirm the real access-gate state appears instead of the message feed, with copy appropriate to their role (not an owner, so no opt-in button, just an explanation). Report back with a screenshot of both states.
 
 GIT:
 
-Do not commit until Ben confirms it actually feels smoother in the browser.
+Do not commit until Ben confirms both states look and work correctly in the browser.
