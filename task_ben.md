@@ -74,7 +74,7 @@ This section exists because a past session confidently claimed specific files we
 
 # Section 3 - The task
 
-TASK: Add a nullable task_id foreign key to time_entries, so time entries can be attributed to a specific task, not just an engagement. This is the backend foundation for Employee Archive's per-task hours requirement, and for making task selection required going forward on new time entries. Existing time entries have no task_id and cannot be retroactively assigned one, so the column itself must stay nullable at the database level, "required" is enforced only at the frontend form and API-validation level for new entries, not a database constraint.
+TASK: Two small, precise changes to the already-built task selector in DailyTab.tsx, now that the backend accepts task_id (confirmed live tonight). The task picker UI itself is fully built and does not need to be created, only corrected and connected to real validation.
 
 USE: claude sonnet
 
@@ -86,45 +86,45 @@ State plainly that no path in this task resolves against /mnt/c/Users or any Win
 
 VERIFY BEFORE ACT:
 
-grep -n -B 3 -A 30 "class TimeEntry" app/models/time_entry.py
+grep -n -B 5 -A 55 "Task \*\|filteredTasks\|Select task" "src/app/(app)/timesheets/DailyTab.tsx"
 
-sed -n '1,30p' app/schemas/time_entry.py
+grep -n -B 5 -A 15 "async function handleAddEntry" "src/app/(app)/timesheets/DailyTab.tsx"
 
-.venv/bin/alembic heads
-
-Confirm alembic heads shows exactly one head. If more than one, stop and report back, do not write a migration against branched history. Confirm the real current TimeEntry model structure and the real TimeEntryBase/TimeEntryCreate/TimeEntryUpdate schemas before adding to them.
+Paste the real output of both. Confirm the exact current task-filtering line (currently filters by assigned_to === currentUserId only, confirmed missing an engagement_id filter) and confirm the exact current validation checks inside handleAddEntry (currently confirmed to check engagementId, activityType, and hours as required, but not taskId).
 
 WHAT THIS IS:
 
-TimeEntry currently has no way to associate to a specific Task, only to an Engagement, confirmed by real grep tonight showing zero matches for task_id anywhere in time_entry.py or task.py. This blocks Employee Archive's per-task hours requirement, which needs to sum only the time entries belonging to a specific task, not an entire engagement's worth of entries across potentially many tasks. Ben's real decision: add a real task_id column, make task selection required going forward on new entries at the application level, but the column stays nullable in the database since existing entries cannot be retroactively assigned a task and should not be broken or deleted.
+This entire task selector UI already exists and works, it was built ahead of the backend actually supporting task_id. Now that time_entries.task_id exists and is confirmed working end to end, this task closes the two real remaining gaps: the task list currently shows all of a person's assigned tasks across every engagement, not filtered to the engagement currently selected in the form, which is confusing and wrong once someone has tasks on multiple engagements. And task selection currently reads and behaves as optional, when Ben's real decision tonight was that it must be required going forward for every new time entry, no exceptions, enforced at the application level since the database column itself must stay nullable for existing historical entries.
 
 CHANGE INSTRUCTIONS:
 
-Add a task_id column to the TimeEntry model in app/models/time_entry.py, following the exact same pattern already used for engagement_id and user_id in this same file: Mapped[Optional[uuid.UUID]], ForeignKey("tasks.id", ondelete="SET NULL"), nullable=True, index=True. Use SET NULL, not CASCADE, since deleting a task should not delete the time entries logged against it, it should just unlink them. Add a relationship to Task if the existing relationship style in this file already does so for engagement and user, matching that same convention.
+Add a filter to the task list so it only shows tasks where t.engagement_id === form.engagementId, in addition to the existing t.assigned_to === currentUserId filter, so the dropdown only ever shows tasks that are actually relevant to the engagement currently selected.
 
-Add task_id: Optional[uuid.UUID] = None to TimeEntryBase in app/schemas/time_entry.py so it flows through TimeEntryCreate automatically, and add task_id: Optional[uuid.UUID] = None to TimeEntryUpdate as well, so an existing entry's task can be corrected after the fact if someone picked the wrong one.
+Change the placeholder/label text from "Select task (optional)" to "Select task" (remove "optional" from both places it appears in this button's label logic), and change the field's own label from "Task" to "Task *", matching the same required-field asterisk convention already used on the Engagement label directly above it in this same form.
 
-Write the migration by hand, not autogenerate, following the exact same structure as the batch 1 dashboard migration referenced earlier tonight (sa.Uuid() column type, ondelete='SET NULL' foreign key constraint, index creation via op.f()), with down_revision set to the real current head confirmed in VERIFY BEFORE ACT.
+In handleAddEntry, add a check for form.taskId alongside the existing engagementId, activityType, and hours checks, using the exact same toast.error pattern already used for those, with a clear message like "Task is required." Add task_id: form.taskId to the payload object being built in this same function, alongside the existing engagement_id, so it actually gets sent to the now-working backend.
+
+Do not change anything about the timer-start flow, the edit-existing-entry flow, or any other part of this file beyond these specific changes.
 
 VERIFY AFTER ACT:
 
-grep -n "task_id" app/models/time_entry.py app/schemas/time_entry.py
+cd /home/corby/jamm-os/frontend
+npm run build
 
-.venv/bin/alembic heads
+grep -n "t.engagement_id === form.engagementId\|Task \*\|Task is required" "src/app/(app)/timesheets/DailyTab.tsx"
 
-This must show exactly one head, the new migration's revision id. Run .venv/bin/alembic upgrade head and confirm it applies with no errors.
+git diff --stat "src/app/(app)/timesheets/DailyTab.tsx"
 
-cd /home/corby/jamm-os
-python3 -c "from app.main import app; print('app imports cleanly')"
+This should be a small, targeted diff, not a rewrite of this file.
 
 MANUAL VERIFICATION:
 
-Restart the backend. Using a real token, call GET /time-entries/ for any existing entry and confirm it now includes a task_id field, null for existing entries, not missing entirely or erroring. Call POST /time-entries/ with a real payload that includes a real task_id belonging to a real task, confirm it saves and the returned entry shows the correct task_id. Report back both real responses.
+Restart the frontend dev server only. Reload the Timesheets page, Daily tab. Select an engagement with more than one task if one exists, or note if the test data only has one task per engagement. Confirm the task dropdown now only shows tasks belonging to that engagement, not tasks from other engagements. Confirm the label now shows an asterisk and the placeholder no longer says optional. Try submitting the form with a task not selected, confirm a clear error appears and it does not submit. Select a task and submit a real entry, confirm it succeeds. Report back with a screenshot of the form and confirm via GET /time-entries/ that the newly created entry has the correct real task_id attached, not null.
 
 GIT:
 
 git add -A
-git commit -m "add a nullable task_id foreign key to time_entries, the backend foundation for Employee Archive's per-task hours and for making task selection required on new time entries going forward. The column stays nullable at the database level since existing entries cannot be retroactively assigned a task, required is enforced at the application level only, using SET NULL on delete so removing a task never deletes or breaks the time entries logged against it"
+git commit -m "close the two remaining gaps in the already-built task selector on the Daily timesheet tab: filter tasks to the currently selected engagement instead of showing all of a person's assigned tasks across every engagement, and make task selection genuinely required for new time entries per Ben's real decision tonight, both in the field's label/copy and in actual form validation, now that time_entries.task_id is confirmed working end to end on the backend"
 git pull --rebase origin main
 git push origin main
 git log --oneline -3
