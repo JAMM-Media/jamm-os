@@ -22,9 +22,9 @@ export const cooperativeApi = {
     return data as { cooperative_enabled: boolean; handle: string }
   },
 
-  getRooms: async (): Promise<{ items: CooperativeRoom[]; total: number }> => {
+  getRooms: async (): Promise<{ items: CooperativeRoom[]; total: number; my_handle: string }> => {
     const { data } = await api.get('/cooperative/rooms')
-    return data as { items: CooperativeRoom[]; total: number }
+    return data as { items: CooperativeRoom[]; total: number; my_handle: string }
   },
 
   getMessages: async (roomId: string, page = 1): Promise<{ items: CooperativeMessage[]; total: number }> => {

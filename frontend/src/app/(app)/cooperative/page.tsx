@@ -4,7 +4,7 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { Network } from 'lucide-react'
+import { Sprout } from 'lucide-react'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { cooperativeApi, type CooperativeMessage } from '@/lib/api/cooperative'
 
@@ -69,54 +69,66 @@ function isGrouped(prev: CooperativeMessage, curr: CooperativeMessage): boolean 
 
 function DateDivider({ label }: { label: string }) {
   return (
-    <div className="flex items-center gap-3 my-4">
-      <div className="flex-1 h-px bg-surface-border dark:bg-dark-border" />
+    <div className="flex items-center gap-3 my-3 px-3">
+      <div className="flex-1 h-px bg-[#C8CDD6] dark:bg-[#484848]" />
       <span className="text-[11px] text-[#6B7280] font-medium">{label}</span>
-      <div className="flex-1 h-px bg-surface-border dark:bg-dark-border" />
+      <div className="flex-1 h-px bg-[#C8CDD6] dark:bg-[#484848]" />
     </div>
   )
 }
 
-function Avatar({ handle, size = 28 }: { handle: string; size?: number }) {
-  const color = handleColor(handle)
+function Avatar({ handle, size = 26 }: { handle: string; size?: number }) {
   return (
     <div
-      style={{ width: size, height: size, backgroundColor: color, flexShrink: 0 }}
+      style={{ width: size, height: size, backgroundColor: handleColor(handle), flexShrink: 0 }}
       className="rounded-full"
     />
   )
 }
 
-function MessageRow({
+function MessageBubble({
   message,
   grouped,
+  isOwn,
 }: {
   message: CooperativeMessage
   grouped: boolean
+  isOwn: boolean
 }) {
-  if (grouped) {
+  if (isOwn) {
     return (
-      <div className="pl-[44px] pr-4 py-0.5 hover:bg-[#F5F5F5] dark:hover:bg-[#222222] group">
-        <p className="text-[13px] text-[#374151] dark:text-[#D1D5DB] leading-relaxed whitespace-pre-wrap break-words">
-          {message.body}
-        </p>
+      <div className="flex justify-end px-3 py-[2px]">
+        <div className="flex flex-col items-end max-w-[70%]">
+          <div className="bg-[#3A6A94] text-white rounded-[18px] px-4 py-2 text-[14px] leading-relaxed whitespace-pre-wrap break-words">
+            {message.body}
+          </div>
+          {!grouped && (
+            <span className="text-[11px] text-[#6B7280] mt-0.5 mr-1">{formatTimestamp(message.created_at)}</span>
+          )}
+        </div>
       </div>
     )
   }
 
+  // Other person's message.
   return (
-    <div className="flex items-start gap-3 px-4 py-1.5 hover:bg-[#F5F5F5] dark:hover:bg-[#222222] group">
-      <Avatar handle={message.author_handle} size={28} />
-      <div className="flex-1 min-w-0">
-        <div className="flex items-baseline gap-2 mb-0.5">
-          <span className="text-[13px] font-semibold text-[#1F3148] dark:text-[#EDEEF0]">
+    <div className="flex items-end gap-2 px-3 py-[2px]">
+      {grouped
+        ? <div style={{ width: 26, flexShrink: 0 }} />
+        : <Avatar handle={message.author_handle} size={26} />
+      }
+      <div className="flex flex-col max-w-[70%]">
+        {!grouped && (
+          <span className="text-[11px] text-[#6B7280] font-medium mb-0.5 ml-1">
             {message.author_handle}
           </span>
-          <span className="text-[11px] text-[#6B7280]">{formatTimestamp(message.created_at)}</span>
-        </div>
-        <p className="text-[13px] text-[#374151] dark:text-[#D1D5DB] leading-relaxed whitespace-pre-wrap break-words">
+        )}
+        <div className="bg-white dark:bg-[#444444] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] text-[#1F3148] dark:text-[#EDEEF0] rounded-[18px] px-4 py-2 text-[14px] leading-relaxed whitespace-pre-wrap break-words">
           {message.body}
-        </p>
+        </div>
+        {!grouped && (
+          <span className="text-[11px] text-[#6B7280] mt-0.5 ml-1">{formatTimestamp(message.created_at)}</span>
+        )}
       </div>
     </div>
   )
@@ -144,7 +156,7 @@ function OwnerGate({ onOptIn }: { onOptIn: () => Promise<void> }) {
   return (
     <div className="flex flex-col items-center justify-center flex-1 py-24 gap-4">
       <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-surface-card dark:bg-dark-card border border-[0.5px] border-surface-border dark:border-dark-border">
-        <Network className="h-5 w-5 text-[#6B7280]" />
+        <Sprout className="h-5 w-5 text-[#6B7280]" />
       </div>
       <div className="text-center max-w-sm">
         <p className="text-[14px] font-medium text-brand dark:text-[#EDEEF0] mb-2">
@@ -170,7 +182,7 @@ function MemberGate() {
   return (
     <div className="flex flex-col items-center justify-center flex-1 py-24 gap-4">
       <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-surface-card dark:bg-dark-card border border-[0.5px] border-surface-border dark:border-dark-border">
-        <Network className="h-5 w-5 text-[#6B7280]" />
+        <Sprout className="h-5 w-5 text-[#6B7280]" />
       </div>
       <div className="text-center max-w-sm">
         <p className="text-[14px] font-medium text-brand dark:text-[#EDEEF0] mb-2">
@@ -195,6 +207,7 @@ export default function CooperativePage() {
 
   const [pageState, setPageState] = useState<PageState>('loading')
   const [mainRoomId, setMainRoomId] = useState<string | null>(null)
+  const [myHandle, setMyHandle] = useState<string | null>(null)
   const [messages, setMessages] = useState<CooperativeMessage[]>([])
   const [compose, setCompose] = useState('')
   const [sending, setSending] = useState(false)
@@ -202,10 +215,11 @@ export default function CooperativePage() {
 
   const loadRoom = useCallback(async () => {
     try {
-      const { items } = await cooperativeApi.getRooms()
+      const { items, my_handle } = await cooperativeApi.getRooms()
       const main = items.find((r) => r.room_type === 'main')
       if (!main) return
       setMainRoomId(main.id)
+      setMyHandle(my_handle)
       const { items: msgs } = await cooperativeApi.getMessages(main.id)
       setMessages(msgs)
       setPageState('ready')
@@ -255,18 +269,17 @@ export default function CooperativePage() {
 
   if (pageState === 'loading') {
     return (
-      <div className="flex flex-col h-full">
-        <div className="flex items-center px-4 h-14 border-b border-surface-border dark:border-dark-border">
+      <div className="flex flex-col h-full p-4 gap-3">
+        <div className="flex items-center gap-2">
+          <Sprout className="h-4 w-4 text-[#6B7280]" />
           <span className="font-medium text-[15px] text-brand dark:text-[#EDEEF0]">Growth Cooperative</span>
+          <span className="text-[12px] text-[#6B7280]">Main Room</span>
         </div>
-        <div className="flex-1 flex flex-col gap-3 p-4">
-          {[80, 140, 60, 100, 72].map((w, i) => (
-            <div key={i} className="flex items-start gap-3">
-              <div className="w-7 h-7 rounded-full bg-[#D5D8DE] dark:bg-[#444444] animate-pulse flex-shrink-0" />
-              <div className="flex flex-col gap-1.5">
-                <div className="h-2 rounded bg-[#D5D8DE] dark:bg-[#444444] animate-pulse" style={{ width: 80 }} />
-                <div className="h-2 rounded bg-[#D5D8DE] dark:bg-[#444444] animate-pulse" style={{ width: w }} />
-              </div>
+        <div className="flex-1 rounded-[10px] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] bg-[#E4E6EA] dark:bg-[#2D2D2D] p-4 flex flex-col gap-4">
+          {[120, 200, 80, 160, 100].map((w, i) => (
+            <div key={i} className={`flex items-end gap-2 ${i % 2 === 0 ? '' : 'flex-row-reverse'}`}>
+              <div className="w-6 h-6 rounded-full bg-[#C8CDD6] dark:bg-[#484848] animate-pulse flex-shrink-0" />
+              <div className="h-8 rounded-[16px] bg-[#C8CDD6] dark:bg-[#484848] animate-pulse" style={{ width: w }} />
             </div>
           ))}
         </div>
@@ -277,7 +290,8 @@ export default function CooperativePage() {
   if (pageState === 'no-access') {
     return (
       <div className="flex flex-col h-full">
-        <div className="flex items-center px-4 h-14 border-b border-surface-border dark:border-dark-border">
+        <div className="flex items-center gap-2 px-4 h-14 border-b border-[#C8CDD6] dark:border-[#484848]">
+          <Sprout className="h-4 w-4 text-[#6B7280]" />
           <span className="font-medium text-[15px] text-brand dark:text-[#EDEEF0]">Growth Cooperative</span>
         </div>
         <div className="flex-1 flex">
@@ -290,48 +304,48 @@ export default function CooperativePage() {
     )
   }
 
-  // Build grouped message list with date dividers.
+  // Build grouped bubble list with date dividers.
   const renderedRows: React.ReactNode[] = []
   messages.forEach((msg, i) => {
     const prev = messages[i - 1]
+    const isOwn = msg.author_handle === myHandle
 
-    // Date divider.
     if (!prev || !isSameDay(prev.created_at, msg.created_at)) {
       renderedRows.push(<DateDivider key={`divider-${msg.id}`} label={formatDateLabel(msg.created_at)} />)
     }
 
     const grouped = !!prev && isSameDay(prev.created_at, msg.created_at) && isGrouped(prev, msg)
-    renderedRows.push(<MessageRow key={msg.id} message={msg} grouped={grouped} />)
+    renderedRows.push(<MessageBubble key={msg.id} message={msg} grouped={grouped} isOwn={isOwn} />)
   })
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full p-4 gap-3">
       {/* Header */}
-      <div className="flex items-center gap-2 px-4 h-14 border-b border-surface-border dark:border-dark-border flex-shrink-0">
-        <Network className="h-4 w-4 text-[#6B7280]" />
-        <span className="font-medium text-[15px] text-brand dark:text-[#EDEEF0]">Growth Cooperative</span>
+      <div className="flex items-center gap-2 flex-shrink-0">
+        <Sprout className="h-4 w-4 text-[#6B7280]" />
+        <span className="font-medium text-[15px] text-[#1F3148] dark:text-[#EDEEF0]">Growth Cooperative</span>
         <span className="text-[12px] text-[#6B7280]">Main Room</span>
       </div>
 
-      {/* Message feed */}
-      <div className="flex-1 overflow-y-auto py-2">
-        {messages.length === 0 ? (
-          <div className="flex items-center justify-center h-full text-[13px] text-[#6B7280]">
-            No messages yet. Be the first to post.
-          </div>
-        ) : (
-          <>
-            {renderedRows}
-          </>
-        )}
-        <div ref={bottomRef} />
+      {/* Feed card */}
+      <div className="flex-1 rounded-[10px] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] bg-[#E4E6EA] dark:bg-[#2D2D2D] overflow-hidden flex flex-col min-h-0">
+        <div className="flex-1 overflow-y-auto py-3">
+          {messages.length === 0 ? (
+            <div className="flex items-center justify-center h-full text-[13px] text-[#6B7280]">
+              No messages yet. Be the first to post.
+            </div>
+          ) : (
+            renderedRows
+          )}
+          <div ref={bottomRef} />
+        </div>
       </div>
 
       {/* Compose */}
-      <div className="flex-shrink-0 px-4 pb-4 pt-2 border-t border-surface-border dark:border-dark-border">
-        <div className="flex items-end gap-2 rounded-[8px] border border-[0.5px] border-surface-border dark:border-dark-border bg-surface-page dark:bg-dark-page px-3 py-2">
+      <div className="flex-shrink-0">
+        <div className="flex items-end gap-2 rounded-[6px] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] bg-[#F7F7F8] dark:bg-[#383838] px-3 py-2 focus-within:border-[#4A7FA5] transition-colors">
           <textarea
-            className="flex-1 bg-transparent resize-none text-[13px] text-brand dark:text-[#EDEEF0] placeholder:text-[#6B7280] focus:outline-none min-h-[20px] max-h-[120px]"
+            className="flex-1 bg-transparent resize-none text-[14px] text-[#1F3148] dark:text-[#EDEEF0] placeholder:text-[#6B7280] focus:outline-none min-h-[20px] max-h-[120px]"
             placeholder="Message Growth Cooperative..."
             rows={1}
             value={compose}
@@ -341,7 +355,7 @@ export default function CooperativePage() {
           <button
             onClick={handleSend}
             disabled={!compose.trim() || sending}
-            className="px-3 h-7 rounded-[6px] bg-brand dark:bg-brand-btn text-white text-[12px] font-medium hover:opacity-90 transition-opacity disabled:opacity-40"
+            className="px-3 h-7 rounded-[6px] bg-[#3A6A94] text-white text-[12px] font-medium hover:opacity-90 transition-opacity disabled:opacity-40"
           >
             Send
           </button>

@@ -27,7 +27,7 @@ import {
   Mail,
   UserCog,
   Archive,
-  Network,
+  Sprout,
 } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { cn } from '@/lib/utils'
@@ -49,7 +49,7 @@ const navItems = [
   { href: '/billing', label: 'Billing', icon: CreditCard },
   { href: '/inbox', label: 'Inbox', icon: Mail },
   { href: '/firm-chat', label: 'Firm Chat', icon: MessageSquare },
-  { href: '/cooperative', label: 'Cooperative', icon: Network },
+  { href: '/cooperative', label: 'Cooperative', icon: Sprout },
   { href: '/notifications', label: 'Notifications', icon: Bell },
 ]
 

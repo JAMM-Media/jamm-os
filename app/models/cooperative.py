@@ -106,3 +106,45 @@ class CooperativeMessage(Base):
         nullable=False,
         default=lambda: datetime.now(timezone.utc),
     )
+
+
+class CooperativeAlias(Base):
+    """Per-viewer private label for another member's handle.
+
+    owner_member_id: the member who set the label.
+    target_member_id: the member being labeled.
+    Strictly per-viewer: only owner_member_id ever sees this alias.
+    """
+
+    __tablename__ = "cooperative_aliases"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+
+    owner_member_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("cooperative_members.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    target_member_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("cooperative_members.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    label: Mapped[str] = mapped_column(String(128), nullable=False)
+
+    created_at: Mapped[datetime] = mapped_column(
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+    updated_at: Mapped[datetime] = mapped_column(
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    __table_args__ = (
+        UniqueConstraint("owner_member_id", "target_member_id", name="uq_cooperative_alias_owner_target"),
+    )
