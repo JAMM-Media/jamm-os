@@ -124,6 +124,7 @@ def list_messages(
         items.append({
             "id": str(m.id),
             "room_id": str(m.room_id),
+            "author_member_id": str(m.author_member_id) if m.author_member_id else None,
             "author_handle": raw_handle,
             "author_display": display,
             "body": m.body,

@@ -6,6 +6,8 @@ export interface CooperativeMessage {
   id: string
   room_id: string
   author_handle: string
+  author_display: string
+  author_member_id: string | null
   body: string
   created_at: string
 }
@@ -37,5 +39,9 @@ export const cooperativeApi = {
   postMessage: async (roomId: string, body: string): Promise<CooperativeMessage> => {
     const { data } = await api.post(`/cooperative/rooms/${roomId}/messages`, { body })
     return data as CooperativeMessage
+  },
+
+  setAlias: async (targetMemberId: string, label: string): Promise<void> => {
+    await api.patch(`/cooperative/members/${targetMemberId}/alias`, { label })
   },
 }

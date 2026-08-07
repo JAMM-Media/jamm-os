@@ -58,9 +58,85 @@ function isSameDay(a: string, b: string): boolean {
 
 const GROUP_WINDOW_MS = 5 * 60 * 1000
 
+// isGrouped uses author_handle, not author_display, so grouping is never affected by aliases.
 function isGrouped(prev: CooperativeMessage, curr: CooperativeMessage): boolean {
   if (prev.author_handle !== curr.author_handle) return false
   return new Date(curr.created_at).getTime() - new Date(prev.created_at).getTime() < GROUP_WINDOW_MS
+}
+
+// ---------------------------------------------------------------------------
+// Label modal
+// ---------------------------------------------------------------------------
+
+function LabelModal({
+  memberId,
+  currentLabel,
+  onSave,
+  onClose,
+}: {
+  memberId: string
+  currentLabel: string
+  onSave: (memberId: string, label: string) => Promise<void>
+  onClose: () => void
+}) {
+  const [value, setValue] = useState(currentLabel)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    inputRef.current?.focus()
+    inputRef.current?.select()
+  }, [])
+
+  const handleSave = async () => {
+    if (!value.trim()) return
+    setSaving(true)
+    setError(null)
+    try {
+      await onSave(memberId, value.trim())
+      onClose()
+    } catch {
+      setError('Failed to save label.')
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/30"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
+    >
+      <div className="bg-white dark:bg-[#2D2D2D] rounded-[10px] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] shadow-lg w-[300px] p-4 flex flex-col gap-3">
+        <p className="text-[13px] font-medium text-[#1F3148] dark:text-[#EDEEF0]">Label this member</p>
+        <input
+          ref={inputRef}
+          type="text"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') handleSave(); if (e.key === 'Escape') onClose() }}
+          placeholder="Enter a label..."
+          className="h-9 px-3 rounded-[6px] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] bg-[#F7F7F8] dark:bg-[#383838] text-[13px] text-[#1F3148] dark:text-[#EDEEF0] placeholder:text-[#6B7280] focus:outline-none focus:border-[#4A7FA5] transition-colors"
+        />
+        {error && <p className="text-[11px] text-red-500">{error}</p>}
+        <div className="flex items-center gap-2 justify-end">
+          <button
+            onClick={onClose}
+            className="px-3 h-8 rounded-[6px] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] text-[12px] text-[#6B7280] hover:bg-[#F7F7F8] dark:hover:bg-[#383838] transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={saving || !value.trim()}
+            className="px-3 h-8 rounded-[6px] bg-[#3A6A94] text-white text-[12px] font-medium hover:opacity-90 transition-opacity disabled:opacity-40"
+          >
+            {saving ? 'Saving...' : 'Save'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 // ---------------------------------------------------------------------------
@@ -90,10 +166,14 @@ function MessageBubble({
   message,
   grouped,
   isOwn,
+  displayLabel,
+  onLabelClick,
 }: {
   message: CooperativeMessage
   grouped: boolean
   isOwn: boolean
+  displayLabel: string
+  onLabelClick?: () => void
 }) {
   if (isOwn) {
     return (
@@ -111,18 +191,33 @@ function MessageBubble({
   }
 
   // Other person's message.
+  const authorElement = !grouped && (
+    <button
+      onClick={onLabelClick}
+      className="text-[11px] text-[#6B7280] font-medium mb-0.5 ml-1 hover:text-[#4A7FA5] transition-colors text-left"
+      title="Label this member"
+    >
+      {displayLabel}
+    </button>
+  )
+
+  const avatarElement = grouped
+    ? <div style={{ width: 26, flexShrink: 0 }} />
+    : (
+      <button
+        onClick={onLabelClick}
+        className="rounded-full hover:opacity-80 transition-opacity flex-shrink-0"
+        title="Label this member"
+      >
+        <Avatar handle={message.author_handle} size={26} />
+      </button>
+    )
+
   return (
     <div className="flex items-end gap-2 px-3 py-[2px]">
-      {grouped
-        ? <div style={{ width: 26, flexShrink: 0 }} />
-        : <Avatar handle={message.author_handle} size={26} />
-      }
+      {avatarElement}
       <div className="flex flex-col max-w-[70%]">
-        {!grouped && (
-          <span className="text-[11px] text-[#6B7280] font-medium mb-0.5 ml-1">
-            {message.author_handle}
-          </span>
-        )}
+        {authorElement}
         <div className="bg-white dark:bg-[#444444] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] text-[#1F3148] dark:text-[#EDEEF0] rounded-[18px] px-4 py-2 text-[14px] leading-relaxed whitespace-pre-wrap break-words">
           {message.body}
         </div>
@@ -211,6 +306,8 @@ export default function CooperativePage() {
   const [messages, setMessages] = useState<CooperativeMessage[]>([])
   const [compose, setCompose] = useState('')
   const [sending, setSending] = useState(false)
+  const [displayOverrides, setDisplayOverrides] = useState<Record<string, string>>({})
+  const [aliasTarget, setAliasTarget] = useState<{ memberId: string; currentLabel: string } | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
 
   const loadRoom = useCallback(async () => {
@@ -265,6 +362,11 @@ export default function CooperativePage() {
     }
   }
 
+  const handleSaveAlias = async (memberId: string, label: string) => {
+    await cooperativeApi.setAlias(memberId, label)
+    setDisplayOverrides((prev) => ({ ...prev, [memberId]: label }))
+  }
+
   if (!user) return null
 
   if (pageState === 'loading') {
@@ -308,60 +410,92 @@ export default function CooperativePage() {
   const renderedRows: React.ReactNode[] = []
   messages.forEach((msg, i) => {
     const prev = messages[i - 1]
+    // isOwn uses author_handle, unchanged.
     const isOwn = msg.author_handle === myHandle
 
     if (!prev || !isSameDay(prev.created_at, msg.created_at)) {
       renderedRows.push(<DateDivider key={`divider-${msg.id}`} label={formatDateLabel(msg.created_at)} />)
     }
 
+    // isGrouped uses author_handle, unchanged.
     const grouped = !!prev && isSameDay(prev.created_at, msg.created_at) && isGrouped(prev, msg)
-    renderedRows.push(<MessageBubble key={msg.id} message={msg} grouped={grouped} isOwn={isOwn} />)
+
+    // Effective display: override takes priority, then server-resolved author_display.
+    const effectiveDisplay = msg.author_member_id && displayOverrides[msg.author_member_id]
+      ? displayOverrides[msg.author_member_id]
+      : (msg.author_display ?? msg.author_handle)
+
+    renderedRows.push(
+      <MessageBubble
+        key={msg.id}
+        message={msg}
+        grouped={grouped}
+        isOwn={isOwn}
+        displayLabel={effectiveDisplay}
+        onLabelClick={!isOwn && msg.author_member_id ? () => {
+          console.log('[label click]', 'member:', msg.author_member_id)
+          console.log('[label modal]', 'opening for:', msg.author_member_id!)
+          setAliasTarget({ memberId: msg.author_member_id!, currentLabel: effectiveDisplay })
+        } : undefined}
+      />
+    )
   })
 
   return (
-    <div className="flex flex-col h-full p-4 gap-3">
-      {/* Header */}
-      <div className="flex items-center gap-2 flex-shrink-0">
-        <Sprout className="h-4 w-4 text-[#6B7280]" />
-        <span className="font-medium text-[15px] text-[#1F3148] dark:text-[#EDEEF0]">Growth Cooperative</span>
-        <span className="text-[12px] text-[#6B7280]">Main Room</span>
-      </div>
+    <>
+      {aliasTarget && (
+        <LabelModal
+          memberId={aliasTarget.memberId}
+          currentLabel={aliasTarget.currentLabel}
+          onSave={handleSaveAlias}
+          onClose={() => setAliasTarget(null)}
+        />
+      )}
 
-      {/* Feed card */}
-      <div className="flex-1 rounded-[10px] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] bg-[#E4E6EA] dark:bg-[#2D2D2D] overflow-hidden flex flex-col min-h-0">
-        <div className="flex-1 overflow-y-auto py-3">
-          {messages.length === 0 ? (
-            <div className="flex items-center justify-center h-full text-[13px] text-[#6B7280]">
-              No messages yet. Be the first to post.
-            </div>
-          ) : (
-            renderedRows
-          )}
-          <div ref={bottomRef} />
+      <div className="flex flex-col h-full p-4 gap-3">
+        {/* Header */}
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <Sprout className="h-4 w-4 text-[#6B7280]" />
+          <span className="font-medium text-[15px] text-[#1F3148] dark:text-[#EDEEF0]">Growth Cooperative</span>
+          <span className="text-[12px] text-[#6B7280]">Main Room</span>
+        </div>
+
+        {/* Feed card */}
+        <div className="flex-1 rounded-[10px] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] bg-[#E4E6EA] dark:bg-[#2D2D2D] overflow-hidden flex flex-col min-h-0">
+          <div className="flex-1 overflow-y-auto py-3">
+            {messages.length === 0 ? (
+              <div className="flex items-center justify-center h-full text-[13px] text-[#6B7280]">
+                No messages yet. Be the first to post.
+              </div>
+            ) : (
+              renderedRows
+            )}
+            <div ref={bottomRef} />
+          </div>
+        </div>
+
+        {/* Compose */}
+        <div className="flex-shrink-0">
+          <div className="flex items-end gap-2 rounded-[6px] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] bg-[#F7F7F8] dark:bg-[#383838] px-3 py-2 focus-within:border-[#4A7FA5] transition-colors">
+            <textarea
+              className="flex-1 bg-transparent resize-none text-[14px] text-[#1F3148] dark:text-[#EDEEF0] placeholder:text-[#6B7280] focus:outline-none min-h-[20px] max-h-[120px]"
+              placeholder="Message Growth Cooperative..."
+              rows={1}
+              value={compose}
+              onChange={(e) => setCompose(e.target.value)}
+              onKeyDown={handleKeyDown}
+            />
+            <button
+              onClick={handleSend}
+              disabled={!compose.trim() || sending}
+              className="px-3 h-7 rounded-[6px] bg-[#3A6A94] text-white text-[12px] font-medium hover:opacity-90 transition-opacity disabled:opacity-40"
+            >
+              Send
+            </button>
+          </div>
+          <p className="text-[11px] text-[#9CA3AF] mt-1 px-1">Enter to send, Shift+Enter for new line</p>
         </div>
       </div>
-
-      {/* Compose */}
-      <div className="flex-shrink-0">
-        <div className="flex items-end gap-2 rounded-[6px] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] bg-[#F7F7F8] dark:bg-[#383838] px-3 py-2 focus-within:border-[#4A7FA5] transition-colors">
-          <textarea
-            className="flex-1 bg-transparent resize-none text-[14px] text-[#1F3148] dark:text-[#EDEEF0] placeholder:text-[#6B7280] focus:outline-none min-h-[20px] max-h-[120px]"
-            placeholder="Message Growth Cooperative..."
-            rows={1}
-            value={compose}
-            onChange={(e) => setCompose(e.target.value)}
-            onKeyDown={handleKeyDown}
-          />
-          <button
-            onClick={handleSend}
-            disabled={!compose.trim() || sending}
-            className="px-3 h-7 rounded-[6px] bg-[#3A6A94] text-white text-[12px] font-medium hover:opacity-90 transition-opacity disabled:opacity-40"
-          >
-            Send
-          </button>
-        </div>
-        <p className="text-[11px] text-[#9CA3AF] mt-1 px-1">Enter to send, Shift+Enter for new line</p>
-      </div>
-    </div>
+    </>
   )
 }
