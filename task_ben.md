@@ -74,7 +74,7 @@ This section exists because a past session confidently claimed specific files we
 
 # Section 3 - The task
 
-TASK: Enforce a 20-widget maximum per canvas in the Add Widget gallery, per Ben's real decision tonight.
+TASK: Add a nullable task_id foreign key to time_entries, so time entries can be attributed to a specific task, not just an engagement. This is the backend foundation for Employee Archive's per-task hours requirement, and for making task selection required going forward on new time entries. Existing time entries have no task_id and cannot be retroactively assigned one, so the column itself must stay nullable at the database level, "required" is enforced only at the frontend form and API-validation level for new entries, not a database constraint.
 
 USE: claude sonnet
 
@@ -86,41 +86,47 @@ State plainly that no path in this task resolves against /mnt/c/Users or any Win
 
 VERIFY BEFORE ACT:
 
-grep -n -B 5 -A 30 "function handleAddWidgetFromGallery\|const handleAddWidgetFromGallery" "src/app/(app)/dashboard/page.tsx"
+grep -n -B 3 -A 30 "class TimeEntry" app/models/time_entry.py
 
-grep -n -B 5 -A 20 "function AddWidgetModal" "src/app/(app)/dashboard/page.tsx"
+sed -n '1,30p' app/schemas/time_entry.py
 
-Paste the real output of both. Confirm the exact current function that appends a new widget to editedWidgets, and confirm how the gallery modal receives editedWidgets so the cap can be checked and displayed there.
+.venv/bin/alembic heads
+
+Confirm alembic heads shows exactly one head. If more than one, stop and report back, do not write a migration against branched history. Confirm the real current TimeEntry model structure and the real TimeEntryBase/TimeEntryCreate/TimeEntryUpdate schemas before adding to them.
 
 WHAT THIS IS:
 
-There are currently 16 distinct widget types in the catalog. A cap of 20 total widget instances allows one of every type plus a handful of duplicate instances (multiple My Tasks filtered per staff member, multiple client-specific widgets for different clients) before hitting a real, meaningful ceiling, chosen deliberately to prevent runaway performance issues without being so tight it blocks someone from just having one of everything.
+TimeEntry currently has no way to associate to a specific Task, only to an Engagement, confirmed by real grep tonight showing zero matches for task_id anywhere in time_entry.py or task.py. This blocks Employee Archive's per-task hours requirement, which needs to sum only the time entries belonging to a specific task, not an entire engagement's worth of entries across potentially many tasks. Ben's real decision: add a real task_id column, make task selection required going forward on new entries at the application level, but the column stays nullable in the database since existing entries cannot be retroactively assigned a task and should not be broken or deleted.
 
 CHANGE INSTRUCTIONS:
 
-In handleAddWidgetFromGallery (or wherever the real append logic lives, per VERIFY BEFORE ACT), before appending a new widget instance, check whether editedWidgets.length is already at or above 20. If so, do not append, and show a clear message (using whatever toast or inline-message pattern already exists elsewhere in this file) explaining the 20-widget limit has been reached, rather than silently doing nothing.
+Add a task_id column to the TimeEntry model in app/models/time_entry.py, following the exact same pattern already used for engagement_id and user_id in this same file: Mapped[Optional[uuid.UUID]], ForeignKey("tasks.id", ondelete="SET NULL"), nullable=True, index=True. Use SET NULL, not CASCADE, since deleting a task should not delete the time entries logged against it, it should just unlink them. Add a relationship to Task if the existing relationship style in this file already does so for engagement and user, matching that same convention.
 
-In the Add Widget gallery itself, when the cap is reached, disable the gallery's clickable entries (the same visual treatment already used for a no-config widget that's already been added, greyed out with a label) with a message indicating the limit, rather than letting someone click through the gallery and have nothing happen with no explanation. This should update reactively if a widget is removed during the same edit session, dropping back below 20, the same way the existing already-added disabled state already updates reactively.
+Add task_id: Optional[uuid.UUID] = None to TimeEntryBase in app/schemas/time_entry.py so it flows through TimeEntryCreate automatically, and add task_id: Optional[uuid.UUID] = None to TimeEntryUpdate as well, so an existing entry's task can be corrected after the fact if someone picked the wrong one.
+
+Write the migration by hand, not autogenerate, following the exact same structure as the batch 1 dashboard migration referenced earlier tonight (sa.Uuid() column type, ondelete='SET NULL' foreign key constraint, index creation via op.f()), with down_revision set to the real current head confirmed in VERIFY BEFORE ACT.
 
 VERIFY AFTER ACT:
 
-cd /home/corby/jamm-os/frontend
-npm run build
+grep -n "task_id" app/models/time_entry.py app/schemas/time_entry.py
 
-grep -n "20\b" "src/app/(app)/dashboard/page.tsx" | grep -i "widget\|length\|cap\|max"
+.venv/bin/alembic heads
 
-git diff --stat
+This must show exactly one head, the new migration's revision id. Run .venv/bin/alembic upgrade head and confirm it applies with no errors.
+
+cd /home/corby/jamm-os
+python3 -c "from app.main import app; print('app imports cleanly')"
 
 MANUAL VERIFICATION:
 
-Restart the frontend dev server only. Reload /dashboard, enter Edit Dashboard, add widgets (duplicating the multi-instance ones like My Tasks or Client Health Snapshot with different configs as needed) until you reach 20 total on the canvas. Confirm the gallery now shows a clear cap-reached state, not just silently failing. Remove one widget, confirm the gallery becomes addable again immediately. Report back with a screenshot of the cap-reached gallery state.
+Restart the backend. Using a real token, call GET /time-entries/ for any existing entry and confirm it now includes a task_id field, null for existing entries, not missing entirely or erroring. Call POST /time-entries/ with a real payload that includes a real task_id belonging to a real task, confirm it saves and the returned entry shows the correct task_id. Report back both real responses.
 
 GIT:
 
 git add -A
-git commit -m "enforce a 20 widget maximum per dashboard canvas per Ben's real decision tonight, chosen since 16 distinct widget types currently exist and a cap below that would block having one of everything with no real justification. The Add Widget gallery now shows a clear cap-reached state with a real message once the limit is hit, rather than silently failing, and updates reactively if a widget is removed during the same edit session"
+git commit -m "add a nullable task_id foreign key to time_entries, the backend foundation for Employee Archive's per-task hours and for making task selection required on new time entries going forward. The column stays nullable at the database level since existing entries cannot be retroactively assigned a task, required is enforced at the application level only, using SET NULL on delete so removing a task never deletes or breaks the time entries logged against it"
 git pull --rebase origin main
 git push origin main
 git log --oneline -3
 
-Paste the real output of git log --oneline -3 showing the new commit hash present next to origin/main. Do not report this as done based on the push command running, confirm the real log output showing origin/main at the new hash.
+Paste the real output of git log --oneline -3 showing the new commit hash present next to origin/main.

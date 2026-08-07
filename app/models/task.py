@@ -62,3 +62,4 @@ class Task(Base):
     client: Mapped["Client"] = relationship(back_populates="tasks")
     engagement: Mapped["Engagement"] = relationship(back_populates="tasks")
     assignee: Mapped["User | None"] = relationship("User", foreign_keys=[assigned_to])
+    time_entries: Mapped[list["TimeEntry"]] = relationship("TimeEntry", back_populates="task")
