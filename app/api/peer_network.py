@@ -1,4 +1,4 @@
-# app/api/cooperative.py
+# app/api/peer_network.py
 #
 # Deliberately separate from app/api/firm_chat.py per spec section 3.
 
@@ -11,15 +11,15 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.dependencies.auth import get_current_user
 from app.dependencies.roles import require_firm_owner
-from app.models.cooperative import CooperativeAlias, CooperativeMember, CooperativeMessage, CooperativeRoom
+from app.models.peer_network import PeerNetworkAlias, PeerNetworkMember, PeerNetworkMessage, PeerNetworkRoom
 from app.models.user import User
-from app.services.cooperative_service import get_active_member, grant_access, opt_in_firm
+from app.services.peer_network_service import get_active_member, grant_access, opt_in_firm
 
 router = APIRouter()
 
 
 # ---------------------------------------------------------------------------
-# POST /cooperative/opt-in
+# POST /peer-network/opt-in
 # ---------------------------------------------------------------------------
 
 @router.post("/opt-in", status_code=status.HTTP_200_OK)
@@ -31,7 +31,7 @@ def opt_in(
 
 
 # ---------------------------------------------------------------------------
-# POST /cooperative/members/{user_id}/grant
+# POST /peer-network/members/{user_id}/grant
 # ---------------------------------------------------------------------------
 
 @router.post("/members/{user_id}/grant", status_code=status.HTTP_200_OK)
@@ -44,7 +44,7 @@ def grant_member_access(
 
 
 # ---------------------------------------------------------------------------
-# GET /cooperative/rooms
+# GET /peer-network/rooms
 # ---------------------------------------------------------------------------
 
 @router.get("/rooms")
@@ -52,10 +52,10 @@ def list_rooms(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    # Gate on active CooperativeMember status.
+    # Gate on active PeerNetworkMember status.
     member = get_active_member(db=db, user_id=current_user.id)
 
-    rooms = db.execute(select(CooperativeRoom)).scalars().all()
+    rooms = db.execute(select(PeerNetworkRoom)).scalars().all()
     return {
         "items": [{"id": str(r.id), "room_type": r.room_type, "name": r.name} for r in rooms],
         "total": len(rooms),
@@ -64,7 +64,7 @@ def list_rooms(
 
 
 # ---------------------------------------------------------------------------
-# GET /cooperative/rooms/{room_id}/messages
+# GET /peer-network/rooms/{room_id}/messages
 # ---------------------------------------------------------------------------
 
 @router.get("/rooms/{room_id}/messages")
@@ -75,11 +75,11 @@ def list_messages(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    # Gate on active CooperativeMember status, not firm-scoped role.
+    # Gate on active PeerNetworkMember status, not firm-scoped role.
     member = get_active_member(db=db, user_id=current_user.id)
 
     room = db.execute(
-        select(CooperativeRoom).where(CooperativeRoom.id == room_id)
+        select(PeerNetworkRoom).where(PeerNetworkRoom.id == room_id)
     ).scalar_one_or_none()
 
     if room is None:
@@ -87,14 +87,14 @@ def list_messages(
 
     # Real count query -- no unbounded fetch.
     total = db.execute(
-        select(func.count()).select_from(CooperativeMessage).where(CooperativeMessage.room_id == room_id)
+        select(func.count()).select_from(PeerNetworkMessage).where(PeerNetworkMessage.room_id == room_id)
     ).scalar_one()
 
     offset = (page - 1) * page_size
     paginated = db.execute(
-        select(CooperativeMessage)
-        .where(CooperativeMessage.room_id == room_id)
-        .order_by(CooperativeMessage.created_at.asc())
+        select(PeerNetworkMessage)
+        .where(PeerNetworkMessage.room_id == room_id)
+        .order_by(PeerNetworkMessage.created_at.asc())
         .limit(page_size)
         .offset(offset)
     ).scalars().all()
@@ -105,14 +105,14 @@ def list_messages(
     alias_map: dict[uuid.UUID, str] = {}
     if member_ids:
         members = db.execute(
-            select(CooperativeMember).where(CooperativeMember.id.in_(member_ids))
+            select(PeerNetworkMember).where(PeerNetworkMember.id.in_(member_ids))
         ).scalars().all()
         handle_map = {m.id: m.handle for m in members}
 
         aliases = db.execute(
-            select(CooperativeAlias).where(
-                CooperativeAlias.owner_member_id == member.id,
-                CooperativeAlias.target_member_id.in_(member_ids),
+            select(PeerNetworkAlias).where(
+                PeerNetworkAlias.owner_member_id == member.id,
+                PeerNetworkAlias.target_member_id.in_(member_ids),
             )
         ).scalars().all()
         alias_map = {a.target_member_id: a.label for a in aliases}
@@ -135,7 +135,7 @@ def list_messages(
 
 
 # ---------------------------------------------------------------------------
-# POST /cooperative/rooms/{room_id}/messages
+# POST /peer-network/rooms/{room_id}/messages
 # ---------------------------------------------------------------------------
 
 @router.post("/rooms/{room_id}/messages", status_code=status.HTTP_201_CREATED)
@@ -145,11 +145,11 @@ def post_message(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    # Gate on active CooperativeMember status.
+    # Gate on active PeerNetworkMember status.
     member = get_active_member(db=db, user_id=current_user.id)
 
     room = db.execute(
-        select(CooperativeRoom).where(CooperativeRoom.id == room_id)
+        select(PeerNetworkRoom).where(PeerNetworkRoom.id == room_id)
     ).scalar_one_or_none()
 
     if room is None:
@@ -159,7 +159,7 @@ def post_message(
     if not text:
         raise HTTPException(status_code=422, detail="Message body cannot be empty.")
 
-    message = CooperativeMessage(
+    message = PeerNetworkMessage(
         room_id=room_id,
         author_member_id=member.id,
         body=text,
@@ -179,7 +179,7 @@ def post_message(
 
 
 # ---------------------------------------------------------------------------
-# PATCH /cooperative/members/{target_member_id}/alias
+# PATCH /peer-network/members/{target_member_id}/alias
 # ---------------------------------------------------------------------------
 
 @router.patch("/members/{target_member_id}/alias", status_code=status.HTTP_200_OK)
@@ -189,7 +189,7 @@ def set_alias(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    # Gate on active CooperativeMember status.
+    # Gate on active PeerNetworkMember status.
     member = get_active_member(db=db, user_id=current_user.id)
 
     if target_member_id == member.id:
@@ -199,7 +199,7 @@ def set_alias(
         )
 
     target = db.execute(
-        select(CooperativeMember).where(CooperativeMember.id == target_member_id)
+        select(PeerNetworkMember).where(PeerNetworkMember.id == target_member_id)
     ).scalar_one_or_none()
 
     if target is None:
@@ -210,9 +210,9 @@ def set_alias(
         raise HTTPException(status_code=422, detail="Label cannot be empty.")
 
     existing = db.execute(
-        select(CooperativeAlias).where(
-            CooperativeAlias.owner_member_id == member.id,
-            CooperativeAlias.target_member_id == target_member_id,
+        select(PeerNetworkAlias).where(
+            PeerNetworkAlias.owner_member_id == member.id,
+            PeerNetworkAlias.target_member_id == target_member_id,
         )
     ).scalar_one_or_none()
 
@@ -221,7 +221,7 @@ def set_alias(
         db.commit()
         return {"alias_set": True, "label": existing.label, "target_handle": target.handle}
 
-    alias = CooperativeAlias(
+    alias = PeerNetworkAlias(
         owner_member_id=member.id,
         target_member_id=target_member_id,
         label=label,

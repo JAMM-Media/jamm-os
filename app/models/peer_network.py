@@ -1,8 +1,8 @@
-# app/models/cooperative.py
+# app/models/peer_network.py
 #
 # Deliberately separate from app/models/firm_chat.py per spec section 3:
 # no shared models, no shared query helpers with any firm-scoped surface.
-# Message authorship resolves only through CooperativeMember, never users.id directly.
+# Message authorship resolves only through PeerNetworkMember, never users.id directly.
 
 import uuid
 from datetime import datetime, timezone
@@ -13,10 +13,10 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base_class import Base
 
 
-class CooperativeMember(Base):
-    """One record per user who has been granted access to the Growth Cooperative."""
+class PeerNetworkMember(Base):
+    """One record per user who has been granted access to the Peer Network."""
 
-    __tablename__ = "cooperative_members"
+    __tablename__ = "peer_network_members"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
 
@@ -54,10 +54,10 @@ class CooperativeMember(Base):
     )
 
 
-class CooperativeRoom(Base):
-    """A room in the Growth Cooperative. Starts with a singleton "main" room."""
+class PeerNetworkRoom(Base):
+    """A room in the Peer Network. Starts with a singleton "main" room."""
 
-    __tablename__ = "cooperative_rooms"
+    __tablename__ = "peer_network_rooms"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
 
@@ -77,25 +77,25 @@ class CooperativeRoom(Base):
     )
 
 
-class CooperativeMessage(Base):
-    """A message posted in a CooperativeRoom.
+class PeerNetworkMessage(Base):
+    """A message posted in a PeerNetworkRoom.
 
-    author_member_id references CooperativeMember, never users.id directly,
+    author_member_id references PeerNetworkMember, never users.id directly,
     so a deactivated member's past messages survive intact.
     """
 
-    __tablename__ = "cooperative_messages"
+    __tablename__ = "peer_network_messages"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
 
     room_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("cooperative_rooms.id", ondelete="CASCADE"),
+        ForeignKey("peer_network_rooms.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
 
     author_member_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("cooperative_members.id", ondelete="SET NULL"),
+        ForeignKey("peer_network_members.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )
@@ -108,7 +108,7 @@ class CooperativeMessage(Base):
     )
 
 
-class CooperativeAlias(Base):
+class PeerNetworkAlias(Base):
     """Per-viewer private label for another member's handle.
 
     owner_member_id: the member who set the label.
@@ -116,18 +116,18 @@ class CooperativeAlias(Base):
     Strictly per-viewer: only owner_member_id ever sees this alias.
     """
 
-    __tablename__ = "cooperative_aliases"
+    __tablename__ = "peer_network_aliases"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
 
     owner_member_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("cooperative_members.id", ondelete="CASCADE"),
+        ForeignKey("peer_network_members.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
 
     target_member_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("cooperative_members.id", ondelete="CASCADE"),
+        ForeignKey("peer_network_members.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -146,5 +146,5 @@ class CooperativeAlias(Base):
     )
 
     __table_args__ = (
-        UniqueConstraint("owner_member_id", "target_member_id", name="uq_cooperative_alias_owner_target"),
+        UniqueConstraint("owner_member_id", "target_member_id", name="uq_peer_network_alias_owner_target"),
     )

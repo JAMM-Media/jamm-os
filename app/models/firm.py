@@ -126,7 +126,7 @@ class Firm(Base):
     firm_type: Mapped[Optional[str]] = mapped_column(String(30), nullable=True)
     concierge_onboarded: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default='false')
 
-    cooperative_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default='false')
+    peer_network_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default='false')
 
     sending_domain: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     sending_domain_postmark_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
