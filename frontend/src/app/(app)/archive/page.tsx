@@ -16,10 +16,10 @@ interface StaffUser {
   email: string
 }
 
-function SkeletonRow() {
+function SkeletonRow({ cols }: { cols: number }) {
   return (
     <tr className="border-b border-[0.5px] border-[#D5D8DE] dark:border-dark-card">
-      {Array.from({ length: 8 }).map((_, i) => (
+      {Array.from({ length: cols }).map((_, i) => (
         <td key={i} className="px-4 py-3">
           <div className="h-2 rounded bg-[#D5D8DE] dark:bg-[#444444] animate-pulse" style={{ width: `${40 + (i % 3) * 20}px` }} />
         </td>
@@ -132,7 +132,11 @@ export default function ArchivePage() {
   if (debouncedSearch) params.search = debouncedSearch
 
   const { data, isLoading } = useFetch<ArchiveResponse>(
-    () => selectedUserId ? archiveApi.getArchive(selectedUserId, params) : Promise.resolve({ items: [], total: 0, aggregates: { tasks_completed: 0, hours_logged: 0, engagements_touched: 0 } }),
+    () => {
+      if (!selectedUserId) return Promise.resolve({ items: [], total: 0, aggregates: { tasks_completed: 0, hours_logged: 0, engagements_touched: 0 } })
+      if (selectedUserId === 'all') return archiveApi.getCombinedArchive(params)
+      return archiveApi.getArchive(selectedUserId, params)
+    },
     [selectedUserId, fromDate, toDate, clientFilter, engagementFilter, roleFilter, starredFilter, debouncedSearch]
   )
 
@@ -167,7 +171,8 @@ export default function ArchivePage() {
 
   if (!user) return null
 
-  const isViewingOtherUser = selectedUserId !== '' && selectedUserId !== user.id
+  const isCombinedView = selectedUserId === 'all'
+  const colCount = isCombinedView ? 9 : 8
 
   const items = data?.items ?? []
   const aggregates = data?.aggregates
@@ -244,6 +249,7 @@ export default function ArchivePage() {
               onChange={(e) => setSelectedUserId(e.target.value)}
               className={selectClass}
             >
+              <option value="all">All Staff</option>
               {staffList.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.full_name || s.email}
@@ -255,7 +261,7 @@ export default function ArchivePage() {
       </div>
 
       {/* Aggregate row */}
-      {aggregates && !isLoading && (
+      {aggregates && (
         <div className="flex items-center gap-6">
           <span className="text-[12px] text-[#6B7280]">
             <span className="font-medium text-[#374151] dark:text-[#9CA3AF]">{aggregates.tasks_completed}</span> tasks completed
@@ -270,11 +276,11 @@ export default function ArchivePage() {
       )}
 
       {/* Table */}
-      <div className="rounded-modal border border-[0.5px] border-surface-border dark:border-dark-border overflow-auto">
+      <div className={['rounded-modal border border-[0.5px] border-surface-border dark:border-dark-border overflow-auto transition-opacity duration-150', isLoading && data ? 'opacity-60' : 'opacity-100'].join(' ')}>
         <table className="w-full border-collapse">
           <thead>
             <tr className="bg-surface-card dark:bg-[#252525]">
-              {['Task', 'Client', 'Engagement', 'Role', 'Completed', 'Revision', 'Hours', ''].map((col) => (
+              {['Task', ...(isCombinedView ? ['Assignee'] : []), 'Client', 'Engagement', 'Role', 'Completed', 'Revision', 'Hours', ''].map((col) => (
                 <th
                   key={col}
                   className="px-4 py-2.5 text-left text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em] whitespace-nowrap"
@@ -285,11 +291,11 @@ export default function ArchivePage() {
             </tr>
           </thead>
           <tbody>
-            {isLoading ? (
-              Array.from({ length: 5 }).map((_, i) => <SkeletonRow key={i} />)
+            {isLoading && !data ? (
+              Array.from({ length: 5 }).map((_, i) => <SkeletonRow key={i} cols={colCount} />)
             ) : items.length === 0 ? (
               <tr>
-                <td colSpan={8}>
+                <td colSpan={colCount}>
                   {data?.total === 0 && !hasFilters && !debouncedSearch
                     ? <EmptyArchive />
                     : <EmptyFiltered onClear={clearFilters} />
@@ -299,6 +305,9 @@ export default function ArchivePage() {
             ) : (
               items.map((entry, i) => {
                 const isStarred = starredOverrides[entry.task_id] ?? entry.starred
+                const isOwnRow = isCombinedView
+                  ? entry.assignee?.id === user.id
+                  : selectedUserId === user.id
                 const completedDate = entry.completed_at
                   ? new Date(entry.completed_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
                   : null
@@ -321,6 +330,15 @@ export default function ArchivePage() {
                         {entry.task_title}
                       </Link>
                     </td>
+
+                    {/* Assignee (combined view only) */}
+                    {isCombinedView && (
+                      <td className="px-4 py-3">
+                        <span className="text-[12px] text-[#374151] dark:text-[#9CA3AF]">
+                          {entry.assignee?.name ?? '--'}
+                        </span>
+                      </td>
+                    )}
 
                     {/* Client */}
                     <td className="px-4 py-3">
@@ -386,7 +404,7 @@ export default function ArchivePage() {
 
                     {/* Star */}
                     <td className="px-4 py-3">
-                      {isViewingOtherUser ? (
+                      {!isOwnRow ? (
                         <button
                           className="flex items-center justify-center w-6 h-6 rounded cursor-not-allowed"
                           title="You can only star items in your own archive"

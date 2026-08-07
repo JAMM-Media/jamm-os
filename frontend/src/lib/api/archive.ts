@@ -23,6 +23,7 @@ export interface ArchiveEntry {
   reviewer: string | null
   hours: number
   starred: boolean
+  assignee?: { id: string | null; name: string | null } | null
 }
 
 export interface ArchiveAggregates {
@@ -52,6 +53,11 @@ export interface ArchiveParams {
 export const archiveApi = {
   getArchive: async (userId: string, params: ArchiveParams = {}): Promise<ArchiveResponse> => {
     const { data } = await api.get(`/archive/${userId}`, { params })
+    return data as ArchiveResponse
+  },
+
+  getCombinedArchive: async (params: ArchiveParams = {}): Promise<ArchiveResponse> => {
+    const { data } = await api.get('/archive/', { params })
     return data as ArchiveResponse
   },
 

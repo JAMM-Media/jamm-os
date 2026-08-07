@@ -74,7 +74,7 @@ This section exists because a past session confidently claimed specific files we
 
 # Section 3 - The task
 
-TASK: Three fixes to the Archive page's star column, now that the real cause of the "glitchy" star behavior is confirmed: it was never a bug in most cases, it was the owner correctly getting rejected for trying to star entries in someone else's archive (working as designed per spec, starring belongs to whoever the work is assigned to, not the viewer), just failing completely silently with no explanation. Alongside that, two real independent bugs were also found directly in the code and need fixing regardless.
+TASK: Fix real UI flicker on the Archive page confirmed by Ben: switching any filter causes a visible flash/flicker because isLoading flips to true on every single refetch (client filter, staff switch, search, anything), and confirmed in code the aggregate row is conditionally hidden whenever !isLoading is false, meaning it disappears and reappears on every filter change even though the underlying data from the previous fetch is still sitting in memory the whole time (useFetch never clears data during a refetch). Also fix the real column-count layout shift when toggling to/from All Staff, which changes the table from 8 to 9 columns.
 
 USE: claude sonnet
 
@@ -86,49 +86,37 @@ State plainly that no path in this task resolves against /mnt/c/Users or any Win
 
 VERIFY BEFORE ACT:
 
-grep -n -B 5 -A 25 "const handleStarToggle" "src/app/(app)/archive/page.tsx"
+grep -n -B 10 -A 30 "Aggregate row\|isLoading" "src/app/(app)/archive/page.tsx"
 
-grep -n -B 5 -A 20 "{/\* Star \*/}" "src/app/(app)/archive/page.tsx"
-
-grep -n "toast\." "src/app/(app)/archive/page.tsx" | head -5
-
-Paste the real output of all three. Confirm the current handleStarToggle logic, the current star button JSX, and confirm whether toast is already imported and used elsewhere in this file for the error-message pattern to match.
+Paste the real output. Confirm every place isLoading currently gates what's shown (the aggregate row, the table body, any skeleton), so the fix covers every real instance, not just the one already found.
 
 WHAT THIS IS:
 
-Fix 1, real bug: starredOverrides[entry.task_id] never gets cleared once set, permanently shadowing entry.starred after the first toggle for that row, causing a real, permanent divergence from server truth.
+useFetch never clears data to null during a refetch, it only replaces it once the new result actually arrives, confirmed directly in its real source tonight. This means the old, still-valid data is available the entire time a refetch is in flight, there is no real need to hide anything just because isLoading briefly becomes true. Real fix: distinguish between a genuine first load (no data has ever arrived yet, a real skeleton is appropriate) and a background refetch of an already-loaded page (data already exists, keep showing it, do not hide it, optionally show a subtle in-place loading indicator instead of hiding content).
 
-Fix 2, real bug: handleStarToggle calls refetch() unconditionally after every successful toggle, even though the optimistic update already correctly reflects the new state, causing an unnecessary full data reswap and the visual row-shift Ben described.
-
-Fix 3, real UX gap, not a permission bug: when the current user is viewing an archive that is not their own (the selected user in the manager/owner staff-picker differs from the logged-in user's own id), every star in that archive is not actually toggleable, since starring is scoped to whoever the task is assigned to, confirmed correct and intentional per spec section 7's "anyone can star rows in their own archive" and section 3's employee-owned-evidence framing constraint. Right now the star renders as if fully clickable regardless, and a click silently fails with a 403 the UI never surfaces, which reads as a random, unexplained glitch. The star should render visibly disabled (greyed out, not the normal amber/gray toggle colors) with a tooltip explaining why, whenever the archive being viewed does not belong to the current logged-in user, and clicking it in that state should do nothing at all, not attempt the API call.
+For the column-shift on toggling All Staff, the table structure changing width abruptly is jarring specifically because it happens with no transition and alongside the full-hide flicker described above, fixing the flicker issue should make this feel significantly less jarring on its own, since the column change will happen once cleanly against otherwise-stable content instead of compounding with a full hide-and-reshow.
 
 CHANGE INSTRUCTIONS:
 
-Remove the refetch() call from handleStarToggle's success path entirely.
+Change the aggregate row's condition from aggregates && !isLoading to just aggregates, so it stays visible and simply updates in place once new aggregates arrive, never disappearing just because a refetch is in progress.
 
-Do not clear starredOverrides after a successful toggle, let it remain the source of truth for that row going forward within the session, since there is no longer an automatic refetch to reconcile against; this is correct because it will already hold the accurate, current value.
+Find wherever the table body is conditionally replaced with a skeleton based on isLoading, and change that condition to only show the skeleton when there is no data at all yet (the real first load), not on every subsequent refetch where data already exists from before. If a subtle in-place loading cue is wanted for refetches (for example a slight opacity reduction on the existing table while new data loads), that is acceptable and matches common real-world patterns, but do not fully hide or replace already-loaded content with a skeleton again once it has loaded once.
 
-Ensure the toggle direction is computed from the latest state at click time using the functional form of setState, not a value captured in a stale closure, so rapid or repeated clicks each correctly compute their own direction.
-
-Determine whether the currently viewed archive belongs to the logged-in user (compare the archive's target user_id, whatever that variable is called in this file, against the logged-in user's own id from useAuth). When it does not match, render the star button with a disabled/muted style (grey, not the normal amber-filled or outline-gray toggle colors), a title/tooltip attribute explaining "You can only star items in your own archive," and make its onClick a no-op or simply omit the onClick handler entirely in that state, so no API call is attempted at all, not just prevented server-side.
-
-Add a toast.error call in handleStarToggle's catch block, using the exact same toast pattern already used elsewhere in this codebase, surfacing whatever real detail message the API returns (for example the confirmed real "You may only star tasks assigned to you." message) rather than failing with no visible feedback, this is a real safety net for any other unexpected failure beyond the now-prevented case above.
+Do not change useFetch itself, it already behaves correctly (never clearing data), this fix belongs entirely in how the Archive page consumes isLoading and data together.
 
 VERIFY AFTER ACT:
 
 cd /home/corby/jamm-os/frontend
 npm run build
 
-grep -n -A 20 "const handleStarToggle" "src/app/(app)/archive/page.tsx"
-
-grep -n "toast.error" "src/app/(app)/archive/page.tsx"
+grep -n "aggregates &&\|isLoading" "src/app/(app)/archive/page.tsx"
 
 git diff --stat
 
 MANUAL VERIFICATION:
 
-Restart the frontend dev server only. Reload /archive as owner@riverside-demo.com viewing your own archive if you have any real starrable rows, confirm star/unstar toggles cleanly with no row-shift and no stuck state, and persists correctly after a full page reload. Switch to viewing a different user's archive via the staff selector, confirm every star in that view now renders visibly greyed/disabled with a tooltip, and confirm clicking one does nothing, no network request fires at all. Report back with a screenshot of both states, your own archive's active stars and someone else's archive's disabled stars.
+Restart the frontend dev server only. Reload /archive, switch between client filters, staff selections, and toggle All Staff on and off several times, confirm the flicker/flash Ben described is genuinely gone or substantially reduced, the aggregate row and table should update smoothly in place rather than disappearing and reappearing. Confirm the very first page load still shows a proper skeleton, this fix should not remove the real first-load skeleton, only the unnecessary repeated ones on every subsequent filter change. Report back with a screenshot and a plain description of whether it now feels smooth.
 
 GIT:
 
-Do not commit until Ben confirms both states look and behave correctly in the browser.
+Do not commit until Ben confirms it actually feels smoother in the browser.
