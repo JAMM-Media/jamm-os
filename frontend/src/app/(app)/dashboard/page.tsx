@@ -449,7 +449,7 @@ function WIPWidget() {
         ) : !isError && data ? (
           <div className="mt-1">
             <p className="text-[22px] font-display font-medium text-brand dark:text-foreground leading-none">{formatCurrency(data?.totalWipValue ?? 0)}</p>
-            <p className="text-[11px] text-muted-foreground mt-0.5">{data?.totalHours ?? 0} hrs unbilled</p>
+            <p className="text-[11px] text-muted-foreground mt-0.5">{(data?.totalHours ?? 0).toFixed(1)} hrs unbilled</p>
           </div>
         ) : null}
       </div>
