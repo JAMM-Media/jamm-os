@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.dependencies.auth import get_current_user
-from app.dependencies.roles import require_firm_owner
+from app.dependencies.roles import require_firm_owner, require_system_admin
 from app.models.peer_network import PeerNetworkAlias, PeerNetworkMember, PeerNetworkMessage, PeerNetworkRoom
 from app.models.user import User
 from app.services.peer_network_service import accept_terms, get_active_member, grant_access, opt_in_firm
@@ -265,6 +265,41 @@ def delete_message(
     db.commit()
 
     return {"deleted": True}
+
+
+# ---------------------------------------------------------------------------
+# DELETE /peer-network/admin/messages/{message_id}  (system admin only)
+# ---------------------------------------------------------------------------
+
+@router.delete("/admin/messages/{message_id}", status_code=status.HTTP_200_OK)
+def admin_delete_message(
+    message_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    _admin: User = Depends(require_system_admin),
+):
+    """Purge a message's body content entirely.
+
+    This is a hard content purge, not a soft flag-only delete.
+    is_deleted is set to True (so the UI renders the same placeholder
+    as author-deleted messages) and the real body field is overwritten with
+    a fixed placeholder, destroying the original text in the database.
+
+    Note on edit history: this codebase edits messages in place with no
+    version table, so overwriting the current body field is the complete
+    purge available given tonight's real implementation.
+    """
+    message = db.execute(
+        select(PeerNetworkMessage).where(PeerNetworkMessage.id == message_id)
+    ).scalar_one_or_none()
+
+    if message is None:
+        raise HTTPException(status_code=404, detail="Message not found.")
+
+    message.is_deleted = True
+    message.body = "[removed by admin]"
+    db.commit()
+
+    return {"deleted": True, "purged": True}
 
 
 # ---------------------------------------------------------------------------

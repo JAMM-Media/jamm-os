@@ -74,7 +74,7 @@ This section exists because a past session confidently claimed specific files we
 
 # Section 3 - The task
 
-TASK: Add the first-post interstitial and persistent composer reminder to Peer Network, per spec section 10, explicitly required alongside the T&C, not separate future scope. Confirmed live tonight: real members can currently post with zero warning about client-identifying information, the exact risk this section exists to reduce.
+TASK: Add real admin delete-any to Peer Network messages, gated by the existing require_system_admin dependency (already used elsewhere in this codebase, confirmed real, not built fresh). This is the actual mechanism behind the T&C promise shipped tonight that "JAMM may remove any message" — right now no such mechanism exists at all, only author-self-delete.
 
 USE: claude fable-5
 
@@ -88,44 +88,33 @@ VERIFY BEFORE ACT:
 
 .venv/bin/alembic heads
 
-grep -n -B 3 -A 25 "def post_message" app/api/peer_network.py
+grep -n -B 3 -A 15 "def require_system_admin" app/dependencies/roles.py
 
-cat "src/app/(app)/peer-network/page.tsx" | grep -n -B 3 -A 15 "handleSend\|Message Peer Network"
+grep -n -B 3 -A 25 "def delete_message" app/api/peer_network.py
 
-Confirm exactly one alembic head. Confirm the real current post_message endpoint and the real current compose/send flow on the frontend before adding to either.
+Confirm exactly one alembic head. Confirm the real require_system_admin dependency signature. Confirm the real current delete_message endpoint (already confirmed: sets is_deleted True, a soft delete, correctly preserving the row for author-self-delete).
 
-WHAT THIS IS, PER THE LOCKED SPEC SECTION 10:
+WHAT THIS IS, PER THE LOCKED SPEC SECTIONS 9 AND 10:
 
-Two separate, real pieces of friction, both required: a first-post interstitial, a one-time modal shown before a member's very first message, stating plainly this is a cross-firm room and client-identifying detail does not belong in it, requiring acknowledgment to continue; and a persistent, quiet reminder in the composer itself, not a blocker, just enough that nobody can claim they forgot which room they were typing in.
+Author self-delete is a soft delete, correct as-is, the row and its real body remain in storage, only the display is masked, since that is genuinely enough for a member managing their own mistake. Admin delete is fundamentally different and must be a real purge: it must remove the message's actual body content from storage entirely, not just flip a flag, because the whole reason admin delete exists is the case where real client-identifying information has been posted, and simply hiding it from display while leaving the real text sitting in the database defeats the actual purpose. The spec is explicit: "Admin delete purges the full record including edit history... it must remove every version, not just the current one."
 
 CHANGE INSTRUCTIONS:
 
-Add a has_posted boolean to PeerNetworkMember, default False. Write the migration by hand, matching tonight's established real structure, down_revision set to the real current head confirmed above.
+Add a new endpoint, DELETE /peer-network/admin/messages/{message_id}, gated require_system_admin, completely separate from the existing author-only DELETE /peer-network/messages/{message_id}, do not modify or merge with that existing endpoint, since author-delete and admin-delete are genuinely different operations with different real guarantees, not two paths to the same soft-delete behavior.
 
-In post_message, after the real member is confirmed active and before the message is actually created, check whether member.has_posted is False. If so, do not block the request outright, since the actual enforcement point should be the frontend interstitial requiring acknowledgment before the send even fires, but set member.has_posted to True as part of this same request regardless, so the backend has a reliable, real record independent of frontend state.
-
-On the frontend, before calling the real send API for the very first time in a session where the member has never posted (check this via a real field returned on the room/member state already available on page load, add has_posted to whatever response already carries membership info if it doesn't already expose it), show a one-time modal: a clear message stating this is a cross-firm room, client-identifying information does not belong in any message, and a single "I Understand, Continue" acknowledgment button. Only after acknowledgment does the actual first message actually send. This should not reappear on subsequent messages or subsequent sessions, since has_posted persists real state.
-
-Add a persistent, quiet reminder directly in or immediately adjacent to the compose box, small muted text, something like "Remember: no client-identifying information," always visible, not a modal, not dismissible, matching the muted-text-token styling convention already used throughout this app (#6B7280 light / #9CA3AF dark).
+This admin endpoint should: set is_deleted True (so it still renders the same "message was deleted" placeholder to everyone, consistent with how author-deleted messages already look), AND overwrite the real body field itself with a fixed placeholder value like "[removed by admin]", actually destroying the real original text content in the database, not just masking it at the display layer the way author-delete does. If this message has ever been edited (edited_at is not null, confirmed real field from earlier tonight), note in the report that real edit history retention doesn't currently exist as a separate mechanism anywhere in this codebase, since messages are edited in place with no version table, so "purge edit history" for this batch simply means the current, final body gets destroyed the same way, there is no separate historical version to also purge given how editing was actually implemented earlier tonight. Do not build a message-version-history table in this task, that is real, separate scope, just handle the real current single-body-field reality correctly and note this limitation plainly in the report rather than silently ignoring it.
 
 VERIFY AFTER ACT:
 
-grep -n "has_posted" app/models/peer_network.py app/api/peer_network.py
-
-.venv/bin/alembic heads
-
-This must show exactly one head, the new migration's revision id. Run .venv/bin/alembic upgrade head and confirm it applies with no errors.
+grep -n "admin/messages\|require_system_admin" app/api/peer_network.py
 
 cd /home/corby/jamm-os
 python3 -c "from app.main import app; print('app imports cleanly')"
 
-cd frontend
-npm run build
-
 MANUAL VERIFICATION:
 
-Restart both the backend and the frontend. Using a real account that has never posted in Peer Network (check has_posted is genuinely false for them first), log in, navigate to Peer Network, type a first message, attempt to send it, confirm the real interstitial appears before it actually sends, acknowledge it, confirm the message then sends for real. Send a second message, confirm the interstitial does not appear again. Confirm the persistent reminder text is visible in or near the compose box at all times, not just before the first message. Report back with a screenshot of both the interstitial and the persistent reminder.
+Restart the backend. First confirm whether a real system_admin user actually exists in this test environment, check via a real query or ask Ben directly if uncertain, since testing this properly requires real credentials for that role, not just code review. If one exists, use a real token for that account to call the new admin delete endpoint on a real test message, confirm the response succeeds, then call GET /peer-network/rooms/{room_id}/messages as a different real user and confirm the message shows the same "This message was deleted" placeholder as an author-deleted message, proving the display behavior is consistent. Separately, using a real non-admin token (owner or manager), attempt to call the new admin endpoint directly, confirm a real 403, proving this is genuinely gated, not just hidden in the UI. Report every real response. If no real system_admin account exists in this environment, report that plainly and stop, do not fabricate a test or claim success without one.
 
 GIT:
 
-Do not commit until Ben confirms both pieces work correctly in the browser.
+Do not commit until Ben confirms the real access control and the real body-destruction behavior both work, backed by actual API responses, not a description.
