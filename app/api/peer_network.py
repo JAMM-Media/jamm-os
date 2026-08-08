@@ -127,8 +127,10 @@ def list_messages(
             "author_member_id": str(m.author_member_id) if m.author_member_id else None,
             "author_handle": raw_handle,
             "author_display": display,
-            "body": m.body,
+            "body": "[deleted]" if m.is_deleted else m.body,
             "created_at": m.created_at.isoformat(),
+            "edited": m.edited_at is not None,
+            "deleted": m.is_deleted,
         })
 
     return {"items": items, "total": total}
@@ -171,11 +173,82 @@ def post_message(
     return {
         "id": str(message.id),
         "room_id": str(message.room_id),
+        "author_member_id": str(message.author_member_id),
         "author_handle": member.handle,
         "author_display": member.handle,
         "body": message.body,
         "created_at": message.created_at.isoformat(),
+        "edited": False,
+        "deleted": False,
     }
+
+
+# ---------------------------------------------------------------------------
+# PATCH /peer-network/messages/{message_id}
+# ---------------------------------------------------------------------------
+
+@router.patch("/messages/{message_id}", status_code=status.HTTP_200_OK)
+def edit_message(
+    message_id: uuid.UUID,
+    body: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    member = get_active_member(db=db, user_id=current_user.id)
+
+    message = db.execute(
+        select(PeerNetworkMessage).where(PeerNetworkMessage.id == message_id)
+    ).scalar_one_or_none()
+
+    if message is None:
+        raise HTTPException(status_code=404, detail="Message not found.")
+    if message.author_member_id != member.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You can only edit your own messages.")
+    if message.is_deleted:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="A deleted message cannot be edited.")
+
+    text = (body.get("body") or "").strip()
+    if not text:
+        raise HTTPException(status_code=422, detail="Message body cannot be empty.")
+
+    from datetime import datetime, timezone as tz
+    message.body = text
+    message.edited_at = datetime.now(tz.utc)
+    db.commit()
+
+    return {
+        "id": str(message.id),
+        "body": message.body,
+        "edited": True,
+        "deleted": False,
+    }
+
+
+# ---------------------------------------------------------------------------
+# DELETE /peer-network/messages/{message_id}
+# ---------------------------------------------------------------------------
+
+@router.delete("/messages/{message_id}", status_code=status.HTTP_200_OK)
+def delete_message(
+    message_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    member = get_active_member(db=db, user_id=current_user.id)
+
+    message = db.execute(
+        select(PeerNetworkMessage).where(PeerNetworkMessage.id == message_id)
+    ).scalar_one_or_none()
+
+    if message is None:
+        raise HTTPException(status_code=404, detail="Message not found.")
+    if message.author_member_id != member.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You can only delete your own messages.")
+
+    message.is_deleted = True
+    db.commit()
+
+    return {"deleted": True}
 
 
 # ---------------------------------------------------------------------------

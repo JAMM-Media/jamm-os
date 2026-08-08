@@ -49,7 +49,7 @@ const navItems = [
   { href: '/billing', label: 'Billing', icon: CreditCard },
   { href: '/inbox', label: 'Inbox', icon: Mail },
   { href: '/firm-chat', label: 'Firm Chat', icon: MessageSquare },
-  { href: '/cooperative', label: 'Cooperative', icon: Sprout },
+  { href: '/peer-network', label: 'Peer Network', icon: Sprout },
   { href: '/notifications', label: 'Notifications', icon: Bell },
 ]
 

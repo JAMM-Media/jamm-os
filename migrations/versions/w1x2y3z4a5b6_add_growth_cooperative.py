@@ -79,7 +79,7 @@ def upgrade() -> None:
             "INSERT INTO cooperative_rooms (id, room_type, name, created_at) "
             "VALUES (:id, :room_type, :name, NOW())"
         ).bindparams(
-            id=str(uuid.uuid4()),
+            sa.bindparam('id', value=str(uuid.uuid4()), type_=sa.Uuid()),
             room_type='main',
             name=None,
         )
