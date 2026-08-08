@@ -26,6 +26,8 @@ import {
   BotMessageSquare,
   Mail,
   UserCog,
+  Archive,
+  Sprout,
 } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { cn } from '@/lib/utils'
@@ -41,11 +43,13 @@ const navItems = [
   { href: '/templates', label: 'Templates', icon: LayoutTemplate },
   { href: '/tasks', label: 'Tasks', icon: CheckSquare },
   { href: '/timesheets', label: 'Timesheets', icon: Clock },
+  { href: '/archive', label: 'Archive', icon: Archive },
   { href: '/calendar', label: 'Calendar', icon: CalendarDays },
   { href: '/documents', label: 'Documents', icon: FileText },
   { href: '/billing', label: 'Billing', icon: CreditCard },
   { href: '/inbox', label: 'Inbox', icon: Mail },
   { href: '/firm-chat', label: 'Firm Chat', icon: MessageSquare },
+  { href: '/cooperative', label: 'Cooperative', icon: Sprout },
   { href: '/notifications', label: 'Notifications', icon: Bell },
 ]
 

@@ -33,6 +33,12 @@ class TimeEntry(Base):
         index=True,
     )
 
+    task_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("tasks.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
     invoice_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         ForeignKey("invoices.id", ondelete="SET NULL"),
         nullable=True,
@@ -95,6 +101,7 @@ class TimeEntry(Base):
 
     firm: Mapped["Firm"] = relationship("Firm", back_populates="time_entries")
     engagement: Mapped["Engagement"] = relationship("Engagement", back_populates="time_entries")
+    task: Mapped[Optional["Task"]] = relationship("Task", back_populates="time_entries")
     user: Mapped["User"] = relationship(
         "User", back_populates="time_entries", foreign_keys=[user_id]
     )

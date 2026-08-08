@@ -12,6 +12,7 @@ from pydantic import BaseModel, ConfigDict
 
 class TimeEntryBase(BaseModel):
     engagement_id: uuid.UUID
+    task_id: Optional[uuid.UUID] = None
     description: str
     hours: Decimal
     hourly_rate: Decimal
@@ -26,6 +27,7 @@ class TimeEntryCreate(TimeEntryBase):
 
 
 class TimeEntryUpdate(BaseModel):
+    task_id: Optional[uuid.UUID] = None
     description: Optional[str] = None
     hours: Optional[Decimal] = None
     hourly_rate: Optional[Decimal] = None

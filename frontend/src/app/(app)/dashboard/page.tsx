@@ -28,6 +28,8 @@ const SIZE_TO_SPAN: Record<string, { w: number; h: number }> = {
   large:  { w: 4, h: 7 },
 }
 
+const EMPTY_CATALOG: WidgetCatalogItem[] = []
+
 function formatCurrency(value: number): string {
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
@@ -447,7 +449,7 @@ function WIPWidget() {
         ) : !isError && data ? (
           <div className="mt-1">
             <p className="text-[22px] font-display font-medium text-brand dark:text-foreground leading-none">{formatCurrency(data?.totalWipValue ?? 0)}</p>
-            <p className="text-[11px] text-muted-foreground mt-0.5">{data?.totalHours ?? 0} hrs unbilled</p>
+            <p className="text-[11px] text-muted-foreground mt-0.5">{(data?.totalHours ?? 0).toFixed(1)} hrs unbilled</p>
           </div>
         ) : null}
       </div>
@@ -976,6 +978,7 @@ function AddWidgetModal({
   }, {})
 
   const categories = Object.keys(grouped).sort()
+  const atCap = editedWidgets.length >= 20
 
   function handleEntryClick(entry: WidgetCatalogItem) {
     if (entry.config_schema.some((f) => f.type === 'client_picker')) {
@@ -1037,6 +1040,11 @@ function AddWidgetModal({
         <p className="text-[13px] text-muted-foreground text-center py-6">No widgets available to add.</p>
       ) : (
         <div className="flex flex-col gap-6">
+          {atCap && (
+            <p className="text-[13px] text-muted-foreground text-center py-2 px-3 rounded-[8px] bg-surface-input dark:bg-dark-card border border-surface-border dark:border-dark-border">
+              20-widget limit reached. Remove a widget from the canvas to add another.
+            </p>
+          )}
           {categories.map((cat) => (
             <div key={cat}>
               <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">
@@ -1053,6 +1061,17 @@ function AddWidgetModal({
                       >
                         <p className="text-[13px] font-medium text-foreground">{entry.display_name}</p>
                         <p className="text-[11px] text-muted-foreground mt-0.5">Added</p>
+                      </div>
+                    )
+                  }
+                  if (atCap) {
+                    return (
+                      <div
+                        key={entry.type_key}
+                        className="text-left px-3.5 py-3 rounded-[8px] border border-surface-border dark:border-dark-border bg-surface-card dark:bg-dark-card opacity-50 cursor-not-allowed"
+                      >
+                        <p className="text-[13px] font-medium text-foreground">{entry.display_name}</p>
+                        <p className="text-[11px] text-muted-foreground mt-0.5">Limit reached</p>
                       </div>
                     )
                   }
@@ -1307,7 +1326,7 @@ export default function DashboardPage() {
     staleTime: 60 * 1000,
   })
 
-  const { data: catalog = [] } = useQuery<WidgetCatalogItem[]>({
+  const { data: catalog = EMPTY_CATALOG } = useQuery<WidgetCatalogItem[]>({
     queryKey: ['dashboard-widget-catalog'],
     queryFn: () => dashboardApi.getWidgetCatalog(),
     staleTime: 30 * 60 * 1000,
@@ -1347,6 +1366,15 @@ export default function DashboardPage() {
             item.minH = minSpan.h
             item.maxW = maxSpan.w
             item.maxH = maxSpan.h
+            item.constraints = [{
+              name: `lockToSizeLine-${w.instance_id}`,
+              constrainSize: (_item, proposedW, _proposedH, _handle, _context) => {
+                const denomW = maxSpan.w - minSpan.w
+                const t = denomW === 0 ? 0 : Math.max(0, Math.min(1, (proposedW - minSpan.w) / denomW))
+                const derivedH = Math.round(minSpan.h + t * (maxSpan.h - minSpan.h))
+                return { w: proposedW, h: derivedH }
+              }
+            }]
           }
         }
       }
@@ -1441,6 +1469,10 @@ export default function DashboardPage() {
   }
 
   function handleAddWidgetFromGallery(entry: WidgetCatalogItem, config: Record<string, unknown> = {}) {
+    if (editedWidgets.length >= 20) {
+      toast.error('Widget limit reached. Remove a widget before adding another.')
+      return
+    }
     const maxBottom = editedWidgets.reduce((acc, w) => {
       const span = SIZE_TO_SPAN[w.size] ?? SIZE_TO_SPAN.medium
       return Math.max(acc, w.grid_y + span.h)
@@ -1535,7 +1567,7 @@ export default function DashboardPage() {
           const span = SIZE_TO_SPAN[sizeName]
           if (!span) continue
           const dist = Math.abs(newItem.w - span.w) + Math.abs(newItem.h - span.h)
-          if (dist < bestDist) {
+          if (dist <= bestDist) {
             bestDist = dist
             closest = sizeName
           }
@@ -1660,7 +1692,7 @@ export default function DashboardPage() {
               onResizeStop={handleResizeStop}
             >
               {activeWidgets.map((widget) => (
-                <div key={widget.instance_id}>
+                <div key={widget.instance_id} className={editMode ? 'select-none' : undefined}>
                   <div
                     style={{
                       overflow: 'hidden',
@@ -1746,7 +1778,7 @@ export default function DashboardPage() {
               <div key={tmpl.id} className="flex items-center px-3 py-2.5 gap-3 border-2 border-transparent hover:border-brand-light dark:hover:border-white transition-colors">
                 <button
                   onClick={() => handleSelectTemplate(tmpl)}
-                  className="flex-1 text-left text-[13px] font-medium text-foreground hover:text-brand transition-colors truncate"
+                  className="flex-1 text-left text-[13px] font-medium text-foreground hover:text-brand dark:hover:text-foreground transition-colors truncate"
                 >
                   {tmpl.name}
                 </button>

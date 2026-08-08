@@ -74,9 +74,9 @@ This section exists because a past session confidently claimed specific files we
 
 # Section 3 - The task
 
-TASK: Remove the "Plan New Template" button and its modal from the visible UI, since 4e-2 is deferred post-launch and currently in an unverified, possibly-broken state. Keep the underlying TemplatePlannerModal component code intact in the file so the work isn't lost, just stop rendering and exposing it to real users.
+TASK: Build the Growth Cooperative's main room frontend: a new page showing the message feed and a compose box, read/post only, no DMs, subgroups, reactions, replies, or mentions yet. This must be a genuinely separate component tree from Firm Chat, not importing its hooks or API client, even though the visual layout is intentionally similar per the spec.
 
-USE: claude sonnet
+USE: claude fable-5
 
 ENVIRONMENT SANITY CHECK:
 
@@ -86,43 +86,49 @@ State plainly that no path in this task resolves against /mnt/c/Users or any Win
 
 VERIFY BEFORE ACT:
 
-grep -n "Plan New Template\|showPlanner\|TemplatePlannerModal" "src/app/(app)/dashboard/page.tsx"
+grep -n -B 3 -A 30 "@router.get(\"/rooms/{room_id}/messages\")\|@router.post(\"/opt-in\")" app/api/cooperative.py
 
-Paste the real output, every line where these appear, so nothing gets missed.
+grep -n -B 5 -A 30 "function.*Layout\|nav" src/components/layout/Sidebar.tsx | head -40
+
+Paste the real output of both. Confirm the exact real response shape of GET/POST messages, the exact real request body POST expects, the exact real 403 shape for a non-member, and the exact real response of POST /cooperative/opt-in, all confirmed live in batch 1 tonight. Confirm the real Sidebar nav item pattern to add a new entry to.
 
 WHAT THIS IS:
 
-The mini-planner feature was deferred for post-launch given real time constraints and an unresolved bug status, confirmed by Ben directly. Leaving a visible "Plan New Template" button in the live product right now would let real users open a feature that was never confirmed working, which is worse than not offering it. This task only hides it from view, it does not delete the TemplatePlannerModal component definition or any of its logic, since that work should be resumable later without rebuilding from scratch.
+This must be built as an entirely separate component tree from Firm Chat, per the spec's hard requirement confirmed and enforced at the backend layer in batch 1. Do not import useChannels, useMessages, or firmChatApi from the firm-chat directory, even for small pieces, write fresh, parallel versions of any needed logic (date-label formatting, same-day grouping, consecutive-same-author grouping within a short time window, timestamp formatting) directly in the new Cooperative files. These are generic display utilities with no firm-chat-specific coupling in their logic, but importing them from the firm-chat directory would still create an unwanted dependency the spec's isolation principle argues against, write them fresh.
+
+Per spec section 14, avatars cannot use initials since members are pseudonymous. Generate a deterministic color from each message's author_handle string (a simple hash of the string mapped into a small fixed palette is sufficient), so the same handle always renders the same color throughout the room, unlike Firm Chat's simpler per-message-index color cycling, which would incorrectly show different colors for the same person across different messages.
+
+The backend's current message response has no is_jamm_team field per message yet, so a JAMM team badge cannot be built accurately in this batch, do not build one, that's real scope for a later batch once the backend actually returns that field per message.
+
+A user hitting this page needs a real membership check, not an assumption they already have access. Call GET /cooperative/rooms/{main room id}/messages first; if it returns a real 403 (confirmed live tonight as {"detail":"You do not have active access to the Growth Cooperative."}), do not show the message feed at all. Instead, show a real access-gate state: if the current user's role is firm_owner, show a genuine opt-in call to action wired to POST /cooperative/opt-in; for any other role, show a message explaining that Growth Cooperative access is granted by the firm owner, with no action available, since only the owner can grant it per spec section 5.
 
 CHANGE INSTRUCTIONS:
 
-Remove the "Plan New Template" button from the edit-mode toolbar JSX. Remove the <TemplatePlannerModal ... /> render call and the showPlanner state and its setter if they are only used for this button and this modal, confirm they aren't used anywhere else in the file before removing them, if they are used elsewhere leave them and only remove the button and the modal's render call. Do not delete the TemplatePlannerModal function/component definition itself, leave that in the file even though it becomes unused, so it isn't lost. If the build reports an unused-variable or unused-component warning as a result, that is expected and acceptable, do not silence it by deleting the component definition.
+Create frontend/src/lib/api/cooperative.ts, a new, separate API client file, not extending firmChat.ts. Export a CooperativeMessage interface matching the real confirmed response shape (id, room_id, author_handle, body, created_at), and a cooperativeApi object with optIn(), getMessages(roomId), and postMessage(roomId, body).
+
+Fetch the real main room's id, do not hardcode the UUID confirmed live tonight, since that id is environment-specific. If the backend does not yet expose a way to list rooms, add a minimal GET /cooperative/rooms endpoint returning the singleton main room's real id and room_type, gated by the same real membership check as the messages endpoints, confirm whether this already exists before assuming it needs to be added, check the real file.
+
+Create frontend/src/app/(app)/cooperative/page.tsx. Build the message feed: date dividers between days (fresh logic, not imported), consecutive messages from the same author_handle within a short time window grouped without repeating the avatar/handle header (fresh logic, not imported), each message showing its deterministic-colored circle avatar, the real handle text, the message body, and a formatted timestamp. Build a simple compose box at the bottom posting via cooperativeApi.postMessage, clearing on success, appending the new message to the feed without requiring a full refetch.
+
+Add "Growth Cooperative" as a new nav item in the real Sidebar, following the exact real pattern already used for other nav items there.
 
 VERIFY AFTER ACT:
 
 cd /home/corby/jamm-os/frontend
 npm run build
 
-grep -n "Plan New Template" "src/app/(app)/dashboard/page.tsx"
+grep -n "cooperativeApi\|CooperativeMessage" src/lib/api/cooperative.ts
 
-This must return nothing, confirming the button is gone from the toolbar.
+grep -rn "useChannels\|useMessages\|firmChatApi" "src/app/(app)/cooperative/page.tsx"
 
-grep -n "function TemplatePlannerModal" "src/app/(app)/dashboard/page.tsx"
-
-This must still return a real match, confirming the component definition itself was not deleted.
+This last grep must return nothing, confirming no accidental import from the firm-chat directory.
 
 git diff --stat
 
 MANUAL VERIFICATION:
 
-Restart the frontend dev server only. Reload /dashboard, enter Edit Dashboard, confirm the toolbar now shows only Add Widget, Reset to Default, Save as Firm Default (if owner), Save as Template, Load Template, Cancel, Done, with no Plan New Template button anywhere. Confirm every remaining button still works exactly as it did before. Report back with a screenshot of the toolbar.
+Restart the frontend dev server only, backend is already confirmed working from batch 1. Log in as owner@riverside-demo.com, navigate to Growth Cooperative from the sidebar. Since the owner already opted in during batch 1's testing, confirm the real message feed loads showing the real "Hello from the Growth Cooperative!" message with a real handle and a colored avatar, not initials. Post a new message, confirm it appears immediately without a full page reload. Log in as a different real user who has not been granted access, navigate to Growth Cooperative, confirm the real access-gate state appears instead of the message feed, with copy appropriate to their role (not an owner, so no opt-in button, just an explanation). Report back with a screenshot of both states.
 
 GIT:
 
-git add -A
-git commit -m "hide the Plan New Template button and mini-planner modal from the live UI, deferring batch 4e-2 post-launch per Ben's call given the 10 day timeline and the feature's real unresolved bug history tonight. The TemplatePlannerModal component itself is left intact in the file, unused but not deleted, so this work is resumable later without rebuilding from scratch"
-git pull --rebase origin main
-git push origin main
-git log --oneline -3
-
-Paste the real output of git log --oneline -3 showing the new commit hash present next to origin/main. Do not report this as done based on the push command running, confirm the real log output showing origin/main at the new hash.
+Do not commit until Ben confirms both states look and work correctly in the browser.

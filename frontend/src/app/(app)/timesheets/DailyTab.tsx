@@ -6,6 +6,7 @@ import { toast } from 'sonner'
 import { Pencil, Trash2, AlertTriangle, Check, ChevronDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import api from '@/lib/api'
+import { TimeTextInput } from '@/components/ui/TimeTextInput'
 
 export interface DailyTabProps {
   selectedUserId: string | null
@@ -98,6 +99,7 @@ interface Engagement {
 interface Task {
   id: string
   title: string
+  engagement_id: string
   assigned_to?: string
 }
 
@@ -467,6 +469,7 @@ export default function DailyTab({
     if (!form.engagementId) { toast.error('Engagement is required'); return }
     if (!form.activityType) { toast.error('Activity type is required'); return }
     if (!form.hours || parseFloat(form.hours) <= 0) { toast.error('Hours is required'); return }
+    if (!form.taskId) { toast.error('Task is required.'); return }
     if (endTimeError) return
 
     const eng = engagements.find((en) => en.id === form.engagementId)
@@ -474,6 +477,7 @@ export default function DailyTab({
 
     const payload: Record<string, unknown> = {
       engagement_id: form.engagementId,
+      task_id: form.taskId,
       description: form.notes || (form.activityType === 'Other' ? form.customActivity : form.activityType),
       hours: parseFloat(form.hours),
       hourly_rate: eng ? hourlyRate : 0,
@@ -659,7 +663,7 @@ export default function DailyTab({
 
             {/* Task */}
             <div className="flex flex-col gap-1.5" ref={taskRef}>
-              <label className={labelClass}>Task</label>
+              <label className={labelClass}>Task *</label>
               <div className="relative">
                 <button
                   type="button"
@@ -676,8 +680,8 @@ export default function DailyTab({
                 >
                   <span className={form.taskId ? '' : 'text-[#9CA3AF]'}>
                     {form.taskId
-                      ? (tasks.find((t) => t.id === form.taskId)?.title ?? 'Select task (optional)')
-                      : (form.engagementId ? 'Select task (optional)' : 'Select an engagement first')}
+                      ? (tasks.find((t) => t.id === form.taskId)?.title ?? 'Select task')
+                      : (form.engagementId ? 'Select task' : 'Select an engagement first')}
                   </span>
                   <ChevronDown className="h-3.5 w-3.5 text-[#9CA3AF] flex-shrink-0 ml-2" />
                 </button>
@@ -700,7 +704,7 @@ export default function DailyTab({
                     </div>
                     <div className="max-h-48 overflow-y-auto">
                       {tasks
-                        .filter((t) => t.assigned_to === currentUserId)
+                        .filter((t) => t.engagement_id === form.engagementId && t.assigned_to === currentUserId)
                         .filter((t) => !taskSearch || t.title.toLowerCase().includes(taskSearch.toLowerCase()))
                         .map((t) => (
                           <button
@@ -713,7 +717,7 @@ export default function DailyTab({
                           </button>
                         ))}
                       {tasks
-                        .filter((t) => t.assigned_to !== currentUserId)
+                        .filter((t) => t.engagement_id === form.engagementId && t.assigned_to !== currentUserId)
                         .filter((t) => !taskSearch || t.title.toLowerCase().includes(taskSearch.toLowerCase()))
                         .map((t) => (
                           <button
@@ -725,7 +729,7 @@ export default function DailyTab({
                             {t.title}
                           </button>
                         ))}
-                      {tasks.filter((t) => !taskSearch || t.title.toLowerCase().includes(taskSearch.toLowerCase())).length === 0 && (
+                      {tasks.filter((t) => t.engagement_id === form.engagementId && (!taskSearch || t.title.toLowerCase().includes(taskSearch.toLowerCase()))).length === 0 && (
                         <div className="px-3 py-2 text-[13px] text-[#9CA3AF]">
                           {tasks.length === 0 ? 'No tasks found for this engagement' : 'No matching tasks'}
                         </div>
@@ -790,10 +794,9 @@ export default function DailyTab({
             {/* Start time */}
             <div className="flex flex-col gap-1.5">
               <label className={labelClass}>Start Time</label>
-              <input
-                type="time"
+              <TimeTextInput
                 value={form.startTime}
-                onChange={(e) => setForm((f) => ({ ...f, startTime: e.target.value }))}
+                onChange={(v) => setForm((f) => ({ ...f, startTime: v }))}
                 className={inputClass}
               />
             </div>
@@ -801,12 +804,9 @@ export default function DailyTab({
             {/* End time */}
             <div className="flex flex-col gap-1.5">
               <label className={labelClass}>End Time</label>
-              <input
-                type="time"
+              <TimeTextInput
                 value={form.endTime}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, endTime: e.target.value, hoursAutoFilled: true }))
-                }
+                onChange={(v) => setForm((f) => ({ ...f, endTime: v, hoursAutoFilled: true }))}
                 className={cn(inputClass, endTimeError ? 'ring-1 ring-red-500 border-red-400' : '')}
               />
               {endTimeError && (
