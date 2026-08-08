@@ -45,6 +45,25 @@ class PeerNetworkMember(Base):
 
     has_posted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
+    is_muted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    muted_reason: Mapped[str | None] = mapped_column(
+        String(512),
+        nullable=True,
+        default=None,
+    )
+
+    muted_at: Mapped[datetime | None] = mapped_column(
+        nullable=True,
+        default=None,
+    )
+
+    muted_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        default=None,
+    )
+
     granted_by: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,

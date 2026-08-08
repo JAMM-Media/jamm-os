@@ -73,6 +73,8 @@ def list_rooms(
         "total": len(rooms),
         "my_handle": member.handle,
         "has_posted": member.has_posted,
+        "is_muted": member.is_muted,
+        "muted_reason": member.muted_reason,
     }
 
 
@@ -162,6 +164,17 @@ def post_message(
 ):
     # Gate on active PeerNetworkMember status.
     member = get_active_member(db=db, user_id=current_user.id)
+
+    # Separate mute check: muted members can read but not post.
+    if member.is_muted:
+        # appeals@jammpx.com is a placeholder pending a real support inbox.
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                f"Your account has been muted: {member.muted_reason}. "
+                "To appeal, contact appeals@jammpx.com."
+            ),
+        )
 
     room = db.execute(
         select(PeerNetworkRoom).where(PeerNetworkRoom.id == room_id)
@@ -300,6 +313,64 @@ def admin_delete_message(
     db.commit()
 
     return {"deleted": True, "purged": True}
+
+
+# ---------------------------------------------------------------------------
+# POST /peer-network/admin/members/{member_id}/mute  (system admin only)
+# ---------------------------------------------------------------------------
+
+@router.post("/admin/members/{member_id}/mute", status_code=status.HTTP_200_OK)
+def mute_member(
+    member_id: uuid.UUID,
+    body: dict,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_system_admin),
+):
+    reason = (body.get("reason") or "").strip()
+    if not reason:
+        raise HTTPException(status_code=422, detail="A specific reason citing the T&C clause violated is required.")
+
+    member = db.execute(
+        select(PeerNetworkMember).where(PeerNetworkMember.id == member_id)
+    ).scalar_one_or_none()
+
+    if member is None:
+        raise HTTPException(status_code=404, detail="Member not found.")
+
+    from datetime import datetime, timezone
+    member.is_muted = True
+    member.muted_reason = reason
+    member.muted_at = datetime.now(timezone.utc)
+    member.muted_by = admin.id
+    db.commit()
+
+    return {"muted": True, "member_id": str(member.id), "reason": reason}
+
+
+# ---------------------------------------------------------------------------
+# POST /peer-network/admin/members/{member_id}/unmute  (system admin only)
+# ---------------------------------------------------------------------------
+
+@router.post("/admin/members/{member_id}/unmute", status_code=status.HTTP_200_OK)
+def unmute_member(
+    member_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    _admin: User = Depends(require_system_admin),
+):
+    member = db.execute(
+        select(PeerNetworkMember).where(PeerNetworkMember.id == member_id)
+    ).scalar_one_or_none()
+
+    if member is None:
+        raise HTTPException(status_code=404, detail="Member not found.")
+
+    member.is_muted = False
+    member.muted_reason = None
+    member.muted_at = None
+    member.muted_by = None
+    db.commit()
+
+    return {"muted": False, "member_id": str(member.id)}
 
 
 # ---------------------------------------------------------------------------

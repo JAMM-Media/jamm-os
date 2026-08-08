@@ -74,7 +74,7 @@ This section exists because a past session confidently claimed specific files we
 
 # Section 3 - The task
 
-TASK: Add real admin delete-any to Peer Network messages, gated by the existing require_system_admin dependency (already used elsewhere in this codebase, confirmed real, not built fresh). This is the actual mechanism behind the T&C promise shipped tonight that "JAMM may remove any message" — right now no such mechanism exists at all, only author-self-delete.
+TASK: Add real partial mute to Peer Network, per Ben's explicit decision: a muted member can still read the room, but is blocked from posting new messages, per spec sections 9 and 10. This is genuinely separate from is_active (which represents "has real membership at all"), reusing it would incorrectly collapse two different real states into one.
 
 USE: claude fable-5
 
@@ -88,33 +88,52 @@ VERIFY BEFORE ACT:
 
 .venv/bin/alembic heads
 
-grep -n -B 3 -A 15 "def require_system_admin" app/dependencies/roles.py
+grep -n -B 3 -A 25 "def post_message" app/api/peer_network.py
 
-grep -n -B 3 -A 25 "def delete_message" app/api/peer_network.py
+grep -n -B 3 -A 20 "def get_active_member" app/services/peer_network_service.py
 
-Confirm exactly one alembic head. Confirm the real require_system_admin dependency signature. Confirm the real current delete_message endpoint (already confirmed: sets is_deleted True, a soft delete, correctly preserving the row for author-self-delete).
+Confirm exactly one alembic head. Confirm the real current post_message endpoint and get_active_member function before adding a separate, real mute check to the write path only, leaving the read path completely untouched.
 
-WHAT THIS IS, PER THE LOCKED SPEC SECTIONS 9 AND 10:
+WHAT THIS IS, PER THE LOCKED SPEC:
 
-Author self-delete is a soft delete, correct as-is, the row and its real body remain in storage, only the display is masked, since that is genuinely enough for a member managing their own mistake. Admin delete is fundamentally different and must be a real purge: it must remove the message's actual body content from storage entirely, not just flip a flag, because the whole reason admin delete exists is the case where real client-identifying information has been posted, and simply hiding it from display while leaving the real text sitting in the database defeats the actual purpose. The spec is explicit: "Admin delete purges the full record including edit history... it must remove every version, not just the current one."
+Mutes are permanent pending manual appeal. The mute notice must state the specific T&C clause violated (spec section 9's real list: personal responsibility, no client-identifying information, pseudonymous not anonymous, other members may be competitors, permanent mutes pending appeal, messages persist after departure, screenshots expose private labels, JAMM may remove any message) and include a real appeal email address, since a muted member cannot message the team in-product. Muting is a real, separate state from is_active: is_active gates all access (read and write) and currently has no revoke path; mute specifically blocks only posting, confirmed by Ben's real decision, while reading stays open.
 
 CHANGE INSTRUCTIONS:
 
-Add a new endpoint, DELETE /peer-network/admin/messages/{message_id}, gated require_system_admin, completely separate from the existing author-only DELETE /peer-network/messages/{message_id}, do not modify or merge with that existing endpoint, since author-delete and admin-delete are genuinely different operations with different real guarantees, not two paths to the same soft-delete behavior.
+Add to PeerNetworkMember: is_muted (Boolean, default False, nullable False), muted_reason (String, nullable, the specific T&C clause text), muted_at (DateTime with timezone, nullable), muted_by (UUID, ForeignKey users.id, ondelete SET NULL, nullable, the real system_admin who muted them).
 
-This admin endpoint should: set is_deleted True (so it still renders the same "message was deleted" placeholder to everyone, consistent with how author-deleted messages already look), AND overwrite the real body field itself with a fixed placeholder value like "[removed by admin]", actually destroying the real original text content in the database, not just masking it at the display layer the way author-delete does. If this message has ever been edited (edited_at is not null, confirmed real field from earlier tonight), note in the report that real edit history retention doesn't currently exist as a separate mechanism anywhere in this codebase, since messages are edited in place with no version table, so "purge edit history" for this batch simply means the current, final body gets destroyed the same way, there is no separate historical version to also purge given how editing was actually implemented earlier tonight. Do not build a message-version-history table in this task, that is real, separate scope, just handle the real current single-body-field reality correctly and note this limitation plainly in the report rather than silently ignoring it.
+Write the migration by hand, matching tonight's established real structure, down_revision set to the real current head confirmed above.
+
+Add POST /peer-network/admin/members/{member_id}/mute, gated require_system_admin, accepting {reason: str} (the specific T&C clause text, required, not optional, since the spec is explicit a mute notice must cite a specific clause). Sets is_muted True, muted_reason to the provided reason, muted_at to now, muted_by to the calling admin's own user id.
+
+Add POST /peer-network/admin/members/{member_id}/unmute, gated require_system_admin, sets is_muted False, clears muted_reason/muted_at/muted_by back to null/None, representing a real manual appeal reinstatement per spec ("a member who explains and acknowledges can be reinstated").
+
+In post_message specifically, after the existing get_active_member call (which stays completely unchanged, still only checking is_active, still gating read access the same way it always has), add a new, separate check: if member.is_muted is True, raise a real 403 with a clear detail message including the real muted_reason and a real placeholder appeal email, appeals@jammpx.com, flagged in code with a comment that this is a placeholder pending a real support inbox. Do not add this check to list_messages or any read-path endpoint, reading must stay completely open for a muted member per Ben's real decision.
+
+Add is_muted and muted_reason to the response of GET /peer-network/rooms (or wherever real membership state is already exposed to the frontend, matching the existing has_posted pattern from earlier tonight), so the frontend can show the real mute state without needing a separate call.
+
+On the frontend, when the user's own membership state shows is_muted true, replace the normal compose box with a real, clear message showing the specific reason and the real appeal email, instead of a functioning send button. Do not hide the message feed itself, since reading stays open.
 
 VERIFY AFTER ACT:
 
-grep -n "admin/messages\|require_system_admin" app/api/peer_network.py
+grep -n "is_muted\|muted_reason\|muted_at\|muted_by" app/models/peer_network.py
+
+grep -n "admin/members.*mute" app/api/peer_network.py
+
+.venv/bin/alembic heads
+
+This must show exactly one head, the new migration's revision id. Run .venv/bin/alembic upgrade head and confirm it applies with no errors.
 
 cd /home/corby/jamm-os
 python3 -c "from app.main import app; print('app imports cleanly')"
 
+cd frontend
+npm run build
+
 MANUAL VERIFICATION:
 
-Restart the backend. First confirm whether a real system_admin user actually exists in this test environment, check via a real query or ask Ben directly if uncertain, since testing this properly requires real credentials for that role, not just code review. If one exists, use a real token for that account to call the new admin delete endpoint on a real test message, confirm the response succeeds, then call GET /peer-network/rooms/{room_id}/messages as a different real user and confirm the message shows the same "This message was deleted" placeholder as an author-deleted message, proving the display behavior is consistent. Separately, using a real non-admin token (owner or manager), attempt to call the new admin endpoint directly, confirm a real 403, proving this is genuinely gated, not just hidden in the UI. Report every real response. If no real system_admin account exists in this environment, report that plainly and stop, do not fabricate a test or claim success without one.
+Restart both the backend and the frontend. Using the real system_admin token created earlier tonight (testadmin@jammpx.com), mute a real test member (use the manager account, ca968bf9-12a6-41d9-af45-1a52dc477da2, or james, 0e5754bd-612f-4fdc-b276-17e86d5890c7, whichever has a real peer network membership already) with a real reason citing one of the actual spec clauses. Confirm the response succeeds. As that muted user, call GET /peer-network/rooms/{room_id}/messages, confirm it still succeeds (reading stays open). Attempt POST /peer-network/rooms/{room_id}/messages as that same muted user, confirm a real 403 with the real reason and appeal email in the response, not a generic error. Unmute them via the real admin endpoint, confirm posting works again afterward. As a non-admin (owner or manager), attempt to call the mute endpoint directly, confirm a real 403. Report every real response.
 
 GIT:
 
-Do not commit until Ben confirms the real access control and the real body-destruction behavior both work, backed by actual API responses, not a description.
+Do not commit until Ben confirms every real check above with actual API responses, not a description.

@@ -579,18 +579,22 @@ export default function PeerNetworkPage() {
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null)
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
   const [myHasPosted, setMyHasPosted] = useState(false)
+  const [myIsMuted, setMyIsMuted] = useState(false)
+  const [myMutedReason, setMyMutedReason] = useState<string | null>(null)
   const [showFirstPostModal, setShowFirstPostModal] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const composeRef = useRef<HTMLTextAreaElement>(null)
 
   const loadRoom = useCallback(async () => {
     try {
-      const { items, my_handle, has_posted } = await peerNetworkApi.getRooms()
+      const { items, my_handle, has_posted, is_muted, muted_reason } = await peerNetworkApi.getRooms()
       const main = items.find((r) => r.room_type === 'main')
       if (!main) return
       setMainRoomId(main.id)
       setMyHandle(my_handle)
       setMyHasPosted(has_posted)
+      setMyIsMuted(is_muted)
+      setMyMutedReason(muted_reason)
       const { items: msgs } = await peerNetworkApi.getMessages(main.id)
       setMessages(msgs)
       setPageState('ready')
@@ -814,32 +818,47 @@ export default function PeerNetworkPage() {
 
         {/* Compose */}
         <div className="flex-shrink-0">
-          <div className="flex items-center gap-2 rounded-[6px] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] bg-[#F7F7F8] dark:bg-[#383838] px-3 py-2 focus-within:border-[#4A7FA5] transition-colors">
-            <textarea
-              ref={composeRef}
-              className="flex-1 bg-transparent resize-none text-[14px] text-[#1F3148] dark:text-[#EDEEF0] placeholder:text-[#6B7280] focus:outline-none min-h-[20px] max-h-[120px] overflow-y-auto"
-              placeholder="Message Peer Network..."
-              rows={1}
-              value={compose}
-              onChange={(e) => {
-                setCompose(e.target.value)
-                e.target.style.height = 'auto'
-                e.target.style.height = e.target.scrollHeight + 'px'
-              }}
-              onKeyDown={handleKeyDown}
-            />
-            <button
-              onClick={handleSend}
-              disabled={!compose.trim() || sending}
-              className="px-3 h-7 rounded-[6px] bg-[#3A6A94] text-white text-[12px] font-medium hover:opacity-90 transition-opacity disabled:opacity-40"
-            >
-              Send
-            </button>
-          </div>
-          <div className="flex items-center justify-between mt-1 px-1">
-            <p className="text-[11px] text-[#6B7280] dark:text-[#9CA3AF]">Remember: no client-identifying information</p>
-            <p className="text-[11px] text-[#9CA3AF]">Enter to send, Shift+Enter for new line</p>
-          </div>
+          {myIsMuted ? (
+            <div className="rounded-[6px] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] bg-[#F7F7F8] dark:bg-[#383838] px-4 py-3">
+              <p className="text-[13px] font-medium text-[#374151] dark:text-[#EDEEF0] mb-1">Your account has been muted</p>
+              <p className="text-[12px] text-[#6B7280] dark:text-[#9CA3AF] leading-relaxed">
+                {myMutedReason}
+              </p>
+              <p className="text-[12px] text-[#6B7280] dark:text-[#9CA3AF] mt-2">
+                To appeal, contact{' '}
+                <a href="mailto:appeals@jammpx.com" className="text-[#4A7FA5] hover:underline">appeals@jammpx.com</a>.
+              </p>
+            </div>
+          ) : (
+            <>
+              <div className="flex items-center gap-2 rounded-[6px] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] bg-[#F7F7F8] dark:bg-[#383838] px-3 py-2 focus-within:border-[#4A7FA5] transition-colors">
+                <textarea
+                  ref={composeRef}
+                  className="flex-1 bg-transparent resize-none text-[14px] text-[#1F3148] dark:text-[#EDEEF0] placeholder:text-[#6B7280] focus:outline-none min-h-[20px] max-h-[120px] overflow-y-auto"
+                  placeholder="Message Peer Network..."
+                  rows={1}
+                  value={compose}
+                  onChange={(e) => {
+                    setCompose(e.target.value)
+                    e.target.style.height = 'auto'
+                    e.target.style.height = e.target.scrollHeight + 'px'
+                  }}
+                  onKeyDown={handleKeyDown}
+                />
+                <button
+                  onClick={handleSend}
+                  disabled={!compose.trim() || sending}
+                  className="px-3 h-7 rounded-[6px] bg-[#3A6A94] text-white text-[12px] font-medium hover:opacity-90 transition-opacity disabled:opacity-40"
+                >
+                  Send
+                </button>
+              </div>
+              <div className="flex items-center justify-between mt-1 px-1">
+                <p className="text-[11px] text-[#6B7280] dark:text-[#9CA3AF]">Remember: no client-identifying information</p>
+                <p className="text-[11px] text-[#9CA3AF]">Enter to send, Shift+Enter for new line</p>
+              </div>
+            </>
+          )}
         </div>
       </div>
     </>
