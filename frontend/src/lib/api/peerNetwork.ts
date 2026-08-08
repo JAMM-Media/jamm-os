@@ -55,4 +55,9 @@ export const peerNetworkApi = {
   deleteMessage: async (messageId: string): Promise<void> => {
     await api.delete(`/peer-network/messages/${messageId}`)
   },
+
+  acceptTerms: async (): Promise<{ accepted: boolean; terms_accepted_at: string }> => {
+    const { data } = await api.post('/peer-network/accept-terms')
+    return data as { accepted: boolean; terms_accepted_at: string }
+  },
 }

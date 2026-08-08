@@ -13,7 +13,7 @@ from app.dependencies.auth import get_current_user
 from app.dependencies.roles import require_firm_owner
 from app.models.peer_network import PeerNetworkAlias, PeerNetworkMember, PeerNetworkMessage, PeerNetworkRoom
 from app.models.user import User
-from app.services.peer_network_service import get_active_member, grant_access, opt_in_firm
+from app.services.peer_network_service import accept_terms, get_active_member, grant_access, opt_in_firm
 
 router = APIRouter()
 
@@ -41,6 +41,18 @@ def grant_member_access(
     calling_owner: User = Depends(require_firm_owner),
 ):
     return grant_access(db=db, calling_owner=calling_owner, target_user_id=user_id)
+
+
+# ---------------------------------------------------------------------------
+# POST /peer-network/accept-terms
+# ---------------------------------------------------------------------------
+
+@router.post("/accept-terms", status_code=status.HTTP_200_OK)
+def accept_peer_network_terms(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return accept_terms(db=db, user_id=current_user.id)
 
 
 # ---------------------------------------------------------------------------

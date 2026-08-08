@@ -74,9 +74,9 @@ This section exists because a past session confidently claimed specific files we
 
 # Section 3 - The task
 
-TASK: Fix the real root cause of the message-bubble alignment bug, now diagnosed twice with independently matching real measurements: the bubble wrapper's max-w-[70%] is a percentage value, and CSS percentage widths do not participate in a flex item's intrinsic (max-content) size calculation, so the browser computes how much space the row "wants" as if the text were laid out on a single unwrapped line, then visually wraps the text afterward inside that oversized reservation. The earlier min-w-0 fix only controlled shrinking, it could not fix this, since the wrong preferred width was never a shrink problem to begin with. The real fix is replacing the percentage max-width with a fixed pixel value, since a fixed value gives the browser a real, definite reference at intrinsic-sizing time.
+TASK: Add a real Terms and Conditions gate to Peer Network, blocking first access until accepted, per spec section 11, which the app currently does not enforce at all despite two real accounts already having posted messages tonight with zero gate in front of them.
 
-USE: claude sonnet
+USE: claude fable-5
 
 ENVIRONMENT SANITY CHECK:
 
@@ -86,33 +86,50 @@ State plainly that no path in this task resolves against /mnt/c/Users or any Win
 
 VERIFY BEFORE ACT:
 
-grep -n "max-w-\[70%\]" "src/app/(app)/peer-network/page.tsx"
+.venv/bin/alembic heads
 
-Paste the real output, confirming every real location using the percentage max-width, both the own-message and other-person-message code paths, matching the four locations already touched by the min-w-0 fix (lines 263 and 364 specifically, per the last task's confirmed output).
+grep -n -B 3 -A 30 "class PeerNetworkMember" app/models/peer_network.py
 
-WHAT THIS IS:
+grep -n -B 5 -A 20 "def get_active_member" app/services/peer_network_service.py
 
-Two independent real audits tonight measured the identical gap pattern (0px / ~25.6px / ~114px depending on wrap length) both before and after adding min-width: 0. The second audit's own real measurement confirmed the row container's rendered width exceeds the sum of its actual visible children by exactly the missing gap amount, and identified the real cause: max-w-[70%] is a percentage, and per real CSS specification behavior, percentage widths are not used when a flex item's max-content (intrinsic, unwrapped) size is being calculated, since a percentage needs a definite reference size that doesn't exist at that calculation stage. The browser therefore computes the row's preferred width as if the entire sentence were one unbroken line, reserves that much space, and only wraps the visible text afterward, leaving the measured dead space behind. A fixed pixel max-width does not have this ambiguity, since it is already a definite value the browser can use immediately.
+Confirm exactly one alembic head. Confirm the real current PeerNetworkMember fields. Confirm the real get_active_member function, since this is the real single choke point every existing endpoint already calls to check access, and the terms gate needs to hook into this same function rather than duplicating the check elsewhere.
+
+WHAT THIS IS, PER THE LOCKED SPEC SECTION 11:
+
+Terms must be accepted before first access, and must cover at minimum: members are responsible for what they share about themselves and their firms; client-identifying information must never be posted; the room is pseudonymous, not anonymous, and handles persist; other members may include firms in the same geographic market who may recruit staff or compete for clients; grounds for muting and that mutes are permanent pending appeal; messages persist after a member or firm leaves the platform; screenshots publish your own private labels, since a member who screenshots the room exposes the names they have attached to other members, not just the message text; JAMM may remove any message.
+
+The real proposed endpoint from spec section 15 is POST /cooperative/accept-terms, which under tonight's rename becomes POST /peer-network/accept-terms.
 
 CHANGE INSTRUCTIONS:
 
-Replace max-w-[70%] with a fixed pixel value in all real locations confirmed in VERIFY BEFORE ACT, both the own-message and other-person-message bubble wrappers. Use max-w-[420px] as the real fixed value (a reasonable real-world chat-bubble cap, roughly matching what 70% would render as on a typical desktop viewport, without being a percentage). Keep every other class on these elements completely unchanged, this is a single-property swap, not a restructuring.
+Add a terms_accepted_at column to PeerNetworkMember (DateTime, timezone=True, nullable=True). Write the migration by hand, matching tonight's established real structure, down_revision set to the real current head confirmed above.
+
+Add POST /peer-network/accept-terms, gated by real active PeerNetworkMember status via get_active_member. Sets terms_accepted_at to now for the calling user's own member record. Idempotent, if already accepted, do not error, just confirm accepted.
+
+Modify get_active_member (or add a real, explicit check in each endpoint that currently calls it, whichever is the correct single choke point per the real code confirmed above) so that GET and POST on messages, reactions, and any other real content-producing or content-reading endpoint require terms_accepted_at to be non-null, returning a real, distinct 403 with a clear detail message like "Terms and conditions must be accepted before accessing the Peer Network." Opting in and granting access (POST /opt-in, POST /members/{id}/grant) should NOT require terms acceptance themselves, since a member cannot accept terms before they have a member record to accept them on, but every real content endpoint after that point should.
+
+On the frontend, when the access-gate check (already built tonight, the real membership check on page load) reveals the user has active membership but has not yet accepted terms (a new real 403 reason distinguishable from "no membership at all"), show a real terms modal, not the existing owner-opt-in or non-owner-explanation gates. The modal must contain real, complete text covering all 8 real points from the spec listed above, written in plain, direct language, not placeholder text, with a single "I Understand and Agree" button that calls the new accept-terms endpoint, then reloads the real message feed on success.
 
 VERIFY AFTER ACT:
 
-cd /home/corby/jamm-os/frontend
+grep -n "terms_accepted_at" app/models/peer_network.py
+
+grep -n "POST.*accept-terms\|accept_terms" app/api/peer_network.py
+
+.venv/bin/alembic heads
+
+This must show exactly one head, the new migration's revision id. Run .venv/bin/alembic upgrade head and confirm it applies with no errors.
+
+cd /home/corby/jamm-os
+python3 -c "from app.main import app; print('app imports cleanly')"
+
+cd frontend
 npm run build
-
-grep -n "max-w-\[420px\]\|max-w-\[70%\]" "src/app/(app)/peer-network/page.tsx"
-
-The max-w-[70%] grep should return nothing at all now, confirming every instance was actually replaced, not just some.
-
-git diff --stat
 
 MANUAL VERIFICATION:
 
-Restart the frontend dev server only. Reload /peer-network. Report back with a screenshot comparing a short and a long wrapped bubble from the same sender.
+Restart both the backend and the frontend, since this touches both. Using a real token for a user who already has active membership from tonight's testing but has never accepted terms (their terms_accepted_at should be null after the migration adds the column, since it's a new column with no historical value to backfill), confirm GET /peer-network/rooms/{room_id}/messages now returns a real, distinct 403 for terms-not-accepted, not the old membership-based 403. Call POST /peer-network/accept-terms with that same real token, confirm success. Call the messages endpoint again with the same token, confirm it now succeeds. In the real browser, log in as that same user, navigate to Peer Network, confirm the real terms modal appears with the actual full text, not a placeholder, click through it, confirm the real message feed then loads normally. Report every real response and a screenshot of the modal.
 
 GIT:
 
-Do not commit yet. This needs a third real Chrome-extension geometry audit before being treated as fixed, given the first two both reported the bug present with matching real numbers, report the real diff and wait for that independent confirmation before committing.
+Do not commit until Ben confirms the real terms modal text and flow work correctly in the browser.

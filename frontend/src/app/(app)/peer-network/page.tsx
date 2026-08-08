@@ -380,6 +380,73 @@ function MessageBubble({
 }
 
 // ---------------------------------------------------------------------------
+// Terms modal
+// ---------------------------------------------------------------------------
+
+function TermsModal({ onAccept }: { onAccept: () => Promise<void> }) {
+  const [accepting, setAccepting] = useState(false)
+
+  const handleAccept = async () => {
+    setAccepting(true)
+    try {
+      await onAccept()
+    } finally {
+      setAccepting(false)
+    }
+  }
+
+  return (
+    <div className="flex flex-col h-full">
+      <div className="flex items-center gap-2 px-4 h-14 border-b border-[#C8CDD6] dark:border-[#484848]">
+        <Sprout className="h-4 w-4 text-[#6B7280]" />
+        <span className="font-medium text-[15px] text-brand dark:text-[#EDEEF0]">Peer Network</span>
+      </div>
+      <div className="flex-1 overflow-y-auto p-6">
+        <div className="max-w-[560px] mx-auto flex flex-col gap-5">
+          <div>
+            <p className="text-[15px] font-semibold text-[#1F3148] dark:text-[#EDEEF0] mb-1">Before you enter</p>
+            <p className="text-[13px] text-[#6B7280]">Please read and agree to the following before accessing the Peer Network.</p>
+          </div>
+          <ol className="flex flex-col gap-3 list-decimal list-inside marker:text-[#6B7280] marker:text-[13px]">
+            <li className="text-[13px] text-[#1F3148] dark:text-[#EDEEF0] leading-relaxed">
+              <span className="font-medium">You are responsible for what you share.</span> Everything you post about yourself, your firm, your clients, or your business is your responsibility. JAMM does not vet, endorse, or take responsibility for member posts.
+            </li>
+            <li className="text-[13px] text-[#1F3148] dark:text-[#EDEEF0] leading-relaxed">
+              <span className="font-medium">Never post client-identifying information.</span> Do not share any details that could identify a specific client, including names, industries, locations, or descriptions that make a client recognizable. This is a firm boundary, not a guideline.
+            </li>
+            <li className="text-[13px] text-[#1F3148] dark:text-[#EDEEF0] leading-relaxed">
+              <span className="font-medium">This room is pseudonymous, not anonymous.</span> Your handle is permanent and consistent across all your sessions. Other members will recognize patterns in what you share over time. Do not assume you cannot be identified by the content of your posts.
+            </li>
+            <li className="text-[13px] text-[#1F3148] dark:text-[#EDEEF0] leading-relaxed">
+              <span className="font-medium">Other members may be your competitors.</span> The Peer Network includes firms in your geographic market. Members you interact with may recruit your staff, compete for your clients, or both. You participate knowing this.
+            </li>
+            <li className="text-[13px] text-[#1F3148] dark:text-[#EDEEF0] leading-relaxed">
+              <span className="font-medium">Mutes are permanent pending appeal.</span> If your access is muted for violating these terms, the mute does not expire automatically. You may appeal to JAMM, but reinstatement is not guaranteed.
+            </li>
+            <li className="text-[13px] text-[#1F3148] dark:text-[#EDEEF0] leading-relaxed">
+              <span className="font-medium">Messages persist after you leave.</span> If you leave the platform or your firm deactivates, your past messages remain visible to current members. They are not deleted on your departure.
+            </li>
+            <li className="text-[13px] text-[#1F3148] dark:text-[#EDEEF0] leading-relaxed">
+              <span className="font-medium">Screenshots expose your private labels.</span> If you take a screenshot of the Peer Network, any private labels you have attached to other members will appear in your screenshot alongside their messages. You are responsible for what those screenshots reveal about how you have identified others.
+            </li>
+            <li className="text-[13px] text-[#1F3148] dark:text-[#EDEEF0] leading-relaxed">
+              <span className="font-medium">JAMM may remove any message.</span> JAMM reserves the right to remove any message from the Peer Network at any time, for any reason, without prior notice.
+            </li>
+          </ol>
+          <button
+            onClick={handleAccept}
+            disabled={accepting}
+            className="w-full h-10 rounded-[8px] bg-[#3A6A94] text-white text-[14px] font-medium hover:opacity-90 transition-opacity disabled:opacity-40"
+          >
+            {accepting ? 'Saving...' : 'I Understand and Agree'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Access gate states
 // ---------------------------------------------------------------------------
 
@@ -445,7 +512,7 @@ function MemberGate() {
 // Main page
 // ---------------------------------------------------------------------------
 
-type PageState = 'loading' | 'no-access' | 'ready'
+type PageState = 'loading' | 'no-access' | 'needs-terms' | 'ready'
 
 export default function PeerNetworkPage() {
   const { user } = useAuth()
@@ -474,9 +541,13 @@ export default function PeerNetworkPage() {
       setMessages(msgs)
       setPageState('ready')
     } catch (err: unknown) {
-      const status = (err as { response?: { status?: number } })?.response?.status
-      if (status === 403) {
-        setPageState('no-access')
+      const res = (err as { response?: { status?: number; data?: { detail?: string } } })?.response
+      if (res?.status === 403) {
+        if (res?.data?.detail === 'Terms and conditions must be accepted before accessing the Peer Network.') {
+          setPageState('needs-terms')
+        } else {
+          setPageState('no-access')
+        }
       }
     }
   }, [])
@@ -493,6 +564,11 @@ export default function PeerNetworkPage() {
 
   const handleOptIn = async () => {
     await peerNetworkApi.optIn()
+    await loadRoom()
+  }
+
+  const handleAcceptTerms = async () => {
+    await peerNetworkApi.acceptTerms()
     await loadRoom()
   }
 
@@ -574,6 +650,10 @@ export default function PeerNetworkPage() {
         </div>
       </div>
     )
+  }
+
+  if (pageState === 'needs-terms') {
+    return <TermsModal onAccept={handleAcceptTerms} />
   }
 
   // Build grouped bubble list with date dividers.

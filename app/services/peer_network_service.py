@@ -128,7 +128,9 @@ def grant_access(db: Session, calling_owner: User, target_user_id: UUID) -> dict
 
 
 def get_active_member(db: Session, user_id: UUID) -> PeerNetworkMember:
-    """Return the caller's active PeerNetworkMember or raise 403."""
+    """Return the caller's active PeerNetworkMember or raise 403.
+    Also raises a distinct 403 if the member has not accepted terms.
+    """
     member = db.execute(
         select(PeerNetworkMember).where(
             PeerNetworkMember.user_id == user_id,
@@ -141,4 +143,33 @@ def get_active_member(db: Session, user_id: UUID) -> PeerNetworkMember:
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You do not have active access to the Peer Network.",
         )
+
+    if member.terms_accepted_at is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Terms and conditions must be accepted before accessing the Peer Network.",
+        )
+
     return member
+
+
+def accept_terms(db: Session, user_id: UUID) -> dict:
+    """Record terms acceptance for the caller's own member record. Idempotent."""
+    member = db.execute(
+        select(PeerNetworkMember).where(
+            PeerNetworkMember.user_id == user_id,
+            PeerNetworkMember.is_active == True,  # noqa: E712
+        )
+    ).scalar_one_or_none()
+
+    if member is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have active access to the Peer Network.",
+        )
+
+    if member.terms_accepted_at is None:
+        member.terms_accepted_at = datetime.now(timezone.utc)
+        db.commit()
+
+    return {"accepted": True, "terms_accepted_at": member.terms_accepted_at.isoformat()}

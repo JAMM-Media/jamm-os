@@ -48,6 +48,11 @@ class PeerNetworkMember(Base):
         nullable=True,
     )
 
+    terms_accepted_at: Mapped[datetime | None] = mapped_column(
+        nullable=True,
+        default=None,
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         nullable=False,
         default=lambda: datetime.now(timezone.utc),
