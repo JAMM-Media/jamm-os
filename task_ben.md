@@ -74,7 +74,7 @@ This section exists because a past session confidently claimed specific files we
 
 # Section 3 - The task
 
-TASK: Add a real Terms and Conditions gate to Peer Network, blocking first access until accepted, per spec section 11, which the app currently does not enforce at all despite two real accounts already having posted messages tonight with zero gate in front of them.
+TASK: Add the first-post interstitial and persistent composer reminder to Peer Network, per spec section 10, explicitly required alongside the T&C, not separate future scope. Confirmed live tonight: real members can currently post with zero warning about client-identifying information, the exact risk this section exists to reduce.
 
 USE: claude fable-5
 
@@ -88,33 +88,29 @@ VERIFY BEFORE ACT:
 
 .venv/bin/alembic heads
 
-grep -n -B 3 -A 30 "class PeerNetworkMember" app/models/peer_network.py
+grep -n -B 3 -A 25 "def post_message" app/api/peer_network.py
 
-grep -n -B 5 -A 20 "def get_active_member" app/services/peer_network_service.py
+cat "src/app/(app)/peer-network/page.tsx" | grep -n -B 3 -A 15 "handleSend\|Message Peer Network"
 
-Confirm exactly one alembic head. Confirm the real current PeerNetworkMember fields. Confirm the real get_active_member function, since this is the real single choke point every existing endpoint already calls to check access, and the terms gate needs to hook into this same function rather than duplicating the check elsewhere.
+Confirm exactly one alembic head. Confirm the real current post_message endpoint and the real current compose/send flow on the frontend before adding to either.
 
-WHAT THIS IS, PER THE LOCKED SPEC SECTION 11:
+WHAT THIS IS, PER THE LOCKED SPEC SECTION 10:
 
-Terms must be accepted before first access, and must cover at minimum: members are responsible for what they share about themselves and their firms; client-identifying information must never be posted; the room is pseudonymous, not anonymous, and handles persist; other members may include firms in the same geographic market who may recruit staff or compete for clients; grounds for muting and that mutes are permanent pending appeal; messages persist after a member or firm leaves the platform; screenshots publish your own private labels, since a member who screenshots the room exposes the names they have attached to other members, not just the message text; JAMM may remove any message.
-
-The real proposed endpoint from spec section 15 is POST /cooperative/accept-terms, which under tonight's rename becomes POST /peer-network/accept-terms.
+Two separate, real pieces of friction, both required: a first-post interstitial, a one-time modal shown before a member's very first message, stating plainly this is a cross-firm room and client-identifying detail does not belong in it, requiring acknowledgment to continue; and a persistent, quiet reminder in the composer itself, not a blocker, just enough that nobody can claim they forgot which room they were typing in.
 
 CHANGE INSTRUCTIONS:
 
-Add a terms_accepted_at column to PeerNetworkMember (DateTime, timezone=True, nullable=True). Write the migration by hand, matching tonight's established real structure, down_revision set to the real current head confirmed above.
+Add a has_posted boolean to PeerNetworkMember, default False. Write the migration by hand, matching tonight's established real structure, down_revision set to the real current head confirmed above.
 
-Add POST /peer-network/accept-terms, gated by real active PeerNetworkMember status via get_active_member. Sets terms_accepted_at to now for the calling user's own member record. Idempotent, if already accepted, do not error, just confirm accepted.
+In post_message, after the real member is confirmed active and before the message is actually created, check whether member.has_posted is False. If so, do not block the request outright, since the actual enforcement point should be the frontend interstitial requiring acknowledgment before the send even fires, but set member.has_posted to True as part of this same request regardless, so the backend has a reliable, real record independent of frontend state.
 
-Modify get_active_member (or add a real, explicit check in each endpoint that currently calls it, whichever is the correct single choke point per the real code confirmed above) so that GET and POST on messages, reactions, and any other real content-producing or content-reading endpoint require terms_accepted_at to be non-null, returning a real, distinct 403 with a clear detail message like "Terms and conditions must be accepted before accessing the Peer Network." Opting in and granting access (POST /opt-in, POST /members/{id}/grant) should NOT require terms acceptance themselves, since a member cannot accept terms before they have a member record to accept them on, but every real content endpoint after that point should.
+On the frontend, before calling the real send API for the very first time in a session where the member has never posted (check this via a real field returned on the room/member state already available on page load, add has_posted to whatever response already carries membership info if it doesn't already expose it), show a one-time modal: a clear message stating this is a cross-firm room, client-identifying information does not belong in any message, and a single "I Understand, Continue" acknowledgment button. Only after acknowledgment does the actual first message actually send. This should not reappear on subsequent messages or subsequent sessions, since has_posted persists real state.
 
-On the frontend, when the access-gate check (already built tonight, the real membership check on page load) reveals the user has active membership but has not yet accepted terms (a new real 403 reason distinguishable from "no membership at all"), show a real terms modal, not the existing owner-opt-in or non-owner-explanation gates. The modal must contain real, complete text covering all 8 real points from the spec listed above, written in plain, direct language, not placeholder text, with a single "I Understand and Agree" button that calls the new accept-terms endpoint, then reloads the real message feed on success.
+Add a persistent, quiet reminder directly in or immediately adjacent to the compose box, small muted text, something like "Remember: no client-identifying information," always visible, not a modal, not dismissible, matching the muted-text-token styling convention already used throughout this app (#6B7280 light / #9CA3AF dark).
 
 VERIFY AFTER ACT:
 
-grep -n "terms_accepted_at" app/models/peer_network.py
-
-grep -n "POST.*accept-terms\|accept_terms" app/api/peer_network.py
+grep -n "has_posted" app/models/peer_network.py app/api/peer_network.py
 
 .venv/bin/alembic heads
 
@@ -128,8 +124,8 @@ npm run build
 
 MANUAL VERIFICATION:
 
-Restart both the backend and the frontend, since this touches both. Using a real token for a user who already has active membership from tonight's testing but has never accepted terms (their terms_accepted_at should be null after the migration adds the column, since it's a new column with no historical value to backfill), confirm GET /peer-network/rooms/{room_id}/messages now returns a real, distinct 403 for terms-not-accepted, not the old membership-based 403. Call POST /peer-network/accept-terms with that same real token, confirm success. Call the messages endpoint again with the same token, confirm it now succeeds. In the real browser, log in as that same user, navigate to Peer Network, confirm the real terms modal appears with the actual full text, not a placeholder, click through it, confirm the real message feed then loads normally. Report every real response and a screenshot of the modal.
+Restart both the backend and the frontend. Using a real account that has never posted in Peer Network (check has_posted is genuinely false for them first), log in, navigate to Peer Network, type a first message, attempt to send it, confirm the real interstitial appears before it actually sends, acknowledge it, confirm the message then sends for real. Send a second message, confirm the interstitial does not appear again. Confirm the persistent reminder text is visible in or near the compose box at all times, not just before the first message. Report back with a screenshot of both the interstitial and the persistent reminder.
 
 GIT:
 
-Do not commit until Ben confirms the real terms modal text and flow work correctly in the browser.
+Do not commit until Ben confirms both pieces work correctly in the browser.

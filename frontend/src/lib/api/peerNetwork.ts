@@ -26,9 +26,9 @@ export const peerNetworkApi = {
     return data as { peer_network_enabled: boolean; handle: string }
   },
 
-  getRooms: async (): Promise<{ items: PeerNetworkRoom[]; total: number; my_handle: string }> => {
+  getRooms: async (): Promise<{ items: PeerNetworkRoom[]; total: number; my_handle: string; has_posted: boolean }> => {
     const { data } = await api.get('/peer-network/rooms')
-    return data as { items: PeerNetworkRoom[]; total: number; my_handle: string }
+    return data as { items: PeerNetworkRoom[]; total: number; my_handle: string; has_posted: boolean }
   },
 
   getMessages: async (roomId: string, page = 1): Promise<{ items: PeerNetworkMessage[]; total: number }> => {

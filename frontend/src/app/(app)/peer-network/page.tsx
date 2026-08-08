@@ -380,6 +380,57 @@ function MessageBubble({
 }
 
 // ---------------------------------------------------------------------------
+// First-post interstitial
+// ---------------------------------------------------------------------------
+
+function FirstPostModal({ onConfirm, onCancel }: { onConfirm: () => Promise<void>; onCancel: () => void }) {
+  const [confirming, setConfirming] = useState(false)
+
+  const handleConfirm = async () => {
+    setConfirming(true)
+    try {
+      await onConfirm()
+    } finally {
+      setConfirming(false)
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/30"
+      onClick={(e) => { if (e.target === e.currentTarget) onCancel() }}
+    >
+      <div className="bg-white dark:bg-[#2D2D2D] rounded-[10px] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] shadow-lg w-[380px] p-5 flex flex-col gap-4">
+        <div className="flex flex-col gap-1">
+          <p className="text-[14px] font-semibold text-[#1F3148] dark:text-[#EDEEF0]">Before you post</p>
+          <p className="text-[13px] text-[#6B7280] leading-relaxed">
+            The Peer Network is a shared room with members from other firms, including firms in your market. Every message you post is visible to all members.
+          </p>
+          <p className="text-[13px] text-[#6B7280] leading-relaxed mt-1">
+            Client-identifying information does not belong here. Do not include names, descriptions, or any detail that could identify a specific client.
+          </p>
+        </div>
+        <div className="flex items-center gap-2 justify-end">
+          <button
+            onClick={onCancel}
+            className="px-3 h-8 rounded-[6px] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] text-[12px] text-[#6B7280] hover:bg-[#F7F7F8] dark:hover:bg-[#383838] transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleConfirm}
+            disabled={confirming}
+            className="px-3 h-8 rounded-[6px] bg-[#3A6A94] text-white text-[12px] font-medium hover:opacity-90 transition-opacity disabled:opacity-40"
+          >
+            {confirming ? 'Sending...' : 'I Understand, Continue'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Terms modal
 // ---------------------------------------------------------------------------
 
@@ -527,16 +578,19 @@ export default function PeerNetworkPage() {
   const [aliasTarget, setAliasTarget] = useState<{ memberId: string; currentLabel: string } | null>(null)
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null)
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
+  const [myHasPosted, setMyHasPosted] = useState(false)
+  const [showFirstPostModal, setShowFirstPostModal] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const composeRef = useRef<HTMLTextAreaElement>(null)
 
   const loadRoom = useCallback(async () => {
     try {
-      const { items, my_handle } = await peerNetworkApi.getRooms()
+      const { items, my_handle, has_posted } = await peerNetworkApi.getRooms()
       const main = items.find((r) => r.room_type === 'main')
       if (!main) return
       setMainRoomId(main.id)
       setMyHandle(my_handle)
+      setMyHasPosted(has_posted)
       const { items: msgs } = await peerNetworkApi.getMessages(main.id)
       setMessages(msgs)
       setPageState('ready')
@@ -572,7 +626,7 @@ export default function PeerNetworkPage() {
     await loadRoom()
   }
 
-  const handleSend = async () => {
+  const doSend = async () => {
     if (!compose.trim() || !mainRoomId || sending) return
     setSending(true)
     try {
@@ -580,9 +634,24 @@ export default function PeerNetworkPage() {
       setMessages((prev) => [...prev, msg])
       setCompose('')
       if (composeRef.current) { composeRef.current.style.height = 'auto' }
+      setMyHasPosted(true)
     } finally {
       setSending(false)
     }
+  }
+
+  const handleSend = async () => {
+    if (!compose.trim() || !mainRoomId || sending) return
+    if (!myHasPosted) {
+      setShowFirstPostModal(true)
+      return
+    }
+    await doSend()
+  }
+
+  const handleFirstPostConfirm = async () => {
+    setShowFirstPostModal(false)
+    await doSend()
   }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -705,6 +774,13 @@ export default function PeerNetworkPage() {
         />
       )}
 
+      {showFirstPostModal && (
+        <FirstPostModal
+          onConfirm={handleFirstPostConfirm}
+          onCancel={() => setShowFirstPostModal(false)}
+        />
+      )}
+
       <ConfirmModal
         open={confirmDeleteId !== null}
         message="Delete this message? It will show as deleted to everyone."
@@ -760,7 +836,10 @@ export default function PeerNetworkPage() {
               Send
             </button>
           </div>
-          <p className="text-[11px] text-[#9CA3AF] mt-1 px-1">Enter to send, Shift+Enter for new line</p>
+          <div className="flex items-center justify-between mt-1 px-1">
+            <p className="text-[11px] text-[#6B7280] dark:text-[#9CA3AF]">Remember: no client-identifying information</p>
+            <p className="text-[11px] text-[#9CA3AF]">Enter to send, Shift+Enter for new line</p>
+          </div>
         </div>
       </div>
     </>

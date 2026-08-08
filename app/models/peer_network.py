@@ -43,6 +43,8 @@ class PeerNetworkMember(Base):
 
     is_jamm_team: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
+    has_posted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
     granted_by: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,

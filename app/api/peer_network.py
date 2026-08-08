@@ -72,6 +72,7 @@ def list_rooms(
         "items": [{"id": str(r.id), "room_type": r.room_type, "name": r.name} for r in rooms],
         "total": len(rooms),
         "my_handle": member.handle,
+        "has_posted": member.has_posted,
     }
 
 
@@ -172,6 +173,9 @@ def post_message(
     text = (body.get("body") or "").strip()
     if not text:
         raise HTTPException(status_code=422, detail="Message body cannot be empty.")
+
+    if not member.has_posted:
+        member.has_posted = True
 
     message = PeerNetworkMessage(
         room_id=room_id,
