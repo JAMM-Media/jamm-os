@@ -74,7 +74,7 @@ This section exists because a past session confidently claimed specific files we
 
 # Section 3 - The task
 
-TASK: Fix a real migration bug reported by Andrew, blocking his deployment. The singleton main-room seed INSERT in migrations/versions/w1x2y3z4a5b6_add_growth_cooperative.py binds the id parameter as a plain Python string with no type annotation, which Postgres correctly rejects on a genuinely clean database (column is uuid, expression is character varying, no implicit cast). This only appeared to work in this session's own earlier testing because that database already had other UUID columns established in a way that happened to mask the type mismatch, not because the migration was actually correct.
+TASK: Fix the real root cause of the message-bubble alignment bug, now diagnosed twice with independently matching real measurements: the bubble wrapper's max-w-[70%] is a percentage value, and CSS percentage widths do not participate in a flex item's intrinsic (max-content) size calculation, so the browser computes how much space the row "wants" as if the text were laid out on a single unwrapped line, then visually wraps the text afterward inside that oversized reservation. The earlier min-w-0 fix only controlled shrinking, it could not fix this, since the wrong preferred width was never a shrink problem to begin with. The real fix is replacing the percentage max-width with a fixed pixel value, since a fixed value gives the browser a real, definite reference at intrinsic-sizing time.
 
 USE: claude sonnet
 
@@ -86,60 +86,33 @@ State plainly that no path in this task resolves against /mnt/c/Users or any Win
 
 VERIFY BEFORE ACT:
 
-grep -n -B 5 -A 15 "op.execute" migrations/versions/w1x2y3z4a5b6_add_growth_cooperative.py
+grep -n "max-w-\[70%\]" "src/app/(app)/peer-network/page.tsx"
 
-.venv/bin/alembic heads
-
-Paste the real output of both. Confirm the exact real current seed INSERT block matches what Andrew reported, and confirm the current real alembic head.
+Paste the real output, confirming every real location using the percentage max-width, both the own-message and other-person-message code paths, matching the four locations already touched by the min-w-0 fix (lines 263 and 364 specifically, per the last task's confirmed output).
 
 WHAT THIS IS:
 
-sa.text(...).bindparams(id=str(uuid.uuid4()), ...) binds id with no type information, so SQLAlchemy sends it to Postgres as a plain string, and Postgres will not implicitly cast VARCHAR to UUID even though the value is a syntactically valid UUID string. The real fix is telling SQLAlchemy the real column type via bindparams' type_ argument, using sqlalchemy.dialects.postgresql.UUID or the generic sqlalchemy Uuid type already used elsewhere in this codebase's migrations tonight (sa.Uuid()), so the parameter gets bound with real type information and Postgres receives a genuine UUID value, not a string it has to guess about.
+Two independent real audits tonight measured the identical gap pattern (0px / ~25.6px / ~114px depending on wrap length) both before and after adding min-width: 0. The second audit's own real measurement confirmed the row container's rendered width exceeds the sum of its actual visible children by exactly the missing gap amount, and identified the real cause: max-w-[70%] is a percentage, and per real CSS specification behavior, percentage widths are not used when a flex item's max-content (intrinsic, unwrapped) size is being calculated, since a percentage needs a definite reference size that doesn't exist at that calculation stage. The browser therefore computes the row's preferred width as if the entire sentence were one unbroken line, reserves that much space, and only wraps the visible text afterward, leaving the measured dead space behind. A fixed pixel max-width does not have this ambiguity, since it is already a definite value the browser can use immediately.
 
 CHANGE INSTRUCTIONS:
 
-Add explicit type_=sa.Uuid() (matching the exact same type already used for every other UUID column in this and every other migration written tonight, for consistency) to the id bindparam in this seed INSERT. The real fix is something like bindparams(sa.bindparam('id', type_=sa.Uuid()), room_type=..., name=...), or the equivalent explicit-type form that matches how this codebase's other migrations already construct typed bind parameters, check for a real existing pattern to match rather than inventing new syntax.
-
-Since Andrew's report confirms this specific migration has never actually succeeded on any clean database (both his local and production are still at t7u8v9w0x1y2, this migration was never truly applied anywhere except this session's own already-populated development database), this fix should be made directly in the existing migration file, not as a new follow-up migration, since nothing real depends on the broken version existing as history anywhere outside this one machine.
+Replace max-w-[70%] with a fixed pixel value in all real locations confirmed in VERIFY BEFORE ACT, both the own-message and other-person-message bubble wrappers. Use max-w-[420px] as the real fixed value (a reasonable real-world chat-bubble cap, roughly matching what 70% would render as on a typical desktop viewport, without being a percentage). Keep every other class on these elements completely unchanged, this is a single-property swap, not a restructuring.
 
 VERIFY AFTER ACT:
 
-grep -n "type_=sa.Uuid()\|bindparam" migrations/versions/w1x2y3z4a5b6_add_growth_cooperative.py
+cd /home/corby/jamm-os/frontend
+npm run build
 
-cd /home/corby/jamm-os
-python3 -c "from app.main import app; print('app imports cleanly')"
+grep -n "max-w-\[420px\]\|max-w-\[70%\]" "src/app/(app)/peer-network/page.tsx"
 
-MANUAL VERIFICATION, THE REAL TEST ANDREW ACTUALLY NEEDS:
+The max-w-[70%] grep should return nothing at all now, confirming every instance was actually replaced, not just some.
 
-This must be verified against a genuinely clean database state, not the existing development database, since that's precisely what masked this bug the first time. Downgrade this specific migration and everything after it back to the prior real head, then re-run upgrade head from that point, to simulate what Andrew's clean database will actually experience:
+git diff --stat
 
-.venv/bin/alembic downgrade w1x2y3z4a5b6-1
+MANUAL VERIFICATION:
 
-(or the real correct down-revision one step before this migration, confirm the real correct target from alembic history if this exact syntax is wrong for this alembic version)
-
-.venv/bin/alembic upgrade head
-
-Confirm this now succeeds with no DatatypeMismatch error, this is the real proof the fix works, not just that the file's syntax changed. Report the real, complete output of the upgrade command.
-
-python3 -c "
-import sys
-sys.path.insert(0, '/home/corby/jamm-os')
-from app.db.session import SessionLocal
-from app.models.cooperative import CooperativeRoom
-db = SessionLocal()
-rooms = db.query(CooperativeRoom).all()
-print('rooms after re-migration:', [(r.id, r.room_type) for r in rooms])
-db.close()
-"
-
-Confirm exactly one real main room still exists, proving the seed insert itself still works correctly with the fix, not just that it no longer errors.
+Restart the frontend dev server only. Reload /peer-network. Report back with a screenshot comparing a short and a long wrapped bubble from the same sender.
 
 GIT:
 
-git add -A
-git commit -m "fix a real migration bug reported by Andrew: the singleton main-room seed INSERT in the Growth Cooperative migration bound its id parameter as a plain untyped string, which Postgres correctly rejects on a genuinely clean database with a real DatatypeMismatch error, since VARCHAR cannot implicitly cast to UUID. This migration had never actually succeeded on any clean database, including Andrew's local machine and production, both still at the prior head. Fixed by explicitly typing the bind parameter as sa.Uuid(), matching the same type already used for every other UUID column in this codebase's migrations. Verified by downgrading and re-running the migration from a clean state, not just re-running it against an already-migrated database, which is what masked this bug the first time"
-git pull --rebase origin main
-git push origin main
-git log --oneline -3
-
-Paste the real output of git log --oneline -3 showing the new commit hash present next to origin/main.
+Do not commit yet. This needs a third real Chrome-extension geometry audit before being treated as fixed, given the first two both reported the bug present with matching real numbers, report the real diff and wait for that independent confirmation before committing.

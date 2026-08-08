@@ -197,7 +197,10 @@ function MessageBubble({
       setEditValue(message.body)
       setTimeout(() => {
         editRef.current?.focus()
-        editRef.current?.select()
+        if (editRef.current) {
+          editRef.current.selectionStart = editRef.current.value.length
+          editRef.current.selectionEnd = editRef.current.value.length
+        }
       }, 0)
     }
   }, [isEditing, message.body])
@@ -235,7 +238,7 @@ function MessageBubble({
   if (isOwn) {
     return (
       <div className="flex justify-end px-3 py-[2px] group">
-        <div className="flex items-end gap-2">
+        <div className="flex items-end gap-2 min-w-0">
           {/* Edit/delete actions -- visible on hover, own messages only */}
           <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity mb-1">
             {!isEditing && (
@@ -257,9 +260,9 @@ function MessageBubble({
               </>
             )}
           </div>
-          <div className="flex flex-col items-end max-w-[70%]">
+          <div className="flex flex-col items-end max-w-[420px] min-w-0">
             {isEditing ? (
-              <div className="flex flex-col min-w-[120px] max-w-[70%]">
+              <div className="flex flex-col min-w-[120px] max-w-[420px]">
                 <div style={{ display: 'grid' }} className="min-w-[80px] w-full">
                   <textarea
                     ref={editRef}
@@ -356,9 +359,9 @@ function MessageBubble({
     )
 
   return (
-    <div className="flex items-end gap-2 px-3 py-[2px]">
+    <div className="flex items-end gap-2 min-w-0 px-3 py-[2px]">
       {avatarElement}
-      <div className="flex flex-col max-w-[70%]">
+      <div className="flex flex-col max-w-[420px] min-w-0">
         {authorElement}
         <div className="bg-white dark:bg-[#444444] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] text-[#1F3148] dark:text-[#EDEEF0] rounded-[18px] px-4 py-2 text-[14px] leading-relaxed whitespace-pre-wrap break-words">
           {message.body}
@@ -458,6 +461,7 @@ export default function PeerNetworkPage() {
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null)
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
+  const composeRef = useRef<HTMLTextAreaElement>(null)
 
   const loadRoom = useCallback(async () => {
     try {
@@ -499,6 +503,7 @@ export default function PeerNetworkPage() {
       const msg = await peerNetworkApi.postMessage(mainRoomId, compose.trim())
       setMessages((prev) => [...prev, msg])
       setCompose('')
+      if (composeRef.current) { composeRef.current.style.height = 'auto' }
     } finally {
       setSending(false)
     }
@@ -655,11 +660,16 @@ export default function PeerNetworkPage() {
         <div className="flex-shrink-0">
           <div className="flex items-center gap-2 rounded-[6px] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] bg-[#F7F7F8] dark:bg-[#383838] px-3 py-2 focus-within:border-[#4A7FA5] transition-colors">
             <textarea
-              className="flex-1 bg-transparent resize-none text-[14px] text-[#1F3148] dark:text-[#EDEEF0] placeholder:text-[#6B7280] focus:outline-none min-h-[20px] max-h-[120px]"
+              ref={composeRef}
+              className="flex-1 bg-transparent resize-none text-[14px] text-[#1F3148] dark:text-[#EDEEF0] placeholder:text-[#6B7280] focus:outline-none min-h-[20px] max-h-[120px] overflow-y-auto"
               placeholder="Message Peer Network..."
               rows={1}
               value={compose}
-              onChange={(e) => setCompose(e.target.value)}
+              onChange={(e) => {
+                setCompose(e.target.value)
+                e.target.style.height = 'auto'
+                e.target.style.height = e.target.scrollHeight + 'px'
+              }}
               onKeyDown={handleKeyDown}
             />
             <button
