@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.crud import irs_authorization as crud_auth
+from app.crud import irs_authorization_warning as crud_warning
 from app.db.session import get_db
 from app.dependencies.auth import get_current_user
 from app.dependencies.roles import require_manager_or_above
@@ -20,6 +21,7 @@ from app.schemas.irs_authorization import (
     IrsAuthorizationSendRequest,
     IrsAuthorizationUpdate,
 )
+from app.schemas.irs_authorization_warning import IrsAuthorizationWarningLadderItem
 from app.services.irs_auth_service import (
     send_irs_authorization,
     check_expiring_authorizations,
@@ -175,6 +177,42 @@ def get_irs_authorization(
     return auth
 
 
+@router.get("/{auth_id}/warnings", response_model=list[IrsAuthorizationWarningLadderItem])
+def list_irs_authorization_warnings(
+    auth_id: UUID,
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    _: User = Depends(require_manager_or_above),
+):
+    """
+    The expiry warning ladder for one authorization: which tiers fired and
+    when, most recent first.
+
+    Read only. The nightly sweep writes these rows and nothing else may, so
+    this endpoint has no side effects at all, not even a lazy backfill.
+
+    Returns [] for an authorization that exists but has had no warning yet,
+    which is the ordinary state of a freshly signed one. An empty ladder is
+    an answer, not a missing resource, so it is a 200 rather than a 404.
+
+    404 for an authorization belonging to another firm, never 403. A 403
+    would confirm the row exists, which tells firm B that firm A holds an
+    authorization with that id.
+
+    Deliberately per-authorization. There is no list-across-all variant. The
+    Morning Briefing may eventually want one, and it should be built then,
+    against what it actually needs.
+    """
+    auth = crud_auth.get_irs_authorization(db, auth_id, current_firm.id)
+    if not auth:
+        raise HTTPException(status_code=404, detail="IRS authorization not found")
+    return crud_warning.list_warnings_for_authorization(
+        db=db,
+        firm_id=current_firm.id,
+        authorization_id=auth_id,
+    )
+
+
 @router.patch("/{auth_id}", response_model=IrsAuthorizationOut)
 def update_irs_authorization(
     auth_id: UUID,
@@ -185,7 +223,20 @@ def update_irs_authorization(
 ):
     """
     Update an IRS authorization record.
-    Used by the webhook handler to mark as active.
+
+    Everything except status. Tax years, dates, notes and the two document
+    links are ordinary fields. status is not, because moving a row to active
+    has to retire what it replaces, so it moves only through signature
+    activation or the nightly expiry sweep. A request carrying status gets a
+    422 naming those paths rather than a silent no-op. See
+    IrsAuthorizationUpdate.
+
+    The old note here said the webhook handler used this endpoint to mark an
+    authorization active. It does not, and had not for some time: the signed
+    webhook lands in esign_service, which calls
+    activate_authorization_for_envelope directly, and that is the path which
+    runs supersession.
+
     Changing valid_until resets the expiry warning ladder, which is why this
     goes through the service layer rather than straight to CRUD.
     """

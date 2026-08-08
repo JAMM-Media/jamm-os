@@ -9,10 +9,12 @@ rule that the 400 message never claims nothing is on file when a record
 exists.
 
 Fixtures that need a status other than what the API writes set it directly on
-the row. PATCH /irs-authorizations/{id} sets status without running the
-supersede logic, so it cannot produce a superseded row at all: those go
-through activate_authorization_for_envelope, which is the only code path that
-supersedes anything.
+the row. Since Phase F2 there is no API path that writes status at all except
+signature activation and the nightly sweep: PATCH /irs-authorizations/{id}
+used to accept it, and set it without running the supersede logic, which is
+why the field was removed. Superseded rows only ever come from
+activate_authorization_for_envelope, the one code path that supersedes
+anything.
 """
 
 from datetime import date, timedelta
@@ -50,11 +52,11 @@ def set_status(auth_id, status, valid_until=...):
     """
     Write status straight onto the row.
 
-    'expired' and 'revoked' are written by the nightly sweep and by a manual
-    PATCH respectively, neither of which is what these tests are exercising.
-    Going direct keeps the fixture about the state, not about how it was
-    reached. valid_until is only touched when passed, so the sentinel
-    distinguishes "leave it alone" from "set it to None".
+    'expired' is written by the nightly sweep, and 'revoked' has no code path
+    writing it yet. Neither is what these tests are exercising. Going direct
+    keeps the fixture about the state, not about how it was reached.
+    valid_until is only touched when passed, so the sentinel distinguishes
+    "leave it alone" from "set it to None".
     """
     db = TestingSessionLocal()
     try:

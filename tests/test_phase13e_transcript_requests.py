@@ -1,9 +1,18 @@
 # tests/test_phase13e_transcript_requests.py
 """
 Phase 13E — Transcript Request tests.
+
+These tests care about the transcript gate, not about how an authorization
+came to be active. Since Phase F2 the status column is written straight onto
+the row here: PATCH /irs-authorizations/{id} no longer accepts status,
+because activating through it skipped the supersede logic.
 """
 
-from uuid import uuid4
+from uuid import UUID, uuid4
+
+from tests.conftest import TestingSessionLocal
+
+from app.models.irs_authorization import IrsAuthorization
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -14,8 +23,21 @@ def make_client(client, headers, name="Transcript Client"):
     return r.json()["id"]
 
 
+def set_status(auth_id, status):
+    """Write status straight onto the row. Mirrors the helper in
+    tests/test_irs_auth_state_resolution.py."""
+    db = TestingSessionLocal()
+    try:
+        auth = db.get(IrsAuthorization, UUID(auth_id))
+        assert auth is not None
+        auth.status = status
+        db.commit()
+    finally:
+        db.close()
+
+
 def send_8821(client, headers, client_id, activate=True):
-    """Send an 8821 and optionally activate it (simulate webhook)."""
+    """Send an 8821 and optionally activate it (simulate the signed webhook)."""
     r = client.post("/irs-authorizations/send", json={
         "client_id": client_id,
         "form_type": "8821",
@@ -25,11 +47,7 @@ def send_8821(client, headers, client_id, activate=True):
     auth_id = r.json()["id"]
 
     if activate:
-        client.patch(
-            f"/irs-authorizations/{auth_id}",
-            json={"status": "active"},
-            headers=headers,
-        )
+        set_status(auth_id, "active")
     return auth_id
 
 
