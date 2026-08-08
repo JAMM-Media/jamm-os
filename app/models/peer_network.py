@@ -107,6 +107,13 @@ class PeerNetworkMessage(Base):
         default=lambda: datetime.now(timezone.utc),
     )
 
+    edited_at: Mapped[datetime | None] = mapped_column(
+        nullable=True,
+        default=None,
+    )
+
+    is_deleted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
 
 class PeerNetworkAlias(Base):
     """Per-viewer private label for another member's handle.
