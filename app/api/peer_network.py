@@ -564,6 +564,17 @@ def post_message(
     # Send in-app notifications to mentioned members.
     # appeals@jammpx.com is a placeholder; NotificationService failure must not
     # abort the message send.
+    if room.room_type == "dm":
+        room_description = "in a direct message"
+    elif room.room_type == "announcements":
+        room_description = "in the Peer Network Announcements room"
+    elif room.room_type == "subgroup" and room.name:
+        room_description = f"in the group {room.name}"
+    elif room.room_type == "subgroup":
+        room_description = "in a group conversation"
+    else:
+        room_description = "in the Peer Network main room"
+
     for mentioned in mention_members:
         if mentioned.id == member.id:
             continue  # no self-notification
@@ -574,7 +585,7 @@ def post_message(
                 recipient_id=mentioned.user_id,
                 recipient_type=RecipientType.staff,
                 title="You were mentioned in the Peer Network",
-                body=f"{member.handle} mentioned you in the Peer Network main room.",
+                body=f"{member.handle} mentioned you {room_description}.",
                 notification_type=NotificationType.peer_network_mention,
             )
         except Exception:

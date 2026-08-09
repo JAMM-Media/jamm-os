@@ -74,7 +74,7 @@ This section exists because a past session confidently claimed specific files we
 
 # Section 3 - The task
 
-TASK: Fix real, confirmed low-contrast mention highlighting in Peer Network, per Ben's live feedback across both light and dark mode. renderBody currently applies one fixed color pair regardless of which bubble it renders inside, but own messages (dark blue background, #3A6A94) and other-person messages (light/white background) need genuinely different, appropriately contrasting highlight treatments, not one color trying to serve both.
+TASK: Fix a real, confirmed bug in Peer Network's mention notifications: the notification body text is hardcoded to say "mentioned you in the Peer Network main room," regardless of which real room the mention actually happened in. Confirmed live tonight that mentions work correctly inside DMs and subgroups too, so this message is factually wrong whenever a mention fires outside Main.
 
 USE: claude sonnet
 
@@ -86,33 +86,33 @@ State plainly that no path in this task resolves against /mnt/c/Users or any Win
 
 VERIFY BEFORE ACT:
 
-grep -n -B 3 -A 10 "function renderBody" "src/app/(app)/peer-network/page.tsx"
+grep -n -B 40 "peer_network_mention" app/api/peer_network.py | grep -n "room ="
 
-grep -n "renderBody(message.body)" "src/app/(app)/peer-network/page.tsx"
-
-Paste the real output of both, confirming the exact real current function signature and both real call sites (own-message bubble at bg-[#3A6A94], other-person bubble at bg-white dark:bg-[#444444]).
+Paste the real output. Confirm the exact real variable name and structure of the room object already in scope at the point the notification is created (confirmed nearby in this same function via room_id usage), specifically its room_type and name fields, since the fix needs to reference the real room, not assume its shape.
 
 WHAT THIS IS:
 
-The current highlight color (#2A5A84 light / #7EB8E4 dark) was likely chosen against the light other-person bubble and works reasonably there, but the same color applied inside the dark blue own-message bubble reads as low-contrast, confirmed worse specifically in light mode by Ben live. Own messages need a highlight treatment that stands out clearly against a dark blue background specifically, for example a bright white or near-white bold treatment, distinct from the body text's own white color via weight/underline rather than a different hue that might not have enough contrast range available against dark blue in both color modes.
+A real notification row is confirmed created correctly (verified live tonight with a real database query), this is not a notification-delivery bug, purely a wrong, hardcoded description of where the mention happened.
 
 CHANGE INSTRUCTIONS:
 
-Add an isOwn: boolean parameter to renderBody. Update both real call sites to pass isOwn (the own-message call site already has isOwn available in its enclosing scope, the other-person call site should pass false explicitly or omit it with a default). Inside renderBody, when isOwn is true, use a highlight treatment with real, sufficient contrast against the dark blue #3A6A94 background in both light and dark mode, for example white text with font-semibold plus underline, or a distinctly brighter accent color confirmed to have real contrast against #3A6A94, use good judgment on the exact real value but the result must be clearly, visibly distinguishable from the surrounding white body text, not just barely different. When isOwn is false, keep the existing #2A5A84 light / #7EB8E4 dark treatment, since that was only confirmed problematic for own messages, not other-person messages.
+Replace the hardcoded "mentioned you in the Peer Network main room" with real, accurate text based on the actual room's real type: for room_type "main", keep the existing "main room" wording. For "announcements", say "the Announcements room" (even though members can't post there, a mention could theoretically still be resolved from history, handle gracefully regardless). For "dm", say something like "you in a private message" or "you in a direct message", since DMs are never named per spec, do not attempt to reference a name. For "subgroup", use the room's real name field, for example "mentioned you in [real group name]".
 
 VERIFY AFTER ACT:
 
-cd /home/corby/jamm-os/frontend
-npm run build
+cd /home/corby/jamm-os
+python3 -c "from app.main import app; print('app imports cleanly')"
 
-grep -n "function renderBody\|renderBody(message.body" "src/app/(app)/peer-network/page.tsx"
+grep -n "room.room_type\|room.name" app/api/peer_network.py | grep -B 2 -A 2 -i notif
 
 git diff --stat
 
+This should be a small, targeted diff.
+
 MANUAL VERIFICATION:
 
-Restart the frontend dev server only. Reload /peer-network in light mode, confirm a mention inside one of your own messages is now clearly, visibly distinguishable from the surrounding message text, not faint. Switch to dark mode, confirm the same for your own messages, and confirm other-person messages (which were already reported as fine) still look correct and unchanged in both modes. Report back with a screenshot in both light and dark mode.
+Restart the backend. Send a real mention inside the real DM created earlier tonight (9e849c0f-7e9b-4400-9dfd-f245a5221e2b), then query the database directly for the resulting real Notification row, confirm its body text now correctly references the DM, not "main room". Send a real mention inside Main room again, confirm that notification's text is still correct and unchanged for that case. Report the real database query results for both.
 
 GIT:
 
-Do not commit until Ben confirms the contrast is genuinely fixed in both light and dark mode in the browser.
+Do not commit until Ben confirms both real notification bodies are correct with actual query output, not a description.
