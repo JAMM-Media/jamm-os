@@ -74,7 +74,7 @@ This section exists because a past session confidently claimed specific files we
 
 # Section 3 - The task
 
-TASK: Fix the real sidebar-toggle "jump" in Peer Network, confirmed live by Ben as a separate issue from the just-fixed bubble-stretching bug. Real theory, worth confirming before applying: the sidebar's width is animated via transition-all from w-8 to w-52, and animating a flex sibling's width forces the adjacent message feed to continuously reflow text line-wrapping for the full duration of the animation, which reads as a visible jump.
+TASK: Fix real, confirmed low-contrast mention highlighting in Peer Network, per Ben's live feedback across both light and dark mode. renderBody currently applies one fixed color pair regardless of which bubble it renders inside, but own messages (dark blue background, #3A6A94) and other-person messages (light/white background) need genuinely different, appropriately contrasting highlight treatments, not one color trying to serve both.
 
 USE: claude sonnet
 
@@ -86,33 +86,33 @@ State plainly that no path in this task resolves against /mnt/c/Users or any Win
 
 VERIFY BEFORE ACT:
 
-grep -n "transition-all.*sidebarCollapsed\|sidebarCollapsed.*transition" "src/app/(app)/peer-network/page.tsx"
+grep -n -B 3 -A 10 "function renderBody" "src/app/(app)/peer-network/page.tsx"
 
-Paste the real output. Confirm the exact real current sidebar container classes, specifically the transition-all and the conditional w-8/w-52 width classes.
+grep -n "renderBody(message.body)" "src/app/(app)/peer-network/page.tsx"
+
+Paste the real output of both, confirming the exact real current function signature and both real call sites (own-message bubble at bg-[#3A6A94], other-person bubble at bg-white dark:bg-[#444444]).
 
 WHAT THIS IS:
 
-Animating a flex item's width when a sibling flex item fills remaining space (flex-1) causes the sibling to continuously reflow its own content for every frame of the animation, since its available width is changing continuously, not just once at the start and end. If any message text is near a line-wrap boundary, this can cause visible content-shifting during the transition, reading as a jump. The standard real fix is to animate a property that does not trigger reflow of sibling content, most commonly by not animating width directly on a flex item, instead using either an instant width change with no transition, or animating transform/opacity on the sidebar itself while keeping its layout width change instant.
+The current highlight color (#2A5A84 light / #7EB8E4 dark) was likely chosen against the light other-person bubble and works reasonably there, but the same color applied inside the dark blue own-message bubble reads as low-contrast, confirmed worse specifically in light mode by Ben live. Own messages need a highlight treatment that stands out clearly against a dark blue background specifically, for example a bright white or near-white bold treatment, distinct from the body text's own white color via weight/underline rather than a different hue that might not have enough contrast range available against dark blue in both color modes.
 
 CHANGE INSTRUCTIONS:
 
-Given this is a real, but minor, polish concern, and the message feed's reflow-during-animation is an inherent property of animating a flex sibling's width (not a bug with an obvious better CSS-only fix that fully eliminates reflow while keeping a smooth width animation), the pragmatic real fix is: remove transition-all from the sidebar's width change specifically, so the collapse/expand becomes an instant width snap instead of an animated one, eliminating the multi-frame reflow entirely. Keep transition-colors or similar on any other properties of that element if they exist and are unrelated to width, only remove the transition behavior that's actually animating width. If the real current class is a single transition-all covering multiple properties, replace it with a more specific transition class that excludes width (for example transition-colors if background/border color transitions are also happening on this element and are worth preserving, check the real current classes to decide precisely what to keep).
+Add an isOwn: boolean parameter to renderBody. Update both real call sites to pass isOwn (the own-message call site already has isOwn available in its enclosing scope, the other-person call site should pass false explicitly or omit it with a default). Inside renderBody, when isOwn is true, use a highlight treatment with real, sufficient contrast against the dark blue #3A6A94 background in both light and dark mode, for example white text with font-semibold plus underline, or a distinctly brighter accent color confirmed to have real contrast against #3A6A94, use good judgment on the exact real value but the result must be clearly, visibly distinguishable from the surrounding white body text, not just barely different. When isOwn is false, keep the existing #2A5A84 light / #7EB8E4 dark treatment, since that was only confirmed problematic for own messages, not other-person messages.
 
 VERIFY AFTER ACT:
 
 cd /home/corby/jamm-os/frontend
 npm run build
 
-grep -n "sidebarCollapsed.*w-8.*w-52\|transition" "src/app/(app)/peer-network/page.tsx" | grep -i sidebar
+grep -n "function renderBody\|renderBody(message.body" "src/app/(app)/peer-network/page.tsx"
 
 git diff --stat
 
-This should be a very small, one-line diff.
-
 MANUAL VERIFICATION:
 
-Restart the frontend dev server only. Reload /peer-network, toggle the sidebar collapsed and expanded several times while watching the message feed, confirm the jump is now gone, the width change should feel like an instant snap rather than an animated slide, but the message content should no longer visibly shift during it. Report back plainly whether it's actually fixed now.
+Restart the frontend dev server only. Reload /peer-network in light mode, confirm a mention inside one of your own messages is now clearly, visibly distinguishable from the surrounding message text, not faint. Switch to dark mode, confirm the same for your own messages, and confirm other-person messages (which were already reported as fine) still look correct and unchanged in both modes. Report back with a screenshot in both light and dark mode.
 
 GIT:
 
-Do not commit until Ben confirms the jump is genuinely gone in the browser.
+Do not commit until Ben confirms the contrast is genuinely fixed in both light and dark mode in the browser.

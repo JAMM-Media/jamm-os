@@ -144,11 +144,13 @@ function LabelModal({
 // Sub-components
 // ---------------------------------------------------------------------------
 
-function renderBody(body: string): React.ReactNode {
-  const parts = body.split(/(@\S+)/)
+function renderBody(body: string, isOwn = false): React.ReactNode {
+  // Split on \u0000Name\u0001 markers from the server's _resolve_mentions.
+  // Capturing group: odd-indexed parts (i%2===1) are mention names; even are plain text.
+  const parts = body.split(/\u0000([^\u0001]*)\u0001/)
   return parts.map((part, i) =>
-    /^@\S+/.test(part)
-      ? <span key={i} className="font-semibold text-[#2A5A84] dark:text-[#7EB8E4]">{part}</span>
+    i % 2 === 1
+      ? <span key={i} className={isOwn ? 'font-semibold underline' : 'font-semibold text-[#2A5A84] dark:text-[#7EB8E4]'}>@{part}</span>
       : part
   )
 }
@@ -327,7 +329,7 @@ function MessageBubble({
               </div>
             ) : (
               <div className="bg-[#3A6A94] text-white rounded-[18px] px-4 py-2 text-[14px] leading-relaxed whitespace-pre-wrap break-words">
-                {renderBody(message.body)}
+                {renderBody(message.body, true)}
               </div>
             )}
             {!grouped && !isEditing && (

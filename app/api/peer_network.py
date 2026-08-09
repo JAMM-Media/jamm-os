@@ -37,7 +37,7 @@ def _resolve_mentions(body: str, handle_map: dict, alias_map: dict) -> str:
         raw_handle = handle_map.get(mid)
         if raw_handle is None:
             return m.group(0)
-        return "@" + alias_map.get(mid, raw_handle)
+        return "\u0000" + alias_map.get(mid, raw_handle) + "\u0001"
     return _MENTION_RE.sub(_sub, body)
 
 
