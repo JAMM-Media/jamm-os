@@ -176,6 +176,13 @@ class PeerNetworkMessage(Base):
 
     is_deleted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
+    parent_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("peer_network_messages.id", ondelete="SET NULL"),
+        nullable=True,
+        default=None,
+        index=True,
+    )
+
     mentions: Mapped[list | None] = mapped_column(JSON, nullable=True, default=None)
 
 
@@ -218,4 +225,42 @@ class PeerNetworkAlias(Base):
 
     __table_args__ = (
         UniqueConstraint("owner_member_id", "target_member_id", name="uq_peer_network_alias_owner_target"),
+    )
+
+
+ALLOWED_REACTIONS = ["👍", "❤️", "😂", "🎉", "👏", "💡"]
+
+
+class PeerNetworkReaction(Base):
+    """Emoji reaction from a member on a message.
+
+    Toggle behavior: adding the same emoji a second time removes it.
+    Only emoji in ALLOWED_REACTIONS are accepted.
+    """
+
+    __tablename__ = "peer_network_reactions"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+
+    message_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("peer_network_messages.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    member_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("peer_network_members.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    emoji: Mapped[str] = mapped_column(String(32), nullable=False)
+
+    created_at: Mapped[datetime] = mapped_column(
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+    __table_args__ = (
+        UniqueConstraint("message_id", "member_id", "emoji", name="uq_peer_network_reaction"),
     )

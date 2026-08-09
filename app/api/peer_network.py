@@ -14,7 +14,7 @@ from app.db.session import get_db
 from app.dependencies.auth import get_current_user
 from app.core.enums import NotificationType, RecipientType, UserRole
 from app.dependencies.roles import require_firm_owner, require_system_admin
-from app.models.peer_network import PeerNetworkAlias, PeerNetworkMember, PeerNetworkMessage, PeerNetworkRoom, PeerNetworkRoomMember
+from app.models.peer_network import (ALLOWED_REACTIONS, PeerNetworkAlias, PeerNetworkMember, PeerNetworkMessage, PeerNetworkReaction, PeerNetworkRoom, PeerNetworkRoomMember)
 from app.models.user import User
 from app.services.notification_service import NotificationService
 from app.services.peer_network_service import accept_terms, get_active_member, get_room_membership, grant_access, opt_in_firm
@@ -123,6 +123,80 @@ def create_room(
 
 
 # ---------------------------------------------------------------------------
+# POST /peer-network/messages/{message_id}/reactions
+# ---------------------------------------------------------------------------
+
+@router.post("/messages/{message_id}/reactions", status_code=status.HTTP_200_OK)
+def toggle_reaction(
+    message_id: uuid.UUID,
+    body: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    member = get_active_member(db=db, user_id=current_user.id)
+
+    emoji = (body.get("emoji") or "").strip()
+    if emoji not in ALLOWED_REACTIONS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Emoji must be one of: {', '.join(ALLOWED_REACTIONS)}",
+        )
+
+    message = db.execute(
+        select(PeerNetworkMessage).where(PeerNetworkMessage.id == message_id)
+    ).scalar_one_or_none()
+    if message is None:
+        raise HTTPException(status_code=404, detail="Message not found.")
+
+    room = db.execute(
+        select(PeerNetworkRoom).where(PeerNetworkRoom.id == message.room_id)
+    ).scalar_one()
+    if room.room_type in ("dm", "subgroup"):
+        if get_room_membership(db=db, room_id=room.id, member_id=member.id) is None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You do not have access to this room.",
+            )
+
+    existing = db.execute(
+        select(PeerNetworkReaction).where(
+            PeerNetworkReaction.message_id == message_id,
+            PeerNetworkReaction.member_id == member.id,
+            PeerNetworkReaction.emoji == emoji,
+        )
+    ).scalar_one_or_none()
+
+    if existing:
+        db.delete(existing)
+    else:
+        db.add(PeerNetworkReaction(
+            message_id=message_id,
+            member_id=member.id,
+            emoji=emoji,
+        ))
+    db.commit()
+
+    # Return updated reaction summary for this message.
+    all_rxns = db.execute(
+        select(PeerNetworkReaction).where(PeerNetworkReaction.message_id == message_id)
+    ).scalars().all()
+    from collections import defaultdict
+    by_emoji: dict = defaultdict(list)
+    for r in all_rxns:
+        by_emoji[r.emoji].append(r.member_id)
+    return {
+        "message_id": str(message_id),
+        "reactions": [
+            {
+                "emoji": e,
+                "count": len(ids),
+                "reacted_by_me": member.id in ids,
+            }
+            for e, ids in by_emoji.items()
+        ],
+    }
+
+
 # POST /peer-network/rooms/{room_id}/hide
 # ---------------------------------------------------------------------------
 
@@ -451,6 +525,27 @@ def list_messages(
         ).scalars().all()
         alias_map = {a.target_member_id: a.label for a in aliases}
 
+    # Batch-fetch reactions for this page.
+    page_message_ids = [m.id for m in paginated]
+    all_reactions = db.execute(
+        select(PeerNetworkReaction).where(PeerNetworkReaction.message_id.in_(page_message_ids))
+    ).scalars().all() if page_message_ids else []
+
+    from collections import defaultdict
+    reactions_by_msg: dict = defaultdict(lambda: defaultdict(list))
+    for rxn in all_reactions:
+        reactions_by_msg[rxn.message_id][rxn.emoji].append(rxn.member_id)
+
+    # Batch-fetch reply counts.
+    reply_count_map: dict[uuid.UUID, int] = {}
+    if page_message_ids:
+        reply_rows = db.execute(
+            select(PeerNetworkMessage.parent_id, func.count().label("cnt"))
+            .where(PeerNetworkMessage.parent_id.in_(page_message_ids))
+            .group_by(PeerNetworkMessage.parent_id)
+        ).all()
+        reply_count_map = {row.parent_id: row.cnt for row in reply_rows}
+
     items = []
     for m in paginated:
         raw_handle = handle_map.get(m.author_member_id, "[deleted]") if m.author_member_id else "[deleted]"
@@ -470,6 +565,16 @@ def list_messages(
             "edited": m.edited_at is not None,
             "deleted": m.is_deleted,
             "is_jamm_team": jamm_team_map.get(m.author_member_id, False) if m.author_member_id else False,
+            "parent_id": str(m.parent_id) if m.parent_id else None,
+            "reply_count": reply_count_map.get(m.id, 0),
+            "reactions": [
+                {
+                    "emoji": emoji,
+                    "count": len(reactor_ids),
+                    "reacted_by_me": member.id in reactor_ids,
+                }
+                for emoji, reactor_ids in reactions_by_msg.get(m.id, {}).items()
+            ],
         })
 
     return {"items": items, "total": total}
@@ -524,6 +629,25 @@ def post_message(
     if not text:
         raise HTTPException(status_code=422, detail="Message body cannot be empty.")
 
+    # Handle optional parent_id for replies; flatten if target is itself a reply.
+    raw_parent_id = body.get("parent_id")
+    resolved_parent_id: uuid.UUID | None = None
+    if raw_parent_id:
+        try:
+            requested_parent = uuid.UUID(str(raw_parent_id))
+        except ValueError:
+            raise HTTPException(status_code=422, detail="parent_id must be a valid UUID.")
+        parent_msg = db.execute(
+            select(PeerNetworkMessage).where(
+                PeerNetworkMessage.id == requested_parent,
+                PeerNetworkMessage.room_id == room_id,
+            )
+        ).scalar_one_or_none()
+        if parent_msg is None:
+            raise HTTPException(status_code=404, detail="Parent message not found in this room.")
+        # Flatten: if the target parent is itself a reply, use its parent instead.
+        resolved_parent_id = parent_msg.parent_id if parent_msg.parent_id else parent_msg.id
+
     if not member.has_posted:
         member.has_posted = True
 
@@ -552,6 +676,7 @@ def post_message(
         author_member_id=member.id,
         body=text,
         mentions=valid_mention_ids if valid_mention_ids else None,
+        parent_id=resolved_parent_id,
     )
     db.add(message)
 
@@ -646,6 +771,9 @@ def post_message(
         "edited": False,
         "deleted": False,
         "is_jamm_team": member.is_jamm_team,
+        "parent_id": str(message.parent_id) if message.parent_id else None,
+        "reply_count": 0,
+        "reactions": [],
     }
 
 
