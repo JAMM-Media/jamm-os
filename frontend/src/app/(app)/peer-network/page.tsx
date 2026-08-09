@@ -4,9 +4,9 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { Sprout, Pencil, Trash2, X, Check } from 'lucide-react'
+import { Sprout, Pencil, Trash2, X, Check, Plus, ChevronLeft, ChevronRight } from 'lucide-react'
 import { useAuth } from '@/lib/hooks/useAuth'
-import { peerNetworkApi, type PeerNetworkMessage } from '@/lib/api/peerNetwork'
+import { peerNetworkApi, type PeerNetworkMessage, type PeerNetworkRoom, type AliasEntry } from '@/lib/api/peerNetwork'
 import { ConfirmModal } from '@/components/ui/ConfirmModal'
 
 // ---------------------------------------------------------------------------
@@ -144,6 +144,17 @@ function LabelModal({
 // Sub-components
 // ---------------------------------------------------------------------------
 
+function renderBody(body: string, isOwn = false): React.ReactNode {
+  // Split on \u0000Name\u0001 markers from the server's _resolve_mentions.
+  // Capturing group: odd-indexed parts (i%2===1) are mention names; even are plain text.
+  const parts = body.split(/\u0000([^\u0001]*)\u0001/)
+  return parts.map((part, i) =>
+    i % 2 === 1
+      ? <span key={i} className={isOwn ? 'font-semibold underline' : 'font-semibold text-[#2A5A84] dark:text-[#7EB8E4]'}>@{part}</span>
+      : part
+  )
+}
+
 function DateDivider({ label }: { label: string }) {
   return (
     <div className="flex items-center gap-3 my-3 px-3">
@@ -197,7 +208,10 @@ function MessageBubble({
       setEditValue(message.body)
       setTimeout(() => {
         editRef.current?.focus()
-        editRef.current?.select()
+        if (editRef.current) {
+          editRef.current.selectionStart = editRef.current.value.length
+          editRef.current.selectionEnd = editRef.current.value.length
+        }
       }, 0)
     }
   }, [isEditing, message.body])
@@ -235,7 +249,7 @@ function MessageBubble({
   if (isOwn) {
     return (
       <div className="flex justify-end px-3 py-[2px] group">
-        <div className="flex items-end gap-2">
+        <div className="flex items-end gap-2 min-w-0">
           {/* Edit/delete actions -- visible on hover, own messages only */}
           <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity mb-1">
             {!isEditing && (
@@ -257,9 +271,9 @@ function MessageBubble({
               </>
             )}
           </div>
-          <div className="flex flex-col items-end max-w-[70%]">
+          <div className="flex flex-col items-end max-w-[420px] min-w-0">
             {isEditing ? (
-              <div className="flex flex-col min-w-[120px] max-w-[70%]">
+              <div className="flex flex-col min-w-[120px] max-w-[420px]">
                 <div style={{ display: 'grid' }} className="min-w-[80px] w-full">
                   <textarea
                     ref={editRef}
@@ -315,7 +329,7 @@ function MessageBubble({
               </div>
             ) : (
               <div className="bg-[#3A6A94] text-white rounded-[18px] px-4 py-2 text-[14px] leading-relaxed whitespace-pre-wrap break-words">
-                {message.body}
+                {renderBody(message.body, true)}
               </div>
             )}
             {!grouped && !isEditing && (
@@ -334,13 +348,20 @@ function MessageBubble({
 
   // Other person's message.
   const authorElement = !grouped && (
-    <button
-      onClick={onLabelClick}
-      className="text-[11px] text-[#6B7280] font-medium mb-0.5 ml-1 hover:text-[#4A7FA5] transition-colors text-left"
-      title="Label this member"
-    >
-      {displayLabel}
-    </button>
+    <div className="flex items-center gap-1.5 mb-0.5 ml-1">
+      <button
+        onClick={onLabelClick}
+        className="text-[11px] text-[#6B7280] font-medium hover:text-[#4A7FA5] transition-colors text-left"
+        title="Label this member"
+      >
+        {displayLabel}
+      </button>
+      {message.is_jamm_team && (
+        <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-[#3A6A94]/10 text-[#3A6A94] dark:bg-[#7EB8E4]/10 dark:text-[#7EB8E4]">
+          JAMM
+        </span>
+      )}
+    </div>
   )
 
   const avatarElement = grouped
@@ -356,12 +377,12 @@ function MessageBubble({
     )
 
   return (
-    <div className="flex items-end gap-2 px-3 py-[2px]">
+    <div className="flex items-end gap-2 min-w-0 px-3 py-[2px]">
       {avatarElement}
-      <div className="flex flex-col max-w-[70%]">
+      <div className="flex flex-col items-start max-w-[420px] min-w-0">
         {authorElement}
         <div className="bg-white dark:bg-[#444444] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] text-[#1F3148] dark:text-[#EDEEF0] rounded-[18px] px-4 py-2 text-[14px] leading-relaxed whitespace-pre-wrap break-words">
-          {message.body}
+          {renderBody(message.body)}
         </div>
         {!grouped && (
           <div className="flex items-center gap-1 mt-0.5 ml-1">
@@ -371,6 +392,266 @@ function MessageBubble({
             <span className="text-[11px] text-[#6B7280]">{formatTimestamp(message.created_at)}</span>
           </div>
         )}
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// First-post interstitial
+// ---------------------------------------------------------------------------
+
+function FirstPostModal({ onConfirm, onCancel }: { onConfirm: () => Promise<void>; onCancel: () => void }) {
+  const [confirming, setConfirming] = useState(false)
+
+  const handleConfirm = async () => {
+    setConfirming(true)
+    try {
+      await onConfirm()
+    } finally {
+      setConfirming(false)
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/30"
+      onClick={(e) => { if (e.target === e.currentTarget) onCancel() }}
+    >
+      <div className="bg-white dark:bg-[#2D2D2D] rounded-[10px] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] shadow-lg w-[380px] p-5 flex flex-col gap-4">
+        <div className="flex flex-col gap-1">
+          <p className="text-[14px] font-semibold text-[#1F3148] dark:text-[#EDEEF0]">Before you post</p>
+          <p className="text-[13px] text-[#6B7280] leading-relaxed">
+            The Peer Network is a shared room with members from other firms, including firms in your market. Every message you post is visible to all members.
+          </p>
+          <p className="text-[13px] text-[#6B7280] leading-relaxed mt-1">
+            Client-identifying information does not belong here. Do not include names, descriptions, or any detail that could identify a specific client.
+          </p>
+        </div>
+        <div className="flex items-center gap-2 justify-end">
+          <button
+            onClick={onCancel}
+            className="px-3 h-8 rounded-[6px] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] text-[12px] text-[#6B7280] hover:bg-[#F7F7F8] dark:hover:bg-[#383838] transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleConfirm}
+            disabled={confirming}
+            className="px-3 h-8 rounded-[6px] bg-[#3A6A94] text-white text-[12px] font-medium hover:opacity-90 transition-opacity disabled:opacity-40"
+          >
+            {confirming ? 'Sending...' : 'I Understand, Continue'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// New Message modal (DM / subgroup creation)
+// ---------------------------------------------------------------------------
+
+function NewMessageModal({
+  aliases,
+  onClose,
+  onCreated,
+}: {
+  aliases: AliasEntry[]
+  onClose: () => void
+  onCreated: (roomId: string) => void
+}) {
+  const [search, setSearch] = useState('')
+  const [handleResults, setHandleResults] = useState<AliasEntry[]>([])
+  const [selected, setSelected] = useState<AliasEntry[]>([])
+  const [groupName, setGroupName] = useState('')
+  const [creating, setCreating] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const aliasResults = search
+    ? aliases.filter(a => (a.label ?? a.handle).toLowerCase().startsWith(search.toLowerCase()))
+    : []
+
+  const selectedIds = new Set(selected.map(s => s.target_member_id))
+  const filteredAliasResults = aliasResults.filter(a => !selectedIds.has(a.target_member_id))
+  const filteredHandleResults = handleResults.filter(a => !selectedIds.has(a.target_member_id) && !filteredAliasResults.find(b => b.target_member_id === a.target_member_id))
+  const results = [...filteredAliasResults, ...filteredHandleResults]
+
+  const onSearch = async (q: string) => {
+    setSearch(q)
+    if (q.length >= 2) {
+      try {
+        const { items } = await peerNetworkApi.searchMembers(q)
+        setHandleResults(items)
+      } catch {}
+    } else {
+      setHandleResults([])
+    }
+  }
+
+  const toggleSelect = (entry: AliasEntry) => {
+    setSelected(prev =>
+      prev.find(s => s.target_member_id === entry.target_member_id)
+        ? prev.filter(s => s.target_member_id !== entry.target_member_id)
+        : [...prev, entry]
+    )
+    setSearch('')
+    setHandleResults([])
+  }
+
+  const handleCreate = async () => {
+    if (selected.length === 0) return
+    setCreating(true)
+    setError(null)
+    try {
+      const roomType = selected.length === 1 ? 'dm' : 'subgroup'
+      const name = roomType === 'subgroup' && groupName.trim() ? groupName.trim() : undefined
+      const room = await peerNetworkApi.createRoom(roomType, selected.map(s => s.target_member_id), name)
+      onCreated(room.id)
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      setError(detail ?? 'Failed to create conversation.')
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/30"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
+    >
+      <div className="bg-white dark:bg-[#2D2D2D] rounded-[10px] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] shadow-lg w-[360px] flex flex-col">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-[#C8CDD6] dark:border-[#484848]">
+          <p className="text-[13px] font-semibold text-[#1F3148] dark:text-[#EDEEF0]">New Message</p>
+          <button onClick={onClose} className="p-1 rounded hover:bg-[#F7F7F8] dark:hover:bg-[#383838] transition-colors">
+            <X className="w-3.5 h-3.5 text-[#6B7280]" />
+          </button>
+        </div>
+        <div className="px-4 pt-3 pb-2">
+          {selected.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mb-2">
+              {selected.map(s => (
+                <span key={s.target_member_id} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#3A6A94]/10 text-[#3A6A94] text-[12px]">
+                  {s.label ?? s.handle}
+                  <button onMouseDown={() => setSelected(prev => prev.filter(p => p.target_member_id !== s.target_member_id))} className="hover:opacity-70">
+                    <X className="w-2.5 h-2.5" />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => onSearch(e.target.value)}
+            placeholder="Search by alias or handle..."
+            autoFocus
+            className="w-full h-9 px-3 rounded-[6px] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] bg-[#F7F7F8] dark:bg-[#383838] text-[13px] text-[#1F3148] dark:text-[#EDEEF0] placeholder:text-[#6B7280] focus:outline-none focus:border-[#4A7FA5] transition-colors"
+          />
+        </div>
+        {results.length > 0 && (
+          <div className="max-h-[180px] overflow-y-auto border-t border-[#C8CDD6] dark:border-[#484848]">
+            {results.slice(0, 8).map(a => (
+              <button
+                key={a.target_member_id}
+                onMouseDown={() => toggleSelect(a)}
+                className="w-full text-left px-4 py-2 text-[13px] text-[#1F3148] dark:text-[#EDEEF0] hover:bg-[#F7F7F8] dark:hover:bg-[#383838] flex items-center gap-2"
+              >
+                <span className="font-medium">{a.label ?? a.handle}</span>
+                {a.label && <span className="text-[#9CA3AF] text-[11px]">{a.handle}</span>}
+              </button>
+            ))}
+          </div>
+        )}
+        {selected.length >= 2 && (
+          <div className="px-4 py-2 border-t border-[#C8CDD6] dark:border-[#484848]">
+            <input
+              type="text"
+              value={groupName}
+              onChange={(e) => setGroupName(e.target.value)}
+              placeholder="Group name (optional)"
+              className="w-full h-8 px-3 rounded-[6px] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] bg-[#F7F7F8] dark:bg-[#383838] text-[12px] text-[#1F3148] dark:text-[#EDEEF0] placeholder:text-[#6B7280] focus:outline-none focus:border-[#4A7FA5] transition-colors"
+            />
+          </div>
+        )}
+        {error && <p className="px-4 pb-2 text-[12px] text-red-500">{error}</p>}
+        <div className="px-4 pb-4 pt-2 border-t border-[#C8CDD6] dark:border-[#484848]">
+          <button
+            onClick={handleCreate}
+            disabled={selected.length === 0 || creating}
+            className="w-full h-9 rounded-[6px] bg-[#3A6A94] text-white text-[13px] font-medium hover:opacity-90 transition-opacity disabled:opacity-40"
+          >
+            {creating ? 'Creating...' : selected.length === 1 ? 'Start DM' : 'Create Group'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Terms modal
+// ---------------------------------------------------------------------------
+
+function TermsModal({ onAccept }: { onAccept: () => Promise<void> }) {
+  const [accepting, setAccepting] = useState(false)
+
+  const handleAccept = async () => {
+    setAccepting(true)
+    try {
+      await onAccept()
+    } finally {
+      setAccepting(false)
+    }
+  }
+
+  return (
+    <div className="flex flex-col h-full">
+      <div className="flex items-center gap-2 px-4 h-14 border-b border-[#C8CDD6] dark:border-[#484848]">
+        <Sprout className="h-4 w-4 text-[#6B7280]" />
+        <span className="font-medium text-[15px] text-brand dark:text-[#EDEEF0]">Peer Network</span>
+      </div>
+      <div className="flex-1 overflow-y-auto p-6">
+        <div className="max-w-[560px] mx-auto flex flex-col gap-5">
+          <div>
+            <p className="text-[15px] font-semibold text-[#1F3148] dark:text-[#EDEEF0] mb-1">Before you enter</p>
+            <p className="text-[13px] text-[#6B7280]">Please read and agree to the following before accessing the Peer Network.</p>
+          </div>
+          <ol className="flex flex-col gap-3 list-decimal list-inside marker:text-[#6B7280] marker:text-[13px]">
+            <li className="text-[13px] text-[#1F3148] dark:text-[#EDEEF0] leading-relaxed">
+              <span className="font-medium">You are responsible for what you share.</span> Everything you post about yourself, your firm, your clients, or your business is your responsibility. JAMM does not vet, endorse, or take responsibility for member posts.
+            </li>
+            <li className="text-[13px] text-[#1F3148] dark:text-[#EDEEF0] leading-relaxed">
+              <span className="font-medium">Never post client-identifying information.</span> Do not share any details that could identify a specific client, including names, industries, locations, or descriptions that make a client recognizable. This is a firm boundary, not a guideline.
+            </li>
+            <li className="text-[13px] text-[#1F3148] dark:text-[#EDEEF0] leading-relaxed">
+              <span className="font-medium">This room is pseudonymous, not anonymous.</span> Your handle is permanent and consistent across all your sessions. Other members will recognize patterns in what you share over time. Do not assume you cannot be identified by the content of your posts.
+            </li>
+            <li className="text-[13px] text-[#1F3148] dark:text-[#EDEEF0] leading-relaxed">
+              <span className="font-medium">Other members may be your competitors.</span> The Peer Network includes firms in your geographic market. Members you interact with may recruit your staff, compete for your clients, or both. You participate knowing this.
+            </li>
+            <li className="text-[13px] text-[#1F3148] dark:text-[#EDEEF0] leading-relaxed">
+              <span className="font-medium">Mutes are permanent pending appeal.</span> If your access is muted for violating these terms, the mute does not expire automatically. You may appeal to JAMM, but reinstatement is not guaranteed.
+            </li>
+            <li className="text-[13px] text-[#1F3148] dark:text-[#EDEEF0] leading-relaxed">
+              <span className="font-medium">Messages persist after you leave.</span> If you leave the platform or your firm deactivates, your past messages remain visible to current members. They are not deleted on your departure.
+            </li>
+            <li className="text-[13px] text-[#1F3148] dark:text-[#EDEEF0] leading-relaxed">
+              <span className="font-medium">Screenshots expose your private labels.</span> If you take a screenshot of the Peer Network, any private labels you have attached to other members will appear in your screenshot alongside their messages. You are responsible for what those screenshots reveal about how you have identified others.
+            </li>
+            <li className="text-[13px] text-[#1F3148] dark:text-[#EDEEF0] leading-relaxed">
+              <span className="font-medium">JAMM may remove any message.</span> JAMM reserves the right to remove any message from the Peer Network at any time, for any reason, without prior notice.
+            </li>
+          </ol>
+          <button
+            onClick={handleAccept}
+            disabled={accepting}
+            className="w-full h-10 rounded-[8px] bg-[#3A6A94] text-white text-[14px] font-medium hover:opacity-90 transition-opacity disabled:opacity-40"
+          >
+            {accepting ? 'Saving...' : 'I Understand and Agree'}
+          </button>
+        </div>
       </div>
     </div>
   )
@@ -442,13 +723,14 @@ function MemberGate() {
 // Main page
 // ---------------------------------------------------------------------------
 
-type PageState = 'loading' | 'no-access' | 'ready'
+type PageState = 'loading' | 'no-access' | 'needs-terms' | 'ready'
 
 export default function PeerNetworkPage() {
   const { user } = useAuth()
 
   const [pageState, setPageState] = useState<PageState>('loading')
-  const [mainRoomId, setMainRoomId] = useState<string | null>(null)
+  const [rooms, setRooms] = useState<PeerNetworkRoom[]>([])
+  const [activeRoomId, setActiveRoomId] = useState<string | null>(null)
   const [myHandle, setMyHandle] = useState<string | null>(null)
   const [messages, setMessages] = useState<PeerNetworkMessage[]>([])
   const [compose, setCompose] = useState('')
@@ -457,22 +739,44 @@ export default function PeerNetworkPage() {
   const [aliasTarget, setAliasTarget] = useState<{ memberId: string; currentLabel: string } | null>(null)
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null)
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
+  const [myHasPosted, setMyHasPosted] = useState(false)
+  const [myIsMuted, setMyIsMuted] = useState(false)
+  const [myMutedReason, setMyMutedReason] = useState<string | null>(null)
+  const [showFirstPostModal, setShowFirstPostModal] = useState(false)
+  const [showNewMessageModal, setShowNewMessageModal] = useState(false)
+  const [aliases, setAliases] = useState<AliasEntry[]>([])
+  const [mentionSearch, setMentionSearch] = useState<string | null>(null)
+  const [mentionResults, setMentionResults] = useState<AliasEntry[]>([])
+  const [mentionReplacements, setMentionReplacements] = useState<Array<{ display: string; token: string }>>([])
   const bottomRef = useRef<HTMLDivElement>(null)
+  const composeRef = useRef<HTMLTextAreaElement>(null)
 
-  const loadRoom = useCallback(async () => {
+  const loadRoom = useCallback(async (keepActiveRoomId?: string) => {
     try {
-      const { items, my_handle } = await peerNetworkApi.getRooms()
-      const main = items.find((r) => r.room_type === 'main')
-      if (!main) return
-      setMainRoomId(main.id)
+      const { items, my_handle, has_posted, is_muted, muted_reason } = await peerNetworkApi.getRooms()
+      setRooms(items)
       setMyHandle(my_handle)
-      const { items: msgs } = await peerNetworkApi.getMessages(main.id)
+      setMyHasPosted(has_posted)
+      setMyIsMuted(is_muted)
+      setMyMutedReason(muted_reason)
+      const targetId = keepActiveRoomId ?? items.find((r) => r.room_type === 'main')?.id ?? items[0]?.id
+      if (!targetId) return
+      setActiveRoomId(targetId)
+      const { items: msgs } = await peerNetworkApi.getMessages(targetId)
       setMessages(msgs)
       setPageState('ready')
+      try {
+        const { items: myAliases } = await peerNetworkApi.getAliases()
+        setAliases(myAliases)
+      } catch {}
     } catch (err: unknown) {
-      const status = (err as { response?: { status?: number } })?.response?.status
-      if (status === 403) {
-        setPageState('no-access')
+      const res = (err as { response?: { status?: number; data?: { detail?: string } } })?.response
+      if (res?.status === 403) {
+        if (res?.data?.detail === 'Terms and conditions must be accepted before accessing the Peer Network.') {
+          setPageState('needs-terms')
+        } else {
+          setPageState('no-access')
+        }
       }
     }
   }, [])
@@ -492,16 +796,107 @@ export default function PeerNetworkPage() {
     await loadRoom()
   }
 
-  const handleSend = async () => {
-    if (!compose.trim() || !mainRoomId || sending) return
+  const handleAcceptTerms = async () => {
+    await peerNetworkApi.acceptTerms()
+    await loadRoom()
+  }
+
+  const switchRoom = useCallback(async (roomId: string) => {
+    if (roomId === activeRoomId) return
+    setActiveRoomId(roomId)
+    setMessages([])
+    setEditingMessageId(null)
+    setCompose('')
+    setMentionSearch(null)
+    setMentionResults([])
+    setMentionReplacements([])
+    try {
+      const { items: msgs } = await peerNetworkApi.getMessages(roomId)
+      setMessages(msgs)
+    } catch {}
+  }, [activeRoomId])
+
+  const getRoomDisplayName = (room: PeerNetworkRoom): string => {
+    if (room.room_type === 'main') return 'Main Room'
+    if (room.room_type === 'announcements') return 'Announcements'
+    if (room.room_type === 'dm') return room.dm_display ?? 'Direct Message'
+    return room.name ?? 'Unnamed Group'
+  }
+
+  const activeRoomDisplayName = (() => {
+    const r = rooms.find(r => r.id === activeRoomId)
+    return r ? getRoomDisplayName(r) : 'Peer Network'
+  })()
+
+  const sortedRooms = [
+    ...rooms.filter(r => r.room_type === 'main'),
+    ...rooms.filter(r => r.room_type === 'announcements'),
+    ...rooms.filter(r => r.room_type === 'dm'),
+    ...rooms.filter(r => r.room_type === 'subgroup'),
+  ]
+
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false
+    return localStorage.getItem('pn_sidebar_collapsed') === 'true'
+  })
+
+  const toggleSidebar = () => {
+    setSidebarCollapsed(prev => {
+      const next = !prev
+      localStorage.setItem('pn_sidebar_collapsed', String(next))
+      return next
+    })
+  }
+
+  const handleHideRoom = async (roomId: string) => {
+    try {
+      await peerNetworkApi.hideRoom(roomId)
+      setRooms(prev => prev.filter(r => r.id !== roomId))
+      if (activeRoomId === roomId) {
+        const main = rooms.find(r => r.room_type === 'main')
+        if (main) switchRoom(main.id)
+      }
+    } catch {}
+  }
+
+  const encodeBody = (text: string, replacements: Array<{ display: string; token: string }>) => {
+    let encoded = text
+    // Sort longest display first to avoid partial-match replacements.
+    const sorted = [...replacements].sort((a, b) => b.display.length - a.display.length)
+    for (const { display, token } of sorted) {
+      encoded = encoded.split('@' + display).join(token)
+    }
+    return encoded
+  }
+
+  const doSend = async () => {
+    if (!compose.trim() || !activeRoomId || sending) return
     setSending(true)
     try {
-      const msg = await peerNetworkApi.postMessage(mainRoomId, compose.trim())
+      const encodedBody = encodeBody(compose.trim(), mentionReplacements)
+      const msg = await peerNetworkApi.postMessage(activeRoomId!, encodedBody)
       setMessages((prev) => [...prev, msg])
       setCompose('')
+      if (composeRef.current) { composeRef.current.style.height = 'auto' }
+      setMyHasPosted(true)
+      setMentionReplacements([])
     } finally {
       setSending(false)
     }
+  }
+
+  const handleSend = async () => {
+    if (!compose.trim() || !activeRoomId || sending) return
+    if (!myHasPosted) {
+      setShowFirstPostModal(true)
+      return
+    }
+    await doSend()
+  }
+
+  const handleFirstPostConfirm = async () => {
+    setShowFirstPostModal(false)
+    await doSend()
   }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -540,7 +935,7 @@ export default function PeerNetworkPage() {
         <div className="flex items-center gap-2">
           <Sprout className="h-4 w-4 text-[#6B7280]" />
           <span className="font-medium text-[15px] text-brand dark:text-[#EDEEF0]">Peer Network</span>
-          <span className="text-[12px] text-[#6B7280]">Main Room</span>
+          <span className="text-[12px] text-[#6B7280]">Loading...</span>
         </div>
         <div className="flex-1 rounded-[10px] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] bg-[#E4E6EA] dark:bg-[#2D2D2D] p-4 flex flex-col gap-4">
           {[120, 200, 80, 160, 100].map((w, i) => (
@@ -569,6 +964,10 @@ export default function PeerNetworkPage() {
         </div>
       </div>
     )
+  }
+
+  if (pageState === 'needs-terms') {
+    return <TermsModal onAccept={handleAcceptTerms} />
   }
 
   // Build grouped bubble list with date dividers.
@@ -620,6 +1019,13 @@ export default function PeerNetworkPage() {
         />
       )}
 
+      {showFirstPostModal && (
+        <FirstPostModal
+          onConfirm={handleFirstPostConfirm}
+          onCancel={() => setShowFirstPostModal(false)}
+        />
+      )}
+
       <ConfirmModal
         open={confirmDeleteId !== null}
         message="Delete this message? It will show as deleted to everyone."
@@ -629,12 +1035,88 @@ export default function PeerNetworkPage() {
         onCancel={() => setConfirmDeleteId(null)}
       />
 
-      <div className="flex flex-col h-full p-4 gap-3">
+      {showNewMessageModal && (
+        <NewMessageModal
+          aliases={aliases}
+          onClose={() => setShowNewMessageModal(false)}
+          onCreated={async (roomId) => {
+            setShowNewMessageModal(false)
+            await loadRoom(roomId)
+          }}
+        />
+      )}
+
+      <div className="flex h-full">
+        {/* Room sidebar */}
+        <div className={`flex-shrink-0 border-r border-[#C8CDD6] dark:border-[#484848] flex flex-col bg-[#F7F7F8] dark:bg-[#252525] ${sidebarCollapsed ? 'w-8' : 'w-52'}`}>
+          {sidebarCollapsed ? (
+            <div className="flex flex-col items-center pt-2">
+              <button
+                onClick={toggleSidebar}
+                title="Expand sidebar"
+                className="p-1.5 rounded hover:bg-[#E4E6EA] dark:hover:bg-[#383838] transition-colors"
+              >
+                <ChevronRight className="w-3.5 h-3.5 text-[#6B7280]" />
+              </button>
+            </div>
+          ) : (
+            <>
+              <div className="flex items-center justify-between px-3 py-3 border-b border-[#C8CDD6] dark:border-[#484848]">
+                <div className="flex items-center gap-1.5">
+                  <Sprout className="h-3.5 w-3.5 text-[#6B7280]" />
+                  <span className="text-[12px] font-semibold text-[#1F3148] dark:text-[#EDEEF0]">Peer Network</span>
+                </div>
+                <div className="flex items-center gap-0.5">
+                  <button
+                    onClick={() => setShowNewMessageModal(true)}
+                    title="New Message"
+                    className="p-1 rounded hover:bg-[#E4E6EA] dark:hover:bg-[#383838] transition-colors"
+                  >
+                    <Plus className="w-3.5 h-3.5 text-[#6B7280]" />
+                  </button>
+                  <button
+                    onClick={toggleSidebar}
+                    title="Collapse sidebar"
+                    className="p-1 rounded hover:bg-[#E4E6EA] dark:hover:bg-[#383838] transition-colors"
+                  >
+                    <ChevronLeft className="w-3.5 h-3.5 text-[#6B7280]" />
+                  </button>
+                </div>
+              </div>
+              <div className="flex-1 overflow-y-auto py-1">
+                {sortedRooms.map(room => (
+                  <div key={room.id} className="group relative flex items-center">
+                    <button
+                      onClick={() => switchRoom(room.id)}
+                      className={`flex-1 text-left px-3 py-2 text-[12px] transition-colors truncate pr-7 ${
+                        activeRoomId === room.id
+                          ? 'bg-[#3A6A94]/10 text-[#3A6A94] dark:text-[#7EB8E4] font-medium'
+                          : 'text-[#374151] dark:text-[#D1D5DB] hover:bg-[#E4E6EA] dark:hover:bg-[#383838]'
+                      }`}
+                    >
+                      {getRoomDisplayName(room)}
+                    </button>
+                    {(room.room_type === 'dm' || room.room_type === 'subgroup') && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleHideRoom(room.id) }}
+                        title="Hide conversation"
+                        className="absolute right-1.5 p-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity hover:bg-[#D5D8DE] dark:hover:bg-[#444444]"
+                      >
+                        <X className="w-3 h-3 text-[#6B7280]" />
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Main feed column */}
+        <div className="flex flex-col flex-1 min-w-0 min-h-0 p-4 gap-3">
         {/* Header */}
         <div className="flex items-center gap-2 flex-shrink-0">
-          <Sprout className="h-4 w-4 text-[#6B7280]" />
-          <span className="font-medium text-[15px] text-[#1F3148] dark:text-[#EDEEF0]">Peer Network</span>
-          <span className="text-[12px] text-[#6B7280]">Main Room</span>
+          <span className="font-medium text-[15px] text-[#1F3148] dark:text-[#EDEEF0]">{activeRoomDisplayName}</span>
         </div>
 
         {/* Feed card */}
@@ -653,24 +1135,104 @@ export default function PeerNetworkPage() {
 
         {/* Compose */}
         <div className="flex-shrink-0">
-          <div className="flex items-center gap-2 rounded-[6px] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] bg-[#F7F7F8] dark:bg-[#383838] px-3 py-2 focus-within:border-[#4A7FA5] transition-colors">
-            <textarea
-              className="flex-1 bg-transparent resize-none text-[14px] text-[#1F3148] dark:text-[#EDEEF0] placeholder:text-[#6B7280] focus:outline-none min-h-[20px] max-h-[120px]"
-              placeholder="Message Peer Network..."
-              rows={1}
-              value={compose}
-              onChange={(e) => setCompose(e.target.value)}
-              onKeyDown={handleKeyDown}
-            />
-            <button
-              onClick={handleSend}
-              disabled={!compose.trim() || sending}
-              className="px-3 h-7 rounded-[6px] bg-[#3A6A94] text-white text-[12px] font-medium hover:opacity-90 transition-opacity disabled:opacity-40"
-            >
-              Send
-            </button>
-          </div>
-          <p className="text-[11px] text-[#9CA3AF] mt-1 px-1">Enter to send, Shift+Enter for new line</p>
+          {rooms.find(r => r.id === activeRoomId)?.room_type === 'announcements' && user.role !== 'system_admin' ? (
+            <div className="rounded-[6px] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] bg-[#F7F7F8] dark:bg-[#383838] px-4 py-3">
+              <p className="text-[12px] text-[#6B7280] dark:text-[#9CA3AF]">Announcements is read-only. Only the JAMM team can post here.</p>
+            </div>
+          ) : myIsMuted ? (
+            <div className="rounded-[6px] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] bg-[#F7F7F8] dark:bg-[#383838] px-4 py-3">
+              <p className="text-[13px] font-medium text-[#374151] dark:text-[#EDEEF0] mb-1">Your account has been muted</p>
+              <p className="text-[12px] text-[#6B7280] dark:text-[#9CA3AF] leading-relaxed">
+                {myMutedReason}
+              </p>
+              <p className="text-[12px] text-[#6B7280] dark:text-[#9CA3AF] mt-2">
+                To appeal, contact{' '}
+                <a href="mailto:appeals@jammpx.com" className="text-[#4A7FA5] hover:underline">appeals@jammpx.com</a>.
+              </p>
+            </div>
+          ) : (
+            <>
+              {mentionSearch !== null && mentionResults.length > 0 && (
+                <div className="mb-1 rounded-[6px] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] bg-white dark:bg-[#2D2D2D] shadow-sm overflow-hidden">
+                  {mentionResults.slice(0, 5).map((a) => (
+                    <button
+                      key={a.target_member_id}
+                      onMouseDown={(e) => {
+                        e.preventDefault()
+                        const displayName = a.label ?? a.handle
+                        const token = `@{${a.target_member_id}}`
+                        // Replace the @partial in compose with the display name.
+                        setCompose((prev) => {
+                          const atIdx = prev.lastIndexOf('@')
+                          if (atIdx === -1) return prev
+                          return prev.slice(0, atIdx) + '@' + displayName + ' ' + prev.slice(atIdx + 1 + (mentionSearch?.length ?? 0))
+                        })
+                        setMentionReplacements((prev) => [
+                          ...prev.filter(r => r.display !== displayName),
+                          { display: displayName, token },
+                        ])
+                        setMentionSearch(null)
+                        setMentionResults([])
+                        composeRef.current?.focus()
+                      }}
+                      className="w-full text-left px-3 py-2 text-[13px] text-[#1F3148] dark:text-[#EDEEF0] hover:bg-[#F7F7F8] dark:hover:bg-[#383838] flex items-center gap-2"
+                    >
+                      <span className="font-medium">{a.label ?? a.handle}</span>
+                      {a.label && <span className="text-[#9CA3AF] text-[11px]">{a.handle}</span>}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <div className="flex items-center gap-2 rounded-[6px] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] bg-[#F7F7F8] dark:bg-[#383838] px-3 py-2 focus-within:border-[#4A7FA5] transition-colors">
+                <textarea
+                  ref={composeRef}
+                  className="flex-1 bg-transparent resize-none text-[14px] text-[#1F3148] dark:text-[#EDEEF0] placeholder:text-[#6B7280] focus:outline-none min-h-[20px] max-h-[120px] overflow-y-auto"
+                  placeholder="Message Peer Network..."
+                  rows={1}
+                  value={compose}
+                  onChange={(e) => {
+                    const val = e.target.value
+                    setCompose(val)
+                    e.target.style.height = 'auto'
+                    e.target.style.height = e.target.scrollHeight + 'px'
+                    // Detect @ trigger for mention autocomplete.
+                    const cursor = e.target.selectionStart ?? val.length
+                    const before = val.slice(0, cursor)
+                    const atMatch = before.match(/@(\S*)$/)
+                    if (atMatch) {
+                      const q = atMatch[1].toLowerCase()
+                      const aliasHits = aliases.filter(a => a.label?.toLowerCase().startsWith(q))
+                      setMentionResults(aliasHits)
+                      setMentionSearch(q)
+                    } else {
+                      setMentionSearch(null)
+                      setMentionResults([])
+                    }
+                  }}
+                  onKeyDown={(e) => {
+                if (mentionSearch !== null && mentionResults.length > 0 && e.key === 'Escape') {
+                  setMentionSearch(null)
+                  setMentionResults([])
+                  return
+                }
+                handleKeyDown(e)
+              }}
+                />
+                <button
+                  onClick={handleSend}
+                  disabled={!compose.trim() || sending}
+                  className="px-3 h-7 rounded-[6px] bg-[#3A6A94] text-white text-[12px] font-medium hover:opacity-90 transition-opacity disabled:opacity-40"
+                >
+                  Send
+                </button>
+              </div>
+              <div className="flex items-center justify-between mt-1 px-1">
+                <p className="text-[11px] text-[#6B7280] dark:text-[#9CA3AF]">Remember: no client-identifying information</p>
+                <p className="text-[11px] text-[#9CA3AF]">Enter to send, Shift+Enter for new line</p>
+              </div>
+            </>
+          )}
+        </div>
         </div>
       </div>
     </>

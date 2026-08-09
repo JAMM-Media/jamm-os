@@ -7,7 +7,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, ForeignKey, JSON, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base_class import Base
@@ -43,9 +43,35 @@ class PeerNetworkMember(Base):
 
     is_jamm_team: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
+    has_posted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    is_muted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    muted_reason: Mapped[str | None] = mapped_column(
+        String(512),
+        nullable=True,
+        default=None,
+    )
+
+    muted_at: Mapped[datetime | None] = mapped_column(
+        nullable=True,
+        default=None,
+    )
+
+    muted_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        default=None,
+    )
+
     granted_by: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
+    )
+
+    terms_accepted_at: Mapped[datetime | None] = mapped_column(
+        nullable=True,
+        default=None,
     )
 
     created_at: Mapped[datetime] = mapped_column(
@@ -74,6 +100,42 @@ class PeerNetworkRoom(Base):
     created_at: Mapped[datetime] = mapped_column(
         nullable=False,
         default=lambda: datetime.now(timezone.utc),
+    )
+
+
+class PeerNetworkRoomMember(Base):
+    """Per-room membership for DMs and subgroups.
+
+    main and announcements rooms are always open to every active network member
+    and never have explicit membership rows. DM and subgroup rooms are private
+    and only visible to members listed here.
+    """
+
+    __tablename__ = "peer_network_room_members"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+
+    room_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("peer_network_rooms.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    member_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("peer_network_members.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    joined_at: Mapped[datetime] = mapped_column(
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+    is_hidden: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    __table_args__ = (
+        UniqueConstraint("room_id", "member_id", name="uq_peer_network_room_member"),
     )
 
 
@@ -113,6 +175,15 @@ class PeerNetworkMessage(Base):
     )
 
     is_deleted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    parent_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("peer_network_messages.id", ondelete="SET NULL"),
+        nullable=True,
+        default=None,
+        index=True,
+    )
+
+    mentions: Mapped[list | None] = mapped_column(JSON, nullable=True, default=None)
 
 
 class PeerNetworkAlias(Base):
@@ -154,4 +225,42 @@ class PeerNetworkAlias(Base):
 
     __table_args__ = (
         UniqueConstraint("owner_member_id", "target_member_id", name="uq_peer_network_alias_owner_target"),
+    )
+
+
+ALLOWED_REACTIONS = ["👍", "❤️", "😂", "🎉", "👏", "💡"]
+
+
+class PeerNetworkReaction(Base):
+    """Emoji reaction from a member on a message.
+
+    Toggle behavior: adding the same emoji a second time removes it.
+    Only emoji in ALLOWED_REACTIONS are accepted.
+    """
+
+    __tablename__ = "peer_network_reactions"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+
+    message_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("peer_network_messages.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    member_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("peer_network_members.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    emoji: Mapped[str] = mapped_column(String(32), nullable=False)
+
+    created_at: Mapped[datetime] = mapped_column(
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+    __table_args__ = (
+        UniqueConstraint("message_id", "member_id", "emoji", name="uq_peer_network_reaction"),
     )
