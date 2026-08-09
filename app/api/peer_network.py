@@ -2,7 +2,9 @@
 #
 # Deliberately separate from app/api/firm_chat.py per spec section 3.
 
+import re
 import uuid
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
@@ -10,15 +12,96 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.dependencies.auth import get_current_user
+from app.core.enums import NotificationType, RecipientType
 from app.dependencies.roles import require_firm_owner, require_system_admin
 from app.models.peer_network import PeerNetworkAlias, PeerNetworkMember, PeerNetworkMessage, PeerNetworkRoom
 from app.models.user import User
+from app.services.notification_service import NotificationService
 from app.services.peer_network_service import accept_terms, get_active_member, grant_access, opt_in_firm
 
 router = APIRouter()
 
+# Regex for stored mention tokens: @{uuid}
+_MENTION_RE = re.compile(
+    r'@\{([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\}'
+)
+
+
+def _resolve_mentions(body: str, handle_map: dict, alias_map: dict) -> str:
+    """Replace @{uuid} tokens with the viewer's per-viewer display text."""
+    def _sub(m: re.Match) -> str:
+        try:
+            mid = uuid.UUID(m.group(1))
+        except ValueError:
+            return m.group(0)
+        raw_handle = handle_map.get(mid)
+        if raw_handle is None:
+            return m.group(0)
+        return "@" + alias_map.get(mid, raw_handle)
+    return _MENTION_RE.sub(_sub, body)
+
+
 
 # ---------------------------------------------------------------------------
+# GET /peer-network/aliases
+# ---------------------------------------------------------------------------
+
+@router.get("/aliases")
+def list_my_aliases(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    member = get_active_member(db=db, user_id=current_user.id)
+    aliases = db.execute(
+        select(PeerNetworkAlias).where(PeerNetworkAlias.owner_member_id == member.id)
+    ).scalars().all()
+    target_ids = [a.target_member_id for a in aliases]
+    handle_map: dict[uuid.UUID, str] = {}
+    if target_ids:
+        targets = db.execute(
+            select(PeerNetworkMember).where(PeerNetworkMember.id.in_(target_ids))
+        ).scalars().all()
+        handle_map = {t.id: t.handle for t in targets}
+    return {
+        "items": [
+            {
+                "target_member_id": str(a.target_member_id),
+                "label": a.label,
+                "handle": handle_map.get(a.target_member_id, a.label),
+            }
+            for a in aliases
+        ],
+        "total": len(aliases),
+    }
+
+
+# ---------------------------------------------------------------------------
+# GET /peer-network/members/search
+# ---------------------------------------------------------------------------
+
+@router.get("/members/search")
+def search_members(
+    handle_prefix: str = Query(..., min_length=1, max_length=50),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    member = get_active_member(db=db, user_id=current_user.id)
+    results = db.execute(
+        select(PeerNetworkMember).where(
+            PeerNetworkMember.is_active == True,  # noqa: E712
+            PeerNetworkMember.handle.ilike(f"{handle_prefix}%"),
+        ).limit(5)
+    ).scalars().all()
+    return {
+        "items": [
+            {"target_member_id": str(m.id), "handle": m.handle, "label": None}
+            for m in results
+            if m.id != member.id
+        ],
+        "total": len(results),
+    }
+
+
 # POST /peer-network/opt-in
 # ---------------------------------------------------------------------------
 
@@ -115,7 +198,16 @@ def list_messages(
     ).scalars().all()
 
     # Resolve handles and the caller's own aliases in one pass.
-    member_ids = {m.author_member_id for m in paginated if m.author_member_id}
+    # Include both author IDs and mention target IDs so tokens resolve per-viewer.
+    member_ids: set[uuid.UUID] = {m.author_member_id for m in paginated if m.author_member_id}
+    for msg in paginated:
+        if msg.mentions:
+            for mid_str in msg.mentions:
+                try:
+                    member_ids.add(uuid.UUID(mid_str))
+                except (ValueError, AttributeError):
+                    pass
+
     handle_map: dict[uuid.UUID, str] = {}
     alias_map: dict[uuid.UUID, str] = {}
     if member_ids:
@@ -136,13 +228,17 @@ def list_messages(
     for m in paginated:
         raw_handle = handle_map.get(m.author_member_id, "[deleted]") if m.author_member_id else "[deleted]"
         display = alias_map.get(m.author_member_id, raw_handle) if m.author_member_id else raw_handle
+        if m.is_deleted:
+            resolved_body = "[deleted]"
+        else:
+            resolved_body = _resolve_mentions(m.body, handle_map, alias_map)
         items.append({
             "id": str(m.id),
             "room_id": str(m.room_id),
             "author_member_id": str(m.author_member_id) if m.author_member_id else None,
             "author_handle": raw_handle,
             "author_display": display,
-            "body": "[deleted]" if m.is_deleted else m.body,
+            "body": resolved_body,
             "created_at": m.created_at.isoformat(),
             "edited": m.edited_at is not None,
             "deleted": m.is_deleted,
@@ -190,22 +286,75 @@ def post_message(
     if not member.has_posted:
         member.has_posted = True
 
+    # Parse @{uuid} mention tokens, validate each is a real active member.
+    raw_mention_ids = [uuid.UUID(m) for m in _MENTION_RE.findall(text)]
+    mention_members: list[PeerNetworkMember] = []
+    if raw_mention_ids:
+        candidates = db.execute(
+            select(PeerNetworkMember).where(
+                PeerNetworkMember.id.in_(raw_mention_ids),
+                PeerNetworkMember.is_active == True,  # noqa: E712
+            )
+        ).scalars().all()
+        candidate_ids = {c.id for c in candidates}
+        # Preserve original mention order, silently drop invalid IDs.
+        seen: set[uuid.UUID] = set()
+        for mid in raw_mention_ids:
+            if mid in candidate_ids and mid not in seen:
+                seen.add(mid)
+                mention_members.append(next(c for c in candidates if c.id == mid))
+
+    valid_mention_ids = [str(m.id) for m in mention_members]
+
     message = PeerNetworkMessage(
         room_id=room_id,
         author_member_id=member.id,
         body=text,
+        mentions=valid_mention_ids if valid_mention_ids else None,
     )
     db.add(message)
     db.commit()
     db.refresh(message)
 
+    # Send in-app notifications to mentioned members.
+    # appeals@jammpx.com is a placeholder; NotificationService failure must not
+    # abort the message send.
+    for mentioned in mention_members:
+        if mentioned.id == member.id:
+            continue  # no self-notification
+        try:
+            NotificationService.create_notification(
+                db=db,
+                firm_id=mentioned.firm_id,
+                recipient_id=mentioned.user_id,
+                recipient_type=RecipientType.staff,
+                title="You were mentioned in the Peer Network",
+                body=f"{member.handle} mentioned you in the Peer Network main room.",
+                notification_type=NotificationType.peer_network_mention,
+            )
+        except Exception:
+            pass  # notification failure must not abort the message
+
+    # Resolve mention tokens per sender (they are this response's viewer).
+    mention_handle_map = {m.id: m.handle for m in mention_members}
+    mention_alias_map: dict[uuid.UUID, str] = {}
+    if valid_mention_ids:
+        sender_aliases = db.execute(
+            select(PeerNetworkAlias).where(
+                PeerNetworkAlias.owner_member_id == member.id,
+                PeerNetworkAlias.target_member_id.in_([m.id for m in mention_members]),
+            )
+        ).scalars().all()
+        mention_alias_map = {a.target_member_id: a.label for a in sender_aliases}
+
+    resolved_body = _resolve_mentions(message.body, mention_handle_map, mention_alias_map)
     return {
         "id": str(message.id),
         "room_id": str(message.room_id),
         "author_member_id": str(message.author_member_id),
         "author_handle": member.handle,
         "author_display": member.handle,
-        "body": message.body,
+        "body": resolved_body,
         "created_at": message.created_at.isoformat(),
         "edited": False,
         "deleted": False,

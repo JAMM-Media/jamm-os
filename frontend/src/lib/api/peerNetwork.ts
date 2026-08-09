@@ -20,6 +20,12 @@ export interface PeerNetworkRoom {
   name: string | null
 }
 
+export interface AliasEntry {
+  target_member_id: string
+  label: string | null
+  handle: string
+}
+
 export const peerNetworkApi = {
   optIn: async (): Promise<{ peer_network_enabled: boolean; handle: string }> => {
     const { data } = await api.post('/peer-network/opt-in')
@@ -59,5 +65,15 @@ export const peerNetworkApi = {
   acceptTerms: async (): Promise<{ accepted: boolean; terms_accepted_at: string }> => {
     const { data } = await api.post('/peer-network/accept-terms')
     return data as { accepted: boolean; terms_accepted_at: string }
+  },
+
+  getAliases: async (): Promise<{ items: AliasEntry[]; total: number }> => {
+    const { data } = await api.get('/peer-network/aliases')
+    return data as { items: AliasEntry[]; total: number }
+  },
+
+  searchMembers: async (handlePrefix: string): Promise<{ items: AliasEntry[]; total: number }> => {
+    const { data } = await api.get('/peer-network/members/search', { params: { handle_prefix: handlePrefix } })
+    return data as { items: AliasEntry[]; total: number }
   },
 }

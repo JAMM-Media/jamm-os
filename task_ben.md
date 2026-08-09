@@ -74,7 +74,7 @@ This section exists because a past session confidently claimed specific files we
 
 # Section 3 - The task
 
-TASK: Add real partial mute to Peer Network, per Ben's explicit decision: a muted member can still read the room, but is blocked from posting new messages, per spec sections 9 and 10. This is genuinely separate from is_active (which represents "has real membership at all"), reusing it would incorrectly collapse two different real states into one.
+TASK: Add @mentions to Peer Network, per spec section 4's explicit hard requirement: a mention must be stored as a reference to the real member, never as literal text, and resolved per-viewer at render time, mirroring the exact same mechanism already proven safe tonight for author_display. Autocomplete searches only the composing member's own private aliases (never a general directory), falling back to handle search for anyone unlabeled, per the real spec text confirmed just now.
 
 USE: claude fable-5
 
@@ -88,37 +88,39 @@ VERIFY BEFORE ACT:
 
 .venv/bin/alembic heads
 
-grep -n -B 3 -A 25 "def post_message" app/api/peer_network.py
+grep -n -B 3 -A 30 "def list_messages" app/api/peer_network.py
 
-grep -n -B 3 -A 20 "def get_active_member" app/services/peer_network_service.py
+grep -n -B 3 -A 15 "class PeerNetworkAlias" app/models/peer_network.py
 
-Confirm exactly one alembic head. Confirm the real current post_message endpoint and get_active_member function before adding a separate, real mute check to the write path only, leaving the read path completely untouched.
+Confirm exactly one alembic head. Confirm the real current list_messages implementation (already resolving author_display via a real per-viewer alias lookup, the exact pattern mentions must reuse) and the real PeerNetworkAlias model.
 
-WHAT THIS IS, PER THE LOCKED SPEC:
+WHAT THIS IS, PER THE LOCKED SPEC SECTIONS 4 AND 7:
 
-Mutes are permanent pending manual appeal. The mute notice must state the specific T&C clause violated (spec section 9's real list: personal responsibility, no client-identifying information, pseudonymous not anonymous, other members may be competitors, permanent mutes pending appeal, messages persist after departure, screenshots expose private labels, JAMM may remove any message) and include a real appeal email address, since a muted member cannot message the team in-product. Muting is a real, separate state from is_active: is_active gates all access (read and write) and currently has no revoke path; mute specifically blocks only posting, confirmed by Ben's real decision, while reading stays open.
+A mention is composed by picking a real member, but what gets stored in the message body is a neutral reference token, never the literal alias text the composer saw on screen, since storing literal text would leak the composer's own private label for that person to every other viewer in the room, the exact deanonymization risk local aliases were built tonight specifically to prevent. At read time, each viewer's own alias for the mentioned member (or the real handle, if unlabeled) gets substituted in, per viewer, reusing the exact same resolution mechanism already proven correct for author_display, not a new, separate system.
+
+Autocomplete when composing searches only the composing member's own real aliases (a private list only they have access to), falling back to real handle search for anyone unlabeled. This is explicitly not a member directory or general user search, which remain correctly out of scope per section 12, since a member can only be found this way if the composer already personally knows them by alias or already knows their exact handle.
+
+Mentioned members get notified per spec section 8 ("@mention: notifies the mentioned member"), the only real-time notification the main room ever sends, since ordinary main-room messages deliberately notify nobody.
 
 CHANGE INSTRUCTIONS:
 
-Add to PeerNetworkMember: is_muted (Boolean, default False, nullable False), muted_reason (String, nullable, the specific T&C clause text), muted_at (DateTime with timezone, nullable), muted_by (UUID, ForeignKey users.id, ondelete SET NULL, nullable, the real system_admin who muted them).
+Add a mentions column to PeerNetworkMessage: a JSON or ARRAY column storing a list of real target member UUIDs, matching the real proposed message shape from spec section 15. This is the queryable record of who was mentioned, never the source of truth for what displays in the body text.
 
-Write the migration by hand, matching tonight's established real structure, down_revision set to the real current head confirmed above.
+Design the real token format for embedding a mention reference inside the message body text itself: use something unambiguous and unlikely to collide with real user text, for example @[member_id] using the real UUID, or a simpler bracketed reference like @{member_id}. Pick whichever is cleaner to parse reliably with a real regex, and use it consistently in both the compose-side encoding and the render-side decoding.
 
-Add POST /peer-network/admin/members/{member_id}/mute, gated require_system_admin, accepting {reason: str} (the specific T&C clause text, required, not optional, since the spec is explicit a mute notice must cite a specific clause). Sets is_muted True, muted_reason to the provided reason, muted_at to now, muted_by to the calling admin's own user id.
+Add GET /peer-network/aliases, gated by real active membership, returning the calling member's own complete list of aliases they've personally set (target_member_id and label for each), the real new endpoint needed for autocomplete, since no such bulk listing endpoint currently exists.
 
-Add POST /peer-network/admin/members/{member_id}/unmute, gated require_system_admin, sets is_muted False, clears muted_reason/muted_at/muted_by back to null/None, representing a real manual appeal reinstatement per spec ("a member who explains and acknowledges can be reinstated").
+In post_message, parse the real mention tokens out of the submitted body, extract the real target member IDs, validate each one is a real, currently active PeerNetworkMember (silently drop any that aren't, do not error the whole message over one invalid mention), and store the validated list in the new mentions column.
 
-In post_message specifically, after the existing get_active_member call (which stays completely unchanged, still only checking is_active, still gating read access the same way it always has), add a new, separate check: if member.is_muted is True, raise a real 403 with a clear detail message including the real muted_reason and a real placeholder appeal email, appeals@jammpx.com, flagged in code with a comment that this is a placeholder pending a real support inbox. Do not add this check to list_messages or any read-path endpoint, reading must stay completely open for a muted member per Ben's real decision.
+In list_messages (and any other real place a message body currently gets returned to a client), after resolving author_display exactly as already done, also parse and resolve any mention tokens in the body text into real per-viewer display text: for each real token found, look up whether the calling viewer has a real alias for that target member (reusing the same real alias-lookup query pattern already proven correct for author_display, do not write a second, different lookup mechanism), and substitute in either their real alias, or the target's real handle if unlabeled. The raw body sent to the database must never leak the mention token format to the client unresolved, every client-facing response must show real, human-readable resolved text.
 
-Add is_muted and muted_reason to the response of GET /peer-network/rooms (or wherever real membership state is already exposed to the frontend, matching the existing has_posted pattern from earlier tonight), so the frontend can show the real mute state without needing a separate call.
-
-On the frontend, when the user's own membership state shows is_muted true, replace the normal compose box with a real, clear message showing the specific reason and the real appeal email, instead of a functioning send button. Do not hide the message feed itself, since reading stays open.
+On the frontend, wire a real @mention popover into the compose textarea: typing @ followed by characters searches the real GET /peer-network/aliases list first (matching against each alias's label), falling back to a real handle search if provided (check whether a real handle-search backend capability already exists or needs a small addition, report which). Selecting a real match inserts the correct token format into what actually gets sent on send, while displaying the person's real, familiar alias text to the composer as they type, not the raw token. Rendered messages in the feed must show the same real resolved-mention text, styled distinctly (bold or a subtle background, matching the existing app conventions), not the raw token format, ever.
 
 VERIFY AFTER ACT:
 
-grep -n "is_muted\|muted_reason\|muted_at\|muted_by" app/models/peer_network.py
+grep -n "mentions" app/models/peer_network.py
 
-grep -n "admin/members.*mute" app/api/peer_network.py
+grep -n "GET.*aliases\|def list_my_aliases" app/api/peer_network.py
 
 .venv/bin/alembic heads
 
@@ -132,8 +134,8 @@ npm run build
 
 MANUAL VERIFICATION:
 
-Restart both the backend and the frontend. Using the real system_admin token created earlier tonight (testadmin@jammpx.com), mute a real test member (use the manager account, ca968bf9-12a6-41d9-af45-1a52dc477da2, or james, 0e5754bd-612f-4fdc-b276-17e86d5890c7, whichever has a real peer network membership already) with a real reason citing one of the actual spec clauses. Confirm the response succeeds. As that muted user, call GET /peer-network/rooms/{room_id}/messages, confirm it still succeeds (reading stays open). Attempt POST /peer-network/rooms/{room_id}/messages as that same muted user, confirm a real 403 with the real reason and appeal email in the response, not a generic error. Unmute them via the real admin endpoint, confirm posting works again afterward. As a non-admin (owner or manager), attempt to call the mute endpoint directly, confirm a real 403. Report every real response.
+Restart both the backend and the frontend. Using two real accounts that already have a real alias relationship from earlier tonight (the owner has aliased the manager, or James, confirm which real pair has a working alias first), post a real message from the owner mentioning that person by typing @ and selecting them from the autocomplete. Confirm the sent message, viewed as the owner, shows the real alias text as the mention. Confirm the same message, viewed as a different real account with no alias set for that same person, shows the real handle instead, not the owner's private alias, proving the same per-viewer isolation already verified for author_display also holds for mentions. Confirm the mentioned member's real notification actually fires (check whatever real notification-listing endpoint already exists in this app, or the frontend's notification UI directly). Report every real response and a screenshot of both a mention being composed and the same message rendered two different ways for two different viewers.
 
 GIT:
 
-Do not commit until Ben confirms every real check above with actual API responses, not a description.
+Do not commit until Ben confirms the real per-viewer mention resolution genuinely holds, with real evidence for both viewers, not a description.

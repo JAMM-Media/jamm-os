@@ -7,7 +7,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, ForeignKey, JSON, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base_class import Base
@@ -139,6 +139,8 @@ class PeerNetworkMessage(Base):
     )
 
     is_deleted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    mentions: Mapped[list | None] = mapped_column(JSON, nullable=True, default=None)
 
 
 class PeerNetworkAlias(Base):

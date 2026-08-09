@@ -179,6 +179,7 @@ class NotificationType(str, Enum):
     extension_deadline = "extension_deadline"
     client_anniversary = "client_anniversary"
     document_expiry_alert = "document_expiry_alert"
+    peer_network_mention = "peer_network_mention"
 
 
 class NotificationChannel(str, Enum):

@@ -6,7 +6,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Sprout, Pencil, Trash2, X, Check } from 'lucide-react'
 import { useAuth } from '@/lib/hooks/useAuth'
-import { peerNetworkApi, type PeerNetworkMessage } from '@/lib/api/peerNetwork'
+import { peerNetworkApi, type PeerNetworkMessage, type AliasEntry } from '@/lib/api/peerNetwork'
 import { ConfirmModal } from '@/components/ui/ConfirmModal'
 
 // ---------------------------------------------------------------------------
@@ -143,6 +143,15 @@ function LabelModal({
 // ---------------------------------------------------------------------------
 // Sub-components
 // ---------------------------------------------------------------------------
+
+function renderBody(body: string): React.ReactNode {
+  const parts = body.split(/(@\S+)/)
+  return parts.map((part, i) =>
+    /^@\S+/.test(part)
+      ? <span key={i} className="font-semibold text-[#2A5A84] dark:text-[#7EB8E4]">{part}</span>
+      : part
+  )
+}
 
 function DateDivider({ label }: { label: string }) {
   return (
@@ -318,7 +327,7 @@ function MessageBubble({
               </div>
             ) : (
               <div className="bg-[#3A6A94] text-white rounded-[18px] px-4 py-2 text-[14px] leading-relaxed whitespace-pre-wrap break-words">
-                {message.body}
+                {renderBody(message.body)}
               </div>
             )}
             {!grouped && !isEditing && (
@@ -364,7 +373,7 @@ function MessageBubble({
       <div className="flex flex-col max-w-[420px] min-w-0">
         {authorElement}
         <div className="bg-white dark:bg-[#444444] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] text-[#1F3148] dark:text-[#EDEEF0] rounded-[18px] px-4 py-2 text-[14px] leading-relaxed whitespace-pre-wrap break-words">
-          {message.body}
+          {renderBody(message.body)}
         </div>
         {!grouped && (
           <div className="flex items-center gap-1 mt-0.5 ml-1">
@@ -582,6 +591,10 @@ export default function PeerNetworkPage() {
   const [myIsMuted, setMyIsMuted] = useState(false)
   const [myMutedReason, setMyMutedReason] = useState<string | null>(null)
   const [showFirstPostModal, setShowFirstPostModal] = useState(false)
+  const [aliases, setAliases] = useState<AliasEntry[]>([])
+  const [mentionSearch, setMentionSearch] = useState<string | null>(null)
+  const [mentionResults, setMentionResults] = useState<AliasEntry[]>([])
+  const [mentionReplacements, setMentionReplacements] = useState<Array<{ display: string; token: string }>>([])
   const bottomRef = useRef<HTMLDivElement>(null)
   const composeRef = useRef<HTMLTextAreaElement>(null)
 
@@ -598,6 +611,10 @@ export default function PeerNetworkPage() {
       const { items: msgs } = await peerNetworkApi.getMessages(main.id)
       setMessages(msgs)
       setPageState('ready')
+      try {
+        const { items: myAliases } = await peerNetworkApi.getAliases()
+        setAliases(myAliases)
+      } catch {}
     } catch (err: unknown) {
       const res = (err as { response?: { status?: number; data?: { detail?: string } } })?.response
       if (res?.status === 403) {
@@ -630,15 +647,27 @@ export default function PeerNetworkPage() {
     await loadRoom()
   }
 
+  const encodeBody = (text: string, replacements: Array<{ display: string; token: string }>) => {
+    let encoded = text
+    // Sort longest display first to avoid partial-match replacements.
+    const sorted = [...replacements].sort((a, b) => b.display.length - a.display.length)
+    for (const { display, token } of sorted) {
+      encoded = encoded.split('@' + display).join(token)
+    }
+    return encoded
+  }
+
   const doSend = async () => {
     if (!compose.trim() || !mainRoomId || sending) return
     setSending(true)
     try {
-      const msg = await peerNetworkApi.postMessage(mainRoomId, compose.trim())
+      const encodedBody = encodeBody(compose.trim(), mentionReplacements)
+      const msg = await peerNetworkApi.postMessage(mainRoomId, encodedBody)
       setMessages((prev) => [...prev, msg])
       setCompose('')
       if (composeRef.current) { composeRef.current.style.height = 'auto' }
       setMyHasPosted(true)
+      setMentionReplacements([])
     } finally {
       setSending(false)
     }
@@ -831,6 +860,37 @@ export default function PeerNetworkPage() {
             </div>
           ) : (
             <>
+              {mentionSearch !== null && mentionResults.length > 0 && (
+                <div className="mb-1 rounded-[6px] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] bg-white dark:bg-[#2D2D2D] shadow-sm overflow-hidden">
+                  {mentionResults.slice(0, 5).map((a) => (
+                    <button
+                      key={a.target_member_id}
+                      onMouseDown={(e) => {
+                        e.preventDefault()
+                        const displayName = a.label ?? a.handle
+                        const token = `@{${a.target_member_id}}`
+                        // Replace the @partial in compose with the display name.
+                        setCompose((prev) => {
+                          const atIdx = prev.lastIndexOf('@')
+                          if (atIdx === -1) return prev
+                          return prev.slice(0, atIdx) + '@' + displayName + ' ' + prev.slice(atIdx + 1 + (mentionSearch?.length ?? 0))
+                        })
+                        setMentionReplacements((prev) => [
+                          ...prev.filter(r => r.display !== displayName),
+                          { display: displayName, token },
+                        ])
+                        setMentionSearch(null)
+                        setMentionResults([])
+                        composeRef.current?.focus()
+                      }}
+                      className="w-full text-left px-3 py-2 text-[13px] text-[#1F3148] dark:text-[#EDEEF0] hover:bg-[#F7F7F8] dark:hover:bg-[#383838] flex items-center gap-2"
+                    >
+                      <span className="font-medium">{a.label ?? a.handle}</span>
+                      {a.label && <span className="text-[#9CA3AF] text-[11px]">{a.handle}</span>}
+                    </button>
+                  ))}
+                </div>
+              )}
               <div className="flex items-center gap-2 rounded-[6px] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] bg-[#F7F7F8] dark:bg-[#383838] px-3 py-2 focus-within:border-[#4A7FA5] transition-colors">
                 <textarea
                   ref={composeRef}
@@ -839,11 +899,32 @@ export default function PeerNetworkPage() {
                   rows={1}
                   value={compose}
                   onChange={(e) => {
-                    setCompose(e.target.value)
+                    const val = e.target.value
+                    setCompose(val)
                     e.target.style.height = 'auto'
                     e.target.style.height = e.target.scrollHeight + 'px'
+                    // Detect @ trigger for mention autocomplete.
+                    const cursor = e.target.selectionStart ?? val.length
+                    const before = val.slice(0, cursor)
+                    const atMatch = before.match(/@(\S*)$/)
+                    if (atMatch) {
+                      const q = atMatch[1].toLowerCase()
+                      const aliasHits = aliases.filter(a => a.label?.toLowerCase().startsWith(q))
+                      setMentionResults(aliasHits)
+                      setMentionSearch(q)
+                    } else {
+                      setMentionSearch(null)
+                      setMentionResults([])
+                    }
                   }}
-                  onKeyDown={handleKeyDown}
+                  onKeyDown={(e) => {
+                if (mentionSearch !== null && mentionResults.length > 0 && e.key === 'Escape') {
+                  setMentionSearch(null)
+                  setMentionResults([])
+                  return
+                }
+                handleKeyDown(e)
+              }}
                 />
                 <button
                   onClick={handleSend}
