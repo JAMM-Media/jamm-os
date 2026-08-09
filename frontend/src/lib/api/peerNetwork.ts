@@ -12,6 +12,7 @@ export interface PeerNetworkMessage {
   created_at: string
   edited: boolean
   deleted: boolean
+  is_jamm_team: boolean
 }
 
 export interface PeerNetworkRoom {

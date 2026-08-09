@@ -74,9 +74,9 @@ This section exists because a past session confidently claimed specific files we
 
 # Section 3 - The task
 
-TASK: Fix a real, confirmed bug in Peer Network's mention notifications: the notification body text is hardcoded to say "mentioned you in the Peer Network main room," regardless of which real room the mention actually happened in. Confirmed live tonight that mentions work correctly inside DMs and subgroups too, so this message is factually wrong whenever a mention fires outside Main.
+TASK: Build the Announcements room for Peer Network, per the locked spec: a real singleton room where only Andrew and Ben (system_admin) can post, read-only for everyone else, with visible JAMM team named badges and a distinct notification rule (notifies everyone, unlike Main which notifies nobody).
 
-USE: claude sonnet
+USE: claude fable-5
 
 ENVIRONMENT SANITY CHECK:
 
@@ -86,33 +86,50 @@ State plainly that no path in this task resolves against /mnt/c/Users or any Win
 
 VERIFY BEFORE ACT:
 
-grep -n -B 40 "peer_network_mention" app/api/peer_network.py | grep -n "room ="
+.venv/bin/alembic heads
 
-Paste the real output. Confirm the exact real variable name and structure of the room object already in scope at the point the notification is created (confirmed nearby in this same function via room_id usage), specifically its room_type and name fields, since the fix needs to reference the real room, not assume its shape.
+grep -n -B 3 -A 20 "def post_message\|def list_rooms" app/api/peer_network.py
 
-WHAT THIS IS:
+grep -n "require_system_admin" app/api/peer_network.py
 
-A real notification row is confirmed created correctly (verified live tonight with a real database query), this is not a notification-delivery bug, purely a wrong, hardcoded description of where the mention happened.
+Confirm exactly one alembic head. Confirm the real current post_message and list_rooms implementations, and confirm require_system_admin (already used tonight for admin delete-any and mute) is available to import and reuse, not something to build fresh.
+
+WHAT THIS IS, PER THE LOCKED SPEC SECTIONS 6 AND 8:
+
+Announcements is read-only for ordinary members, only Andrew and Ben (system_admin) can post. "Where product changes, new features, and platform news go." Separated from Main specifically so a product changelog doesn't sit oddly inside a peer conversation, and so it can notify everyone without making Main noisy. Per the real notification table: "Announcement posted by JAMM team -> All members," a distinctly different rule from Main's "nobody" and DMs/subgroups' "just the recipients." JAMM team accounts post under real names with a visible badge, confirmed via the already-existing but never-used is_jamm_team field on PeerNetworkMember.
 
 CHANGE INSTRUCTIONS:
 
-Replace the hardcoded "mentioned you in the Peer Network main room" with real, accurate text based on the actual room's real type: for room_type "main", keep the existing "main room" wording. For "announcements", say "the Announcements room" (even though members can't post there, a mention could theoretically still be resolved from history, handle gracefully regardless). For "dm", say something like "you in a private message" or "you in a direct message", since DMs are never named per spec, do not attempt to reference a name. For "subgroup", use the room's real name field, for example "mentioned you in [real group name]".
+Since no Announcements room exists yet, write a real data migration (matching the exact same pattern already used in batch 1 tonight for the singleton main room) that inserts exactly one real PeerNetworkRoom row with room_type "announcements". Write this by hand, down_revision set to the real current head confirmed above.
+
+In post_message, add a real check: if the target room's room_type is "announcements", require the calling user's role to be system_admin (reuse require_system_admin's underlying check, or the same real role comparison it uses, applied inline since this is inside an existing function rather than a fresh route), rejecting with a real, clear 403 for anyone else, including firm_owner and manager. This is in addition to the existing get_active_member and mute checks, not a replacement for them, since only real active Peer Network members should even reach this room in the first place, JAMM team accounts included, so confirm real active PeerNetworkMember records exist for the two real system_admin accounts already created tonight (testadmin@jammpx.com) or note if a second one is needed to represent two distinct named JAMM team accounts, per spec "Andrew and Ben post under their real names," implying two distinct real accounts, not one shared admin login. Flag this plainly in the report rather than assuming, this is a real product/data decision, not just code.
+
+When creating a message where the author's real PeerNetworkMember.is_jamm_team is true, include a real is_jamm_team: true field on the message response (alongside the existing author_handle/author_display fields), so the frontend can render a visible team badge. This should apply in list_messages too, not just the post response, resolving is_jamm_team from the same real member lookup already used for handles/aliases.
+
+Send a real notification to every real active PeerNetworkMember (not just mentioned members) when a message is posted in the Announcements room specifically, distinct from the existing per-mention notification logic, matching the real spec table's "notifies all members" rule. Do not add any notification behavior to Main room posts, which must continue to notify nobody, confirm this is still true in the real current code before assuming it.
+
+On the frontend, when the active room is Announcements, hide the compose box entirely for non-system_admin users (show a clear read-only explanation instead, matching the same real pattern already used for the muted-member compose replacement tonight), and show it normally for a real system_admin account if one is used to test. Add a visible "JAMM Team" badge next to any message where is_jamm_team is true, distinct from the existing avatar/handle treatment, using real design tokens already established tonight, not inventing new colors.
 
 VERIFY AFTER ACT:
+
+grep -n "is_jamm_team" app/api/peer_network.py "src/app/(app)/peer-network/page.tsx"
+
+grep -n "announcements" app/api/peer_network.py
+
+.venv/bin/alembic heads
+
+This must show exactly one head, the new migration's revision id. Run .venv/bin/alembic upgrade head and confirm it applies with no errors.
 
 cd /home/corby/jamm-os
 python3 -c "from app.main import app; print('app imports cleanly')"
 
-grep -n "room.room_type\|room.name" app/api/peer_network.py | grep -B 2 -A 2 -i notif
-
-git diff --stat
-
-This should be a small, targeted diff.
+cd frontend
+npm run build
 
 MANUAL VERIFICATION:
 
-Restart the backend. Send a real mention inside the real DM created earlier tonight (9e849c0f-7e9b-4400-9dfd-f245a5221e2b), then query the database directly for the resulting real Notification row, confirm its body text now correctly references the DM, not "main room". Send a real mention inside Main room again, confirm that notification's text is still correct and unchanged for that case. Report the real database query results for both.
+Restart both the backend and the frontend. Using the real testadmin@jammpx.com account, confirm they have (or need) a real active PeerNetworkMember record with is_jamm_team true, create one if needed and report that this was a real, necessary step, not assumed already done. Post a real announcement as the admin, confirm it succeeds. As a real non-admin account (owner or manager), attempt to post in Announcements, confirm a real 403. Confirm the non-admin's real GET /peer-network/rooms/{announcements_id}/messages still succeeds (read-only, not fully blocked). Confirm the real posted message shows is_jamm_team true in the API response. Query the real database directly to confirm a real Notification row was created for every real active member, not just the poster. Report every real response and query result.
 
 GIT:
 
-Do not commit until Ben confirms both real notification bodies are correct with actual query output, not a description.
+Do not commit until Ben confirms every real check above with actual evidence, not a description.

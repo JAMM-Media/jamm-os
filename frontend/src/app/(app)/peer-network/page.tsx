@@ -348,13 +348,20 @@ function MessageBubble({
 
   // Other person's message.
   const authorElement = !grouped && (
-    <button
-      onClick={onLabelClick}
-      className="text-[11px] text-[#6B7280] font-medium mb-0.5 ml-1 hover:text-[#4A7FA5] transition-colors text-left"
-      title="Label this member"
-    >
-      {displayLabel}
-    </button>
+    <div className="flex items-center gap-1.5 mb-0.5 ml-1">
+      <button
+        onClick={onLabelClick}
+        className="text-[11px] text-[#6B7280] font-medium hover:text-[#4A7FA5] transition-colors text-left"
+        title="Label this member"
+      >
+        {displayLabel}
+      </button>
+      {message.is_jamm_team && (
+        <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-[#3A6A94]/10 text-[#3A6A94] dark:bg-[#7EB8E4]/10 dark:text-[#7EB8E4]">
+          JAMM
+        </span>
+      )}
+    </div>
   )
 
   const avatarElement = grouped
@@ -1128,7 +1135,11 @@ export default function PeerNetworkPage() {
 
         {/* Compose */}
         <div className="flex-shrink-0">
-          {myIsMuted ? (
+          {rooms.find(r => r.id === activeRoomId)?.room_type === 'announcements' && user.role !== 'system_admin' ? (
+            <div className="rounded-[6px] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] bg-[#F7F7F8] dark:bg-[#383838] px-4 py-3">
+              <p className="text-[12px] text-[#6B7280] dark:text-[#9CA3AF]">Announcements is read-only. Only the JAMM team can post here.</p>
+            </div>
+          ) : myIsMuted ? (
             <div className="rounded-[6px] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] bg-[#F7F7F8] dark:bg-[#383838] px-4 py-3">
               <p className="text-[13px] font-medium text-[#374151] dark:text-[#EDEEF0] mb-1">Your account has been muted</p>
               <p className="text-[12px] text-[#6B7280] dark:text-[#9CA3AF] leading-relaxed">

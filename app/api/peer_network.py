@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.dependencies.auth import get_current_user
-from app.core.enums import NotificationType, RecipientType
+from app.core.enums import NotificationType, RecipientType, UserRole
 from app.dependencies.roles import require_firm_owner, require_system_admin
 from app.models.peer_network import PeerNetworkAlias, PeerNetworkMember, PeerNetworkMessage, PeerNetworkRoom, PeerNetworkRoomMember
 from app.models.user import User
@@ -435,11 +435,13 @@ def list_messages(
 
     handle_map: dict[uuid.UUID, str] = {}
     alias_map: dict[uuid.UUID, str] = {}
+    jamm_team_map: dict[uuid.UUID, bool] = {}
     if member_ids:
         members = db.execute(
             select(PeerNetworkMember).where(PeerNetworkMember.id.in_(member_ids))
         ).scalars().all()
         handle_map = {m.id: m.handle for m in members}
+        jamm_team_map = {m.id: m.is_jamm_team for m in members}
 
         aliases = db.execute(
             select(PeerNetworkAlias).where(
@@ -467,6 +469,7 @@ def list_messages(
             "created_at": m.created_at.isoformat(),
             "edited": m.edited_at is not None,
             "deleted": m.is_deleted,
+            "is_jamm_team": jamm_team_map.get(m.author_member_id, False) if m.author_member_id else False,
         })
 
     return {"items": items, "total": total}
@@ -510,6 +513,12 @@ def post_message(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="You do not have access to this room.",
             )
+
+    if room.room_type == "announcements" and current_user.role != UserRole.system_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only JAMM team accounts can post in the Announcements room.",
+        )
 
     text = (body.get("body") or "").strip()
     if not text:
@@ -591,6 +600,28 @@ def post_message(
         except Exception:
             pass  # notification failure must not abort the message
 
+    # For Announcements posts, notify every active member (distinct from mention-only logic).
+    if room.room_type == "announcements":
+        all_active_members = db.execute(
+            select(PeerNetworkMember).where(
+                PeerNetworkMember.is_active == True,  # noqa: E712
+                PeerNetworkMember.id != member.id,
+            )
+        ).scalars().all()
+        for target in all_active_members:
+            try:
+                NotificationService.create_notification(
+                    db=db,
+                    firm_id=target.firm_id,
+                    recipient_id=target.user_id,
+                    recipient_type=RecipientType.staff,
+                    title="New announcement from JAMM",
+                    body=f"{member.handle} posted a new announcement in the Peer Network.",
+                    notification_type=NotificationType.peer_network_mention,
+                )
+            except Exception:
+                pass
+
     # Resolve mention tokens per sender (they are this response's viewer).
     mention_handle_map = {m.id: m.handle for m in mention_members}
     mention_alias_map: dict[uuid.UUID, str] = {}
@@ -614,6 +645,7 @@ def post_message(
         "created_at": message.created_at.isoformat(),
         "edited": False,
         "deleted": False,
+        "is_jamm_team": member.is_jamm_team,
     }
 
 
