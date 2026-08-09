@@ -11,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.enums import UserRole
-from app.models.peer_network import PeerNetworkMember
+from app.models.peer_network import PeerNetworkMember, PeerNetworkRoomMember
 from app.models.firm import Firm
 from app.models.user import User
 
@@ -173,3 +173,17 @@ def accept_terms(db: Session, user_id: UUID) -> dict:
         db.commit()
 
     return {"accepted": True, "terms_accepted_at": member.terms_accepted_at.isoformat()}
+
+
+def get_room_membership(db: Session, room_id: UUID, member_id: UUID):
+    """Return the PeerNetworkRoomMember row for this member+room, or None.
+
+    Used to gate access to dm and subgroup rooms. main and announcements
+    rooms must NOT use this check -- they remain open to all active members.
+    """
+    return db.execute(
+        select(PeerNetworkRoomMember).where(
+            PeerNetworkRoomMember.room_id == room_id,
+            PeerNetworkRoomMember.member_id == member_id,
+        )
+    ).scalar_one_or_none()

@@ -14,10 +14,10 @@ from app.db.session import get_db
 from app.dependencies.auth import get_current_user
 from app.core.enums import NotificationType, RecipientType
 from app.dependencies.roles import require_firm_owner, require_system_admin
-from app.models.peer_network import PeerNetworkAlias, PeerNetworkMember, PeerNetworkMessage, PeerNetworkRoom
+from app.models.peer_network import PeerNetworkAlias, PeerNetworkMember, PeerNetworkMessage, PeerNetworkRoom, PeerNetworkRoomMember
 from app.models.user import User
 from app.services.notification_service import NotificationService
-from app.services.peer_network_service import accept_terms, get_active_member, grant_access, opt_in_firm
+from app.services.peer_network_service import accept_terms, get_active_member, get_room_membership, grant_access, opt_in_firm
 
 router = APIRouter()
 
@@ -43,6 +43,127 @@ def _resolve_mentions(body: str, handle_map: dict, alias_map: dict) -> str:
 
 
 # ---------------------------------------------------------------------------
+# POST /peer-network/rooms
+# ---------------------------------------------------------------------------
+
+@router.post("/rooms", status_code=status.HTTP_201_CREATED)
+def create_room(
+    body: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    creator = get_active_member(db=db, user_id=current_user.id)
+
+    room_type = (body.get("room_type") or "").strip()
+    if room_type not in ("dm", "subgroup"):
+        raise HTTPException(
+            status_code=422,
+            detail="room_type must be 'dm' or 'subgroup'. main and announcements are not user-creatable.",
+        )
+
+    raw_member_ids = body.get("member_ids") or []
+    try:
+        target_ids = [uuid.UUID(str(mid)) for mid in raw_member_ids]
+    except (ValueError, AttributeError):
+        raise HTTPException(status_code=422, detail="All member_ids must be valid UUIDs.")
+
+    # Validate every requested member is a real, active PeerNetworkMember.
+    valid_targets: list[PeerNetworkMember] = []
+    if target_ids:
+        found = db.execute(
+            select(PeerNetworkMember).where(
+                PeerNetworkMember.id.in_(target_ids),
+                PeerNetworkMember.is_active == True,  # noqa: E712
+            )
+        ).scalars().all()
+        found_ids = {m.id for m in found}
+        invalid_ids = [str(mid) for mid in target_ids if mid not in found_ids]
+        if invalid_ids:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Invalid or inactive member ids: {', '.join(invalid_ids)}",
+            )
+        valid_targets = list(found)
+
+    # Count total participants: creator + requested targets (deduplicated).
+    all_member_ids = {creator.id} | {m.id for m in valid_targets}
+    total_count = len(all_member_ids)
+
+    if room_type == "dm":
+        if total_count != 2:
+            raise HTTPException(
+                status_code=422,
+                detail=f"A DM requires exactly 2 total participants (creator + 1 other). Got {total_count}.",
+            )
+        room_name = None  # DMs are never named.
+    else:  # subgroup
+        if total_count < 2:
+            raise HTTPException(
+                status_code=422,
+                detail="A subgroup requires at least 2 total participants (creator + 1 other).",
+            )
+        room_name = (body.get("name") or "").strip() or None
+
+    room = PeerNetworkRoom(room_type=room_type, name=room_name)
+    db.add(room)
+    db.flush()  # get room.id before adding members
+
+    for mid in all_member_ids:
+        db.add(PeerNetworkRoomMember(room_id=room.id, member_id=mid))
+
+    db.commit()
+    db.refresh(room)
+
+    return {
+        "id": str(room.id),
+        "room_type": room.room_type,
+        "name": room.name,
+        "member_count": total_count,
+    }
+
+
+# ---------------------------------------------------------------------------
+# PATCH /peer-network/rooms/{room_id}
+# ---------------------------------------------------------------------------
+
+@router.patch("/rooms/{room_id}", status_code=status.HTTP_200_OK)
+def rename_room(
+    room_id: uuid.UUID,
+    body: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    member = get_active_member(db=db, user_id=current_user.id)
+
+    room = db.execute(
+        select(PeerNetworkRoom).where(PeerNetworkRoom.id == room_id)
+    ).scalar_one_or_none()
+
+    if room is None:
+        raise HTTPException(status_code=404, detail="Room not found.")
+
+    if room.room_type != "subgroup":
+        raise HTTPException(
+            status_code=422,
+            detail="Only subgroup rooms can be renamed. DMs are never named; main and announcements are not user-renameable.",
+        )
+
+    if get_room_membership(db=db, room_id=room.id, member_id=member.id) is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have access to this room.",
+        )
+
+    new_name = (body.get("name") or "").strip()
+    if not new_name:
+        raise HTTPException(status_code=422, detail="name is required and cannot be empty.")
+
+    room.name = new_name
+    db.commit()
+
+    return {"id": str(room.id), "room_type": room.room_type, "name": room.name}
+
+
 # GET /peer-network/aliases
 # ---------------------------------------------------------------------------
 
@@ -150,7 +271,25 @@ def list_rooms(
     # Gate on active PeerNetworkMember status.
     member = get_active_member(db=db, user_id=current_user.id)
 
-    rooms = db.execute(select(PeerNetworkRoom)).scalars().all()
+    # main and announcements are open to all active members.
+    open_rooms = db.execute(
+        select(PeerNetworkRoom).where(PeerNetworkRoom.room_type.in_(["main", "announcements"]))
+    ).scalars().all()
+
+    # dm and subgroup rooms are private; only include where the member has a membership row.
+    member_room_ids = db.execute(
+        select(PeerNetworkRoomMember.room_id).where(PeerNetworkRoomMember.member_id == member.id)
+    ).scalars().all()
+    private_rooms = db.execute(
+        select(PeerNetworkRoom).where(PeerNetworkRoom.id.in_(member_room_ids))
+    ).scalars().all() if member_room_ids else []
+
+    seen_ids = {r.id for r in open_rooms}
+    rooms = list(open_rooms)
+    for r in private_rooms:
+        if r.id not in seen_ids:
+            rooms.append(r)
+
     return {
         "items": [{"id": str(r.id), "room_type": r.room_type, "name": r.name} for r in rooms],
         "total": len(rooms),
@@ -182,6 +321,13 @@ def list_messages(
 
     if room is None:
         raise HTTPException(status_code=404, detail="Room not found.")
+
+    if room.room_type in ("dm", "subgroup"):
+        if get_room_membership(db=db, room_id=room.id, member_id=member.id) is None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You do not have access to this room.",
+            )
 
     # Real count query -- no unbounded fetch.
     total = db.execute(
@@ -278,6 +424,13 @@ def post_message(
 
     if room is None:
         raise HTTPException(status_code=404, detail="Room not found.")
+
+    if room.room_type in ("dm", "subgroup"):
+        if get_room_membership(db=db, room_id=room.id, member_id=member.id) is None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You do not have access to this room.",
+            )
 
     text = (body.get("body") or "").strip()
     if not text:

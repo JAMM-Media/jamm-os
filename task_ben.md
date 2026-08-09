@@ -74,7 +74,7 @@ This section exists because a past session confidently claimed specific files we
 
 # Section 3 - The task
 
-TASK: Add @mentions to Peer Network, per spec section 4's explicit hard requirement: a mention must be stored as a reference to the real member, never as literal text, and resolved per-viewer at render time, mirroring the exact same mechanism already proven safe tonight for author_display. Autocomplete searches only the composing member's own private aliases (never a general directory), falling back to handle search for anyone unlabeled, per the real spec text confirmed just now.
+TASK: Add the backend foundation for Peer Network DMs and subgroups: a real per-room membership table (which does not exist at all right now, confirmed live, every room is currently accessible to any active network member regardless of intent), room creation, and making list_rooms genuinely per-user instead of returning every room unconditionally.
 
 USE: claude fable-5
 
@@ -88,39 +88,37 @@ VERIFY BEFORE ACT:
 
 .venv/bin/alembic heads
 
-grep -n -B 3 -A 30 "def list_messages" app/api/peer_network.py
+grep -n -B 3 -A 30 "class PeerNetworkRoom" app/models/peer_network.py
 
-grep -n -B 3 -A 15 "class PeerNetworkAlias" app/models/peer_network.py
+grep -n -B 3 -A 20 "def list_rooms\|def list_messages\|def post_message" app/api/peer_network.py
 
-Confirm exactly one alembic head. Confirm the real current list_messages implementation (already resolving author_display via a real per-viewer alias lookup, the exact pattern mentions must reuse) and the real PeerNetworkAlias model.
+Confirm exactly one alembic head. Confirm the real current PeerNetworkRoom model and every real place a room gets looked up, since access control needs to be added consistently across all of them, not just the new ones.
 
-WHAT THIS IS, PER THE LOCKED SPEC SECTIONS 4 AND 7:
+WHAT THIS IS, PER THE LOCKED SPEC SECTION 6:
 
-A mention is composed by picking a real member, but what gets stored in the message body is a neutral reference token, never the literal alias text the composer saw on screen, since storing literal text would leak the composer's own private label for that person to every other viewer in the room, the exact deanonymization risk local aliases were built tonight specifically to prevent. At read time, each viewer's own alias for the mentioned member (or the real handle, if unlabeled) gets substituted in, per viewer, reusing the exact same resolution mechanism already proven correct for author_display, not a new, separate system.
-
-Autocomplete when composing searches only the composing member's own real aliases (a private list only they have access to), falling back to real handle search for anyone unlabeled. This is explicitly not a member directory or general user search, which remain correctly out of scope per section 12, since a member can only be found this way if the composer already personally knows them by alias or already knows their exact handle.
-
-Mentioned members get notified per spec section 8 ("@mention: notifies the mentioned member"), the only real-time notification the main room ever sends, since ordinary main-room messages deliberately notify nobody.
+Direct messages (one-to-one) and multi-person private subgroups. Members create these freely, no approval needed. Subgroups can be named with a shared name. No cap on subgroups per member. This is fundamentally different from Main (open to every active network member) and Announcements (read-only, JAMM team posts only): DMs and subgroups need real, restricted membership, confirmed as a genuine gap right now since PeerNetworkRoom has no membership concept at all and any active member could theoretically access any room by ID.
 
 CHANGE INSTRUCTIONS:
 
-Add a mentions column to PeerNetworkMessage: a JSON or ARRAY column storing a list of real target member UUIDs, matching the real proposed message shape from spec section 15. This is the queryable record of who was mentioned, never the source of truth for what displays in the body text.
+Add a new model, PeerNetworkRoomMember, in app/models/peer_network.py: id, room_id (FK peer_network_rooms.id, ondelete=CASCADE, index), member_id (FK peer_network_members.id, ondelete=CASCADE, index, this is a PeerNetworkMember id, not a raw user id, matching the existing pattern used throughout this feature), joined_at (DateTime with timezone). Add a real unique constraint on (room_id, member_id), someone can't be added to the same room twice.
 
-Design the real token format for embedding a mention reference inside the message body text itself: use something unambiguous and unlikely to collide with real user text, for example @[member_id] using the real UUID, or a simpler bracketed reference like @{member_id}. Pick whichever is cleaner to parse reliably with a real regex, and use it consistently in both the compose-side encoding and the render-side decoding.
+Write the migration by hand, matching tonight's established real structure, down_revision set to the real current head confirmed above.
 
-Add GET /peer-network/aliases, gated by real active membership, returning the calling member's own complete list of aliases they've personally set (target_member_id and label for each), the real new endpoint needed for autocomplete, since no such bulk listing endpoint currently exists.
+Add a real helper function, get_room_membership(db, room_id, member_id) or similar, in app/services/peer_network_service.py, returning the real PeerNetworkRoomMember row or None. This should be used to gate access specifically for room_type "dm" and "subgroup", NOT for "main" or "announcements", since those two remain open to every active network member exactly as they work today, do not change their access behavior.
 
-In post_message, parse the real mention tokens out of the submitted body, extract the real target member IDs, validate each one is a real, currently active PeerNetworkMember (silently drop any that aren't, do not error the whole message over one invalid mention), and store the validated list in the new mentions column.
+Update list_messages and post_message: after the existing get_active_member check (unchanged), for rooms where room_type is "dm" or "subgroup", additionally require a real PeerNetworkRoomMember row for the calling member, real 403 if none exists. For "main" and "announcements", skip this additional check entirely, preserving current behavior exactly.
 
-In list_messages (and any other real place a message body currently gets returned to a client), after resolving author_display exactly as already done, also parse and resolve any mention tokens in the body text into real per-viewer display text: for each real token found, look up whether the calling viewer has a real alias for that target member (reusing the same real alias-lookup query pattern already proven correct for author_display, do not write a second, different lookup mechanism), and substitute in either their real alias, or the target's real handle if unlabeled. The raw body sent to the database must never leak the mention token format to the client unresolved, every client-facing response must show real, human-readable resolved text.
+Add POST /peer-network/rooms, accepting {room_type: "dm" | "subgroup", member_ids: list[uuid], name: Optional[str]}. Validate room_type is one of these two values only, reject "main"/"announcements" creation attempts since those are singleton/admin-only concepts, not user-creatable. For "dm", require exactly 2 total participants (the creator plus exactly one other, reject any other count with a clear error). For "subgroup", require at least 2 total participants (creator plus at least one other) and allow name to be set; for "dm", name should always be null regardless of what's passed, DMs are not named per spec. Validate every real member_id in the request actually corresponds to a real, active PeerNetworkMember in this firm's network before creating anything, reject with a clear error listing which ids were invalid if any aren't. Create the PeerNetworkRoom row, then a PeerNetworkRoomMember row for the creator and for every valid target member, including the creator themselves.
 
-On the frontend, wire a real @mention popover into the compose textarea: typing @ followed by characters searches the real GET /peer-network/aliases list first (matching against each alias's label), falling back to a real handle search if provided (check whether a real handle-search backend capability already exists or needs a small addition, report which). Selecting a real match inserts the correct token format into what actually gets sent on send, while displaying the person's real, familiar alias text to the composer as they type, not the raw token. Rendered messages in the feed must show the same real resolved-mention text, styled distinctly (bold or a subtle background, matching the existing app conventions), not the raw token format, ever.
+Rewrite list_rooms to be genuinely per-user: for "main" and "announcements", these should always appear for every active member with no membership check, exactly as today. For "dm" and "subgroup", only include rooms where a real PeerNetworkRoomMember row exists for the calling member. Keep the existing my_handle/has_posted/is_muted/muted_reason fields in the response exactly as they are now, this is purely about which rooms get listed, not the shape of the per-user state already returned.
+
+Add PATCH /peer-network/rooms/{room_id}, gated by real room membership (dm/subgroup only, per the new check), accepting {name: str}, renaming a subgroup only, reject with a clear error if called on a dm (dms are never named) or on main/announcements (not user-renameable).
 
 VERIFY AFTER ACT:
 
-grep -n "mentions" app/models/peer_network.py
+grep -n "class PeerNetworkRoomMember" app/models/peer_network.py
 
-grep -n "GET.*aliases\|def list_my_aliases" app/api/peer_network.py
+grep -n "get_room_membership\|@router.post(\"/rooms\")\|@router.patch(\"/rooms" app/api/peer_network.py
 
 .venv/bin/alembic heads
 
@@ -129,13 +127,10 @@ This must show exactly one head, the new migration's revision id. Run .venv/bin/
 cd /home/corby/jamm-os
 python3 -c "from app.main import app; print('app imports cleanly')"
 
-cd frontend
-npm run build
-
 MANUAL VERIFICATION:
 
-Restart both the backend and the frontend. Using two real accounts that already have a real alias relationship from earlier tonight (the owner has aliased the manager, or James, confirm which real pair has a working alias first), post a real message from the owner mentioning that person by typing @ and selecting them from the autocomplete. Confirm the sent message, viewed as the owner, shows the real alias text as the mention. Confirm the same message, viewed as a different real account with no alias set for that same person, shows the real handle instead, not the owner's private alias, proving the same per-viewer isolation already verified for author_display also holds for mentions. Confirm the mentioned member's real notification actually fires (check whatever real notification-listing endpoint already exists in this app, or the frontend's notification UI directly). Report every real response and a screenshot of both a mention being composed and the same message rendered two different ways for two different viewers.
+Restart the backend. Using two real distinct member accounts from tonight's testing (the owner and the manager, both confirmed active members), create a real DM between them via POST /peer-network/rooms. Confirm both participants can call GET /peer-network/rooms and see the new DM listed, and confirm a real third account (the third-party test account created earlier tonight, also an active member but not part of this DM) does NOT see it in their own room list. Post a real message in the new DM as one participant, confirm the other participant can read it via GET /peer-network/rooms/{room_id}/messages, and confirm the real third-party account gets a real 403 attempting to read the same room directly by its real id. Try creating a DM with 3 member_ids, confirm a real, clear rejection. Create a real subgroup with a real name and 3 total participants, confirm it works and is named correctly. Report every real response.
 
 GIT:
 
-Do not commit until Ben confirms the real per-viewer mention resolution genuinely holds, with real evidence for both viewers, not a description.
+Do not commit until Ben confirms every real check above with actual API responses.

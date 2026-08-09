@@ -103,6 +103,40 @@ class PeerNetworkRoom(Base):
     )
 
 
+class PeerNetworkRoomMember(Base):
+    """Per-room membership for DMs and subgroups.
+
+    main and announcements rooms are always open to every active network member
+    and never have explicit membership rows. DM and subgroup rooms are private
+    and only visible to members listed here.
+    """
+
+    __tablename__ = "peer_network_room_members"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+
+    room_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("peer_network_rooms.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    member_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("peer_network_members.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    joined_at: Mapped[datetime] = mapped_column(
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+    __table_args__ = (
+        UniqueConstraint("room_id", "member_id", name="uq_peer_network_room_member"),
+    )
+
+
 class PeerNetworkMessage(Base):
     """A message posted in a PeerNetworkRoom.
 
