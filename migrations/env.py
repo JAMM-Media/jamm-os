@@ -10,6 +10,7 @@ from app.core.config import get_settings
 
 # Import all models so Alembic can see them and generate correct migrations
 from app.models import user, engagement, task, client, contact
+from app.models.engagement_member import EngagementMember
 from app.models import firm, document, document_request, checklist_template, signature_envelope, engagement_letter_template
 from app.models.portal_session import PortalSession
 from app.models.portal_notification import PortalNotification

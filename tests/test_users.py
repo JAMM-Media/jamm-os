@@ -65,6 +65,15 @@ def test_workload_returns_assigned_tasks(client, firm_a_owner):
     eng = client.post("/engagements/", json={"name": "Workload Eng", "client_id": cl.json()["id"]}, headers=headers)
     assert eng.status_code == 201
 
+    # Task assignment is scoped to engagement members, so the staff user has
+    # to be on the engagement before any of these tasks can go to them.
+    add_member = client.post(
+        f"/engagements/{eng.json()['id']}/members",
+        json={"user_id": staff_id},
+        headers=headers,
+    )
+    assert add_member.status_code == 201
+
     # Create two tasks assigned to the staff user, one unassigned
     client.post("/tasks/", json={
         "title": "Task A", "client_id": cl.json()["id"],
@@ -99,6 +108,15 @@ def test_workload_status_filter(client, firm_a_owner):
 
     cl = client.post("/clients/", json={"name": "Filter Client"}, headers=headers)
     eng = client.post("/engagements/", json={"name": "Filter Eng", "client_id": cl.json()["id"]}, headers=headers)
+
+    # Assignment is scoped to engagement members -- see the comment in
+    # test_workload_returns_assigned_tasks above.
+    add_member = client.post(
+        f"/engagements/{eng.json()['id']}/members",
+        json={"user_id": staff_id},
+        headers=headers,
+    )
+    assert add_member.status_code == 201
 
     task_a = client.post("/tasks/", json={
         "title": "Todo Task", "client_id": cl.json()["id"],

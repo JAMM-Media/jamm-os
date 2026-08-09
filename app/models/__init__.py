@@ -8,6 +8,7 @@ from app.models.firm import Firm
 from app.models.user import User
 from app.models.client import Client
 from app.models.engagement import Engagement
+from app.models.engagement_member import EngagementMember
 from app.models.task import Task
 from app.models.contact import Contact
 from app.models.document import Document, DocumentAuditLog

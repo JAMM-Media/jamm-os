@@ -31,6 +31,19 @@ async def create_engagement(
 ):
     engagement = crud_engagement.create_engagement(db, payload, firm_id=firm_id)
 
+    # The creator becomes an administrator of the engagement they just made.
+    # Imported inside the function: engagement_member_service imports nothing
+    # from here today, but keeping the dependency one-directional at module
+    # scope removes the possibility of a cycle as either side grows.
+    from app.services import engagement_member_service
+
+    engagement_member_service.ensure_creator_is_administrator(
+        db=db,
+        firm_id=firm_id,
+        engagement_id=engagement.id,
+        current_user_id=current_user_id,
+    )
+
     if engagement.engagement_type:
         populate_from_template(
             db=db,
@@ -413,6 +426,15 @@ def bulk_create_engagements(
             filing_deadline=payload.filing_deadline,
         )
         engagement = crud_engagement.create_engagement(db, eng_create, firm_id=firm_id)
+
+        from app.services import engagement_member_service
+
+        engagement_member_service.ensure_creator_is_administrator(
+            db=db,
+            firm_id=firm_id,
+            engagement_id=engagement.id,
+            current_user_id=current_user_id,
+        )
 
         write_audit_log(
             db=db,

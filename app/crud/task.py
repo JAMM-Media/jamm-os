@@ -45,9 +45,22 @@ def get_tasks_for_firm(
     return query
 
 
-def create_task(db: Session, task_in: TaskCreate, firm_id: UUID) -> Task:
+def create_task(
+    db: Session,
+    task_in: TaskCreate,
+    firm_id: UUID,
+    is_self_created: bool = False,
+) -> Task:
     data = task_in.model_dump()
-    task = Task(**data, firm_id=firm_id)
+    # status and task_type are Enum members on the schema and plain String
+    # columns on the model. Both enums subclass str so they would bind
+    # correctly anyway, but unwrapping keeps what lands in the row identical
+    # to what a raw string caller would have written.
+    for _enum_field in ("status", "task_type"):
+        value = data.get(_enum_field)
+        if value is not None:
+            data[_enum_field] = getattr(value, "value", value)
+    task = Task(**data, firm_id=firm_id, is_self_created=is_self_created)
     db.add(task)
     db.commit()
     db.refresh(task)

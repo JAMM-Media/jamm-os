@@ -46,6 +46,10 @@ router = APIRouter(prefix="/engagements", tags=["engagements"])
 # ---------------------------------------------------------
 # CREATE
 # firm_id comes from the JWT via current_firm — never from the request body.
+#
+# manager_or_above, not staff_or_above: staff never create engagements. The
+# creator becomes an administrator of the engagement automatically, which is
+# handled in engagement_service.create_engagement.
 # ---------------------------------------------------------
 @router.post("/", response_model=EngagementOut, status_code=status.HTTP_201_CREATED)
 async def create_engagement(
@@ -54,7 +58,7 @@ async def create_engagement(
     db: Session = Depends(get_db),
     current_firm: Firm = Depends(get_current_firm),
     current_user: User = Depends(get_current_user),
-    _: object = Depends(require_staff_or_above),
+    _: object = Depends(require_manager_or_above),
 ):
     return await engagement_service.create_engagement(
         db=db, payload=payload, firm_id=current_firm.id,
@@ -395,6 +399,9 @@ def update_complexity_flags(
 
 # ---------------------------------------------------------
 # BULK CREATE ENGAGEMENTS
+# Same restriction as single create — this is engagement creation too, and
+# leaving it at staff_or_above would make the single-create restriction
+# trivially bypassable.
 # ---------------------------------------------------------
 @router.post("/bulk-create", response_model=BulkEngagementCreateResult, status_code=status.HTTP_201_CREATED)
 def bulk_create_engagements(
@@ -402,7 +409,7 @@ def bulk_create_engagements(
     db: Session = Depends(get_db),
     current_firm: Firm = Depends(get_current_firm),
     current_user: User = Depends(get_current_user),
-    _: object = Depends(require_staff_or_above),
+    _: object = Depends(require_manager_or_above),
 ):
     created_ids, skipped = engagement_service.bulk_create_engagements(
         db=db, payload=payload, firm_id=current_firm.id, current_user_id=current_user.id,

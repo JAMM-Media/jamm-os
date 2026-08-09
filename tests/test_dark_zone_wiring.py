@@ -67,7 +67,14 @@ def test_bulk_task_assignment_fires():
 
     payload = BulkTaskUpdate(ids=[task.id], update=BulkTaskFieldUpdate(assigned_to=new_assignee))
 
-    with patch("app.services.task_service.log_event") as mock_log:
+    # Bulk assignment now checks that the assignee is a member of each task's
+    # engagement, which needs a real session -- every lookup against this
+    # fully mocked db would come back as a truthy MagicMock and get rejected
+    # for having a MagicMock role. This test is about behavioral-event wiring,
+    # not about the membership rule; the rule itself is covered against a real
+    # database in tests/test_engagement_membership.py.
+    with patch("app.services.task_service.log_event") as mock_log, \
+         patch("app.services.task_service._require_assignable"):
         bulk_update_tasks(payload=payload, db=mock_db, current_firm=current_firm, _=None)
 
     event_types = [c.kwargs["event_type"] for c in mock_log.call_args_list]
@@ -92,7 +99,10 @@ def test_bulk_task_no_change_fires_nothing():
         update=BulkTaskFieldUpdate(status=TaskStatus.TODO, assigned_to=same_assignee, due_date=same_due_date),
     )
 
-    with patch("app.services.task_service.log_event") as mock_log:
+    # Same reason as the test above: the membership check cannot run against a
+    # fully mocked session, and is not what this test is asserting.
+    with patch("app.services.task_service.log_event") as mock_log, \
+         patch("app.services.task_service._require_assignable"):
         bulk_update_tasks(payload=payload, db=mock_db, current_firm=current_firm, _=None)
 
     mock_log.assert_not_called()

@@ -31,7 +31,11 @@ def enrich_task(task: Task, db: Session) -> TaskOut:
 
 # ---------------------------------------------------------
 # CREATE TASK
-# manager_or_above can create tasks
+#
+# staff_or_above is the floor, not the rule. Anyone ON an engagement can
+# create tasks for it, whatever their firm role, and internal tasks need no
+# engagement at all. The real per-engagement check needs the database and
+# lives in task_service.require_can_create_task.
 # ---------------------------------------------------------
 @router.post("/", response_model=TaskOut, status_code=status.HTTP_201_CREATED)
 def create_task(
@@ -39,8 +43,14 @@ def create_task(
     db: Session = Depends(get_db),
     current_firm: Firm = Depends(get_current_firm),
     current_user: User = Depends(get_current_user),
-    _: object = Depends(require_manager_or_above),
+    _: object = Depends(require_staff_or_above),
 ):
+    task_service.require_can_create_task(
+        db,
+        firm_id=current_firm.id,
+        engagement_id=payload.engagement_id,
+        current_user=current_user,
+    )
     return task_service.create_task(
         db=db, payload=payload, firm_id=current_firm.id,
         current_user_id=current_user.id,
