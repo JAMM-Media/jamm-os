@@ -123,6 +123,43 @@ def create_room(
 
 
 # ---------------------------------------------------------------------------
+# POST /peer-network/rooms/{room_id}/hide
+# ---------------------------------------------------------------------------
+
+@router.post("/rooms/{room_id}/hide", status_code=status.HTTP_200_OK)
+def hide_room(
+    room_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    member = get_active_member(db=db, user_id=current_user.id)
+
+    room = db.execute(
+        select(PeerNetworkRoom).where(PeerNetworkRoom.id == room_id)
+    ).scalar_one_or_none()
+
+    if room is None:
+        raise HTTPException(status_code=404, detail="Room not found.")
+
+    if room.room_type in ("main", "announcements"):
+        raise HTTPException(
+            status_code=422,
+            detail="Main and Announcements rooms cannot be hidden.",
+        )
+
+    row = get_room_membership(db=db, room_id=room.id, member_id=member.id)
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You are not a member of this room.",
+        )
+
+    row.is_hidden = True
+    db.commit()
+
+    return {"hidden": True, "room_id": str(room_id)}
+
+
 # PATCH /peer-network/rooms/{room_id}
 # ---------------------------------------------------------------------------
 
@@ -276,9 +313,13 @@ def list_rooms(
         select(PeerNetworkRoom).where(PeerNetworkRoom.room_type.in_(["main", "announcements"]))
     ).scalars().all()
 
-    # dm and subgroup rooms are private; only include where the member has a membership row.
+    # dm and subgroup rooms are private; only include where the member has a membership row
+    # and has not hidden it.
     member_room_ids = db.execute(
-        select(PeerNetworkRoomMember.room_id).where(PeerNetworkRoomMember.member_id == member.id)
+        select(PeerNetworkRoomMember.room_id).where(
+            PeerNetworkRoomMember.member_id == member.id,
+            PeerNetworkRoomMember.is_hidden == False,  # noqa: E712
+        )
     ).scalars().all()
     private_rooms = db.execute(
         select(PeerNetworkRoom).where(PeerNetworkRoom.id.in_(member_room_ids))
@@ -290,8 +331,46 @@ def list_rooms(
         if r.id not in seen_ids:
             rooms.append(r)
 
+    # Compute dm_display for DM rooms: the other participant's per-viewer display name.
+    dm_room_ids = [r.id for r in rooms if r.room_type == "dm"]
+    dm_display_map: dict[uuid.UUID, str] = {}
+    if dm_room_ids:
+        dm_member_rows = db.execute(
+            select(PeerNetworkRoomMember).where(
+                PeerNetworkRoomMember.room_id.in_(dm_room_ids)
+            )
+        ).scalars().all()
+        other_id_by_room: dict[uuid.UUID, uuid.UUID] = {}
+        for row in dm_member_rows:
+            if row.member_id != member.id:
+                other_id_by_room[row.room_id] = row.member_id
+        other_ids = set(other_id_by_room.values())
+        if other_ids:
+            other_members = db.execute(
+                select(PeerNetworkMember).where(PeerNetworkMember.id.in_(other_ids))
+            ).scalars().all()
+            handle_map_dm = {m.id: m.handle for m in other_members}
+            dm_aliases = db.execute(
+                select(PeerNetworkAlias).where(
+                    PeerNetworkAlias.owner_member_id == member.id,
+                    PeerNetworkAlias.target_member_id.in_(other_ids),
+                )
+            ).scalars().all()
+            alias_map_dm = {a.target_member_id: a.label for a in dm_aliases}
+            for room_id, other_id in other_id_by_room.items():
+                raw = handle_map_dm.get(other_id, "Unknown")
+                dm_display_map[room_id] = alias_map_dm.get(other_id, raw)
+
+    def _room_item(r: PeerNetworkRoom) -> dict:
+        return {
+            "id": str(r.id),
+            "room_type": r.room_type,
+            "name": r.name,
+            "dm_display": dm_display_map.get(r.id),
+        }
+
     return {
-        "items": [{"id": str(r.id), "room_type": r.room_type, "name": r.name} for r in rooms],
+        "items": [_room_item(r) for r in rooms],
         "total": len(rooms),
         "my_handle": member.handle,
         "has_posted": member.has_posted,
@@ -466,6 +545,19 @@ def post_message(
         mentions=valid_mention_ids if valid_mention_ids else None,
     )
     db.add(message)
+
+    # Unhide this room for any other member who had hidden it, so the conversation
+    # reappears in their sidebar automatically when a new message arrives.
+    hidden_members = db.execute(
+        select(PeerNetworkRoomMember).where(
+            PeerNetworkRoomMember.room_id == room_id,
+            PeerNetworkRoomMember.member_id != member.id,
+            PeerNetworkRoomMember.is_hidden == True,  # noqa: E712
+        )
+    ).scalars().all()
+    for row in hidden_members:
+        row.is_hidden = False
+
     db.commit()
     db.refresh(message)
 

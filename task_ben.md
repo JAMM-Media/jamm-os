@@ -74,9 +74,9 @@ This section exists because a past session confidently claimed specific files we
 
 # Section 3 - The task
 
-TASK: Add the backend foundation for Peer Network DMs and subgroups: a real per-room membership table (which does not exist at all right now, confirmed live, every room is currently accessible to any active network member regardless of intent), room creation, and making list_rooms genuinely per-user instead of returning every room unconditionally.
+TASK: Fix the real sidebar-toggle "jump" in Peer Network, confirmed live by Ben as a separate issue from the just-fixed bubble-stretching bug. Real theory, worth confirming before applying: the sidebar's width is animated via transition-all from w-8 to w-52, and animating a flex sibling's width forces the adjacent message feed to continuously reflow text line-wrapping for the full duration of the animation, which reads as a visible jump.
 
-USE: claude fable-5
+USE: claude sonnet
 
 ENVIRONMENT SANITY CHECK:
 
@@ -86,51 +86,33 @@ State plainly that no path in this task resolves against /mnt/c/Users or any Win
 
 VERIFY BEFORE ACT:
 
-.venv/bin/alembic heads
+grep -n "transition-all.*sidebarCollapsed\|sidebarCollapsed.*transition" "src/app/(app)/peer-network/page.tsx"
 
-grep -n -B 3 -A 30 "class PeerNetworkRoom" app/models/peer_network.py
+Paste the real output. Confirm the exact real current sidebar container classes, specifically the transition-all and the conditional w-8/w-52 width classes.
 
-grep -n -B 3 -A 20 "def list_rooms\|def list_messages\|def post_message" app/api/peer_network.py
+WHAT THIS IS:
 
-Confirm exactly one alembic head. Confirm the real current PeerNetworkRoom model and every real place a room gets looked up, since access control needs to be added consistently across all of them, not just the new ones.
-
-WHAT THIS IS, PER THE LOCKED SPEC SECTION 6:
-
-Direct messages (one-to-one) and multi-person private subgroups. Members create these freely, no approval needed. Subgroups can be named with a shared name. No cap on subgroups per member. This is fundamentally different from Main (open to every active network member) and Announcements (read-only, JAMM team posts only): DMs and subgroups need real, restricted membership, confirmed as a genuine gap right now since PeerNetworkRoom has no membership concept at all and any active member could theoretically access any room by ID.
+Animating a flex item's width when a sibling flex item fills remaining space (flex-1) causes the sibling to continuously reflow its own content for every frame of the animation, since its available width is changing continuously, not just once at the start and end. If any message text is near a line-wrap boundary, this can cause visible content-shifting during the transition, reading as a jump. The standard real fix is to animate a property that does not trigger reflow of sibling content, most commonly by not animating width directly on a flex item, instead using either an instant width change with no transition, or animating transform/opacity on the sidebar itself while keeping its layout width change instant.
 
 CHANGE INSTRUCTIONS:
 
-Add a new model, PeerNetworkRoomMember, in app/models/peer_network.py: id, room_id (FK peer_network_rooms.id, ondelete=CASCADE, index), member_id (FK peer_network_members.id, ondelete=CASCADE, index, this is a PeerNetworkMember id, not a raw user id, matching the existing pattern used throughout this feature), joined_at (DateTime with timezone). Add a real unique constraint on (room_id, member_id), someone can't be added to the same room twice.
-
-Write the migration by hand, matching tonight's established real structure, down_revision set to the real current head confirmed above.
-
-Add a real helper function, get_room_membership(db, room_id, member_id) or similar, in app/services/peer_network_service.py, returning the real PeerNetworkRoomMember row or None. This should be used to gate access specifically for room_type "dm" and "subgroup", NOT for "main" or "announcements", since those two remain open to every active network member exactly as they work today, do not change their access behavior.
-
-Update list_messages and post_message: after the existing get_active_member check (unchanged), for rooms where room_type is "dm" or "subgroup", additionally require a real PeerNetworkRoomMember row for the calling member, real 403 if none exists. For "main" and "announcements", skip this additional check entirely, preserving current behavior exactly.
-
-Add POST /peer-network/rooms, accepting {room_type: "dm" | "subgroup", member_ids: list[uuid], name: Optional[str]}. Validate room_type is one of these two values only, reject "main"/"announcements" creation attempts since those are singleton/admin-only concepts, not user-creatable. For "dm", require exactly 2 total participants (the creator plus exactly one other, reject any other count with a clear error). For "subgroup", require at least 2 total participants (creator plus at least one other) and allow name to be set; for "dm", name should always be null regardless of what's passed, DMs are not named per spec. Validate every real member_id in the request actually corresponds to a real, active PeerNetworkMember in this firm's network before creating anything, reject with a clear error listing which ids were invalid if any aren't. Create the PeerNetworkRoom row, then a PeerNetworkRoomMember row for the creator and for every valid target member, including the creator themselves.
-
-Rewrite list_rooms to be genuinely per-user: for "main" and "announcements", these should always appear for every active member with no membership check, exactly as today. For "dm" and "subgroup", only include rooms where a real PeerNetworkRoomMember row exists for the calling member. Keep the existing my_handle/has_posted/is_muted/muted_reason fields in the response exactly as they are now, this is purely about which rooms get listed, not the shape of the per-user state already returned.
-
-Add PATCH /peer-network/rooms/{room_id}, gated by real room membership (dm/subgroup only, per the new check), accepting {name: str}, renaming a subgroup only, reject with a clear error if called on a dm (dms are never named) or on main/announcements (not user-renameable).
+Given this is a real, but minor, polish concern, and the message feed's reflow-during-animation is an inherent property of animating a flex sibling's width (not a bug with an obvious better CSS-only fix that fully eliminates reflow while keeping a smooth width animation), the pragmatic real fix is: remove transition-all from the sidebar's width change specifically, so the collapse/expand becomes an instant width snap instead of an animated one, eliminating the multi-frame reflow entirely. Keep transition-colors or similar on any other properties of that element if they exist and are unrelated to width, only remove the transition behavior that's actually animating width. If the real current class is a single transition-all covering multiple properties, replace it with a more specific transition class that excludes width (for example transition-colors if background/border color transitions are also happening on this element and are worth preserving, check the real current classes to decide precisely what to keep).
 
 VERIFY AFTER ACT:
 
-grep -n "class PeerNetworkRoomMember" app/models/peer_network.py
+cd /home/corby/jamm-os/frontend
+npm run build
 
-grep -n "get_room_membership\|@router.post(\"/rooms\")\|@router.patch(\"/rooms" app/api/peer_network.py
+grep -n "sidebarCollapsed.*w-8.*w-52\|transition" "src/app/(app)/peer-network/page.tsx" | grep -i sidebar
 
-.venv/bin/alembic heads
+git diff --stat
 
-This must show exactly one head, the new migration's revision id. Run .venv/bin/alembic upgrade head and confirm it applies with no errors.
-
-cd /home/corby/jamm-os
-python3 -c "from app.main import app; print('app imports cleanly')"
+This should be a very small, one-line diff.
 
 MANUAL VERIFICATION:
 
-Restart the backend. Using two real distinct member accounts from tonight's testing (the owner and the manager, both confirmed active members), create a real DM between them via POST /peer-network/rooms. Confirm both participants can call GET /peer-network/rooms and see the new DM listed, and confirm a real third account (the third-party test account created earlier tonight, also an active member but not part of this DM) does NOT see it in their own room list. Post a real message in the new DM as one participant, confirm the other participant can read it via GET /peer-network/rooms/{room_id}/messages, and confirm the real third-party account gets a real 403 attempting to read the same room directly by its real id. Try creating a DM with 3 member_ids, confirm a real, clear rejection. Create a real subgroup with a real name and 3 total participants, confirm it works and is named correctly. Report every real response.
+Restart the frontend dev server only. Reload /peer-network, toggle the sidebar collapsed and expanded several times while watching the message feed, confirm the jump is now gone, the width change should feel like an instant snap rather than an animated slide, but the message content should no longer visibly shift during it. Report back plainly whether it's actually fixed now.
 
 GIT:
 
-Do not commit until Ben confirms every real check above with actual API responses.
+Do not commit until Ben confirms the jump is genuinely gone in the browser.

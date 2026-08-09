@@ -18,6 +18,7 @@ export interface PeerNetworkRoom {
   id: string
   room_type: string
   name: string | null
+  dm_display: string | null
 }
 
 export interface AliasEntry {
@@ -75,5 +76,24 @@ export const peerNetworkApi = {
   searchMembers: async (handlePrefix: string): Promise<{ items: AliasEntry[]; total: number }> => {
     const { data } = await api.get('/peer-network/members/search', { params: { handle_prefix: handlePrefix } })
     return data as { items: AliasEntry[]; total: number }
+  },
+
+  createRoom: async (
+    roomType: 'dm' | 'subgroup',
+    memberIds: string[],
+    name?: string,
+  ): Promise<{ id: string; room_type: string; name: string | null; member_count: number }> => {
+    const { data } = await api.post('/peer-network/rooms', { room_type: roomType, member_ids: memberIds, name: name ?? null })
+    return data as { id: string; room_type: string; name: string | null; member_count: number }
+  },
+
+  renameRoom: async (roomId: string, name: string): Promise<{ id: string; room_type: string; name: string | null }> => {
+    const { data } = await api.patch(`/peer-network/rooms/${roomId}`, { name })
+    return data as { id: string; room_type: string; name: string | null }
+  },
+
+  hideRoom: async (roomId: string): Promise<{ hidden: boolean; room_id: string }> => {
+    const { data } = await api.post(`/peer-network/rooms/${roomId}/hide`)
+    return data as { hidden: boolean; room_id: string }
   },
 }

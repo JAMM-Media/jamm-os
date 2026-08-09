@@ -132,6 +132,8 @@ class PeerNetworkRoomMember(Base):
         default=lambda: datetime.now(timezone.utc),
     )
 
+    is_hidden: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
     __table_args__ = (
         UniqueConstraint("room_id", "member_id", name="uq_peer_network_room_member"),
     )

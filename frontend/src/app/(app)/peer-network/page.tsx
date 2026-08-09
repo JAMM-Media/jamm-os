@@ -4,9 +4,9 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { Sprout, Pencil, Trash2, X, Check } from 'lucide-react'
+import { Sprout, Pencil, Trash2, X, Check, Plus, ChevronLeft, ChevronRight } from 'lucide-react'
 import { useAuth } from '@/lib/hooks/useAuth'
-import { peerNetworkApi, type PeerNetworkMessage, type AliasEntry } from '@/lib/api/peerNetwork'
+import { peerNetworkApi, type PeerNetworkMessage, type PeerNetworkRoom, type AliasEntry } from '@/lib/api/peerNetwork'
 import { ConfirmModal } from '@/components/ui/ConfirmModal'
 
 // ---------------------------------------------------------------------------
@@ -370,7 +370,7 @@ function MessageBubble({
   return (
     <div className="flex items-end gap-2 min-w-0 px-3 py-[2px]">
       {avatarElement}
-      <div className="flex flex-col max-w-[420px] min-w-0">
+      <div className="flex flex-col items-start max-w-[420px] min-w-0">
         {authorElement}
         <div className="bg-white dark:bg-[#444444] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] text-[#1F3148] dark:text-[#EDEEF0] rounded-[18px] px-4 py-2 text-[14px] leading-relaxed whitespace-pre-wrap break-words">
           {renderBody(message.body)}
@@ -432,6 +432,148 @@ function FirstPostModal({ onConfirm, onCancel }: { onConfirm: () => Promise<void
             className="px-3 h-8 rounded-[6px] bg-[#3A6A94] text-white text-[12px] font-medium hover:opacity-90 transition-opacity disabled:opacity-40"
           >
             {confirming ? 'Sending...' : 'I Understand, Continue'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// New Message modal (DM / subgroup creation)
+// ---------------------------------------------------------------------------
+
+function NewMessageModal({
+  aliases,
+  onClose,
+  onCreated,
+}: {
+  aliases: AliasEntry[]
+  onClose: () => void
+  onCreated: (roomId: string) => void
+}) {
+  const [search, setSearch] = useState('')
+  const [handleResults, setHandleResults] = useState<AliasEntry[]>([])
+  const [selected, setSelected] = useState<AliasEntry[]>([])
+  const [groupName, setGroupName] = useState('')
+  const [creating, setCreating] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const aliasResults = search
+    ? aliases.filter(a => (a.label ?? a.handle).toLowerCase().startsWith(search.toLowerCase()))
+    : []
+
+  const selectedIds = new Set(selected.map(s => s.target_member_id))
+  const filteredAliasResults = aliasResults.filter(a => !selectedIds.has(a.target_member_id))
+  const filteredHandleResults = handleResults.filter(a => !selectedIds.has(a.target_member_id) && !filteredAliasResults.find(b => b.target_member_id === a.target_member_id))
+  const results = [...filteredAliasResults, ...filteredHandleResults]
+
+  const onSearch = async (q: string) => {
+    setSearch(q)
+    if (q.length >= 2) {
+      try {
+        const { items } = await peerNetworkApi.searchMembers(q)
+        setHandleResults(items)
+      } catch {}
+    } else {
+      setHandleResults([])
+    }
+  }
+
+  const toggleSelect = (entry: AliasEntry) => {
+    setSelected(prev =>
+      prev.find(s => s.target_member_id === entry.target_member_id)
+        ? prev.filter(s => s.target_member_id !== entry.target_member_id)
+        : [...prev, entry]
+    )
+    setSearch('')
+    setHandleResults([])
+  }
+
+  const handleCreate = async () => {
+    if (selected.length === 0) return
+    setCreating(true)
+    setError(null)
+    try {
+      const roomType = selected.length === 1 ? 'dm' : 'subgroup'
+      const name = roomType === 'subgroup' && groupName.trim() ? groupName.trim() : undefined
+      const room = await peerNetworkApi.createRoom(roomType, selected.map(s => s.target_member_id), name)
+      onCreated(room.id)
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      setError(detail ?? 'Failed to create conversation.')
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/30"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
+    >
+      <div className="bg-white dark:bg-[#2D2D2D] rounded-[10px] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] shadow-lg w-[360px] flex flex-col">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-[#C8CDD6] dark:border-[#484848]">
+          <p className="text-[13px] font-semibold text-[#1F3148] dark:text-[#EDEEF0]">New Message</p>
+          <button onClick={onClose} className="p-1 rounded hover:bg-[#F7F7F8] dark:hover:bg-[#383838] transition-colors">
+            <X className="w-3.5 h-3.5 text-[#6B7280]" />
+          </button>
+        </div>
+        <div className="px-4 pt-3 pb-2">
+          {selected.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mb-2">
+              {selected.map(s => (
+                <span key={s.target_member_id} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#3A6A94]/10 text-[#3A6A94] text-[12px]">
+                  {s.label ?? s.handle}
+                  <button onMouseDown={() => setSelected(prev => prev.filter(p => p.target_member_id !== s.target_member_id))} className="hover:opacity-70">
+                    <X className="w-2.5 h-2.5" />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => onSearch(e.target.value)}
+            placeholder="Search by alias or handle..."
+            autoFocus
+            className="w-full h-9 px-3 rounded-[6px] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] bg-[#F7F7F8] dark:bg-[#383838] text-[13px] text-[#1F3148] dark:text-[#EDEEF0] placeholder:text-[#6B7280] focus:outline-none focus:border-[#4A7FA5] transition-colors"
+          />
+        </div>
+        {results.length > 0 && (
+          <div className="max-h-[180px] overflow-y-auto border-t border-[#C8CDD6] dark:border-[#484848]">
+            {results.slice(0, 8).map(a => (
+              <button
+                key={a.target_member_id}
+                onMouseDown={() => toggleSelect(a)}
+                className="w-full text-left px-4 py-2 text-[13px] text-[#1F3148] dark:text-[#EDEEF0] hover:bg-[#F7F7F8] dark:hover:bg-[#383838] flex items-center gap-2"
+              >
+                <span className="font-medium">{a.label ?? a.handle}</span>
+                {a.label && <span className="text-[#9CA3AF] text-[11px]">{a.handle}</span>}
+              </button>
+            ))}
+          </div>
+        )}
+        {selected.length >= 2 && (
+          <div className="px-4 py-2 border-t border-[#C8CDD6] dark:border-[#484848]">
+            <input
+              type="text"
+              value={groupName}
+              onChange={(e) => setGroupName(e.target.value)}
+              placeholder="Group name (optional)"
+              className="w-full h-8 px-3 rounded-[6px] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] bg-[#F7F7F8] dark:bg-[#383838] text-[12px] text-[#1F3148] dark:text-[#EDEEF0] placeholder:text-[#6B7280] focus:outline-none focus:border-[#4A7FA5] transition-colors"
+            />
+          </div>
+        )}
+        {error && <p className="px-4 pb-2 text-[12px] text-red-500">{error}</p>}
+        <div className="px-4 pb-4 pt-2 border-t border-[#C8CDD6] dark:border-[#484848]">
+          <button
+            onClick={handleCreate}
+            disabled={selected.length === 0 || creating}
+            className="w-full h-9 rounded-[6px] bg-[#3A6A94] text-white text-[13px] font-medium hover:opacity-90 transition-opacity disabled:opacity-40"
+          >
+            {creating ? 'Creating...' : selected.length === 1 ? 'Start DM' : 'Create Group'}
           </button>
         </div>
       </div>
@@ -578,7 +720,8 @@ export default function PeerNetworkPage() {
   const { user } = useAuth()
 
   const [pageState, setPageState] = useState<PageState>('loading')
-  const [mainRoomId, setMainRoomId] = useState<string | null>(null)
+  const [rooms, setRooms] = useState<PeerNetworkRoom[]>([])
+  const [activeRoomId, setActiveRoomId] = useState<string | null>(null)
   const [myHandle, setMyHandle] = useState<string | null>(null)
   const [messages, setMessages] = useState<PeerNetworkMessage[]>([])
   const [compose, setCompose] = useState('')
@@ -591,6 +734,7 @@ export default function PeerNetworkPage() {
   const [myIsMuted, setMyIsMuted] = useState(false)
   const [myMutedReason, setMyMutedReason] = useState<string | null>(null)
   const [showFirstPostModal, setShowFirstPostModal] = useState(false)
+  const [showNewMessageModal, setShowNewMessageModal] = useState(false)
   const [aliases, setAliases] = useState<AliasEntry[]>([])
   const [mentionSearch, setMentionSearch] = useState<string | null>(null)
   const [mentionResults, setMentionResults] = useState<AliasEntry[]>([])
@@ -598,17 +742,18 @@ export default function PeerNetworkPage() {
   const bottomRef = useRef<HTMLDivElement>(null)
   const composeRef = useRef<HTMLTextAreaElement>(null)
 
-  const loadRoom = useCallback(async () => {
+  const loadRoom = useCallback(async (keepActiveRoomId?: string) => {
     try {
       const { items, my_handle, has_posted, is_muted, muted_reason } = await peerNetworkApi.getRooms()
-      const main = items.find((r) => r.room_type === 'main')
-      if (!main) return
-      setMainRoomId(main.id)
+      setRooms(items)
       setMyHandle(my_handle)
       setMyHasPosted(has_posted)
       setMyIsMuted(is_muted)
       setMyMutedReason(muted_reason)
-      const { items: msgs } = await peerNetworkApi.getMessages(main.id)
+      const targetId = keepActiveRoomId ?? items.find((r) => r.room_type === 'main')?.id ?? items[0]?.id
+      if (!targetId) return
+      setActiveRoomId(targetId)
+      const { items: msgs } = await peerNetworkApi.getMessages(targetId)
       setMessages(msgs)
       setPageState('ready')
       try {
@@ -647,6 +792,64 @@ export default function PeerNetworkPage() {
     await loadRoom()
   }
 
+  const switchRoom = useCallback(async (roomId: string) => {
+    if (roomId === activeRoomId) return
+    setActiveRoomId(roomId)
+    setMessages([])
+    setEditingMessageId(null)
+    setCompose('')
+    setMentionSearch(null)
+    setMentionResults([])
+    setMentionReplacements([])
+    try {
+      const { items: msgs } = await peerNetworkApi.getMessages(roomId)
+      setMessages(msgs)
+    } catch {}
+  }, [activeRoomId])
+
+  const getRoomDisplayName = (room: PeerNetworkRoom): string => {
+    if (room.room_type === 'main') return 'Main Room'
+    if (room.room_type === 'announcements') return 'Announcements'
+    if (room.room_type === 'dm') return room.dm_display ?? 'Direct Message'
+    return room.name ?? 'Unnamed Group'
+  }
+
+  const activeRoomDisplayName = (() => {
+    const r = rooms.find(r => r.id === activeRoomId)
+    return r ? getRoomDisplayName(r) : 'Peer Network'
+  })()
+
+  const sortedRooms = [
+    ...rooms.filter(r => r.room_type === 'main'),
+    ...rooms.filter(r => r.room_type === 'announcements'),
+    ...rooms.filter(r => r.room_type === 'dm'),
+    ...rooms.filter(r => r.room_type === 'subgroup'),
+  ]
+
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false
+    return localStorage.getItem('pn_sidebar_collapsed') === 'true'
+  })
+
+  const toggleSidebar = () => {
+    setSidebarCollapsed(prev => {
+      const next = !prev
+      localStorage.setItem('pn_sidebar_collapsed', String(next))
+      return next
+    })
+  }
+
+  const handleHideRoom = async (roomId: string) => {
+    try {
+      await peerNetworkApi.hideRoom(roomId)
+      setRooms(prev => prev.filter(r => r.id !== roomId))
+      if (activeRoomId === roomId) {
+        const main = rooms.find(r => r.room_type === 'main')
+        if (main) switchRoom(main.id)
+      }
+    } catch {}
+  }
+
   const encodeBody = (text: string, replacements: Array<{ display: string; token: string }>) => {
     let encoded = text
     // Sort longest display first to avoid partial-match replacements.
@@ -658,11 +861,11 @@ export default function PeerNetworkPage() {
   }
 
   const doSend = async () => {
-    if (!compose.trim() || !mainRoomId || sending) return
+    if (!compose.trim() || !activeRoomId || sending) return
     setSending(true)
     try {
       const encodedBody = encodeBody(compose.trim(), mentionReplacements)
-      const msg = await peerNetworkApi.postMessage(mainRoomId, encodedBody)
+      const msg = await peerNetworkApi.postMessage(activeRoomId!, encodedBody)
       setMessages((prev) => [...prev, msg])
       setCompose('')
       if (composeRef.current) { composeRef.current.style.height = 'auto' }
@@ -674,7 +877,7 @@ export default function PeerNetworkPage() {
   }
 
   const handleSend = async () => {
-    if (!compose.trim() || !mainRoomId || sending) return
+    if (!compose.trim() || !activeRoomId || sending) return
     if (!myHasPosted) {
       setShowFirstPostModal(true)
       return
@@ -723,7 +926,7 @@ export default function PeerNetworkPage() {
         <div className="flex items-center gap-2">
           <Sprout className="h-4 w-4 text-[#6B7280]" />
           <span className="font-medium text-[15px] text-brand dark:text-[#EDEEF0]">Peer Network</span>
-          <span className="text-[12px] text-[#6B7280]">Main Room</span>
+          <span className="text-[12px] text-[#6B7280]">Loading...</span>
         </div>
         <div className="flex-1 rounded-[10px] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] bg-[#E4E6EA] dark:bg-[#2D2D2D] p-4 flex flex-col gap-4">
           {[120, 200, 80, 160, 100].map((w, i) => (
@@ -823,12 +1026,88 @@ export default function PeerNetworkPage() {
         onCancel={() => setConfirmDeleteId(null)}
       />
 
-      <div className="flex flex-col h-full p-4 gap-3">
+      {showNewMessageModal && (
+        <NewMessageModal
+          aliases={aliases}
+          onClose={() => setShowNewMessageModal(false)}
+          onCreated={async (roomId) => {
+            setShowNewMessageModal(false)
+            await loadRoom(roomId)
+          }}
+        />
+      )}
+
+      <div className="flex h-full">
+        {/* Room sidebar */}
+        <div className={`flex-shrink-0 border-r border-[#C8CDD6] dark:border-[#484848] flex flex-col bg-[#F7F7F8] dark:bg-[#252525] ${sidebarCollapsed ? 'w-8' : 'w-52'}`}>
+          {sidebarCollapsed ? (
+            <div className="flex flex-col items-center pt-2">
+              <button
+                onClick={toggleSidebar}
+                title="Expand sidebar"
+                className="p-1.5 rounded hover:bg-[#E4E6EA] dark:hover:bg-[#383838] transition-colors"
+              >
+                <ChevronRight className="w-3.5 h-3.5 text-[#6B7280]" />
+              </button>
+            </div>
+          ) : (
+            <>
+              <div className="flex items-center justify-between px-3 py-3 border-b border-[#C8CDD6] dark:border-[#484848]">
+                <div className="flex items-center gap-1.5">
+                  <Sprout className="h-3.5 w-3.5 text-[#6B7280]" />
+                  <span className="text-[12px] font-semibold text-[#1F3148] dark:text-[#EDEEF0]">Peer Network</span>
+                </div>
+                <div className="flex items-center gap-0.5">
+                  <button
+                    onClick={() => setShowNewMessageModal(true)}
+                    title="New Message"
+                    className="p-1 rounded hover:bg-[#E4E6EA] dark:hover:bg-[#383838] transition-colors"
+                  >
+                    <Plus className="w-3.5 h-3.5 text-[#6B7280]" />
+                  </button>
+                  <button
+                    onClick={toggleSidebar}
+                    title="Collapse sidebar"
+                    className="p-1 rounded hover:bg-[#E4E6EA] dark:hover:bg-[#383838] transition-colors"
+                  >
+                    <ChevronLeft className="w-3.5 h-3.5 text-[#6B7280]" />
+                  </button>
+                </div>
+              </div>
+              <div className="flex-1 overflow-y-auto py-1">
+                {sortedRooms.map(room => (
+                  <div key={room.id} className="group relative flex items-center">
+                    <button
+                      onClick={() => switchRoom(room.id)}
+                      className={`flex-1 text-left px-3 py-2 text-[12px] transition-colors truncate pr-7 ${
+                        activeRoomId === room.id
+                          ? 'bg-[#3A6A94]/10 text-[#3A6A94] dark:text-[#7EB8E4] font-medium'
+                          : 'text-[#374151] dark:text-[#D1D5DB] hover:bg-[#E4E6EA] dark:hover:bg-[#383838]'
+                      }`}
+                    >
+                      {getRoomDisplayName(room)}
+                    </button>
+                    {(room.room_type === 'dm' || room.room_type === 'subgroup') && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleHideRoom(room.id) }}
+                        title="Hide conversation"
+                        className="absolute right-1.5 p-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity hover:bg-[#D5D8DE] dark:hover:bg-[#444444]"
+                      >
+                        <X className="w-3 h-3 text-[#6B7280]" />
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Main feed column */}
+        <div className="flex flex-col flex-1 min-w-0 min-h-0 p-4 gap-3">
         {/* Header */}
         <div className="flex items-center gap-2 flex-shrink-0">
-          <Sprout className="h-4 w-4 text-[#6B7280]" />
-          <span className="font-medium text-[15px] text-[#1F3148] dark:text-[#EDEEF0]">Peer Network</span>
-          <span className="text-[12px] text-[#6B7280]">Main Room</span>
+          <span className="font-medium text-[15px] text-[#1F3148] dark:text-[#EDEEF0]">{activeRoomDisplayName}</span>
         </div>
 
         {/* Feed card */}
@@ -940,6 +1219,7 @@ export default function PeerNetworkPage() {
               </div>
             </>
           )}
+        </div>
         </div>
       </div>
     </>
