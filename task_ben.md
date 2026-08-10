@@ -72,11 +72,11 @@ This section exists because a past session confidently claimed specific files we
 
 ---
 
-# Section 3 - The task
+ # Section 3 - The task
 
-TASK: Add the backend foundation for Peer Network reactions and one-level replies, per spec section 7: standard emoji set reactions on any message (toggle on/off, no custom uploads), and Slack-style one-level-deep replies (a reply attaches to a parent message; replies to replies flatten into the same thread rather than nesting).
+TASK: One-line change to Peer Network, per Ben's real decision after weighing the tradeoff: the message content column's max-width, currently 720px, gets nudged up to 840px, a modest widening, not a removal of the real readability cap (confirmed correct professional convention, matching Slack's own real behavior of capping line width even on wide screens).
 
-USE: claude fable-5
+USE: claude sonnet
 
 ENVIRONMENT SANITY CHECK:
 
@@ -86,47 +86,29 @@ State plainly that no path in this task resolves against /mnt/c/Users or any Win
 
 VERIFY BEFORE ACT:
 
-.venv/bin/alembic heads
+grep -n "max-w-\[720px\]" "src/app/(app)/peer-network/page.tsx"
 
-grep -n -B 3 -A 45 "def list_messages" app/api/peer_network.py
-
-Confirm exactly one alembic head. Confirm the real current list_messages implementation in full (the batch-fetch-then-build-maps-then-construct-items pattern already established), since reactions and reply data need to follow this same real pattern, not a different approach.
-
-WHAT THIS IS, PER THE LOCKED SPEC SECTION 7 AND THE PROPOSED MESSAGE SHAPE IN SECTION 15:
-
-Reactions: emoji reactions on any message, standard set, no custom uploads. The real proposed response shape per message: "reactions": [{ "emoji": "👍", "count": 4, "reacted_by_me": true }]. Replies: one level deep only. A reply attaches to a parent message via parent_id and forms a thread. Replies to replies flatten into the same thread rather than nesting, meaning a reply's own parent_id must always point to a genuine top-level message, never to another reply, enforced server-side, not just a frontend convention. The real proposed shape includes reply_count on the parent.
+Paste the real output. Confirm exactly one real location.
 
 CHANGE INSTRUCTIONS:
 
-Add a new model, PeerNetworkReaction, in app/models/peer_network.py: id, message_id (FK peer_network_messages.id, ondelete=CASCADE, index), member_id (FK peer_network_members.id, ondelete=CASCADE, index), emoji (String, a real restricted set, define a real constant list of allowed standard emoji, for example 👍 ❤️ 😂 🎉 👏 💡, reject anything outside this set with a clear error rather than accepting arbitrary text), created_at. Add a real unique constraint on (message_id, member_id, emoji), the same person reacting with the same emoji twice should not create duplicate rows, toggling should remove it instead.
-
-Add parent_id: Mapped[uuid.UUID | None] to PeerNetworkMessage, ForeignKey peer_network_messages.id, ondelete=SET NULL, nullable=True, index=True. When creating a reply, if the target parent message itself already has a non-null parent_id, reject with a clear error or automatically flatten by using the parent's own parent_id instead of the attempted grandparent (spec explicitly requires flattening, not rejecting, choose flattening to match "replies to replies flatten into the same thread" precisely, do not silently allow a real two-level chain to form).
-
-Write the migration by hand, matching tonight's established real structure, down_revision set to the real current head confirmed above.
-
-Add POST /peer-network/messages/{message_id}/reactions, accepting {emoji: str}, gated by real active membership and, if the message's room is dm/subgroup, real room membership too (reuse the exact same real checks already used in post_message). Validate emoji is in the real allowed set. Toggle behavior: if the calling member already has this exact reaction on this message, remove it (un-react); otherwise create it. Return the real updated reaction summary for this message.
-
-Add a reply parameter to the existing POST /peer-network/rooms/{room_id}/messages endpoint: accept an optional parent_id in the request body. If provided, validate the parent message exists in this same room (reject if it's in a different room), and apply the real flattening rule described above if the target parent itself has a parent_id.
-
-Update list_messages to include real reaction and reply data per message, following the exact same batch-fetch pattern already used for handles/aliases/jamm_team: batch-query all PeerNetworkReaction rows for every message id in the current page, group by message_id and emoji to build real counts, and check whether the calling member's own id appears in each group for reacted_by_me. Batch-query reply counts (a real COUNT grouped by parent_id) for every message id in the current page. Add "reactions": [...] and "reply_count": int and "parent_id": str | None to each item's real response dict, matching the exact real shape already established in section 15's proposed API.
+Change max-w-[720px] to max-w-[840px]. Do not change anything else.
 
 VERIFY AFTER ACT:
 
-grep -n "class PeerNetworkReaction" app/models/peer_network.py
+cd /home/corby/jamm-os/frontend
+npm run build
 
-grep -n "parent_id\|reactions.*POST\|@router.post(\"/messages" app/api/peer_network.py
+grep -n "max-w-\[840px\]" "src/app/(app)/peer-network/page.tsx"
 
-.venv/bin/alembic heads
+git diff --stat
 
-This must show exactly one head, the new migration's revision id. Run .venv/bin/alembic upgrade head and confirm it applies with no errors.
-
-cd /home/corby/jamm-os
-python3 -c "from app.main import app; print('app imports cleanly')"
+This should be a one-line diff.
 
 MANUAL VERIFICATION:
 
-Restart the backend. Using two real distinct accounts from tonight's testing, react to a real existing message with a real allowed emoji as each account, confirm the message's real reactions field shows count 2, reacted_by_me true for each account's own perspective, false for the other's. React again with the same emoji as one account, confirm it toggles off (count drops back to 1). Try reacting with a real disallowed emoji or arbitrary text, confirm a real, clear rejection. Post a real reply to an existing message, confirm the parent's reply_count increases. Attempt to reply to that same reply (a real attempted second-level nesting), confirm it correctly flattens to point at the real original top-level parent, not the reply, verify this with a real database query showing the actual stored parent_id. Report every real response and query result.
+Restart the frontend dev server only. Reload /peer-network, find or send a real long message that previously wrapped around the middle of the screen, confirm it now wraps at a real, modestly wider point, still capped, not stretching edge-to-edge. Report back plainly whether the new width feels right.
 
 GIT:
 
-Do not commit until Ben confirms every real check above with actual evidence.
+Do not commit until Ben confirms it in the browser.

@@ -13,6 +13,9 @@ export interface PeerNetworkMessage {
   edited: boolean
   deleted: boolean
   is_jamm_team: boolean
+  parent_id: string | null
+  reply_count: number
+  reactions: Array<{ emoji: string; count: number; reacted_by_me: boolean }>
 }
 
 export interface PeerNetworkRoom {
@@ -46,8 +49,11 @@ export const peerNetworkApi = {
     return data as { items: PeerNetworkMessage[]; total: number }
   },
 
-  postMessage: async (roomId: string, body: string): Promise<PeerNetworkMessage> => {
-    const { data } = await api.post(`/peer-network/rooms/${roomId}/messages`, { body })
+  postMessage: async (roomId: string, body: string, parentId?: string): Promise<PeerNetworkMessage> => {
+    const { data } = await api.post(`/peer-network/rooms/${roomId}/messages`, {
+      body,
+      ...(parentId ? { parent_id: parentId } : {}),
+    })
     return data as PeerNetworkMessage
   },
 
@@ -96,5 +102,13 @@ export const peerNetworkApi = {
   hideRoom: async (roomId: string): Promise<{ hidden: boolean; room_id: string }> => {
     const { data } = await api.post(`/peer-network/rooms/${roomId}/hide`)
     return data as { hidden: boolean; room_id: string }
+  },
+
+  toggleReaction: async (
+    messageId: string,
+    emoji: string,
+  ): Promise<{ message_id: string; reactions: Array<{ emoji: string; count: number; reacted_by_me: boolean }> }> => {
+    const { data } = await api.post(`/peer-network/messages/${messageId}/reactions`, { emoji })
+    return data as { message_id: string; reactions: Array<{ emoji: string; count: number; reacted_by_me: boolean }> }
   },
 }
