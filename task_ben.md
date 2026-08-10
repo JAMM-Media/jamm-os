@@ -74,7 +74,7 @@ This section exists because a past session confidently claimed specific files we
 
  # Section 3 - The task
 
-TASK: One-line change to Peer Network, per Ben's real decision after weighing the tradeoff: the message content column's max-width, currently 720px, gets nudged up to 840px, a modest widening, not a removal of the real readability cap (confirmed correct professional convention, matching Slack's own real behavior of capping line width even on wide screens).
+TASK: Fix a real hover-flicker bug on the Peer Network thread preview button. Confirmed by Ben live in the browser: hovering near the edge of the "N replies" element causes it to rapidly toggle between the reply-count state and the "View thread" state instead of switching cleanly.
 
 USE: claude sonnet
 
@@ -86,28 +86,34 @@ State plainly that no path in this task resolves against /mnt/c/Users or any Win
 
 VERIFY BEFORE ACT:
 
-grep -n "max-w-\[720px\]" "src/app/(app)/peer-network/page.tsx"
+sed -n '455,495p' "src/app/(app)/peer-network/page.tsx"
 
-Paste the real output. Confirm exactly one real location.
+Paste the real output. Confirm it matches: a `<button>` with `onMouseEnter`/`onMouseLeave` toggling `threadHovered`, containing an avatar stack, a reply-count span, and a conditionally rendered span showing "View thread" when true or "Last reply {relativeTime}" when false, with no min-width currently set on the button.
+
+If it does not match, stop and paste the real content instead of proceeding.
+
+WHAT THIS IS:
+
+The button's width is determined by its content. "View thread" and "Last reply Xm ago" render at different widths. When threadHovered flips, the button resizes. If the cursor sits near the button's edge, that resize moves the edge out from under the cursor, firing mouseleave, which flips threadHovered back, which resizes the button again, putting the edge back under the cursor, firing mouseenter again. This is the real root cause of the flicker Ben confirmed live, not a rendering glitch.
 
 CHANGE INSTRUCTIONS:
 
-Change max-w-[720px] to max-w-[840px]. Do not change anything else.
+On the button element with `onMouseEnter={() => setThreadHovered(true)}` and `onMouseLeave={() => setThreadHovered(false)}`, add a fixed min-width to its className, wide enough that "View thread" plus the reply-count span plus the avatar stack never exceeds it in either state. Do not change the swap logic, the pluralization logic, the avatar stack, or relativeTime. This is a width fix only.
 
 VERIFY AFTER ACT:
 
 cd /home/corby/jamm-os/frontend
 npm run build
 
-grep -n "max-w-\[840px\]" "src/app/(app)/peer-network/page.tsx"
+sed -n '455,495p' "src/app/(app)/peer-network/page.tsx"
 
 git diff --stat
 
-This should be a one-line diff.
+Confirm the build has zero TypeScript errors and the diff touches only this button's className.
 
 MANUAL VERIFICATION:
 
-Restart the frontend dev server only. Reload /peer-network, find or send a real long message that previously wrapped around the middle of the screen, confirm it now wraps at a real, modestly wider point, still capped, not stretching edge-to-edge. Report back plainly whether the new width feels right.
+Restart the frontend dev server only. Reload /peer-network, find a message with replies, hover directly on the edge where the flicker previously happened, and confirm the state now swaps cleanly with no flutter in between. Report back plainly whether it's fixed.
 
 GIT:
 

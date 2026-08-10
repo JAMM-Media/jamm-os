@@ -464,7 +464,7 @@ function MessageBubble({
             onClick={() => onReply?.()}
             onMouseEnter={() => setThreadHovered(true)}
             onMouseLeave={() => setThreadHovered(false)}
-            className={`flex items-center gap-1.5 mt-1.5 px-2 py-1 rounded-[6px] border border-[0.5px] transition-colors ${
+            className={`flex items-center gap-1.5 mt-1.5 px-2 py-1 min-w-[240px] rounded-[6px] border border-[0.5px] transition-colors ${
               threadHovered
                 ? 'border-[#4A7FA5] bg-[#4A7FA5]/10 dark:bg-[#4A7FA5]/10'
                 : 'border-[#C8CDD6] dark:border-[#484848] bg-transparent'
