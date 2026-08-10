@@ -24,4 +24,8 @@ with open(OUTPUT_FILE, 'w', encoding='utf-8') as out:
             filepath = os.path.join(dirpath, filename)
             write_file(out, filepath)
 
+    write_file(out, os.path.join('frontend', 'tailwind.config.ts'))
+    write_file(out, os.path.join('frontend', 'package.json'))
+    write_file(out, os.path.join('frontend', 'src', 'app', 'globals.css'))
+
 print(f'Snapshot written to {OUTPUT_FILE}')

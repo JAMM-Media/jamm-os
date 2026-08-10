@@ -37,7 +37,12 @@ This is how instance six was caught. The guard test passed against a deliberatel
 
 Run one control per load-bearing assertion, not one for the file. A suite can have ten passing tests where nine of them survive the defect that matters. When a batch of tests covers one rule, find the defect that only one of them catches, and confirm that one specifically.
 
-Restore by inspecting the file afterward, not by trusting the restore command. See instance 8.
+**The restore step is not complete until two checks pass:**
+
+1. Re-run the test and confirm it is green again. Red-then-restore without a final green run leaves open the possibility that the restore changed the wrong thing, or that the break and the fix crossed somewhere unexpected.
+2. Run `git status` or `git diff` on every file touched during the control and confirm the working tree matches git. A restore command exiting cleanly proves nothing on its own. See instance 8, where the command printed "restored" over a file that still contained the mutation.
+
+Inspect outcomes, not messages. The restore command's own report is exactly the kind of green signal this file exists to distrust.
 
 Applies to guard tests, assertions, alerts, monitors, and any check whose job is to notice a problem.
 
