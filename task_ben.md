@@ -74,7 +74,7 @@ This section exists because a past session confidently claimed specific files we
 
  # Section 3 - The task
 
-TASK: The Peer Network thread panel (ThreadPanel) renders its parent message and reply messages with its own hand-rolled markup, entirely separate from MessageBubble, the component that received the flat-layout rebuild, the hover toolbar, reactions, and edit/delete. Confirmed by Ben live in the browser via screenshot comparison against Slack: thread panel messages still show the old dark-blue rounded bubble style with no avatar, and hovering a message inside the thread shows no toolbar at all, since ThreadPanel never calls MessageBubble. Fix: make ThreadPanel render both the parent message and every reply through MessageBubble, so the thread panel inherits the same look and functionality as the main feed permanently, instead of drifting out of sync again.
+TASK: Real bug, root-caused via a Claude in Chrome DOM inspection after two prior fix attempts (z-index bump, then a shield element) both failed. The actual cause: every message row's floating toolbar exists in the DOM at all times across the entire message list, hidden only via opacity-0, with no pointer-events control. Since opacity does not affect hit-testing, these invisible toolbars remain fully interactive and can sit on top of other elements, including an open dropdown from a different row, at the exact screen coordinates that dropdown occupies. Measured live: hovering over the Edit button's visual location returns a descendant of a completely different, invisible row's toolbar via elementFromPoint, not the dropdown or its shield, which is why clicks in that region get intercepted by an invisible element instead of landing on the intended button.
 
 USE: claude sonnet
 
@@ -86,48 +86,40 @@ State plainly that no path in this task resolves against /mnt/c/Users or any Win
 
 VERIFY BEFORE ACT:
 
-sed -n '193,225p' "src/app/(app)/peer-network/page.tsx"
-sed -n '713,815p' "src/app/(app)/peer-network/page.tsx"
-sed -n '1240,1262p' "src/app/(app)/peer-network/page.tsx"
-sed -n '1494,1510p' "src/app/(app)/peer-network/page.tsx"
+sed -n '312,320p' "src/app/(app)/peer-network/page.tsx"
 
-Paste the real output of all four. Confirm: MessageBubble's full prop signature, ThreadPanel's current hand-rolled rendering of the parent message and the replies.map() block with the rounded-[14px] bubble styling, the real call pattern for MessageBubble in the main feed (with onLabelClick, onEdit, onDelete, onReact, onReply, replyAuthors, lastReplyAt), and ThreadPanel's current call site showing only parentMessage, replies, myHandle, onClose, onSendReply as props.
+Paste the real output. Confirm the toolbar div's className includes the conditional: `${(showPicker || (isOwn && showMoreMenu)) ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`, meaning when neither showPicker nor showMoreMenu is true and the row is not being hovered, the toolbar sits at opacity-0 with no accompanying pointer-events control.
 
-If any of these does not match, stop and paste the real content instead of proceeding.
+If this does not match, stop and paste the real content instead of proceeding.
 
 WHAT THIS IS:
 
-ThreadPanel currently duplicates message rendering instead of reusing MessageBubble. This is the actual root cause of two things Ben found: the old bubble style persisting inside threads, and the complete absence of the hover toolbar (React, Reply, more-options) on any message inside a thread. The fix is not to re-style ThreadPanel's own markup to imitate MessageBubble. It is to make ThreadPanel call MessageBubble directly for both the parent message and each reply, so there is exactly one place this rendering logic lives, and future changes to MessageBubble automatically apply inside threads too.
+Every message row in the feed renders its own MessageBubble, and every MessageBubble unconditionally renders this toolbar div, regardless of whether that specific row is currently hovered or has any menu open. Visibility is controlled purely by opacity and a CSS group-hover rule scoped to that row's own wrapper. Opacity does not remove an element from hit-testing, an opacity-0 element still receives pointer events and still participates in elementFromPoint resolution at its screen coordinates unless pointer-events is explicitly set to none. Live inspection confirmed this directly: with one row's dropdown open, a different row's invisible toolbar was the actual element returned by elementFromPoint over the dropdown's Edit button region, intercepting the click before it could reach the dropdown at all. This is a real defect independent of the specific dropdown bug, since any invisible interactive toolbar sitting on top of real content anywhere in the list could produce the same class of interference.
 
 CHANGE INSTRUCTIONS:
 
-1. Expand ThreadPanel's props to accept: myMemberId (or however isOwn is currently determined for the caller, check the main feed's isOwn calculation and match it), onReact (emoji: string, messageId: string) => void or equivalent signature matching handleReact's real signature, onEditStart (messageId: string) => void matching setEditingMessageId's usage, onDeleteStart (messageId: string) => void matching setConfirmDeleteId's usage, and onLabelClick (memberId: string, currentLabel: string) => void matching setAliasTarget's usage. Name these consistently with how they are already named and used at the main feed's MessageBubble call site, do not invent new naming conventions.
+On the toolbar div at the line confirmed in VERIFY BEFORE ACT, add `pointer-events-none` to the classes applied in the hidden (opacity-0) branch of the existing conditional, and `pointer-events-auto` to the classes applied in the visible (opacity-100) branch, so the toolbar is only interactive when actually visible, either because the row is hovered (group-hover, handled by the existing CSS rule needing its own pointer-events-auto companion) or because showPicker/showMoreMenu is true for that specific row.
 
-2. Replace the hand-rolled parent message block (the div with author_display, renderBody, and formatTimestamp) with a real MessageBubble call, passing message={parentMessage}, grouped={false}, isOwn computed the same way the main feed computes it, displayLabel computed consistently with how the main feed computes it, onEdit and onDelete wired only when isOwn is true and the message is not deleted (matching the main feed's exact conditional pattern), onReact wired unless deleted, and onReply explicitly set to undefined, since replying to a message while already viewing its own thread is not a supported action.
+Since group-hover:opacity-100 is a CSS pseudo-class transition and not a JS-driven boolean like showPicker/showMoreMenu, the pointer-events toggle for the hover case also needs to be CSS-driven: add `group-hover:pointer-events-auto` alongside the existing `group-hover:opacity-100` in the same conditional branch, so pointer-events only activates on actual hover of that specific row's own group, matching the same mechanism already used for opacity.
 
-3. Replace the replies.map() block's hand-rolled bubble markup with a real MessageBubble call per reply, using the same prop-wiring pattern as step 2, but since every reply message already has a parent_id set, onReply should also be undefined here, consistent with the fix already shipped that hides Reply entirely on any message with a parent_id.
+The full conditional should end up structured as: when showPicker or (isOwn and showMoreMenu) is true, apply `opacity-100 pointer-events-auto`. Otherwise, apply `opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto`. Write the exact template literal reflecting this logic, preserving every other existing class on this div unchanged.
 
-4. Update the ThreadPanel call site (the one passing parentMessage, replies, myHandle, onClose, onSendReply) to also pass the newly required props, using the exact same handlers already in scope at that point (handleReact, setEditingMessageId, setConfirmDeleteId, setAliasTarget), the same ones already passed to the main feed's MessageBubble a few hundred lines earlier in this same file. Do not create new state or new handler functions, reuse what already exists.
-
-5. Do not touch the compose box, the Send button, the thread header, or the parent/reply divider line at the top of the replies section. Those are unrelated to this bug.
+Do not touch the shield element added in the prior task, leave it in place for now since removing it is out of scope for this task and it is not actively harmful. Do not touch any other opacity-0/group-hover element in the file (the timestamp span at line 298, or the DM/subgroup hide button at line 1403), this task is scoped to the message toolbar only, since that is the one confirmed to cause the reported bug.
 
 VERIFY AFTER ACT:
 
-sed -n '713,830p' "src/app/(app)/peer-network/page.tsx"
-sed -n '1494,1515p' "src/app/(app)/peer-network/page.tsx"
+sed -n '312,320p' "src/app/(app)/peer-network/page.tsx"
 
 cd /home/corby/jamm-os/frontend
 npm run build 2>&1
 
 git diff --stat
 
-VERIFY AFTER ACT must include the literal, pasted output of npm run build, not a summary or a claim that it passed. Confirm zero TypeScript errors from the real, literal output. If npm run build cannot execute in your session, state that plainly and explicitly, but this does not excuse Ben from needing to run it himself before trusting this as done, restate that requirement clearly in your report.
-
-Confirm the diff shows ThreadPanel now calling MessageBubble twice, once for the parent and once per reply, with the old rounded-[14px] bubble markup fully removed.
+VERIFY AFTER ACT must include the literal, pasted output of npm run build, not a summary or a claim that it passed. Confirm zero TypeScript errors from the real, literal output. If npm run build cannot execute in your session, state that plainly, but restate clearly that Ben must run it himself in his real WSL terminal before this is trusted as done.
 
 MANUAL VERIFICATION:
 
-**Restart the frontend.** Reload /peer-network, open a thread with at least one reply. Confirm: the parent message and every reply now render as flat rows with avatar, sender name, and timestamp header, matching the main feed's style exactly, not the old blue bubble. Hover the parent message and confirm React and, if it is your own message, the more-options menu appear, but Reply does not. Hover a reply message and confirm the same, React and more-options where applicable, no Reply button. Confirm reacting to a message inside the thread actually works and the reaction shows up. Report back plainly whether this now matches the Slack reference screenshot Ben provided.
+**Restart the frontend.** Reload /peer-network. Hover a message you own that has another message directly below it. Open the more-options menu, move the mouse from the three-dot button down to Delete, the exact motion that failed in the two prior attempts, and confirm the row below no longer intercepts the click anywhere along that path. Actually click Delete and confirm the message is deleted. Also test Edit. Separately, confirm normal hover behavior still works correctly elsewhere in the list: hovering any row still reveals its own toolbar normally, and moving the mouse away still hides it. Report back plainly and specifically whether Delete now actually works, since this is the third attempt at the same bug and the first two both failed on this exact claim.
 
 GIT:
 

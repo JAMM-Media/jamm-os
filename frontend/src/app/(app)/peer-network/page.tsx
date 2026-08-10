@@ -313,7 +313,7 @@ function MessageBubble({
       <div className="relative flex-1 min-w-0 max-w-[840px]">
         {/* Floating toolbar -- absolute overlay, never reserves document-flow space */}
         {!isEditing && (
-          <div className={`absolute -top-3 right-0 z-20 transition-opacity flex items-center gap-0.5 bg-white dark:bg-[#2D2D2D] border border-[#C8CDD6] dark:border-[#484848] rounded-[6px] shadow-lg px-2 py-1.5 ${(showPicker || (isOwn && showMoreMenu)) ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
+          <div className={`absolute -top-3 right-0 z-20 transition-opacity flex items-center gap-0.5 bg-white dark:bg-[#2D2D2D] border border-[#C8CDD6] dark:border-[#484848] rounded-[6px] shadow-lg px-2 py-1.5 ${(showPicker || (isOwn && showMoreMenu)) ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto'}`}>
             <button onClick={() => onReact?.('👍')} title="👍" className="p-1 rounded hover:bg-[#D5D8DE] dark:hover:bg-[#444444] transition-colors text-[16px] leading-none">👍</button>
             <button onClick={() => onReact?.('❤️')} title="❤️" className="p-1 rounded hover:bg-[#D5D8DE] dark:hover:bg-[#444444] transition-colors text-[16px] leading-none">❤️</button>
             <button onClick={() => onReact?.('🎉')} title="🎉" className="p-1 rounded hover:bg-[#D5D8DE] dark:hover:bg-[#444444] transition-colors text-[16px] leading-none">🎉</button>
@@ -336,7 +336,7 @@ function MessageBubble({
                 <span className="text-[12px] font-medium text-[#4B5563]">React</span>
               </button>
               {showPicker && (
-                <div className="absolute bottom-full right-0 flex bg-white dark:bg-[#2D2D2D] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] rounded-[6px] shadow-sm p-1 gap-0.5 z-10">
+                <div className="absolute bottom-full right-0 flex bg-white dark:bg-[#2D2D2D] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] rounded-[6px] shadow-sm p-1 gap-0.5 z-30">
                   {PEER_NETWORK_PICKER_ONLY_REACTIONS.map(e => (
                     <button key={e} onClick={() => { onReact?.(e); setPickerPinned(false); setShowPicker(false) }} className="p-1 rounded hover:bg-[#F7F7F8] dark:hover:bg-[#383838] text-[16px] leading-none">{e}</button>
                   ))}
@@ -359,7 +359,7 @@ function MessageBubble({
                   <MoreHorizontal className="w-3 h-3 text-[#6B7280]" />
                 </button>
                 {showMoreMenu && (
-                  <div className="absolute top-full right-0 mt-0.5 bg-white dark:bg-[#2D2D2D] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] rounded-[6px] shadow-sm py-0.5 z-10 min-w-[80px]">
+                  <div className="absolute top-full right-0 mt-0.5 bg-white dark:bg-[#2D2D2D] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] rounded-[6px] shadow-sm py-0.5 z-30 min-w-[80px]">
                     <button
                       onClick={() => { onEdit?.(); setShowMoreMenu(false) }}
                       className="flex items-center gap-1.5 w-full px-2 py-1 text-[12px] text-[#1F3148] dark:text-[#EDEEF0] hover:bg-[#F7F7F8] dark:hover:bg-[#383838] transition-colors"
@@ -374,6 +374,8 @@ function MessageBubble({
                       <Trash2 className="w-3 h-3 text-[#6B7280]" />
                       Delete
                     </button>
+                    {/* Pointer shield -- transparent overlay below dropdown, blocks next row's hover zone during mouse travel to Delete */}
+                    <div className="absolute top-full left-0 right-0 h-14 z-40" />
                   </div>
                 )}
               </div>
@@ -1260,6 +1262,7 @@ export default function PeerNetworkPage() {
   const renderedRows: React.ReactNode[] = []
   messages.forEach((msg, i) => {
     const prev = messages[i - 1]
+    if (msg.parent_id) return
     // isOwn uses author_handle, unchanged.
     const isOwn = msg.author_handle === myHandle
 
