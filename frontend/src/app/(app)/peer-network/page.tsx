@@ -313,10 +313,11 @@ function MessageBubble({
       <div className="relative flex-1 min-w-0 max-w-[840px]">
         {/* Floating toolbar -- absolute overlay, never reserves document-flow space */}
         {!isEditing && (
-          <div className={`absolute -top-3 right-0 z-20 transition-opacity flex items-center gap-0.5 bg-white dark:bg-[#2D2D2D] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] rounded-[6px] shadow-sm px-0.5 py-0.5 ${(showPicker || (isOwn && showMoreMenu)) ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
-            <button onClick={() => onReact?.('👍')} title="👍" className="p-1 rounded hover:bg-[#D5D8DE] dark:hover:bg-[#444444] transition-colors text-[13px] leading-none">👍</button>
-            <button onClick={() => onReact?.('❤️')} title="❤️" className="p-1 rounded hover:bg-[#D5D8DE] dark:hover:bg-[#444444] transition-colors text-[13px] leading-none">❤️</button>
-            <button onClick={() => onReact?.('🎉')} title="🎉" className="p-1 rounded hover:bg-[#D5D8DE] dark:hover:bg-[#444444] transition-colors text-[13px] leading-none">🎉</button>
+          <div className={`absolute -top-3 right-0 z-20 transition-opacity flex items-center gap-0.5 bg-white dark:bg-[#2D2D2D] border border-[#C8CDD6] dark:border-[#484848] rounded-[6px] shadow-lg px-2 py-1.5 ${(showPicker || (isOwn && showMoreMenu)) ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
+            <button onClick={() => onReact?.('👍')} title="👍" className="p-1 rounded hover:bg-[#D5D8DE] dark:hover:bg-[#444444] transition-colors text-[16px] leading-none">👍</button>
+            <button onClick={() => onReact?.('❤️')} title="❤️" className="p-1 rounded hover:bg-[#D5D8DE] dark:hover:bg-[#444444] transition-colors text-[16px] leading-none">❤️</button>
+            <button onClick={() => onReact?.('🎉')} title="🎉" className="p-1 rounded hover:bg-[#D5D8DE] dark:hover:bg-[#444444] transition-colors text-[16px] leading-none">🎉</button>
+            <div className="w-[1px] h-4 bg-[#C8CDD6] dark:bg-[#484848] mx-0.5" />
             <div
               ref={pickerRef}
               className="relative pb-1"
@@ -329,9 +330,10 @@ function MessageBubble({
                   if (pickerPinned) { setPickerPinned(false); setShowPicker(false) }
                   else { setPickerPinned(true); setShowPicker(true) }
                 }}
-                className="p-1 rounded hover:bg-[#D5D8DE] dark:hover:bg-[#444444] transition-colors"
+                className="flex items-center gap-1 px-1.5 py-1 rounded hover:bg-[#D5D8DE] dark:hover:bg-[#444444] transition-colors"
               >
-                <Smile className="w-3 h-3 text-[#6B7280]" />
+                <Smile className="w-3.5 h-3.5 text-[#6B7280]" strokeWidth={2.5} />
+                <span className="text-[12px] font-medium text-[#4B5563]">React</span>
               </button>
               {showPicker && (
                 <div className="absolute bottom-full right-0 flex bg-white dark:bg-[#2D2D2D] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] rounded-[6px] shadow-sm p-1 gap-0.5 z-10">
@@ -341,9 +343,12 @@ function MessageBubble({
                 </div>
               )}
             </div>
-            <button onClick={() => onReply?.()} title="Reply" className="p-1 rounded hover:bg-[#D5D8DE] dark:hover:bg-[#444444] transition-colors">
-              <MessageSquare className="w-3 h-3 text-[#6B7280]" />
-            </button>
+            {onReply && (
+              <button onClick={() => onReply()} title="Reply" className="flex items-center gap-1 px-1.5 py-1 rounded hover:bg-[#D5D8DE] dark:hover:bg-[#444444] transition-colors">
+                <MessageSquare className="w-3.5 h-3.5 text-[#6B7280]" strokeWidth={2.5} />
+                <span className="text-[12px] font-medium text-[#4B5563]">Reply</span>
+              </button>
+            )}
             {isOwn && (
               <div ref={moreMenuRef} className="relative">
                 <button
@@ -712,14 +717,30 @@ function ThreadPanel({
   parentMessage,
   replies,
   myHandle,
+  displayOverrides,
+  editingMessageId,
   onClose,
   onSendReply,
+  onReact,
+  onEditStart,
+  onEditSave,
+  onEditCancel,
+  onDeleteStart,
+  onLabelClick,
 }: {
   parentMessage: PeerNetworkMessage
   replies: PeerNetworkMessage[]
   myHandle: string | null
+  displayOverrides: Record<string, string>
+  editingMessageId: string | null
   onClose: () => void
   onSendReply: (body: string) => Promise<void>
+  onReact: (messageId: string, emoji: string) => void
+  onEditStart: (messageId: string) => void
+  onEditSave: (messageId: string, newBody: string) => Promise<void>
+  onEditCancel: () => void
+  onDeleteStart: (messageId: string) => void
+  onLabelClick: (memberId: string, currentLabel: string) => void
 }) {
   const [compose, setCompose] = useState('')
   const [sending, setSending] = useState(false)
@@ -750,32 +771,56 @@ function ThreadPanel({
       </div>
       <div className="flex-1 overflow-y-auto">
         {/* Parent message */}
-        <div className="px-4 py-3 border-b border-[#C8CDD6] dark:border-[#484848]">
-          <p className="text-[11px] text-[#6B7280] mb-1">{parentMessage.author_display ?? parentMessage.author_handle}</p>
-          <div className="text-[13px] text-[#1F3148] dark:text-[#EDEEF0] whitespace-pre-wrap break-words">
-            {renderBody(parentMessage.body, myHandle === parentMessage.author_handle)}
-          </div>
-          <p className="text-[11px] text-[#9CA3AF] mt-1">{formatTimestamp(parentMessage.created_at)}</p>
-        </div>
+        {(() => {
+          const isParentOwn = parentMessage.author_handle === myHandle
+          const parentDisplay = parentMessage.author_member_id && displayOverrides[parentMessage.author_member_id]
+            ? displayOverrides[parentMessage.author_member_id]
+            : (parentMessage.author_display ?? parentMessage.author_handle)
+          return (
+            <div className="border-b border-[#C8CDD6] dark:border-[#484848] py-1">
+              <MessageBubble
+                message={parentMessage}
+                grouped={false}
+                isOwn={isParentOwn}
+                displayLabel={parentDisplay}
+                onLabelClick={!isParentOwn && parentMessage.author_member_id ? () => onLabelClick(parentMessage.author_member_id!, parentDisplay) : undefined}
+                onEdit={isParentOwn && !parentMessage.deleted ? () => onEditStart(parentMessage.id) : undefined}
+                onDelete={isParentOwn && !parentMessage.deleted ? () => onDeleteStart(parentMessage.id) : undefined}
+                onReact={!parentMessage.deleted ? (emoji) => onReact(parentMessage.id, emoji) : undefined}
+                onReply={undefined}
+                isEditing={editingMessageId === parentMessage.id}
+                onEditSave={isParentOwn ? (newBody) => onEditSave(parentMessage.id, newBody) : undefined}
+                onEditCancel={onEditCancel}
+              />
+            </div>
+          )
+        })()}
         {/* Replies */}
-        <div className="py-2">
+        <div className="py-1">
           {replies.length === 0 && (
             <p className="text-[12px] text-[#9CA3AF] text-center py-4">No replies yet.</p>
           )}
           {replies.map(msg => {
-            const isOwn = msg.author_handle === myHandle
+            const isReplyOwn = msg.author_handle === myHandle
+            const replyDisplay = msg.author_member_id && displayOverrides[msg.author_member_id]
+              ? displayOverrides[msg.author_member_id]
+              : (msg.author_display ?? msg.author_handle)
             return (
-              <div key={msg.id} className="px-4 py-2">
-                <div className="flex items-center gap-1.5 mb-0.5">
-                  <span className="text-[11px] font-medium text-[#6B7280]">{msg.author_display ?? msg.author_handle}</span>
-                  <span className="text-[10px] text-[#9CA3AF]">{formatTimestamp(msg.created_at)}</span>
-                </div>
-                <div className={`inline-block rounded-[14px] px-3 py-1.5 text-[13px] whitespace-pre-wrap break-words max-w-full ${
-                  isOwn ? 'bg-[#3A6A94] text-white' : 'bg-[#F7F7F8] dark:bg-[#2D2D2D] text-[#1F3148] dark:text-[#EDEEF0] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848]'
-                }`}>
-                  {renderBody(msg.body, isOwn)}
-                </div>
-              </div>
+              <MessageBubble
+                key={msg.id}
+                message={msg}
+                grouped={false}
+                isOwn={isReplyOwn}
+                displayLabel={replyDisplay}
+                onLabelClick={!isReplyOwn && msg.author_member_id ? () => onLabelClick(msg.author_member_id!, replyDisplay) : undefined}
+                onEdit={isReplyOwn && !msg.deleted ? () => onEditStart(msg.id) : undefined}
+                onDelete={isReplyOwn && !msg.deleted ? () => onDeleteStart(msg.id) : undefined}
+                onReact={!msg.deleted ? (emoji) => onReact(msg.id, emoji) : undefined}
+                onReply={undefined}
+                isEditing={editingMessageId === msg.id}
+                onEditSave={isReplyOwn ? (newBody) => onEditSave(msg.id, newBody) : undefined}
+                onEditCancel={onEditCancel}
+              />
             )
           })}
           <div ref={bottomRef} />
@@ -1496,8 +1541,16 @@ export default function PeerNetworkPage() {
               parentMessage={parent}
               replies={replies}
               myHandle={myHandle}
+              displayOverrides={displayOverrides}
+              editingMessageId={editingMessageId}
               onClose={() => setOpenThreadParentId(null)}
               onSendReply={handleSendReply}
+              onReact={handleReact}
+              onEditStart={setEditingMessageId}
+              onEditSave={handleEditSave}
+              onEditCancel={() => setEditingMessageId(null)}
+              onDeleteStart={setConfirmDeleteId}
+              onLabelClick={(memberId, currentLabel) => setAliasTarget({ memberId, currentLabel })}
             />
           )
         })()}

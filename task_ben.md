@@ -74,7 +74,7 @@ This section exists because a past session confidently claimed specific files we
 
  # Section 3 - The task
 
-TASK: Fix a real hover-flicker bug on the Peer Network thread preview button. Confirmed by Ben live in the browser: hovering near the edge of the "N replies" element causes it to rapidly toggle between the reply-count state and the "View thread" state instead of switching cleanly.
+TASK: The Peer Network thread panel (ThreadPanel) renders its parent message and reply messages with its own hand-rolled markup, entirely separate from MessageBubble, the component that received the flat-layout rebuild, the hover toolbar, reactions, and edit/delete. Confirmed by Ben live in the browser via screenshot comparison against Slack: thread panel messages still show the old dark-blue rounded bubble style with no avatar, and hovering a message inside the thread shows no toolbar at all, since ThreadPanel never calls MessageBubble. Fix: make ThreadPanel render both the parent message and every reply through MessageBubble, so the thread panel inherits the same look and functionality as the main feed permanently, instead of drifting out of sync again.
 
 USE: claude sonnet
 
@@ -86,35 +86,49 @@ State plainly that no path in this task resolves against /mnt/c/Users or any Win
 
 VERIFY BEFORE ACT:
 
-sed -n '455,495p' "src/app/(app)/peer-network/page.tsx"
+sed -n '193,225p' "src/app/(app)/peer-network/page.tsx"
+sed -n '713,815p' "src/app/(app)/peer-network/page.tsx"
+sed -n '1240,1262p' "src/app/(app)/peer-network/page.tsx"
+sed -n '1494,1510p' "src/app/(app)/peer-network/page.tsx"
 
-Paste the real output. Confirm it matches: a `<button>` with `onMouseEnter`/`onMouseLeave` toggling `threadHovered`, containing an avatar stack, a reply-count span, and a conditionally rendered span showing "View thread" when true or "Last reply {relativeTime}" when false, with no min-width currently set on the button.
+Paste the real output of all four. Confirm: MessageBubble's full prop signature, ThreadPanel's current hand-rolled rendering of the parent message and the replies.map() block with the rounded-[14px] bubble styling, the real call pattern for MessageBubble in the main feed (with onLabelClick, onEdit, onDelete, onReact, onReply, replyAuthors, lastReplyAt), and ThreadPanel's current call site showing only parentMessage, replies, myHandle, onClose, onSendReply as props.
 
-If it does not match, stop and paste the real content instead of proceeding.
+If any of these does not match, stop and paste the real content instead of proceeding.
 
 WHAT THIS IS:
 
-The button's width is determined by its content. "View thread" and "Last reply Xm ago" render at different widths. When threadHovered flips, the button resizes. If the cursor sits near the button's edge, that resize moves the edge out from under the cursor, firing mouseleave, which flips threadHovered back, which resizes the button again, putting the edge back under the cursor, firing mouseenter again. This is the real root cause of the flicker Ben confirmed live, not a rendering glitch.
+ThreadPanel currently duplicates message rendering instead of reusing MessageBubble. This is the actual root cause of two things Ben found: the old bubble style persisting inside threads, and the complete absence of the hover toolbar (React, Reply, more-options) on any message inside a thread. The fix is not to re-style ThreadPanel's own markup to imitate MessageBubble. It is to make ThreadPanel call MessageBubble directly for both the parent message and each reply, so there is exactly one place this rendering logic lives, and future changes to MessageBubble automatically apply inside threads too.
 
 CHANGE INSTRUCTIONS:
 
-On the button element with `onMouseEnter={() => setThreadHovered(true)}` and `onMouseLeave={() => setThreadHovered(false)}`, add a fixed min-width to its className, wide enough that "View thread" plus the reply-count span plus the avatar stack never exceeds it in either state. Do not change the swap logic, the pluralization logic, the avatar stack, or relativeTime. This is a width fix only.
+1. Expand ThreadPanel's props to accept: myMemberId (or however isOwn is currently determined for the caller, check the main feed's isOwn calculation and match it), onReact (emoji: string, messageId: string) => void or equivalent signature matching handleReact's real signature, onEditStart (messageId: string) => void matching setEditingMessageId's usage, onDeleteStart (messageId: string) => void matching setConfirmDeleteId's usage, and onLabelClick (memberId: string, currentLabel: string) => void matching setAliasTarget's usage. Name these consistently with how they are already named and used at the main feed's MessageBubble call site, do not invent new naming conventions.
+
+2. Replace the hand-rolled parent message block (the div with author_display, renderBody, and formatTimestamp) with a real MessageBubble call, passing message={parentMessage}, grouped={false}, isOwn computed the same way the main feed computes it, displayLabel computed consistently with how the main feed computes it, onEdit and onDelete wired only when isOwn is true and the message is not deleted (matching the main feed's exact conditional pattern), onReact wired unless deleted, and onReply explicitly set to undefined, since replying to a message while already viewing its own thread is not a supported action.
+
+3. Replace the replies.map() block's hand-rolled bubble markup with a real MessageBubble call per reply, using the same prop-wiring pattern as step 2, but since every reply message already has a parent_id set, onReply should also be undefined here, consistent with the fix already shipped that hides Reply entirely on any message with a parent_id.
+
+4. Update the ThreadPanel call site (the one passing parentMessage, replies, myHandle, onClose, onSendReply) to also pass the newly required props, using the exact same handlers already in scope at that point (handleReact, setEditingMessageId, setConfirmDeleteId, setAliasTarget), the same ones already passed to the main feed's MessageBubble a few hundred lines earlier in this same file. Do not create new state or new handler functions, reuse what already exists.
+
+5. Do not touch the compose box, the Send button, the thread header, or the parent/reply divider line at the top of the replies section. Those are unrelated to this bug.
 
 VERIFY AFTER ACT:
 
-cd /home/corby/jamm-os/frontend
-npm run build
+sed -n '713,830p' "src/app/(app)/peer-network/page.tsx"
+sed -n '1494,1515p' "src/app/(app)/peer-network/page.tsx"
 
-sed -n '455,495p' "src/app/(app)/peer-network/page.tsx"
+cd /home/corby/jamm-os/frontend
+npm run build 2>&1
 
 git diff --stat
 
-Confirm the build has zero TypeScript errors and the diff touches only this button's className.
+VERIFY AFTER ACT must include the literal, pasted output of npm run build, not a summary or a claim that it passed. Confirm zero TypeScript errors from the real, literal output. If npm run build cannot execute in your session, state that plainly and explicitly, but this does not excuse Ben from needing to run it himself before trusting this as done, restate that requirement clearly in your report.
+
+Confirm the diff shows ThreadPanel now calling MessageBubble twice, once for the parent and once per reply, with the old rounded-[14px] bubble markup fully removed.
 
 MANUAL VERIFICATION:
 
-Restart the frontend dev server only. Reload /peer-network, find a message with replies, hover directly on the edge where the flicker previously happened, and confirm the state now swaps cleanly with no flutter in between. Report back plainly whether it's fixed.
+**Restart the frontend.** Reload /peer-network, open a thread with at least one reply. Confirm: the parent message and every reply now render as flat rows with avatar, sender name, and timestamp header, matching the main feed's style exactly, not the old blue bubble. Hover the parent message and confirm React and, if it is your own message, the more-options menu appear, but Reply does not. Hover a reply message and confirm the same, React and more-options where applicable, no Reply button. Confirm reacting to a message inside the thread actually works and the reaction shows up. Report back plainly whether this now matches the Slack reference screenshot Ben provided.
 
 GIT:
 
-Do not commit until Ben confirms it in the browser.
+Do not commit until Ben confirms in the browser.
