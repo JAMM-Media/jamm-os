@@ -8,43 +8,12 @@ from alembic import context
 from app.db.base_class import Base
 from app.core.config import get_settings
 
-# Import all models so Alembic can see them and generate correct migrations
-from app.models import user, engagement, task, client, contact
-from app.models.engagement_member import EngagementMember
-from app.models import firm, document, document_request, checklist_template, signature_envelope, engagement_letter_template
-from app.models.portal_session import PortalSession
-from app.models.portal_notification import PortalNotification
-from app.models.invoice import Invoice
-from app.models.time_entry import TimeEntry
-from app.models.stripe_connection import StripeConnection
-from app.models.automation_rule import AutomationRule, AutomationExecutionLog
-from app.models.notification import Notification
-from app.models.notification_preference import NotificationPreference
-from app.models.integration import Integration
-from app.models.audit_log import AuditLog
-from app.models.retention import DataRetentionPolicy
-from app.models.message import ClientMessage, ClientMessageRead
-from app.models.firm_chat import Channel, ChannelMember, FirmMessage, FirmMessageRead
-from app.models.irs_authorization import IrsAuthorization
-from app.models.irs_authorization_warning import IrsAuthorizationWarning
-from app.models.extension import Extension
-from app.models.tax_organizer import TaxOrganizerTemplate, TaxOrganizer
-from app.models.transcript_request import TranscriptRequest
-from app.models.behavioral_event import BehavioralEvent
-from app.models.document_expiry import DocumentExpiry
-from app.models.qc_checklist import (
-    QcChecklistTemplate, QcChecklistItem
-)
-from app.models.recurring_engagement_log import RecurringEngagementLog
-from app.models.concierge_question_log import ConciergeQuestionLog
-from app.models.concierge_notification import ConciergeNotification
-from app.models.security_event import SecurityEvent
-from app.models.staff_credential import StaffCredential
-from app.models.cpe_record import CPERecord
-from app.models.metric_registry import MetricRegistry
-from app.models.metric_value import MetricValue
-from app.models.metric_run_log import MetricRunLog
-from app.models.finding import Finding
+# Importing the package is what makes every model visible to autogenerate.
+# app/models/__init__.py discovers and imports its own modules, so this single
+# import inherits any model file added later. The list of individual imports
+# that used to live here went stale twice, and each time autogenerate
+# responded by proposing to DROP the tables it could no longer see.
+import app.models  # noqa: F401
 
 settings = get_settings()
 

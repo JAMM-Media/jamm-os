@@ -1,51 +1,52 @@
-from app.models.irs_authorization import IrsAuthorization
-from app.models.extension import Extension
 # app/models/__init__.py
-# Import order matters here: Firm must come first because every other
-# model has a foreign key pointing to it. Python needs to see the Firm
-# class definition before models that reference it.
-from app.models.firm import Firm
-from app.models.user import User
-from app.models.client import Client
-from app.models.engagement import Engagement
-from app.models.engagement_member import EngagementMember
-from app.models.task import Task
-from app.models.contact import Contact
-from app.models.document import Document, DocumentAuditLog
-from app.models.document_request import DocumentRequest
-from app.models.checklist_template import ChecklistTemplate
-from app.models.signature_envelope import SignatureEnvelope
-from app.models.engagement_letter_template import EngagementLetterTemplate
-from app.models.portal_session import PortalSession
-from app.models.portal_notification import PortalNotification
-from app.models.invoice import Invoice
-from app.models.time_entry import TimeEntry
-from app.models.stripe_connection import StripeConnection
-from app.models.automation_rule import AutomationRule, AutomationExecutionLog
-from app.models.notification import Notification
-from app.models.notification_preference import NotificationPreference
-from app.models.integration import Integration
-from app.models.audit_log import AuditLog
-from app.models.retention import DataRetentionPolicy
-from app.models.note import Note
-from app.models.note_read import NoteRead
-from app.models.message import ClientMessage, ClientMessageRead
-from app.models.firm_chat import Channel, FirmMessage, FirmMessageRead
-from app.models.tax_organizer import TaxOrganizerTemplate, TaxOrganizer
-from app.models.transcript_request import TranscriptRequest
-from app.models.behavioral_event import BehavioralEvent
-from app.models.engagement_template import EngagementTemplate
-from app.models.document_expiry import DocumentExpiry
-from app.models.qc_checklist import (
-    QcChecklistTemplate, QcChecklistItem
-)
-from app.models.concierge_notification import ConciergeNotification
-from app.models.concierge_question_log import ConciergeQuestionLog
-from app.models.billing_detail_report import BillingDetailReport
-from app.models.staff_credential import StaffCredential
-from app.models.cpe_record import CPERecord
-from app.models.metric_registry import MetricRegistry
-from app.models.metric_value import MetricValue
-from app.models.metric_run_log import MetricRunLog
-from app.models.finding import Finding
-from app.models.dashboard_layout import DashboardLayout, FirmDefaultDashboardLayout
+
+"""SQLAlchemy model registry.
+
+Discovery is automatic. Every module in this package is imported when the
+package is imported, and every model class those modules define is bound into
+this namespace. Adding a model file is the only step required to register its
+tables with Base.metadata, which is what Alembic autogenerate compares the
+database against. There is no hand-maintained import list left to forget.
+
+Import order is irrelevant. Every relationship in this codebase is declared
+with a string name, so no model ever needs to see another model's class object
+at the moment it is defined.
+
+Both directions of this are covered by tests/test_model_registry.py.
+"""
+
+import importlib
+import pkgutil
+
+from app.db.base_class import Base
+
+__all__: list[str] = []
+
+
+def _discover_models() -> None:
+    """Import every sibling module and re-export the model classes it owns.
+
+    Binding the classes into the package namespace is what keeps
+    `from app.models import Firm` and `app.models.Firm` working exactly as
+    they did under the old hand-written import list.
+    """
+    for module_info in pkgutil.iter_modules(__path__):
+        if module_info.name == "__init__":
+            continue
+
+        module = importlib.import_module(f"{__name__}.{module_info.name}")
+
+        for attr_name, attr in vars(module).items():
+            # __module__ filters out classes the module merely imported, so a
+            # model is exported once, by the module that actually defines it.
+            if (
+                isinstance(attr, type)
+                and issubclass(attr, Base)
+                and attr is not Base
+                and attr.__module__ == module.__name__
+            ):
+                globals()[attr_name] = attr
+                __all__.append(attr_name)
+
+
+_discover_models()
