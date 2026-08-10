@@ -11,7 +11,6 @@ from sqlalchemy import select, func
 from sqlalchemy.orm import Session
 
 from app.models.engagement import Engagement
-from app.models.task import Task
 from app.models.invoice import Invoice
 from app.models.client import Client
 from app.core.enums import (
@@ -56,42 +55,90 @@ def execute(
         return f"Unknown action type: {action_type}"
 
 
+# The two task handlers below route through task_service rather than writing
+# Task rows directly. Two reasons, both of which were real defects:
+#
+# 1. Automation used to fire zero behavioral events for the work it did. The
+#    dispatcher logged that a rule fired; nothing logged what the rule did.
+#    That data cannot be backfilled.
+# 2. They returned strings like "skipped: task not found" on failure. The
+#    dispatcher only marks an action failed when it catches an exception, so a
+#    skipped action was recorded as a success and the rule logged
+#    automation.fired. The execution log was reporting success for actions
+#    that did nothing. They raise now.
+#
+# The other handlers in this file still do both of these things and are
+# scheduled for a later audit.
+
 def _handle_create_task(
     config: Dict[str, Any],
     payload: Dict[str, Any],
     db: Session,
 ) -> str:
+    from app.schemas.task import TaskCreate, TaskType
+    from app.services import task_service
+
     title = config.get("title")
     if not title:
-        logger.warning("create_task skipped: no title in config")
-        return "create_task skipped: no title in config"
+        raise ValueError("create_task failed: no title in config")
 
     description = config.get("description", "")
     due_days_from_now = config.get("due_days_from_now")
 
-    firm_id = payload.get("firm_id")
-    engagement_id = payload.get("engagement_id")
-    client_id = payload.get("client_id")
+    firm_id_raw = payload.get("firm_id")
+    if not firm_id_raw:
+        raise ValueError("create_task failed: no firm_id in payload")
+    firm_id = UUID(str(firm_id_raw)) if not isinstance(firm_id_raw, UUID) else firm_id_raw
+
+    engagement_id_raw = payload.get("engagement_id")
+    client_id_raw = payload.get("client_id")
+    engagement_id = (
+        UUID(str(engagement_id_raw))
+        if engagement_id_raw and not isinstance(engagement_id_raw, UUID)
+        else engagement_id_raw
+    )
+    client_id = (
+        UUID(str(client_id_raw))
+        if client_id_raw and not isinstance(client_id_raw, UUID)
+        else client_id_raw
+    )
 
     due_date = None
     if due_days_from_now is not None:
         due_date = (datetime.now(timezone.utc) + timedelta(days=int(due_days_from_now))).date()
 
-    now = datetime.now(timezone.utc)
-    task = Task(
-        id=uuid4(),
-        firm_id=UUID(str(firm_id)) if firm_id and not isinstance(firm_id, UUID) else firm_id,
-        title=title,
-        notes=description if description else None,
-        engagement_id=UUID(str(engagement_id)) if engagement_id and not isinstance(engagement_id, UUID) else engagement_id,
-        client_id=UUID(str(client_id)) if client_id and not isinstance(client_id, UUID) else client_id,
-        due_date=due_date,
-        status="todo",
-        created_at=now,
-        updated_at=now,
+    # A client task requires both ids. With only one of them present the old
+    # code silently produced a half-populated client task, which is exactly
+    # the state TaskCreate's validator exists to prevent.
+    if engagement_id and client_id:
+        payload_in = TaskCreate(
+            title=title,
+            task_type=TaskType.CLIENT,
+            client_id=client_id,
+            engagement_id=engagement_id,
+            due_date=due_date,
+            notes=description if description else None,
+        )
+    elif not engagement_id and not client_id:
+        payload_in = TaskCreate(
+            title=title,
+            task_type=TaskType.INTERNAL,
+            due_date=due_date,
+            notes=description if description else None,
+        )
+    else:
+        raise ValueError(
+            "create_task failed: a client task needs both client_id and "
+            "engagement_id in the trigger payload, got only one of them"
+        )
+
+    task_service.create_task(
+        db=db,
+        payload=payload_in,
+        firm_id=firm_id,
+        current_user_id=None,
+        created_by_automation=True,
     )
-    db.add(task)
-    db.commit()
     return f"Task created: {title}"
 
 
@@ -100,25 +147,25 @@ def _handle_assign_task(
     payload: Dict[str, Any],
     db: Session,
 ) -> str:
+    from app.services import task_service
+
     task_id = config.get("task_id")
     assign_to_user_id = config.get("assign_to_user_id")
 
     if not task_id or not assign_to_user_id:
-        return "assign_task skipped: missing task_id or assign_to_user_id"
+        raise ValueError("assign_task failed: missing task_id or assign_to_user_id")
 
     firm_id_raw = payload.get("firm_id")
-    firm_id = UUID(str(firm_id_raw)) if firm_id_raw and not isinstance(firm_id_raw, UUID) else firm_id_raw
+    if not firm_id_raw:
+        raise ValueError("assign_task failed: no firm_id in payload")
+    firm_id = UUID(str(firm_id_raw)) if not isinstance(firm_id_raw, UUID) else firm_id_raw
 
-    stmt = select(Task).where(
-        Task.id == UUID(str(task_id)),
-        Task.firm_id == firm_id,
+    task_service.assign_task_from_automation(
+        db,
+        task_id=UUID(str(task_id)),
+        firm_id=firm_id,
+        assign_to_user_id=UUID(str(assign_to_user_id)),
     )
-    task = db.execute(stmt).scalar_one_or_none()
-    if not task:
-        return "assign_task skipped: task not found"
-
-    task.assigned_to = UUID(str(assign_to_user_id))
-    db.commit()
     return f"Task {task_id} assigned to {assign_to_user_id}"
 
 

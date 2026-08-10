@@ -372,6 +372,60 @@ def test_refusal_with_zero_administrators_falls_back_to_firm_owner(
     assert len(owner_notes) == 1, f"expected the firm_owner fallback, got {len(owner_notes)}"
 
 
+def test_deactivated_firm_owner_is_not_used_as_the_fallback(
+    client, firm_a_owner, engagement, staff_target, staff_other
+):
+    """The fallback fires exactly when nobody else can catch the refusal, so a
+    deactivated owner standing in as the sole recipient means the refusal
+    reaches nobody. Here the only firm_owner is deactivated and a second,
+    active one exists, so only the active one may be notified."""
+    from app.models.user import User
+
+    engagement_id = engagement["engagement_id"]
+    firm_id = engagement["firm_id"]
+
+    active_owner_id, _, _ = _make_user(firm_id, "firm_owner", "activeowner")
+
+    members = client.get(
+        f"/engagements/{engagement_id}/members", headers=firm_a_owner["headers"]
+    ).json()["items"]
+    for member in members:
+        if member["is_administrator"]:
+            client.delete(
+                f"/engagements/{engagement_id}/members/{member['id']}",
+                headers=firm_a_owner["headers"],
+            )
+
+    client.post(
+        f"/engagements/{engagement_id}/members",
+        headers=firm_a_owner["headers"],
+        json={"user_id": staff_other["user_id"]},
+    )
+
+    # Deactivate the original owner only after the setup calls that needed it.
+    db = TestingSessionLocal()
+    try:
+        original = db.query(User).filter(User.email == "owner@firma.com").one()
+        original.is_active = False
+        original_id = str(original.id)
+        db.commit()
+    finally:
+        db.close()
+
+    r = _create_task(
+        client, staff_other["headers"],
+        engagement["client_id"], engagement_id,
+        assigned_to=staff_target["user_id"],
+    )
+    assert r.status_code == 422, r.text
+
+    recipients = {str(n.recipient_id) for n in _notifications(firm_id)}
+    assert recipients == {active_owner_id}, (
+        "only the active firm owner should be notified, got "
+        f"{recipients} (deactivated owner is {original_id})"
+    )
+
+
 # ---------------------------------------------------------------------------
 # Bulk
 # ---------------------------------------------------------------------------

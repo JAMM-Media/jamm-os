@@ -285,10 +285,15 @@ def notify_engagement_administrators(
     ).scalars().all())
 
     if not recipient_ids:
+        # is_active matters more here than anywhere else in this codebase. The
+        # fallback fires precisely when there is nobody else to catch the
+        # refusal, so a deactivated owner as the sole recipient means the
+        # refusal reaches nobody at all. Matches anniversary_service.
         recipient_ids = list(db.execute(
             select(User.id).where(
                 User.firm_id == firm_id,
                 User.role == UserRole.firm_owner,
+                User.is_active == True,
             )
         ).scalars().all())
 

@@ -31,10 +31,23 @@ class Task(Base):
     # Both are nullable ONLY to make room for INTERNAL tasks, which belong to
     # the firm and to no client or engagement at all. task_type is what says
     # which kind a row is; the nullability is a consequence of that, not an
-    # invitation to create half-populated client tasks. The invariant
-    # (client => both set, internal => both null) is enforced in
-    # app/services/task_service.py, which is the only path allowed to create
-    # or retype a task.
+    # invitation to create half-populated client tasks.
+    #
+    # The invariant (client => both set, internal => both null) is enforced in
+    # app/services/task_service.py, via the TaskCreate validator. That is the
+    # only path that VALIDATES the invariant, and the only one that fires
+    # behavioral events, but it is not the only path that creates a task.
+    # These three build a Task directly and are not checked by anything:
+    #
+    #   app/services/engagement_template_service.py
+    #   app/services/esign_service.py
+    #   app/services/recurring_engagement_service.py
+    #
+    # All three happen to satisfy the invariant today, because each sets both
+    # client_id and engagement_id and leans on the task_type server default.
+    # They are correct by habit rather than by enforcement, so anything added
+    # to the rule in task_service will not reach them. Route new creation
+    # paths through task_service.create_task.
     client_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("clients.id", ondelete="CASCADE"),
         nullable=True,

@@ -581,6 +581,55 @@ def bulk_update_tasks(
     return {"updated": len(tasks), "members_added": members_added}
 
 
+def assign_task_from_automation(
+    db: Session,
+    *,
+    task_id: UUID,
+    firm_id: UUID,
+    assign_to_user_id: UUID,
+):
+    """Assignment performed by an automation rule.
+
+    Separate from update_task rather than folded into it, because update_task
+    hardcodes actor_type="staff" across half a dozen events and threading an
+    actor type through all of them is a wider change than this needs. This
+    path fires the one event automation actually causes.
+    """
+    task = crud_task.get_task_for_firm(db, task_id, firm_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    _require_assignable(
+        db,
+        firm_id=firm_id,
+        engagement_id=task.engagement_id,
+        assigned_to=assign_to_user_id,
+        acting_user_id=None,
+        created_by_automation=True,
+    )
+
+    old_assigned = str(task.assigned_to) if task.assigned_to else None
+    task.assigned_to = assign_to_user_id
+    db.commit()
+
+    log_event(
+        firm_id=task.firm_id,
+        event_type="task.assigned",
+        entity_type="task",
+        entity_id=task.id,
+        actor_type="automation",
+        actor_id=None,
+        metadata={
+            "from_staff_id": old_assigned,
+            "to_staff_id": str(assign_to_user_id),
+            "engagement_id": str(task.engagement_id) if task.engagement_id else None,
+            "via": "automation",
+        },
+    )
+
+    return task
+
+
 def delete_task(
     *,
     db: Session,

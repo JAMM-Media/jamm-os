@@ -1,6 +1,6 @@
 # How We Work: Verification and Debugging
 
-This file exists because of a specific, repeated failure. Seven separate times, a signal reported success while the thing it was supposed to be watching was broken. Every instance cost real time, and every instance looked fine right up until someone checked by hand.
+This file exists because of a specific, repeated failure. Eight separate times, a signal reported success while the thing it was supposed to be watching was broken. Every instance cost real time, and every instance looked fine right up until someone checked by hand.
 
 These are not style preferences. Each rule below is here because ignoring it already cost us something.
 
@@ -10,7 +10,7 @@ These are not style preferences. Each rule below is here because ignoring it alr
 
 The failure mode is always the same shape. Something reports success. The report is accurate about what it measured. What it measured was not the thing that mattered.
 
-Seven instances so far:
+Eight instances so far:
 
 1. **Unregistered expiry sweep.** The sweep was written, tested, and correct. It was never registered with the scheduler, so it never ran. Nothing errored, because nothing happened.
 2. **Anniversary job logging ERROR under a successful scheduler.** The scheduler reported healthy. The job inside it was failing every run. Scheduler health and job health are different measurements.
@@ -19,10 +19,11 @@ Seven instances so far:
 5. **A test asserting a bug as correct expected behavior.** The test passed for years. It encoded the bug as the expectation, so fixing the bug would have turned it red.
 6. **The model registry guard test passing against a broken `__init__.py`.** The guard was written to catch unimported models. It passed even with the registry deliberately broken, because `conftest.py` imports `app.main`, which pulls the missing modules in transitively through routers and services. Alembic does not load the app. It imports `app.models` and nothing else. The test and the failure were looking at two different processes.
 7. **The test database schema diverging from production.** Seventeen timestamp columns were declared as naive `DateTime()` in the models while the migrations created them as `timestamptz`. Because `conftest.py` builds the test database with `create_all()` from the models, the test suite ran against `TIMESTAMP WITHOUT TIME ZONE` while dev and production ran `WITH TIME ZONE`. Every test passed. Any timezone bug in the affected code would have been invisible to the suite by construction.
+8. **A restore command reporting success after silently failing.** During a negative control, the command that was supposed to restore a mutated file failed on a bad path and printed "restored" anyway. The mutation was still in the file. It was caught only by grepping for the mutation marker instead of trusting the message. This one is a different flavor from the others: not a tool measuring the wrong thing, but a command reporting on an outcome it never checked. Verification steps are themselves subject to this rule. Confirm a restore by inspecting the file, not by reading the message.
 
 Instance seven is the purest form of the pattern. The others are things that failed. That one never failed. It made an entire category of failure unobservable, which is worse, because there was nothing to notice.
 
-When you find an eighth, add it here with its origin. The list is the point. Recognizing the shape early is worth more than any individual rule below.
+When you find a ninth, add it here with its origin. The list is the point. Recognizing the shape early is worth more than any individual rule below.
 
 ---
 
@@ -33,6 +34,10 @@ Write the test. Then deliberately break the thing it guards. Confirm it goes red
 A test that has only ever been observed passing is not evidence of anything. It might be catching the failure. It might be structurally incapable of catching it. Those two states look identical from the outside, and the only way to tell them apart is the negative control.
 
 This is how instance six was caught. The guard test passed against a deliberately broken registry, which revealed it was measuring the wrong process entirely. Without the negative control it would have shipped green and useless.
+
+Run one control per load-bearing assertion, not one for the file. A suite can have ten passing tests where nine of them survive the defect that matters. When a batch of tests covers one rule, find the defect that only one of them catches, and confirm that one specifically.
+
+Restore by inspecting the file afterward, not by trusting the restore command. See instance 8.
 
 Applies to guard tests, assertions, alerts, monitors, and any check whose job is to notice a problem.
 
@@ -45,6 +50,8 @@ Instance six failed because the test ran inside pytest, where `conftest.py` had 
 Before trusting a check, ask what environment the real failure occurs in, and whether the check runs in that environment. If it does not, the check is measuring a different world.
 
 The fix in that case was to run `import app.models` in a clean subprocess and compare against the fully loaded process. Isolation was the entire point of the test.
+
+A related trap: a test asserting that nothing was created should read the database directly rather than call an endpoint. An endpoint's own filtering can hide the row the test was supposed to catch.
 
 ---
 
@@ -97,3 +104,11 @@ If something reports healthy while behaving unhealthily, the reporting is the fi
 Roadmap documents, design references, and prior session notes go stale. The repository is the only current description of the repository.
 
 This applies to comments too. A comment asserting something the code no longer does is worse than no comment, because the next person will trust it. When behavior changes, the comments describing that behavior change in the same commit.
+
+---
+
+## 9. When a rule changes on purpose, update the tests that encoded the old one
+
+Instance five is a test that encoded a bug as the expectation. The mirror image is a test that correctly encoded a rule which has since been deliberately replaced.
+
+Both look the same from the terminal: a red test after a change. The difference is whether the behavior changed on purpose. When it did, update the test to the new expectation, rename it if the name asserts the old rule, and say in the docstring what changed and why. A test named `..._is_refused` that now asserts success is its own small piece of misinformation.
