@@ -26,7 +26,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.enums import UserRole
+from app.core.enums import NotificationType, RecipientType, UserRole
 from app.crud import engagement_member as crud_member
 from app.models.engagement import Engagement
 from app.models.engagement_member import EngagementMember
@@ -183,6 +183,140 @@ def add_member(
         )
 
     return member
+
+
+def add_member_for_assignment(
+    db: Session,
+    *,
+    firm_id: UUID,
+    engagement_id: UUID,
+    user_id: UUID,
+    acting_user: User,
+) -> Optional[EngagementMember]:
+    """Add a member as a side effect of assigning them a task.
+
+    This grants nothing the acting user could not already have granted by
+    hand. can_manage_membership() is the identical check add_member() makes,
+    so the only thing collapsed here is the two-step dance of adding someone
+    to the engagement and then assigning them the work. When the acting user
+    does not hold that authority this returns None and writes nothing; the
+    caller decides what refusal looks like.
+
+    Never adds as an administrator. Authority to place someone on an
+    engagement is not authority to make them able to place others.
+    """
+    if not can_manage_membership(
+        db, firm_id=firm_id, engagement_id=engagement_id, user=acting_user
+    ):
+        return None
+
+    existing = crud_member.get_membership(db, firm_id, engagement_id, user_id)
+    if existing:
+        return existing
+
+    target = db.execute(
+        select(User).where(User.id == user_id, User.firm_id == firm_id)
+    ).scalars().first()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found in this firm")
+    if target.role not in ASSIGNABLE_ROLES:
+        raise HTTPException(
+            status_code=422,
+            detail="Only internal firm users can be added to an engagement.",
+        )
+
+    member = crud_member.create_member(
+        db,
+        firm_id=firm_id,
+        engagement_id=engagement_id,
+        user_id=user_id,
+        is_administrator=False,
+    )
+
+    # Membership is access to a client's tax data. An addition that leaves no
+    # trace is exactly what makes a member list unexplainable six months from
+    # now, so the automatic path writes the same record the manual one does,
+    # marked with how it happened.
+    write_audit_log(
+        db=db,
+        firm_id=firm_id,
+        action="engagement_member.added",
+        actor_id=acting_user.id,
+        actor_type="staff",
+        entity_type="engagement_member",
+        entity_id=member.id,
+        metadata={
+            "engagement_id": str(engagement_id),
+            "user_id": str(user_id),
+            "as_administrator": False,
+            "via": "task_assignment",
+        },
+    )
+
+    return member
+
+
+def notify_engagement_administrators(
+    db: Session,
+    *,
+    firm_id: UUID,
+    engagement_id: UUID,
+    title: str,
+    body: str,
+) -> int:
+    """Notify whoever can act on an engagement membership problem.
+
+    Falls back to the firm owners when the engagement has no administrator.
+    That is a real state rather than a hypothetical: remove_member
+    deliberately allows removing the last one, and firm_owner can always
+    restore one.
+
+    Returns the number of recipients notified.
+    """
+    from app.db.session import SessionLocal
+    from app.services.notification_service import NotificationService
+
+    recipient_ids = list(db.execute(
+        select(EngagementMember.user_id).where(
+            EngagementMember.firm_id == firm_id,
+            EngagementMember.engagement_id == engagement_id,
+            EngagementMember.is_administrator.is_(True),
+        )
+    ).scalars().all())
+
+    if not recipient_ids:
+        recipient_ids = list(db.execute(
+            select(User.id).where(
+                User.firm_id == firm_id,
+                User.role == UserRole.firm_owner,
+            )
+        ).scalars().all())
+
+    if not recipient_ids:
+        return 0
+
+    # Its own session, like every other notification written from the service
+    # layer. The caller is about to raise, and a refused assignment must not
+    # take the notification down with it, nor commit whatever else happens to
+    # be sitting on the request session.
+    notification_db = SessionLocal()
+    try:
+        for recipient_id in recipient_ids:
+            NotificationService.create_notification(
+                db=notification_db,
+                firm_id=firm_id,
+                recipient_id=recipient_id,
+                recipient_type=RecipientType.staff,
+                title=title,
+                body=body,
+                notification_type=NotificationType.system,
+                related_entity_type="engagement",
+                related_entity_id=engagement_id,
+            )
+    finally:
+        notification_db.close()
+
+    return len(recipient_ids)
 
 
 def update_member(

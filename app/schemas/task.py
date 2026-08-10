@@ -100,3 +100,20 @@ class BulkTaskFieldUpdate(BaseModel):
 class BulkTaskUpdate(BaseModel):
     ids: list[uuid.UUID]
     update: BulkTaskFieldUpdate
+
+
+class BulkMemberAdded(BaseModel):
+    """One user who was added to engagements as a side effect of a bulk
+    reassignment."""
+
+    user_id: uuid.UUID
+    engagement_ids: list[uuid.UUID]
+
+
+class BulkTaskUpdateResponse(BaseModel):
+    """members_added is reported so a firm owner can see that a bulk
+    reassignment also placed somebody on nine engagements, at the moment it
+    happens rather than later on a member list."""
+
+    updated: int
+    members_added: list[BulkMemberAdded] = []

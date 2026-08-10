@@ -7,7 +7,10 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.models.task import Task
 from app.models.firm import Firm
-from app.schemas.task import TaskCreate, TaskUpdate, TaskOut, TaskStatus, BulkTaskUpdate
+from app.schemas.task import (
+    TaskCreate, TaskUpdate, TaskOut, TaskStatus, BulkTaskUpdate,
+    BulkTaskUpdateResponse,
+)
 from app.schemas.pagination import PaginatedResponse
 from app.utils.pagination import paginate
 from app.crud import task as crud_task
@@ -89,15 +92,17 @@ def list_tasks(
 # ---------------------------------------------------------
 # BULK UPDATE TASKS
 # ---------------------------------------------------------
-@router.patch("/bulk")
+@router.patch("/bulk", response_model=BulkTaskUpdateResponse)
 def bulk_update_tasks(
     payload: BulkTaskUpdate,
     db: Session = Depends(get_db),
     current_firm: Firm = Depends(get_current_firm),
+    current_user: User = Depends(get_current_user),
     _: object = Depends(require_manager_or_above),
 ):
     return task_service.bulk_update_tasks(
         db=db, ids=payload.ids, update=payload.update, firm_id=current_firm.id,
+        current_user_id=current_user.id,
     )
 
 

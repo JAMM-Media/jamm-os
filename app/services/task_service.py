@@ -18,9 +18,20 @@ from app.services.behavioral_log import log_event
 # Assignment scoping
 #
 # Task assignment offers only current members of that engagement. A dropdown
-# of members, not a free choice of firm users. Assignment never grants
-# access -- being assigned a task does not put anyone on the engagement, it
-# only records that a person already on it owns this piece of work.
+# of members, not a free choice of firm users.
+#
+# Assignment never grants access beyond what the assigner could already have
+# granted by hand. If the assigner holds membership-management authority on
+# that engagement, assigning to a non-member adds them automatically, because
+# refusing would only send that person to the member list to press one more
+# button and come back. The auto-add collapses two steps into one for someone
+# who already held the authority to take both. It invents no new permission:
+# the check is can_manage_membership(), the same one the manual add makes.
+#
+# If the assigner does not hold that authority, the assignment is refused and
+# the engagement administrators are notified so somebody who can act, does.
+# Automation never carries add-member authority at all, because an automation
+# rule has no actor whose authority could be checked.
 #
 # Internal tasks have no engagement, so their assignee pool is every internal
 # user of the firm.
@@ -52,33 +63,178 @@ def _require_firm_user(db: Session, user_id: UUID, firm_id: UUID) -> User:
     return user
 
 
+_REFUSED_DETAIL = (
+    "That user is not a member of this engagement, and you do not have "
+    "permission to add them. An administrator of this engagement has been "
+    "notified and can either add them or make the assignment for you."
+)
+
+_REFUSED_AUTOMATION_DETAIL = (
+    "Automation cannot assign a task to a user who is not a member of the "
+    "engagement. An administrator of this engagement has been notified."
+)
+
+
+def _notify_assignment_refused(
+    db: Session,
+    *,
+    firm_id: UUID,
+    engagement_id: UUID,
+    assigned_to: UUID,
+    by_automation: bool,
+) -> None:
+    """Tell the engagement administrators that an assignment was refused, so
+    the refusal reaches somebody who can actually resolve it."""
+    from app.services import engagement_member_service
+
+    target = db.execute(
+        select(User).where(User.id == assigned_to, User.firm_id == firm_id)
+    ).scalars().first()
+    target_name = target.full_name if target else str(assigned_to)
+
+    engagement = db.execute(
+        select(Engagement).where(
+            Engagement.id == engagement_id,
+            Engagement.firm_id == firm_id,
+        )
+    ).scalars().first()
+    engagement_name = engagement.name if engagement else str(engagement_id)
+
+    if by_automation:
+        body = (
+            f"An automation rule tried to assign a task on {engagement_name} "
+            f"to {target_name}, who is not a member of that engagement. The "
+            "assignment was refused. Add them to the engagement if they "
+            "should be doing this work."
+        )
+    else:
+        body = (
+            f"Somebody tried to assign a task on {engagement_name} to "
+            f"{target_name}, who is not a member of that engagement, and did "
+            "not have permission to add them. The assignment was refused. Add "
+            "them to the engagement if they should be doing this work."
+        )
+
+    engagement_member_service.notify_engagement_administrators(
+        db,
+        firm_id=firm_id,
+        engagement_id=engagement_id,
+        title="Task assignment refused",
+        body=body,
+    )
+
+
+def _check_assignable(
+    db: Session,
+    *,
+    firm_id: UUID,
+    engagement_id: UUID | None,
+    assigned_to: UUID | None,
+    acting_user_id: UUID | None,
+    created_by_automation: bool = False,
+) -> bool:
+    """Decide an assignment without writing anything.
+
+    Returns True when the assignment is allowed but needs the target added to
+    the engagement first, False when no membership work is required. Raises
+    422 when the assignment must be refused, having notified the engagement
+    administrators on the way out.
+
+    Kept separate from _require_assignable so the bulk path can evaluate every
+    task in a batch before performing a single auto-add.
+    """
+    if assigned_to is None:
+        return False
+
+    _require_firm_user(db, assigned_to, firm_id)
+
+    if engagement_id is None:
+        return False
+
+    from app.services import engagement_member_service
+
+    if engagement_member_service.is_member(
+        db, firm_id=firm_id, engagement_id=engagement_id, user_id=assigned_to
+    ):
+        return False
+
+    # An automation rule has no created_by column, so there is no actor whose
+    # authority could be checked. Automation therefore never auto-adds.
+    if created_by_automation:
+        _notify_assignment_refused(
+            db,
+            firm_id=firm_id,
+            engagement_id=engagement_id,
+            assigned_to=assigned_to,
+            by_automation=True,
+        )
+        raise HTTPException(status_code=422, detail=_REFUSED_AUTOMATION_DETAIL)
+
+    acting_user = _require_firm_user(db, acting_user_id, firm_id)
+
+    if not engagement_member_service.can_manage_membership(
+        db, firm_id=firm_id, engagement_id=engagement_id, user=acting_user
+    ):
+        _notify_assignment_refused(
+            db,
+            firm_id=firm_id,
+            engagement_id=engagement_id,
+            assigned_to=assigned_to,
+            by_automation=False,
+        )
+        raise HTTPException(status_code=422, detail=_REFUSED_DETAIL)
+
+    return True
+
+
 def _require_assignable(
     db: Session,
     *,
     firm_id: UUID,
     engagement_id: UUID | None,
     assigned_to: UUID | None,
-) -> None:
-    if assigned_to is None:
-        return
+    acting_user_id: UUID | None,
+    created_by_automation: bool = False,
+) -> dict | None:
+    """Scope one assignment, auto-adding the target when the acting user has
+    the authority to add them.
 
-    _require_firm_user(db, assigned_to, firm_id)
-
-    if engagement_id is None:
-        return
+    Returns a record of the auto-add performed, or None when none was needed,
+    so callers can report it back rather than leaving the new membership to be
+    discovered later on a member list.
+    """
+    needs_add = _check_assignable(
+        db,
+        firm_id=firm_id,
+        engagement_id=engagement_id,
+        assigned_to=assigned_to,
+        acting_user_id=acting_user_id,
+        created_by_automation=created_by_automation,
+    )
+    if not needs_add:
+        return None
 
     from app.services import engagement_member_service
 
-    if not engagement_member_service.is_member(
-        db, firm_id=firm_id, engagement_id=engagement_id, user_id=assigned_to
-    ):
-        raise HTTPException(
-            status_code=422,
-            detail=(
-                "That user is not a member of this engagement. Add them to the "
-                "engagement first, or pick someone already on it."
-            ),
+    acting_user = _require_firm_user(db, acting_user_id, firm_id)
+    membership = engagement_member_service.add_member_for_assignment(
+        db,
+        firm_id=firm_id,
+        engagement_id=engagement_id,
+        user_id=assigned_to,
+        acting_user=acting_user,
+    )
+    if membership is None:
+        _notify_assignment_refused(
+            db,
+            firm_id=firm_id,
+            engagement_id=engagement_id,
+            assigned_to=assigned_to,
+            by_automation=False,
         )
+        raise HTTPException(status_code=422, detail=_REFUSED_DETAIL)
+
+    return {"user_id": assigned_to, "engagement_id": engagement_id}
 
 
 def require_can_create_task(
@@ -128,6 +284,8 @@ def create_task(
         firm_id=firm_id,
         engagement_id=engagement_id,
         assigned_to=getattr(payload, "assigned_to", None),
+        acting_user_id=current_user_id,
+        created_by_automation=created_by_automation,
     )
 
     # Set once, here, and never recomputed. Deriving it later by comparing a
@@ -197,6 +355,7 @@ def update_task(
             firm_id=firm_id,
             engagement_id=_target_engagement_id,
             assigned_to=_target_assignee,
+            acting_user_id=current_user_id,
         )
 
     old_status = str(task.status) if task.status else None
@@ -318,6 +477,7 @@ def bulk_update_tasks(
     ids,
     update,  # TaskUpdate
     firm_id: UUID,
+    current_user_id: UUID,
 ):
     stmt = select(Task).where(
         Task.id.in_(ids),
@@ -326,19 +486,47 @@ def bulk_update_tasks(
     tasks = db.execute(stmt).scalars().all()
     update_data = update.model_dump(exclude_none=True)
 
+    members_added: list[dict] = []
+
     # A bulk reassignment is still an assignment: it has to respect engagement
     # membership exactly like the single-task path, or it becomes the way
-    # around the rule. Validated against every targeted task before a single
-    # row is written, so the request is all-or-nothing rather than leaving a
-    # half-applied batch behind.
+    # around the rule. All or nothing, in two passes. The first pass decides
+    # every targeted task and writes nothing, so one refused task anywhere in
+    # the batch refuses the whole batch and leaves zero memberships behind. The
+    # adds only happen once the entire batch is known to be allowed.
     if update_data.get("assigned_to") is not None:
+        assigned_to = update_data["assigned_to"]
+
+        engagement_ids_needing_add = []
         for task in tasks:
-            _require_assignable(
+            if _check_assignable(
                 db,
                 firm_id=firm_id,
                 engagement_id=task.engagement_id,
-                assigned_to=update_data["assigned_to"],
+                assigned_to=assigned_to,
+                acting_user_id=current_user_id,
+            ) and task.engagement_id not in engagement_ids_needing_add:
+                engagement_ids_needing_add.append(task.engagement_id)
+
+        added_engagement_ids = []
+        for engagement_id in engagement_ids_needing_add:
+            record = _require_assignable(
+                db,
+                firm_id=firm_id,
+                engagement_id=engagement_id,
+                assigned_to=assigned_to,
+                acting_user_id=current_user_id,
             )
+            if record:
+                added_engagement_ids.append(record["engagement_id"])
+
+        # Reported so a firm owner sees that a bulk reassignment also placed
+        # somebody on nine engagements, rather than finding out later.
+        if added_engagement_ids:
+            members_added.append({
+                "user_id": assigned_to,
+                "engagement_ids": added_engagement_ids,
+            })
 
     changed = []
     for task in tasks:
@@ -358,7 +546,7 @@ def bulk_update_tasks(
                 entity_type="task",
                 entity_id=task.id,
                 actor_type="staff",
-                actor_id=None,
+                actor_id=current_user_id,
                 metadata={"from_status": str(old_status), "to_status": str(task.status), "via": "bulk"}
             )
         if task.assigned_to != old_assigned_to:
@@ -368,7 +556,7 @@ def bulk_update_tasks(
                 entity_type="task",
                 entity_id=task.id,
                 actor_type="staff",
-                actor_id=None,
+                actor_id=current_user_id,
                 metadata={
                     "from_staff_id": str(old_assigned_to) if old_assigned_to else None,
                     "to_staff_id": str(task.assigned_to) if task.assigned_to else None,
@@ -382,7 +570,7 @@ def bulk_update_tasks(
                 entity_type="task",
                 entity_id=task.id,
                 actor_type="staff",
-                actor_id=None,
+                actor_id=current_user_id,
                 metadata={
                     "from_due_date": old_due_date.isoformat() if old_due_date else None,
                     "to_due_date": task.due_date.isoformat() if task.due_date else None,
@@ -390,7 +578,7 @@ def bulk_update_tasks(
                 }
             )
 
-    return {"updated": len(tasks)}
+    return {"updated": len(tasks), "members_added": members_added}
 
 
 def delete_task(

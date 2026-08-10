@@ -360,9 +360,13 @@ def test_promotion_is_written_to_the_audit_log(
 # Task assignment is scoped to members
 # ---------------------------------------------------------------------------
 
-def test_assigning_a_client_task_to_a_non_member_is_refused(
+def test_assigning_a_client_task_to_a_non_member_auto_adds_them(
     client, firm_a_owner, engagement_a, firm_a_staff_two
 ):
+    """Was a refusal until Phase G2. A firm owner could always have added this
+    person by hand and then assigned, so refusing only bought an extra trip to
+    the member list. The refusal path now applies to assigners who lack that
+    authority, covered in test_task_assignment_membership.py."""
     r = client.post(
         "/tasks/",
         headers=firm_a_owner["headers"],
@@ -374,7 +378,10 @@ def test_assigning_a_client_task_to_a_non_member_is_refused(
             "assigned_to": firm_a_staff_two["user_id"],
         },
     )
-    assert r.status_code == 422, r.text
+    assert r.status_code == 201, r.text
+    assert firm_a_staff_two["user_id"] in _member_ids(
+        client, firm_a_owner["headers"], engagement_a["engagement_id"]
+    )
 
 
 def test_assigning_a_client_task_to_a_member_succeeds(
@@ -401,11 +408,13 @@ def test_assigning_a_client_task_to_a_member_succeeds(
     assert r.json()["assigned_to"] == firm_a_staff_two["user_id"]
 
 
-def test_reassigning_an_existing_task_to_a_non_member_is_refused(
+def test_reassigning_an_existing_task_to_a_non_member_auto_adds_them(
     client, firm_a_owner, engagement_a, firm_a_staff_two, firm_a_staff_three
 ):
     """Assignment scoping cannot only apply at creation, or the rule is one
-    PATCH away from irrelevant."""
+    PATCH away from irrelevant. Since Phase G2 the PATCH path resolves the
+    same way the POST path does: auto-add for an assigner who could have added
+    them by hand, refusal plus notification for one who could not."""
     engagement_id = engagement_a["engagement_id"]
     client.post(
         f"/engagements/{engagement_id}/members",
@@ -430,10 +439,13 @@ def test_reassigning_an_existing_task_to_a_non_member_is_refused(
         headers=firm_a_owner["headers"],
         json={"assigned_to": firm_a_staff_three["user_id"]},
     )
-    assert r.status_code == 422, r.text
+    assert r.status_code == 200, r.text
+    assert firm_a_staff_three["user_id"] in _member_ids(
+        client, firm_a_owner["headers"], engagement_id
+    )
 
 
-def test_bulk_reassignment_to_a_non_member_is_refused(
+def test_bulk_reassignment_to_a_non_member_auto_adds_them(
     client, firm_a_owner, engagement_a, firm_a_staff_two
 ):
     task = client.post(
@@ -452,7 +464,15 @@ def test_bulk_reassignment_to_a_non_member_is_refused(
         headers=firm_a_owner["headers"],
         json={"ids": [task["id"]], "update": {"assigned_to": firm_a_staff_two["user_id"]}},
     )
-    assert r.status_code == 422, r.text
+    assert r.status_code == 200, r.text
+    assert r.json()["updated"] == 1
+    assert r.json()["members_added"] == [{
+        "user_id": firm_a_staff_two["user_id"],
+        "engagement_ids": [engagement_a["engagement_id"]],
+    }]
+    assert firm_a_staff_two["user_id"] in _member_ids(
+        client, firm_a_owner["headers"], engagement_a["engagement_id"]
+    )
 
 
 def test_a_member_of_the_engagement_can_create_tasks_for_it(

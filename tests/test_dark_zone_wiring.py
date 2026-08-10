@@ -46,7 +46,10 @@ def test_bulk_task_status_change_fires():
     payload = BulkTaskUpdate(ids=[task.id], update=BulkTaskFieldUpdate(status=TaskStatus.DONE))
 
     with patch("app.services.task_service.log_event") as mock_log:
-        bulk_update_tasks(payload=payload, db=mock_db, current_firm=current_firm, _=None)
+        bulk_update_tasks(
+            payload=payload, db=mock_db, current_firm=current_firm,
+            current_user=_mock_user(), _=None,
+        )
 
     event_types = [c.kwargs["event_type"] for c in mock_log.call_args_list]
     assert "task.status_changed" in event_types
@@ -72,10 +75,16 @@ def test_bulk_task_assignment_fires():
     # fully mocked db would come back as a truthy MagicMock and get rejected
     # for having a MagicMock role. This test is about behavioral-event wiring,
     # not about the membership rule; the rule itself is covered against a real
-    # database in tests/test_engagement_membership.py.
+    # database in tests/test_engagement_membership.py and
+    # tests/test_task_assignment_membership.py. Both halves of the two-pass
+    # membership check have to be neutralised, not just the second.
     with patch("app.services.task_service.log_event") as mock_log, \
-         patch("app.services.task_service._require_assignable"):
-        bulk_update_tasks(payload=payload, db=mock_db, current_firm=current_firm, _=None)
+         patch("app.services.task_service._require_assignable"), \
+         patch("app.services.task_service._check_assignable", return_value=False):
+        bulk_update_tasks(
+            payload=payload, db=mock_db, current_firm=current_firm,
+            current_user=_mock_user(), _=None,
+        )
 
     event_types = [c.kwargs["event_type"] for c in mock_log.call_args_list]
     assert "task.assigned" in event_types
@@ -102,8 +111,12 @@ def test_bulk_task_no_change_fires_nothing():
     # Same reason as the test above: the membership check cannot run against a
     # fully mocked session, and is not what this test is asserting.
     with patch("app.services.task_service.log_event") as mock_log, \
-         patch("app.services.task_service._require_assignable"):
-        bulk_update_tasks(payload=payload, db=mock_db, current_firm=current_firm, _=None)
+         patch("app.services.task_service._require_assignable"), \
+         patch("app.services.task_service._check_assignable", return_value=False):
+        bulk_update_tasks(
+            payload=payload, db=mock_db, current_firm=current_firm,
+            current_user=_mock_user(), _=None,
+        )
 
     mock_log.assert_not_called()
 
