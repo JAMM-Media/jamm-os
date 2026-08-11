@@ -3,7 +3,7 @@
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 from typing import Optional
-from fastapi import BackgroundTasks
+from fastapi import BackgroundTasks, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import select, func
 
@@ -11,6 +11,7 @@ from app.crud import engagement as crud_engagement
 from app.crud.qc_checklist import populate_from_template
 from app.models.client import Client as ClientModel
 from app.models.engagement import Engagement
+from app.models.invoice import Invoice
 from app.models.task import Task
 from app.models.document import Document
 from app.models.time_entry import TimeEntry
@@ -305,6 +306,49 @@ def delete_engagement(
     if not engagement:
         return None
 
+    # This is a hard delete. Documents cascade away with the engagement and
+    # time entries cannot survive it at all (their engagement_id is NOT NULL),
+    # so anything still attached has to be dealt with before the row goes.
+    document_count = db.execute(
+        select(func.count()).select_from(Document).where(
+            Document.engagement_id == engagement_id,
+            Document.firm_id == firm_id,
+        )
+    ).scalar()
+    time_entry_count = db.execute(
+        select(func.count()).select_from(TimeEntry).where(
+            TimeEntry.engagement_id == engagement_id,
+            TimeEntry.firm_id == firm_id,
+        )
+    ).scalar()
+    # Soft-deleted invoices are excluded: they are already gone everywhere else
+    # in the app, so blocking on one would refuse a deletion for a row the user
+    # has no way to see or clear.
+    invoice_count = db.execute(
+        select(func.count()).select_from(Invoice).where(
+            Invoice.engagement_id == engagement_id,
+            Invoice.firm_id == firm_id,
+            Invoice.is_deleted == False,  # noqa: E712
+        )
+    ).scalar()
+
+    attached = []
+    if document_count:
+        attached.append(f"{document_count} document{'s' if document_count != 1 else ''}")
+    if time_entry_count:
+        attached.append(f"{time_entry_count} time entr{'ies' if time_entry_count != 1 else 'y'}")
+    if invoice_count:
+        attached.append(f"{invoice_count} invoice{'s' if invoice_count != 1 else ''}")
+
+    if attached:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Cannot delete engagement: {', '.join(attached)} attached. "
+                "Remove or reassign them first."
+            ),
+        )
+
     days_active = (datetime.now(timezone.utc) - engagement.created_at).days \
         if engagement.created_at else None
     completion_status = str(engagement.status) if engagement.status else None
@@ -315,7 +359,7 @@ def delete_engagement(
 
     log_event(
         firm_id=eng_firm_id,
-        event_type="engagement.archived",
+        event_type="engagement.deleted",
         entity_type="engagement",
         entity_id=engagement_id,
         actor_type="staff",
