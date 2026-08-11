@@ -74,31 +74,52 @@ This section exists because a past session confidently claimed specific files we
 
  # Section 3 - The task
 
-TASK: Fix a real bug in password_reset_service.request_password_reset. A missing or failing email send currently raises an unhandled exception that crashes the /auth/forgot-password endpoint with a 500, confirmed live via curl. This breaks the endpoint's core security design: it's supposed to always return the same generic response regardless of whether the account exists or whether the email actually sent, matching the proven pattern already used in staff_magic_link.py's request_staff_magic_link, which wraps its email send in try/except and only logs failures.
+TASK: The login page currently relies on native browser HTML validation (the `required` attribute) to prevent empty form submissions. This produces an unstyled, ugly native browser popup ("Please fill out this field") that renders differently and poorly across browsers (confirmed by Ben on both Chrome and Safari), completely outside the app's design system and uncontrollable via CSS. Replace native validation with the app's own styled inline error message, reusing the existing red error text pattern already used for login failures.
 
 USE: claude sonnet
 
 ENVIRONMENT SANITY CHECK:
+
 pwd
+
 State plainly that no path in this task resolves against /mnt/c/Users or any Windows-side copy.
 
 VERIFY BEFORE ACT:
-cat app/services/password_reset_service.py
-cat app/services/staff_magic_link.py
 
-Paste both. Confirm password_reset_service.request_password_reset calls EmailService.send_password_reset_email with no try/except around it, and confirm staff_magic_link.py's request_staff_magic_link wraps its equivalent email call in try/except Exception, logging the error and continuing rather than raising.
+sed -n '39,65p' "src/app/(auth)/login/page.tsx"
+sed -n '125,180p' "src/app/(auth)/login/page.tsx"
+
+Paste both. Confirm handleSubmit currently calls e.preventDefault() then immediately calls login(email, password) with no check that either field is non-empty, relying entirely on the required attribute on the input elements to prevent this. Confirm the existing error display pattern: {error && (<p className="text-[11px] text-[#991B1B] mt-1">{error}</p>)}.
+
+If this does not match, stop and paste the real content instead of proceeding.
 
 CHANGE INSTRUCTIONS:
-In app/services/password_reset_service.py, wrap the EmailService.send_password_reset_email call in the same try/except Exception pattern already used in staff_magic_link.py: log the error with the affected user's id (never log the email/token), and do not re-raise. The function should return successfully regardless of whether the email send succeeded, exactly matching the non-enumerable design already documented in this function and already correctly implemented in the magic-link equivalent.
 
-Do not change the token generation, expiry, or any other logic in this file. Do not touch app/api/auth.py or the frontend.
+1. Add noValidate to the main login form tag (the one with onSubmit={handleSubmit}), disabling the browser's native validation UI entirely for this form.
+
+2. At the start of handleSubmit, after e.preventDefault() and before setIsLoading(true), add a real client-side check: if email.trim() is empty, setError('Please enter your email.') and return early without calling login(). If password.trim() is empty (and step is 'password'), setError('Please enter your password.') and return early. Use the exact existing setError mechanism and existing error display, no new state or new UI element needed, the error will render through the same {error && (...)} block already in the file.
+
+3. Also add noValidate to the magic link form (the one with onSubmit={handleMagicLink}), and add an equivalent check at the start of handleMagicLink: if the effective magic link email is empty, use the existing setMagicError mechanism with a message like 'Please enter your email.' and return early, before making the fetch call.
+
+4. Remove the required attribute from the email and password inputs in the main form, and from the magic link email input, since validation is now handled by the code instead of the browser. Do NOT remove required from the TOTP or backup code inputs unless you also add equivalent client-side checks for them — if you have time, add the same pattern (check totpCode or backupCode is non-empty before calling login() in the 'code' step), otherwise leave required on those two specific inputs alone as a safe fallback, and note this explicitly in your report.
+
+Do not change any other validation, the login logic itself, routing, or styling.
 
 VERIFY AFTER ACT:
-cat app/services/password_reset_service.py
+
+sed -n '39,65p' "src/app/(auth)/login/page.tsx"
+sed -n '125,180p' "src/app/(auth)/login/page.tsx"
+
 git diff --stat
 
+Confirm noValidate is present on both forms, confirm the new email/password checks exist and use the existing error state/display pattern, confirm required was removed only from the fields that now have a matching code-level check.
+
 MANUAL VERIFICATION:
-Ben runs npm run build himself if this touches frontend (it shouldn't). Ben restarts the backend and re-runs: curl -i -X POST http://localhost:8000/auth/forgot-password -H "Content-Type: application/json" -d '{"email":"owner@riverside-demo.com"}' and confirms it now returns 200 with the generic success message instead of a 500, even before a real Postmark key is added.
+
+Ben will run npm run build himself and confirm it's clean before trusting this as done.
+
+**Restart the frontend.** Reload /login. Click "Sign in" with both fields empty — confirm no native browser popup appears, and instead a styled red error message shows using the app's existing error text style. Fill in only email and submit — confirm the password-specific error shows. Test the magic link form the same way with an empty email. Confirm a real, valid sign-in still works normally end to end. Report back plainly whether the native validation popup is fully gone in favor of the app's own styled error.
 
 GIT:
-Do not commit until Ben confirms in the browser/curl.
+
+Do not commit until Ben confirms in the browser.

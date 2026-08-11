@@ -39,6 +39,13 @@ export default function LoginPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError('')
+    if (step === 'password') {
+      if (!email.trim()) { setError('Please enter your email.'); return }
+      if (!password.trim()) { setError('Please enter your password.'); return }
+    } else {
+      if (!showBackupCode && !totpCode.trim()) { setError('Please enter your authenticator code.'); return }
+      if (showBackupCode && !backupCode.trim()) { setError('Please enter a backup code.'); return }
+    }
     setIsLoading(true)
 
     const result = step === 'code'
@@ -83,6 +90,7 @@ export default function LoginPage() {
     e.preventDefault()
     setMagicError('')
     setMagicSent(false)
+    if (!(magicEmail || email).trim()) { setMagicError('Please enter your email.'); return }
     setMagicLoading(true)
     try {
       const target = magicEmail || email
@@ -106,37 +114,26 @@ export default function LoginPage() {
   const effectiveMagicEmail = magicEmail || email
 
   return (
-    <div className="min-h-screen flex">
-      {/* Left panel */}
-      <div className="hidden md:flex w-1/2 bg-brand flex-col p-10">
-        {/* Wordmark + logo mark */}
+    <div className="min-h-screen bg-surface-page dark:bg-dark-page">
+      {/* Page header -- logo + wordmark, top-left */}
+      <div className="px-16 pt-10">
         <div className="flex items-center gap-2.5">
           <img src="/jamm-logo-mark.svg" alt="" width={60} className="flex-shrink-0" />
-          <span className="text-white text-3xl font-medium">
+          <span className="text-brand dark:text-[#EDEEF0] text-2xl font-medium">
             JAMM <span style={{ color: '#B07D3A' }}>PX</span>
           </span>
         </div>
-
-        {/* Main content -- vertically centered */}
-        <div className="flex flex-1 items-center">
-          <div className="flex flex-col">
-            <div className="h-[2px] mb-3" style={{ backgroundColor: '#B07D3A', width: '48px' }} />
-            <h2 className="text-white text-7xl font-bold leading-tight">
-              Your firm.<br /><span style={{ color: '#B07D3A' }}>Under control.</span>
-            </h2>
-          </div>
-        </div>
       </div>
 
-      {/* Right panel */}
-      <div className="flex flex-1 items-center justify-center bg-surface-page dark:bg-dark-page">
-        <div className="w-[460px] bg-surface-card dark:bg-dark-card rounded-[10px] border border-surface-border p-10">
-          <div className="mb-6">
-            <h1 className="text-4xl font-bold text-brand dark:text-[#EDEEF0]">Welcome back</h1>
-            <p className="text-[13px] text-[#6B7280] mt-1">Sign in to your JAMM <span style={{ color: '#B07D3A' }}>PX</span> account</p>
+      {/* Centered content column */}
+      <div className="flex flex-col items-center px-4 pt-14 pb-16">
+        <div className="w-full max-w-[460px]">
+          {/* Headline block */}
+          <div className="mb-8">
+            <h1 className="text-4xl font-extrabold leading-tight text-center dark:text-[#EDEEF0]" style={{ color: '#16233A' }}>Sign in to JAMM <span style={{ color: '#B07D3A' }}>PX</span></h1>
           </div>
 
-          <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+          <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
             {step === 'password' ? (
               <>
                 {/* Email */}
@@ -146,9 +143,8 @@ export default function LoginPage() {
                     type="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    placeholder="you@firm.com"
-                    required
-                    className="w-full h-11 px-3 rounded-md text-base bg-surface-input dark:bg-dark-card border border-surface-border focus:border-brand-light focus:outline-none focus:ring-1 focus:ring-brand-light text-brand dark:text-[#EDEEF0] placeholder:text-[#9CA3AF]"
+                    placeholder="Enter your email"
+                    className="w-full h-12 px-3 rounded-xl text-base bg-surface-input dark:bg-dark-card border border-surface-border hover:border-brand-light focus:border-brand-light focus:outline-none focus:ring-2 focus:ring-brand-light focus:ring-offset-0 text-brand dark:text-[#EDEEF0] placeholder:text-[#9CA3AF]"
                   />
                 </div>
 
@@ -163,8 +159,8 @@ export default function LoginPage() {
                       type={showPassword ? 'text' : 'password'}
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      required
-                      className="w-full h-11 px-3 rounded-md text-base bg-surface-input dark:bg-dark-card border border-surface-border focus:border-brand-light focus:outline-none focus:ring-1 focus:ring-brand-light text-brand dark:text-[#EDEEF0] placeholder:text-[#9CA3AF]"
+                      placeholder="Enter your password"
+                      className="w-full h-12 px-3 rounded-xl text-base bg-surface-input dark:bg-dark-card border border-surface-border hover:border-brand-light focus:border-brand-light focus:outline-none focus:ring-2 focus:ring-brand-light focus:ring-offset-0 text-brand dark:text-[#EDEEF0] placeholder:text-[#9CA3AF]"
                     />
                     <button
                       type="button"
@@ -189,7 +185,7 @@ export default function LoginPage() {
                 <button
                   type="submit"
                   disabled={isLoading}
-                  className="w-full h-11 mt-2 rounded-md text-sm font-medium text-white bg-brand dark:bg-brand-btn disabled:opacity-60 flex items-center justify-center gap-2"
+                  className="w-full h-12 mt-2 rounded-xl text-sm font-medium text-white bg-brand dark:bg-brand-btn disabled:opacity-60 flex items-center justify-center gap-2"
                 >
                   {isLoading ? (
                     <>
@@ -220,7 +216,7 @@ export default function LoginPage() {
                       value={totpCode}
                       onChange={(e) => setTotpCode(e.target.value)}
                       autoFocus
-                      className="w-full h-11 px-3 rounded-md text-base bg-surface-input dark:bg-dark-card border border-surface-border focus:border-brand-light focus:outline-none focus:ring-1 focus:ring-brand-light text-brand dark:text-[#EDEEF0] placeholder:text-[#9CA3AF]"
+                      className="w-full h-12 px-3 rounded-xl text-base bg-surface-input dark:bg-dark-card border border-surface-border hover:border-brand-light focus:border-brand-light focus:outline-none focus:ring-2 focus:ring-brand-light focus:ring-offset-0 text-brand dark:text-[#EDEEF0] placeholder:text-[#9CA3AF]"
                     />
                     <p className="text-[11px] text-[#6B7280] mt-1">
                       Enter the 6-digit code from your authenticator app.
@@ -239,7 +235,7 @@ export default function LoginPage() {
                       value={backupCode}
                       onChange={(e) => setBackupCode(e.target.value)}
                       autoFocus
-                      className="w-full h-11 px-3 rounded-md text-base bg-surface-input dark:bg-dark-card border border-surface-border focus:border-brand-light focus:outline-none focus:ring-1 focus:ring-brand-light text-brand dark:text-[#EDEEF0] placeholder:text-[#9CA3AF]"
+                      className="w-full h-12 px-3 rounded-xl text-base bg-surface-input dark:bg-dark-card border border-surface-border hover:border-brand-light focus:border-brand-light focus:outline-none focus:ring-2 focus:ring-brand-light focus:ring-offset-0 text-brand dark:text-[#EDEEF0] placeholder:text-[#9CA3AF]"
                     />
                     <p className="text-[11px] text-[#6B7280] mt-1">
                       Enter one of your saved backup codes.
@@ -256,7 +252,7 @@ export default function LoginPage() {
                 <button
                   type="submit"
                   disabled={isLoading}
-                  className="w-full h-11 mt-2 rounded-md text-sm font-medium text-white bg-brand dark:bg-brand-btn disabled:opacity-60 flex items-center justify-center gap-2"
+                  className="w-full h-12 mt-2 rounded-xl text-sm font-medium text-white bg-brand dark:bg-brand-btn disabled:opacity-60 flex items-center justify-center gap-2"
                 >
                   {isLoading ? (
                     <>
@@ -311,14 +307,13 @@ export default function LoginPage() {
               We&apos;ll email you a one-time link valid for 15 minutes.
             </p>
 
-            <form onSubmit={handleMagicLink} className="flex flex-col gap-2 mt-1">
+            <form onSubmit={handleMagicLink} noValidate className="flex flex-col gap-2 mt-1">
               <input
                 type="email"
                 value={effectiveMagicEmail}
                 onChange={(e) => setMagicEmail(e.target.value)}
-                placeholder="you@firm.com"
-                required
-                className="w-full h-11 px-3 rounded-md text-base bg-surface-input dark:bg-dark-card border border-surface-border focus:border-brand-light focus:outline-none focus:ring-1 focus:ring-brand-light text-brand dark:text-[#EDEEF0] placeholder:text-[#9CA3AF]"
+                placeholder="Enter your email"
+                className="w-full h-12 px-3 rounded-xl text-base bg-surface-input dark:bg-dark-card border border-surface-border hover:border-brand-light focus:border-brand-light focus:outline-none focus:ring-2 focus:ring-brand-light focus:ring-offset-0 text-brand dark:text-[#EDEEF0] placeholder:text-[#9CA3AF]"
               />
 
               {magicSent ? (
@@ -329,7 +324,7 @@ export default function LoginPage() {
                 <button
                   type="submit"
                   disabled={magicLoading}
-                  className="w-full h-11 rounded-md text-sm font-[500] text-[#1F3148] dark:text-[#EDEEF0] flex items-center justify-center gap-2 disabled:opacity-60 transition-colors hover:bg-[#E4E6EA] dark:hover:bg-[#333333]"
+                  className="w-full h-12 rounded-xl text-sm font-[500] text-[#1F3148] dark:text-[#EDEEF0] flex items-center justify-center gap-2 disabled:opacity-60 transition-colors hover:bg-[#E4E6EA] dark:hover:bg-[#333333]"
                   style={{ border: '0.5px solid #1F3148' }}
                 >
                   {magicLoading ? (
