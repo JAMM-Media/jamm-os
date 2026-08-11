@@ -24,6 +24,22 @@ function formatTs(iso: string): string {
   })
 }
 
+function ConciergeLogSkeleton() {
+  return (
+    <div className="flex flex-col gap-2">
+      {Array.from({ length: 5 }).map((_, i) => (
+        <div key={i} className="rounded-[8px] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] bg-white dark:bg-[#2D2D2D] px-4 py-3">
+          <div className="flex items-center gap-2 mb-2">
+            <div className="h-3 w-24 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+            <div className="h-3 w-16 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+          </div>
+          <div className="h-4 w-3/4 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+        </div>
+      ))}
+    </div>
+  )
+}
+
 export default function ConciergeLogPage() {
   const [entries, setEntries] = useState<LogEntry[]>([])
   const [total, setTotal] = useState(0)
@@ -86,9 +102,7 @@ export default function ConciergeLogPage() {
         </div>
       </div>
 
-      {loading && (
-        <p className="text-[13px] text-[#6B7280]">Loading...</p>
-      )}
+      {loading && <ConciergeLogSkeleton />}
 
       {error && (
         <p className="text-[13px] text-red-600">{error}</p>

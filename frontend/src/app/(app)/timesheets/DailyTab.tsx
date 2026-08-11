@@ -955,7 +955,7 @@ export default function DailyTab({
 
       {/* Entries */}
       {loadingEntries ? (
-        <div className="text-[13px] text-[#6B7280] py-4">Loading...</div>
+        <DailyEntriesSkeleton />
       ) : entries.length === 0 ? (
         <div className="text-[13px] text-[#6B7280] py-8 text-center">
           Nothing logged yet today. Add your first entry above.
@@ -1151,6 +1151,25 @@ interface EntryRowProps {
   onEditCancel: () => void
   onDelete: () => void
   onSubmittedEdit: () => void
+}
+
+function DailyEntriesSkeleton() {
+  return (
+    <div className="flex flex-col gap-1">
+      {Array.from({ length: 4 }).map((_, i) => (
+        <div key={i} className="flex items-center gap-3 px-3 py-2.5 rounded-[6px] bg-surface-card dark:bg-dark-card border border-[0.5px] border-surface-border dark:border-dark-border">
+          <div className="flex-1 min-w-0 flex flex-col gap-1.5">
+            <div className="flex items-center gap-2">
+              <div className="h-3 w-48 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+              <div className="h-4 w-16 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded-full" />
+            </div>
+            <div className="h-3 w-32 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+          </div>
+          <div className="h-3 w-12 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded flex-shrink-0" />
+        </div>
+      ))}
+    </div>
+  )
 }
 
 function EntryRow({

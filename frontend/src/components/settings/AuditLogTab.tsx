@@ -50,6 +50,22 @@ function formatDate(iso: string): string {
   })
 }
 
+function AuditLogRowsSkeleton() {
+  return (
+    <>
+      {Array.from({ length: 6 }).map((_, i) => (
+        <tr key={i} className={i % 2 === 0 ? 'bg-white dark:bg-[#1E1E1E]' : 'bg-[#F7F7F8] dark:bg-[#252525]'}>
+          <td className="px-4 py-2.5"><div className="h-3 w-20 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" /></td>
+          <td className="px-4 py-2.5"><div className="h-3 w-28 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" /></td>
+          <td className="px-4 py-2.5"><div className="h-3 w-24 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" /></td>
+          <td className="px-4 py-2.5"><div className="h-3 w-20 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" /></td>
+          <td className="px-4 py-2.5"><div className="h-3 w-24 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" /></td>
+        </tr>
+      ))}
+    </>
+  )
+}
+
 export default function AuditLogTab() {
   const [entries, setEntries] = useState<AuditEntry[]>([])
   const [total, setTotal] = useState(0)
@@ -149,13 +165,7 @@ export default function AuditLogTab() {
             </tr>
           </thead>
           <tbody>
-            {loading && (
-              <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-[#6B7280]">
-                  Loading...
-                </td>
-              </tr>
-            )}
+            {loading && <AuditLogRowsSkeleton />}
             {!loading && entries.length === 0 && (
               <tr>
                 <td colSpan={5} className="px-4 py-8 text-center text-[#6B7280]">

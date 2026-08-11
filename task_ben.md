@@ -74,7 +74,7 @@ This section exists because a past session confidently claimed specific files we
 
  # Section 3 - The task
 
-TASK: The login page currently relies on native browser HTML validation (the `required` attribute) to prevent empty form submissions. This produces an unstyled, ugly native browser popup ("Please fill out this field") that renders differently and poorly across browsers (confirmed by Ben on both Chrome and Safari), completely outside the app's design system and uncontrollable via CSS. Replace native validation with the app's own styled inline error message, reusing the existing red error text pattern already used for login failures.
+TASK: Complete the firm-chat skeleton fix from the previous task. A ChannelListSkeleton was built and wired in correctly, but the message-area skeleton was never added — the message list still renders blank while messagesLoading is true.
 
 USE: claude sonnet
 
@@ -86,39 +86,35 @@ State plainly that no path in this task resolves against /mnt/c/Users or any Win
 
 VERIFY BEFORE ACT:
 
-sed -n '39,65p' "src/app/(auth)/login/page.tsx"
-sed -n '125,180p' "src/app/(auth)/login/page.tsx"
+cat "src/app/(app)/firm-chat/page.tsx"
 
-Paste both. Confirm handleSubmit currently calls e.preventDefault() then immediately calls login(email, password) with no check that either field is non-empty, relying entirely on the required attribute on the input elements to prevent this. Confirm the existing error display pattern: {error && (<p className="text-[11px] text-[#991B1B] mt-1">{error}</p>)}.
+Confirm ChannelListSkeleton exists and is wired in for the channel list's loading state. Confirm the message area currently renders blank/empty while messagesLoading is true, with no skeleton for it. Also view the real message-bubble skeleton pattern already built in Peer Network for reference:
 
-If this does not match, stop and paste the real content instead of proceeding.
+grep -n "Skeleton\|animate-pulse" "src/app/(app)/peer-network/page.tsx"
 
 CHANGE INSTRUCTIONS:
 
-1. Add noValidate to the main login form tag (the one with onSubmit={handleSubmit}), disabling the browser's native validation UI entirely for this form.
+Build a MessageAreaSkeleton (or similarly named) component matching firm-chat's real message rendering shape — avatar circle + sender name/timestamp line + message-bubble-shaped pulse block, 4-5 messages worth, varying widths so it doesn't look like a rigid repeated block. Use the same visual language already proven in peer-network's message skeleton as a starting reference, adapted to firm-chat's actual real message layout (read the file to confirm firm-chat's real message rendering structure before matching it — do not assume it's identical to peer-network's).
 
-2. At the start of handleSubmit, after e.preventDefault() and before setIsLoading(true), add a real client-side check: if email.trim() is empty, setError('Please enter your email.') and return early without calling login(). If password.trim() is empty (and step is 'password'), setError('Please enter your password.') and return early. Use the exact existing setError mechanism and existing error display, no new state or new UI element needed, the error will render through the same {error && (...)} block already in the file.
+Wire it in to show while messagesLoading is true, same trigger condition already used for ChannelListSkeleton on the channel list.
 
-3. Also add noValidate to the magic link form (the one with onSubmit={handleMagicLink}), and add an equivalent check at the start of handleMagicLink: if the effective magic link email is empty, use the existing setMagicError mechanism with a message like 'Please enter your email.' and return early, before making the fetch call.
-
-4. Remove the required attribute from the email and password inputs in the main form, and from the magic link email input, since validation is now handled by the code instead of the browser. Do NOT remove required from the TOTP or backup code inputs unless you also add equivalent client-side checks for them — if you have time, add the same pattern (check totpCode or backupCode is non-empty before calling login() in the 'code' step), otherwise leave required on those two specific inputs alone as a safe fallback, and note this explicitly in your report.
-
-Do not change any other validation, the login logic itself, routing, or styling.
+Do not touch ChannelListSkeleton or anything else in this file.
 
 VERIFY AFTER ACT:
 
-sed -n '39,65p' "src/app/(auth)/login/page.tsx"
-sed -n '125,180p' "src/app/(auth)/login/page.tsx"
+grep -n "Skeleton" "src/app/(app)/firm-chat/page.tsx"
+
+Confirm both ChannelListSkeleton and the new message-area skeleton now exist and are both wired in.
 
 git diff --stat
 
-Confirm noValidate is present on both forms, confirm the new email/password checks exist and use the existing error state/display pattern, confirm required was removed only from the fields that now have a matching code-level check.
+Confirm the diff touches only this one file.
 
 MANUAL VERIFICATION:
 
 Ben will run npm run build himself and confirm it's clean before trusting this as done.
 
-**Restart the frontend.** Reload /login. Click "Sign in" with both fields empty — confirm no native browser popup appears, and instead a styled red error message shows using the app's existing error text style. Fill in only email and submit — confirm the password-specific error shows. Test the magic link form the same way with an empty email. Confirm a real, valid sign-in still works normally end to end. Report back plainly whether the native validation popup is fully gone in favor of the app's own styled error.
+**Restart the frontend.** Reload /firm-chat with network throttled in devtools to actually see the loading state. Confirm both the channel list and the message area now show real skeletons during load, not just the channel list. Report back plainly.
 
 GIT:
 

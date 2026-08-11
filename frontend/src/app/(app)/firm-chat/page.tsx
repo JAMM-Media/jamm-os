@@ -14,6 +14,42 @@ import { useAuth } from '@/lib/hooks/useAuth'
 import { EntityLinkPicker, type EntityLink } from '@/components/shared/EntityLinkPicker'
 import { EntityChip } from '@/components/shared/EntityChip'
 
+function ChannelListSkeleton() {
+  return (
+    <div className="flex flex-col gap-0.5 px-1.5 pt-1">
+      {Array.from({ length: 5 }).map((_, i) => (
+        <div key={i} className="h-9 px-3.5 rounded-md flex items-center">
+          <div className="h-3 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" style={{ width: `${55 + (i % 3) * 15}%` }} />
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function MessageAreaSkeleton() {
+  const widths = ['w-3/4', 'w-1/2', 'w-4/5', 'w-2/3', 'w-3/5']
+  return (
+    <div className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-5">
+      {Array.from({ length: 5 }).map((_, i) => (
+        <div key={i} className="flex gap-3 items-start">
+          <div className="w-7 h-7 rounded-full bg-[#D5D8DE] dark:bg-[#444444] animate-pulse flex-shrink-0" />
+          <div className="flex-1 min-w-0">
+            <div className="flex items-baseline gap-2 mb-1.5">
+              <div className="h-3 w-20 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+              <div className="h-2.5 w-12 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+            </div>
+            <div className={`h-3 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded ${widths[i]}`} />
+            {i % 3 === 0 && (
+              <div className="h-3 w-2/5 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded mt-1" />
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface StaffMember {
@@ -554,21 +590,7 @@ export default function FirmChatPage() {
   // ─── Message rendering ───────────────────────────────────────────────────
 
   const renderMessages = (): ReactNode => {
-    if (messagesLoading) {
-      return (
-        <div className="space-y-4 p-4">
-          {[...Array(4)].map((_, i) => (
-            <div key={i} className="flex gap-3 items-start">
-              <div className="w-7 h-7 rounded-full bg-[#D5D8DE] dark:bg-[#444444] flex-shrink-0" />
-              <div className="space-y-2 flex-1">
-                <div className="h-2 bg-[#D5D8DE] dark:bg-[#444444] rounded w-2/5" />
-                <div className="h-2 bg-[#D5D8DE] dark:bg-[#444444] rounded w-3/4" />
-              </div>
-            </div>
-          ))}
-        </div>
-      )
-    }
+    if (messagesLoading) return <MessageAreaSkeleton />
 
     if (messages.length === 0) {
       return (
@@ -695,11 +717,7 @@ export default function FirmChatPage() {
           {/* Channel rows */}
           <div className="flex-1 overflow-y-auto px-1.5 pb-3">
             {channelsLoading ? (
-              <div className="space-y-1 px-2 pt-1">
-                {[...Array(3)].map((_, i) => (
-                  <div key={i} className="h-2 rounded bg-[#D5D8DE] dark:bg-[#444444] w-4/5 my-3" />
-                ))}
-              </div>
+              <ChannelListSkeleton />
             ) : channels.length === 0 ? (
               /* Empty state */
               <div className="flex flex-col items-center justify-center h-full gap-2.5 px-3 text-center">

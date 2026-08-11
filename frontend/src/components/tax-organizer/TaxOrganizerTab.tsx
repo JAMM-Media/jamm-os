@@ -64,6 +64,23 @@ const inputClass =
   'w-full rounded-[6px] border border-surface-border dark:border-dark-border bg-surface-page dark:bg-dark-page text-[13px] text-brand dark:text-[#EDEEF0] px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-brand'
 const labelClass = 'text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em]'
 
+function TaxOrganizerListSkeleton() {
+  return (
+    <div className="flex flex-col gap-2">
+      {Array.from({ length: 3 }).map((_, i) => (
+        <div key={i} className="flex items-center justify-between px-4 py-3 bg-surface-card dark:bg-dark-card rounded-[8px] border border-[0.5px] border-surface-border dark:border-dark-border">
+          <div className="flex flex-col gap-1.5">
+            <div className="h-4 w-12 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+            <div className="h-3 w-32 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+            <div className="h-3 w-20 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+          </div>
+          <div className="h-5 w-20 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded-full" />
+        </div>
+      ))}
+    </div>
+  )
+}
+
 export default function TaxOrganizerTab({ clientId, userRole }: TaxOrganizerTabProps) {
   const isManagerPlus = userRole === 'firm_owner' || userRole === 'manager'
   const currentYear = new Date().getFullYear()
@@ -283,7 +300,7 @@ export default function TaxOrganizerTab({ clientId, userRole }: TaxOrganizerTabP
 
       <div className="flex flex-col gap-2">
         {loadingOrganizers ? (
-          <div className="text-[13px] text-[#6B7280] py-4">Loading...</div>
+          <TaxOrganizerListSkeleton />
         ) : organizers.length === 0 ? (
           <div className="text-[13px] text-[#6B7280] py-8 text-center">
             No tax organizers sent yet. Send one above to collect structured tax information from

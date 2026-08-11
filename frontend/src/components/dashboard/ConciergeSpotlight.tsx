@@ -19,6 +19,21 @@ interface Notification {
 
 const MINIMIZED_KEY = 'jamm_concierge_spotlight_minimized'
 
+function ConciergeSpotlightSkeleton() {
+  return (
+    <div className="flex flex-col border border-[0.5px] border-surface-border dark:border-dark-border border-l-[3px] border-l-concierge rounded-[8px] bg-surface-card dark:bg-dark-card shadow-sm overflow-hidden">
+      <div className="px-3 py-2 border-b border-surface-border dark:border-dark-border flex items-center gap-1.5">
+        <div className="w-1.5 h-1.5 rounded-full bg-[#D5D8DE] dark:bg-[#444444] animate-pulse flex-shrink-0" />
+        <div className="h-2.5 w-24 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+      </div>
+      <div className="px-3 py-2.5 flex flex-col gap-2">
+        <div className="h-3 w-full bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+        <div className="h-3 w-4/5 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+      </div>
+    </div>
+  )
+}
+
 export function ConciergeSpotlight() {
   const router = useRouter()
   const pathname = usePathname()
@@ -59,7 +74,8 @@ export function ConciergeSpotlight() {
       })
   }, [])
 
-  if (featured === undefined || featured === null) return null
+  if (featured === undefined) return <ConciergeSpotlightSkeleton />
+  if (featured === null) return null
 
   const draft = featured.metadata?.draft as string | undefined
 

@@ -143,6 +143,49 @@ const STATUS_COLORS = {
   red: 'bg-red-500',
 }
 
+function AggregateSummarySkeleton() {
+  return (
+    <div className="rounded-[8px] border border-[0.5px] border-surface-border dark:border-dark-border overflow-hidden">
+      <table className="w-full border-collapse text-[12px]">
+        <thead>
+          <tr className="bg-surface-card dark:bg-[#252525]">
+            {['Staff', 'Total Hours', 'Billable Hrs', 'Billable %', 'Entries', 'Status'].map((col) => (
+              <th key={col} className="px-3 py-2 text-left text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em]">{col}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {Array.from({ length: 4 }).map((_, i) => (
+            <tr key={i} className="border-b border-[0.5px] border-[#D5D8DE] dark:border-dark-card">
+              {['w-24', 'w-16', 'w-16', 'w-12', 'w-12', 'w-4'].map((w, j) => (
+                <td key={j} className="px-3 py-2"><div className={`h-3 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded ${w}`} /></td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function AggregateEntriesSkeleton() {
+  return (
+    <div className="rounded-[8px] border border-[0.5px] border-surface-border dark:border-dark-border overflow-x-auto">
+      <table className="w-full border-collapse text-[12px] min-w-[700px]">
+        <tbody>
+          {Array.from({ length: 6 }).map((_, i) => (
+            <tr key={i} className={i % 2 === 0 ? 'bg-surface-page dark:bg-dark-page' : 'bg-surface-card dark:bg-[#252525]'}>
+              {['w-20', 'w-32', 'w-28', 'w-20', 'w-12', 'w-12', 'w-16', 'w-12'].map((w, j) => (
+                <td key={j} className="px-3 py-2.5"><div className={`h-3 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded ${w}`} /></td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
 export default function AggregateTab({
   period,
   selectedUserId,
@@ -299,6 +342,8 @@ export default function AggregateTab({
       </div>
 
       {/* Manager summary */}
+      {isManagerOrAbove && loadingSummary && <AggregateSummarySkeleton />}
+
       {isManagerOrAbove && !loadingSummary && Object.keys(userGroups).length > 0 && (
         <div className="rounded-[8px] border border-[0.5px] border-surface-border dark:border-dark-border overflow-hidden">
           <table className="w-full border-collapse text-[12px]">
@@ -367,7 +412,7 @@ export default function AggregateTab({
 
       {/* Detail table */}
       {loadingEntries ? (
-        <div className="text-[13px] text-[#6B7280] py-4">Loading...</div>
+        <AggregateEntriesSkeleton />
       ) : entries.length === 0 ? (
         <div className="text-[13px] text-[#6B7280] py-8 text-center">
           No entries for this period.

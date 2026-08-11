@@ -291,6 +291,27 @@ function MeetingPopover({ event, pos, onClose }: { event: CalEvent; pos: { x: nu
 // Main page
 // ---------------------------------------------------------------------------
 
+function CalendarGridSkeleton() {
+  return (
+    <div className="flex-1 overflow-auto">
+      <div className="grid grid-cols-7 border-b border-surface-border">
+        {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d) => (
+          <div key={d} className="text-center text-xs font-medium py-1 text-muted-foreground">{d}</div>
+        ))}
+      </div>
+      <div className="grid grid-cols-7">
+        {Array.from({ length: 35 }).map((_, i) => (
+          <div key={i} className="min-h-[80px] border-b border-r border-surface-border/50 p-1">
+            <div className="h-4 w-4 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded-full mb-1.5" />
+            {i % 4 === 0 && <div className="h-3 w-full bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded mb-0.5" />}
+            {i % 6 === 1 && <div className="h-3 w-4/5 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export default function CalendarPage() {
   const { user } = useAuth()
   const qc = useQueryClient()
@@ -337,7 +358,7 @@ export default function CalendarPage() {
   // Data fetching
   // ---------------------------------------------------------------------------
 
-  const { data: calendarItems = [] } = useQuery({
+  const { data: calendarItems = [], isLoading: calendarLoading } = useQuery({
     queryKey: ['engagements-calendar'],
     queryFn: () => engagementsApi.getCalendar(180),
   })
@@ -908,9 +929,15 @@ export default function CalendarPage() {
 
           {/* Calendar view */}
           <div className="flex-1 overflow-hidden flex flex-col" onClick={() => setClickedEvent(null)}>
-            {view === 'month' && <MonthView />}
-            {view === 'week' && <WeekView />}
-            {view === 'agenda' && <AgendaView />}
+            {calendarLoading ? (
+              <CalendarGridSkeleton />
+            ) : (
+              <>
+                {view === 'month' && <MonthView />}
+                {view === 'week' && <WeekView />}
+                {view === 'agenda' && <AgendaView />}
+              </>
+            )}
           </div>
         </div>
 
