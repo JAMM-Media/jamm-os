@@ -4,7 +4,7 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { Sprout, Pencil, Trash2, X, Check, Plus, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Sprout, Pencil, Trash2, X, Check, Plus, ChevronLeft, ChevronRight, Smile, MessageSquare, MoreHorizontal } from 'lucide-react'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { peerNetworkApi, type PeerNetworkMessage, type PeerNetworkRoom, type AliasEntry } from '@/lib/api/peerNetwork'
 import { ConfirmModal } from '@/components/ui/ConfirmModal'
@@ -57,7 +57,20 @@ function isSameDay(a: string, b: string): boolean {
   )
 }
 
-const GROUP_WINDOW_MS = 5 * 60 * 1000
+function relativeTime(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime()
+  const mins = Math.floor(diff / 60000)
+  if (mins < 1) return 'just now'
+  if (mins < 60) return `${mins}m ago`
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return `${hours}h ago`
+  const days = Math.floor(hours / 24)
+  if (days < 30) return `${days}d ago`
+  const months = Math.floor(days / 30)
+  return `${months}mo ago`
+}
+
+const GROUP_WINDOW_MS = 15 * 60 * 1000
 
 // isGrouped uses author_handle, not author_display, so grouping is never affected by aliases.
 function isGrouped(prev: PeerNetworkMessage, curr: PeerNetworkMessage): boolean {
@@ -144,6 +157,9 @@ function LabelModal({
 // Sub-components
 // ---------------------------------------------------------------------------
 
+const PEER_NETWORK_REACTIONS = ['👍', '❤️', '😂', '🎉', '👏', '💡']
+const PEER_NETWORK_PICKER_ONLY_REACTIONS = ['😂', '👏', '💡']
+
 function renderBody(body: string, isOwn = false): React.ReactNode {
   // Split on \u0000Name\u0001 markers from the server's _resolve_mentions.
   // Capturing group: odd-indexed parts (i%2===1) are mention names; even are plain text.
@@ -182,6 +198,10 @@ function MessageBubble({
   onLabelClick,
   onEdit,
   onDelete,
+  onReact,
+  onReply,
+  replyAuthors,
+  lastReplyAt,
   isEditing,
   onEditSave,
   onEditCancel,
@@ -193,6 +213,10 @@ function MessageBubble({
   onLabelClick?: () => void
   onEdit?: () => void
   onDelete?: () => void
+  onReact?: (emoji: string) => void
+  onReply?: () => void
+  replyAuthors?: string[]
+  lastReplyAt?: string
   isEditing?: boolean
   onEditSave?: (newBody: string) => Promise<void>
   onEditCancel?: () => void
@@ -202,6 +226,35 @@ function MessageBubble({
   const editRef = useRef<HTMLTextAreaElement>(null)
   const saveRef = useRef<HTMLButtonElement>(null)
   const cancelRef = useRef<HTMLButtonElement>(null)
+  const [showPicker, setShowPicker] = useState(false)
+  const [pickerPinned, setPickerPinned] = useState(false)
+  const pickerRef = useRef<HTMLDivElement>(null)
+  const [showMoreMenu, setShowMoreMenu] = useState(false)
+  const moreMenuRef = useRef<HTMLDivElement>(null)
+  const [threadHovered, setThreadHovered] = useState(false)
+
+  useEffect(() => {
+    if (!pickerPinned) return
+    function handleClickOutside(e: MouseEvent) {
+      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
+        setPickerPinned(false)
+        setShowPicker(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [pickerPinned])
+
+  useEffect(() => {
+    if (!showMoreMenu) return
+    function handleClickOutside(e: MouseEvent) {
+      if (moreMenuRef.current && !moreMenuRef.current.contains(e.target as Node)) {
+        setShowMoreMenu(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [showMoreMenu])
 
   useEffect(() => {
     if (isEditing) {
@@ -227,169 +280,237 @@ function MessageBubble({
   }
 
   if (message.deleted) {
-    if (isOwn) {
-      return (
-        <div className="flex justify-end px-3 py-[2px]">
-          <span className="text-[12px] text-[#6B7280] dark:text-[#9CA3AF] italic px-1">
-            This message was deleted
-          </span>
-        </div>
-      )
-    }
     return (
-      <div className="flex items-end gap-2 px-3 py-[2px]">
-        <div style={{ width: 26, flexShrink: 0 }} />
-        <span className="text-[12px] text-[#6B7280] dark:text-[#9CA3AF] italic px-1">
+      <div className="flex items-start gap-3 px-3 py-[1px] mx-1 rounded-[6px] hover:bg-[#D5D8DE] dark:hover:bg-[#383838] transition-colors">
+        <div className="w-9 flex-shrink-0" />
+        <span className="text-[12px] text-[#6B7280] dark:text-[#9CA3AF] italic">
           This message was deleted
         </span>
       </div>
     )
   }
 
-  if (isOwn) {
-    return (
-      <div className="flex justify-end px-3 py-[2px] group">
-        <div className="flex items-end gap-2 min-w-0">
-          {/* Edit/delete actions -- visible on hover, own messages only */}
-          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity mb-1">
-            {!isEditing && (
-              <>
-                <button
-                  onClick={onEdit}
-                  title="Edit message"
-                  className="p-1 rounded hover:bg-[#D5D8DE] dark:hover:bg-[#444444] transition-colors"
-                >
-                  <Pencil className="w-3 h-3 text-[#6B7280]" />
-                </button>
-                <button
-                  onClick={onDelete}
-                  title="Delete message"
-                  className="p-1 rounded hover:bg-[#D5D8DE] dark:hover:bg-[#444444] transition-colors"
-                >
-                  <Trash2 className="w-3 h-3 text-[#6B7280]" />
-                </button>
-              </>
-            )}
-          </div>
-          <div className="flex flex-col items-end max-w-[420px] min-w-0">
-            {isEditing ? (
-              <div className="flex flex-col min-w-[120px] max-w-[420px]">
-                <div style={{ display: 'grid' }} className="min-w-[80px] w-full">
-                  <textarea
-                    ref={editRef}
-                    value={editValue}
-                    onChange={(e) => setEditValue(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleEditSave() }
-                      if (e.key === 'Escape') onEditCancel?.()
-                    }}
-                    onBlur={(e) => {
-                      if (e.relatedTarget !== saveRef.current && e.relatedTarget !== cancelRef.current) {
-                        onEditCancel?.()
-                      }
-                    }}
-                    className="w-full rounded-[18px] px-4 py-2 text-[14px] bg-[#3A6A94] text-white resize-none overflow-hidden focus:outline-none focus:ring-2 focus:ring-white/30"
-                    style={{ gridArea: '1 / 1 / 2 / 2' }}
-                  />
-                  <span
-                    aria-hidden
-                    style={{
-                      gridArea: '1 / 1 / 2 / 2',
-                      visibility: 'hidden',
-                      pointerEvents: 'none',
-                      whiteSpace: 'pre-wrap',
-                      wordBreak: 'break-word',
-                      fontSize: '14px',
-                      fontFamily: 'inherit',
-                      padding: '8px 16px',
-                    }}
-                  >
-                    {editValue + ' '}
-                  </span>
-                </div>
-                <div className="flex justify-end gap-1 mt-1">
-                  <button
-                    ref={cancelRef}
-                    onClick={onEditCancel}
-                    className="p-1 rounded-full bg-[#E5E7EB] dark:bg-[#444444] text-[#6B7280] hover:bg-[#D1D5DB] dark:hover:bg-[#555555] transition-colors"
-                    title="Cancel edit"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    ref={saveRef}
-                    onClick={handleEditSave}
-                    disabled={editSaving || !editValue.trim()}
-                    className="p-1 rounded-full bg-[#3A6A94] text-white hover:opacity-90 transition-opacity disabled:opacity-40"
-                    title="Save edit"
-                  >
-                    <Check className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="bg-[#3A6A94] text-white rounded-[18px] px-4 py-2 text-[14px] leading-relaxed whitespace-pre-wrap break-words">
-                {renderBody(message.body, true)}
-              </div>
-            )}
-            {!grouped && !isEditing && (
-              <div className="flex items-center gap-1 mt-0.5 mr-1">
-                {message.edited && (
-                  <span className="text-[10px] text-[#9CA3AF]">(edited)</span>
-                )}
-                <span className="text-[11px] text-[#6B7280]">{formatTimestamp(message.created_at)}</span>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-    )
-  }
-
-  // Other person's message.
-  const authorElement = !grouped && (
-    <div className="flex items-center gap-1.5 mb-0.5 ml-1">
-      <button
-        onClick={onLabelClick}
-        className="text-[11px] text-[#6B7280] font-medium hover:text-[#4A7FA5] transition-colors text-left"
-        title="Label this member"
-      >
-        {displayLabel}
-      </button>
-      {message.is_jamm_team && (
-        <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-[#3A6A94]/10 text-[#3A6A94] dark:bg-[#7EB8E4]/10 dark:text-[#7EB8E4]">
-          JAMM
-        </span>
-      )}
-    </div>
-  )
-
-  const avatarElement = grouped
-    ? <div style={{ width: 26, flexShrink: 0 }} />
-    : (
-      <button
-        onClick={onLabelClick}
-        className="rounded-full hover:opacity-80 transition-opacity flex-shrink-0"
-        title="Label this member"
-      >
-        <Avatar handle={message.author_handle} size={26} />
-      </button>
-    )
-
   return (
-    <div className="flex items-end gap-2 min-w-0 px-3 py-[2px]">
-      {avatarElement}
-      <div className="flex flex-col items-start max-w-[420px] min-w-0">
-        {authorElement}
-        <div className="bg-white dark:bg-[#444444] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] text-[#1F3148] dark:text-[#EDEEF0] rounded-[18px] px-4 py-2 text-[14px] leading-relaxed whitespace-pre-wrap break-words">
-          {renderBody(message.body)}
+    <div className={`flex items-start gap-3 px-3 ${grouped ? 'py-[1px]' : 'mt-2 py-0.5'} mx-1 rounded-[6px] hover:bg-[#D5D8DE] dark:hover:bg-[#383838] transition-colors group`}>
+      {/* Avatar column or time-gutter for grouped continuation */}
+      {grouped ? (
+        <div className="w-9 flex-shrink-0 flex items-center justify-end pt-[3px]">
+          <span className="text-[11px] text-[#9CA3AF] opacity-0 group-hover:opacity-100 transition-opacity select-none leading-none">
+            {formatTimestamp(message.created_at)}
+          </span>
         </div>
-        {!grouped && (
-          <div className="flex items-center gap-1 mt-0.5 ml-1">
-            {message.edited && (
-              <span className="text-[10px] text-[#9CA3AF]">(edited)</span>
+      ) : (
+        <button
+          onClick={onLabelClick}
+          className="rounded-full hover:opacity-80 transition-opacity flex-shrink-0 mt-[2px]"
+          title="Label this member"
+        >
+          <Avatar handle={message.author_handle} size={36} />
+        </button>
+      )}
+
+      {/* Content column */}
+      <div className="relative flex-1 min-w-0 max-w-[840px]">
+        {/* Floating toolbar -- absolute overlay, never reserves document-flow space */}
+        {!isEditing && (
+          <div className={`absolute -top-3 right-0 z-20 transition-opacity flex items-center gap-0.5 bg-white dark:bg-[#2D2D2D] border border-[#C8CDD6] dark:border-[#484848] rounded-[6px] shadow-lg px-2 py-1.5 ${(showPicker || (isOwn && showMoreMenu)) ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto'}`}>
+            <button onClick={() => onReact?.('👍')} title="👍" className="p-1 rounded hover:bg-[#D5D8DE] dark:hover:bg-[#444444] transition-colors text-[16px] leading-none">👍</button>
+            <button onClick={() => onReact?.('❤️')} title="❤️" className="p-1 rounded hover:bg-[#D5D8DE] dark:hover:bg-[#444444] transition-colors text-[16px] leading-none">❤️</button>
+            <button onClick={() => onReact?.('🎉')} title="🎉" className="p-1 rounded hover:bg-[#D5D8DE] dark:hover:bg-[#444444] transition-colors text-[16px] leading-none">🎉</button>
+            <div className="w-[1px] h-4 bg-[#C8CDD6] dark:bg-[#484848] mx-0.5" />
+            <div
+              ref={pickerRef}
+              className="relative pb-1"
+              onMouseEnter={() => setShowPicker(true)}
+              onMouseLeave={() => { if (!pickerPinned) setShowPicker(false) }}
+            >
+              <button
+                title="React"
+                onClick={() => {
+                  if (pickerPinned) { setPickerPinned(false); setShowPicker(false) }
+                  else { setPickerPinned(true); setShowPicker(true) }
+                }}
+                className="flex items-center gap-1 px-1.5 py-1 rounded hover:bg-[#D5D8DE] dark:hover:bg-[#444444] transition-colors"
+              >
+                <Smile className="w-3.5 h-3.5 text-[#6B7280]" strokeWidth={2.5} />
+                <span className="text-[12px] font-medium text-[#4B5563]">React</span>
+              </button>
+              {showPicker && (
+                <div className="absolute bottom-full right-0 flex bg-white dark:bg-[#2D2D2D] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] rounded-[6px] shadow-sm p-1 gap-0.5 z-30">
+                  {PEER_NETWORK_PICKER_ONLY_REACTIONS.map(e => (
+                    <button key={e} onClick={() => { onReact?.(e); setPickerPinned(false); setShowPicker(false) }} className="p-1 rounded hover:bg-[#F7F7F8] dark:hover:bg-[#383838] text-[16px] leading-none">{e}</button>
+                  ))}
+                </div>
+              )}
+            </div>
+            {onReply && (
+              <button onClick={() => onReply()} title="Reply" className="flex items-center gap-1 px-1.5 py-1 rounded hover:bg-[#D5D8DE] dark:hover:bg-[#444444] transition-colors">
+                <MessageSquare className="w-3.5 h-3.5 text-[#6B7280]" strokeWidth={2.5} />
+                <span className="text-[12px] font-medium text-[#4B5563]">Reply</span>
+              </button>
             )}
-            <span className="text-[11px] text-[#6B7280]">{formatTimestamp(message.created_at)}</span>
+            {isOwn && (
+              <div ref={moreMenuRef} className="relative">
+                <button
+                  title="More options"
+                  onClick={() => setShowMoreMenu(m => !m)}
+                  className="p-1 rounded hover:bg-[#D5D8DE] dark:hover:bg-[#444444] transition-colors"
+                >
+                  <MoreHorizontal className="w-3 h-3 text-[#6B7280]" />
+                </button>
+                {showMoreMenu && (
+                  <div className="absolute top-full right-0 mt-0.5 bg-white dark:bg-[#2D2D2D] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] rounded-[6px] shadow-sm py-0.5 z-30 min-w-[80px]">
+                    <button
+                      onClick={() => { onEdit?.(); setShowMoreMenu(false) }}
+                      className="flex items-center gap-1.5 w-full px-2 py-1 text-[12px] text-[#1F3148] dark:text-[#EDEEF0] hover:bg-[#F7F7F8] dark:hover:bg-[#383838] transition-colors"
+                    >
+                      <Pencil className="w-3 h-3 text-[#6B7280]" />
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => { onDelete?.(); setShowMoreMenu(false) }}
+                      className="flex items-center gap-1.5 w-full px-2 py-1 text-[12px] text-[#1F3148] dark:text-[#EDEEF0] hover:bg-[#F7F7F8] dark:hover:bg-[#383838] transition-colors"
+                    >
+                      <Trash2 className="w-3 h-3 text-[#6B7280]" />
+                      Delete
+                    </button>
+                    {/* Pointer shield -- transparent overlay below dropdown, blocks next row's hover zone during mouse travel to Delete */}
+                    <div className="absolute top-full left-0 right-0 h-14 z-40" />
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Header: author name + JAMM badge + timestamp + edited marker + reply-count */}
+        {!grouped && (
+          <div className="flex items-baseline gap-1.5 mb-0.5">
+            <button
+              onClick={onLabelClick}
+              className="text-[16px] font-semibold text-[#1F3148] dark:text-[#EDEEF0] hover:underline transition-colors text-left"
+              title="Label this member"
+            >
+              {displayLabel}
+            </button>
+            {message.is_jamm_team && (
+              <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-[#3A6A94]/10 text-[#3A6A94] dark:bg-[#7EB8E4]/10 dark:text-[#7EB8E4]">
+                JAMM
+              </span>
+            )}
+            <span className="text-[13px] text-[#9CA3AF]">{formatTimestamp(message.created_at)}</span>
+            {message.edited && <span className="text-[13px] text-[#9CA3AF]">(edited)</span>}
+          </div>
+        )}
+
+        {/* Message body or edit-in-place */}
+        {isEditing ? (
+          <div className="flex flex-col">
+            <div style={{ display: 'grid' }} className="w-full">
+              <textarea
+                ref={editRef}
+                value={editValue}
+                onChange={(e) => setEditValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleEditSave() }
+                  if (e.key === 'Escape') onEditCancel?.()
+                }}
+                onBlur={(e) => {
+                  if (e.relatedTarget !== saveRef.current && e.relatedTarget !== cancelRef.current) {
+                    onEditCancel?.()
+                  }
+                }}
+                className="w-full rounded-[6px] px-3 py-1.5 text-[14px] bg-[#F7F7F8] dark:bg-[#383838] text-[#1F3148] dark:text-[#EDEEF0] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] resize-none overflow-hidden focus:outline-none focus:ring-2 focus:ring-[#4A7FA5]/30"
+                style={{ gridArea: '1 / 1 / 2 / 2' }}
+              />
+              <span
+                aria-hidden
+                style={{
+                  gridArea: '1 / 1 / 2 / 2',
+                  visibility: 'hidden',
+                  pointerEvents: 'none',
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-word',
+                  fontSize: '14px',
+                  fontFamily: 'inherit',
+                  padding: '6px 12px',
+                }}
+              >
+                {editValue + ' '}
+              </span>
+            </div>
+            <div className="flex gap-1 mt-1">
+              <button
+                ref={cancelRef}
+                onClick={onEditCancel}
+                className="p-1 rounded-full bg-[#E5E7EB] dark:bg-[#444444] text-[#6B7280] hover:bg-[#D1D5DB] dark:hover:bg-[#555555] transition-colors"
+                title="Cancel edit"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+              <button
+                ref={saveRef}
+                onClick={handleEditSave}
+                disabled={editSaving || !editValue.trim()}
+                className="p-1 rounded-full bg-[#3A6A94] text-white hover:opacity-90 transition-opacity disabled:opacity-40"
+                title="Save edit"
+              >
+                <Check className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+        ) : (
+          <p className="text-[16px] text-[#1F3148] dark:text-[#EDEEF0] leading-relaxed whitespace-pre-wrap break-words">
+            {renderBody(message.body)}
+          </p>
+        )}
+
+        {/* Thread preview -- shown for all top-level messages with replies */}
+        {!message.parent_id && (message.reply_count ?? 0) > 0 && (
+          <button
+            onClick={() => onReply?.()}
+            onMouseEnter={() => setThreadHovered(true)}
+            onMouseLeave={() => setThreadHovered(false)}
+            className={`flex items-center gap-1.5 mt-1.5 px-2 py-1 min-w-[240px] rounded-[6px] border border-[0.5px] transition-colors ${
+              threadHovered
+                ? 'border-[#4A7FA5] bg-[#4A7FA5]/10 dark:bg-[#4A7FA5]/10'
+                : 'border-[#C8CDD6] dark:border-[#484848] bg-transparent'
+            }`}
+          >
+            {replyAuthors && replyAuthors.length > 0 && (
+              <div className="flex items-center">
+                {replyAuthors.slice(0, 3).map((handle, i) => (
+                  <div key={handle} style={{ marginLeft: i > 0 ? '-4px' : 0 }}>
+                    <Avatar handle={handle} size={16} />
+                  </div>
+                ))}
+              </div>
+            )}
+            <span className="text-[13px] font-medium text-[#4A7FA5]">{message.reply_count} {message.reply_count === 1 ? 'reply' : 'replies'}</span>
+            {threadHovered ? (
+              <span className="text-[13px] font-medium text-[#4A7FA5]">View thread</span>
+            ) : (
+              <span className="text-[13px] text-[#6B7280]">{lastReplyAt ? `Last reply ${relativeTime(lastReplyAt)}` : ''}</span>
+            )}
+          </button>
+        )}
+
+        {/* Reaction pills -- always visible */}
+        {message.reactions && message.reactions.length > 0 && (
+          <div className="flex flex-wrap gap-1 mt-1">
+            {message.reactions.map(r => (
+              <button
+                key={r.emoji}
+                onClick={() => onReact?.(r.emoji)}
+                className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[12px] border transition-colors ${
+                  r.reacted_by_me
+                    ? 'border-[#3A6A94] bg-[#3A6A94]/10 text-[#3A6A94] dark:border-[#7EB8E4] dark:text-[#7EB8E4]'
+                    : 'border-[#C8CDD6] dark:border-[#484848] text-[#6B7280] hover:border-[#3A6A94]/50'
+                }`}
+              >
+                {r.emoji} <span className="text-[11px]">{r.count}</span>
+              </button>
+            ))}
           </div>
         )}
       </div>
@@ -591,6 +712,152 @@ function NewMessageModal({
 }
 
 // ---------------------------------------------------------------------------
+// Thread panel (Slack-style docked column for replies)
+// ---------------------------------------------------------------------------
+
+function ThreadPanel({
+  parentMessage,
+  replies,
+  myHandle,
+  displayOverrides,
+  editingMessageId,
+  onClose,
+  onSendReply,
+  onReact,
+  onEditStart,
+  onEditSave,
+  onEditCancel,
+  onDeleteStart,
+  onLabelClick,
+}: {
+  parentMessage: PeerNetworkMessage
+  replies: PeerNetworkMessage[]
+  myHandle: string | null
+  displayOverrides: Record<string, string>
+  editingMessageId: string | null
+  onClose: () => void
+  onSendReply: (body: string) => Promise<void>
+  onReact: (messageId: string, emoji: string) => void
+  onEditStart: (messageId: string) => void
+  onEditSave: (messageId: string, newBody: string) => Promise<void>
+  onEditCancel: () => void
+  onDeleteStart: (messageId: string) => void
+  onLabelClick: (memberId: string, currentLabel: string) => void
+}) {
+  const [compose, setCompose] = useState('')
+  const [sending, setSending] = useState(false)
+  const bottomRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [replies])
+
+  const handleSend = async () => {
+    if (!compose.trim() || sending) return
+    setSending(true)
+    try {
+      await onSendReply(compose.trim())
+      setCompose('')
+    } finally {
+      setSending(false)
+    }
+  }
+
+  return (
+    <div className="w-80 flex-shrink-0 border-l border-[#C8CDD6] dark:border-[#484848] flex flex-col bg-white dark:bg-[#1E1E1E]">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-[#C8CDD6] dark:border-[#484848] flex-shrink-0">
+        <span className="text-[13px] font-semibold text-[#1F3148] dark:text-[#EDEEF0]">Thread</span>
+        <button onClick={onClose} className="p-1 rounded hover:bg-[#F7F7F8] dark:hover:bg-[#383838] transition-colors">
+          <X className="w-3.5 h-3.5 text-[#6B7280]" />
+        </button>
+      </div>
+      <div className="flex-1 overflow-y-auto">
+        {/* Parent message */}
+        {(() => {
+          const isParentOwn = parentMessage.author_handle === myHandle
+          const parentDisplay = parentMessage.author_member_id && displayOverrides[parentMessage.author_member_id]
+            ? displayOverrides[parentMessage.author_member_id]
+            : (parentMessage.author_display ?? parentMessage.author_handle)
+          return (
+            <div className="border-b border-[#C8CDD6] dark:border-[#484848] py-1">
+              <MessageBubble
+                message={parentMessage}
+                grouped={false}
+                isOwn={isParentOwn}
+                displayLabel={parentDisplay}
+                onLabelClick={!isParentOwn && parentMessage.author_member_id ? () => onLabelClick(parentMessage.author_member_id!, parentDisplay) : undefined}
+                onEdit={isParentOwn && !parentMessage.deleted ? () => onEditStart(parentMessage.id) : undefined}
+                onDelete={isParentOwn && !parentMessage.deleted ? () => onDeleteStart(parentMessage.id) : undefined}
+                onReact={!parentMessage.deleted ? (emoji) => onReact(parentMessage.id, emoji) : undefined}
+                onReply={undefined}
+                isEditing={editingMessageId === parentMessage.id}
+                onEditSave={isParentOwn ? (newBody) => onEditSave(parentMessage.id, newBody) : undefined}
+                onEditCancel={onEditCancel}
+              />
+            </div>
+          )
+        })()}
+        {/* Replies */}
+        <div className="py-1">
+          {replies.length === 0 && (
+            <p className="text-[12px] text-[#9CA3AF] text-center py-4">No replies yet.</p>
+          )}
+          {replies.map(msg => {
+            const isReplyOwn = msg.author_handle === myHandle
+            const replyDisplay = msg.author_member_id && displayOverrides[msg.author_member_id]
+              ? displayOverrides[msg.author_member_id]
+              : (msg.author_display ?? msg.author_handle)
+            return (
+              <MessageBubble
+                key={msg.id}
+                message={msg}
+                grouped={false}
+                isOwn={isReplyOwn}
+                displayLabel={replyDisplay}
+                onLabelClick={!isReplyOwn && msg.author_member_id ? () => onLabelClick(msg.author_member_id!, replyDisplay) : undefined}
+                onEdit={isReplyOwn && !msg.deleted ? () => onEditStart(msg.id) : undefined}
+                onDelete={isReplyOwn && !msg.deleted ? () => onDeleteStart(msg.id) : undefined}
+                onReact={!msg.deleted ? (emoji) => onReact(msg.id, emoji) : undefined}
+                onReply={undefined}
+                isEditing={editingMessageId === msg.id}
+                onEditSave={isReplyOwn ? (newBody) => onEditSave(msg.id, newBody) : undefined}
+                onEditCancel={onEditCancel}
+              />
+            )
+          })}
+          <div ref={bottomRef} />
+        </div>
+      </div>
+      <div className="px-3 py-2 border-t border-[#C8CDD6] dark:border-[#484848] flex-shrink-0">
+        <div className="flex items-center gap-2 rounded-[6px] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] bg-[#F7F7F8] dark:bg-[#383838] px-3 py-2 focus-within:border-[#4A7FA5] transition-colors">
+          <textarea
+            className="flex-1 bg-transparent resize-none text-[13px] text-[#1F3148] dark:text-[#EDEEF0] placeholder:text-[#6B7280] focus:outline-none min-h-[20px] max-h-[80px] overflow-y-auto"
+            placeholder="Reply..."
+            rows={1}
+            value={compose}
+            onChange={(e) => {
+              setCompose(e.target.value)
+              e.target.style.height = 'auto'
+              e.target.style.height = e.target.scrollHeight + 'px'
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() }
+            }}
+          />
+          <button
+            onClick={handleSend}
+            disabled={!compose.trim() || sending}
+            className="px-2 h-6 rounded-[4px] bg-[#3A6A94] text-white text-[11px] font-medium hover:opacity-90 transition-opacity disabled:opacity-40"
+          >
+            Send
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Terms modal
 // ---------------------------------------------------------------------------
 
@@ -744,6 +1011,7 @@ export default function PeerNetworkPage() {
   const [myMutedReason, setMyMutedReason] = useState<string | null>(null)
   const [showFirstPostModal, setShowFirstPostModal] = useState(false)
   const [showNewMessageModal, setShowNewMessageModal] = useState(false)
+  const [openThreadParentId, setOpenThreadParentId] = useState<string | null>(null)
   const [aliases, setAliases] = useState<AliasEntry[]>([])
   const [mentionSearch, setMentionSearch] = useState<string | null>(null)
   const [mentionResults, setMentionResults] = useState<AliasEntry[]>([])
@@ -927,6 +1195,26 @@ export default function PeerNetworkPage() {
     setConfirmDeleteId(null)
   }
 
+  const handleReact = async (messageId: string, emoji: string) => {
+    try {
+      const result = await peerNetworkApi.toggleReaction(messageId, emoji)
+      setMessages((prev) =>
+        prev.map((m) => m.id === messageId ? { ...m, reactions: result.reactions } : m)
+      )
+    } catch {}
+  }
+
+  const handleSendReply = async (body: string) => {
+    if (!activeRoomId || !openThreadParentId) return
+    const msg = await peerNetworkApi.postMessage(activeRoomId, body, openThreadParentId)
+    setMessages((prev) => [
+      ...prev.map((m) =>
+        m.id === openThreadParentId ? { ...m, reply_count: (m.reply_count ?? 0) + 1 } : m
+      ),
+      msg,
+    ])
+  }
+
   if (!user) return null
 
   if (pageState === 'loading') {
@@ -974,6 +1262,7 @@ export default function PeerNetworkPage() {
   const renderedRows: React.ReactNode[] = []
   messages.forEach((msg, i) => {
     const prev = messages[i - 1]
+    if (msg.parent_id) return
     // isOwn uses author_handle, unchanged.
     const isOwn = msg.author_handle === myHandle
 
@@ -989,6 +1278,13 @@ export default function PeerNetworkPage() {
       ? displayOverrides[msg.author_member_id]
       : (msg.author_display ?? msg.author_handle)
 
+    const msgReplies = !msg.parent_id && (msg.reply_count ?? 0) > 0 ? messages.filter(m => m.parent_id === msg.id) : []
+    const msgReplyAuthors = msgReplies.length > 0
+      ? Array.from(new Set(msgReplies.map(m => m.author_handle))).slice(0, 3)
+      : undefined
+    const msgLastReplyAt = msgReplies.length > 0
+      ? msgReplies.reduce((latest, m) => m.created_at > latest ? m.created_at : latest, msgReplies[0].created_at)
+      : undefined
     renderedRows.push(
       <MessageBubble
         key={msg.id}
@@ -1001,6 +1297,10 @@ export default function PeerNetworkPage() {
         } : undefined}
         onEdit={isOwn && !msg.deleted ? () => setEditingMessageId(msg.id) : undefined}
         onDelete={isOwn && !msg.deleted ? () => setConfirmDeleteId(msg.id) : undefined}
+        onReact={!msg.deleted ? (emoji) => handleReact(msg.id, emoji) : undefined}
+        onReply={!msg.deleted && !msg.parent_id ? () => setOpenThreadParentId(msg.id) : undefined}
+        replyAuthors={msgReplyAuthors}
+        lastReplyAt={msgLastReplyAt}
         isEditing={editingMessageId === msg.id}
         onEditSave={isOwn ? (newBody) => handleEditSave(msg.id, newBody) : undefined}
         onEditCancel={() => setEditingMessageId(null)}
@@ -1234,6 +1534,29 @@ export default function PeerNetworkPage() {
           )}
         </div>
         </div>
+        {/* Thread panel */}
+        {openThreadParentId && (() => {
+          const parent = messages.find(m => m.id === openThreadParentId)
+          if (!parent) return null
+          const replies = messages.filter(m => m.parent_id === openThreadParentId)
+          return (
+            <ThreadPanel
+              parentMessage={parent}
+              replies={replies}
+              myHandle={myHandle}
+              displayOverrides={displayOverrides}
+              editingMessageId={editingMessageId}
+              onClose={() => setOpenThreadParentId(null)}
+              onSendReply={handleSendReply}
+              onReact={handleReact}
+              onEditStart={setEditingMessageId}
+              onEditSave={handleEditSave}
+              onEditCancel={() => setEditingMessageId(null)}
+              onDeleteStart={setConfirmDeleteId}
+              onLabelClick={(memberId, currentLabel) => setAliasTarget({ memberId, currentLabel })}
+            />
+          )
+        })()}
       </div>
     </>
   )

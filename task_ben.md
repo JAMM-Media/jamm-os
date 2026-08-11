@@ -72,11 +72,11 @@ This section exists because a past session confidently claimed specific files we
 
 ---
 
-# Section 3 - The task
+ # Section 3 - The task
 
-TASK: Add the backend foundation for Peer Network reactions and one-level replies, per spec section 7: standard emoji set reactions on any message (toggle on/off, no custom uploads), and Slack-style one-level-deep replies (a reply attaches to a parent message; replies to replies flatten into the same thread rather than nesting).
+TASK: Real bug, root-caused via a Claude in Chrome DOM inspection after two prior fix attempts (z-index bump, then a shield element) both failed. The actual cause: every message row's floating toolbar exists in the DOM at all times across the entire message list, hidden only via opacity-0, with no pointer-events control. Since opacity does not affect hit-testing, these invisible toolbars remain fully interactive and can sit on top of other elements, including an open dropdown from a different row, at the exact screen coordinates that dropdown occupies. Measured live: hovering over the Edit button's visual location returns a descendant of a completely different, invisible row's toolbar via elementFromPoint, not the dropdown or its shield, which is why clicks in that region get intercepted by an invisible element instead of landing on the intended button.
 
-USE: claude fable-5
+USE: claude sonnet
 
 ENVIRONMENT SANITY CHECK:
 
@@ -86,47 +86,41 @@ State plainly that no path in this task resolves against /mnt/c/Users or any Win
 
 VERIFY BEFORE ACT:
 
-.venv/bin/alembic heads
+sed -n '312,320p' "src/app/(app)/peer-network/page.tsx"
 
-grep -n -B 3 -A 45 "def list_messages" app/api/peer_network.py
+Paste the real output. Confirm the toolbar div's className includes the conditional: `${(showPicker || (isOwn && showMoreMenu)) ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`, meaning when neither showPicker nor showMoreMenu is true and the row is not being hovered, the toolbar sits at opacity-0 with no accompanying pointer-events control.
 
-Confirm exactly one alembic head. Confirm the real current list_messages implementation in full (the batch-fetch-then-build-maps-then-construct-items pattern already established), since reactions and reply data need to follow this same real pattern, not a different approach.
+If this does not match, stop and paste the real content instead of proceeding.
 
-WHAT THIS IS, PER THE LOCKED SPEC SECTION 7 AND THE PROPOSED MESSAGE SHAPE IN SECTION 15:
+WHAT THIS IS:
 
-Reactions: emoji reactions on any message, standard set, no custom uploads. The real proposed response shape per message: "reactions": [{ "emoji": "👍", "count": 4, "reacted_by_me": true }]. Replies: one level deep only. A reply attaches to a parent message via parent_id and forms a thread. Replies to replies flatten into the same thread rather than nesting, meaning a reply's own parent_id must always point to a genuine top-level message, never to another reply, enforced server-side, not just a frontend convention. The real proposed shape includes reply_count on the parent.
+Every message row in the feed renders its own MessageBubble, and every MessageBubble unconditionally renders this toolbar div, regardless of whether that specific row is currently hovered or has any menu open. Visibility is controlled purely by opacity and a CSS group-hover rule scoped to that row's own wrapper. Opacity does not remove an element from hit-testing, an opacity-0 element still receives pointer events and still participates in elementFromPoint resolution at its screen coordinates unless pointer-events is explicitly set to none. Live inspection confirmed this directly: with one row's dropdown open, a different row's invisible toolbar was the actual element returned by elementFromPoint over the dropdown's Edit button region, intercepting the click before it could reach the dropdown at all. This is a real defect independent of the specific dropdown bug, since any invisible interactive toolbar sitting on top of real content anywhere in the list could produce the same class of interference.
 
 CHANGE INSTRUCTIONS:
 
-Add a new model, PeerNetworkReaction, in app/models/peer_network.py: id, message_id (FK peer_network_messages.id, ondelete=CASCADE, index), member_id (FK peer_network_members.id, ondelete=CASCADE, index), emoji (String, a real restricted set, define a real constant list of allowed standard emoji, for example 👍 ❤️ 😂 🎉 👏 💡, reject anything outside this set with a clear error rather than accepting arbitrary text), created_at. Add a real unique constraint on (message_id, member_id, emoji), the same person reacting with the same emoji twice should not create duplicate rows, toggling should remove it instead.
+On the toolbar div at the line confirmed in VERIFY BEFORE ACT, add `pointer-events-none` to the classes applied in the hidden (opacity-0) branch of the existing conditional, and `pointer-events-auto` to the classes applied in the visible (opacity-100) branch, so the toolbar is only interactive when actually visible, either because the row is hovered (group-hover, handled by the existing CSS rule needing its own pointer-events-auto companion) or because showPicker/showMoreMenu is true for that specific row.
 
-Add parent_id: Mapped[uuid.UUID | None] to PeerNetworkMessage, ForeignKey peer_network_messages.id, ondelete=SET NULL, nullable=True, index=True. When creating a reply, if the target parent message itself already has a non-null parent_id, reject with a clear error or automatically flatten by using the parent's own parent_id instead of the attempted grandparent (spec explicitly requires flattening, not rejecting, choose flattening to match "replies to replies flatten into the same thread" precisely, do not silently allow a real two-level chain to form).
+Since group-hover:opacity-100 is a CSS pseudo-class transition and not a JS-driven boolean like showPicker/showMoreMenu, the pointer-events toggle for the hover case also needs to be CSS-driven: add `group-hover:pointer-events-auto` alongside the existing `group-hover:opacity-100` in the same conditional branch, so pointer-events only activates on actual hover of that specific row's own group, matching the same mechanism already used for opacity.
 
-Write the migration by hand, matching tonight's established real structure, down_revision set to the real current head confirmed above.
+The full conditional should end up structured as: when showPicker or (isOwn and showMoreMenu) is true, apply `opacity-100 pointer-events-auto`. Otherwise, apply `opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto`. Write the exact template literal reflecting this logic, preserving every other existing class on this div unchanged.
 
-Add POST /peer-network/messages/{message_id}/reactions, accepting {emoji: str}, gated by real active membership and, if the message's room is dm/subgroup, real room membership too (reuse the exact same real checks already used in post_message). Validate emoji is in the real allowed set. Toggle behavior: if the calling member already has this exact reaction on this message, remove it (un-react); otherwise create it. Return the real updated reaction summary for this message.
-
-Add a reply parameter to the existing POST /peer-network/rooms/{room_id}/messages endpoint: accept an optional parent_id in the request body. If provided, validate the parent message exists in this same room (reject if it's in a different room), and apply the real flattening rule described above if the target parent itself has a parent_id.
-
-Update list_messages to include real reaction and reply data per message, following the exact same batch-fetch pattern already used for handles/aliases/jamm_team: batch-query all PeerNetworkReaction rows for every message id in the current page, group by message_id and emoji to build real counts, and check whether the calling member's own id appears in each group for reacted_by_me. Batch-query reply counts (a real COUNT grouped by parent_id) for every message id in the current page. Add "reactions": [...] and "reply_count": int and "parent_id": str | None to each item's real response dict, matching the exact real shape already established in section 15's proposed API.
+Do not touch the shield element added in the prior task, leave it in place for now since removing it is out of scope for this task and it is not actively harmful. Do not touch any other opacity-0/group-hover element in the file (the timestamp span at line 298, or the DM/subgroup hide button at line 1403), this task is scoped to the message toolbar only, since that is the one confirmed to cause the reported bug.
 
 VERIFY AFTER ACT:
 
-grep -n "class PeerNetworkReaction" app/models/peer_network.py
+sed -n '312,320p' "src/app/(app)/peer-network/page.tsx"
 
-grep -n "parent_id\|reactions.*POST\|@router.post(\"/messages" app/api/peer_network.py
+cd /home/corby/jamm-os/frontend
+npm run build 2>&1
 
-.venv/bin/alembic heads
+git diff --stat
 
-This must show exactly one head, the new migration's revision id. Run .venv/bin/alembic upgrade head and confirm it applies with no errors.
-
-cd /home/corby/jamm-os
-python3 -c "from app.main import app; print('app imports cleanly')"
+VERIFY AFTER ACT must include the literal, pasted output of npm run build, not a summary or a claim that it passed. Confirm zero TypeScript errors from the real, literal output. If npm run build cannot execute in your session, state that plainly, but restate clearly that Ben must run it himself in his real WSL terminal before this is trusted as done.
 
 MANUAL VERIFICATION:
 
-Restart the backend. Using two real distinct accounts from tonight's testing, react to a real existing message with a real allowed emoji as each account, confirm the message's real reactions field shows count 2, reacted_by_me true for each account's own perspective, false for the other's. React again with the same emoji as one account, confirm it toggles off (count drops back to 1). Try reacting with a real disallowed emoji or arbitrary text, confirm a real, clear rejection. Post a real reply to an existing message, confirm the parent's reply_count increases. Attempt to reply to that same reply (a real attempted second-level nesting), confirm it correctly flattens to point at the real original top-level parent, not the reply, verify this with a real database query showing the actual stored parent_id. Report every real response and query result.
+**Restart the frontend.** Reload /peer-network. Hover a message you own that has another message directly below it. Open the more-options menu, move the mouse from the three-dot button down to Delete, the exact motion that failed in the two prior attempts, and confirm the row below no longer intercepts the click anywhere along that path. Actually click Delete and confirm the message is deleted. Also test Edit. Separately, confirm normal hover behavior still works correctly elsewhere in the list: hovering any row still reveals its own toolbar normally, and moving the mouse away still hides it. Report back plainly and specifically whether Delete now actually works, since this is the third attempt at the same bug and the first two both failed on this exact claim.
 
 GIT:
 
-Do not commit until Ben confirms every real check above with actual evidence.
+Do not commit until Ben confirms in the browser.
