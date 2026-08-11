@@ -343,9 +343,12 @@ function ClientDetailContent() {
 
   if (clientLoading) {
     return (
-        <div className="flex flex-col items-center justify-center h-full gap-3 p-6">
+      <>
+        <div className="flex flex-col gap-3 p-6">
           <div className="h-6 w-48 bg-surface-border dark:bg-dark-border animate-pulse rounded" />
         </div>
+        <ClientDetailBodySkeleton />
+      </>
     )
   }
 
@@ -1094,6 +1097,39 @@ function ClientDetailContent() {
         initialEngagementType={initialEngagementType}
       />
   </>)
+}
+
+function ClientDetailBodySkeleton() {
+  return (
+    <div className="flex flex-col gap-4 p-6 pt-0">
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+        <div className="bg-surface-card dark:bg-dark-card rounded-card p-4">
+          <div className="h-3.5 w-32 bg-surface-border dark:bg-dark-border animate-pulse rounded mb-3" />
+          <div className="space-y-2.5">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="flex items-center gap-2.5">
+                <div className="h-4 w-4 bg-surface-border dark:bg-dark-border animate-pulse rounded flex-shrink-0" />
+                <div className="h-3 bg-surface-border dark:bg-dark-border animate-pulse rounded" style={{ width: i === 0 ? "50%" : i === 1 ? "65%" : "80%" }} />
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="bg-surface-card dark:bg-dark-card rounded-card p-4">
+          <div className="h-3.5 w-28 bg-surface-border dark:bg-dark-border animate-pulse rounded mb-3" />
+          <div className="h-6 w-32 bg-surface-border dark:bg-dark-border animate-pulse rounded mb-2" />
+          <div className="h-3 w-48 bg-surface-border dark:bg-dark-border animate-pulse rounded" />
+        </div>
+      </div>
+      <div className="bg-surface-card dark:bg-dark-card rounded-card p-4">
+        <div className="h-3.5 w-36 bg-surface-border dark:bg-dark-border animate-pulse rounded mb-3" />
+        <div className="space-y-2">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="h-10 bg-surface-border dark:bg-dark-border animate-pulse rounded" />
+          ))}
+        </div>
+      </div>
+    </div>
+  )
 }
 
 export default function ClientDetailPage() {

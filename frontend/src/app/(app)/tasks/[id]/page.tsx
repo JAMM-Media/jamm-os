@@ -13,6 +13,21 @@ import { useAuth } from '@/lib/hooks/useAuth'
 
 type BadgeVariant = Parameters<typeof StatusBadge>[0]['variant']
 
+function TaskDetailBodySkeleton() {
+  return (
+    <div className="p-6 pt-0 flex flex-col gap-4">
+      <div className="grid grid-cols-1 xl:grid-cols-4 gap-4">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <div key={i} className="bg-surface-card dark:bg-dark-card rounded-card p-4">
+            <div className="h-2.5 w-16 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded mb-2" />
+            <div className="h-4 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" style={{ width: `${50 + (i % 2) * 20}%` }} />
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export default function TaskDetailPage() {
   const params = useParams()
   const id = params.id as string
@@ -43,11 +58,14 @@ export default function TaskDetailPage() {
 
   if (isLoading) {
     return (
+      <>
         <div className="p-6">
           <div className="h-4 w-32 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded mb-4" />
           <div className="h-8 w-64 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded mb-2" />
           <div className="h-4 w-48 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
         </div>
+        <TaskDetailBodySkeleton />
+      </>
     )
   }
 

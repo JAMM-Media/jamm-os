@@ -72,9 +72,9 @@ This section exists because a past session confidently claimed specific files we
 
 ---
 
- # Section 3 - The task
+# Section 3 - The task
 
-TASK: Complete the firm-chat skeleton fix from the previous task. A ChannelListSkeleton was built and wired in correctly, but the message-area skeleton was never added — the message list still renders blank while messagesLoading is true.
+TASK: Fix the three highest-priority skeleton gaps identified in tonight's full audit's B classification — clients/[id], engagements/[id], and tasks/[id]. All three currently skeleton only their page header (breadcrumb/title/meta) while the actual body content — tabs, lists, panels — pops in blank once data resolves. This produces a jarring half-loaded feel since the header looks ready before the body is.
 
 USE: claude sonnet
 
@@ -86,35 +86,51 @@ State plainly that no path in this task resolves against /mnt/c/Users or any Win
 
 VERIFY BEFORE ACT:
 
-cat "src/app/(app)/firm-chat/page.tsx"
+cat "src/app/(app)/dashboard/page.tsx" | grep -n "Skeleton" -A 8
 
-Confirm ChannelListSkeleton exists and is wired in for the channel list's loading state. Confirm the message area currently renders blank/empty while messagesLoading is true, with no skeleton for it. Also view the real message-bubble skeleton pattern already built in Peer Network for reference:
+Reference standard: named, content-shaped skeleton components using surface-border/dark-border tokens and animate-pulse, matching real content layout.
 
-grep -n "Skeleton\|animate-pulse" "src/app/(app)/peer-network/page.tsx"
+Then view each of the three target files in full:
+
+cat "src/app/(app)/clients/[id]/page.tsx"
+cat "src/app/(app)/engagements/[id]/page.tsx"
+cat "src/app/(app)/tasks/[id]/page.tsx"
+
+Confirm each currently has a small header-only skeleton (2-4 animate-pulse divs for breadcrumb/title/meta) and that the tab/body content below renders nothing or pops in abruptly once its own data resolves. Identify the real tab structure and body layout for each page (what tabs exist, what each tab's content looks like once loaded) before writing any skeleton, since the skeleton must match real content, not be invented.
+
+If any file's structure doesn't match this description, stop and report the actual content instead of proceeding on that file.
 
 CHANGE INSTRUCTIONS:
 
-Build a MessageAreaSkeleton (or similarly named) component matching firm-chat's real message rendering shape — avatar circle + sender name/timestamp line + message-bubble-shaped pulse block, 4-5 messages worth, varying widths so it doesn't look like a rigid repeated block. Use the same visual language already proven in peer-network's message skeleton as a starting reference, adapted to firm-chat's actual real message layout (read the file to confirm firm-chat's real message rendering structure before matching it — do not assume it's identical to peer-network's).
+For each of the three files, extend the existing header skeleton to also cover the body/tab content area during the loading state:
 
-Wire it in to show while messagesLoading is true, same trigger condition already used for ChannelListSkeleton on the channel list.
+1. clients/[id]/page.tsx — build a skeleton for the default/first tab's real content shape (read the file to determine what actually renders — likely contact info fields, associated engagements list, or similar). Named descriptively (e.g. ClientDetailBodySkeleton).
 
-Do not touch ChannelListSkeleton or anything else in this file.
+2. engagements/[id]/page.tsx — build a skeleton for the default/first tab's real content shape (likely task list, document requests, or similar — read the file to confirm). Named descriptively (e.g. EngagementDetailBodySkeleton).
+
+3. tasks/[id]/page.tsx — build a skeleton for the real body content shape (likely task details, comments/activity, or similar — read the file to confirm). Named descriptively (e.g. TaskDetailBodySkeleton).
+
+Each skeleton should follow the dashboard reference pattern: sized/colored placeholder divs matching the real content's actual layout (field rows, list items, card shapes), not generic boxes. Wire each in to show during the same loading condition that currently gates the header skeleton, so header and body skeletons appear and disappear together.
+
+Do not touch the existing header skeletons themselves, only add body coverage. Do not touch any other file — this task is scoped to these three only.
 
 VERIFY AFTER ACT:
 
-grep -n "Skeleton" "src/app/(app)/firm-chat/page.tsx"
+grep -n "Skeleton" "src/app/(app)/clients/[id]/page.tsx"
+grep -n "Skeleton" "src/app/(app)/engagements/[id]/page.tsx"
+grep -n "Skeleton" "src/app/(app)/tasks/[id]/page.tsx"
 
-Confirm both ChannelListSkeleton and the new message-area skeleton now exist and are both wired in.
+Confirm each file now has both its original header skeleton and a new body skeleton component.
 
 git diff --stat
 
-Confirm the diff touches only this one file.
+Confirm the diff touches only these three files.
 
 MANUAL VERIFICATION:
 
-Ben will run npm run build himself and confirm it's clean before trusting this as done.
+Ben will run npm run build himself in the frontend directory and confirm it's clean before trusting this as done.
 
-**Restart the frontend.** Reload /firm-chat with network throttled in devtools to actually see the loading state. Confirm both the channel list and the message area now show real skeletons during load, not just the channel list. Report back plainly.
+**Restart the frontend.** With network throttled in devtools, visit a real client detail page, a real engagement detail page, and a real task detail page. Confirm the body content area now shows a real, shaped skeleton during load instead of popping in blank after the header skeleton disappears. Report back plainly, page by page.
 
 GIT:
 

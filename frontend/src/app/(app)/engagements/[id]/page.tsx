@@ -54,6 +54,23 @@ function formatDate(dateStr: string | null | undefined): string {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
+function EngagementDetailBodySkeleton() {
+  return (
+    <div className="p-6 pt-0 flex flex-col gap-4">
+      <div className="bg-surface-card dark:bg-dark-card rounded-[8px] p-4">
+        <div className="grid grid-cols-2 gap-x-6 gap-y-4">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="flex flex-col gap-1">
+              <div className="h-2.5 w-20 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+              <div className="h-4 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" style={{ width: `${45 + (i % 3) * 15}%` }} />
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function EngagementDetailPage() {
   const params = useParams()
   const router = useRouter()
@@ -111,11 +128,14 @@ export default function EngagementDetailPage() {
 
   if (isLoading) {
     return (
+      <>
         <div className="p-6">
           <div className="h-6 w-48 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded mb-4" />
           <div className="h-8 w-72 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded mb-2" />
           <div className="h-4 w-56 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
         </div>
+        <EngagementDetailBodySkeleton />
+      </>
     )
   }
 
