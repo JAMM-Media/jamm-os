@@ -301,14 +301,10 @@ def delete_time_entry(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_manager_or_above),
 ):
-    result, error = time_entry_service.delete_time_entry(
+    time_entry_service.delete_time_entry(
         db=db, entry_id=entry_id,
         firm_id=current_user.firm_id, current_user=current_user,
     )
-    if error == "not_found":
-        raise HTTPException(status_code=404, detail="Time entry not found")
-    if error == "billed":
-        raise HTTPException(status_code=400, detail="Cannot delete a billed time entry")
     return {"message": "Time entry deleted"}
 
 

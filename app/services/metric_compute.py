@@ -372,7 +372,11 @@ def _build_invoice_payment_time(db: Session, firm_id: uuid.UUID, current_week: d
 def _dying_with_engagement_document_items(
     db: Session, firm_id: uuid.UUID, resolved_keys: set[tuple]
 ) -> list[datetime]:
-    completion_events = _fetch_events(db, firm_id, ["engagement.completed", "engagement.archived"])
+    # Completion is the only resolution that matters here. Deletion is not a
+    # substitute: the delete_engagement guard refuses to delete an engagement
+    # that still has documents attached, so a deleted engagement never has
+    # document request items left to die with it.
+    completion_events = _fetch_events(db, firm_id, ["engagement.completed"])
     latest_resolution_by_engagement: dict[uuid.UUID, datetime] = {}
     for ev in completion_events:
         if ev.entity_id is None:

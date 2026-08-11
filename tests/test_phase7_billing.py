@@ -320,6 +320,34 @@ def test_cannot_delete_paid_invoice(client, firm_a_owner):
     assert r.status_code == 400, r.text
 
 
+def test_cannot_delete_paid_invoice_detail_message(client, firm_a_owner):
+    """
+    Pins the exact client-visible refusal. The guard moved from the router into
+    invoice_service, and this is what proves the move changed no behavior.
+    """
+    firm_id = uuid.UUID(firm_a_owner["firm_id"])
+    headers = firm_a_owner["headers"]
+    client_id = _create_client_in_db(firm_id)
+
+    invoice_id = client.post("/invoices/", json=_invoice_payload(client_id), headers=headers).json()["id"]
+
+    db = TestingSessionLocal()
+    try:
+        inv = db.get(Invoice, uuid.UUID(invoice_id))
+        inv.status = InvoiceStatus.paid
+        db.commit()
+    finally:
+        db.close()
+
+    r = client.delete(f"/invoices/{invoice_id}", headers=headers)
+    assert r.status_code == 400, r.text
+    assert r.json()["detail"] == "Cannot delete a paid invoice"
+
+    missing = client.delete(f"/invoices/{uuid.uuid4()}", headers=headers)
+    assert missing.status_code == 404, missing.text
+    assert missing.json()["detail"] == "Invoice not found"
+
+
 # ===========================================================================
 # GROUP 2 — Invoice lifecycle
 # ===========================================================================
@@ -615,6 +643,56 @@ def test_delete_time_entry(client, firm_a_owner):
 
     r2 = client.get(f"/time-entries/{entry_id}", headers=headers)
     assert r2.status_code == 404, r2.text
+
+
+def test_cannot_delete_billed_time_entry(client, firm_a_owner):
+    """
+    A billed entry has already been invoiced, so deleting it would silently
+    detach revenue from its work record. The refusal was previously untested,
+    which left the guard with no way to be observed failing.
+    """
+    firm_id = uuid.UUID(firm_a_owner["firm_id"])
+    headers = firm_a_owner["headers"]
+    client_id = _create_client_in_db(firm_id)
+    engagement_id = _create_engagement_in_db(firm_id, client_id)
+    today = date.today().isoformat()
+
+    entry_id = client.post(
+        "/time-entries/",
+        json={
+            "engagement_id": str(engagement_id),
+            "description": "Billed and undeletable",
+            "hours": "2.0",
+            "hourly_rate": "100.00",
+            "is_billable": True,
+            "date": today,
+        },
+        headers=headers,
+    ).json()["id"]
+
+    db = TestingSessionLocal()
+    try:
+        entry = db.get(TimeEntry, uuid.UUID(entry_id))
+        entry.is_billed = True
+        db.commit()
+    finally:
+        db.close()
+
+    r = client.delete(f"/time-entries/{entry_id}", headers=headers)
+    assert r.status_code == 400, r.text
+    assert r.json()["detail"] == "Cannot delete a billed time entry"
+
+    # Reads the table directly: the delete endpoint's own filtering could hide
+    # a row that is still there.
+    db = TestingSessionLocal()
+    try:
+        assert db.get(TimeEntry, uuid.UUID(entry_id)) is not None
+    finally:
+        db.close()
+
+    missing = client.delete(f"/time-entries/{uuid.uuid4()}", headers=headers)
+    assert missing.status_code == 404, missing.text
+    assert missing.json()["detail"] == "Time entry not found"
 
 
 # ===========================================================================

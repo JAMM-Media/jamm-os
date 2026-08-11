@@ -177,14 +177,10 @@ def delete_invoice(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_firm_owner),
 ):
-    result, error = invoice_service.delete_invoice(
+    invoice_service.delete_invoice(
         db=db, invoice_id=invoice_id, firm_id=current_user.firm_id,
         current_user_id=current_user.id,
     )
-    if error == "not_found":
-        raise HTTPException(status_code=404, detail="Invoice not found")
-    if error == "paid":
-        raise HTTPException(status_code=400, detail="Cannot delete a paid invoice")
     return {"message": "Invoice deleted"}
 
 

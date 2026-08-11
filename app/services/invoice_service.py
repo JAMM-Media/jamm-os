@@ -259,9 +259,9 @@ def delete_invoice(
 ):
     invoice = crud_invoice.get_invoice(db, invoice_id, firm_id=firm_id)
     if not invoice:
-        return None, "not_found"
+        raise HTTPException(status_code=404, detail="Invoice not found")
     if invoice.status == InvoiceStatus.paid:
-        return None, "paid"
+        raise HTTPException(status_code=400, detail="Cannot delete a paid invoice")
 
     amount = str(invoice.total_amount) if invoice.total_amount else None
     days_since_creation = (datetime.now(timezone.utc) - invoice.created_at).days \
@@ -283,7 +283,7 @@ def delete_invoice(
         }
     )
 
-    return True, None
+    return True
 
 
 async def create_invoice_from_time_entries(

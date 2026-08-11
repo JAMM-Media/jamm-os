@@ -105,9 +105,9 @@ def delete_time_entry(
 ):
     entry = crud_time_entry.get_time_entry(db, entry_id, firm_id=firm_id)
     if not entry:
-        return None, "not_found"
+        raise HTTPException(status_code=404, detail="Time entry not found")
     if entry.is_billed:
-        return None, "billed"
+        raise HTTPException(status_code=400, detail="Cannot delete a billed time entry")
 
     hours = float(entry.hours) if entry.hours else None
     entry_firm_id = entry.firm_id
@@ -126,7 +126,7 @@ def delete_time_entry(
         }
     )
 
-    return True, None
+    return True
 
 
 def submit_day(
