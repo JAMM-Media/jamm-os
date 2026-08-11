@@ -1,6 +1,6 @@
 # How We Work: Verification and Debugging
 
-This file exists because of a specific, repeated failure. Eight separate times, a signal reported success while the thing it was supposed to be watching was broken. Every instance cost real time, and every instance looked fine right up until someone checked by hand.
+This file exists because of a specific, repeated failure. Nine separate times, a signal reported success while the thing it was supposed to be watching was broken. Every instance cost real time, and every instance looked fine right up until someone checked by hand.
 
 These are not style preferences. Each rule below is here because ignoring it already cost us something.
 
@@ -10,7 +10,7 @@ These are not style preferences. Each rule below is here because ignoring it alr
 
 The failure mode is always the same shape. Something reports success. The report is accurate about what it measured. What it measured was not the thing that mattered.
 
-Eight instances so far:
+Nine instances so far:
 
 1. **Unregistered expiry sweep.** The sweep was written, tested, and correct. It was never registered with the scheduler, so it never ran. Nothing errored, because nothing happened.
 2. **Anniversary job logging ERROR under a successful scheduler.** The scheduler reported healthy. The job inside it was failing every run. Scheduler health and job health are different measurements.
@@ -20,10 +20,11 @@ Eight instances so far:
 6. **The model registry guard test passing against a broken `__init__.py`.** The guard was written to catch unimported models. It passed even with the registry deliberately broken, because `conftest.py` imports `app.main`, which pulls the missing modules in transitively through routers and services. Alembic does not load the app. It imports `app.models` and nothing else. The test and the failure were looking at two different processes.
 7. **The test database schema diverging from production.** Seventeen timestamp columns were declared as naive `DateTime()` in the models while the migrations created them as `timestamptz`. Because `conftest.py` builds the test database with `create_all()` from the models, the test suite ran against `TIMESTAMP WITHOUT TIME ZONE` while dev and production ran `WITH TIME ZONE`. Every test passed. Any timezone bug in the affected code would have been invisible to the suite by construction.
 8. **A restore command reporting success after silently failing.** During a negative control, the command that was supposed to restore a mutated file failed on a bad path and printed "restored" anyway. The mutation was still in the file. It was caught only by grepping for the mutation marker instead of trusting the message. This one is a different flavor from the others: not a tool measuring the wrong thing, but a command reporting on an outcome it never checked. Verification steps are themselves subject to this rule. Confirm a restore by inspecting the file, not by reading the message.
+9. **The billed-time-entry delete guard with no test at all.** During the guard-unification refactor (Aug 11), the pre-change sweep for the existing safety net found that the only DELETE test for time entries was the success case. The guard had existed in the service path since it was written, and no test had ever exercised the refusal. It happened to work, but nothing would have gone red if any change had ever broken it, including the refactor about to be performed on it. Caught only because the session checked for the safety net before assuming it. This is a different flavor again: instances one through eight are signals that reported wrongly. This one is the absence of a signal mistaken for the absence of a problem. Nothing was green, because nothing was watching, and those two states are indistinguishable until you go looking for the watcher.
 
-Instance seven is the purest form of the pattern. The others are things that failed. That one never failed. It made an entire category of failure unobservable, which is worse, because there was nothing to notice.
+Instances seven and nine are the purest forms of the pattern. The others are things that failed. Those two never failed. They made a category of failure unobservable, which is worse, because there was nothing to notice.
 
-When you find a ninth, add it here with its origin. The list is the point. Recognizing the shape early is worth more than any individual rule below.
+When you find a tenth, add it here with its origin. The list is the point. Recognizing the shape early is worth more than any individual rule below.
 
 ---
 
@@ -117,3 +118,13 @@ This applies to comments too. A comment asserting something the code no longer d
 Instance five is a test that encoded a bug as the expectation. The mirror image is a test that correctly encoded a rule which has since been deliberately replaced.
 
 Both look the same from the terminal: a red test after a change. The difference is whether the behavior changed on purpose. When it did, update the test to the new expectation, rename it if the name asserts the old rule, and say in the docstring what changed and why. A test named `..._is_refused` that now asserts success is its own small piece of misinformation.
+
+---
+
+## 10. Before refactoring guarded behavior, find the test that pins it
+
+A refactor's correctness proof is that existing tests pass unmodified. That proof is only as good as the tests existing. Before restructuring anything whose behavior must not change, locate the specific test that pins each externally visible behavior: status codes, messages, side effects. Do not assume coverage; find the test by name.
+
+If no pinning test exists, write it against the old code first and watch it pass before touching anything. The order is the whole point. A pinning test written before the refactor records what the code did. The same test written after the refactor records what the new code does, and proves only that the new code agrees with itself.
+
+This is instance nine's rule. The refactor that surfaced it would otherwise have carried an unwatched guard across a restructuring with no way to notice if it dropped.
