@@ -74,53 +74,31 @@ This section exists because a past session confidently claimed specific files we
 
  # Section 3 - The task
 
-TASK: Real bug, root-caused via a Claude in Chrome DOM inspection after two prior fix attempts (z-index bump, then a shield element) both failed. The actual cause: every message row's floating toolbar exists in the DOM at all times across the entire message list, hidden only via opacity-0, with no pointer-events control. Since opacity does not affect hit-testing, these invisible toolbars remain fully interactive and can sit on top of other elements, including an open dropdown from a different row, at the exact screen coordinates that dropdown occupies. Measured live: hovering over the Edit button's visual location returns a descendant of a completely different, invisible row's toolbar via elementFromPoint, not the dropdown or its shield, which is why clicks in that region get intercepted by an invisible element instead of landing on the intended button.
+TASK: Fix a real bug in password_reset_service.request_password_reset. A missing or failing email send currently raises an unhandled exception that crashes the /auth/forgot-password endpoint with a 500, confirmed live via curl. This breaks the endpoint's core security design: it's supposed to always return the same generic response regardless of whether the account exists or whether the email actually sent, matching the proven pattern already used in staff_magic_link.py's request_staff_magic_link, which wraps its email send in try/except and only logs failures.
 
 USE: claude sonnet
 
 ENVIRONMENT SANITY CHECK:
-
 pwd
-
 State plainly that no path in this task resolves against /mnt/c/Users or any Windows-side copy.
 
 VERIFY BEFORE ACT:
+cat app/services/password_reset_service.py
+cat app/services/staff_magic_link.py
 
-sed -n '312,320p' "src/app/(app)/peer-network/page.tsx"
-
-Paste the real output. Confirm the toolbar div's className includes the conditional: `${(showPicker || (isOwn && showMoreMenu)) ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`, meaning when neither showPicker nor showMoreMenu is true and the row is not being hovered, the toolbar sits at opacity-0 with no accompanying pointer-events control.
-
-If this does not match, stop and paste the real content instead of proceeding.
-
-WHAT THIS IS:
-
-Every message row in the feed renders its own MessageBubble, and every MessageBubble unconditionally renders this toolbar div, regardless of whether that specific row is currently hovered or has any menu open. Visibility is controlled purely by opacity and a CSS group-hover rule scoped to that row's own wrapper. Opacity does not remove an element from hit-testing, an opacity-0 element still receives pointer events and still participates in elementFromPoint resolution at its screen coordinates unless pointer-events is explicitly set to none. Live inspection confirmed this directly: with one row's dropdown open, a different row's invisible toolbar was the actual element returned by elementFromPoint over the dropdown's Edit button region, intercepting the click before it could reach the dropdown at all. This is a real defect independent of the specific dropdown bug, since any invisible interactive toolbar sitting on top of real content anywhere in the list could produce the same class of interference.
+Paste both. Confirm password_reset_service.request_password_reset calls EmailService.send_password_reset_email with no try/except around it, and confirm staff_magic_link.py's request_staff_magic_link wraps its equivalent email call in try/except Exception, logging the error and continuing rather than raising.
 
 CHANGE INSTRUCTIONS:
+In app/services/password_reset_service.py, wrap the EmailService.send_password_reset_email call in the same try/except Exception pattern already used in staff_magic_link.py: log the error with the affected user's id (never log the email/token), and do not re-raise. The function should return successfully regardless of whether the email send succeeded, exactly matching the non-enumerable design already documented in this function and already correctly implemented in the magic-link equivalent.
 
-On the toolbar div at the line confirmed in VERIFY BEFORE ACT, add `pointer-events-none` to the classes applied in the hidden (opacity-0) branch of the existing conditional, and `pointer-events-auto` to the classes applied in the visible (opacity-100) branch, so the toolbar is only interactive when actually visible, either because the row is hovered (group-hover, handled by the existing CSS rule needing its own pointer-events-auto companion) or because showPicker/showMoreMenu is true for that specific row.
-
-Since group-hover:opacity-100 is a CSS pseudo-class transition and not a JS-driven boolean like showPicker/showMoreMenu, the pointer-events toggle for the hover case also needs to be CSS-driven: add `group-hover:pointer-events-auto` alongside the existing `group-hover:opacity-100` in the same conditional branch, so pointer-events only activates on actual hover of that specific row's own group, matching the same mechanism already used for opacity.
-
-The full conditional should end up structured as: when showPicker or (isOwn and showMoreMenu) is true, apply `opacity-100 pointer-events-auto`. Otherwise, apply `opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto`. Write the exact template literal reflecting this logic, preserving every other existing class on this div unchanged.
-
-Do not touch the shield element added in the prior task, leave it in place for now since removing it is out of scope for this task and it is not actively harmful. Do not touch any other opacity-0/group-hover element in the file (the timestamp span at line 298, or the DM/subgroup hide button at line 1403), this task is scoped to the message toolbar only, since that is the one confirmed to cause the reported bug.
+Do not change the token generation, expiry, or any other logic in this file. Do not touch app/api/auth.py or the frontend.
 
 VERIFY AFTER ACT:
-
-sed -n '312,320p' "src/app/(app)/peer-network/page.tsx"
-
-cd /home/corby/jamm-os/frontend
-npm run build 2>&1
-
+cat app/services/password_reset_service.py
 git diff --stat
 
-VERIFY AFTER ACT must include the literal, pasted output of npm run build, not a summary or a claim that it passed. Confirm zero TypeScript errors from the real, literal output. If npm run build cannot execute in your session, state that plainly, but restate clearly that Ben must run it himself in his real WSL terminal before this is trusted as done.
-
 MANUAL VERIFICATION:
-
-**Restart the frontend.** Reload /peer-network. Hover a message you own that has another message directly below it. Open the more-options menu, move the mouse from the three-dot button down to Delete, the exact motion that failed in the two prior attempts, and confirm the row below no longer intercepts the click anywhere along that path. Actually click Delete and confirm the message is deleted. Also test Edit. Separately, confirm normal hover behavior still works correctly elsewhere in the list: hovering any row still reveals its own toolbar normally, and moving the mouse away still hides it. Report back plainly and specifically whether Delete now actually works, since this is the third attempt at the same bug and the first two both failed on this exact claim.
+Ben runs npm run build himself if this touches frontend (it shouldn't). Ben restarts the backend and re-runs: curl -i -X POST http://localhost:8000/auth/forgot-password -H "Content-Type: application/json" -d '{"email":"owner@riverside-demo.com"}' and confirms it now returns 200 with the generic success message instead of a 500, even before a real Postmark key is added.
 
 GIT:
-
-Do not commit until Ben confirms in the browser.
+Do not commit until Ben confirms in the browser/curl.

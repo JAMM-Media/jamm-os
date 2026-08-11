@@ -3,6 +3,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { Eye, EyeOff, Loader2 } from 'lucide-react'
 
@@ -107,21 +108,33 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen flex">
       {/* Left panel */}
-      <div className="hidden md:flex w-1/2 bg-brand flex-col items-center justify-center gap-3">
-        <span className="text-white text-2xl font-medium">
-          JAMM <span style={{ color: '#B07D3A' }}>PX</span>
-        </span>
-        <span className="text-brand-muted text-sm font-normal text-center px-8">
-          Practice experience for accounting firms.
-        </span>
+      <div className="hidden md:flex w-1/2 bg-brand flex-col p-10">
+        {/* Wordmark + logo mark */}
+        <div className="flex items-center gap-2.5">
+          <img src="/jamm-logo-mark.svg" alt="" width={60} className="flex-shrink-0" />
+          <span className="text-white text-3xl font-medium">
+            JAMM <span style={{ color: '#B07D3A' }}>PX</span>
+          </span>
+        </div>
+
+        {/* Main content -- vertically centered */}
+        <div className="flex flex-1 items-center">
+          <div className="flex flex-col">
+            <div className="h-[2px] mb-3" style={{ backgroundColor: '#B07D3A', width: '48px' }} />
+            <h2 className="text-white text-7xl font-bold leading-tight">
+              Your firm.<br /><span style={{ color: '#B07D3A' }}>Under control.</span>
+            </h2>
+          </div>
+        </div>
       </div>
 
       {/* Right panel */}
       <div className="flex flex-1 items-center justify-center bg-surface-page dark:bg-dark-page">
-        <div className="w-[380px] bg-surface-card dark:bg-dark-card rounded-[10px] border border-surface-border p-8">
-          <h1 className="text-base font-medium text-brand dark:text-[#EDEEF0] mb-6">
-            Sign in to JAMM <span style={{ color: '#B07D3A' }}>PX</span>
-          </h1>
+        <div className="w-[460px] bg-surface-card dark:bg-dark-card rounded-[10px] border border-surface-border p-10">
+          <div className="mb-6">
+            <h1 className="text-4xl font-bold text-brand dark:text-[#EDEEF0]">Welcome back</h1>
+            <p className="text-[13px] text-[#6B7280] mt-1">Sign in to your JAMM <span style={{ color: '#B07D3A' }}>PX</span> account</p>
+          </div>
 
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
             {step === 'password' ? (
@@ -135,20 +148,23 @@ export default function LoginPage() {
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="you@firm.com"
                     required
-                    className="w-full h-9 px-3 rounded-md text-sm bg-surface-input dark:bg-dark-card border border-surface-border focus:border-brand-light focus:outline-none focus:ring-1 focus:ring-brand-light text-brand dark:text-[#EDEEF0] placeholder:text-[#9CA3AF]"
+                    className="w-full h-11 px-3 rounded-md text-base bg-surface-input dark:bg-dark-card border border-surface-border focus:border-brand-light focus:outline-none focus:ring-1 focus:ring-brand-light text-brand dark:text-[#EDEEF0] placeholder:text-[#9CA3AF]"
                   />
                 </div>
 
                 {/* Password */}
                 <div className="flex flex-col gap-1">
-                  <label className="text-[11px] font-medium text-[#6B7280]">Password</label>
+                  <div className="flex items-center justify-between">
+                    <label className="text-[11px] font-medium text-[#6B7280]">Password</label>
+                    <Link href="/login/forgot-password" className="text-[11px] text-brand dark:text-[#4A7FA5] hover:underline">Forgot password?</Link>
+                  </div>
                   <div className="relative">
                     <input
                       type={showPassword ? 'text' : 'password'}
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       required
-                      className="w-full h-9 px-3 rounded-md text-sm bg-surface-input dark:bg-dark-card border border-surface-border focus:border-brand-light focus:outline-none focus:ring-1 focus:ring-brand-light text-brand dark:text-[#EDEEF0] placeholder:text-[#9CA3AF]"
+                      className="w-full h-11 px-3 rounded-md text-base bg-surface-input dark:bg-dark-card border border-surface-border focus:border-brand-light focus:outline-none focus:ring-1 focus:ring-brand-light text-brand dark:text-[#EDEEF0] placeholder:text-[#9CA3AF]"
                     />
                     <button
                       type="button"
@@ -173,7 +189,7 @@ export default function LoginPage() {
                 <button
                   type="submit"
                   disabled={isLoading}
-                  className="w-full h-9 mt-2 rounded-md text-xs font-medium text-white bg-brand dark:bg-brand-btn disabled:opacity-60 flex items-center justify-center gap-2"
+                  className="w-full h-11 mt-2 rounded-md text-sm font-medium text-white bg-brand dark:bg-brand-btn disabled:opacity-60 flex items-center justify-center gap-2"
                 >
                   {isLoading ? (
                     <>
@@ -204,7 +220,7 @@ export default function LoginPage() {
                       value={totpCode}
                       onChange={(e) => setTotpCode(e.target.value)}
                       autoFocus
-                      className="w-full h-9 px-3 rounded-md text-sm bg-surface-input dark:bg-dark-card border border-surface-border focus:border-brand-light focus:outline-none focus:ring-1 focus:ring-brand-light text-brand dark:text-[#EDEEF0] placeholder:text-[#9CA3AF]"
+                      className="w-full h-11 px-3 rounded-md text-base bg-surface-input dark:bg-dark-card border border-surface-border focus:border-brand-light focus:outline-none focus:ring-1 focus:ring-brand-light text-brand dark:text-[#EDEEF0] placeholder:text-[#9CA3AF]"
                     />
                     <p className="text-[11px] text-[#6B7280] mt-1">
                       Enter the 6-digit code from your authenticator app.
@@ -223,7 +239,7 @@ export default function LoginPage() {
                       value={backupCode}
                       onChange={(e) => setBackupCode(e.target.value)}
                       autoFocus
-                      className="w-full h-9 px-3 rounded-md text-sm bg-surface-input dark:bg-dark-card border border-surface-border focus:border-brand-light focus:outline-none focus:ring-1 focus:ring-brand-light text-brand dark:text-[#EDEEF0] placeholder:text-[#9CA3AF]"
+                      className="w-full h-11 px-3 rounded-md text-base bg-surface-input dark:bg-dark-card border border-surface-border focus:border-brand-light focus:outline-none focus:ring-1 focus:ring-brand-light text-brand dark:text-[#EDEEF0] placeholder:text-[#9CA3AF]"
                     />
                     <p className="text-[11px] text-[#6B7280] mt-1">
                       Enter one of your saved backup codes.
@@ -240,7 +256,7 @@ export default function LoginPage() {
                 <button
                   type="submit"
                   disabled={isLoading}
-                  className="w-full h-9 mt-2 rounded-md text-xs font-medium text-white bg-brand dark:bg-brand-btn disabled:opacity-60 flex items-center justify-center gap-2"
+                  className="w-full h-11 mt-2 rounded-md text-sm font-medium text-white bg-brand dark:bg-brand-btn disabled:opacity-60 flex items-center justify-center gap-2"
                 >
                   {isLoading ? (
                     <>
@@ -302,7 +318,7 @@ export default function LoginPage() {
                 onChange={(e) => setMagicEmail(e.target.value)}
                 placeholder="you@firm.com"
                 required
-                className="w-full h-9 px-3 rounded-md text-sm bg-surface-input dark:bg-dark-card border border-surface-border focus:border-brand-light focus:outline-none focus:ring-1 focus:ring-brand-light text-brand dark:text-[#EDEEF0] placeholder:text-[#9CA3AF]"
+                className="w-full h-11 px-3 rounded-md text-base bg-surface-input dark:bg-dark-card border border-surface-border focus:border-brand-light focus:outline-none focus:ring-1 focus:ring-brand-light text-brand dark:text-[#EDEEF0] placeholder:text-[#9CA3AF]"
               />
 
               {magicSent ? (
@@ -313,7 +329,7 @@ export default function LoginPage() {
                 <button
                   type="submit"
                   disabled={magicLoading}
-                  className="w-full h-9 rounded-md text-[12px] font-[500] text-[#1F3148] dark:text-[#EDEEF0] flex items-center justify-center gap-2 disabled:opacity-60 transition-colors hover:bg-[#E4E6EA] dark:hover:bg-[#333333]"
+                  className="w-full h-11 rounded-md text-sm font-[500] text-[#1F3148] dark:text-[#EDEEF0] flex items-center justify-center gap-2 disabled:opacity-60 transition-colors hover:bg-[#E4E6EA] dark:hover:bg-[#333333]"
                   style={{ border: '0.5px solid #1F3148' }}
                 >
                   {magicLoading ? (

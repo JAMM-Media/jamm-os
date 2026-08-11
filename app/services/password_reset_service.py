@@ -65,12 +65,15 @@ def request_password_reset(email: str, db: Session) -> None:
 
     reset_url = f"{settings.FRONTEND_URL}/reset-password?token={raw_token}"
 
-    EmailService.send_password_reset_email(
-        to_email=user.email,
-        recipient_name=user.full_name or user.email,
-        reset_url=reset_url,
-        expiry_hours=EXPIRY_HOURS,
-    )
+    try:
+        EmailService.send_password_reset_email(
+            to_email=user.email,
+            recipient_name=user.full_name or user.email,
+            reset_url=reset_url,
+            expiry_hours=EXPIRY_HOURS,
+        )
+    except Exception as e:
+        logger.error("Password reset email failed: user_id=%s error=%s", user.id, str(e))
 
 
 def reset_password(token: str, new_password: str, db: Session) -> tuple[bool, str | None]:
