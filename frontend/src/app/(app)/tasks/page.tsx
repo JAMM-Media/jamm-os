@@ -24,6 +24,23 @@ const TASK_STATUSES = [
   { value: 'done', label: 'Done' },
 ]
 
+function TasksTableSkeleton() {
+  return (
+    <div className="rounded-modal border border-[0.5px] border-surface-border dark:border-dark-border overflow-hidden">
+      {Array.from({ length: 5 }).map((_, i) => (
+        <div key={i} className="flex items-center gap-4 px-4 py-3 border-b border-[0.5px] border-[#D5D8DE] dark:border-dark-card last:border-0">
+          <div className="h-4 w-48 flex-1 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded flex-shrink-0" />
+          <div className="h-4 w-24  bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded flex-shrink-0" />
+          <div className="h-4 w-28  bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded flex-shrink-0" />
+          <div className="h-4 w-24  bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded flex-shrink-0" />
+          <div className="h-4 w-20  bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded flex-shrink-0" />
+          <div className="h-[22px] w-16 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded-full flex-shrink-0" />
+        </div>
+      ))}
+    </div>
+  )
+}
+
 export default function TasksPage() {
   const [view, setView] = useState<ViewMode>('table')
   const [search, setSearch] = useState('')
@@ -277,18 +294,7 @@ export default function TasksPage() {
         </div>
 
         {isLoading && localTasks.length === 0 ? (
-          <div className="rounded-modal border border-[0.5px] border-surface-border dark:border-dark-border overflow-hidden">
-            {Array.from({ length: 5 }).map((_, i) => (
-              <div
-                key={i}
-                className="flex gap-4 px-4 py-3 border-b border-[0.5px] border-[#D5D8DE] dark:border-dark-card last:border-0"
-              >
-                {Array.from({ length: 6 }).map((_, j) => (
-                  <div key={j} className="h-4 flex-1 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
-                ))}
-              </div>
-            ))}
-          </div>
+          <TasksTableSkeleton />
         ) : filtered.length === 0 && search === '' ? (
           <TaskEmptyState onNew={() => setModalOpen(true)} />
         ) : filtered.length === 0 ? (

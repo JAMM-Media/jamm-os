@@ -38,6 +38,21 @@ function exportCsv(data: WIPSummary) {
   URL.revokeObjectURL(url)
 }
 
+function WipTableSkeleton() {
+  return (
+    <div className="rounded-modal border border-[0.5px] border-surface-border dark:border-dark-border overflow-hidden">
+      {Array.from({ length: 5 }).map((_, i) => (
+        <div key={i} className="flex items-center gap-4 px-4 py-3 border-b border-[0.5px] border-[#D5D8DE] dark:border-dark-card last:border-0">
+          <div className="h-4 w-28  bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded flex-shrink-0" />
+          <div className="h-4 w-40 flex-1 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded flex-shrink-0" />
+          <div className="h-4 w-16  bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded flex-shrink-0" />
+          <div className="h-4 w-20  bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded flex-shrink-0" />
+        </div>
+      ))}
+    </div>
+  )
+}
+
 export default function WIPReportPage() {
   const { data, isLoading, isError, refetch } = useQuery<WIPSummary>({
     queryKey: ['wip-report'],
@@ -79,15 +94,7 @@ export default function WIPReportPage() {
 
         {/* Content */}
         {isLoading ? (
-          <div className="rounded-modal border border-[0.5px] border-surface-border dark:border-dark-border overflow-hidden">
-            {Array.from({ length: 5 }).map((_, i) => (
-              <div key={i} className="flex gap-4 px-4 py-3 border-b border-[0.5px] border-[#D5D8DE] dark:border-dark-card last:border-0">
-                {Array.from({ length: 4 }).map((_, j) => (
-                  <div key={j} className="h-4 flex-1 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
-                ))}
-              </div>
-            ))}
-          </div>
+          <WipTableSkeleton />
         ) : isError ? (
           <div className="flex flex-col items-center justify-center py-24 gap-3">
             <p className="text-[13px] text-[#DC2626]">Failed to load WIP data.</p>

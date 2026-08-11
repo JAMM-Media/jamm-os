@@ -74,7 +74,7 @@ This section exists because a past session confidently claimed specific files we
 
 # Section 3 - The task
 
-TASK: Fix the three highest-priority skeleton gaps identified in tonight's full audit's B classification — clients/[id], engagements/[id], and tasks/[id]. All three currently skeleton only their page header (breadcrumb/title/meta) while the actual body content — tabs, lists, panels — pops in blank once data resolves. This produces a jarring half-loaded feel since the header looks ready before the body is.
+TASK: Fix the generic, unshaped loading skeletons on six list/table pages found in tonight's full skeleton audit — billing, billing/wip, clients, documents, engagements, and tasks. Each currently shows identical flat gray bars per cell regardless of what the real table's columns actually are, so the loading state looks the same whether you're viewing invoices, clients, or tasks. Replace each with a real skeleton matching that specific page's actual table columns.
 
 USE: claude sonnet
 
@@ -90,47 +90,50 @@ cat "src/app/(app)/dashboard/page.tsx" | grep -n "Skeleton" -A 8
 
 Reference standard: named, content-shaped skeleton components using surface-border/dark-border tokens and animate-pulse, matching real content layout.
 
-Then view each of the three target files in full:
+Confirmed reference for billing specifically, already investigated:
 
-cat "src/app/(app)/clients/[id]/page.tsx"
-cat "src/app/(app)/engagements/[id]/page.tsx"
-cat "src/app/(app)/tasks/[id]/page.tsx"
+sed -n '1,90p' src/components/billing/InvoiceTable.tsx
 
-Confirm each currently has a small header-only skeleton (2-4 animate-pulse divs for breadcrumb/title/meta) and that the tab/body content below renders nothing or pops in abruptly once its own data resolves. Identify the real tab structure and body layout for each page (what tabs exist, what each tab's content looks like once loaded) before writing any skeleton, since the skeleton must match real content, not be invented.
+Confirms the real table has 5 columns: Invoice, Client, Amount, Due, Status, with Status rendered via a real StatusBadge component (not a plain bar), and an optional checkbox column when selection is enabled. The billing/page.tsx loading state currently renders 5 rows of 6 identical h-4 flex-1 generic bars with no distinction between columns — this must be replaced with cells sized and shaped to match: a shorter bar for Invoice number, a medium bar for Client name, a shorter right-ish bar for Amount, a short bar for Due date, and a pill-shaped badge placeholder for Status (matching StatusBadge's real rounded-pill shape, not a plain bar).
 
-If any file's structure doesn't match this description, stop and report the actual content instead of proceeding on that file.
+For each of the other five pages, before writing any skeleton, view the real table/list component it renders to determine the real column structure:
+
+For billing/wip/page.tsx: find and view its real table/row component.
+For clients/page.tsx: find and view its real table/row component (likely a ClientTable or similar, search for "Table\|Card" imports at the top of the page file the same way InvoiceTable/InvoiceCard were found for billing).
+For documents/page.tsx: same approach.
+For engagements/page.tsx: same approach — note EngagementCard and EngagementTable are known to exist from tonight's earlier audit, matching the InvoiceTable/InvoiceCard split pattern.
+For tasks/page.tsx: same approach — note TaskCard and TaskTable are known to exist from tonight's earlier audit, matching pattern.
+
+For each page, identify the real column headers, their approximate relative widths, and any special cell types (badges, pills, avatars, currency-right-aligned, etc.) before writing that page's skeleton. Do not guess — read the real component file first.
+
+If any page's current loading state doesn't match "generic flat h-4 bars per cell," stop and report the actual current state for that specific page instead of proceeding with an assumption.
 
 CHANGE INSTRUCTIONS:
 
-For each of the three files, extend the existing header skeleton to also cover the body/tab content area during the loading state:
+For each of the six pages, replace the generic flat-bar skeleton with a real, named, content-shaped skeleton component matching that page's actual real table columns (as investigated in VERIFY BEFORE ACT). Each cell in the skeleton row should be shaped and sized proportionally to its real column's typical content — short bars for dates/numbers, medium bars for names, pill-shaped placeholders for status badges, matching the real StatusBadge/badge component's actual border-radius and approximate size rather than a plain rectangular bar.
 
-1. clients/[id]/page.tsx — build a skeleton for the default/first tab's real content shape (read the file to determine what actually renders — likely contact info fields, associated engagements list, or similar). Named descriptively (e.g. ClientDetailBodySkeleton).
+Keep the same row count (5 rows, matching the existing pattern) and the same outer container structure (rounded-modal border, existing color tokens) — only the per-cell shapes change from generic to column-matched.
 
-2. engagements/[id]/page.tsx — build a skeleton for the default/first tab's real content shape (likely task list, document requests, or similar — read the file to confirm). Named descriptively (e.g. EngagementDetailBodySkeleton).
+Name each skeleton component descriptively per page (e.g. BillingTableSkeleton, ClientsTableSkeleton, etc.), following the naming convention already established in dashboard/page.tsx and in tonight's earlier fixes.
 
-3. tasks/[id]/page.tsx — build a skeleton for the real body content shape (likely task details, comments/activity, or similar — read the file to confirm). Named descriptively (e.g. TaskDetailBodySkeleton).
-
-Each skeleton should follow the dashboard reference pattern: sized/colored placeholder divs matching the real content's actual layout (field rows, list items, card shapes), not generic boxes. Wire each in to show during the same loading condition that currently gates the header skeleton, so header and body skeletons appear and disappear together.
-
-Do not touch the existing header skeletons themselves, only add body coverage. Do not touch any other file — this task is scoped to these three only.
+Do not touch any file not in this list of six. Do not change any data-fetching logic, only what renders during the loading state.
 
 VERIFY AFTER ACT:
 
-grep -n "Skeleton" "src/app/(app)/clients/[id]/page.tsx"
-grep -n "Skeleton" "src/app/(app)/engagements/[id]/page.tsx"
-grep -n "Skeleton" "src/app/(app)/tasks/[id]/page.tsx"
+For each of the six files:
+grep -n "Skeleton" "src/app/(app)/[path]/page.tsx"
 
-Confirm each file now has both its original header skeleton and a new body skeleton component.
+Confirm a real, named, column-matched skeleton component now exists in each, replacing the generic flat-bar version.
 
 git diff --stat
 
-Confirm the diff touches only these three files.
+Confirm the diff touches only these six files.
 
 MANUAL VERIFICATION:
 
 Ben will run npm run build himself in the frontend directory and confirm it's clean before trusting this as done.
 
-**Restart the frontend.** With network throttled in devtools, visit a real client detail page, a real engagement detail page, and a real task detail page. Confirm the body content area now shows a real, shaped skeleton during load instead of popping in blank after the header skeleton disappears. Report back plainly, page by page.
+**Restart the frontend.** With network throttled to Slow 3G in devtools, visit each of the six pages (Billing, Billing WIP, Clients, Documents, Engagements, Tasks) and confirm each now shows a skeleton with cells shaped to match that specific page's real columns — not identical generic bars across all six pages. Report back plainly, page by page, and note if any page's real table structure turned out to be different from what was assumed going in.
 
 GIT:
 
