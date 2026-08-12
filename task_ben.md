@@ -74,9 +74,9 @@ This section exists because a past session confidently claimed specific files we
 
 # Section 3 - The task
 
-TASK: Extend the existing ReferralSource enum with the six new values required by the CRM/Acquisition Tracker build contract, in the exact display order specified. Backend only — no frontend picker exists yet to update, and that's intentional (deferred to the intake form build).
+TASK: Build the Lead model and ReferralPartner model — the CRM's foundational data layer. Models, three new enums, one migration creating both tables, and Pydantic schemas. No API endpoints or CRUD service functions in this task — that's a separate follow-up.
 
-USE: claude sonnet
+USE: claude fable-5
 
 ENVIRONMENT SANITY CHECK:
 
@@ -86,46 +86,127 @@ State plainly that no path in this task resolves against /mnt/c/Users or any Win
 
 VERIFY BEFORE ACT:
 
-sed -n '226,236p' app/core/enums.py
-grep -n "referral_source\|referring_client_id" app/models/client.py
+cat app/models/client.py
+cat app/models/firm.py | head -40
+cat app/db/base_class.py
+find app -iname "lead.py" -o -iname "referral_partner.py"
+grep -rn "class Lead\b\|class ReferralPartner\b" app/ --include="*.py"
+grep -n "ENGAGEMENT_TYPE\|engagement_type" app/core/enums.py app/models/engagement.py
+ls app/schemas/
 .venv/bin/alembic heads
 
-Confirm the real current enum matches exactly: client_referral, professional_referral, google_search, social_media, website, association_or_community, walk_in, other — in that order, as a class ReferralSource(str, Enum). Confirm referral_source and referring_client_id exist on Client exactly as currently defined. Confirm the real current alembic head hash — it must match a2b3c4d5e6f7. If it doesn't, stop and report the real hash instead of proceeding.
+Paste all real output. Confirm neither Lead nor ReferralPartner exists anywhere in the codebase today. Confirm the real current alembic head — do NOT trust any hash written elsewhere in this task or in prior context; a real chain conflict was found and fixed earlier tonight specifically because a stated head turned out to be stale. Get the real head fresh, right now, before writing down_revision.
 
 WHAT THIS IS:
 
-The CRM contract (Section 3.2) requires ReferralSource extended to 14 values total, in this exact display order, since this same enum is reused on the future Lead model so attribution flows forward on conversion without translation:
+Per the CRM/Acquisition Tracker build contract, Section 8. Lead is a record distinct from Client — a prospect, not yet a signed client. ReferralPartner is a simple per-firm entity for tracking repeat external referrers (attorneys, banks, other firms) who are not themselves clients.
 
-client_referral, professional_referral, returning_client, google_search, search_ads, social_ads, social_media, website, association_or_community, walk_in, cold_outreach, purchased_book, other, unknown
+Ben's explicit design decision: stage, lost_reason, source_platform, and provenance all get STRICT database-level enum enforcement — sa.Enum(EnumClass, native_enum=False), matching the real existing pattern on Client.referral_source (confirmed tonight, see app/models/client.py). This is a deliberate departure from the Task/Engagement convention of plain String status columns with schema-level-only enums — Ben chose stricter DB enforcement specifically for these four fields, accepting that future value additions require a real migration each time, same as the ReferralSource extension completed earlier tonight.
 
-Six new values: returning_client, search_ads, social_ads, cold_outreach, purchased_book, unknown. unknown must render last in any picker per the contract, which this ordering satisfies since Python enum iteration order follows declaration order.
-
-Column length is already confirmed sufficient: the real production column is VARCHAR(24), sized to the existing longest value (association_or_community, 24 chars). The longest new value (returning_client, 16 chars) fits with no length migration needed. Do not add a length migration.
-
-This task does NOT include: source_platform, provenance, ReferralPartner, or any Lead model field. Those belong to the Lead model per Section 8 of the contract and Lead does not exist yet — building them now would leave them with nothing to attach to. Do not add them.
+referral_source on Lead reuses the EXISTING ReferralSource enum from app/core/enums.py verbatim — do not create a second copy or a Lead-specific version. This is what lets attribution flow forward from Lead to Client on conversion without translation, per the contract's explicit design intent.
 
 CHANGE INSTRUCTIONS:
 
-In app/core/enums.py, rewrite the ReferralSource class body to contain exactly the 14 values above, in that exact order, matching the existing string-value-equals-name pattern (e.g. returning_client = "returning_client"). Do not change the class's docstring unless it's factually now incomplete. Do not touch any other enum in this file.
+1. In app/core/enums.py, add three new enum classes, following the exact real style of the existing ReferralSource class (str, Enum, docstring, value=name pattern):
 
-Write a new Alembic migration, down_revision set to a2b3c4d5e6f7, that alters the referralsource enum type to add the six new values. Follow the exact real pattern already used for native_enum=False string-backed enums in this codebase — confirm from the existing e06c341c7b5a migration (add_client_referral_source_and_firm_) what the correct upgrade/downgrade shape is for this pattern, since a VARCHAR-backed enum with native_enum=False is altered differently than a native Postgres ENUM type would be. Do not assume a native-enum ALTER TYPE approach without confirming the real column type first.
+class LeadStage(str, Enum):
+    """A lead's position in the acquisition pipeline. Ordered but skippable -- a walk-in ready to sign can jump straight to proposal."""
+    identified = "identified"
+    contacted = "contacted"
+    call_booked = "call_booked"
+    proposal = "proposal"
+    won = "won"
+    lost = "lost"
+
+class LeadLostReason(str, Enum):
+    """Captured at the transition to lost. unqualified is filtered-on-purpose and never counts against conversion metrics -- that distinction is sacred, per the build contract."""
+    unqualified = "unqualified"
+    unresponsive = "unresponsive"
+    chose_competitor = "chose_competitor"
+    price = "price"
+    timing = "timing"
+    other = "other"
+
+class SourcePlatform(str, Enum):
+    """Layer 2 attribution: the where. Auto-derived from utm_source when a lead arrives through a tracked link; manual picker is the fallback for leads with no link behind them. For cold_outreach leads (see ReferralSource), this same field carries the mechanism instead of a platform."""
+    facebook = "facebook"
+    instagram = "instagram"
+    tiktok = "tiktok"
+    linkedin = "linkedin"
+    youtube = "youtube"
+    x = "x"
+    google = "google"
+    bing = "bing"
+    nextdoor = "nextdoor"
+    email = "email"
+    phone = "phone"
+    dm = "dm"
+    direct_mail = "direct_mail"
+    other = "other"
+
+class LeadProvenance(str, Enum):
+    """How we know this lead's attribution. Precedence is substitution, never blending: crm_lead beats firm_entered beats client_reported. Lower tiers fill blanks only and never overwrite higher tiers."""
+    crm_lead = "crm_lead"
+    firm_entered = "firm_entered"
+    client_reported = "client_reported"
+
+2. Create app/models/lead.py, modeled structurally on app/models/client.py (confirm the real current shape from VERIFY BEFORE ACT before writing). Fields:
+
+   - id: UUID pk, default uuid.uuid4
+   - firm_id: FK firms.id, CASCADE, nullable=False, indexed -- matches every other firm-scoped model
+   - name: String(200), nullable=False
+   - email: String(255), nullable=True -- NOT unique (unlike Client.email), since duplicate leads from re-submission or multiple channels are expected and should not be blocked
+   - phone: String(50), nullable=True
+   - stage: sa.Enum(LeadStage, name="leadstage", native_enum=False), nullable=False, default=LeadStage.identified, server_default="identified"
+   - lost_reason: sa.Enum(LeadLostReason, name="leadlostreason", native_enum=False), nullable=True
+   - referral_source: sa.Enum(ReferralSource, name="referralsource", native_enum=False), nullable=True -- reuses the existing enum, same name= as Client's column so it's the same underlying Postgres-side type name
+   - source_platform: sa.Enum(SourcePlatform, name="sourceplatform", native_enum=False), nullable=True
+   - utm_campaign, utm_source, utm_medium, utm_content, utm_term: String(255), nullable=True each -- stored verbatim per contract Section 8, no parsing or normalization
+   - referring_client_id: FK clients.id, ondelete SET NULL, nullable=True -- bare FK only, no relationship(), matching the exact real reasoning already documented on Client.referring_client_id (nothing needs to traverse it yet)
+   - referral_partner_id: FK referral_partners.id, ondelete SET NULL, nullable=True -- bare FK only, same reasoning
+   - service_interest: String(100), nullable=True -- freeform for now; no fixed enum exists for firm service types today (confirm from VERIFY BEFORE ACT output whether one exists on Engagement; if it does, leave a code comment noting the future alignment opportunity, do not force a shared enum in this task)
+   - entity_type: String(20), nullable=True -- mirrors Client.entity_type's exact comment and convention (individual | business | trust | estate | non_profit)
+   - revenue_band: String(50), nullable=True -- plain String, not one of the four strict fields
+   - urgency: Text, nullable=True -- raw captured answer to the timeline/urgency question; free text since the exact question wording lives in the not-yet-available nurture tree
+   - hot: Boolean, nullable=False, default=False, server_default="false"
+   - provenance: sa.Enum(LeadProvenance, name="leadprovenance", native_enum=False), nullable=False -- NO default and NO server_default. This must be explicitly set by every creation path, never silently assumed, because precedence correctness depends on it being real every time.
+   - first_response_time: Integer, nullable=True -- minutes elapsed from lead creation to first outbound firm response; computed and set later by a service layer this task does not build
+   - created_at, updated_at: DateTime(timezone=True), same lambda pattern as every other model in this codebase
+   - firm: relationship("Firm", back_populates="leads") -- note this requires adding a leads relationship to app/models/firm.py; add it following the exact real pattern used for Firm's other back_populates relationships (confirm real pattern from VERIFY BEFORE ACT firm.py output)
+
+3. Create app/models/referral_partner.py:
+
+   - id: UUID pk, default uuid.uuid4
+   - firm_id: FK firms.id, CASCADE, nullable=False, indexed
+   - name: String(200), nullable=False
+   - type: String(50), nullable=True -- freeform (attorney, bank, other_firm, etc.), no enum specified by the contract
+   - notes: Text, nullable=True
+   - created_at, updated_at: DateTime(timezone=True), same pattern
+
+4. Write ONE Alembic migration creating both tables and both new foreign key constraints, down_revision set to whatever the real current head is (confirmed fresh in VERIFY BEFORE ACT, not assumed). Add the three new enum types as VARCHAR-backed columns per the native_enum=False pattern -- confirm the real exact upgrade/downgrade shape from a table-creation migration elsewhere in this codebase (search for one if the earlier examples in this task aren't sufficient) rather than inventing the shape from scratch.
+
+5. Create app/schemas/lead.py with LeadBase, LeadCreate, LeadUpdate, LeadOut -- following the exact real structure of app/schemas/task.py (confirmed from VERIFY BEFORE ACT): a *Base with shared fields, *Create for input, *Update with all-optional fields, *Out with id/timestamps and model_config = ConfigDict(from_attributes=True). Local Pydantic enums are NOT needed here since these four fields already have real backend enums in core/enums.py -- import and reuse LeadStage, LeadLostReason, SourcePlatform, LeadProvenance, ReferralSource directly in the schema, do not redeclare them.
+
+6. Create app/schemas/referral_partner.py with ReferralPartnerBase, ReferralPartnerCreate, ReferralPartnerUpdate, ReferralPartnerOut, same structural pattern.
+
+Do NOT create any API router, any CRUD service function, or any endpoint in this task. Data layer and schemas only.
 
 VERIFY AFTER ACT:
 
-sed -n '226,244p' app/core/enums.py
 .venv/bin/alembic heads
 .venv/bin/alembic upgrade head
 
-PGPASSWORD=postgres psql -h localhost -U postgres -d jammpx_dev -c "\d clients" | grep referral_source
+PGPASSWORD=postgres psql -h localhost -U postgres -d jammpx_dev -c "\d leads"
+PGPASSWORD=postgres psql -h localhost -U postgres -d jammpx_dev -c "\d referral_partners"
 
 git diff --stat
 
-Paste all real output. Confirm the enum file shows exactly 14 values in the correct order, confirm the migration applied cleanly against the real local database with no errors, and confirm the referral_source column still exists and did not silently change type.
+Paste all real output. Confirm both tables exist with the real column list matching what was specified above, confirm a single clean head, confirm the migration applied with no errors.
 
 MANUAL VERIFICATION:
 
-**Restart the backend.** Confirm the API still boots cleanly with no startup errors (this enum is imported in app/models/client.py, a broken enum definition would fail at import time). No manual browser check needed since nothing in the UI references this field yet.
+**Restart the backend.** Confirm it boots with no import errors -- this touches app/core/enums.py and app/models/firm.py, both imported widely, so a mistake here would fail loudly at startup. No frontend check needed, nothing in the UI references these yet.
 
 GIT:
 
-Do not commit until Ben confirms the backend restarts cleanly and the migration applied without error.
+Do not commit until Ben confirms the backend restarts cleanly and both tables show the correct real shape in psql.

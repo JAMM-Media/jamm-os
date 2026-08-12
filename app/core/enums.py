@@ -307,3 +307,47 @@ EFILEABLE_ENGAGEMENT_TYPES = {
     "tax_return_706",
     "tax_return_709",
 }
+
+class LeadStage(str, Enum):
+    """A lead's position in the acquisition pipeline. Ordered but skippable -- a walk-in ready to sign can jump straight to proposal."""
+    identified = "identified"
+    contacted = "contacted"
+    call_booked = "call_booked"
+    proposal = "proposal"
+    won = "won"
+    lost = "lost"
+
+
+class LeadLostReason(str, Enum):
+    """Captured at the transition to lost. unqualified is filtered-on-purpose and never counts against conversion metrics -- that distinction is sacred, per the build contract."""
+    unqualified = "unqualified"
+    unresponsive = "unresponsive"
+    chose_competitor = "chose_competitor"
+    price = "price"
+    timing = "timing"
+    other = "other"
+
+
+class SourcePlatform(str, Enum):
+    """Layer 2 attribution: the where. Auto-derived from utm_source when a lead arrives through a tracked link; manual picker is the fallback for leads with no link behind them. For cold_outreach leads (see ReferralSource), this same field carries the mechanism instead of a platform."""
+    facebook = "facebook"
+    instagram = "instagram"
+    tiktok = "tiktok"
+    linkedin = "linkedin"
+    youtube = "youtube"
+    x = "x"
+    google = "google"
+    bing = "bing"
+    nextdoor = "nextdoor"
+    email = "email"
+    phone = "phone"
+    dm = "dm"
+    direct_mail = "direct_mail"
+    other = "other"
+
+
+class LeadProvenance(str, Enum):
+    """How we know this lead's attribution. Precedence is substitution, never blending: crm_lead beats firm_entered beats client_reported. Lower tiers fill blanks only and never overwrite higher tiers."""
+    crm_lead = "crm_lead"
+    firm_entered = "firm_entered"
+    client_reported = "client_reported"
