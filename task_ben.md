@@ -74,7 +74,7 @@ This section exists because a past session confidently claimed specific files we
 
 # Section 3 - The task
 
-TASK: Build the Lead model and ReferralPartner model — the CRM's foundational data layer. Models, three new enums, one migration creating both tables, and Pydantic schemas. No API endpoints or CRUD service functions in this task — that's a separate follow-up.
+TASK: Build the Lead CRUD API — service layer, router, and CRUD functions on top of the Lead and ReferralPartner models shipped earlier tonight. This is the layer that enforces provenance precedence, which the schema alone does not protect.
 
 USE: claude fable-5
 
@@ -86,127 +86,71 @@ State plainly that no path in this task resolves against /mnt/c/Users or any Win
 
 VERIFY BEFORE ACT:
 
-cat app/models/client.py
-cat app/models/firm.py | head -40
-cat app/db/base_class.py
-find app -iname "lead.py" -o -iname "referral_partner.py"
-grep -rn "class Lead\b\|class ReferralPartner\b" app/ --include="*.py"
-grep -n "ENGAGEMENT_TYPE\|engagement_type" app/core/enums.py app/models/engagement.py
-ls app/schemas/
-.venv/bin/alembic heads
+cat app/models/lead.py
+cat app/schemas/lead.py
+cat app/models/referral_partner.py
+cat app/schemas/referral_partner.py
+cat app/crud/task.py
+cat app/api/tasks.py
+cat app/dependencies/roles.py
+grep -n "include_router" app/main.py | tail -5
 
-Paste all real output. Confirm neither Lead nor ReferralPartner exists anywhere in the codebase today. Confirm the real current alembic head — do NOT trust any hash written elsewhere in this task or in prior context; a real chain conflict was found and fixed earlier tonight specifically because a stated head turned out to be stale. Get the real head fresh, right now, before writing down_revision.
+Paste all real output. Confirm the real current shape of everything built tonight before writing anything on top of it -- do not assume the shape described in this task's prose matches the real files without checking, since Claude Code's own prior summary of what it built could differ in some small way from the real file content.
 
 WHAT THIS IS:
 
-Per the CRM/Acquisition Tracker build contract, Section 8. Lead is a record distinct from Client — a prospect, not yet a signed client. ReferralPartner is a simple per-firm entity for tracking repeat external referrers (attorneys, banks, other firms) who are not themselves clients.
+Two real problems exist in the current LeadCreate/LeadUpdate schemas that must be fixed at the service layer, not just documented:
 
-Ben's explicit design decision: stage, lost_reason, source_platform, and provenance all get STRICT database-level enum enforcement — sa.Enum(EnumClass, native_enum=False), matching the real existing pattern on Client.referral_source (confirmed tonight, see app/models/client.py). This is a deliberate departure from the Task/Engagement convention of plain String status columns with schema-level-only enums — Ben chose stricter DB enforcement specifically for these four fields, accepting that future value additions require a real migration each time, same as the ReferralSource extension completed earlier tonight.
+PROBLEM 1: LeadCreate currently requires provenance as a caller-supplied field with nothing enforcing which values which callers may set. Per the build contract, provenance describes HOW the system knows a lead's attribution -- crm_lead means the intake form or a tracked link captured it automatically, firm_entered means staff typed it in by hand, client_reported means an existing client answered the portal attribution survey. A staff member manually creating a lead through this API must never be able to claim crm_lead provenance for it -- that would be a false claim about how the data was captured, and future intelligence-layer trust in provenance depends on this being real.
 
-referral_source on Lead reuses the EXISTING ReferralSource enum from app/core/enums.py verbatim — do not create a second copy or a Lead-specific version. This is what lets attribution flow forward from Lead to Client on conversion without translation, per the contract's explicit design intent.
+PROBLEM 2: LeadUpdate currently allows provenance to be freely overwritten with no precedence check. Per the contract, precedence is substitution, never blending: crm_lead beats firm_entered beats client_reported. Lower tiers fill blanks only and never overwrite higher tiers. A naive attribute-copy update loop (the pattern Task uses, which is correct for Task since Task has no precedence concept) would let a low-tier update silently stomp a high-tier value already on the lead. This must not be possible through this API.
 
 CHANGE INSTRUCTIONS:
 
-1. In app/core/enums.py, add three new enum classes, following the exact real style of the existing ReferralSource class (str, Enum, docstring, value=name pattern):
+1. In app/crud/lead.py, write CRUD functions following the exact real structure of app/crud/task.py:
+   - get_lead_for_firm(db, lead_id, firm_id) -> Lead | None
+   - get_leads_for_firm(db, firm_id, stage=None, hot=None) -> query, for use with paginate(), matching get_tasks_for_firm's real filter-building shape
+   - create_lead(db, lead_in, firm_id, provenance) -- provenance is a required plain function argument here, NOT read from lead_in. This is what makes problem 1 structurally impossible rather than merely policy: the service layer decides provenance based on WHICH endpoint is calling, never trusts a value the caller embedded in the payload.
+   - update_lead_with_precedence(db, lead, update_in, new_provenance) -- this is the real fix for problem 2. Before applying update_in's changes, compare new_provenance's tier against the lead's CURRENT provenance tier using the real precedence order (crm_lead=3, firm_entered=2, client_reported=1, higher number wins). If new_provenance's tier is LOWER than the lead's current tier, only apply fields from update_in that are currently None/blank on the lead -- never overwrite an existing non-null value. If new_provenance's tier is EQUAL OR HIGHER, apply update_in normally (full overwrite of provided fields), and update the lead's provenance field to new_provenance. Write this as a real, readable tier-comparison, not a magic-number one-liner -- define the tier order as a small module-level dict or similar so it's legible six months from now.
+   - No delete_lead function. Per the build contract, lost leads are never purged -- a declined lead with its attribution intact is a real data point about the channel that produced it. Do not build a DELETE endpoint or CRUD function for Lead at all.
 
-class LeadStage(str, Enum):
-    """A lead's position in the acquisition pipeline. Ordered but skippable -- a walk-in ready to sign can jump straight to proposal."""
-    identified = "identified"
-    contacted = "contacted"
-    call_booked = "call_booked"
-    proposal = "proposal"
-    won = "won"
-    lost = "lost"
+2. In app/crud/referral_partner.py, standard CRUD (get, list for firm, create, update). ReferralPartner has no provenance concept, no precedence logic needed. A DELETE endpoint IS appropriate here since partners are just contact records, not attribution history -- but confirm no Lead currently references a partner before allowing delete (real FK check, not just relying on ON DELETE SET NULL to silently null out real attribution data without anyone knowing it happened).
 
-class LeadLostReason(str, Enum):
-    """Captured at the transition to lost. unqualified is filtered-on-purpose and never counts against conversion metrics -- that distinction is sacred, per the build contract."""
-    unqualified = "unqualified"
-    unresponsive = "unresponsive"
-    chose_competitor = "chose_competitor"
-    price = "price"
-    timing = "timing"
-    other = "other"
+3. In app/api/leads.py, build the router following the exact real structure of app/api/tasks.py:
+   - POST /leads/ -- creates with provenance=LeadProvenance.crm_lead if the request includes a real signal it came through an automated channel (for now, since the intake form doesn't exist yet, this endpoint is staff-facing only -- use provenance=LeadProvenance.firm_entered unconditionally for every lead created through this endpoint in this task). Leave a clear code comment explaining that a second, separate public/unauthenticated endpoint will be needed for the future intake form, which will pass crm_lead, and that this endpoint intentionally never does. Role: require_staff_or_above, matching Task's create floor.
+   - GET /leads/ -- list, PaginatedResponse[LeadOut], filterable by stage and hot, matching list_tasks's real query-param and pagination shape exactly. Role: require_staff_or_above.
+   - GET /leads/{lead_id} -- single lead. Role: require_staff_or_above.
+   - PATCH /leads/{lead_id} -- calls update_lead_with_precedence, always passing provenance=LeadProvenance.firm_entered (same reasoning as create -- this is a staff-facing endpoint in this task, not the future portal attribution survey which will pass client_reported). Role: require_staff_or_above.
+   - No DELETE endpoint.
 
-class SourcePlatform(str, Enum):
-    """Layer 2 attribution: the where. Auto-derived from utm_source when a lead arrives through a tracked link; manual picker is the fallback for leads with no link behind them. For cold_outreach leads (see ReferralSource), this same field carries the mechanism instead of a platform."""
-    facebook = "facebook"
-    instagram = "instagram"
-    tiktok = "tiktok"
-    linkedin = "linkedin"
-    youtube = "youtube"
-    x = "x"
-    google = "google"
-    bing = "bing"
-    nextdoor = "nextdoor"
-    email = "email"
-    phone = "phone"
-    dm = "dm"
-    direct_mail = "direct_mail"
-    other = "other"
+4. In app/api/referral_partners.py, standard CRUD router: POST, GET list, GET single, PATCH, DELETE (with the real FK check from step 2). Role: require_manager_or_above for create/update/delete, require_staff_or_above for read -- partners are a lighter-weight setup concern than lead data itself.
 
-class LeadProvenance(str, Enum):
-    """How we know this lead's attribution. Precedence is substitution, never blending: crm_lead beats firm_entered beats client_reported. Lower tiers fill blanks only and never overwrite higher tiers."""
-    crm_lead = "crm_lead"
-    firm_entered = "firm_entered"
-    client_reported = "client_reported"
+5. Register both routers in app/main.py, following the exact real pattern of the existing include_router calls -- confirm the real correct placement and prefix/tags convention from the VERIFY BEFORE ACT output rather than guessing.
 
-2. Create app/models/lead.py, modeled structurally on app/models/client.py (confirm the real current shape from VERIFY BEFORE ACT before writing). Fields:
-
-   - id: UUID pk, default uuid.uuid4
-   - firm_id: FK firms.id, CASCADE, nullable=False, indexed -- matches every other firm-scoped model
-   - name: String(200), nullable=False
-   - email: String(255), nullable=True -- NOT unique (unlike Client.email), since duplicate leads from re-submission or multiple channels are expected and should not be blocked
-   - phone: String(50), nullable=True
-   - stage: sa.Enum(LeadStage, name="leadstage", native_enum=False), nullable=False, default=LeadStage.identified, server_default="identified"
-   - lost_reason: sa.Enum(LeadLostReason, name="leadlostreason", native_enum=False), nullable=True
-   - referral_source: sa.Enum(ReferralSource, name="referralsource", native_enum=False), nullable=True -- reuses the existing enum, same name= as Client's column so it's the same underlying Postgres-side type name
-   - source_platform: sa.Enum(SourcePlatform, name="sourceplatform", native_enum=False), nullable=True
-   - utm_campaign, utm_source, utm_medium, utm_content, utm_term: String(255), nullable=True each -- stored verbatim per contract Section 8, no parsing or normalization
-   - referring_client_id: FK clients.id, ondelete SET NULL, nullable=True -- bare FK only, no relationship(), matching the exact real reasoning already documented on Client.referring_client_id (nothing needs to traverse it yet)
-   - referral_partner_id: FK referral_partners.id, ondelete SET NULL, nullable=True -- bare FK only, same reasoning
-   - service_interest: String(100), nullable=True -- freeform for now; no fixed enum exists for firm service types today (confirm from VERIFY BEFORE ACT output whether one exists on Engagement; if it does, leave a code comment noting the future alignment opportunity, do not force a shared enum in this task)
-   - entity_type: String(20), nullable=True -- mirrors Client.entity_type's exact comment and convention (individual | business | trust | estate | non_profit)
-   - revenue_band: String(50), nullable=True -- plain String, not one of the four strict fields
-   - urgency: Text, nullable=True -- raw captured answer to the timeline/urgency question; free text since the exact question wording lives in the not-yet-available nurture tree
-   - hot: Boolean, nullable=False, default=False, server_default="false"
-   - provenance: sa.Enum(LeadProvenance, name="leadprovenance", native_enum=False), nullable=False -- NO default and NO server_default. This must be explicitly set by every creation path, never silently assumed, because precedence correctness depends on it being real every time.
-   - first_response_time: Integer, nullable=True -- minutes elapsed from lead creation to first outbound firm response; computed and set later by a service layer this task does not build
-   - created_at, updated_at: DateTime(timezone=True), same lambda pattern as every other model in this codebase
-   - firm: relationship("Firm", back_populates="leads") -- note this requires adding a leads relationship to app/models/firm.py; add it following the exact real pattern used for Firm's other back_populates relationships (confirm real pattern from VERIFY BEFORE ACT firm.py output)
-
-3. Create app/models/referral_partner.py:
-
-   - id: UUID pk, default uuid.uuid4
-   - firm_id: FK firms.id, CASCADE, nullable=False, indexed
-   - name: String(200), nullable=False
-   - type: String(50), nullable=True -- freeform (attorney, bank, other_firm, etc.), no enum specified by the contract
-   - notes: Text, nullable=True
-   - created_at, updated_at: DateTime(timezone=True), same pattern
-
-4. Write ONE Alembic migration creating both tables and both new foreign key constraints, down_revision set to whatever the real current head is (confirmed fresh in VERIFY BEFORE ACT, not assumed). Add the three new enum types as VARCHAR-backed columns per the native_enum=False pattern -- confirm the real exact upgrade/downgrade shape from a table-creation migration elsewhere in this codebase (search for one if the earlier examples in this task aren't sufficient) rather than inventing the shape from scratch.
-
-5. Create app/schemas/lead.py with LeadBase, LeadCreate, LeadUpdate, LeadOut -- following the exact real structure of app/schemas/task.py (confirmed from VERIFY BEFORE ACT): a *Base with shared fields, *Create for input, *Update with all-optional fields, *Out with id/timestamps and model_config = ConfigDict(from_attributes=True). Local Pydantic enums are NOT needed here since these four fields already have real backend enums in core/enums.py -- import and reuse LeadStage, LeadLostReason, SourcePlatform, LeadProvenance, ReferralSource directly in the schema, do not redeclare them.
-
-6. Create app/schemas/referral_partner.py with ReferralPartnerBase, ReferralPartnerCreate, ReferralPartnerUpdate, ReferralPartnerOut, same structural pattern.
-
-Do NOT create any API router, any CRUD service function, or any endpoint in this task. Data layer and schemas only.
+6. Audit logging: per real precedent (Client logs 'client.updated' on every update, unconditionally, via write_audit_log), add write_audit_log calls for lead.created and lead.updated in the service/CRUD layer, action='lead.created' / 'lead.updated', entity_type='lead', actor_type='staff'. Do NOT add audit logging to ReferralPartner -- Task has no audit logging at all and ReferralPartner is closer to Task's footprint (internal setup data) than Client's (client PII).
 
 VERIFY AFTER ACT:
 
-.venv/bin/alembic heads
-.venv/bin/alembic upgrade head
+cd /home/corby/jamm-os/frontend
+npm run build 2>&1 | tail -5 (only if this task touched anything under frontend/, which it should not -- if this command finds nothing to build against, say so plainly rather than fabricating output)
 
-PGPASSWORD=postgres psql -h localhost -U postgres -d jammpx_dev -c "\d leads"
-PGPASSWORD=postgres psql -h localhost -U postgres -d jammpx_dev -c "\d referral_partners"
-
+cd /home/corby/jamm-os
+grep -n "def create_lead\|def update_lead_with_precedence" app/crud/lead.py
+grep -n "include_router(leads_router\|include_router(referral_partners_router" app/main.py
 git diff --stat
 
-Paste all real output. Confirm both tables exist with the real column list matching what was specified above, confirm a single clean head, confirm the migration applied with no errors.
+Paste all real output. Confirm the precedence function exists with real logic, confirm both routers are actually mounted (a built-but-unmounted router is a silent dead endpoint), confirm the diff only touches the files this task should touch.
 
 MANUAL VERIFICATION:
 
-**Restart the backend.** Confirm it boots with no import errors -- this touches app/core/enums.py and app/models/firm.py, both imported widely, so a mistake here would fail loudly at startup. No frontend check needed, nothing in the UI references these yet.
+**Restart the backend.** Confirm clean boot, no import errors. Then, using the Riverside test firm credentials, manually hit the API directly (curl or the FastAPI /docs page) to prove the precedence logic actually works, not just that it compiles:
+
+1. POST a lead with no provenance in the payload (confirm the API ignores any provenance field if sent, and creates with firm_entered regardless).
+2. PATCH that lead's phone number. Confirm it updates normally, since firm_entered patching a firm_entered lead is equal-tier.
+3. Manually set that lead's provenance to crm_lead directly in the database via psql (simulating what the future intake form would produce), then PATCH the same lead's phone number again through this staff-facing endpoint. Confirm the phone number does NOT change, since firm_entered is lower-tier than the lead's current crm_lead and the field is already non-null -- this is the real proof the precedence logic works, not just that it exists.
+
+Report back plainly what each of the three real API calls returned.
 
 GIT:
 
-Do not commit until Ben confirms the backend restarts cleanly and both tables show the correct real shape in psql.
+Do not commit until Ben confirms all three manual verification steps in step above pass for real.

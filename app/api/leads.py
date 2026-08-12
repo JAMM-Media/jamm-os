@@ -1,0 +1,127 @@
+# app/api/leads.py
+
+from uuid import UUID
+from fastapi import APIRouter, Depends, HTTPException, status, Query
+from sqlalchemy.orm import Session
+
+from app.db.session import get_db
+from app.models.firm import Firm
+from app.schemas.lead import LeadCreate, LeadUpdate, LeadOut
+from app.schemas.pagination import PaginatedResponse
+from app.utils.pagination import paginate
+from app.crud import lead as crud_lead
+from app.dependencies.auth import get_current_user
+from app.dependencies.tenant import get_current_firm
+from app.dependencies.roles import require_staff_or_above
+from app.models.user import User
+from app.core.enums import LeadProvenance, LeadStage
+
+router = APIRouter(prefix="/api/v1/leads", tags=["Leads"])
+
+
+# ---------------------------------------------------------
+# CREATE LEAD
+#
+# This endpoint is staff-facing only. Provenance is unconditionally
+# firm_entered -- a staff member typing in a lead cannot claim crm_lead
+# provenance, which would be a false statement about how the data was
+# captured. A separate, unauthenticated public endpoint will be needed
+# for the future intake form, which will pass crm_lead, and that
+# endpoint will intentionally never call this one.
+# ---------------------------------------------------------
+@router.post("/", response_model=LeadOut, status_code=status.HTTP_201_CREATED)
+def create_lead(
+    payload: LeadCreate,
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    current_user: User = Depends(get_current_user),
+    _: object = Depends(require_staff_or_above),
+):
+    from app.services.audit_service import write_audit_log
+    lead = crud_lead.create_lead(
+        db=db,
+        lead_in=payload,
+        firm_id=current_firm.id,
+        provenance=LeadProvenance.firm_entered,
+    )
+    write_audit_log(
+        db=db,
+        firm_id=current_firm.id,
+        action="lead.created",
+        actor_id=current_user.id,
+        actor_type="staff",
+        entity_type="lead",
+        entity_id=lead.id,
+    )
+    return lead
+
+
+# ---------------------------------------------------------
+# LIST LEADS
+# ---------------------------------------------------------
+@router.get("/", response_model=PaginatedResponse[LeadOut])
+def list_leads(
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    _: object = Depends(require_staff_or_above),
+    stage: LeadStage | None = None,
+    hot: bool | None = None,
+    limit: int = Query(100, le=1000),
+    offset: int = 0,
+):
+    query = crud_lead.get_leads_for_firm(db, current_firm.id, stage=stage, hot=hot)
+    return paginate(query, limit=limit, offset=offset)
+
+
+# ---------------------------------------------------------
+# GET SINGLE LEAD
+# ---------------------------------------------------------
+@router.get("/{lead_id}", response_model=LeadOut)
+def get_lead(
+    lead_id: UUID,
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    _: object = Depends(require_staff_or_above),
+):
+    lead = crud_lead.get_lead_for_firm(db, lead_id, current_firm.id)
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    return lead
+
+
+# ---------------------------------------------------------
+# UPDATE LEAD
+#
+# Always passes firm_entered as new_provenance -- same reasoning as
+# create. Lower-tier updates will only fill blank fields on a higher-tier
+# lead; equal-tier updates apply normally.
+# ---------------------------------------------------------
+@router.patch("/{lead_id}", response_model=LeadOut)
+def update_lead(
+    lead_id: UUID,
+    payload: LeadUpdate,
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    current_user: User = Depends(get_current_user),
+    _: object = Depends(require_staff_or_above),
+):
+    from app.services.audit_service import write_audit_log
+    lead = crud_lead.get_lead_for_firm(db, lead_id, current_firm.id)
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    updated = crud_lead.update_lead_with_precedence(
+        db=db,
+        lead=lead,
+        update_in=payload,
+        new_provenance=LeadProvenance.firm_entered,
+    )
+    write_audit_log(
+        db=db,
+        firm_id=current_firm.id,
+        action="lead.updated",
+        actor_id=current_user.id,
+        actor_type="staff",
+        entity_type="lead",
+        entity_id=lead.id,
+    )
+    return updated
