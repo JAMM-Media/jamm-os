@@ -15,6 +15,38 @@ function formatFileSize(kb: number): string {
   return `${(kb / 1024).toFixed(1)} MB`
 }
 
+function DocumentDetailBodySkeleton() {
+  return (
+    <div className="p-6 pt-0 flex flex-col gap-3">
+      {/* Document Details card */}
+      <div className="bg-surface-card dark:bg-dark-card rounded-[8px] border border-[0.5px] border-surface-border dark:border-dark-border overflow-hidden">
+        <div className="px-4 py-2.5 border-b border-[0.5px] border-surface-border dark:border-dark-border bg-[#EDEEF0] dark:bg-[#252525]">
+          <div className="h-2.5 w-28 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+        </div>
+        <div className="grid grid-cols-2 gap-0">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div
+              key={i}
+              className={`px-4 py-3 flex flex-col gap-1 ${i < 4 ? 'border-b border-[0.5px] border-surface-border dark:border-dark-border' : ''}`}
+            >
+              <div className="h-2.5 w-12 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+              <div className="h-3.5 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" style={{ width: i % 2 === 0 ? '65%' : '48%' }} />
+            </div>
+          ))}
+        </div>
+      </div>
+      {/* Download CTA card */}
+      <div className="bg-surface-card dark:bg-dark-card rounded-[8px] border border-[0.5px] border-surface-border dark:border-dark-border p-4 flex items-center justify-between">
+        <div className="flex flex-col gap-1.5">
+          <div className="h-3.5 w-32 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+          <div className="h-2.5 w-48 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+        </div>
+        <div className="h-9 w-24 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded-[6px]" />
+      </div>
+    </div>
+  )
+}
+
 export default function DocumentDetailPage() {
   const params = useParams()
   const docId = params.id as string
@@ -30,6 +62,7 @@ export default function DocumentDetailPage() {
 
   if (isLoading) {
     return (
+      <>
         <div className="p-6 flex flex-col gap-4">
           <div className="h-4 w-32 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
           <div className="flex items-start gap-3">
@@ -40,6 +73,8 @@ export default function DocumentDetailPage() {
             </div>
           </div>
         </div>
+        <DocumentDetailBodySkeleton />
+      </>
     )
   }
 
