@@ -140,3 +140,9 @@ class Lead(Base):
         back_populates="lead",
         cascade="all, delete-orphan",
     )
+
+    messages: Mapped[list["LeadMessage"]] = relationship(
+        "LeadMessage",
+        back_populates="lead",
+        cascade="all, delete-orphan",
+    )

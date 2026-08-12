@@ -74,9 +74,9 @@ This section exists because a past session confidently claimed specific files we
 
 # Section 3 - The task
 
-TASK 2 OF 2: Build the Enrollment model -- how one lead moves through one specific SequenceVersion. Requires Task 1 (Sequence/SequenceVersion/Step/StepEdge/SequenceGoal) to already be shipped and confirmed on main.
+TASK: Build the LeadMessage model -- a thread of messages attached to a Lead, closely following the real, existing ClientMessage pattern. This closes a real gap flagged twice tonight: both inbound reply capture (contract Section 6.5) and the future lead detail view (Section 7.3) need a thread to attach to, and none exists yet.
 
-USE: claude fable-5
+USE: claude sonnet
 
 ENVIRONMENT SANITY CHECK:
 
@@ -86,69 +86,53 @@ State plainly that no path in this task resolves against /mnt/c/Users or any Win
 
 VERIFY BEFORE ACT:
 
-git log --oneline -3
-cat app/models/sequence.py
+cat app/models/message.py
+cat app/schemas/message.py
 cat app/models/lead.py
 .venv/bin/alembic heads
 
-Paste all real output. Confirm Task 1's commit (153644d) is genuinely on this branch before building on top of it. Confirm the real fresh alembic head -- do not trust any hash in this text.
+Paste all real output. Confirm the real current alembic head fresh, live -- do not trust any hash written in this task's own text.
 
 WHAT THIS IS:
 
-Per contract Section 6.1 and 6.3: an Enrollment ties one Lead to one SequenceVersion (pinned at enroll time, never repointed even if the sequence gets a new version later), tracks which Step it's currently sitting at, when it next needs attention, and whether/why it has stopped. Per Section 6.1's global stop conditions: unsubscribe (suppression list, exits forever), converted to Client, staff removes from sequence. Per Section 6.1's re-enrollment rule: no concurrent duplicate enrollment in the same sequence for the same lead -- this task adds a real partial unique index enforcing that at the database level, not just application logic that could be bypassed by a bug.
+ClientMessage has no separate Thread table -- client_id itself IS the thread, identified by firm_id + client_id together. LeadMessage follows the exact same shape: lead_id itself is the thread. Unlike ClientMessage, do NOT build a read-receipts table in this task -- the contract's Section 6.5 only requires that inbound replies attach to the lead thread and fire a behavioral event; nothing requires staff read-state tracking on lead messages, and adding it now would be scope the contract never asked for.
 
-Loop caps (contract example: rebook loop caps at 2) require real per-enrollment counting -- this task stores loop progress as a JSON field keyed by loop identifier, incremented by future step-execution logic (not built in this task), checked against StepEdge.loop_cap.
+sender_role uses "staff" or "lead" as its two real values, matching the exact real vocabulary convention already established by ClientMessage's "staff"/"client" pair (confirmed in VERIFY BEFORE ACT and via prior grep across app/crud/message.py, app/services/message_service.py, app/api/portal.py). sender_id is nullable and null when the sender is the lead/prospect themselves, exactly matching how ClientMessage handles the client side (a prospect has no User account, same reasoning that already justifies ClientMessage.sender_id being nullable for the client side).
 
 CHANGE INSTRUCTIONS:
 
-1. In app/core/enums.py, add:
+1. Create app/models/lead_message.py:
 
-class EnrollmentStatus(str, Enum):
-    """Where an enrollment stands. active is the only status still being walked forward by the engine."""
-    active = "active"
-    unsubscribed = "unsubscribed"
-    converted = "converted"
-    removed_by_staff = "removed_by_staff"
-    completed_dead_end = "completed_dead_end"
-    completed_won = "completed_won"
-
-2. Create app/models/enrollment.py:
-
-class Enrollment(Base):
-    __tablename__ = "enrollments"
+class LeadMessage(Base):
+    __tablename__ = "lead_messages"
     id: UUID pk, default uuid4
-    firm_id: FK firms.id, CASCADE, nullable=False, indexed -- denormalized from lead for direct tenant-scoped queries, matching how firm_id is handled on every other model in this codebase rather than always joining through Lead
+    firm_id: FK firms.id, CASCADE, nullable=False, indexed
     lead_id: FK leads.id, CASCADE, nullable=False, indexed
-    sequence_id: FK sequences.id, nullable=False, indexed -- denormalized from sequence_version_id at creation time, needed for the real no-duplicate-concurrent-enrollment rule below
-    sequence_version_id: FK sequence_versions.id, nullable=False, indexed -- the real pin, never changes after creation
-    current_step_id: FK sequence_steps.id, nullable=True -- nullable only in the brief instant between creation and the first step assignment
-    next_action_time: DateTime(timezone=True), nullable=True -- null means no pending scheduled action (e.g. genuinely stopped, or waiting on an event with no timer component)
-    status: sa.Enum(EnrollmentStatus, name="enrollmentstatus", native_enum=False), nullable=False, default=EnrollmentStatus.active, server_default="active"
-    loop_counts: JSON, nullable=False, default=dict, server_default="{}" -- e.g. {"rebook": 1}, keyed by a loop identifier, incremented by future step-execution logic
-    enrolled_at: DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
-    stopped_at: DateTime(timezone=True), nullable=True -- set when status leaves active
-    created_at, updated_at: DateTime(timezone=True), standard lambda pattern -- Enrollment is real mutable state, unlike everything in Task 1, so it DOES get updated_at
-    lead: relationship("Lead", back_populates="enrollments") -- add this relationship to app/models/lead.py following the exact real pattern already used for Lead's other relationships
+    sender_id: FK users.id, ondelete SET NULL, nullable=True -- null when sender_role is "lead"
+    sender_role: String(30), nullable=False -- "staff" or "lead"
+    body: Text, nullable=False
+    source: String(30), nullable=True -- e.g. "inbound_email", "staff_note", "form_reply" -- freeform for now, populated by whichever future capture mechanism creates the row; not enforced as an enum since the real full set of sources is not yet finalized
+    is_deleted: Boolean, nullable=False, default=False, server_default="false" -- matching ClientMessage's exact real pattern
+    created_at: DateTime(timezone=True), server_default=func.now(), default lambda pattern, nullable=False -- matching ClientMessage's exact real pattern including the server_default
 
-Add a real partial unique index: unique on (lead_id, sequence_id) WHERE status = 'active'. This is the real interpretation of the no-duplicate-concurrent-enrollment rule -- it is keyed on the SEQUENCE, not the specific version, since a lead should not be enrolled twice in "the nurture preset" even across two different versions of it. If this interpretation seems genuinely wrong against the contract text on a fresh re-read, flag it plainly in your summary rather than silently picking a different one.
+    Composite index matching ClientMessage's exact real pattern: Index("ix_lead_messages_firm_lead", "firm_id", "lead_id")
 
-3. Write ONE Alembic migration creating enrollments plus the partial unique index and the EnrollmentStatus enum. Get the real fresh alembic head from VERIFY BEFORE ACT.
+    Relationships: sender: relationship("User", foreign_keys=[sender_id]) -- matching ClientMessage exactly. Also add messages: relationship("LeadMessage", back_populates="lead") -- wait, correct this: add a lead relationship on LeadMessage pointing back to Lead, and add the reverse messages relationship on Lead itself in app/models/lead.py, following the exact real relationship pattern Lead already uses for enrollments (added earlier tonight).
 
-4. Create app/schemas/enrollment.py with EnrollmentOut only (read-only) -- no Create/Update schema, since enrolling a lead is a real operation with side effects (checking the partial unique index, assigning the first real step, setting next_action_time), not a generic CRUD create. That real enroll operation is a separate future task, not built here.
+2. Write ONE Alembic migration creating lead_messages with the composite index. Get the real fresh alembic head from VERIFY BEFORE ACT, do not trust any hash in this text -- this exact mistake has happened multiple times tonight.
 
-Do NOT build any CRUD functions beyond a bare get_enrollment_for_firm lookup, any API router, or any step-execution logic in this task.
+3. Create app/schemas/lead_message.py with LeadMessageOut only (read-only, from_attributes=True) -- no Create/Update schema. Matching the exact real security reasoning already documented in app/schemas/message.py: sender_id and sender_role must be injected server-side by whichever future function creates a row (a staff-compose endpoint, the future Postmark inbound webhook), never accepted directly from a request body. Building a generic LeadMessageCreate schema now would invite exactly the mistake that comment in message.py exists to prevent. No CRUD functions beyond a bare get_messages_for_lead(db, lead_id, firm_id) -> list[LeadMessage] ordered by created_at. No API router, no message-creation logic, no Postmark integration in this task -- data layer only.
 
 VERIFY AFTER ACT:
 
 .venv/bin/alembic heads
 .venv/bin/alembic upgrade head
 
-PGPASSWORD=postgres psql -h localhost -U postgres -d jammpx_dev -c "\d enrollments"
-PGPASSWORD=postgres psql -h localhost -U postgres -d jammpx_dev -c "\di" | grep -i enrollment
+PGPASSWORD=postgres psql -h localhost -U postgres -d jammpx_dev -c "\d lead_messages"
 
 git diff --stat
 
-Paste all real output. Confirm the table shape, confirm the partial unique index specifically shows its WHERE clause in the index listing, confirm clean single alembic head and clean upgrade.
+Paste all real output. Confirm the real table shape matches ClientMessage's pattern minus read receipts, confirm the composite index exists, confirm single clean alembic head and clean upgrade.
 
 MANUAL VERIFICATION:
 
@@ -156,4 +140,4 @@ MANUAL VERIFICATION:
 
 GIT:
 
-Do not commit until Ben confirms clean backend boot and the real partial unique index confirmed via psql.
+Do not commit until Ben confirms clean backend boot and the real table shape confirmed via psql.
