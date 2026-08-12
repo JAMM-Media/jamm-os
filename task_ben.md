@@ -74,7 +74,7 @@ This section exists because a past session confidently claimed specific files we
 
 # Section 3 - The task
 
-TASK 1 OF 2: Build the nurture engine's sequence data model -- Sequence, SequenceVersion, Step, StepEdge, SequenceGoal. This defines the SHAPE of a sequence only. No Enrollment, no lead-specific state, no step-execution logic -- those are a separate follow-up task.
+TASK 2 OF 2: Build the Enrollment model -- how one lead moves through one specific SequenceVersion. Requires Task 1 (Sequence/SequenceVersion/Step/StepEdge/SequenceGoal) to already be shipped and confirmed on main.
 
 USE: claude fable-5
 
@@ -86,115 +86,74 @@ State plainly that no path in this task resolves against /mnt/c/Users or any Win
 
 VERIFY BEFORE ACT:
 
-cat app/models/automation_rule.py
+git log --oneline -3
+cat app/models/sequence.py
 cat app/models/lead.py
-grep -n "class TriggerEvent" -A20 app/core/enums.py
 .venv/bin/alembic heads
 
-Paste all real output. Confirm the real current alembic head fresh, live -- do NOT trust any hash written in this task's own text, this exact mistake has happened multiple times tonight already. Confirm the real AutomationRule.preset_key pattern before reusing it on SequenceVersion.
+Paste all real output. Confirm Task 1's commit (153644d) is genuinely on this branch before building on top of it. Confirm the real fresh alembic head -- do not trust any hash in this text.
 
 WHAT THIS IS:
 
-Per the CRM/Acquisition Tracker build contract, Section 6 (nurture engine) and Section 8 (data model requirements). A Sequence is a named nurture flow, firm-scoped. Every edit creates a new SequenceVersion, which is genuinely immutable once created -- nothing about a SequenceVersion, Step, StepEdge, or SequenceGoal row is ever updated after creation, only new versions are created. Enrollments (built in a separate task) pin to one specific version and finish on it even if the sequence is edited later.
+Per contract Section 6.1 and 6.3: an Enrollment ties one Lead to one SequenceVersion (pinned at enroll time, never repointed even if the sequence gets a new version later), tracks which Step it's currently sitting at, when it next needs attention, and whether/why it has stopped. Per Section 6.1's global stop conditions: unsubscribe (suppression list, exits forever), converted to Client, staff removes from sequence. Per Section 6.1's re-enrollment rule: no concurrent duplicate enrollment in the same sequence for the same lead -- this task adds a real partial unique index enforcing that at the database level, not just application logic that could be bypassed by a bug.
+
+Loop caps (contract example: rebook loop caps at 2) require real per-enrollment counting -- this task stores loop progress as a JSON field keyed by loop identifier, incremented by future step-execution logic (not built in this task), checked against StepEdge.loop_cap.
 
 CHANGE INSTRUCTIONS:
 
 1. In app/core/enums.py, add:
 
-class StepType(str, Enum):
-    """One node in a nurture sequence's step graph."""
-    trigger = "trigger"
-    email = "email"
-    wait_fixed = "wait_fixed"
-    wait_until_event = "wait_until_event"
-    branch = "branch"
-    action = "action"
-    goal = "goal"
-    won = "won"
-    dead_end = "dead_end"
+class EnrollmentStatus(str, Enum):
+    """Where an enrollment stands. active is the only status still being walked forward by the engine."""
+    active = "active"
+    unsubscribed = "unsubscribed"
+    converted = "converted"
+    removed_by_staff = "removed_by_staff"
+    completed_dead_end = "completed_dead_end"
+    completed_won = "completed_won"
 
-Do not add any other new enum in this file for this task -- edge condition_label and phase are plain strings on the model (freeform, matching the real tree's own labels like "yes", "no", "timeout", "loop", "PHASE 1"), not enums, since the specific v1 preset's real label vocabulary is not yet encoded and forcing an enum now risks missing a real label when that encoding task happens later.
+2. Create app/models/enrollment.py:
 
-2. Create app/models/sequence.py with:
-
-class Sequence(Base):
-    __tablename__ = "sequences"
+class Enrollment(Base):
+    __tablename__ = "enrollments"
     id: UUID pk, default uuid4
-    firm_id: FK firms.id, CASCADE, nullable=False, indexed
-    name: String(200), nullable=False
-    is_active: Boolean, nullable=False, default=True, server_default="true"
-    current_version_id: FK sequence_versions.id, nullable=True, ondelete SET NULL -- nullable because a brand new Sequence has no version yet at the instant of creation
-    created_at, updated_at: DateTime(timezone=True), standard lambda pattern
-    firm: relationship("Firm", back_populates="sequences") -- add this relationship to app/models/firm.py following the exact real pattern confirmed from VERIFY BEFORE ACT
+    firm_id: FK firms.id, CASCADE, nullable=False, indexed -- denormalized from lead for direct tenant-scoped queries, matching how firm_id is handled on every other model in this codebase rather than always joining through Lead
+    lead_id: FK leads.id, CASCADE, nullable=False, indexed
+    sequence_id: FK sequences.id, nullable=False, indexed -- denormalized from sequence_version_id at creation time, needed for the real no-duplicate-concurrent-enrollment rule below
+    sequence_version_id: FK sequence_versions.id, nullable=False, indexed -- the real pin, never changes after creation
+    current_step_id: FK sequence_steps.id, nullable=True -- nullable only in the brief instant between creation and the first step assignment
+    next_action_time: DateTime(timezone=True), nullable=True -- null means no pending scheduled action (e.g. genuinely stopped, or waiting on an event with no timer component)
+    status: sa.Enum(EnrollmentStatus, name="enrollmentstatus", native_enum=False), nullable=False, default=EnrollmentStatus.active, server_default="active"
+    loop_counts: JSON, nullable=False, default=dict, server_default="{}" -- e.g. {"rebook": 1}, keyed by a loop identifier, incremented by future step-execution logic
+    enrolled_at: DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    stopped_at: DateTime(timezone=True), nullable=True -- set when status leaves active
+    created_at, updated_at: DateTime(timezone=True), standard lambda pattern -- Enrollment is real mutable state, unlike everything in Task 1, so it DOES get updated_at
+    lead: relationship("Lead", back_populates="enrollments") -- add this relationship to app/models/lead.py following the exact real pattern already used for Lead's other relationships
 
-class SequenceVersion(Base):
-    __tablename__ = "sequence_versions"
-    id: UUID pk, default uuid4
-    sequence_id: FK sequences.id, CASCADE, nullable=False, indexed
-    version_number: Integer, nullable=False
-    preset_lineage_key: String(100), nullable=True, indexed -- matches the real AutomationRule.preset_key pattern confirmed in VERIFY BEFORE ACT
-    created_at: DateTime(timezone=True) -- NO updated_at on this model or any model in this task. Genuine immutability means there is nothing to update; an updated_at column would be a lie about what this table guarantees.
-    created_by_user_id: FK users.id, nullable=True, ondelete SET NULL
-    Add a real unique constraint on (sequence_id, version_number) -- two versions of the same sequence must never share a number.
+Add a real partial unique index: unique on (lead_id, sequence_id) WHERE status = 'active'. This is the real interpretation of the no-duplicate-concurrent-enrollment rule -- it is keyed on the SEQUENCE, not the specific version, since a lead should not be enrolled twice in "the nurture preset" even across two different versions of it. If this interpretation seems genuinely wrong against the contract text on a fresh re-read, flag it plainly in your summary rather than silently picking a different one.
 
-class Step(Base):
-    __tablename__ = "sequence_steps"
-    id: UUID pk, default uuid4
-    sequence_version_id: FK sequence_versions.id, CASCADE, nullable=False, indexed
-    step_key: String(50), nullable=False -- preserves the real tree's own node IDs (T1, 22, R1, etc) when that preset gets encoded later
-    step_type: sa.Enum(StepType, name="steptype", native_enum=False), nullable=False
-    channel: String(20), nullable=True, default="email", server_default="email" -- the SMS seam from contract Section 6.8, always "email" today
-    phase: String(50), nullable=True -- freeform, matches the real tree's own phase labels
-    is_modified_from_preset: Boolean, nullable=False, default=False, server_default="false"
-    config: JSON, nullable=False, default=dict, server_default="{}" -- type-specific config, shape not enforced at the DB level
-    created_at: DateTime(timezone=True) only, no updated_at, same immutability reasoning as SequenceVersion
-    Add a real unique constraint on (sequence_version_id, step_key) -- no two steps in one version can share a key.
+3. Write ONE Alembic migration creating enrollments plus the partial unique index and the EnrollmentStatus enum. Get the real fresh alembic head from VERIFY BEFORE ACT.
 
-class StepEdge(Base):
-    __tablename__ = "sequence_step_edges"
-    id: UUID pk, default uuid4
-    from_step_id: FK sequence_steps.id, CASCADE, nullable=False, indexed
-    to_step_id: FK sequence_steps.id, CASCADE, nullable=False, indexed
-    condition_label: String(50), nullable=True -- freeform, e.g. "yes", "no", "timeout", "loop"
-    loop_cap: Integer, nullable=True -- only set on edges that form a real loop back to an earlier step; null means not a loop edge
-    created_at: DateTime(timezone=True) only, same immutability reasoning
+4. Create app/schemas/enrollment.py with EnrollmentOut only (read-only) -- no Create/Update schema, since enrolling a lead is a real operation with side effects (checking the partial unique index, assigning the first real step, setting next_action_time), not a generic CRUD create. That real enroll operation is a separate future task, not built here.
 
-class SequenceGoal(Base):
-    __tablename__ = "sequence_goals"
-    id: UUID pk, default uuid4
-    sequence_version_id: FK sequence_versions.id, CASCADE, nullable=False, indexed
-    goal_event: String(100), nullable=False -- e.g. "lead.call_booked", matches real behavioral event type strings
-    target_step_id: FK sequence_steps.id, nullable=False
-    applies_to_phase: String(50), nullable=True -- matches Step.phase; null means the goal applies across the whole version, not scoped to one phase
-    created_at: DateTime(timezone=True) only, same immutability reasoning
-
-All FKs use string names in relationship() where relationships exist, per standing rules. Bare FKs with no relationship() where nothing needs to traverse it yet, matching the exact real reasoning already used repeatedly tonight on Lead's own FKs.
-
-3. Write ONE Alembic migration creating all five tables plus the two unique constraints. Get the real fresh alembic head from VERIFY BEFORE ACT, do not trust any hash in this text.
-
-4. Create app/schemas/sequence.py with SequenceBase/Create/Update/Out, SequenceVersionOut (read-only, no Create/Update schemas -- nothing ever creates or updates a SequenceVersion directly through a generic schema; a version is only ever produced by a real "publish a new version" operation, which is a separate future task, not generic CRUD), StepOut, StepEdgeOut, SequenceGoalOut (all read-only for the same reason -- these belong to an immutable version and are never independently created via a generic endpoint).
-
-Do NOT build any CRUD functions, any API router, or any endpoints in this task. Data layer and read-only schemas only. This is the shape; nothing yet reads or writes it through an API.
+Do NOT build any CRUD functions beyond a bare get_enrollment_for_firm lookup, any API router, or any step-execution logic in this task.
 
 VERIFY AFTER ACT:
 
 .venv/bin/alembic heads
 .venv/bin/alembic upgrade head
 
-PGPASSWORD=postgres psql -h localhost -U postgres -d jammpx_dev -c "\d sequences"
-PGPASSWORD=postgres psql -h localhost -U postgres -d jammpx_dev -c "\d sequence_versions"
-PGPASSWORD=postgres psql -h localhost -U postgres -d jammpx_dev -c "\d sequence_steps"
-PGPASSWORD=postgres psql -h localhost -U postgres -d jammpx_dev -c "\d sequence_step_edges"
-PGPASSWORD=postgres psql -h localhost -U postgres -d jammpx_dev -c "\d sequence_goals"
+PGPASSWORD=postgres psql -h localhost -U postgres -d jammpx_dev -c "\d enrollments"
+PGPASSWORD=postgres psql -h localhost -U postgres -d jammpx_dev -c "\di" | grep -i enrollment
 
 git diff --stat
 
-Paste all real output. Confirm all five tables exist with the real specified shape, confirm both unique constraints exist, confirm a single clean alembic head, confirm the migration applied with no errors.
+Paste all real output. Confirm the table shape, confirm the partial unique index specifically shows its WHERE clause in the index listing, confirm clean single alembic head and clean upgrade.
 
 MANUAL VERIFICATION:
 
-**Restart the backend.** Confirm clean boot, no import errors. No frontend or browser check needed -- nothing reads this data yet.
+**Restart the backend.** Confirm clean boot, no import errors.
 
 GIT:
 
-Do not commit until Ben confirms the backend restarts cleanly and all five real table shapes are confirmed via psql.
+Do not commit until Ben confirms clean backend boot and the real partial unique index confirmed via psql.

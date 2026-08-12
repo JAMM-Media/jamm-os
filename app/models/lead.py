@@ -134,3 +134,9 @@ class Lead(Base):
     )
 
     firm: Mapped["Firm"] = relationship("Firm", back_populates="leads")
+
+    enrollments: Mapped[list["Enrollment"]] = relationship(
+        "Enrollment",
+        back_populates="lead",
+        cascade="all, delete-orphan",
+    )

@@ -364,3 +364,13 @@ class StepType(str, Enum):
     goal = "goal"
     won = "won"
     dead_end = "dead_end"
+
+
+class EnrollmentStatus(str, Enum):
+    """Where an enrollment stands. active is the only status still being walked forward by the engine."""
+    active = "active"
+    unsubscribed = "unsubscribed"
+    converted = "converted"
+    removed_by_staff = "removed_by_staff"
+    completed_dead_end = "completed_dead_end"
+    completed_won = "completed_won"
