@@ -227,12 +227,18 @@ class ReferralSource(str, Enum):
     """How a client found the firm. Captured at intake for acquisition reporting."""
     client_referral = "client_referral"
     professional_referral = "professional_referral"
+    returning_client = "returning_client"
     google_search = "google_search"
+    search_ads = "search_ads"
+    social_ads = "social_ads"
     social_media = "social_media"
     website = "website"
     association_or_community = "association_or_community"
     walk_in = "walk_in"
+    cold_outreach = "cold_outreach"
+    purchased_book = "purchased_book"
     other = "other"
+    unknown = "unknown"
 
 
 class BetterDirection(str, Enum):

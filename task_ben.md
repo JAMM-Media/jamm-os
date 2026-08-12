@@ -74,7 +74,7 @@ This section exists because a past session confidently claimed specific files we
 
 # Section 3 - The task
 
-TASK: Two files were skipped in the previous skeleton-audit task and never actually changed — IrsAuthBadge.tsx and SendEngagementLetterModal.tsx. Both still show their original generic placeholder. Fix both now to close out the full 15-file task.
+TASK: Extend the existing ReferralSource enum with the six new values required by the CRM/Acquisition Tracker build contract, in the exact display order specified. Backend only — no frontend picker exists yet to update, and that's intentional (deferred to the intake form build).
 
 USE: claude sonnet
 
@@ -86,43 +86,46 @@ State plainly that no path in this task resolves against /mnt/c/Users or any Win
 
 VERIFY BEFORE ACT:
 
-grep -n "animate-pulse" "src/components/clients/IrsAuthBadge.tsx"
-grep -n "animate-pulse" "src/components/engagements/SendEngagementLetterModal.tsx"
+sed -n '226,236p' app/core/enums.py
+grep -n "referral_source\|referring_client_id" app/models/client.py
+.venv/bin/alembic heads
 
-Confirm both still show the unchanged original: IrsAuthBadge.tsx line ~212 with className={cn('bg-[#D5D8DE] dark:bg-[#444444] animate-pulse', className)}, and SendEngagementLetterModal.tsx line ~349 with a flat h-9 rounded-[6px] bg-[#D5D8DE] dark:bg-[#444444] animate-pulse div.
+Confirm the real current enum matches exactly: client_referral, professional_referral, google_search, social_media, website, association_or_community, walk_in, other — in that order, as a class ReferralSource(str, Enum). Confirm referral_source and referring_client_id exist on Client exactly as currently defined. Confirm the real current alembic head hash — it must match a2b3c4d5e6f7. If it doesn't, stop and report the real hash instead of proceeding.
 
-Then view each file's real content to determine the correct real shape:
+WHAT THIS IS:
 
-cat "src/components/clients/IrsAuthBadge.tsx"
-cat "src/components/engagements/SendEngagementLetterModal.tsx"
+The CRM contract (Section 3.2) requires ReferralSource extended to 14 values total, in this exact display order, since this same enum is reused on the future Lead model so attribution flows forward on conversion without translation:
 
-For IrsAuthBadge.tsx: this is a small inline badge component (per its use of a className prop passed through cn()). Determine the real badge's actual size/shape once loaded — likely a small pill with an icon and short text — from the rest of this same file, since the loading state should match the real badge's own footprint, not a generic block.
+client_referral, professional_referral, returning_client, google_search, search_ads, social_ads, social_media, website, association_or_community, walk_in, cold_outreach, purchased_book, other, unknown
 
-For SendEngagementLetterModal.tsx: the current placeholder sits where a template appears to be fetched (h-9 suggests a dropdown/select-sized element). Confirm from the real loaded markup what this actually becomes — likely a select/dropdown for choosing a letter template.
+Six new values: returning_client, search_ads, social_ads, cold_outreach, purchased_book, unknown. unknown must render last in any picker per the contract, which this ordering satisfies since Python enum iteration order follows declaration order.
+
+Column length is already confirmed sufficient: the real production column is VARCHAR(24), sized to the existing longest value (association_or_community, 24 chars). The longest new value (returning_client, 16 chars) fits with no length migration needed. Do not add a length migration.
+
+This task does NOT include: source_platform, provenance, ReferralPartner, or any Lead model field. Those belong to the Lead model per Section 8 of the contract and Lead does not exist yet — building them now would leave them with nothing to attach to. Do not add them.
 
 CHANGE INSTRUCTIONS:
 
-1. IrsAuthBadge.tsx — replace the current flat animate-pulse background with a skeleton sized and shaped to match the real badge's actual dimensions (small pill, matching real padding/border-radius), rather than a generic rectangle. Keep the className prop pass-through pattern intact since other code depends on it.
+In app/core/enums.py, rewrite the ReferralSource class body to contain exactly the 14 values above, in that exact order, matching the existing string-value-equals-name pattern (e.g. returning_client = "returning_client"). Do not change the class's docstring unless it's factually now incomplete. Do not touch any other enum in this file.
 
-2. SendEngagementLetterModal.tsx — replace the flat h-9 bar with a skeleton matching the real template-selector's actual shape (e.g. a select-styled placeholder with a label above it if the real version has one — confirm from real markup).
-
-Edit both files directly with your file-editing tools. Do not write or use a standalone script to make these edits — do them as direct file edits.
+Write a new Alembic migration, down_revision set to a2b3c4d5e6f7, that alters the referralsource enum type to add the six new values. Follow the exact real pattern already used for native_enum=False string-backed enums in this codebase — confirm from the existing e06c341c7b5a migration (add_client_referral_source_and_firm_) what the correct upgrade/downgrade shape is for this pattern, since a VARCHAR-backed enum with native_enum=False is altered differently than a native Postgres ENUM type would be. Do not assume a native-enum ALTER TYPE approach without confirming the real column type first.
 
 VERIFY AFTER ACT:
 
-grep -n "animate-pulse" "src/components/clients/IrsAuthBadge.tsx"
-grep -n "animate-pulse" "src/components/engagements/SendEngagementLetterModal.tsx"
+sed -n '226,244p' app/core/enums.py
+.venv/bin/alembic heads
+.venv/bin/alembic upgrade head
 
-git status --short
+PGPASSWORD=postgres psql -h localhost -U postgres -d jammpx_dev -c "\d clients" | grep referral_source
 
-Confirm only these two files changed, plus task_ben.md if applicable, and no stray new files exist.
+git diff --stat
+
+Paste all real output. Confirm the enum file shows exactly 14 values in the correct order, confirm the migration applied cleanly against the real local database with no errors, and confirm the referral_source column still exists and did not silently change type.
 
 MANUAL VERIFICATION:
 
-Ben will run npm run build himself and confirm it's clean before trusting this as done.
-
-**Restart the frontend.** With network throttled to Slow 3G, trigger IrsAuthBadge's loading state (likely on a client detail page) and SendEngagementLetterModal's loading state (likely when sending an engagement letter and it fetches available templates). Confirm both show a real, shaped skeleton now. Report back plainly.
+**Restart the backend.** Confirm the API still boots cleanly with no startup errors (this enum is imported in app/models/client.py, a broken enum definition would fail at import time). No manual browser check needed since nothing in the UI references this field yet.
 
 GIT:
 
-Do not commit until Ben confirms in the browser.
+Do not commit until Ben confirms the backend restarts cleanly and the migration applied without error.
