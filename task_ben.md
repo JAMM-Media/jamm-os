@@ -74,9 +74,9 @@ This section exists because a past session confidently claimed specific files we
 
 # Section 3 - The task
 
-TASK: Build the public intake form shell — a per-firm, unauthenticated, Turnstile-protected page that captures a prospect's info and creates a Lead with crm_lead provenance. This is the SHELL only: one flat form (name, contact, service interest, freeform "how did you hear"), not the tree-driven one-question-per-screen flow described in the build contract's Section 5 -- that part is explicitly blocked on a nurture tree artifact Ben does not have yet. Do not attempt to build tree-driven question logic, answer-button email wiring, or nurture auto-enrollment in this task.
+TASK: Replace the "Jane Smith" placeholder text on the public intake form's name field with a different example name.
 
-USE: claude fable-5
+USE: claude sonnet
 
 ENVIRONMENT SANITY CHECK:
 
@@ -86,73 +86,21 @@ State plainly that no path in this task resolves against /mnt/c/Users or any Win
 
 VERIFY BEFORE ACT:
 
-cat app/models/firm.py | grep -A15 "class Firm"
-cat app/crud/firm.py
-grep -n "def log_event" app/services/behavioral_log.py
-sed -n '1,40p' app/services/behavioral_log.py
-grep -rn "class Notification\|NotificationType\|def create_notification" app/models/notification.py app/services/*.py 2>/dev/null | head -20
-grep -n "TURNSTILE" .env
-grep -n "^import requests\|^import httpx" app/services/*.py | head -5
-cat app/schemas/lead.py
-cat app/crud/lead.py
-find frontend/src/app/portal -maxdepth 2
+grep -n "Jane Smith" "frontend/src/app/intake/[slug]/page.tsx"
 
-Paste all real output. Confirm: the real Firm model fields relevant to branding (logo_url, primary_color, or whatever real fields exist -- do not assume field names, read them), the real log_event() call signature so behavioral events are fired correctly rather than guessed, whether a real Notification model/creation pattern exists and what it looks like, confirmation both TURNSTILE_SITE_KEY and TURNSTILE_SECRET_KEY are present in .env, which HTTP client library is already in use elsewhere in this codebase (for calling Cloudflare's siteverify endpoint server-side), and the real current Lead schema/CRUD shape from tonight's earlier work.
-
-WHAT THIS IS:
-
-Per the CRM/Acquisition Tracker build contract, Section 4. A hosted public page per firm at /intake/{slug} (Firm.slug already exists, confirmed real and populated -- e.g. Riverside Tax & Advisory's slug is "riverside-demo"), reachable with zero authentication, that captures a prospect's info and creates a real Lead.
-
-This endpoint is the FIRST genuinely public, write-capable endpoint in this codebase. No spam protection exists anywhere else to copy -- Cloudflare Turnstile keys are now real and present in .env specifically for this task. Rate limiting DOES have a real precedent: check_email_rate_limit(email, max_requests=3, window_seconds=900), confirmed real and already used identically in app/api/portal.py at lines 170 and 388. Match that exact call shape and those exact numbers for the email-based limit. Also apply the existing @limiter.limit() IP-based decorator pattern from app/core/rate_limit.py on top of it, not instead of it -- this endpoint needs both layers, matching the portal's own auth endpoints which use IP-based @limiter.limit() decorators.
-
-Every lead created through this endpoint uses provenance=LeadProvenance.crm_lead -- this is the ONE place in the codebase that endpoint is allowed to use that value, per the code comment already written in app/api/leads.py during tonight's earlier CRUD task. UTM parameters (utm_campaign, utm_source, utm_medium, utm_content, utm_term) are captured silently from query parameters on the page load and carried through to submission -- never surfaced to the visitor, never asked as a question.
+Confirm the real single location.
 
 CHANGE INSTRUCTIONS:
 
-1. Backend -- app/api/intake.py, a new public router, prefix "/intake", no auth dependency of any kind on any endpoint in this file:
-
-   GET /intake/{slug}/config -- public, unauthenticated. Looks up the firm by slug via the real existing get_firm_by_slug(). Returns only what a public page needs to render firm branding safely (confirm exact real branding fields from VERIFY BEFORE ACT output -- do not invent field names). Returns 404 if slug doesn't exist. Include TURNSTILE_SITE_KEY in this response (the site key is safe to expose publicly by design -- it's the secret key that must never leave the backend).
-
-   POST /intake/{slug}/submit -- public, unauthenticated. Real request body: name (required), email (required), phone (optional), service_interest (optional freeform string), how_did_you_hear (optional freeform string, stored into Lead.urgency is WRONG -- check the real Lead schema from VERIFY BEFORE ACT and store this into whatever field is actually appropriate, likely a new use of an existing nullable field or flag clearly in a code comment if no clean field exists yet), utm_campaign/utm_source/utm_medium/utm_content/utm_term (all optional, captured from the page not asked of the visitor), and a turnstile_token (required).
-
-   Real submission flow, in order:
-   a. Look up firm by slug, 404 if not found.
-   b. Verify turnstile_token server-side by POSTing to Cloudflare's real siteverify endpoint (https://challenges.cloudflare.com/turnstile/v0/siteverify) with the real TURNSTILE_SECRET_KEY from settings, the token, and the request's real remote IP. Reject with 400 if verification fails. Do this using whatever HTTP client library is already the real convention in this codebase (confirmed from VERIFY BEFORE ACT), not a newly introduced one.
-   c. Apply check_email_rate_limit(email, max_requests=3, window_seconds=900), matching the exact real portal precedent. Reject with 429 if exceeded.
-   d. Create the Lead via the real existing create_lead() CRUD function, firm_id from the looked-up firm, provenance=LeadProvenance.crm_lead explicitly. Map name/email/phone/service_interest directly. Map referral_source appropriately if determinable from UTM presence (if utm_source is present, this came through a tracked link -- leave referral_source null and let a human or a future automated pass classify it later; do not guess a ReferralSource value from raw UTM strings in this task, that mapping is a real design decision the contract does not specify and Ben has not made).
-   e. Fire a real behavioral event using the real confirmed log_event() signature from VERIFY BEFORE ACT -- event name lead.created (this is the exact string from the contract's own Section 9.1 candidate list, not a task-invented name).
-   f. If a real Notification creation pattern was confirmed in VERIFY BEFORE ACT, notify the firm owner that a new lead came in. If no clean existing pattern exists, skip this sub-step entirely and say so plainly in your summary rather than inventing a new notification mechanism in this task.
-   g. Return a real success response. No nurture auto-enrollment call -- that does not exist yet.
-
-2. Frontend -- frontend/src/app/intake/[slug]/page.tsx, a fully public page with NO app shell, NO sidebar, NO auth check of any kind -- confirm from the real portal login/magic-link pages (VERIFY BEFORE ACT) what an unauthenticated page's real layout pattern looks like in this codebase, and follow it.
-
-   On load: call GET /intake/{slug}/config. If 404, show a plain "this page doesn't exist" state, not a broken render. Otherwise render the firm's real branding (confirmed fields from VERIFY BEFORE ACT), and silently capture any utm_* query parameters present in the URL into component state -- never render them as visible fields.
-
-   Render ONE flat form: name, email, phone (optional), a short freeform "what can we help with" text field (service_interest), a short freeform "how did you hear about us" text field. Include the real Cloudflare Turnstile widget using the site key from the config response -- use the real Turnstile JS API (https://challenges.cloudflare.com/turnstile/v0/api.js), rendered as a real widget the visitor must complete before submit is enabled.
-
-   On submit: POST to /intake/{slug}/submit with the form fields, captured UTM values, and the real Turnstile token. Show a plain, warm confirmation state on success ("thanks, we'll be in touch") -- per the contract's Section 5, this SAME confirmation state must show regardless of anything about fit or qualification, since qualification logic does not exist in this shell task at all. Show a real, clear error state on failure (rate limited, turnstile failed, firm not found), not a silent failure.
-
-   Do NOT build multi-step/one-question-per-screen UI. Do NOT build a progress indicator. This is explicitly a flat single-screen form for this task -- the tree-driven experience is future work.
-
-3. Register the new intake router in app/main.py, following the real existing include_router pattern and placement convention.
+Replace "Jane Smith" with "Alex Rivera" as the placeholder text on the name field only. Do not touch the email field's placeholder or anything else on the page.
 
 VERIFY AFTER ACT:
 
-cd /home/corby/jamm-os/frontend
-npm run build 2>&1 | tail -20
+grep -n "Alex Rivera\|Jane Smith" "frontend/src/app/intake/[slug]/page.tsx"
+cd frontend && npm run build 2>&1 | tail -5
 
-cd /home/corby/jamm-os
-grep -n "include_router(intake_router" app/main.py
-git diff --stat
-
-Paste all real output. Confirm a clean frontend build with zero TypeScript errors, confirm the router is actually mounted, confirm the diff only touches files this task should touch.
-
-MANUAL VERIFICATION:
-
-**Restart both the backend and the frontend.** Confirm the backend boots with no import errors.
-
-Then Ben will test this live in an incognito browser window (no session) at localhost:3000/intake/riverside-demo -- confirming the real branding loads, the real Turnstile widget renders and must be completed, a real submission creates a real Lead with provenance=crm_lead (checkable via psql: SELECT name, email, provenance, utm_source FROM leads ORDER BY created_at DESC LIMIT 1;), and that visiting /intake/some-fake-slug-that-does-not-exist shows the plain not-found state rather than a broken page.
+Confirm Jane Smith no longer appears, Alex Rivera does, and the build is clean.
 
 GIT:
 
-Do not commit until Ben confirms the live submission in the browser actually created a real Lead row with the correct provenance, verified via real psql output, not just a success toast in the UI.
+Do not commit until Ben confirms it visually in the browser.

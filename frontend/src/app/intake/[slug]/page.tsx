@@ -215,7 +215,7 @@ export default function IntakePage() {
                 type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="Jane Smith"
+                placeholder="Alex Rivera"
                 required
                 className={inputClass}
               />
