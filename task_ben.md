@@ -74,7 +74,7 @@ This section exists because a past session confidently claimed specific files we
 
 # Section 3 - The task
 
-TASK: Fix the generic/unshaped or spinner-only loading states on nine settings-area files from tonight's skeleton audit — team, my-integrations, settings/page, settings/billing, AutomationsTab, EmailCalendarTab, LetterTemplatesTab, SecurityTab, PortalBrandingTab.
+TASK: Two files were skipped in the previous skeleton-audit task and never actually changed — IrsAuthBadge.tsx and SendEngagementLetterModal.tsx. Both still show their original generic placeholder. Fix both now to close out the full 15-file task.
 
 USE: claude sonnet
 
@@ -86,66 +86,42 @@ State plainly that no path in this task resolves against /mnt/c/Users or any Win
 
 VERIFY BEFORE ACT:
 
-cat "src/app/(app)/dashboard/page.tsx" | grep -n "Skeleton" -A 8
+grep -n "animate-pulse" "src/components/clients/IrsAuthBadge.tsx"
+grep -n "animate-pulse" "src/components/engagements/SendEngagementLetterModal.tsx"
 
-Reference standard, already used successfully five times tonight: named, content-shaped skeleton components using surface-border/dark-border tokens and animate-pulse, matching real content layout.
+Confirm both still show the unchanged original: IrsAuthBadge.tsx line ~212 with className={cn('bg-[#D5D8DE] dark:bg-[#444444] animate-pulse', className)}, and SendEngagementLetterModal.tsx line ~349 with a flat h-9 rounded-[6px] bg-[#D5D8DE] dark:bg-[#444444] animate-pulse div.
 
-Then, for each of the nine files, view enough of the real file to determine (a) exactly what the current loading state looks like and (b) what the real loaded content actually renders, so the skeleton can match it precisely rather than being guessed:
+Then view each file's real content to determine the correct real shape:
 
-cat "src/app/(app)/settings/team/page.tsx" | grep -n "animate-pulse" -B 5 -A 15
-cat "src/app/(app)/settings/my-integrations/page.tsx" | grep -n "animate-pulse" -B 10 -A 5
-cat "src/app/(app)/settings/page.tsx" | grep -n "animate-pulse" -B 10 -A 10
-cat "src/app/(app)/settings/billing/page.tsx" | grep -n "animate-pulse" -B 10 -A 10
-cat frontend/src/components/settings/AutomationsTab.tsx | grep -n "SkeletonRow" -B 5 -A 20
-cat frontend/src/components/settings/EmailCalendarTab.tsx | grep -n "animate-pulse" -B 10 -A 5
-cat frontend/src/components/settings/LetterTemplatesTab.tsx | grep -n "animate-pulse" -B 10 -A 5
-cat frontend/src/components/settings/SecurityTab.tsx | grep -n "224" 
-sed -n '200,240p' frontend/src/components/settings/SecurityTab.tsx
-cat frontend/src/components/settings/PortalBrandingTab.tsx | grep -n "animate-pulse" -B 10 -A 5
+cat "src/components/clients/IrsAuthBadge.tsx"
+cat "src/components/engagements/SendEngagementLetterModal.tsx"
 
-Note on SecurityTab.tsx specifically: this file has many Loader2 instances. Only the one around line 224 is a genuine initial-page-data-load spinner. All others (savingPassword, setupLoading, verifying, regenerating, disabling) are button-action spinners triggered by user clicks, not data-loading states — do not touch those, they are correct as-is and out of scope.
+For IrsAuthBadge.tsx: this is a small inline badge component (per its use of a className prop passed through cn()). Determine the real badge's actual size/shape once loaded — likely a small pill with an icon and short text — from the rest of this same file, since the loading state should match the real badge's own footprint, not a generic block.
 
-Note on AutomationsTab.tsx specifically: it already has a SkeletonRow component with title/subtitle/meta bars and a toggle-shaped placeholder. Before rebuilding it, compare it against the real automation row it's meant to represent (search this same file for how a real, loaded automation row renders) and determine honestly whether SkeletonRow already matches that shape well, or whether it needs adjustment. Report this determination explicitly rather than assuming either way.
-
-If any file's current state doesn't match what a targeted grep suggests, stop and report the actual content instead of proceeding on that file with an assumption.
+For SendEngagementLetterModal.tsx: the current placeholder sits where a template appears to be fetched (h-9 suggests a dropdown/select-sized element). Confirm from the real loaded markup what this actually becomes — likely a select/dropdown for choosing a letter template.
 
 CHANGE INSTRUCTIONS:
 
-For each of the nine files, based on your own investigation of its real loaded content:
+1. IrsAuthBadge.tsx — replace the current flat animate-pulse background with a skeleton sized and shaped to match the real badge's actual dimensions (small pill, matching real padding/border-radius), rather than a generic rectangle. Keep the className prop pass-through pattern intact since other code depends on it.
 
-1. team/page.tsx — replace the generic h-2 w-[60%] per-cell bars with a real skeleton matching the actual team member row's real columns (name, role, email, status, etc. — confirm real columns from the loaded row markup).
+2. SendEngagementLetterModal.tsx — replace the flat h-9 bar with a skeleton matching the real template-selector's actual shape (e.g. a select-styled placeholder with a label above it if the real version has one — confirm from real markup).
 
-2. my-integrations/page.tsx — replace the generic h-[88px] card block with a real skeleton matching the actual integration card's real layout (icon, name, description, connect/status button — confirm from real card markup).
-
-3. settings/page.tsx — this file has multiple distinct loading spots (an h-[88px] integrations block, three h-3 w-[120px] bars, and an h-2 w-[60%] bar). Address each with a skeleton matching its own real nearby content, treating them as separate small fixes within the same file rather than one unified change.
-
-4. settings/billing/page.tsx — replace the single h-8 w-32 bar with a real skeleton matching the actual subscription status section's real layout (likely plan name, price, renewal date, or similar — confirm from real content).
-
-5. AutomationsTab.tsx — if your investigation in VERIFY BEFORE ACT found SkeletonRow does not yet match the real automation row shape, fix it to match. If it already matches well, state that explicitly and make no change to this file.
-
-6. EmailCalendarTab.tsx — replace the generic h-12 rounded-lg bars with a real skeleton matching the actual connected-account row's real layout (confirm from real markup — likely provider icon, email, sync status).
-
-7. LetterTemplatesTab.tsx — replace the generic h-16 blocks with a real skeleton matching the actual template row's real layout (template name, type, last modified, or similar — confirm from real markup).
-
-8. SecurityTab.tsx — replace the single centered Loader2 spinner at the genuine initial-data-load spot (confirmed in VERIFY BEFORE ACT) with a real skeleton matching the tab's real loaded content shape (likely 2FA status, password change form, backup codes section — confirm from real markup). Do not touch any of the button-action Loader2 spinners.
-
-9. PortalBrandingTab.tsx — the current skeleton (a label bar + input bar) is already reasonably close to a real form field shape. Confirm this matches the real field it represents; if it does, this file may need no change or only a minor width/sizing adjustment — do not force an unnecessary rebuild if it's already adequate.
-
-Name every new/changed skeleton component descriptively, following the naming convention established throughout tonight's work. Do not touch any file not in this list of nine, and do not touch action-button spinners anywhere.
+Edit both files directly with your file-editing tools. Do not write or use a standalone script to make these edits — do them as direct file edits.
 
 VERIFY AFTER ACT:
 
-For each of the nine files, run a grep confirming the skeleton/loading state that now exists.
+grep -n "animate-pulse" "src/components/clients/IrsAuthBadge.tsx"
+grep -n "animate-pulse" "src/components/engagements/SendEngagementLetterModal.tsx"
 
-git diff --stat
+git status --short
 
-Confirm the diff touches only these nine files (fewer, if AutomationsTab or PortalBrandingTab needed no change — report explicitly which files were left untouched and why).
+Confirm only these two files changed, plus task_ben.md if applicable, and no stray new files exist.
 
 MANUAL VERIFICATION:
 
-Ben will run npm run build himself in the frontend directory and confirm it's clean before trusting this as done.
+Ben will run npm run build himself and confirm it's clean before trusting this as done.
 
-**Restart the frontend.** With network throttled to Slow 3G in devtools, visit Settings > Team, Settings > My Integrations, the main Settings page, Settings > Billing, and the Automations, Email & Calendar, Letter Templates, Security, and Portal Branding tabs. Confirm each now shows a real, content-shaped skeleton (or confirm no change was needed where noted). Report back plainly, file by file.
+**Restart the frontend.** With network throttled to Slow 3G, trigger IrsAuthBadge's loading state (likely on a client detail page) and SendEngagementLetterModal's loading state (likely when sending an engagement letter and it fetches available templates). Confirm both show a real, shaped skeleton now. Report back plainly.
 
 GIT:
 

@@ -346,7 +346,7 @@ export function SendEngagementLetterModal({
             {/* Template selection */}
             <FormField label="Letter Template" required error={errors.template}>
               {fetching ? (
-                <div className="h-9 rounded-[6px] bg-[#D5D8DE] dark:bg-[#444444] animate-pulse" />
+                <div className="h-9 rounded-[6px] border border-surface-border dark:border-dark-border bg-[#D5D8DE] dark:bg-[#444444] animate-pulse" />
               ) : templates.length === 0 ? (
                 <p className="text-[12px] text-[#6B7280]">No templates found. Add templates in Settings → Letter Templates.</p>
               ) : (

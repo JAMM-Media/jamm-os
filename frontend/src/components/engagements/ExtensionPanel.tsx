@@ -157,8 +157,18 @@ export function ExtensionPanel({ engagementId, clientId }: ExtensionPanelProps) 
       <div className="bg-surface-card dark:bg-dark-card rounded-[8px] border border-[0.5px] border-surface-border dark:border-dark-border p-4">
         {isLoading ? (
           <div className="flex flex-col gap-3">
-            <div className="h-4 w-24 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
-            <div className="h-4 w-48 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+            <div className="flex items-center justify-between">
+              <div className="h-4 w-24 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+              <div className="h-5 w-20 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded-full" />
+            </div>
+            <div className="grid grid-cols-2 gap-3 mt-1">
+              {[1, 2, 3, 4].map((j) => (
+                <div key={j} className="flex flex-col gap-1">
+                  <div className="h-2.5 w-16 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+                  <div className="h-3 w-24 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+                </div>
+              ))}
+            </div>
           </div>
         ) : extension ? (
           <>

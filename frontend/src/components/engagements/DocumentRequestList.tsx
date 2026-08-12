@@ -247,8 +247,20 @@ export function DocumentRequestList({
         {Array.from({ length: 3 }).map((_, i) => (
           <div
             key={i}
-            className="bg-[#D5D8DE] dark:bg-[#444444] rounded-[8px] h-[72px] mb-[10px] animate-pulse"
-          />
+            className="bg-[#EDEEF0] dark:bg-[#383838] rounded-[8px] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] px-4 py-[14px] mb-[10px]"
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex flex-col gap-1">
+                <div className="h-3 w-40 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+                <div className="h-2.5 w-28 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="h-3 w-20 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+                <div className="h-4 w-4 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+              </div>
+            </div>
+            <div className="h-1.5 w-full bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded-full mt-3" />
+          </div>
         ))}
       </div>
     )

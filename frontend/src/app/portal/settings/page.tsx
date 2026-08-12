@@ -144,8 +144,17 @@ export default function PortalSettingsPage() {
           style={{ backgroundColor: '#383838', border: '0.5px solid #484848' }}
         >
           {hasPassword === null ? (
-            <div className="flex justify-center py-4">
-              <Loader2 className="w-5 h-5 animate-spin" style={{ color: '#9CA3AF' }} />
+            <div className="flex flex-col gap-3">
+              <div className="h-3 w-32 rounded animate-pulse" style={{ backgroundColor: '#484848' }} />
+              {[1, 2].map((j) => (
+                <div key={j} className="flex flex-col gap-1">
+                  <div className="h-2 w-24 rounded animate-pulse" style={{ backgroundColor: '#484848' }} />
+                  <div className="h-9 w-full rounded-[6px] animate-pulse" style={{ backgroundColor: '#484848' }} />
+                </div>
+              ))}
+              <div className="flex justify-end">
+                <div className="h-9 w-28 rounded-[6px] animate-pulse" style={{ backgroundColor: '#484848' }} />
+              </div>
             </div>
           ) : (
             <>

@@ -48,11 +48,14 @@ export function StaffRoster() {
         Array.from({ length: 5 }).map((_, i) => (
           <div
             key={i}
-            className="grid grid-cols-6 gap-4 px-4 py-3 bg-[#E4E6EA] dark:bg-[#2D2D2D] border-b border-[0.5px] border-[#D5D8DE] dark:border-dark-card last:border-0"
+            className="grid grid-cols-6 items-center px-4 py-3 bg-[#E4E6EA] dark:bg-[#2D2D2D] border-b border-[0.5px] border-[#D5D8DE] dark:border-dark-card last:border-0"
           >
-            {Array.from({ length: 6 }).map((_, j) => (
-              <div key={j} className="h-2 w-[60%] bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
-            ))}
+            <div className="h-3 w-[70%] bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+            <div className="h-3 w-[75%] bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+            <div className="h-5 w-16 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded-full" />
+            <div className="h-4 w-4 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded-full" />
+            <div className="h-5 w-12 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded-full" />
+            <div className="h-3 w-[50%] bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
           </div>
         ))
       ) : members.length === 0 ? (

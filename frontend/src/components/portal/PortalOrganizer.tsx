@@ -307,10 +307,17 @@ export default function PortalOrganizer({ clientId: _clientId, initialOrganizerI
   }
 
   if (loadingDetail) {
+    const barStyle = { backgroundColor: portalMode === 'light' ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.12)' }
     return (
       <div className="p-5 max-w-2xl mx-auto w-full flex flex-col gap-3">
         {[1, 2].map((i) => (
-          <div key={i} className="h-16 rounded-[8px] animate-pulse" style={{ backgroundColor: cardColor }} />
+          <div key={i} className="rounded-[8px] p-5 flex flex-col gap-4" style={{ backgroundColor: cardColor }}>
+            <div className="h-4 w-36 rounded animate-pulse" style={barStyle} />
+            <div className="flex flex-col gap-2">
+              <div className="h-3 w-full rounded animate-pulse" style={barStyle} />
+              <div className="h-3 w-3/4 rounded animate-pulse" style={barStyle} />
+            </div>
+          </div>
         ))}
       </div>
     )
@@ -437,7 +444,13 @@ export default function PortalOrganizer({ clientId: _clientId, initialOrganizerI
     <div className="p-5 max-w-2xl mx-auto w-full flex flex-col gap-3">
       {loading ? (
         [1, 2].map((i) => (
-          <div key={i} className="h-16 rounded-[8px] animate-pulse" style={{ backgroundColor: cardColor }} />
+          <div key={i} className="rounded-[8px] p-4 flex flex-col gap-2" style={{ backgroundColor: cardColor }}>
+            <div className="flex items-center justify-between">
+              <div className="h-3 w-16 rounded animate-pulse" style={{ backgroundColor: portalMode === 'light' ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.12)' }} />
+              <div className="h-4 w-24 rounded-full animate-pulse" style={{ backgroundColor: portalMode === 'light' ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.12)' }} />
+            </div>
+            <div className="h-3 w-36 rounded animate-pulse" style={{ backgroundColor: portalMode === 'light' ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.12)' }} />
+          </div>
         ))
       ) : organizers.length === 0 ? (
         <div className="text-[13px] py-12 text-center" style={{ color: mutedText }}>

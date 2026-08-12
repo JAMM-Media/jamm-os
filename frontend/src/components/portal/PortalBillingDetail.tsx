@@ -52,10 +52,20 @@ export function PortalBillingDetail({ cardColor, accentColor, portalMode, textPr
   }
 
   if (loading) {
+    const barStyle = { backgroundColor: portalMode === 'light' ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.12)' }
     return (
       <div className="p-5 flex flex-col gap-3 max-w-3xl mx-auto w-full">
         {[1, 2, 3].map((i) => (
-          <div key={i} className="h-16 rounded-[8px] animate-pulse" style={{ backgroundColor: cardColor }} />
+          <div key={i} className="rounded-[8px] overflow-hidden" style={{ backgroundColor: cardColor, border: `0.5px solid ${borderColor}` }}>
+            <div className="flex items-center justify-between px-4 py-3">
+              <div className="flex flex-col gap-1.5">
+                <div className="h-3 w-36 rounded animate-pulse" style={barStyle} />
+                <div className="h-3 w-24 rounded animate-pulse" style={barStyle} />
+                <div className="h-3 w-20 rounded animate-pulse" style={barStyle} />
+              </div>
+              <div className="h-4 w-4 rounded flex-shrink-0 animate-pulse" style={barStyle} />
+            </div>
+          </div>
         ))}
       </div>
     )

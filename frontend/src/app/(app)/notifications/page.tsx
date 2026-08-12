@@ -178,9 +178,18 @@ export default function NotificationsPage() {
 
         {/* Notification list */}
         {isLoading ? (
-          <div className="space-y-2">
-            {[1,2,3,4].map((i) => (
-              <div key={i} className="h-16 rounded-[8px] bg-[#D5D8DE] dark:bg-[#444444] animate-pulse" />
+          <div className="space-y-1">
+            {[1, 2, 3, 4].map((i) => (
+              <div key={i} className="flex items-start gap-3 px-4 py-3 rounded-[8px] bg-surface-card dark:bg-dark-card">
+                <div className="flex-shrink-0 mt-1.5">
+                  <div className="w-2 h-2 rounded-full bg-[#D5D8DE] dark:bg-[#444444] animate-pulse" />
+                </div>
+                <div className="flex-1 min-w-0 flex flex-col gap-1.5">
+                  <div className="h-3 w-[60%] bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+                  <div className="h-2.5 w-[80%] bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+                </div>
+                <div className="h-2.5 w-12 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded flex-shrink-0 mt-0.5" />
+              </div>
             ))}
           </div>
         ) : isError ? (

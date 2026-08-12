@@ -601,7 +601,22 @@ export default function TaxOrganizerTemplates() {
       {loading ? (
         <div className="flex flex-col gap-2">
           {[1, 2, 3].map((i) => (
-            <div key={i} className="h-16 rounded-[8px] bg-[#D5D8DE] dark:bg-[#444] animate-pulse" />
+            <div key={i} className="flex items-center gap-3 px-4 py-3 rounded-[8px] bg-surface-card dark:bg-dark-card border border-surface-border dark:border-dark-border">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap mb-1">
+                  <div className="h-3 w-40 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+                  <div className="h-4 w-20 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded-full" />
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="h-2.5 w-20 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+                  <div className="h-2.5 w-24 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+                </div>
+              </div>
+              <div className="flex items-center gap-1 flex-shrink-0">
+                <div className="h-6 w-6 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+                <div className="h-6 w-6 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+              </div>
+            </div>
           ))}
         </div>
       ) : templates.length === 0 ? (

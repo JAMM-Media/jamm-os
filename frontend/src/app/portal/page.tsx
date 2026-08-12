@@ -77,7 +77,16 @@ export default function PortalPage() {
         <div className="h-10 bg-[#252525] border-b border-[#383838] flex-shrink-0 animate-pulse" />
         <div className="flex-1 p-5 flex flex-col gap-3 max-w-2xl mx-auto w-full">
           {[1, 2, 3].map((i) => (
-            <div key={i} className="h-16 rounded-[8px] bg-[#383838] animate-pulse" />
+            <div key={i} className="flex items-center justify-between gap-4 rounded-[8px] px-5 py-4" style={{ backgroundColor: '#383838' }}>
+              <div className="flex items-start gap-3">
+                <div className="h-5 w-5 rounded flex-shrink-0 mt-0.5 animate-pulse" style={{ backgroundColor: 'rgba(255,255,255,0.12)' }} />
+                <div className="flex flex-col gap-1.5">
+                  <div className="h-3 w-40 rounded animate-pulse" style={{ backgroundColor: 'rgba(255,255,255,0.12)' }} />
+                  <div className="h-3 w-56 rounded animate-pulse" style={{ backgroundColor: 'rgba(255,255,255,0.12)' }} />
+                </div>
+              </div>
+              <div className="h-5 w-5 rounded-full flex-shrink-0 animate-pulse" style={{ backgroundColor: 'rgba(255,255,255,0.12)' }} />
+            </div>
           ))}
         </div>
       </div>

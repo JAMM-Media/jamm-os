@@ -925,7 +925,24 @@ export default function TemplatesPage() {
             {loading ? (
               <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
                 {Array.from({ length: 4 }).map((_, i) => (
-                  <div key={i} className="h-32 rounded-card bg-[#D5D8DE] dark:bg-[#333] animate-pulse" />
+                  <div key={i} className="bg-surface-card dark:bg-dark-card rounded-card border border-[0.5px] border-surface-border dark:border-dark-border p-4">
+                    <div className="flex items-start justify-between gap-3 mb-2">
+                      <div className="flex-1 flex flex-col gap-1.5">
+                        <div className="h-3 w-40 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+                        <div className="h-2.5 w-56 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+                      </div>
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        <div className="h-6 w-6 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+                        <div className="h-6 w-6 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 flex-wrap mt-3">
+                      <div className="h-4 w-20 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded-full" />
+                      <div className="h-3 w-14 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+                      <div className="h-3 w-16 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+                    </div>
+                    <div className="h-8 w-full bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded-md mt-3" />
+                  </div>
                 ))}
               </div>
             ) : templates.length === 0 ? (

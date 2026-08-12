@@ -57,10 +57,18 @@ export function PortalDocuments({ firmName, accentColor = '#3A6A94', cardColor =
   }, [fetchDocuments])
 
   if (loading) {
+    const barStyle = { backgroundColor: portalMode === 'light' ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.12)' }
     return (
       <div className="p-5 flex flex-col gap-3 max-w-2xl mx-auto">
         {[1, 2, 3].map((i) => (
-          <div key={i} className="h-14 rounded-[8px] animate-pulse" style={{ backgroundColor: cardColor }} />
+          <div key={i} className="flex items-center gap-3 rounded-[8px] px-5 py-4" style={{ backgroundColor: cardColor }}>
+            <div className="h-5 w-5 rounded flex-shrink-0 animate-pulse" style={barStyle} />
+            <div className="flex-1 flex flex-col gap-1.5 min-w-0">
+              <div className="h-3 w-[55%] rounded animate-pulse" style={barStyle} />
+              <div className="h-3 w-[40%] rounded animate-pulse" style={barStyle} />
+            </div>
+            <div className="h-3 w-20 rounded flex-shrink-0 animate-pulse" style={barStyle} />
+          </div>
         ))}
       </div>
     )
