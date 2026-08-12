@@ -74,9 +74,9 @@ This section exists because a past session confidently claimed specific files we
 
 # Section 3 - The task
 
-TASK: Build the LeadMessage model -- a thread of messages attached to a Lead, closely following the real, existing ClientMessage pattern. This closes a real gap flagged twice tonight: both inbound reply capture (contract Section 6.5) and the future lead detail view (Section 7.3) need a thread to attach to, and none exists yet.
+TASK: Build inbound reply capture for the nurture engine, per contract Section 6.5. A real Postmark inbound webhook that receives parsed replies, matches them to the correct Lead via plus-addressing, writes them to LeadMessage, and fires a behavioral event. Also updates EmailService to support the dedicated broadcast stream and a per-lead Reply-To address, since nurture email needs both and neither currently exists.
 
-USE: claude sonnet
+USE: claude fable-5
 
 ENVIRONMENT SANITY CHECK:
 
@@ -86,58 +86,63 @@ State plainly that no path in this task resolves against /mnt/c/Users or any Win
 
 VERIFY BEFORE ACT:
 
-cat app/models/message.py
-cat app/schemas/message.py
-cat app/models/lead.py
-.venv/bin/alembic heads
+cat app/services/email_service.py
+cat app/core/config.py
+cat app/models/lead_message.py
+cat app/services/behavioral_log.py
+grep -n "POSTMARK_BROADCAST_STREAM_ID\|POSTMARK_INBOUND_WEBHOOK" app/core/config.py .env
+grep -n "def log_event" -A20 app/services/behavioral_log.py
 
-Paste all real output. Confirm the real current alembic head fresh, live -- do not trust any hash written in this task's own text.
+Paste all real output. Confirm POSTMARK_BROADCAST_STREAM_ID, POSTMARK_INBOUND_WEBHOOK_USERNAME, and POSTMARK_INBOUND_WEBHOOK_PASSWORD are all real, present values in .env before writing anything that depends on them existing. Confirm the real log_event() signature before firing any event. If any of the three env vars are missing or config.py has no field for them yet, stop and report exactly what's missing rather than guessing a fallback.
 
 WHAT THIS IS:
 
-ClientMessage has no separate Thread table -- client_id itself IS the thread, identified by firm_id + client_id together. LeadMessage follows the exact same shape: lead_id itself is the thread. Unlike ClientMessage, do NOT build a read-receipts table in this task -- the contract's Section 6.5 only requires that inbound replies attach to the lead thread and fire a behavioral event; nothing requires staff read-state tracking on lead messages, and adding it now would be scope the contract never asked for.
+The real inbound address is a600f6b42ca483cbfacac9789f91d74f@inbound.postmarkapp.com, already live and confirmed working in Postmark, no DNS setup needed. Postmark supports plus-addressing on inbound mail: a message sent to a600f6b42ca483cbfacac9789f91d74f+{lead_id}@inbound.postmarkapp.com still delivers normally, and Postmark's webhook payload includes the {lead_id} portion as a top-level field called MailboxHash. This is the real, confirmed mechanism for matching an inbound reply to the correct lead -- no tag-matching heuristics, no custom domain.
 
-sender_role uses "staff" or "lead" as its two real values, matching the exact real vocabulary convention already established by ClientMessage's "staff"/"client" pair (confirmed in VERIFY BEFORE ACT and via prior grep across app/crud/message.py, app/services/message_service.py, app/api/portal.py). sender_id is nullable and null when the sender is the lead/prospect themselves, exactly matching how ClientMessage handles the client side (a prospect has no User account, same reasoning that already justifies ClientMessage.sender_id being nullable for the client side).
+Without this, every wait_until_event step in the future nurture engine silently degrades to a plain timer -- this is why the contract calls this mandatory infrastructure, ships with the engine, not after.
 
 CHANGE INSTRUCTIONS:
 
-1. Create app/models/lead_message.py:
+1. In app/core/config.py, add three new Settings fields if not already confirmed present from VERIFY BEFORE ACT: POSTMARK_BROADCAST_STREAM_ID: str = "", POSTMARK_INBOUND_WEBHOOK_USERNAME: str = "", POSTMARK_INBOUND_WEBHOOK_PASSWORD: str = "".
 
-class LeadMessage(Base):
-    __tablename__ = "lead_messages"
-    id: UUID pk, default uuid4
-    firm_id: FK firms.id, CASCADE, nullable=False, indexed
-    lead_id: FK leads.id, CASCADE, nullable=False, indexed
-    sender_id: FK users.id, ondelete SET NULL, nullable=True -- null when sender_role is "lead"
-    sender_role: String(30), nullable=False -- "staff" or "lead"
-    body: Text, nullable=False
-    source: String(30), nullable=True -- e.g. "inbound_email", "staff_note", "form_reply" -- freeform for now, populated by whichever future capture mechanism creates the row; not enforced as an enum since the real full set of sources is not yet finalized
-    is_deleted: Boolean, nullable=False, default=False, server_default="false" -- matching ClientMessage's exact real pattern
-    created_at: DateTime(timezone=True), server_default=func.now(), default lambda pattern, nullable=False -- matching ClientMessage's exact real pattern including the server_default
+2. In app/services/email_service.py, modify EmailService._send to accept a new optional parameter message_stream: str = "outbound" (default preserves every existing caller's current behavior exactly, zero risk of regression), and use it in place of the currently hardcoded "MessageStream": "outbound" on line 52. Add a new public method send_nurture_email(to_email, subject, html_body, from_name, reply_to, display_name=None, sending_domain=None) that calls _send with message_stream set from settings.POSTMARK_BROADCAST_STREAM_ID. This is the only method future nurture-sending code should ever call -- do not wire it into any actual sequence step logic in this task, that's future work, this task only makes the capability exist and callable.
 
-    Composite index matching ClientMessage's exact real pattern: Index("ix_lead_messages_firm_lead", "firm_id", "lead_id")
+Add a real helper: build_lead_reply_to(lead_id) -> str, returning the real plus-addressed format: f"a600f6b42ca483cbfacac9789f91d74f+{lead_id}@inbound.postmarkapp.com". Hardcode the real base address as a module-level constant with a clear comment that this is JAMM's real Postmark server's auto-assigned inbound address, confirmed live -- not a placeholder. If a custom inbound domain is ever set up later, this constant is the one place that changes.
 
-    Relationships: sender: relationship("User", foreign_keys=[sender_id]) -- matching ClientMessage exactly. Also add messages: relationship("LeadMessage", back_populates="lead") -- wait, correct this: add a lead relationship on LeadMessage pointing back to Lead, and add the reverse messages relationship on Lead itself in app/models/lead.py, following the exact real relationship pattern Lead already uses for enrollments (added earlier tonight).
+3. Create app/api/webhooks/postmark_inbound.py (create the webhooks/ subdirectory if it doesn't exist; check VERIFY BEFORE ACT output for any existing app/api/webhooks/ directory or similar grouping pattern first and match it if one exists):
 
-2. Write ONE Alembic migration creating lead_messages with the composite index. Get the real fresh alembic head from VERIFY BEFORE ACT, do not trust any hash in this text -- this exact mistake has happened multiple times tonight.
+Use fastapi.security.HTTPBasic and HTTPBasicCredentials as a real FastAPI dependency (this is the correct one -- distinct from requests.auth.HTTPBasicAuth used elsewhere in this codebase for outbound calls to Dropbox Sign, confirmed during this task's research; do not confuse the two). Verify the supplied credentials against settings.POSTMARK_INBOUND_WEBHOOK_USERNAME and POSTMARK_INBOUND_WEBHOOK_PASSWORD using a real constant-time comparison (secrets.compare_digest), raise 401 on mismatch.
 
-3. Create app/schemas/lead_message.py with LeadMessageOut only (read-only, from_attributes=True) -- no Create/Update schema. Matching the exact real security reasoning already documented in app/schemas/message.py: sender_id and sender_role must be injected server-side by whichever future function creates a row (a staff-compose endpoint, the future Postmark inbound webhook), never accepted directly from a request body. Building a generic LeadMessageCreate schema now would invite exactly the mistake that comment in message.py exists to prevent. No CRUD functions beyond a bare get_messages_for_lead(db, lead_id, firm_id) -> list[LeadMessage] ordered by created_at. No API router, no message-creation logic, no Postmark integration in this task -- data layer only.
+POST /webhooks/postmark-inbound, protected by the above. Real Postmark inbound webhook payload includes (among many fields): MailboxHash, TextBody, HtmlBody (may be absent), From, FromFull, Subject, MessageID. Parse MailboxHash as the lead's UUID. If MailboxHash is missing, malformed, or does not match any real Lead for any firm (query across firms is correct here since the webhook has no firm-scoping context of its own -- MailboxHash IS the only real routing key), log a clear warning and return 200 anyway (Postmark expects 200 to avoid retry storms; a malformed or unmatched inbound email is not the caller's fault to retry against). Do not raise a 4xx/5xx for an unmatched lead -- only for real auth failure.
+
+On a real match: create a LeadMessage with lead_id from the matched lead, firm_id from that lead, sender_role="lead", sender_id=None, body from TextBody (fall back to a stripped version of HtmlBody only if TextBody is empty -- prefer TextBody, real inbound email nearly always includes both), source="inbound_email". Fire a real behavioral event using the real confirmed log_event() signature: event name lead.email_replied, per the contract's own Section 9.1 candidate list. Do NOT attempt to advance any Enrollment's current_step_id or evaluate any wait_until_event condition in this task -- that is real step-execution engine logic, not built yet, explicitly out of scope here. This task only captures the reply and fires the event; a future task consumes that event.
+
+4. Register the new router in app/main.py, following the exact real existing include_router pattern and placement.
 
 VERIFY AFTER ACT:
 
-.venv/bin/alembic heads
-.venv/bin/alembic upgrade head
-
-PGPASSWORD=postgres psql -h localhost -U postgres -d jammpx_dev -c "\d lead_messages"
-
+grep -n "def send_nurture_email\|def build_lead_reply_to" app/services/email_service.py
+grep -n "message_stream" app/services/email_service.py
+find app/api/webhooks -iname "postmark_inbound.py"
+grep -n "include_router.*postmark_inbound\|include_router.*webhooks" app/main.py
 git diff --stat
 
-Paste all real output. Confirm the real table shape matches ClientMessage's pattern minus read receipts, confirm the composite index exists, confirm single clean alembic head and clean upgrade.
+Paste all real output. Confirm the new methods exist, confirm message_stream is now a real parameter not a hardcoded string, confirm the router file exists and is mounted.
 
 MANUAL VERIFICATION:
 
-**Restart the backend.** Confirm clean boot, no import errors.
+**Restart the backend.** Confirm clean boot, no import errors. Then Ben will run a real test:
+
+1. curl -u jammpx_inbound:<the real password from .env> -X POST http://localhost:8000/webhooks/postmark-inbound -H "Content-Type: application/json" -d a real, minimal, realistic Postmark inbound JSON payload (Claude Code should provide this exact real curl command with a real Lead's UUID from the local database substituted into MailboxHash in its summary, so Ben can run it directly).
+
+2. Confirm a 200 response.
+
+3. Check via psql: SELECT sender_role, body, source FROM lead_messages WHERE lead_id = '<the real lead id used>' ORDER BY created_at DESC LIMIT 1;  Confirm a real row landed with sender_role='lead' and the correct body text.
+
+4. Attempt the same curl WITHOUT the -u credentials. Confirm a real 401, not a silent 200.
+
+Report back all real output for all four steps.
 
 GIT:
 
-Do not commit until Ben confirms clean backend boot and the real table shape confirmed via psql.
+Do not commit until Ben confirms all four manual verification steps pass with real evidence, especially the 401 rejection when credentials are missing -- an unsecured webhook accepting forged replies from anyone on the internet is a real, serious risk, not a nice-to-have check.

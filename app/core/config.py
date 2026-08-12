@@ -57,6 +57,11 @@ class Settings(BaseSettings):
     TURNSTILE_SITE_KEY: str = ""
     TURNSTILE_SECRET_KEY: str = ""
 
+    # Postmark broadcast stream and inbound webhook
+    POSTMARK_BROADCAST_STREAM_ID: str = ""
+    POSTMARK_INBOUND_WEBHOOK_USERNAME: str = ""
+    POSTMARK_INBOUND_WEBHOOK_PASSWORD: str = ""
+
     # QuickBooks OAuth
     QUICKBOOKS_CLIENT_ID: str = ""
     QUICKBOOKS_CLIENT_SECRET: str = ""
