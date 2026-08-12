@@ -79,6 +79,12 @@ class Lead(Base):
         nullable=True,
     )
 
+    # Set when stage transitions to won. Bare FK only -- no relationship().
+    converted_client_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("clients.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
     # Freeform for now. Engagement.engagement_type is a plain String column
     # with no enum class (EFILEABLE_ENGAGEMENT_TYPES is a set, not an Enum).
     # A future alignment opportunity exists once firm service types stabilize

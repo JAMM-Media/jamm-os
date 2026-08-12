@@ -98,3 +98,91 @@ def update_lead_with_precedence(
     db.commit()
     db.refresh(lead)
     return lead
+
+
+def convert_lead_to_client(db: Session, lead: Lead):
+    """Create a real Client from a won lead inside a single transaction.
+
+    Fields carried forward: name, email, phone, referral_source,
+    referring_client_id, entity_type, service_interest (-> business_description,
+    the closest available Client field).
+
+    Fields dropped (no Client equivalent): stage, lost_reason, source_platform,
+    utm_*, referral_partner_id, revenue_band, urgency, hot, provenance,
+    first_response_time. Listed explicitly rather than silently discarded.
+
+    Note: Client.email has a global UNIQUE constraint. If the lead email
+    already belongs to another client row the INSERT will raise IntegrityError.
+    The caller (transition_lead_stage) does not catch this -- the error will
+    surface as a 500 until a dedicated deduplication path is added.
+
+    This function does NOT call db.commit() itself. The caller must commit.
+    """
+    from app.models.client import Client
+    client = Client(
+        firm_id=lead.firm_id,
+        name=lead.name,
+        email=lead.email,
+        phone=lead.phone,
+        referral_source=lead.referral_source,
+        referring_client_id=lead.referring_client_id,
+        entity_type=lead.entity_type,
+        business_description=lead.service_interest,
+    )
+    db.add(client)
+    db.flush()  # assigns client.id within the open transaction
+    return client
+
+
+def transition_lead_stage(
+    db: Session,
+    lead: Lead,
+    new_stage: LeadStage,
+    lost_reason=None,
+) -> Lead:
+    """The only correct way to change a lead's stage.
+
+    Stage transitions are NOT provenance-gated -- they are a separate concern
+    from attribution field updates and must not go through
+    update_lead_with_precedence.
+
+    Raises ValueError if lost is requested with no lost_reason.
+    Caller converts ValueError to HTTP 400.
+    """
+    from app.core.enums import LeadLostReason
+    from app.services.behavioral_log import log_event
+
+    if new_stage == LeadStage.won:
+        client = convert_lead_to_client(db, lead)
+        lead.stage = LeadStage.won.value
+        lead.converted_client_id = client.id
+        db.commit()
+        db.refresh(lead)
+        log_event(
+            event_type="lead.converted",
+            firm_id=lead.firm_id,
+            entity_type="lead",
+            entity_id=lead.id,
+            actor_type="staff",
+        )
+    elif new_stage == LeadStage.lost:
+        if lost_reason is None:
+            raise ValueError("lost_reason is required when transitioning a lead to lost")
+        lead.stage = LeadStage.lost.value
+        lead.lost_reason = lost_reason.value if hasattr(lost_reason, "value") else lost_reason
+        db.commit()
+        db.refresh(lead)
+        log_event(
+            event_type="lead.lost",
+            firm_id=lead.firm_id,
+            entity_type="lead",
+            entity_id=lead.id,
+            actor_type="staff",
+            metadata={"lost_reason": str(lost_reason)},
+        )
+    else:
+        lead.stage = new_stage.value
+        db.commit()
+        db.refresh(lead)
+
+    return lead

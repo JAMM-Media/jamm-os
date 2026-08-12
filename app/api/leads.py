@@ -2,6 +2,7 @@
 
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status, Query
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
@@ -14,7 +15,7 @@ from app.dependencies.auth import get_current_user
 from app.dependencies.tenant import get_current_firm
 from app.dependencies.roles import require_staff_or_above
 from app.models.user import User
-from app.core.enums import LeadProvenance, LeadStage
+from app.core.enums import LeadProvenance, LeadStage, LeadLostReason
 
 router = APIRouter(prefix="/api/v1/leads", tags=["Leads"])
 
@@ -124,4 +125,40 @@ def update_lead(
         entity_type="lead",
         entity_id=lead.id,
     )
+    return updated
+
+
+# ---------------------------------------------------------
+# TRANSITION LEAD STAGE
+#
+# Explicit action endpoint -- transitions are more consequential than
+# generic field edits and deserve their own entry point. The existing
+# PATCH endpoint is intentionally NOT modified to also handle transitions.
+# ---------------------------------------------------------
+class LeadTransitionRequest(BaseModel):
+    new_stage: LeadStage
+    lost_reason: LeadLostReason | None = None
+
+
+@router.post("/{lead_id}/transition", response_model=LeadOut)
+def transition_lead(
+    lead_id: UUID,
+    payload: LeadTransitionRequest,
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    current_user: User = Depends(get_current_user),
+    _: object = Depends(require_staff_or_above),
+):
+    lead = crud_lead.get_lead_for_firm(db, lead_id, current_firm.id)
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    try:
+        updated = crud_lead.transition_lead_stage(
+            db=db,
+            lead=lead,
+            new_stage=payload.new_stage,
+            lost_reason=payload.lost_reason,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
     return updated

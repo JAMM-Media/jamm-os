@@ -70,6 +70,7 @@ class LeadOut(LeadBase):
     firm_id: uuid.UUID
     provenance: LeadProvenance
     first_response_time: Optional[int] = None
+    converted_client_id: Optional[uuid.UUID] = None
     created_at: datetime
     updated_at: datetime
 
