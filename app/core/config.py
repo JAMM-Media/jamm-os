@@ -53,6 +53,10 @@ class Settings(BaseSettings):
     # Encryption
     ENCRYPTION_KEY: str = ""
 
+    # Cloudflare Turnstile (public intake form spam protection)
+    TURNSTILE_SITE_KEY: str = ""
+    TURNSTILE_SECRET_KEY: str = ""
+
     # QuickBooks OAuth
     QUICKBOOKS_CLIENT_ID: str = ""
     QUICKBOOKS_CLIENT_SECRET: str = ""

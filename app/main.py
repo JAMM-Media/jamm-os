@@ -80,6 +80,7 @@ from app.api.calendar import router as calendar_router
 from app.api.morning_briefing import router as morning_briefing_router
 from app.api.staff_credentials import router as staff_credentials_router
 from app.api.cpe_records import router as cpe_records_router
+from app.api.intake import router as intake_router
 from app.api.leads import router as leads_router
 from app.api.referral_partners import router as referral_partners_router
 from app.api.financial_intelligence import router as financial_intelligence_router
@@ -334,6 +335,7 @@ app.include_router(calendar_router, prefix="/api/v1")
 app.include_router(morning_briefing_router, prefix="/api/v1")
 app.include_router(staff_credentials_router)
 app.include_router(cpe_records_router)
+app.include_router(intake_router)
 app.include_router(leads_router)
 app.include_router(referral_partners_router)
 app.include_router(financial_intelligence_router)

@@ -74,7 +74,7 @@ This section exists because a past session confidently claimed specific files we
 
 # Section 3 - The task
 
-TASK: Build the Lead CRUD API — service layer, router, and CRUD functions on top of the Lead and ReferralPartner models shipped earlier tonight. This is the layer that enforces provenance precedence, which the schema alone does not protect.
+TASK: Build the public intake form shell — a per-firm, unauthenticated, Turnstile-protected page that captures a prospect's info and creates a Lead with crm_lead provenance. This is the SHELL only: one flat form (name, contact, service interest, freeform "how did you hear"), not the tree-driven one-question-per-screen flow described in the build contract's Section 5 -- that part is explicitly blocked on a nurture tree artifact Ben does not have yet. Do not attempt to build tree-driven question logic, answer-button email wiring, or nurture auto-enrollment in this task.
 
 USE: claude fable-5
 
@@ -86,71 +86,73 @@ State plainly that no path in this task resolves against /mnt/c/Users or any Win
 
 VERIFY BEFORE ACT:
 
-cat app/models/lead.py
+cat app/models/firm.py | grep -A15 "class Firm"
+cat app/crud/firm.py
+grep -n "def log_event" app/services/behavioral_log.py
+sed -n '1,40p' app/services/behavioral_log.py
+grep -rn "class Notification\|NotificationType\|def create_notification" app/models/notification.py app/services/*.py 2>/dev/null | head -20
+grep -n "TURNSTILE" .env
+grep -n "^import requests\|^import httpx" app/services/*.py | head -5
 cat app/schemas/lead.py
-cat app/models/referral_partner.py
-cat app/schemas/referral_partner.py
-cat app/crud/task.py
-cat app/api/tasks.py
-cat app/dependencies/roles.py
-grep -n "include_router" app/main.py | tail -5
+cat app/crud/lead.py
+find frontend/src/app/portal -maxdepth 2
 
-Paste all real output. Confirm the real current shape of everything built tonight before writing anything on top of it -- do not assume the shape described in this task's prose matches the real files without checking, since Claude Code's own prior summary of what it built could differ in some small way from the real file content.
+Paste all real output. Confirm: the real Firm model fields relevant to branding (logo_url, primary_color, or whatever real fields exist -- do not assume field names, read them), the real log_event() call signature so behavioral events are fired correctly rather than guessed, whether a real Notification model/creation pattern exists and what it looks like, confirmation both TURNSTILE_SITE_KEY and TURNSTILE_SECRET_KEY are present in .env, which HTTP client library is already in use elsewhere in this codebase (for calling Cloudflare's siteverify endpoint server-side), and the real current Lead schema/CRUD shape from tonight's earlier work.
 
 WHAT THIS IS:
 
-Two real problems exist in the current LeadCreate/LeadUpdate schemas that must be fixed at the service layer, not just documented:
+Per the CRM/Acquisition Tracker build contract, Section 4. A hosted public page per firm at /intake/{slug} (Firm.slug already exists, confirmed real and populated -- e.g. Riverside Tax & Advisory's slug is "riverside-demo"), reachable with zero authentication, that captures a prospect's info and creates a real Lead.
 
-PROBLEM 1: LeadCreate currently requires provenance as a caller-supplied field with nothing enforcing which values which callers may set. Per the build contract, provenance describes HOW the system knows a lead's attribution -- crm_lead means the intake form or a tracked link captured it automatically, firm_entered means staff typed it in by hand, client_reported means an existing client answered the portal attribution survey. A staff member manually creating a lead through this API must never be able to claim crm_lead provenance for it -- that would be a false claim about how the data was captured, and future intelligence-layer trust in provenance depends on this being real.
+This endpoint is the FIRST genuinely public, write-capable endpoint in this codebase. No spam protection exists anywhere else to copy -- Cloudflare Turnstile keys are now real and present in .env specifically for this task. Rate limiting DOES have a real precedent: check_email_rate_limit(email, max_requests=3, window_seconds=900), confirmed real and already used identically in app/api/portal.py at lines 170 and 388. Match that exact call shape and those exact numbers for the email-based limit. Also apply the existing @limiter.limit() IP-based decorator pattern from app/core/rate_limit.py on top of it, not instead of it -- this endpoint needs both layers, matching the portal's own auth endpoints which use IP-based @limiter.limit() decorators.
 
-PROBLEM 2: LeadUpdate currently allows provenance to be freely overwritten with no precedence check. Per the contract, precedence is substitution, never blending: crm_lead beats firm_entered beats client_reported. Lower tiers fill blanks only and never overwrite higher tiers. A naive attribute-copy update loop (the pattern Task uses, which is correct for Task since Task has no precedence concept) would let a low-tier update silently stomp a high-tier value already on the lead. This must not be possible through this API.
+Every lead created through this endpoint uses provenance=LeadProvenance.crm_lead -- this is the ONE place in the codebase that endpoint is allowed to use that value, per the code comment already written in app/api/leads.py during tonight's earlier CRUD task. UTM parameters (utm_campaign, utm_source, utm_medium, utm_content, utm_term) are captured silently from query parameters on the page load and carried through to submission -- never surfaced to the visitor, never asked as a question.
 
 CHANGE INSTRUCTIONS:
 
-1. In app/crud/lead.py, write CRUD functions following the exact real structure of app/crud/task.py:
-   - get_lead_for_firm(db, lead_id, firm_id) -> Lead | None
-   - get_leads_for_firm(db, firm_id, stage=None, hot=None) -> query, for use with paginate(), matching get_tasks_for_firm's real filter-building shape
-   - create_lead(db, lead_in, firm_id, provenance) -- provenance is a required plain function argument here, NOT read from lead_in. This is what makes problem 1 structurally impossible rather than merely policy: the service layer decides provenance based on WHICH endpoint is calling, never trusts a value the caller embedded in the payload.
-   - update_lead_with_precedence(db, lead, update_in, new_provenance) -- this is the real fix for problem 2. Before applying update_in's changes, compare new_provenance's tier against the lead's CURRENT provenance tier using the real precedence order (crm_lead=3, firm_entered=2, client_reported=1, higher number wins). If new_provenance's tier is LOWER than the lead's current tier, only apply fields from update_in that are currently None/blank on the lead -- never overwrite an existing non-null value. If new_provenance's tier is EQUAL OR HIGHER, apply update_in normally (full overwrite of provided fields), and update the lead's provenance field to new_provenance. Write this as a real, readable tier-comparison, not a magic-number one-liner -- define the tier order as a small module-level dict or similar so it's legible six months from now.
-   - No delete_lead function. Per the build contract, lost leads are never purged -- a declined lead with its attribution intact is a real data point about the channel that produced it. Do not build a DELETE endpoint or CRUD function for Lead at all.
+1. Backend -- app/api/intake.py, a new public router, prefix "/intake", no auth dependency of any kind on any endpoint in this file:
 
-2. In app/crud/referral_partner.py, standard CRUD (get, list for firm, create, update). ReferralPartner has no provenance concept, no precedence logic needed. A DELETE endpoint IS appropriate here since partners are just contact records, not attribution history -- but confirm no Lead currently references a partner before allowing delete (real FK check, not just relying on ON DELETE SET NULL to silently null out real attribution data without anyone knowing it happened).
+   GET /intake/{slug}/config -- public, unauthenticated. Looks up the firm by slug via the real existing get_firm_by_slug(). Returns only what a public page needs to render firm branding safely (confirm exact real branding fields from VERIFY BEFORE ACT output -- do not invent field names). Returns 404 if slug doesn't exist. Include TURNSTILE_SITE_KEY in this response (the site key is safe to expose publicly by design -- it's the secret key that must never leave the backend).
 
-3. In app/api/leads.py, build the router following the exact real structure of app/api/tasks.py:
-   - POST /leads/ -- creates with provenance=LeadProvenance.crm_lead if the request includes a real signal it came through an automated channel (for now, since the intake form doesn't exist yet, this endpoint is staff-facing only -- use provenance=LeadProvenance.firm_entered unconditionally for every lead created through this endpoint in this task). Leave a clear code comment explaining that a second, separate public/unauthenticated endpoint will be needed for the future intake form, which will pass crm_lead, and that this endpoint intentionally never does. Role: require_staff_or_above, matching Task's create floor.
-   - GET /leads/ -- list, PaginatedResponse[LeadOut], filterable by stage and hot, matching list_tasks's real query-param and pagination shape exactly. Role: require_staff_or_above.
-   - GET /leads/{lead_id} -- single lead. Role: require_staff_or_above.
-   - PATCH /leads/{lead_id} -- calls update_lead_with_precedence, always passing provenance=LeadProvenance.firm_entered (same reasoning as create -- this is a staff-facing endpoint in this task, not the future portal attribution survey which will pass client_reported). Role: require_staff_or_above.
-   - No DELETE endpoint.
+   POST /intake/{slug}/submit -- public, unauthenticated. Real request body: name (required), email (required), phone (optional), service_interest (optional freeform string), how_did_you_hear (optional freeform string, stored into Lead.urgency is WRONG -- check the real Lead schema from VERIFY BEFORE ACT and store this into whatever field is actually appropriate, likely a new use of an existing nullable field or flag clearly in a code comment if no clean field exists yet), utm_campaign/utm_source/utm_medium/utm_content/utm_term (all optional, captured from the page not asked of the visitor), and a turnstile_token (required).
 
-4. In app/api/referral_partners.py, standard CRUD router: POST, GET list, GET single, PATCH, DELETE (with the real FK check from step 2). Role: require_manager_or_above for create/update/delete, require_staff_or_above for read -- partners are a lighter-weight setup concern than lead data itself.
+   Real submission flow, in order:
+   a. Look up firm by slug, 404 if not found.
+   b. Verify turnstile_token server-side by POSTing to Cloudflare's real siteverify endpoint (https://challenges.cloudflare.com/turnstile/v0/siteverify) with the real TURNSTILE_SECRET_KEY from settings, the token, and the request's real remote IP. Reject with 400 if verification fails. Do this using whatever HTTP client library is already the real convention in this codebase (confirmed from VERIFY BEFORE ACT), not a newly introduced one.
+   c. Apply check_email_rate_limit(email, max_requests=3, window_seconds=900), matching the exact real portal precedent. Reject with 429 if exceeded.
+   d. Create the Lead via the real existing create_lead() CRUD function, firm_id from the looked-up firm, provenance=LeadProvenance.crm_lead explicitly. Map name/email/phone/service_interest directly. Map referral_source appropriately if determinable from UTM presence (if utm_source is present, this came through a tracked link -- leave referral_source null and let a human or a future automated pass classify it later; do not guess a ReferralSource value from raw UTM strings in this task, that mapping is a real design decision the contract does not specify and Ben has not made).
+   e. Fire a real behavioral event using the real confirmed log_event() signature from VERIFY BEFORE ACT -- event name lead.created (this is the exact string from the contract's own Section 9.1 candidate list, not a task-invented name).
+   f. If a real Notification creation pattern was confirmed in VERIFY BEFORE ACT, notify the firm owner that a new lead came in. If no clean existing pattern exists, skip this sub-step entirely and say so plainly in your summary rather than inventing a new notification mechanism in this task.
+   g. Return a real success response. No nurture auto-enrollment call -- that does not exist yet.
 
-5. Register both routers in app/main.py, following the exact real pattern of the existing include_router calls -- confirm the real correct placement and prefix/tags convention from the VERIFY BEFORE ACT output rather than guessing.
+2. Frontend -- frontend/src/app/intake/[slug]/page.tsx, a fully public page with NO app shell, NO sidebar, NO auth check of any kind -- confirm from the real portal login/magic-link pages (VERIFY BEFORE ACT) what an unauthenticated page's real layout pattern looks like in this codebase, and follow it.
 
-6. Audit logging: per real precedent (Client logs 'client.updated' on every update, unconditionally, via write_audit_log), add write_audit_log calls for lead.created and lead.updated in the service/CRUD layer, action='lead.created' / 'lead.updated', entity_type='lead', actor_type='staff'. Do NOT add audit logging to ReferralPartner -- Task has no audit logging at all and ReferralPartner is closer to Task's footprint (internal setup data) than Client's (client PII).
+   On load: call GET /intake/{slug}/config. If 404, show a plain "this page doesn't exist" state, not a broken render. Otherwise render the firm's real branding (confirmed fields from VERIFY BEFORE ACT), and silently capture any utm_* query parameters present in the URL into component state -- never render them as visible fields.
+
+   Render ONE flat form: name, email, phone (optional), a short freeform "what can we help with" text field (service_interest), a short freeform "how did you hear about us" text field. Include the real Cloudflare Turnstile widget using the site key from the config response -- use the real Turnstile JS API (https://challenges.cloudflare.com/turnstile/v0/api.js), rendered as a real widget the visitor must complete before submit is enabled.
+
+   On submit: POST to /intake/{slug}/submit with the form fields, captured UTM values, and the real Turnstile token. Show a plain, warm confirmation state on success ("thanks, we'll be in touch") -- per the contract's Section 5, this SAME confirmation state must show regardless of anything about fit or qualification, since qualification logic does not exist in this shell task at all. Show a real, clear error state on failure (rate limited, turnstile failed, firm not found), not a silent failure.
+
+   Do NOT build multi-step/one-question-per-screen UI. Do NOT build a progress indicator. This is explicitly a flat single-screen form for this task -- the tree-driven experience is future work.
+
+3. Register the new intake router in app/main.py, following the real existing include_router pattern and placement convention.
 
 VERIFY AFTER ACT:
 
 cd /home/corby/jamm-os/frontend
-npm run build 2>&1 | tail -5 (only if this task touched anything under frontend/, which it should not -- if this command finds nothing to build against, say so plainly rather than fabricating output)
+npm run build 2>&1 | tail -20
 
 cd /home/corby/jamm-os
-grep -n "def create_lead\|def update_lead_with_precedence" app/crud/lead.py
-grep -n "include_router(leads_router\|include_router(referral_partners_router" app/main.py
+grep -n "include_router(intake_router" app/main.py
 git diff --stat
 
-Paste all real output. Confirm the precedence function exists with real logic, confirm both routers are actually mounted (a built-but-unmounted router is a silent dead endpoint), confirm the diff only touches the files this task should touch.
+Paste all real output. Confirm a clean frontend build with zero TypeScript errors, confirm the router is actually mounted, confirm the diff only touches files this task should touch.
 
 MANUAL VERIFICATION:
 
-**Restart the backend.** Confirm clean boot, no import errors. Then, using the Riverside test firm credentials, manually hit the API directly (curl or the FastAPI /docs page) to prove the precedence logic actually works, not just that it compiles:
+**Restart both the backend and the frontend.** Confirm the backend boots with no import errors.
 
-1. POST a lead with no provenance in the payload (confirm the API ignores any provenance field if sent, and creates with firm_entered regardless).
-2. PATCH that lead's phone number. Confirm it updates normally, since firm_entered patching a firm_entered lead is equal-tier.
-3. Manually set that lead's provenance to crm_lead directly in the database via psql (simulating what the future intake form would produce), then PATCH the same lead's phone number again through this staff-facing endpoint. Confirm the phone number does NOT change, since firm_entered is lower-tier than the lead's current crm_lead and the field is already non-null -- this is the real proof the precedence logic works, not just that it exists.
-
-Report back plainly what each of the three real API calls returned.
+Then Ben will test this live in an incognito browser window (no session) at localhost:3000/intake/riverside-demo -- confirming the real branding loads, the real Turnstile widget renders and must be completed, a real submission creates a real Lead with provenance=crm_lead (checkable via psql: SELECT name, email, provenance, utm_source FROM leads ORDER BY created_at DESC LIMIT 1;), and that visiting /intake/some-fake-slug-that-does-not-exist shows the plain not-found state rather than a broken page.
 
 GIT:
 
-Do not commit until Ben confirms all three manual verification steps in step above pass for real.
+Do not commit until Ben confirms the live submission in the browser actually created a real Lead row with the correct provenance, verified via real psql output, not just a success toast in the UI.
