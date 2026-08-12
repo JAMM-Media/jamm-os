@@ -309,3 +309,9 @@ class Firm(Base):
         back_populates="firm",
         cascade="all, delete-orphan",
     )
+
+    sequences: Mapped[list["Sequence"]] = relationship(
+        "Sequence",
+        back_populates="firm",
+        cascade="all, delete-orphan",
+    )

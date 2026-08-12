@@ -351,3 +351,16 @@ class LeadProvenance(str, Enum):
     crm_lead = "crm_lead"
     firm_entered = "firm_entered"
     client_reported = "client_reported"
+
+
+class StepType(str, Enum):
+    """One node in a nurture sequence's step graph."""
+    trigger = "trigger"
+    email = "email"
+    wait_fixed = "wait_fixed"
+    wait_until_event = "wait_until_event"
+    branch = "branch"
+    action = "action"
+    goal = "goal"
+    won = "won"
+    dead_end = "dead_end"

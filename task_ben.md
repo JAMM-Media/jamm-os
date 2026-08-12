@@ -74,7 +74,7 @@ This section exists because a past session confidently claimed specific files we
 
 # Section 3 - The task
 
-TASK: Build real pipeline stage-transition logic for Lead, per the CRM build contract Section 7.1. Two concrete behaviors: (1) transitioning a lead's stage to "lost" requires lost_reason to be set, not merely optional. (2) transitioning a lead's stage to "won" creates a real Client, carrying attribution and provenance forward, and the lead retains a durable link to the Client it became.
+TASK 1 OF 2: Build the nurture engine's sequence data model -- Sequence, SequenceVersion, Step, StepEdge, SequenceGoal. This defines the SHAPE of a sequence only. No Enrollment, no lead-specific state, no step-execution logic -- those are a separate follow-up task.
 
 USE: claude fable-5
 
@@ -86,60 +86,115 @@ State plainly that no path in this task resolves against /mnt/c/Users or any Win
 
 VERIFY BEFORE ACT:
 
-cat app/crud/lead.py
-cat app/schemas/lead.py
-cat app/api/leads.py
+cat app/models/automation_rule.py
 cat app/models/lead.py
-grep -B2 -A30 "class ClientBase" app/schemas/client.py
-grep -n "def create_client" app/crud/client.py
-cat app/models/client.py | grep -B3 -A15 "quickbooks_customer_id\|entity_type:"
-grep -n "def log_event" app/services/behavioral_log.py
+grep -n "class TriggerEvent" -A20 app/core/enums.py
+.venv/bin/alembic heads
 
-Paste all real output. Confirm the exact real current shape of update_lead_with_precedence and the leads router before modifying either -- this task adds transition logic on top of tonight's earlier work, it does not replace it. Confirm the real create_client() signature and real Client fields available to populate on creation.
+Paste all real output. Confirm the real current alembic head fresh, live -- do NOT trust any hash written in this task's own text, this exact mistake has happened multiple times tonight already. Confirm the real AutomationRule.preset_key pattern before reusing it on SequenceVersion.
 
 WHAT THIS IS:
 
-Per contract Section 7.1: "lost always carries a lost_reason enum captured at the transition... won is the transition that creates the Client: attribution and provenance flow forward, the pre-client thread and intake answers ride along to the Client record, and the lead exits every sequence."
-
-"The lead exits every sequence" is explicitly OUT OF SCOPE for this task -- no sequence/enrollment system exists yet (that's the nurture engine, still blocked on an artifact Ben doesn't have). Do not build any sequence-exit logic. Note this omission plainly in your summary rather than silently skipping it.
-
-"The pre-client thread and intake answers ride along" -- Lead has no message-thread model yet (that's part of the lead detail view, Section 7.3, not built yet either). This task carries forward only what concretely exists on Lead today: name, email, phone, referral_source, referring_client_id, entity_type, service_interest (map to Client.business_description if that's the closest real fit -- confirm from VERIFY BEFORE ACT whether a better field exists, do not force a mismatch). Anything Lead has that Client has no equivalent field for should be explicitly listed as dropped in your summary, not silently discarded without mention.
+Per the CRM/Acquisition Tracker build contract, Section 6 (nurture engine) and Section 8 (data model requirements). A Sequence is a named nurture flow, firm-scoped. Every edit creates a new SequenceVersion, which is genuinely immutable once created -- nothing about a SequenceVersion, Step, StepEdge, or SequenceGoal row is ever updated after creation, only new versions are created. Enrollments (built in a separate task) pin to one specific version and finish on it even if the sequence is edited later.
 
 CHANGE INSTRUCTIONS:
 
-1. In app/models/lead.py, add one new field: converted_client_id, FK to clients.id, ondelete SET NULL, nullable=True. Bare FK only, no relationship() -- matching the exact real reasoning already used twice on this same model (referring_client_id, referral_partner_id): nothing needs to traverse it yet. Write a real Alembic migration for this single column addition. Get the real current alembic head fresh via a live `.venv/bin/alembic heads` call in this task -- do NOT trust any hash mentioned anywhere else in this task's own text or in any prior context, confirm it live, since this exact mistake has happened twice already tonight.
+1. In app/core/enums.py, add:
 
-2. In app/crud/lead.py, add a new function transition_lead_stage(db, lead, new_stage, lost_reason=None, current_user_id=None) that is the ONLY correct way to change a lead's stage going forward:
-   - If new_stage is LeadStage.lost: raise a real ValueError (caught and converted to a 400 in the router) if lost_reason is None. Set both stage and lost_reason together.
-   - If new_stage is LeadStage.won: call a new function convert_lead_to_client(db, lead) (write this in app/crud/lead.py or a new app/services/lead_service.py -- your call which, but be consistent and explain the choice in your summary). This function creates a real Client via the existing create_client(), passing forward: name, email, phone, referral_source, referring_client_id, entity_type from the lead, plus firm_id from the lead itself. Then sets the lead's stage to won and converted_client_id to the new client's real id. Do this inside one real database transaction -- both the Client creation and the Lead update must succeed together or neither should persist; do not leave a lead half-transitioned if Client creation fails partway.
-   - For any other stage value: apply normally, no special handling.
-   - This function does NOT go through update_lead_with_precedence's provenance-tier logic -- stage transitions are a different concern from attribution field updates, and conflating them would be wrong. Stage and lost_reason are not provenance-gated fields.
+class StepType(str, Enum):
+    """One node in a nurture sequence's step graph."""
+    trigger = "trigger"
+    email = "email"
+    wait_fixed = "wait_fixed"
+    wait_until_event = "wait_until_event"
+    branch = "branch"
+    action = "action"
+    goal = "goal"
+    won = "won"
+    dead_end = "dead_end"
 
-3. In app/api/leads.py, add one new endpoint: POST /leads/{lead_id}/transition, taking a small real request body (new_stage: LeadStage, lost_reason: LeadLostReason | None = None), calling transition_lead_stage. Return the updated LeadOut on success, and if the lead was won, also return the new client_id in the response (extend LeadOut or return a small wrapper -- your call, explain which in your summary). Role: require_staff_or_above, matching every other lead-touching endpoint tonight. Return 400 with a clear message if lost is attempted with no lost_reason. Do NOT modify the existing PATCH /leads/{lead_id} endpoint to also handle stage transitions -- keep this as a separate, explicit action endpoint, since a transition is a meaningfully different, more consequential action than a normal field edit and deserves its own clear entry point rather than being buried in a generic PATCH.
+Do not add any other new enum in this file for this task -- edge condition_label and phase are plain strings on the model (freeform, matching the real tree's own labels like "yes", "no", "timeout", "loop", "PHASE 1"), not enums, since the specific v1 preset's real label vocabulary is not yet encoded and forcing an enum now risks missing a real label when that encoding task happens later.
 
-4. Fire a real behavioral event on conversion using the real confirmed log_event() signature: event name lead.converted, per the contract's own Section 9.1 candidate list. Also fire lead.lost (with reason) when the lost transition happens, same section, same real signature.
+2. Create app/models/sequence.py with:
+
+class Sequence(Base):
+    __tablename__ = "sequences"
+    id: UUID pk, default uuid4
+    firm_id: FK firms.id, CASCADE, nullable=False, indexed
+    name: String(200), nullable=False
+    is_active: Boolean, nullable=False, default=True, server_default="true"
+    current_version_id: FK sequence_versions.id, nullable=True, ondelete SET NULL -- nullable because a brand new Sequence has no version yet at the instant of creation
+    created_at, updated_at: DateTime(timezone=True), standard lambda pattern
+    firm: relationship("Firm", back_populates="sequences") -- add this relationship to app/models/firm.py following the exact real pattern confirmed from VERIFY BEFORE ACT
+
+class SequenceVersion(Base):
+    __tablename__ = "sequence_versions"
+    id: UUID pk, default uuid4
+    sequence_id: FK sequences.id, CASCADE, nullable=False, indexed
+    version_number: Integer, nullable=False
+    preset_lineage_key: String(100), nullable=True, indexed -- matches the real AutomationRule.preset_key pattern confirmed in VERIFY BEFORE ACT
+    created_at: DateTime(timezone=True) -- NO updated_at on this model or any model in this task. Genuine immutability means there is nothing to update; an updated_at column would be a lie about what this table guarantees.
+    created_by_user_id: FK users.id, nullable=True, ondelete SET NULL
+    Add a real unique constraint on (sequence_id, version_number) -- two versions of the same sequence must never share a number.
+
+class Step(Base):
+    __tablename__ = "sequence_steps"
+    id: UUID pk, default uuid4
+    sequence_version_id: FK sequence_versions.id, CASCADE, nullable=False, indexed
+    step_key: String(50), nullable=False -- preserves the real tree's own node IDs (T1, 22, R1, etc) when that preset gets encoded later
+    step_type: sa.Enum(StepType, name="steptype", native_enum=False), nullable=False
+    channel: String(20), nullable=True, default="email", server_default="email" -- the SMS seam from contract Section 6.8, always "email" today
+    phase: String(50), nullable=True -- freeform, matches the real tree's own phase labels
+    is_modified_from_preset: Boolean, nullable=False, default=False, server_default="false"
+    config: JSON, nullable=False, default=dict, server_default="{}" -- type-specific config, shape not enforced at the DB level
+    created_at: DateTime(timezone=True) only, no updated_at, same immutability reasoning as SequenceVersion
+    Add a real unique constraint on (sequence_version_id, step_key) -- no two steps in one version can share a key.
+
+class StepEdge(Base):
+    __tablename__ = "sequence_step_edges"
+    id: UUID pk, default uuid4
+    from_step_id: FK sequence_steps.id, CASCADE, nullable=False, indexed
+    to_step_id: FK sequence_steps.id, CASCADE, nullable=False, indexed
+    condition_label: String(50), nullable=True -- freeform, e.g. "yes", "no", "timeout", "loop"
+    loop_cap: Integer, nullable=True -- only set on edges that form a real loop back to an earlier step; null means not a loop edge
+    created_at: DateTime(timezone=True) only, same immutability reasoning
+
+class SequenceGoal(Base):
+    __tablename__ = "sequence_goals"
+    id: UUID pk, default uuid4
+    sequence_version_id: FK sequence_versions.id, CASCADE, nullable=False, indexed
+    goal_event: String(100), nullable=False -- e.g. "lead.call_booked", matches real behavioral event type strings
+    target_step_id: FK sequence_steps.id, nullable=False
+    applies_to_phase: String(50), nullable=True -- matches Step.phase; null means the goal applies across the whole version, not scoped to one phase
+    created_at: DateTime(timezone=True) only, same immutability reasoning
+
+All FKs use string names in relationship() where relationships exist, per standing rules. Bare FKs with no relationship() where nothing needs to traverse it yet, matching the exact real reasoning already used repeatedly tonight on Lead's own FKs.
+
+3. Write ONE Alembic migration creating all five tables plus the two unique constraints. Get the real fresh alembic head from VERIFY BEFORE ACT, do not trust any hash in this text.
+
+4. Create app/schemas/sequence.py with SequenceBase/Create/Update/Out, SequenceVersionOut (read-only, no Create/Update schemas -- nothing ever creates or updates a SequenceVersion directly through a generic schema; a version is only ever produced by a real "publish a new version" operation, which is a separate future task, not generic CRUD), StepOut, StepEdgeOut, SequenceGoalOut (all read-only for the same reason -- these belong to an immutable version and are never independently created via a generic endpoint).
+
+Do NOT build any CRUD functions, any API router, or any endpoints in this task. Data layer and read-only schemas only. This is the shape; nothing yet reads or writes it through an API.
 
 VERIFY AFTER ACT:
 
 .venv/bin/alembic heads
 .venv/bin/alembic upgrade head
-PGPASSWORD=postgres psql -h localhost -U postgres -d jammpx_dev -c "\d leads" | grep converted_client_id
-grep -n "def transition_lead_stage\|def convert_lead_to_client" app/crud/lead.py app/services/lead_service.py 2>/dev/null
-grep -n "/transition" app/api/leads.py
+
+PGPASSWORD=postgres psql -h localhost -U postgres -d jammpx_dev -c "\d sequences"
+PGPASSWORD=postgres psql -h localhost -U postgres -d jammpx_dev -c "\d sequence_versions"
+PGPASSWORD=postgres psql -h localhost -U postgres -d jammpx_dev -c "\d sequence_steps"
+PGPASSWORD=postgres psql -h localhost -U postgres -d jammpx_dev -c "\d sequence_step_edges"
+PGPASSWORD=postgres psql -h localhost -U postgres -d jammpx_dev -c "\d sequence_goals"
+
 git diff --stat
 
-Paste all real output.
+Paste all real output. Confirm all five tables exist with the real specified shape, confirm both unique constraints exist, confirm a single clean alembic head, confirm the migration applied with no errors.
 
 MANUAL VERIFICATION:
 
-**Restart the backend.** Confirm clean boot. Then Ben will run a real end-to-end test:
-
-1. Attempt POST /leads/{id}/transition with new_stage=lost and no lost_reason. Confirm a real 400, not a 500 or a silent success.
-2. POST the same with new_stage=lost and a real lost_reason. Confirm success, confirm via psql that both stage and lost_reason landed correctly.
-3. Create a fresh test lead, POST /leads/{id}/transition with new_stage=won. Confirm the response includes a client_id. Confirm via psql that a real new row exists in clients with the lead's name/email/phone, and that the lead's own row now shows stage=won and converted_client_id pointing at that real client id.
-
-Report back all real psql output for step 3 especially -- this is the step that proves the actual conversion worked, not just that the endpoint returned 200.
+**Restart the backend.** Confirm clean boot, no import errors. No frontend or browser check needed -- nothing reads this data yet.
 
 GIT:
 
-Do not commit until Ben confirms all three manual steps pass with real evidence, especially the won conversion actually creating a real linked Client row.
+Do not commit until Ben confirms the backend restarts cleanly and all five real table shapes are confirmed via psql.
