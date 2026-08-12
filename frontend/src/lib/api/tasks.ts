@@ -16,6 +16,16 @@ export interface Task {
   updatedAt: string
 }
 
+export interface BulkMemberAdded {
+  user_id: string
+  engagement_ids: string[]
+}
+
+export interface BulkTaskUpdateResponse {
+  updated: number
+  members_added: BulkMemberAdded[]
+}
+
 function mapTask(raw: Record<string, unknown>): Task {
   return {
     id: String(raw.id),
@@ -74,7 +84,7 @@ export const tasksApi = {
     return mapTask(data)
   },
 
-  bulkUpdate: async (ids: string[], update: { status?: string; assigned_to?: string; due_date?: string }): Promise<{ updated: number }> => {
+  bulkUpdate: async (ids: string[], update: { status?: string; assigned_to?: string; due_date?: string }): Promise<BulkTaskUpdateResponse> => {
     const { data } = await api.patch('/tasks/bulk', { ids, update })
     return data
   },

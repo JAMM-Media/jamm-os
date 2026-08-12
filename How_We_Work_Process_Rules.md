@@ -1,6 +1,6 @@
 # How We Work: Verification and Debugging
 
-This file exists because of a specific, repeated failure. Nine separate times, a signal reported success while the thing it was supposed to be watching was broken. Every instance cost real time, and every instance looked fine right up until someone checked by hand.
+This file exists because of a specific, repeated failure. Ten separate times, a signal reported success while the thing it was supposed to be watching was broken. Every instance cost real time, and every instance looked fine right up until someone checked by hand.
 
 These are not style preferences. Each rule below is here because ignoring it already cost us something.
 
@@ -10,7 +10,7 @@ These are not style preferences. Each rule below is here because ignoring it alr
 
 The failure mode is always the same shape. Something reports success. The report is accurate about what it measured. What it measured was not the thing that mattered.
 
-Nine instances so far:
+Ten instances so far:
 
 1. **Unregistered expiry sweep.** The sweep was written, tested, and correct. It was never registered with the scheduler, so it never ran. Nothing errored, because nothing happened.
 2. **Anniversary job logging ERROR under a successful scheduler.** The scheduler reported healthy. The job inside it was failing every run. Scheduler health and job health are different measurements.
@@ -21,10 +21,11 @@ Nine instances so far:
 7. **The test database schema diverging from production.** Seventeen timestamp columns were declared as naive `DateTime()` in the models while the migrations created them as `timestamptz`. Because `conftest.py` builds the test database with `create_all()` from the models, the test suite ran against `TIMESTAMP WITHOUT TIME ZONE` while dev and production ran `WITH TIME ZONE`. Every test passed. Any timezone bug in the affected code would have been invisible to the suite by construction.
 8. **A restore command reporting success after silently failing.** During a negative control, the command that was supposed to restore a mutated file failed on a bad path and printed "restored" anyway. The mutation was still in the file. It was caught only by grepping for the mutation marker instead of trusting the message. This one is a different flavor from the others: not a tool measuring the wrong thing, but a command reporting on an outcome it never checked. Verification steps are themselves subject to this rule. Confirm a restore by inspecting the file, not by reading the message.
 9. **The billed-time-entry delete guard with no test at all.** During the guard-unification refactor (Aug 11), the pre-change sweep for the existing safety net found that the only DELETE test for time entries was the success case. The guard had existed in the service path since it was written, and no test had ever exercised the refusal. It happened to work, but nothing would have gone red if any change had ever broken it, including the refactor about to be performed on it. Caught only because the session checked for the safety net before assuming it. This is a different flavor again: instances one through eight are signals that reported wrongly. This one is the absence of a signal mistaken for the absence of a problem. Nothing was green, because nothing was watching, and those two states are indistinguishable until you go looking for the watcher.
+10. **The only frontend test, unrunnable in a fresh checkout.** During the Phase 0 Item 3 frontend quick fixes (Aug 11), the verification step asked for existing frontend tests to be run. There is exactly one, `frontend/src/lib/concierge/assembleSSEStream.test.ts`, a regression test locking in the SSE reassembly fix so words can never silently glue together across line boundaries again. Its header documents the command to run it: `node --test --import tsx`. But `tsx` is not in `devDependencies` and is not in `node_modules`, and there is no `test` script in `package.json`, so the documented command fails with `ERR_MODULE_NOT_FOUND` on a clean checkout. Forced through with a temporary runner, all seven tests pass, so the test itself is correct. It has simply never been executable by anyone who did not already happen to have `tsx`. A regression test that cannot execute in a fresh checkout is a watcher nobody is watching. This is instance nine's flavor rather than instances one through eight: the absence of a signal mistaken for the absence of a problem. The bug it guards could have returned at any time and nothing would have gone red, because nothing was capable of running.
 
-Instances seven and nine are the purest forms of the pattern. The others are things that failed. Those two never failed. They made a category of failure unobservable, which is worse, because there was nothing to notice.
+Instances seven, nine, and ten are the purest forms of the pattern. The others are things that failed. Those three never failed. They made a category of failure unobservable, which is worse, because there was nothing to notice.
 
-When you find a tenth, add it here with its origin. The list is the point. Recognizing the shape early is worth more than any individual rule below.
+When you find an eleventh, add it here with its origin. The list is the point. Recognizing the shape early is worth more than any individual rule below.
 
 ---
 

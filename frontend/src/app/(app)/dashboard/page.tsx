@@ -302,8 +302,9 @@ function UnsignedDocumentsTable({
       await api.post(`/esign/envelopes/${envelopeId}/remind`)
       toast.success('Reminder sent')
       onActionComplete()
-    } catch {
-      toast.error('Failed to send reminder')
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      toast.error(detail ?? 'Failed to send reminder')
     } finally {
       setPending(null)
     }
@@ -315,8 +316,9 @@ function UnsignedDocumentsTable({
       await api.post(`/esign/envelopes/${envelopeId}/create-followup-task`)
       toast.success('Follow-up task created')
       onActionComplete()
-    } catch {
-      toast.error('Failed to create task')
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      toast.error(detail ?? 'Failed to create task')
     } finally {
       setPending(null)
     }

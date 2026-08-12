@@ -154,8 +154,9 @@ export default function TasksPage() {
       setSelectedIds(new Set())
       toast.success(`Reassigned ${ids.length} task${ids.length !== 1 ? 's' : ''}`)
       refetch()
-    } catch {
-      toast.error('Reassign failed')
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      toast.error(detail ?? 'Reassign failed')
     } finally {
       setBulkLoading(false)
     }
