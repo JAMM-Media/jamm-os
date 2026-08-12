@@ -487,9 +487,20 @@ export default function LetterTemplatesTab() {
       </div>
 
       {loading ? (
-        <div className="space-y-2">
-          {[1,2,3,4].map((i) => (
-            <div key={i} className="h-16 rounded-[8px] bg-[#D5D8DE] dark:bg-[#444444] animate-pulse" />
+        <div className="flex flex-col gap-2">
+          {[1, 2, 3, 4].map((i) => (
+            <div key={i} className="flex items-center gap-3 px-4 py-3 rounded-[8px] bg-surface-card dark:bg-dark-card border border-surface-border dark:border-dark-border">
+              <div className="w-2 h-2 rounded-full bg-[#D5D8DE] dark:bg-[#444444] flex-shrink-0" />
+              <div className="flex-1 flex flex-col gap-1.5 min-w-0">
+                <div className="h-3 w-40 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+                <div className="h-3 w-24 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+              </div>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <div className="h-5 w-9 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded-full" />
+                <div className="h-7 w-16 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded-[6px]" />
+                <div className="h-7 w-10 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded-[6px]" />
+              </div>
+            </div>
           ))}
         </div>
       ) : templates.length === 0 ? (

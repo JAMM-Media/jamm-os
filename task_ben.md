@@ -74,7 +74,7 @@ This section exists because a past session confidently claimed specific files we
 
 # Section 3 - The task
 
-TASK: Fix the two remaining "header-only skeleton" gaps from tonight's audit — billing/[id] and documents/[id]. Both currently skeleton only the breadcrumb/title area (billing/[id]: 3 divs; documents/[id]: icon + title/meta divs), and the actual body content pops in blank once data resolves, same class of bug already fixed tonight on clients/[id], engagements/[id], and tasks/[id].
+TASK: Fix the generic/unshaped or spinner-only loading states on nine settings-area files from tonight's skeleton audit — team, my-integrations, settings/page, settings/billing, AutomationsTab, EmailCalendarTab, LetterTemplatesTab, SecurityTab, PortalBrandingTab.
 
 USE: claude sonnet
 
@@ -88,45 +88,64 @@ VERIFY BEFORE ACT:
 
 cat "src/app/(app)/dashboard/page.tsx" | grep -n "Skeleton" -A 8
 
-Reference standard, already used successfully three times tonight: named, content-shaped skeleton components using surface-border/dark-border tokens and animate-pulse, matching real content layout.
+Reference standard, already used successfully five times tonight: named, content-shaped skeleton components using surface-border/dark-border tokens and animate-pulse, matching real content layout.
 
-Then view both target files in full to determine their real body content shape before writing anything:
+Then, for each of the nine files, view enough of the real file to determine (a) exactly what the current loading state looks like and (b) what the real loaded content actually renders, so the skeleton can match it precisely rather than being guessed:
 
-cat "src/app/(app)/billing/[id]/page.tsx"
-cat "src/app/(app)/documents/[id]/page.tsx"
+cat "src/app/(app)/settings/team/page.tsx" | grep -n "animate-pulse" -B 5 -A 15
+cat "src/app/(app)/settings/my-integrations/page.tsx" | grep -n "animate-pulse" -B 10 -A 5
+cat "src/app/(app)/settings/page.tsx" | grep -n "animate-pulse" -B 10 -A 10
+cat "src/app/(app)/settings/billing/page.tsx" | grep -n "animate-pulse" -B 10 -A 10
+cat frontend/src/components/settings/AutomationsTab.tsx | grep -n "SkeletonRow" -B 5 -A 20
+cat frontend/src/components/settings/EmailCalendarTab.tsx | grep -n "animate-pulse" -B 10 -A 5
+cat frontend/src/components/settings/LetterTemplatesTab.tsx | grep -n "animate-pulse" -B 10 -A 5
+cat frontend/src/components/settings/SecurityTab.tsx | grep -n "224" 
+sed -n '200,240p' frontend/src/components/settings/SecurityTab.tsx
+cat frontend/src/components/settings/PortalBrandingTab.tsx | grep -n "animate-pulse" -B 10 -A 5
 
-For billing/[id]: confirm the current skeleton is 3 divs (lines 21-23, matching header/breadcrumb only per prior grep), and identify what the real page body renders once data loads — likely invoice line items, payment details, client info, or similar. Read the actual JSX past the loading guard to determine the real shape, do not assume.
+Note on SecurityTab.tsx specifically: this file has many Loader2 instances. Only the one around line 224 is a genuine initial-page-data-load spinner. All others (savingPassword, setupLoading, verifying, regenerating, disabling) are button-action spinners triggered by user clicks, not data-loading states — do not touch those, they are correct as-is and out of scope.
 
-For documents/[id]: confirm the current skeleton covers only an icon + title/meta row (per prior grep), and identify the real body content — likely a document preview area, metadata fields, version history, or similar. Read the actual JSX to determine the real shape.
+Note on AutomationsTab.tsx specifically: it already has a SkeletonRow component with title/subtitle/meta bars and a toggle-shaped placeholder. Before rebuilding it, compare it against the real automation row it's meant to represent (search this same file for how a real, loaded automation row renders) and determine honestly whether SkeletonRow already matches that shape well, or whether it needs adjustment. Report this determination explicitly rather than assuming either way.
 
-If either file's structure doesn't match what's described, stop and report the actual content instead of proceeding on that file.
+If any file's current state doesn't match what a targeted grep suggests, stop and report the actual content instead of proceeding on that file with an assumption.
 
 CHANGE INSTRUCTIONS:
 
-For each file, build a body skeleton matching that file's real content layout, following the dashboard reference pattern (sized/colored placeholder divs matching real content, not generic boxes), and wire it in to appear alongside the existing header skeleton so both resolve together:
+For each of the nine files, based on your own investigation of its real loaded content:
 
-1. billing/[id]/page.tsx — build a skeleton named descriptively (e.g. BillingDetailBodySkeleton) matching the real invoice detail body shape.
+1. team/page.tsx — replace the generic h-2 w-[60%] per-cell bars with a real skeleton matching the actual team member row's real columns (name, role, email, status, etc. — confirm real columns from the loaded row markup).
 
-2. documents/[id]/page.tsx — build a skeleton named descriptively (e.g. DocumentDetailBodySkeleton) matching the real document detail body shape.
+2. my-integrations/page.tsx — replace the generic h-[88px] card block with a real skeleton matching the actual integration card's real layout (icon, name, description, connect/status button — confirm from real card markup).
 
-Do not touch the existing header skeletons themselves, only add body coverage. Do not touch any other file — this task is scoped to these two only.
+3. settings/page.tsx — this file has multiple distinct loading spots (an h-[88px] integrations block, three h-3 w-[120px] bars, and an h-2 w-[60%] bar). Address each with a skeleton matching its own real nearby content, treating them as separate small fixes within the same file rather than one unified change.
+
+4. settings/billing/page.tsx — replace the single h-8 w-32 bar with a real skeleton matching the actual subscription status section's real layout (likely plan name, price, renewal date, or similar — confirm from real content).
+
+5. AutomationsTab.tsx — if your investigation in VERIFY BEFORE ACT found SkeletonRow does not yet match the real automation row shape, fix it to match. If it already matches well, state that explicitly and make no change to this file.
+
+6. EmailCalendarTab.tsx — replace the generic h-12 rounded-lg bars with a real skeleton matching the actual connected-account row's real layout (confirm from real markup — likely provider icon, email, sync status).
+
+7. LetterTemplatesTab.tsx — replace the generic h-16 blocks with a real skeleton matching the actual template row's real layout (template name, type, last modified, or similar — confirm from real markup).
+
+8. SecurityTab.tsx — replace the single centered Loader2 spinner at the genuine initial-data-load spot (confirmed in VERIFY BEFORE ACT) with a real skeleton matching the tab's real loaded content shape (likely 2FA status, password change form, backup codes section — confirm from real markup). Do not touch any of the button-action Loader2 spinners.
+
+9. PortalBrandingTab.tsx — the current skeleton (a label bar + input bar) is already reasonably close to a real form field shape. Confirm this matches the real field it represents; if it does, this file may need no change or only a minor width/sizing adjustment — do not force an unnecessary rebuild if it's already adequate.
+
+Name every new/changed skeleton component descriptively, following the naming convention established throughout tonight's work. Do not touch any file not in this list of nine, and do not touch action-button spinners anywhere.
 
 VERIFY AFTER ACT:
 
-grep -n "Skeleton" "src/app/(app)/billing/[id]/page.tsx"
-grep -n "Skeleton" "src/app/(app)/documents/[id]/page.tsx"
-
-Confirm each file now has both its original header skeleton and a new body skeleton component.
+For each of the nine files, run a grep confirming the skeleton/loading state that now exists.
 
 git diff --stat
 
-Confirm the diff touches only these two files.
+Confirm the diff touches only these nine files (fewer, if AutomationsTab or PortalBrandingTab needed no change — report explicitly which files were left untouched and why).
 
 MANUAL VERIFICATION:
 
 Ben will run npm run build himself in the frontend directory and confirm it's clean before trusting this as done.
 
-**Restart the frontend.** With network throttled to Slow 3G in devtools, visit a real invoice detail page and a real document detail page. Confirm the body content area now shows a real, shaped skeleton during load instead of popping in blank after the header skeleton disappears. Report back plainly, page by page.
+**Restart the frontend.** With network throttled to Slow 3G in devtools, visit Settings > Team, Settings > My Integrations, the main Settings page, Settings > Billing, and the Automations, Email & Calendar, Letter Templates, Security, and Portal Branding tabs. Confirm each now shows a real, content-shaped skeleton (or confirm no change was needed where noted). Report back plainly, file by file.
 
 GIT:
 

@@ -220,8 +220,35 @@ export default function SecurityTab() {
 
   if (loading) {
     return (
-      <div className="flex justify-center py-12">
-        <Loader2 className="w-5 h-5 animate-spin text-[#6B7280]" />
+      <div className="flex flex-col gap-4 max-w-lg">
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-1.5">
+            <div className="h-4 w-36 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+            <div className="h-3 w-64 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+          </div>
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="flex items-start gap-3 rounded-[8px] px-3.5 py-3 border border-[#C8CDD6] dark:border-[#444444] bg-[#EDEEF0] dark:bg-[#2D2D2D]">
+              <div className="mt-0.5 w-4 h-4 rounded-full bg-[#D5D8DE] dark:bg-[#555555] animate-pulse flex-shrink-0" />
+              <div className="flex flex-col gap-1.5 flex-1">
+                <div className="h-3 w-32 bg-[#D5D8DE] dark:bg-[#555555] animate-pulse rounded" />
+                <div className="h-3 w-48 bg-[#D5D8DE] dark:bg-[#555555] animate-pulse rounded" />
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="border-t border-[0.5px] border-[#C8CDD6] dark:border-[#484848] my-2" />
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-1.5">
+            <div className="h-4 w-32 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+            <div className="h-3 w-52 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+          </div>
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="flex items-center justify-between px-3 py-3 rounded-[8px] border border-[#C8CDD6] dark:border-[#444444] bg-[#EDEEF0] dark:bg-[#2D2D2D]">
+              <div className="h-3 w-40 bg-[#D5D8DE] dark:bg-[#555555] animate-pulse rounded" />
+              <div className="h-5 w-9 bg-[#D5D8DE] dark:bg-[#555555] animate-pulse rounded-full" />
+            </div>
+          ))}
+        </div>
       </div>
     )
   }
