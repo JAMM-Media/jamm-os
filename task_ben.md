@@ -74,7 +74,7 @@ This section exists because a past session confidently claimed specific files we
 
 # Section 3 - The task
 
-TASK: Build inbound reply capture for the nurture engine, per contract Section 6.5. A real Postmark inbound webhook that receives parsed replies, matches them to the correct Lead via plus-addressing, writes them to LeadMessage, and fires a behavioral event. Also updates EmailService to support the dedicated broadcast stream and a per-lead Reply-To address, since nurture email needs both and neither currently exists.
+TASK: Build the suppression list and unsubscribe mechanism for the nurture engine, per contract Section 6.6. Legally required before any real nurture email can send -- CAN-SPAM requires a working unsubscribe link in every marketing send, and a suppression list the engine checks before every send.
 
 USE: claude fable-5
 
@@ -86,63 +86,80 @@ State plainly that no path in this task resolves against /mnt/c/Users or any Win
 
 VERIFY BEFORE ACT:
 
-cat app/services/email_service.py
-cat app/core/config.py
-cat app/models/lead_message.py
-cat app/services/behavioral_log.py
-grep -n "POSTMARK_BROADCAST_STREAM_ID\|POSTMARK_INBOUND_WEBHOOK" app/core/config.py .env
-grep -n "def log_event" -A20 app/services/behavioral_log.py
+cat app/services/portal_magic_link.py
+cat app/models/portal_session.py
+cat app/models/enrollment.py
+grep -n "class EnrollmentStatus" -A10 app/core/enums.py
+.venv/bin/alembic heads
 
-Paste all real output. Confirm POSTMARK_BROADCAST_STREAM_ID, POSTMARK_INBOUND_WEBHOOK_USERNAME, and POSTMARK_INBOUND_WEBHOOK_PASSWORD are all real, present values in .env before writing anything that depends on them existing. Confirm the real log_event() signature before firing any event. If any of the three env vars are missing or config.py has no field for them yet, stop and report exactly what's missing rather than guessing a fallback.
+Paste all real output. Confirm the real token generate/hash/verify pattern from portal_magic_link.py before copying it. Confirm the real fresh alembic head, live -- do not trust any hash written in this task's own text, this exact mistake has happened multiple times tonight.
 
 WHAT THIS IS:
 
-The real inbound address is a600f6b42ca483cbfacac9789f91d74f@inbound.postmarkapp.com, already live and confirmed working in Postmark, no DNS setup needed. Postmark supports plus-addressing on inbound mail: a message sent to a600f6b42ca483cbfacac9789f91d74f+{lead_id}@inbound.postmarkapp.com still delivers normally, and Postmark's webhook payload includes the {lead_id} portion as a top-level field called MailboxHash. This is the real, confirmed mechanism for matching an inbound reply to the correct lead -- no tag-matching heuristics, no custom domain.
+Two genuinely separate mechanisms working together:
 
-Without this, every wait_until_event step in the future nurture engine silently degrades to a plain timer -- this is why the contract calls this mandatory infrastructure, ships with the engine, not after.
+1. SuppressedEmail -- a permanent, firm-scoped table of email addresses that must never receive nurture mail. Checked by plain email lookup before every nurture send (that check itself is future step-execution logic, NOT built in this task -- this task only builds the table and the lookup function it will call).
+
+2. An unsubscribe token tied to one specific Enrollment -- generated once per enrollment (or regenerated as needed), following the EXACT real pattern already proven in portal_magic_link.py: secrets.token_hex(32) for the raw token, only the SHA-256 hash ever stored, the raw value only exists transiently to embed in an email link. Clicking the resulting link (no login required, matching the magic-link precedent of a safe unauthenticated action gated by an unguessable hashed token) does three real things together: adds the enrollment's lead's email to SuppressedEmail for that firm, sets the enrollment's status to EnrollmentStatus.unsubscribed (this value already exists, added earlier tonight), and fires a real behavioral event.
 
 CHANGE INSTRUCTIONS:
 
-1. In app/core/config.py, add three new Settings fields if not already confirmed present from VERIFY BEFORE ACT: POSTMARK_BROADCAST_STREAM_ID: str = "", POSTMARK_INBOUND_WEBHOOK_USERNAME: str = "", POSTMARK_INBOUND_WEBHOOK_PASSWORD: str = "".
+1. Create app/models/suppressed_email.py:
 
-2. In app/services/email_service.py, modify EmailService._send to accept a new optional parameter message_stream: str = "outbound" (default preserves every existing caller's current behavior exactly, zero risk of regression), and use it in place of the currently hardcoded "MessageStream": "outbound" on line 52. Add a new public method send_nurture_email(to_email, subject, html_body, from_name, reply_to, display_name=None, sending_domain=None) that calls _send with message_stream set from settings.POSTMARK_BROADCAST_STREAM_ID. This is the only method future nurture-sending code should ever call -- do not wire it into any actual sequence step logic in this task, that's future work, this task only makes the capability exist and callable.
+class SuppressedEmail(Base):
+    __tablename__ = "suppressed_emails"
+    id: UUID pk, default uuid4
+    firm_id: FK firms.id, CASCADE, nullable=False, indexed
+    email: String(255), nullable=False -- store lowercased, normalize in the CRUD layer, not the DB
+    reason: String(50), nullable=True -- freeform for now, e.g. "unsubscribed", "bounced" (bounced is not built in this task, just leaving room)
+    suppressed_at: DateTime(timezone=True), default lambda pattern, nullable=False
+    Add a real unique constraint on (firm_id, email) -- an email is either suppressed for a firm or it isn't, no duplicate rows.
 
-Add a real helper: build_lead_reply_to(lead_id) -> str, returning the real plus-addressed format: f"a600f6b42ca483cbfacac9789f91d74f+{lead_id}@inbound.postmarkapp.com". Hardcode the real base address as a module-level constant with a clear comment that this is JAMM's real Postmark server's auto-assigned inbound address, confirmed live -- not a placeholder. If a custom inbound domain is ever set up later, this constant is the one place that changes.
+2. Add unsubscribe_token_hash: String(64), nullable=True, indexed and unsubscribe_token_expires_at: DateTime(timezone=True), nullable=True to the EXISTING Enrollment model in app/models/enrollment.py. Nullable because not every enrollment necessarily has an active unsubscribe link generated at every moment -- generation is a real operation, not automatic on enrollment creation, and that generation operation is NOT built in this task (it belongs with the future step-execution engine, which is what will actually construct and send emails). This task only adds the columns and the verification logic that CONSUMES a token once one exists.
 
-3. Create app/api/webhooks/postmark_inbound.py (create the webhooks/ subdirectory if it doesn't exist; check VERIFY BEFORE ACT output for any existing app/api/webhooks/ directory or similar grouping pattern first and match it if one exists):
+3. Write ONE Alembic migration: create suppressed_emails with its unique constraint, add the two new columns to enrollments. Get the real fresh alembic head from VERIFY BEFORE ACT.
 
-Use fastapi.security.HTTPBasic and HTTPBasicCredentials as a real FastAPI dependency (this is the correct one -- distinct from requests.auth.HTTPBasicAuth used elsewhere in this codebase for outbound calls to Dropbox Sign, confirmed during this task's research; do not confuse the two). Verify the supplied credentials against settings.POSTMARK_INBOUND_WEBHOOK_USERNAME and POSTMARK_INBOUND_WEBHOOK_PASSWORD using a real constant-time comparison (secrets.compare_digest), raise 401 on mismatch.
+4. Create app/crud/suppressed_email.py:
+   - is_suppressed(db, firm_id, email) -> bool -- the real lookup function future send-time code will call. Normalize email to lowercase before comparing.
+   - add_suppression(db, firm_id, email, reason=None) -> SuppressedEmail -- real upsert-safe logic: if the (firm_id, email) pair already exists, do nothing and return the existing row rather than raising an IntegrityError on the unique constraint. This matters because a lead could click an unsubscribe link twice, or unsubscribe through two different enrollments with the same email.
 
-POST /webhooks/postmark-inbound, protected by the above. Real Postmark inbound webhook payload includes (among many fields): MailboxHash, TextBody, HtmlBody (may be absent), From, FromFull, Subject, MessageID. Parse MailboxHash as the lead's UUID. If MailboxHash is missing, malformed, or does not match any real Lead for any firm (query across firms is correct here since the webhook has no firm-scoping context of its own -- MailboxHash IS the only real routing key), log a clear warning and return 200 anyway (Postmark expects 200 to avoid retry storms; a malformed or unmatched inbound email is not the caller's fault to retry against). Do not raise a 4xx/5xx for an unmatched lead -- only for real auth failure.
+5. Create app/services/unsubscribe_service.py, following the exact real hash/verify pattern from portal_magic_link.py:
+   - verify_and_process_unsubscribe(db, raw_token) -> bool -- hash the incoming raw token with SHA-256, look up the Enrollment by unsubscribe_token_hash, check unsubscribe_token_expires_at has not passed. If not found or expired, return False (do not raise -- an expired or invalid unsubscribe link should show a plain "this link is no longer valid" state, not crash). If found and valid: call add_suppression for that enrollment's lead's email under that enrollment's firm_id, set the enrollment's status to EnrollmentStatus.unsubscribed and stopped_at to now, clear unsubscribe_token_hash and unsubscribe_token_expires_at (single-use, matching the real magic-link precedent of tokens not being reusable after their purpose is served), commit, fire a real behavioral event using the real confirmed log_event() signature -- event name lead.unsubscribed (not in the contract's Section 9.1 candidate list verbatim, but consistent with its naming convention; note this plainly in your summary as a task-introduced event name Andrew should bless alongside the others before deploy). Return True.
 
-On a real match: create a LeadMessage with lead_id from the matched lead, firm_id from that lead, sender_role="lead", sender_id=None, body from TextBody (fall back to a stripped version of HtmlBody only if TextBody is empty -- prefer TextBody, real inbound email nearly always includes both), source="inbound_email". Fire a real behavioral event using the real confirmed log_event() signature: event name lead.email_replied, per the contract's own Section 9.1 candidate list. Do NOT attempt to advance any Enrollment's current_step_id or evaluate any wait_until_event condition in this task -- that is real step-execution engine logic, not built yet, explicitly out of scope here. This task only captures the reply and fires the event; a future task consumes that event.
+6. Create app/api/unsubscribe.py: GET /unsubscribe/{token}, fully public, no auth dependency of any kind (matching the intake form and inbound webhook's real precedent of genuinely public endpoints elsewhere in this codebase). Calls verify_and_process_unsubscribe. Return a simple real response indicating success or an already-invalid/expired state -- this is a backend-only task, no frontend page in this task; a plain JSON response is sufficient for now, a real frontend confirmation page is future work, flag this plainly rather than silently building UI as scope creep.
 
-4. Register the new router in app/main.py, following the exact real existing include_router pattern and placement.
+Register the new router in app/main.py, following the exact real existing include_router pattern.
+
+Do NOT build the token-generation function that creates a fresh unsubscribe token for an enrollment in this task -- that's tightly coupled to the future step-execution engine's email-sending logic (a token should be generated at the moment an email is actually about to send, not speculatively ahead of time). This task only builds what happens when an already-generated token is used.
 
 VERIFY AFTER ACT:
 
-grep -n "def send_nurture_email\|def build_lead_reply_to" app/services/email_service.py
-grep -n "message_stream" app/services/email_service.py
-find app/api/webhooks -iname "postmark_inbound.py"
-grep -n "include_router.*postmark_inbound\|include_router.*webhooks" app/main.py
+.venv/bin/alembic heads
+.venv/bin/alembic upgrade head
+
+PGPASSWORD=postgres psql -h localhost -U postgres -d jammpx_dev -c "\d suppressed_emails"
+PGPASSWORD=postgres psql -h localhost -U postgres -d jammpx_dev -c "\d enrollments" | grep unsubscribe
+
 git diff --stat
 
-Paste all real output. Confirm the new methods exist, confirm message_stream is now a real parameter not a hardcoded string, confirm the router file exists and is mounted.
+Paste all real output. Confirm the real table shape, confirm the unique constraint, confirm the two new columns landed on enrollments, confirm single clean alembic head and clean upgrade.
 
 MANUAL VERIFICATION:
 
-**Restart the backend.** Confirm clean boot, no import errors. Then Ben will run a real test:
+**Restart the backend.** Confirm clean boot, no import errors. Then Ben will run a real test. Claude Code must provide the EXACT real SQL and curl commands in its summary, using a real enrollment row -- since no enrollment currently has an unsubscribe_token_hash set (nothing generates one yet), Ben will need to manually set one via a real UPDATE statement first, using a real raw token and its real SHA-256 hash that Claude Code computes and provides explicitly (do not make Ben compute a hash by hand -- provide the exact real python3 -c command to generate a matching raw-token/hash pair together).
 
-1. curl -u jammpx_inbound:<the real password from .env> -X POST http://localhost:8000/webhooks/postmark-inbound -H "Content-Type: application/json" -d a real, minimal, realistic Postmark inbound JSON payload (Claude Code should provide this exact real curl command with a real Lead's UUID from the local database substituted into MailboxHash in its summary, so Ben can run it directly).
+Real test sequence Claude Code must lay out explicitly:
+1. Generate a real raw_token and its real sha256 hash together (paired, not independently generated).
+2. UPDATE a real enrollment row, setting unsubscribe_token_hash to the real hash and unsubscribe_token_expires_at to a future timestamp.
+3. GET /unsubscribe/{raw_token} -- the RAW token, never the hash, in the URL.
+4. Confirm via psql: the enrollment's status is now unsubscribed, stopped_at is set, unsubscribe_token_hash is now null.
+5. Confirm via psql: a real row exists in suppressed_emails for that lead's email under the correct firm_id.
+6. Hit the SAME URL a second time. Confirm it now returns the invalid/expired state, not a second success -- proving the token is genuinely single-use.
 
-2. Confirm a 200 response.
-
-3. Check via psql: SELECT sender_role, body, source FROM lead_messages WHERE lead_id = '<the real lead id used>' ORDER BY created_at DESC LIMIT 1;  Confirm a real row landed with sender_role='lead' and the correct body text.
-
-4. Attempt the same curl WITHOUT the -u credentials. Confirm a real 401, not a silent 200.
-
-Report back all real output for all four steps.
+CRITICAL SECURITY REMINDER FOR THIS TASK'S SUMMARY: do not print any real generated token, hash, or credential value directly in your summary text where Ben would need to paste it back into this chat for confirmation. Provide the exact commands Ben should run himself in his own terminal to generate and use these values locally, and ask Ben to confirm success by describing the RESULT (e.g. "the psql query showed status=unsubscribed"), not by pasting the raw token or hash itself back into this conversation. This is a real, repeated pattern from tonight -- three separate credential leaks already happened this session because task summaries printed real secret values in plaintext.
 
 GIT:
 
-Do not commit until Ben confirms all four manual verification steps pass with real evidence, especially the 401 rejection when credentials are missing -- an unsecured webhook accepting forged replies from anyone on the internet is a real, serious risk, not a nice-to-have check.
+Do not commit until Ben confirms all six real verification steps pass, described by their results, not by pasting any raw token or hash value into this chat.
+
+MANUAL VERIFICATION NOTE FOR BEN: when Claude Code gives you the token-generation command, run it yourself and keep the output in your own terminal. When you report back here, describe what happened rather than pasting the actual token or hash.

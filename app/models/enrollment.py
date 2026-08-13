@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 import sqlalchemy as sa
-from sqlalchemy import DateTime, JSON, ForeignKey
+from sqlalchemy import DateTime, JSON, ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base_class import Base
@@ -101,6 +101,20 @@ class Enrollment(Base):
         default=lambda: datetime.now(timezone.utc),
         onupdate=lambda: datetime.now(timezone.utc),
         nullable=False,
+    )
+
+    # Nullable -- generated at email-send time, not at enrollment creation.
+    # SHA-256 hex digest (64 chars). Raw token only exists transiently in email link.
+    # Follows the exact same pattern as PortalSession.magic_link_token_hash.
+    unsubscribe_token_hash: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+        index=True,
+    )
+
+    unsubscribe_token_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
     )
 
     lead: Mapped["Lead"] = relationship("Lead", back_populates="enrollments")
