@@ -74,7 +74,7 @@ This section exists because a past session confidently claimed specific files we
 
 # Section 3 - The task
 
-TASK 4a OF N: Write tests for stage-transition validity, per Andrew's Step 4 instruction ("stage transitions follow the six-stage pipeline and invalid transitions are rejected"). Real research already done: transition_lead_stage currently has NO validation preventing an invalid transition beyond lost requiring lost_reason. This task must surface that gap honestly, not paper over it with tests asserting protection that does not exist.
+TASK 4b OF N: Investigate and honestly report on sequence version-pinning, per Andrew's Step 4 instruction ("a lead enrolled in a sequence stays on the version it enrolled under; editing the sequence never affects mid-walk leads"). Real research already done before this task: no code anywhere in the codebase writes to Enrollment.sequence_version_id after creation, and no code anywhere writes to Sequence.current_version_id at all. There is currently no real operation to publish a new SequenceVersion or move a Sequence's current_version_id forward. This task must determine whether this guarantee is meaningfully testable today, and report honestly if it is not, rather than writing a test that exercises nothing real.
 
 USE: claude sonnet
 
@@ -86,55 +86,59 @@ State plainly that no path in this task resolves against /mnt/c/Users or any Win
 
 VERIFY BEFORE ACT:
 
-grep -n "def transition_lead_stage" -A 60 app/crud/lead.py
-grep -n "class LeadStage" -A 10 app/core/enums.py
+cat app/models/sequence.py
+cat app/models/enrollment.py
+grep -rln "publish\|new_version\|create_version" app/crud/ app/services/ app/api/ 2>/dev/null
+grep -rn "sequence_version_id\|current_version_id" app/ --include="*.py" | grep -v "tests/"
 
-Paste all real output, the full function this time, not just the first 40 lines already seen. Confirm the complete real current transition logic for every stage value, not just won and lost.
+Paste all real output. Independently confirm the research finding stated in this task's own description -- do not trust it blindly, verify it yourself with fresh real commands, since this exact kind of self-verification has been the standing discipline all session. If you find any real code path this task's description missed that DOES touch sequence_version_id or current_version_id after creation, stop and report that specifically, since it would mean the finding in this task's own description is wrong and the real testable behavior is different from what is assumed here.
 
 WHAT THIS IS:
 
-Real finding from research done before this task: transition_lead_stage has no check on the lead's CURRENT stage before applying a new one. Nothing prevents transitioning a lead already at won back to any earlier stage, nothing prevents transitioning a lead at lost forward again, and stages other than won/lost are applied with zero validation of any kind (confirmed from the original build task's own stated design: "For any other stage value: apply normally, no special handling"). The contract's Section 7.1 says the pipeline is "ordered but skippable" -- meaning forward skips (e.g. identified straight to proposal, a walk-in ready to sign) are legitimate by design, but nothing in the contract suggests backward moves or moves off a terminal state (won, lost) should be allowed, and the code currently does not distinguish these cases at all.
+Andrew's Step 4 instruction treats version-pinning as a locked design guarantee to test. The real current state of the codebase is that no mechanism exists yet that could violate this guarantee, because no mechanism exists yet to change a sequence's current version at all. This is structurally different from, for example, the provenance-precedence guarantee tested in Step 3, where a real function (update_lead_with_precedence) actively enforces the rule against real attempted violations. Here there is no analogous function to test, because the feature that would need to respect pinning (editing a sequence, publishing a new version) has not been built.
 
 CHANGE INSTRUCTIONS:
 
-Create tests/test_stage_transitions.py.
+Create tests/test_sequence_version_pinning.py.
 
-First, write tests that document and prove the REAL CURRENT behavior honestly, even where that behavior is permissive:
+Do NOT write a test that fabricates a fake "edit the sequence" operation by directly mutating rows to simulate what a future publish operation might someday do. That would be testing invented behavior, not real shipped behavior, and would produce a green test that proves nothing about the real system today.
 
-1. test_forward_skip_is_allowed: a lead at identified can transition directly to proposal (skipping contacted and call_booked), per the contract's explicit "ordered but skippable" design. Assert this succeeds, since it is intentional, not a bug.
+Instead, write these real, honest tests:
 
-2. test_lost_requires_lost_reason: already proven live tonight, the automated version -- transitioning to lost with no lost_reason raises ValueError, with lost_reason it succeeds and both fields are set correctly.
+1. test_enrollment_sequence_version_id_is_set_at_creation_and_immutable_by_schema: create a real Sequence, a real SequenceVersion, and a real Enrollment pointing at that version. Confirm the real EnrollmentOut schema is read-only for this field where relevant, and confirm directly via the real database (a fresh query after creation) that the value matches what was set at creation. This proves the field holds its value through a normal read cycle, which is the truthful, narrow claim currently verifiable.
 
-3. test_won_creates_client_and_sets_converted_client_id: already proven live tonight, the automated version.
+2. test_no_code_path_currently_modifies_enrollment_sequence_version_id: a real, deliberate structural test. Search the real committed source tree (using Python's ast module or a real grep-based check performed AT TEST TIME, not hardcoded as a static assumption) for any assignment to .sequence_version_id anywhere under app/ outside of app/models/enrollment.py's own column definition and test files. Assert this search finds nothing. This is a real, enforceable test: if someone later adds code that reassigns this field without updating this guard test, the test will fail and force a conscious decision, which is exactly the kind of protection appropriate for a guarantee that today exists by absence rather than by active enforcement.
 
-Then, write tests that PROBE the real gap rather than assume protection exists:
+3. test_creating_new_sequence_version_does_not_alter_existing_enrollment: create a Sequence, SequenceVersion 1, and an Enrollment pinned to version 1. Create a second real SequenceVersion (version 2) for the same Sequence, following the exact real immutable-creation pattern already used elsewhere in this codebase (a new row, not an edit). Re-fetch the original Enrollment from the database. Assert its sequence_version_id is unchanged and still equals version 1's id. This is a real, legitimate test of the actual guarantee, using only operations that genuinely exist today (creating a new version is real; nothing needs to be invented), and it would genuinely catch a regression if some future code carelessly updated all enrollments when a new version is created.
 
-4. test_transition_from_won_backward_is_currently_unblocked: attempt to transition a lead already at won back to contacted. Per real current code, this will SUCCEED (no error, no rejection). Write this test to assert the real current behavior -- it succeeds -- with a clear comment and a clear test name stating this is a gap, not a verified-safe design, so this is honestly on record as a finding rather than silently passing as if it were intended protection.
+In the test file's module docstring, state plainly and honestly: full version-pinning as a behavioral guarantee (a sequence being actively edited, or a real publish operation, correctly leaving mid-walk enrollments untouched) is not fully testable today, because no real edit or publish operation exists yet. These tests verify what is genuinely true right now: the field is set correctly at creation, nothing currently touches it afterward, and creating a new version in isolation does not disturb existing enrollments. Testing the full guarantee under real editing conditions is a task for whenever the sequence-editing feature itself is built, and should be added at that time, not simulated now.
 
-5. test_transition_from_lost_forward_is_currently_unblocked: same real probe, attempting lost back to identified or forward to call_booked. Assert the real current permissive behavior, documented the same honest way.
+TEST DISCIPLINE:
 
-Do NOT write any test asserting that invalid transitions ARE rejected, since that would be asserting behavior that does not exist in the real shipped code, which is exactly the kind of false-passing test Andrew's TEST DISCIPLINE section prohibits ("never weaken an assertion to make a test pass").
+Test #2 is a real guard test and must be watched to fail: temporarily add a genuine (but test-only, clearly marked) line of code somewhere real in app/ that assigns to .sequence_version_id, confirm test #2 goes red and correctly identifies the real file and line it found, remove the test-only line, confirm green again, then run git diff to confirm the working tree is clean. Report the real before and after output in your summary.
 
-At the top of the test file, include a real, clearly labeled module docstring section titled "KNOWN GAP" stating plainly: transition_lead_stage does not validate that a requested stage transition is a legitimate forward move or reject transitions away from a terminal state (won, lost). This should be flagged to Andrew as a real product decision needed (should terminal states be locked? should backward moves require a reason, similar to lost_reason?) before this gap is either fixed or explicitly accepted as intentional flexibility.
+Never weaken an assertion to make a test pass. If this investigation surfaces something different from what this task assumes, report it plainly rather than forcing the originally planned tests to fit.
+
+No em dashes anywhere in any test file, string, comment, or test name.
 
 VERIFY AFTER ACT:
 
-.venv/bin/pytest tests/test_stage_transitions.py -v 2>&1 | tail -60
+.venv/bin/pytest tests/test_sequence_version_pinning.py -v 2>&1 | tail -60
 
 Paste the real, full output.
 
 Then:
 
-.venv/bin/pytest > /tmp/pytest_output_step4a.txt 2>&1
+.venv/bin/pytest > /tmp/pytest_output_step4b.txt 2>&1
 echo "REAL EXIT CODE: $?"
-tail -40 /tmp/pytest_output_step4a.txt
+tail -40 /tmp/pytest_output_step4b.txt
 
-Paste all real output. Confirm the real new test count and that the only failures present are the same 9 pre-existing Stripe failures.
+Paste all real output.
 
 MANUAL VERIFICATION:
 
-No red/green guard-test cycle needed for this specific task, since these tests document real current behavior rather than guard a specific protection mechanism. Ben will review the KNOWN GAP docstring for accuracy and decide whether to raise it with Andrew before or alongside committing.
+Ben will independently re-run the real guard-test cycle for test #2 himself, live, same as every prior guard test this session, before treating this as complete.
 
 GIT:
 
-Do not commit until Ben has reviewed the KNOWN GAP finding and confirms the real test output.
+Do not commit until Ben confirms the real red/green cycle output he has watched directly, plus the real full suite output.
