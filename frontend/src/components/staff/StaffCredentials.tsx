@@ -164,11 +164,14 @@ export function StaffCredentials() {
               {credLoading ? (
                 Array.from({ length: 3 }).map((_, i) => (
                   <tr key={i} className="bg-[#E4E6EA] dark:bg-[#2D2D2D] border-b border-[0.5px] border-[#D5D8DE] dark:border-dark-card">
-                    {Array.from({ length: 8 }).map((_, j) => (
-                      <td key={j} className={tdClass}>
-                        <div className="h-2 w-[60%] bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
-                      </td>
-                    ))}
+                    <td className={tdClass}><div className="h-3 w-[70%] bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" /></td>
+                    <td className={tdClass}><div className="h-3 w-[60%] bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" /></td>
+                    <td className={tdClass}><div className="h-3 w-[50%] bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" /></td>
+                    <td className={tdClass}><div className="h-3 w-[40%] bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" /></td>
+                    <td className={tdClass}><div className="h-3 w-[55%] bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" /></td>
+                    <td className={tdClass}><div className="h-3 w-[55%] bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" /></td>
+                    <td className={tdClass}><div className="h-5 w-16 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded-full" /></td>
+                    <td className={tdClass}><div className="h-3 w-8 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" /></td>
                   </tr>
                 ))
               ) : credentials.length === 0 ? (
@@ -290,11 +293,14 @@ export function StaffCredentials() {
               {cpeLoading ? (
                 Array.from({ length: 3 }).map((_, i) => (
                   <tr key={i} className="bg-[#E4E6EA] dark:bg-[#2D2D2D] border-b border-[0.5px] border-[#D5D8DE] dark:border-dark-card">
-                    {Array.from({ length: 8 }).map((_, j) => (
-                      <td key={j} className={tdClass}>
-                        <div className="h-2 w-[60%] bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
-                      </td>
-                    ))}
+                    <td className={tdClass}><div className="h-3 w-[70%] bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" /></td>
+                    <td className={tdClass}><div className="h-3 w-[65%] bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" /></td>
+                    <td className={tdClass}><div className="h-3 w-[40%] bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" /></td>
+                    <td className={tdClass}><div className="h-3 w-[40%] bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" /></td>
+                    <td className={tdClass}><div className="h-3 w-[40%] bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" /></td>
+                    <td className={tdClass}><div className="h-3 w-[55%] bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" /></td>
+                    <td className={tdClass}><div className="h-5 w-16 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded-full" /></td>
+                    <td className={tdClass}><div className="h-3 w-8 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" /></td>
                   </tr>
                 ))
               ) : cpeRecords.length === 0 ? (

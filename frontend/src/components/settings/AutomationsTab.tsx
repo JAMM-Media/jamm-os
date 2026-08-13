@@ -75,15 +75,22 @@ function ToggleSwitch({
   )
 }
 
-function SkeletonRow() {
+function AutomationRowSkeleton() {
   return (
     <div className="bg-card dark:bg-dark-card rounded-lg border border-subtle px-4 py-3 flex items-center gap-4 mb-2">
-      <div className="flex-1 flex flex-col gap-2">
-        <div className="h-4 rounded bg-gray-200 dark:bg-gray-700 w-[45%] animate-pulse" />
-        <div className="h-3 rounded bg-gray-200 dark:bg-gray-700 w-[70%] animate-pulse" />
-        <div className="h-3 rounded bg-gray-200 dark:bg-gray-700 w-[25%] animate-pulse" />
+      <div className="flex-1 flex flex-col gap-1">
+        <div className="flex items-center gap-2">
+          <div className="w-1.5 h-1.5 rounded-full bg-surface-border dark:bg-dark-border animate-pulse flex-shrink-0" />
+          <div className="h-4 rounded bg-surface-border dark:bg-dark-border w-[45%] animate-pulse" />
+        </div>
+        <div className="h-3 rounded bg-surface-border dark:bg-dark-border w-[70%] animate-pulse" />
+        <div className="h-3 rounded bg-surface-border dark:bg-dark-border w-[25%] animate-pulse" />
       </div>
-      <div className="h-6 w-10 rounded-full bg-gray-200 dark:bg-gray-700 animate-pulse" />
+      <div className="flex items-center gap-3 flex-shrink-0">
+        <div className="h-3 w-8 bg-surface-border dark:bg-dark-border animate-pulse rounded" />
+        <div className="h-3 w-8 bg-surface-border dark:bg-dark-border animate-pulse rounded" />
+        <div className="h-5 w-9 rounded-full bg-surface-border dark:bg-dark-border animate-pulse" />
+      </div>
     </div>
   )
 }
@@ -334,7 +341,7 @@ export default function AutomationsTab() {
     return (
       <div>
         {Array.from({ length: 4 }).map((_, i) => (
-          <SkeletonRow key={i} />
+          <AutomationRowSkeleton key={i} />
         ))}
       </div>
     )

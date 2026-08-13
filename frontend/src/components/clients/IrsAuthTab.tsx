@@ -248,8 +248,17 @@ export function IrsAuthTab({ clientId }: IrsAuthTabProps) {
           {Array.from({ length: 2 }).map((_, i) => (
             <div
               key={i}
-              className="h-24 rounded-[8px] bg-surface-border dark:bg-dark-border animate-pulse"
-            />
+              className="bg-surface-card dark:bg-dark-card rounded-[8px]"
+              style={{ padding: '12px 14px' }}
+            >
+              <div className="flex items-center justify-between mb-2">
+                <div className="h-4 w-24 bg-surface-border dark:bg-dark-border animate-pulse rounded" />
+                <div className="h-[22px] w-20 bg-surface-border dark:bg-dark-border animate-pulse rounded-full" />
+              </div>
+              <div className="h-2.5 w-40 bg-surface-border dark:bg-dark-border animate-pulse rounded mb-1" />
+              <div className="h-2.5 w-56 bg-surface-border dark:bg-dark-border animate-pulse rounded mb-1" />
+              <div className="h-2.5 w-36 bg-surface-border dark:bg-dark-border animate-pulse rounded" />
+            </div>
           ))}
         </div>
       ) : auths.length === 0 ? (

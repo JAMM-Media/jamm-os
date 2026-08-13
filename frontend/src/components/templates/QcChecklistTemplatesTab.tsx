@@ -272,7 +272,16 @@ export default function QcChecklistTemplatesTab() {
       {loading ? (
         <div className="flex flex-col gap-2">
           {[1, 2, 3].map((i) => (
-            <div key={i} className="h-14 rounded-[8px] bg-[#D5D8DE] dark:bg-[#333] animate-pulse" />
+            <div key={i} className="bg-surface-card dark:bg-dark-card rounded-[8px] border border-[0.5px] border-surface-border dark:border-dark-border p-3 flex items-center justify-between">
+              <div className="flex flex-col gap-1 min-w-0">
+                <div className="h-3 w-44 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+                <div className="h-2.5 w-28 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+              </div>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <div className="h-6 w-8 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+                <div className="h-6 w-8 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+              </div>
+            </div>
           ))}
         </div>
       ) : filtered.length === 0 ? (

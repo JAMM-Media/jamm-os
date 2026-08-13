@@ -297,3 +297,21 @@ class Firm(Base):
         back_populates="firm",
         cascade="all, delete-orphan",
     )
+
+    leads: Mapped[list["Lead"]] = relationship(
+        "Lead",
+        back_populates="firm",
+        cascade="all, delete-orphan",
+    )
+
+    referral_partners: Mapped[list["ReferralPartner"]] = relationship(
+        "ReferralPartner",
+        back_populates="firm",
+        cascade="all, delete-orphan",
+    )
+
+    sequences: Mapped[list["Sequence"]] = relationship(
+        "Sequence",
+        back_populates="firm",
+        cascade="all, delete-orphan",
+    )

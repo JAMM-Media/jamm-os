@@ -299,9 +299,15 @@ export function NotesPanel({
               {[1, 2, 3].map((i) => (
                 <div
                   key={i}
-                  className="rounded-[6px] p-[10px_12px] bg-surface-border dark:bg-dark-border animate-pulse"
-                  style={{ height: 72 }}
-                />
+                  className="rounded-[6px] p-[10px_12px] bg-surface-page dark:bg-dark-page mb-2"
+                >
+                  <div className="flex items-center justify-between mb-1.5">
+                    <div className="h-3 w-24 bg-surface-border dark:bg-dark-border animate-pulse rounded" />
+                    <div className="h-2.5 w-20 bg-surface-border dark:bg-dark-border animate-pulse rounded" />
+                  </div>
+                  <div className="h-2.5 w-full bg-surface-border dark:bg-dark-border animate-pulse rounded mb-1" />
+                  <div className="h-2.5 w-3/4 bg-surface-border dark:bg-dark-border animate-pulse rounded" />
+                </div>
               ))}
             </div>
           ) : notes.length === 0 ? (

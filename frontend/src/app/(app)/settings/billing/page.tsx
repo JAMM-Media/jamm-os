@@ -98,7 +98,10 @@ function SettingsBillingContent() {
             collection.
           </p>
           {loadingStatus ? (
-            <div className="h-8 w-32 rounded-[6px] bg-[#F3F4F6] dark:bg-[#333333] animate-pulse" />
+            <div className="flex flex-col gap-2">
+              <div className="h-5 w-24 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded-full" />
+              <div className="h-3 w-40 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+            </div>
           ) : status?.connected ? (
             <div className="flex flex-col gap-2">
               <div className="flex items-center gap-2">

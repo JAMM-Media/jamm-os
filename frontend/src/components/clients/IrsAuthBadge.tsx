@@ -208,7 +208,7 @@ export function IrsAuthBadge({ clientId, onClick, className }: IrsAuthBadgeProps
   if (isLoading) {
     return (
       <div
-        style={{ width: 72, height: 22, borderRadius: 9999 }}
+        style={{ width: 120, height: 22, borderRadius: 9999 }}
         className={cn('bg-[#D5D8DE] dark:bg-[#444444] animate-pulse', className)}
       />
     )

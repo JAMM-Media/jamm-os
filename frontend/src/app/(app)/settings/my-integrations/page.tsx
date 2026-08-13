@@ -99,7 +99,14 @@ function MyIntegrationsContent() {
         {loading ? (
           <div className="flex flex-col gap-3 max-w-lg">
             {[1, 2].map((i) => (
-              <div key={i} className="bg-surface-card dark:bg-dark-card rounded-[10px] p-4 h-[88px] animate-pulse" />
+              <div key={i} className="bg-surface-card dark:bg-dark-card rounded-[10px] p-4 flex items-center gap-4 border border-surface-border dark:border-dark-border" style={{ borderWidth: '0.5px' }}>
+                <div className="w-9 h-9 rounded-lg bg-[#D5D8DE] dark:bg-[#444444] animate-pulse flex-shrink-0" />
+                <div className="flex-1 flex flex-col gap-1.5">
+                  <div className="h-3 w-16 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+                  <div className="h-3 w-32 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+                </div>
+                <div className="h-7 w-20 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded-[6px] flex-shrink-0" />
+              </div>
             ))}
           </div>
         ) : (

@@ -9,6 +9,11 @@ logger = logging.getLogger(__name__)
 _TEMPLATES_DIR = Path(__file__).parent.parent / "templates" / "email"
 _POSTMARK_API_URL = "https://api.postmarkapp.com/email"
 
+# JAMM's real Postmark server's auto-assigned inbound address, confirmed live.
+# Plus-addressing format: {BASE}+{lead_id}@inbound.postmarkapp.com
+# If a custom inbound domain is ever configured, this is the one constant to change.
+_INBOUND_REPLY_TO_BASE = "a600f6b42ca483cbfacac9789f91d74f"
+
 
 class EmailService:
 
@@ -33,6 +38,7 @@ class EmailService:
         reply_to: str | None = None,
         display_name: str | None = None,
         sending_domain: str | None = None,
+        message_stream: str = "outbound",
     ) -> None:
         """Send email via Postmark HTTP API. Raises on failure."""
         from app.core.config import get_settings
@@ -49,7 +55,7 @@ class EmailService:
             "To": to_email,
             "Subject": subject,
             "HtmlBody": html_body,
-            "MessageStream": "outbound",
+            "MessageStream": message_stream,
         }
         if reply_to:
             payload["ReplyTo"] = reply_to
@@ -196,3 +202,44 @@ class EmailService:
         subject = f"Welcome to {firm_name} — Your Client Portal"
         EmailService._send(to_email, subject, html, firm_name)
         return True
+
+    @staticmethod
+    def send_nurture_email(
+        to_email: str,
+        subject: str,
+        html_body: str,
+        from_name: str,
+        reply_to: str,
+        display_name: str | None = None,
+        sending_domain: str | None = None,
+    ) -> None:
+        """Send via the dedicated broadcast stream for nurture sequences.
+
+        This is the only method future nurture-sending code should call.
+        It sets message_stream from POSTMARK_BROADCAST_STREAM_ID so nurture
+        emails are correctly routed through Postmark's broadcast stream,
+        separate from transactional outbound.
+        """
+        from app.core.config import get_settings
+        settings = get_settings()
+        EmailService._send(
+            to_email=to_email,
+            subject=subject,
+            html_body=html_body,
+            from_name=from_name,
+            reply_to=reply_to,
+            display_name=display_name,
+            sending_domain=sending_domain,
+            message_stream=settings.POSTMARK_BROADCAST_STREAM_ID or "broadcast",
+        )
+
+
+def build_lead_reply_to(lead_id: str) -> str:
+    """Build the plus-addressed Reply-To for a nurture email.
+
+    Postmark delivers mail to {BASE}+{lead_id}@inbound.postmarkapp.com and
+    sets MailboxHash to the {lead_id} portion in the inbound webhook payload.
+    This is how an inbound reply is matched back to the correct Lead without
+    any custom domain or heuristic tag matching.
+    """
+    return f"{_INBOUND_REPLY_TO_BASE}+{lead_id}@inbound.postmarkapp.com"

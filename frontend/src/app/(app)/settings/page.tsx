@@ -144,7 +144,14 @@ function MyIntegrationsTabContent() {
       {loading ? (
         <div className="flex flex-col gap-3 max-w-lg">
           {[1, 2].map((i) => (
-            <div key={i} className="bg-surface-card dark:bg-dark-card rounded-[10px] p-4 h-[88px] animate-pulse" />
+            <div key={i} className="bg-surface-card dark:bg-dark-card rounded-[10px] p-4 flex items-center gap-4 border border-surface-border dark:border-dark-border" style={{ borderWidth: '0.5px' }}>
+            <div className="w-9 h-9 rounded-lg bg-[#D5D8DE] dark:bg-[#444444] animate-pulse flex-shrink-0" />
+            <div className="flex-1 flex flex-col gap-1.5">
+              <div className="h-3 w-16 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+              <div className="h-3 w-32 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+            </div>
+            <div className="h-7 w-20 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded-[6px] flex-shrink-0" />
+          </div>
           ))}
         </div>
       ) : (
@@ -747,9 +754,18 @@ export default function SettingsPage() {
             <div className="bg-surface-card dark:bg-dark-card rounded-[10px] p-4 flex flex-col gap-4 max-w-lg">
               {firmLoading ? (
                 <>
-                  <div className="h-3 w-[120px] bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
-                  <div className="h-3 w-[120px] bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
-                  <div className="h-3 w-[120px] bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+                  <div className="flex flex-col gap-0.5">
+                    <div className="h-2 w-16 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+                    <div className="h-3 w-28 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+                  </div>
+                  <div className="flex flex-col gap-0.5">
+                    <div className="h-2 w-10 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+                    <div className="h-3 w-24 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+                  </div>
+                  <div className="flex flex-col gap-0.5">
+                    <div className="h-2 w-28 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+                    <div className="h-5 w-16 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded-full" />
+                  </div>
                 </>
               ) : (
                 <>
@@ -1256,11 +1272,11 @@ export default function SettingsPage() {
                     {teamLoading ? (
                       Array.from({ length: 3 }).map((_, i) => (
                         <tr key={i} className="bg-surface-page dark:bg-dark-page border-b border-[0.5px] border-[#D5D8DE] dark:border-dark-card last:border-0">
-                          {Array.from({ length: 5 }).map((_, j) => (
-                            <td key={j} className="px-4 py-3">
-                              <div className="h-2 w-[60%] bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
-                            </td>
-                          ))}
+                          <td className="px-4 py-3"><div className="h-3 w-[70%] bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" /></td>
+                          <td className="px-4 py-3"><div className="h-3 w-[75%] bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" /></td>
+                          <td className="px-4 py-3"><div className="h-5 w-14 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded-full" /></td>
+                          <td className="px-4 py-3"><div className="h-5 w-12 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded-full" /></td>
+                          <td className="px-4 py-3"><div className="h-4 w-14 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" /></td>
                         </tr>
                       ))
                     ) : team.length === 0 ? (

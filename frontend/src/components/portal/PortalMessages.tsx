@@ -90,11 +90,23 @@ export function PortalMessages({ clientId, firmName, cardColor = '#383838', acce
   }
 
   if (loading) {
+    const barStyle = { backgroundColor: portalMode === 'light' ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.12)' }
     return (
-      <div className="p-5 flex flex-col gap-3 max-w-2xl mx-auto">
-        {[1, 2].map((i) => (
-          <div key={i} className="h-16 rounded-[6px] animate-pulse" style={{ backgroundColor: cardColor }} />
-        ))}
+      <div className="p-5 space-y-4 max-w-2xl mx-auto">
+        <div className="flex flex-col gap-1 items-start">
+          <div className="h-2.5 w-20 rounded animate-pulse px-1" style={barStyle} />
+          <div className="rounded-[8px] px-3 py-2" style={{ backgroundColor: cardColor }}>
+            <div className="flex flex-col gap-1.5">
+              <div className="h-3 w-48 rounded animate-pulse" style={barStyle} />
+              <div className="h-3 w-32 rounded animate-pulse" style={barStyle} />
+            </div>
+          </div>
+        </div>
+        <div className="flex flex-col gap-1 items-end">
+          <div className="rounded-[8px] px-3 py-2" style={{ backgroundColor: accentColor }}>
+            <div className="h-3 w-40 rounded animate-pulse" style={{ backgroundColor: 'rgba(255,255,255,0.25)' }} />
+          </div>
+        </div>
       </div>
     )
   }

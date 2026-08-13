@@ -155,9 +155,15 @@ export function QcChecklistTab({ engagementId, engagementStatus: _engagementStat
 
   if (loading) {
     return (
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col divide-y divide-surface-border dark:divide-dark-border border border-[0.5px] border-surface-border dark:border-dark-border rounded-[8px] overflow-hidden">
         {[1, 2, 3].map((i) => (
-          <div key={i} className="h-10 rounded-[8px] bg-[#D5D8DE] dark:bg-[#333] animate-pulse" />
+          <div key={i} className="flex items-start gap-3 px-4 py-3 bg-surface-card dark:bg-dark-card">
+            <div className="mt-0.5 flex-shrink-0 w-4 h-4 rounded border border-[#D1D5DB] dark:border-[#555] bg-[#D5D8DE] dark:bg-[#444444] animate-pulse" />
+            <div className="flex-1 flex flex-col gap-1.5">
+              <div className="h-3 w-[55%] bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+              <div className="h-2.5 w-24 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+            </div>
+          </div>
         ))}
       </div>
     )

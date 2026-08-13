@@ -103,7 +103,14 @@ function DeletedEngagementTemplates() {
     return (
       <div className="flex flex-col gap-2">
         {[1, 2, 3].map((i) => (
-          <div key={i} className="h-14 rounded-[8px] bg-[#D5D8DE] dark:bg-[#444] animate-pulse" />
+          <div key={i} className="bg-surface-card dark:bg-dark-card rounded-[8px] p-3 flex items-center justify-between">
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="h-3 w-36 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+              <div className="h-4 w-20 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded-full" />
+              <div className="h-4 w-14 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded-full" />
+            </div>
+            <div className="h-6 w-16 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded-[6px]" />
+          </div>
         ))}
       </div>
     )
@@ -197,7 +204,14 @@ function DeletedTaxOrganizerTemplates() {
     return (
       <div className="flex flex-col gap-2">
         {[1, 2, 3].map((i) => (
-          <div key={i} className="h-14 rounded-[8px] bg-[#D5D8DE] dark:bg-[#444] animate-pulse" />
+          <div key={i} className="bg-surface-card dark:bg-dark-card rounded-[8px] p-3 flex items-center justify-between">
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="h-3 w-36 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+              <div className="h-4 w-24 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded-full" />
+              <div className="h-4 w-14 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded-full" />
+            </div>
+            <div className="h-6 w-16 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded-[6px]" />
+          </div>
         ))}
       </div>
     )
@@ -293,7 +307,14 @@ function DeletedLetterTemplates() {
     return (
       <div className="flex flex-col gap-2">
         {[1, 2, 3].map((i) => (
-          <div key={i} className="h-14 rounded-[8px] bg-[#D5D8DE] dark:bg-[#444] animate-pulse" />
+          <div key={i} className="bg-surface-card dark:bg-dark-card rounded-[8px] p-3 flex items-center justify-between">
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="h-3 w-36 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+              <div className="h-4 w-20 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded-full" />
+              <div className="h-4 w-14 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded-full" />
+            </div>
+            <div className="h-6 w-16 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded-[6px]" />
+          </div>
         ))}
       </div>
     )
@@ -387,7 +408,15 @@ function DeletedQcTemplates() {
     return (
       <div className="flex flex-col gap-2">
         {[1, 2, 3].map((i) => (
-          <div key={i} className="h-14 rounded-[8px] bg-[#D5D8DE] dark:bg-[#444] animate-pulse" />
+          <div key={i} className="bg-surface-card dark:bg-dark-card rounded-[8px] p-3 flex items-center justify-between">
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="h-3 w-36 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+              <div className="h-4 w-20 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded-full" />
+              <div className="h-4 w-12 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded-full" />
+              <div className="h-4 w-14 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded-full" />
+            </div>
+            <div className="h-6 w-16 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded-[6px]" />
+          </div>
         ))}
       </div>
     )
