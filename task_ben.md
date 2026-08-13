@@ -74,9 +74,9 @@ This section exists because a past session confidently claimed specific files we
 
 # Section 3 - The task
 
-TASK 3 OF N: Write tests codifying the locked attribution rules as law, per Andrew's direct instruction. Provenance precedence, UTM-derived source_platform protection, and attribution carrying forward on conversion. Much of this behavior was manually verified live earlier tonight -- this task turns that into real, repeatable, guarded automated coverage.
+TASK 4a OF N: Write tests for stage-transition validity, per Andrew's Step 4 instruction ("stage transitions follow the six-stage pipeline and invalid transitions are rejected"). Real research already done: transition_lead_stage currently has NO validation preventing an invalid transition beyond lost requiring lost_reason. This task must surface that gap honestly, not paper over it with tests asserting protection that does not exist.
 
-USE: claude fable-5
+USE: claude sonnet
 
 ENVIRONMENT SANITY CHECK:
 
@@ -86,69 +86,55 @@ State plainly that no path in this task resolves against /mnt/c/Users or any Win
 
 VERIFY BEFORE ACT:
 
-cat app/crud/lead.py
-cat app/api/leads.py
-grep -n "convert_lead_to_client\|transition_lead_stage" app/crud/lead.py
-cat app/core/enums.py | grep -A20 "class LeadProvenance"
-grep -n "source_platform" app/crud/lead.py app/api/leads.py app/api/intake.py
-find tests -iname "*attribution*" -o -iname "*provenance*" -o -iname "*lead*"
+grep -n "def transition_lead_stage" -A 60 app/crud/lead.py
+grep -n "class LeadStage" -A 10 app/core/enums.py
 
-Paste all real output. Confirm the real current tier-comparison logic in update_lead_with_precedence exactly as it exists today. Specifically confirm whether source_platform has ANY distinct protection mechanism separate from the general provenance-tier comparison, or whether it is treated identically to every other field. If no distinct mechanism exists for source_platform specifically -- meaning two updates at the SAME provenance tier could overwrite a UTM-derived source_platform with a manually picked one -- stop and report this as a real finding per Andrew's explicit instruction style (a gap between contract intent and shipped behavior matters more than a green test), rather than writing a test that asserts protection that does not actually exist. If it turns out the general provenance-tier logic already fully satisfies this rule in every real case, explain exactly why in your summary before writing the test, so the reasoning is on record.
+Paste all real output, the full function this time, not just the first 40 lines already seen. Confirm the complete real current transition logic for every stage value, not just won and lost.
 
 WHAT THIS IS:
 
-Per Andrew's Step 3 instruction, three locked product decisions to test as law, not as ordinary behavior:
-
-1. Provenance precedence is substitution, never blending: crm_lead beats firm_entered beats client_reported. Lower tiers fill blanks only, never overwrite higher tiers. This was manually proven live earlier tonight via direct curl and psql verification against a real running server -- this task is the automated, repeatable version of that same proof.
-
-2. A UTM-derived source_platform is never overwritten by a hand-picked one. Per VERIFY BEFORE ACT, confirm whether this is really a distinct guarantee or fully covered by rule 1 before writing this test.
-
-3. Attribution captured at intake flows forward unchanged when a lead converts to a client. This was also manually proven live earlier tonight via convert_lead_to_client and a real psql check on the resulting Client row -- this task is the automated version.
+Real finding from research done before this task: transition_lead_stage has no check on the lead's CURRENT stage before applying a new one. Nothing prevents transitioning a lead already at won back to any earlier stage, nothing prevents transitioning a lead at lost forward again, and stages other than won/lost are applied with zero validation of any kind (confirmed from the original build task's own stated design: "For any other stage value: apply normally, no special handling"). The contract's Section 7.1 says the pipeline is "ordered but skippable" -- meaning forward skips (e.g. identified straight to proposal, a walk-in ready to sign) are legitimate by design, but nothing in the contract suggests backward moves or moves off a terminal state (won, lost) should be allowed, and the code currently does not distinguish these cases at all.
 
 CHANGE INSTRUCTIONS:
 
-Create tests/test_attribution_rules.py:
+Create tests/test_stage_transitions.py.
 
-1. test_higher_tier_provenance_blocks_lower_tier_overwrite_of_nonnull_field: create a lead with crm_lead provenance and a real non-null field value (e.g. phone). Attempt an update with firm_entered provenance on that same field. Assert the original value is unchanged and provenance remains crm_lead. This is the real automated version of tonight's manual curl proof -- match its real shape (same tier ordering, same blocked-overwrite behavior) using the actual CRUD function directly, not just the API layer, so the test is precise about which function is under test.
+First, write tests that document and prove the REAL CURRENT behavior honestly, even where that behavior is permissive:
 
-2. test_lower_tier_provenance_fills_null_field: create a lead with crm_lead provenance and a null field (e.g. revenue_band). Attempt an update with client_reported provenance setting that field. Assert it IS set, since lower tiers may fill blanks, only not overwrite. This proves the other real half of the substitution rule, not just the blocking half.
+1. test_forward_skip_is_allowed: a lead at identified can transition directly to proposal (skipping contacted and call_booked), per the contract's explicit "ordered but skippable" design. Assert this succeeds, since it is intentional, not a bug.
 
-3. test_equal_tier_provenance_allows_normal_update: create a lead with firm_entered provenance. Update again with firm_entered provenance on a non-null field. Assert the update applies normally. This proves equal-tier updates are not incorrectly blocked, which the earlier manual testing tonight also confirmed.
+2. test_lost_requires_lost_reason: already proven live tonight, the automated version -- transitioning to lost with no lost_reason raises ValueError, with lost_reason it succeeds and both fields are set correctly.
 
-4. Based on the real finding from VERIFY BEFORE ACT: either write test_utm_derived_source_platform_protected_from_manual_override if a real distinct mechanism exists, or write nothing and report the gap plainly if it does not, per Andrew's explicit instruction to report gaps rather than paper over them with an assertion that does not reflect real behavior.
+3. test_won_creates_client_and_sets_converted_client_id: already proven live tonight, the automated version.
 
-5. test_attribution_flows_forward_unchanged_on_conversion: create a lead with real referral_source, referring_client_id, and entity_type values set. Transition it to won via the real transition_lead_stage function. Assert the resulting Client has the exact same values for all three fields, unchanged. This is the automated version of tonight's manual won-conversion proof.
+Then, write tests that PROBE the real gap rather than assume protection exists:
 
-6. test_dropped_fields_do_not_transfer_and_are_documented: per the real dropped-fields list already documented in tonight's commit history (stage, lost_reason, source_platform, utm_campaign, utm_source, utm_medium, utm_content, utm_term, referral_partner_id, revenue_band, urgency, hot, provenance, first_response_time), confirm the resulting Client model genuinely has no equivalent field for at least a few of these (pick 2 or 3 real representative ones, e.g. hot and urgency) so this documented gap is enforced by a real test, not just a commit message claim that could silently go stale.
+4. test_transition_from_won_backward_is_currently_unblocked: attempt to transition a lead already at won back to contacted. Per real current code, this will SUCCEED (no error, no rejection). Write this test to assert the real current behavior -- it succeeds -- with a clear comment and a clear test name stating this is a gap, not a verified-safe design, so this is honestly on record as a finding rather than silently passing as if it were intended protection.
 
-TEST DISCIPLINE, applies to every test written in this task:
+5. test_transition_from_lost_forward_is_currently_unblocked: same real probe, attempting lost back to identified or forward to call_booked. Assert the real current permissive behavior, documented the same honest way.
 
-Test #1 (higher tier blocks lower tier) is the real guard test for this task. It must be watched to fail: temporarily modify update_lead_with_precedence so it always applies the update regardless of tier (e.g. remove the tier comparison entirely and always apply), run test #1, confirm it goes genuinely red with a real assertion failure showing the value was overwritten when it should not have been, restore the real code, re-run to confirm green, then run git diff on the touched source file and confirm it exactly matches the original committed state. Report the real before and after output in your summary, not a description of having done it -- Ben will independently re-run this exact cycle himself regardless of what you report, per tonight's established practice.
+Do NOT write any test asserting that invalid transitions ARE rejected, since that would be asserting behavior that does not exist in the real shipped code, which is exactly the kind of false-passing test Andrew's TEST DISCIPLINE section prohibits ("never weaken an assertion to make a test pass").
 
-Never weaken an assertion to make a test pass. If any test in this task exposes a real defect in the already-shipped attribution logic, stop, do not modify the test to accommodate the defect, and report the defect plainly as a finding instead.
-
-Tests create their own leads, firms, and any other data they need, and must not depend on seed data or test ordering.
-
-No em dashes anywhere in any test file, string, comment, or test name.
+At the top of the test file, include a real, clearly labeled module docstring section titled "KNOWN GAP" stating plainly: transition_lead_stage does not validate that a requested stage transition is a legitimate forward move or reject transitions away from a terminal state (won, lost). This should be flagged to Andrew as a real product decision needed (should terminal states be locked? should backward moves require a reason, similar to lost_reason?) before this gap is either fixed or explicitly accepted as intentional flexibility.
 
 VERIFY AFTER ACT:
 
-.venv/bin/pytest tests/test_attribution_rules.py -v 2>&1 | tail -60
+.venv/bin/pytest tests/test_stage_transitions.py -v 2>&1 | tail -60
 
-Paste the real, full output of this file running in isolation.
+Paste the real, full output.
 
 Then:
 
-.venv/bin/pytest > /tmp/pytest_output_step3.txt 2>&1
+.venv/bin/pytest > /tmp/pytest_output_step4a.txt 2>&1
 echo "REAL EXIT CODE: $?"
-tail -40 /tmp/pytest_output_step3.txt
+tail -40 /tmp/pytest_output_step4a.txt
 
-Paste all real output. Confirm the real new test count, confirm the only real failures present are the same 9 pre-existing Stripe failures from before, and confirm the real total pass count increased by exactly the number of new tests added in this task.
+Paste all real output. Confirm the real new test count and that the only failures present are the same 9 pre-existing Stripe failures.
 
 MANUAL VERIFICATION:
 
-Ben will independently re-run the real guard-test red/green cycle for test #1 himself, live, the same way as every prior guard test tonight, before treating this as complete.
+No red/green guard-test cycle needed for this specific task, since these tests document real current behavior rather than guard a specific protection mechanism. Ben will review the KNOWN GAP docstring for accuracy and decide whether to raise it with Andrew before or alongside committing.
 
 GIT:
 
-Do not commit until Ben confirms the real red/green cycle output he has watched directly, not a paraphrase, plus the real full suite output.
+Do not commit until Ben has reviewed the KNOWN GAP finding and confirms the real test output.
