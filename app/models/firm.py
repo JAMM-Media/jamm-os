@@ -315,3 +315,9 @@ class Firm(Base):
         back_populates="firm",
         cascade="all, delete-orphan",
     )
+
+    service_catalog_entries: Mapped[list["ServiceCatalogEntry"]] = relationship(
+        "ServiceCatalogEntry",
+        back_populates="firm",
+        cascade="all, delete-orphan",
+    )

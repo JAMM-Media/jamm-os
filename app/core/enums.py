@@ -469,3 +469,47 @@ class EnrollmentStatus(str, Enum):
     removed_by_staff = "removed_by_staff"
     completed_dead_end = "completed_dead_end"
     completed_won = "completed_won"
+
+
+class PricingMode(str, Enum):
+    """
+    How a firm's price for one service is served to a lead.
+
+    fixed          -> runs full automation; the computed number is the price.
+    starting_at    -> the same math, but proposals read "starting at".
+    quote_required -> serves no number at all and routes intake to the firm
+                      owner. Any unpriced path lands here too, by the
+                      universal quote law.
+    """
+    fixed = "fixed"
+    starting_at = "starting_at"
+    quote_required = "quote_required"
+
+
+class DimensionKind(str, Enum):
+    """
+    The shape of the answer a complexity dimension collects.
+
+    boolean       -> yes or no.
+    numeric_range -> a number bucketed into firm-defined tiers; the only kind
+                     that carries units.
+    categorical   -> one choice from a system-owned vocabulary; the only kind
+                     that carries options.
+    """
+    boolean = "boolean"
+    numeric_range = "numeric_range"
+    categorical = "categorical"
+
+
+class DimensionRole(str, Enum):
+    """
+    What a firm is using a configured dimension for.
+
+    priced        -> the answer moves the price.
+    informational -> the answer is collected and shown but never priced.
+    guard         -> the answer is compared against a threshold that routes
+                     the lead out of automation; requires a guard_threshold.
+    """
+    priced = "priced"
+    informational = "informational"
+    guard = "guard"
