@@ -66,6 +66,101 @@ class EngagementType(str, Enum):
     other_advisory = "other_advisory"
     custom = "custom"
 
+    # Individual tax
+    tax_return_1040nr = "tax_return_1040nr"
+
+    # Business and entity tax
+    tax_return_990 = "tax_return_990"
+    tax_return_709 = "tax_return_709"
+    amended_return_business = "amended_return_business"
+
+    # Payroll and information reporting
+    payroll_tax_940 = "payroll_tax_940"
+    payroll_processing = "payroll_processing"
+    information_returns_1099_w2 = "information_returns_1099_w2"
+
+    # Sales tax
+    sales_use_tax = "sales_use_tax"
+
+    # Foreign reporting
+    fbar_international = "fbar_international"
+
+    # Bookkeeping and accounting
+    bookkeeping_cleanup = "bookkeeping_cleanup"
+    accounting_system_setup = "accounting_system_setup"
+
+    # Financial statements
+    financial_statement_compilation = "financial_statement_compilation"
+    financial_statement_review = "financial_statement_review"
+    financial_statement_audit = "financial_statement_audit"
+    agreed_upon_procedures = "agreed_upon_procedures"
+
+    # Advisory and representation
+    fractional_cfo = "fractional_cfo"
+    entity_formation = "entity_formation"
+    irs_notice_resolution = "irs_notice_resolution"
+    tax_resolution = "tax_resolution"
+
+    # Specialty
+    rd_tax_credit_study = "rd_tax_credit_study"
+    nonprofit_formation_exemption = "nonprofit_formation_exemption"
+    benefit_plan_5500 = "benefit_plan_5500"
+    business_valuation = "business_valuation"
+    business_personal_property_tax = "business_personal_property_tax"
+    cost_segregation_study = "cost_segregation_study"
+    transaction_advisory = "transaction_advisory"
+
+
+# Lead-facing display labels for every EngagementType member.
+# This is the single backend source of truth for these labels; the public
+# config endpoint serves them from here. Every member must have an entry,
+# enforced by tests/test_engagement_type_canon.py.
+ENGAGEMENT_TYPE_LABELS: dict[EngagementType, str] = {
+    EngagementType.tax_return_1040: "Individual Tax Return (Form 1040)",
+    EngagementType.tax_return_1040nr: "Nonresident Individual Tax Return (Form 1040-NR)",
+    EngagementType.amended_return_1040x: "Amended Individual Return (Form 1040-X)",
+    EngagementType.extension_4868: "Individual Extension (Form 4868)",
+    EngagementType.tax_return_1120: "C Corporation Tax Return (Form 1120)",
+    EngagementType.tax_return_1120s: "S Corporation Tax Return (Form 1120-S)",
+    EngagementType.tax_return_1065: "Partnership Tax Return (Form 1065)",
+    EngagementType.tax_return_990: "Nonprofit Tax Return (Form 990)",
+    EngagementType.tax_return_1041: "Trust and Estate Income Tax Return (Form 1041)",
+    EngagementType.tax_return_706: "Estate Tax Return (Form 706)",
+    EngagementType.tax_return_709: "Gift Tax Return (Form 709)",
+    EngagementType.amended_return_business: "Amended Business Return",
+    EngagementType.extension_7004: "Business Extension (Form 7004)",
+    EngagementType.extension_8868: "Exempt Organization Extension (Form 8868)",
+    EngagementType.payroll_tax_941: "Quarterly Payroll Tax Filing (Form 941)",
+    EngagementType.payroll_tax_940: "Annual FUTA Filing (Form 940)",
+    EngagementType.payroll_processing: "Payroll Processing",
+    EngagementType.information_returns_1099_w2: "1099 and W-2 Preparation",
+    EngagementType.sales_use_tax: "Sales and Use Tax Filing",
+    EngagementType.fbar_international: "FBAR and International Reporting",
+    EngagementType.bookkeeping_monthly: "Monthly Bookkeeping",
+    EngagementType.bookkeeping_quarterly: "Quarterly Bookkeeping",
+    EngagementType.bookkeeping_cleanup: "Bookkeeping Cleanup and Catch-Up",
+    EngagementType.accounting_system_setup: "Accounting System Setup and Migration",
+    EngagementType.financial_statement_compilation: "Financial Statement Compilation",
+    EngagementType.financial_statement_review: "Financial Statement Review",
+    EngagementType.financial_statement_audit: "Financial Statement Audit",
+    EngagementType.agreed_upon_procedures: "Agreed-Upon Procedures",
+    EngagementType.tax_planning_advisory: "Tax Planning and Advisory",
+    EngagementType.fractional_cfo: "Fractional CFO Services",
+    EngagementType.entity_formation: "Entity Formation and New Business Setup",
+    EngagementType.irs_notice_resolution: "IRS Notice Resolution",
+    EngagementType.tax_resolution: "Tax Resolution",
+    EngagementType.audit_representation: "Audit Representation",
+    EngagementType.rd_tax_credit_study: "R&D Tax Credit Study",
+    EngagementType.nonprofit_formation_exemption: "Nonprofit Formation and Exemption Application",
+    EngagementType.benefit_plan_5500: "Employee Benefit Plan Filing (Form 5500)",
+    EngagementType.business_valuation: "Business Valuation",
+    EngagementType.business_personal_property_tax: "Business Personal Property Tax Filing",
+    EngagementType.cost_segregation_study: "Cost Segregation Study",
+    EngagementType.transaction_advisory: "Transaction Advisory",
+    EngagementType.other_advisory: "Other Advisory",
+    EngagementType.custom: "Custom Engagement",
+}
+
 
 class TaskStatus(str, Enum):
     """Valid status values for a Task."""
