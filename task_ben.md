@@ -74,7 +74,7 @@ This section exists because a past session confidently claimed specific files we
 
 # Section 3 - The task
 
-TASK 1 OF N: Fix the unnamed FK constraint blocking clean pytest teardown, confirm the full suite runs with exit code 0. This is a hard prerequisite -- no other test work in this initiative proceeds until this is verified clean.
+TASK: Small clarification to test_no_credentials_returns_401 in tests/test_postmark_inbound_webhook.py. Real red/green verification tonight proved this test's 401 result comes from FastAPI's HTTPBasic default auto_error=True behavior (it rejects requests with no Authorization header before our custom _verify_credentials function ever runs), not from our own credential-checking logic. The test's real assertion is still correct and the endpoint really is protected either way, but the current docstring implies it proves our custom logic works, which it does not for this specific no-credentials case.
 
 USE: claude sonnet
 
@@ -86,40 +86,24 @@ State plainly that no path in this task resolves against /mnt/c/Users or any Win
 
 VERIFY BEFORE ACT:
 
-grep -n "use_alter=True" app/models/sequence.py
-grep -n "fk_sequences_current_version_id" migrations/versions/e2f3g4h5i6j7_add_sequence_data_models.py
-find . -iname "conftest.py" -not -path "*/node_modules/*"
-find . -iname "pytest.ini" -o -iname "pyproject.toml" | head -5
-cat .env.test 2>/dev/null | grep -v "PASSWORD\|SECRET\|KEY\|TOKEN" | head -20
-pytest --collect-only 2>&1 | tail -30
-pytest 2>&1 | tail -50
-echo "REAL EXIT CODE: $?"
+grep -n "def test_no_credentials_returns_401" -A 15 tests/test_postmark_inbound_webhook.py
 
-Paste all real output, including the real current pytest exit code before any fix is applied. I want to see the real current failure state (collection error, teardown error, or something else entirely) before assuming Andrew's diagnosis is the only issue present. If pytest fails for a reason unrelated to the FK constraint, stop and report that plainly rather than proceeding as if the described fix is sufficient.
-
-WHAT THIS IS:
-
-Per Andrew's direct instruction: in app/models/sequence.py, the ForeignKey to sequence_versions.id declared with use_alter=True has no name, while the migration that actually creates the deferred constraint uses the real name fk_sequences_current_version_id. SQLAlchemy needs the model-side name to match the migration-side name to correctly emit DROP CONSTRAINT during test teardown; without it, teardown fails even when every test itself passed, corrupting trust in the whole suite's exit code.
+Confirm the real current test content before editing.
 
 CHANGE INSTRUCTIONS:
 
-In app/models/sequence.py, find the current_version_id ForeignKey declaration using use_alter=True. Add name="fk_sequences_current_version_id" to it, matching exactly the real name already used in migrations/versions/e2f3g4h5i6j7_add_sequence_data_models.py (confirm the exact real string from VERIFY BEFORE ACT, do not assume it matches what is written in this task if the real migration file shows something different).
-
-Do not touch any other file. Do not write any test in this task. This is a single, surgical, one-line fix.
+Update only the docstring of test_no_credentials_returns_401 to accurately state what was really proven: this confirms the endpoint rejects requests with no Authorization header at all, via FastAPI's own HTTPBasic default behavior (auto_error=True), which runs before the custom _verify_credentials function. Note plainly that this is still real, correct protection, just attributable to a different layer than the wrong-credentials test. Do not change the assertion logic itself, only the docstring. Do not touch test_wrong_credentials_returns_401 or test_correct_credentials_accepted, both of which were confirmed tonight to genuinely test the custom function.
 
 VERIFY AFTER ACT:
 
-pytest 2>&1 | tail -50
-echo "REAL EXIT CODE: $?"
+.venv/bin/pytest tests/test_postmark_inbound_webhook.py::TestWebhookAuth -v
 
-git diff
-
-Paste all real output. Confirm the real exit code is 0. If it is not 0, report the real remaining error in full rather than a summary of it, and do not claim success.
+Paste real output confirming all three tests still pass, unaffected by a docstring-only change.
 
 MANUAL VERIFICATION:
 
-Ben will review the real pytest output and the real exit code himself before treating this as fixed. No browser or backend restart needed for this task -- it is a test-infrastructure fix only.
+Ben will review the corrected docstring for accuracy.
 
 GIT:
 
-Do not commit until Ben confirms the real exit code is 0 in output he has seen directly, not a paraphrase.
+Do not commit until Ben confirms the docstring accurately reflects what was really proven tonight.
