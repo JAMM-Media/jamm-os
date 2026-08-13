@@ -74,9 +74,9 @@ This section exists because a past session confidently claimed specific files we
 
 # Section 3 - The task
 
-TASK: Small clarification to test_no_credentials_returns_401 in tests/test_postmark_inbound_webhook.py. Real red/green verification tonight proved this test's 401 result comes from FastAPI's HTTPBasic default auto_error=True behavior (it rejects requests with no Authorization header before our custom _verify_credentials function ever runs), not from our own credential-checking logic. The test's real assertion is still correct and the endpoint really is protected either way, but the current docstring implies it proves our custom logic works, which it does not for this specific no-credentials case.
+TASK 3 OF N: Write tests codifying the locked attribution rules as law, per Andrew's direct instruction. Provenance precedence, UTM-derived source_platform protection, and attribution carrying forward on conversion. Much of this behavior was manually verified live earlier tonight -- this task turns that into real, repeatable, guarded automated coverage.
 
-USE: claude sonnet
+USE: claude fable-5
 
 ENVIRONMENT SANITY CHECK:
 
@@ -86,24 +86,69 @@ State plainly that no path in this task resolves against /mnt/c/Users or any Win
 
 VERIFY BEFORE ACT:
 
-grep -n "def test_no_credentials_returns_401" -A 15 tests/test_postmark_inbound_webhook.py
+cat app/crud/lead.py
+cat app/api/leads.py
+grep -n "convert_lead_to_client\|transition_lead_stage" app/crud/lead.py
+cat app/core/enums.py | grep -A20 "class LeadProvenance"
+grep -n "source_platform" app/crud/lead.py app/api/leads.py app/api/intake.py
+find tests -iname "*attribution*" -o -iname "*provenance*" -o -iname "*lead*"
 
-Confirm the real current test content before editing.
+Paste all real output. Confirm the real current tier-comparison logic in update_lead_with_precedence exactly as it exists today. Specifically confirm whether source_platform has ANY distinct protection mechanism separate from the general provenance-tier comparison, or whether it is treated identically to every other field. If no distinct mechanism exists for source_platform specifically -- meaning two updates at the SAME provenance tier could overwrite a UTM-derived source_platform with a manually picked one -- stop and report this as a real finding per Andrew's explicit instruction style (a gap between contract intent and shipped behavior matters more than a green test), rather than writing a test that asserts protection that does not actually exist. If it turns out the general provenance-tier logic already fully satisfies this rule in every real case, explain exactly why in your summary before writing the test, so the reasoning is on record.
+
+WHAT THIS IS:
+
+Per Andrew's Step 3 instruction, three locked product decisions to test as law, not as ordinary behavior:
+
+1. Provenance precedence is substitution, never blending: crm_lead beats firm_entered beats client_reported. Lower tiers fill blanks only, never overwrite higher tiers. This was manually proven live earlier tonight via direct curl and psql verification against a real running server -- this task is the automated, repeatable version of that same proof.
+
+2. A UTM-derived source_platform is never overwritten by a hand-picked one. Per VERIFY BEFORE ACT, confirm whether this is really a distinct guarantee or fully covered by rule 1 before writing this test.
+
+3. Attribution captured at intake flows forward unchanged when a lead converts to a client. This was also manually proven live earlier tonight via convert_lead_to_client and a real psql check on the resulting Client row -- this task is the automated version.
 
 CHANGE INSTRUCTIONS:
 
-Update only the docstring of test_no_credentials_returns_401 to accurately state what was really proven: this confirms the endpoint rejects requests with no Authorization header at all, via FastAPI's own HTTPBasic default behavior (auto_error=True), which runs before the custom _verify_credentials function. Note plainly that this is still real, correct protection, just attributable to a different layer than the wrong-credentials test. Do not change the assertion logic itself, only the docstring. Do not touch test_wrong_credentials_returns_401 or test_correct_credentials_accepted, both of which were confirmed tonight to genuinely test the custom function.
+Create tests/test_attribution_rules.py:
+
+1. test_higher_tier_provenance_blocks_lower_tier_overwrite_of_nonnull_field: create a lead with crm_lead provenance and a real non-null field value (e.g. phone). Attempt an update with firm_entered provenance on that same field. Assert the original value is unchanged and provenance remains crm_lead. This is the real automated version of tonight's manual curl proof -- match its real shape (same tier ordering, same blocked-overwrite behavior) using the actual CRUD function directly, not just the API layer, so the test is precise about which function is under test.
+
+2. test_lower_tier_provenance_fills_null_field: create a lead with crm_lead provenance and a null field (e.g. revenue_band). Attempt an update with client_reported provenance setting that field. Assert it IS set, since lower tiers may fill blanks, only not overwrite. This proves the other real half of the substitution rule, not just the blocking half.
+
+3. test_equal_tier_provenance_allows_normal_update: create a lead with firm_entered provenance. Update again with firm_entered provenance on a non-null field. Assert the update applies normally. This proves equal-tier updates are not incorrectly blocked, which the earlier manual testing tonight also confirmed.
+
+4. Based on the real finding from VERIFY BEFORE ACT: either write test_utm_derived_source_platform_protected_from_manual_override if a real distinct mechanism exists, or write nothing and report the gap plainly if it does not, per Andrew's explicit instruction to report gaps rather than paper over them with an assertion that does not reflect real behavior.
+
+5. test_attribution_flows_forward_unchanged_on_conversion: create a lead with real referral_source, referring_client_id, and entity_type values set. Transition it to won via the real transition_lead_stage function. Assert the resulting Client has the exact same values for all three fields, unchanged. This is the automated version of tonight's manual won-conversion proof.
+
+6. test_dropped_fields_do_not_transfer_and_are_documented: per the real dropped-fields list already documented in tonight's commit history (stage, lost_reason, source_platform, utm_campaign, utm_source, utm_medium, utm_content, utm_term, referral_partner_id, revenue_band, urgency, hot, provenance, first_response_time), confirm the resulting Client model genuinely has no equivalent field for at least a few of these (pick 2 or 3 real representative ones, e.g. hot and urgency) so this documented gap is enforced by a real test, not just a commit message claim that could silently go stale.
+
+TEST DISCIPLINE, applies to every test written in this task:
+
+Test #1 (higher tier blocks lower tier) is the real guard test for this task. It must be watched to fail: temporarily modify update_lead_with_precedence so it always applies the update regardless of tier (e.g. remove the tier comparison entirely and always apply), run test #1, confirm it goes genuinely red with a real assertion failure showing the value was overwritten when it should not have been, restore the real code, re-run to confirm green, then run git diff on the touched source file and confirm it exactly matches the original committed state. Report the real before and after output in your summary, not a description of having done it -- Ben will independently re-run this exact cycle himself regardless of what you report, per tonight's established practice.
+
+Never weaken an assertion to make a test pass. If any test in this task exposes a real defect in the already-shipped attribution logic, stop, do not modify the test to accommodate the defect, and report the defect plainly as a finding instead.
+
+Tests create their own leads, firms, and any other data they need, and must not depend on seed data or test ordering.
+
+No em dashes anywhere in any test file, string, comment, or test name.
 
 VERIFY AFTER ACT:
 
-.venv/bin/pytest tests/test_postmark_inbound_webhook.py::TestWebhookAuth -v
+.venv/bin/pytest tests/test_attribution_rules.py -v 2>&1 | tail -60
 
-Paste real output confirming all three tests still pass, unaffected by a docstring-only change.
+Paste the real, full output of this file running in isolation.
+
+Then:
+
+.venv/bin/pytest > /tmp/pytest_output_step3.txt 2>&1
+echo "REAL EXIT CODE: $?"
+tail -40 /tmp/pytest_output_step3.txt
+
+Paste all real output. Confirm the real new test count, confirm the only real failures present are the same 9 pre-existing Stripe failures from before, and confirm the real total pass count increased by exactly the number of new tests added in this task.
 
 MANUAL VERIFICATION:
 
-Ben will review the corrected docstring for accuracy.
+Ben will independently re-run the real guard-test red/green cycle for test #1 himself, live, the same way as every prior guard test tonight, before treating this as complete.
 
 GIT:
 
-Do not commit until Ben confirms the docstring accurately reflects what was really proven tonight.
+Do not commit until Ben confirms the real red/green cycle output he has watched directly, not a paraphrase, plus the real full suite output.
