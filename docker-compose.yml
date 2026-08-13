@@ -4,7 +4,7 @@ version: "3.9"
 
 services:
   db:
-    image: postgres:14
+    image: postgres:18
     container_name: jamm-db
     restart: always
     environment:
