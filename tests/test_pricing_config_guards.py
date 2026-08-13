@@ -819,3 +819,210 @@ def test_numeric_dimension_cannot_have_option_prices(db, firm_a, flag):
 
     assert exc.value.status_code == 400
     assert "cannot carry option prices" in exc.value.detail
+
+
+# ---------------------------------------------------------------------------
+# Tier edits must not destroy the subtree hanging off them
+# ---------------------------------------------------------------------------
+
+def _parent_with_child_chain(db, firm, user, flag):
+    """A parent numeric config with two tiers, a child config hanging under the
+    first tier, and priced tiers under the child.
+
+    The parent's tier 0 is left unpriced deliberately: it has a child, so the
+    leaf-only law forbids it carrying a price at all.
+    """
+    top, top_unit = _numeric_dimension(db, flag, "top_dim", rank=1)
+    leaf, leaf_unit = _numeric_dimension(db, flag, "leaf_dim", rank=3)
+
+    top_config = _configure(db, firm, user, top, top_unit)
+    top_tiers = svc.save_tiers(
+        db,
+        firm_id=firm.id,
+        actor_id=user.id,
+        config_id=top_config.id,
+        tiers=[_tier(0, 10, None, 0), _tier(10, 20, "150.00", 1)],
+    )
+
+    child_config = _configure(
+        db, firm, user, leaf, leaf_unit, parent_tier_id=top_tiers[0].id
+    )
+    child_tiers = svc.save_tiers(
+        db,
+        firm_id=firm.id,
+        actor_id=user.id,
+        config_id=child_config.id,
+        tiers=[_tier(0, 5, "60.00", 0)],
+    )
+    return top_config, top_tiers, child_config, child_tiers
+
+
+def test_tier_edit_preserves_child_configs(db, firm_a, flag):
+    """Editing a parent's tiers must not disturb what hangs under them.
+
+    This is the test that pins the in-place update in save_tiers. The obvious
+    simplification, delete every existing tier and insert the incoming set,
+    passes every other test in this file while corrupting the subtree.
+
+    Note what that corruption actually is, because it is not what you would
+    guess from reading the schema. parent_tier_id is ON DELETE CASCADE, but
+    save_tiers goes through the ORM, and SQLAlchemy nulls the foreign key
+    itself before the database ever applies its own rule. So the child is not
+    deleted, it SURVIVES as an orphan with parent_tier_id NULL: silently
+    demoted from a dependent price to a flat additive one. That is why the
+    assertion below checks parent_tier_id specifically and not merely that the
+    row still exists. A test asserting only survival passes against the bug.
+    """
+    from app.models.firm_dimension_config import FirmDimensionConfig
+
+    firm, user = firm_a
+    top_config, top_tiers, child_config, child_tiers = _parent_with_child_chain(
+        db, firm, user, flag
+    )
+    parented_tier_id = top_tiers[0].id
+
+    # Edit the parent: same sort_orders, different boundaries, and a changed
+    # price on the tier that has no child.
+    svc.save_tiers(
+        db,
+        firm_id=firm.id,
+        actor_id=user.id,
+        config_id=top_config.id,
+        tiers=[_tier(0, 12, None, 0), _tier(12, 25, "175.00", 1)],
+    )
+
+    db.expire_all()
+
+    # The child config survived, still attached to the same tier.
+    surviving = db.get(FirmDimensionConfig, child_config.id)
+    assert surviving is not None, (
+        "the child config was destroyed by an edit to its parent's tiers"
+    )
+    assert surviving.parent_tier_id == parented_tier_id
+
+    # The tier it hangs under is the same row, not a recreated one.
+    reused = db.get(FirmTier, parented_tier_id)
+    assert reused is not None, "the parented tier row was replaced, not updated"
+    assert reused.range_max == Decimal("12.00"), "the edit did not apply"
+
+    # The child's own tiers and prices are untouched.
+    child_after = db.execute(
+        select(FirmTier)
+        .where(FirmTier.config_id == child_config.id)
+        .order_by(FirmTier.sort_order)
+    ).scalars().all()
+    assert len(child_after) == 1
+    assert child_after[0].id == child_tiers[0].id
+    assert child_after[0].price == Decimal("60.00")
+
+
+def test_removing_parented_tier_is_refused(db, firm_a, flag):
+    """A tier with configs hanging under it cannot be dropped by a tier edit.
+
+    Allowing it would delete the subtree through CASCADE, which is a
+    destructive operation and therefore belongs to change_dimension_direction
+    and its explicit confirm flag.
+    """
+    from app.models.firm_dimension_config import FirmDimensionConfig
+
+    firm, user = firm_a
+    top_config, top_tiers, child_config, child_tiers = _parent_with_child_chain(
+        db, firm, user, flag
+    )
+    parented_tier_id = top_tiers[0].id
+
+    # Omit sort_order 0, the tier the child hangs under.
+    with pytest.raises(HTTPException) as exc:
+        svc.save_tiers(
+            db,
+            firm_id=firm.id,
+            actor_id=user.id,
+            config_id=top_config.id,
+            tiers=[_tier(0, 20, "150.00", 1)],
+        )
+
+    assert exc.value.status_code == 400
+    assert "change_dimension_direction" in exc.value.detail
+
+    db.expire_all()
+
+    # Nothing was destroyed by the refused edit.
+    assert db.get(FirmTier, parented_tier_id) is not None
+    assert db.get(FirmDimensionConfig, child_config.id) is not None
+    assert db.get(FirmTier, child_tiers[0].id) is not None
+    assert db.get(FirmTier, child_tiers[0].id).price == Decimal("60.00")
+
+
+# ---------------------------------------------------------------------------
+# Rule 8: categorical branch ambiguity, both directions
+# ---------------------------------------------------------------------------
+
+def _categorical_ambiguity_fixture(db, firm, user, flag):
+    """A categorical dimension plus a numeric dimension to hang it under, plus
+    a finer numeric dimension to act as an option-parented child."""
+    top, top_unit = _numeric_dimension(db, flag, "top_dim", rank=1)
+    choice, options = _categorical_dimension(db, flag, "choice_dim", rank=2)
+    leaf, leaf_unit = _numeric_dimension(db, flag, "leaf_dim", rank=3)
+
+    top_config = _configure(db, firm, user, top, top_unit)
+    top_tiers = svc.save_tiers(
+        db,
+        firm_id=firm.id,
+        actor_id=user.id,
+        config_id=top_config.id,
+        tiers=[_tier(0, 10, None, 0), _tier(10, 20, None, 1)],
+    )
+    return choice, options, leaf, leaf_unit, top_tiers
+
+
+def test_second_categorical_config_with_option_children_refused(db, firm_a, flag):
+    """Direction one of rule 8.
+
+    A categorical dimension that already has children hanging under its options
+    cannot be configured on a second branch, because those existing children
+    would immediately become unable to say which branch they belong to.
+    """
+    firm, user = firm_a
+    choice, options, leaf, leaf_unit, top_tiers = _categorical_ambiguity_fixture(
+        db, firm, user, flag
+    )
+
+    # Configure the categorical dimension flat, then hang a child under one of
+    # its options. This much is legal.
+    _configure(db, firm, user, choice, None)
+    _configure(db, firm, user, leaf, leaf_unit, parent_option_id=options[0].id)
+
+    # Now try to put the same categorical dimension on a second branch.
+    with pytest.raises(HTTPException) as exc:
+        _configure(db, firm, user, choice, None, parent_tier_id=top_tiers[0].id)
+
+    assert exc.value.status_code == 400
+    assert "second branch" in exc.value.detail
+    assert "choice_dim" in exc.value.detail
+
+
+def test_option_child_refused_when_dimension_on_multiple_branches(db, firm_a, flag):
+    """Direction two of rule 8, the mirror.
+
+    Configuring a categorical dimension twice is legal while nothing hangs
+    under its options. What is refused is the child that would be born
+    ambiguous underneath that arrangement.
+    """
+    firm, user = firm_a
+    choice, options, leaf, leaf_unit, top_tiers = _categorical_ambiguity_fixture(
+        db, firm, user, flag
+    )
+
+    # Two branches for the same categorical dimension, legal because no option
+    # has children yet. This also proves direction one is not over-firing.
+    _configure(db, firm, user, choice, None)
+    _configure(db, firm, user, choice, None, parent_tier_id=top_tiers[0].id)
+
+    # Now the child would have no way to name its branch.
+    with pytest.raises(HTTPException) as exc:
+        _configure(db, firm, user, leaf, leaf_unit, parent_option_id=options[0].id)
+
+    assert exc.value.status_code == 400
+    assert "more than one branch" in exc.value.detail
+    assert "choice_dim" in exc.value.detail
+    assert "leaf_dim" in exc.value.detail

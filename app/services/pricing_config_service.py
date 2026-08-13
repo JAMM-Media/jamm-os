@@ -28,6 +28,37 @@ The rules, in the order the task specifies them:
 5. Role and kind coherence               -> _validate_role_coherence
 6. Activation law                        -> upsert_service_catalog_entry
 7. Tenant isolation                      -> every query below
+8. Categorical branch ambiguity          -> _validate_categorical_branch_ambiguity
+
+RULE 8, and why it exists.
+
+The branch-uniqueness constraint allows the same dimension to be configured on
+more than one branch, which is intended: a firm may want transaction volume
+priced differently under two different parents. Option-parented children are
+the exception that breaks under it. A child hanging under a vocabulary option
+references the OPTION alone, not the parent config, and vocabulary options
+belong to the system-owned dimension rather than to any one firm's config of
+it. So when a categorical dimension is configured on two branches, an
+option-parented child underneath it cannot say which branch it belongs to.
+
+_descendant_config_ids resolves that ambiguity the only way it can, by
+claiming the child for every config of that dimension. The consequence is
+real data loss: change_dimension_direction on either config deletes tiers and
+prices the firm attached under the other one.
+
+Rule 8 forbids the ambiguous shape from being created, in both directions.
+It is a save-time guard, not a fix.
+
+THE DURABLE FIX IS DEFERRED AND LEDGERED. firm_dimension_configs.parent_option_id
+should be accompanied by a parent_config_id so a child names its branch
+outright, at which point _descendant_config_ids becomes exact and rule 8 can
+be dropped. That is a schema change with a migration and a backfill, out of
+scope for this session.
+
+Rule 8 is enforced in configure_dimension, which is where ambiguous shapes get
+created. change_dimension_direction is NOT covered: it can still move a config
+into an ambiguous arrangement. That gap is deliberate for now, is recorded in
+the session summary, and closes with the durable fix above.
 """
 
 import uuid
@@ -35,7 +66,7 @@ from decimal import Decimal
 from typing import Optional
 
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.enums import DimensionKind, DimensionRole
@@ -344,6 +375,96 @@ def _assert_option_can_be_priced(
 
 
 # ---------------------------------------------------------------------------
+# Rule 8: categorical branch ambiguity. See the module docstring for why.
+# ---------------------------------------------------------------------------
+
+def _config_count_for_dimension(
+    db: Session, firm_id: uuid.UUID, dimension_id: uuid.UUID
+) -> int:
+    """How many times this firm has configured this dimension, across all branches."""
+    return db.execute(
+        select(func.count(FirmDimensionConfig.id)).where(
+            FirmDimensionConfig.firm_id == firm_id,
+            FirmDimensionConfig.dimension_id == dimension_id,
+        )
+    ).scalar_one()
+
+
+def _option_parented_child_exists(
+    db: Session, firm_id: uuid.UUID, dimension_id: uuid.UUID
+) -> bool:
+    """Whether any config hangs under any vocabulary option of this dimension."""
+    option_ids = db.execute(
+        select(ComplexityVocabularyOption.id).where(
+            ComplexityVocabularyOption.dimension_id == dimension_id
+        )
+    ).scalars().all()
+    if not option_ids:
+        return False
+
+    return db.execute(
+        select(FirmDimensionConfig.id).where(
+            FirmDimensionConfig.firm_id == firm_id,
+            FirmDimensionConfig.parent_option_id.in_(option_ids),
+        ).limit(1)
+    ).scalar_one_or_none() is not None
+
+
+def _validate_categorical_branch_ambiguity(
+    db: Session,
+    firm_id: uuid.UUID,
+    dimension: ComplexityDimension,
+    parent: Optional[ComplexityDimension],
+    parent_option_id: Optional[uuid.UUID],
+) -> None:
+    """Refuse both ways of creating a branch an option-parented child cannot name.
+
+    Direction one: configuring a categorical dimension again when it already
+    has option-parented children. The existing children would become ambiguous
+    the moment the second config exists.
+
+    Direction two: hanging a new child under an option whose dimension already
+    lives on more than one branch. The new child would be born ambiguous.
+
+    These are separate checks, not two views of one check. Either can fire
+    while the other does not, depending on which side of the arrangement is
+    created first.
+    """
+    if dimension.kind == DimensionKind.categorical:
+        already_configured = _config_count_for_dimension(db, firm_id, dimension.id)
+        if already_configured >= 1 and _option_parented_child_exists(
+            db, firm_id, dimension.id
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Dimension '{dimension.key}' is categorical, is already "
+                    "configured, and has dependent configs hanging under its "
+                    "options. It cannot be configured on a second branch: a "
+                    "child hanging under an option would have no way to say "
+                    "which branch it belongs to, and a later direction change "
+                    "would delete prices from both. Remove the dependent "
+                    "configs first, or price this dimension on its existing "
+                    "branch."
+                ),
+            )
+
+    if parent_option_id is not None and parent is not None:
+        if _config_count_for_dimension(db, firm_id, parent.id) > 1:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Dimension '{dimension.key}' cannot hang under an option "
+                    f"of '{parent.key}', because '{parent.key}' is configured "
+                    "on more than one branch. A child references the option "
+                    "alone, so it could not say which branch of "
+                    f"'{parent.key}' it belongs to. Consolidate "
+                    f"'{parent.key}' onto one branch first."
+                ),
+            )
+
+
+# ---------------------------------------------------------------------------
 # Rule 5: role and kind coherence
 # ---------------------------------------------------------------------------
 
@@ -505,8 +626,8 @@ def configure_dimension(
 ) -> FirmDimensionConfigOut:
     """Attach one system dimension to one firm, flat or under a parent.
 
-    Runs rules 2, 3 and 5. The single-parent rule is already guaranteed by the
-    Create schema and by the database check constraint, so it is not
+    Runs rules 2, 3, 5 and 8. The single-parent rule is already guaranteed by
+    the Create schema and by the database check constraint, so it is not
     re-checked here.
     """
     dimension = _get_dimension(db, data.dimension_id)
@@ -518,6 +639,9 @@ def configure_dimension(
     parent = _parent_dimension(db, firm_id, data.parent_tier_id, data.parent_option_id)
     _validate_downhill_link(dimension, parent)
     _assert_parent_is_unpriced(db, firm_id, data.parent_tier_id, data.parent_option_id)
+    _validate_categorical_branch_ambiguity(
+        db, firm_id, dimension, parent, data.parent_option_id
+    )
 
     config = FirmDimensionConfig(
         firm_id=firm_id,
@@ -582,11 +706,29 @@ def save_tiers(
     """Replace the tier set for one config, in place.
 
     Existing tiers are matched to incoming ones by sort_order and updated
-    rather than deleted and recreated. That is deliberate and load-bearing:
-    firm_dimension_configs.parent_tier_id is ON DELETE CASCADE, so dropping a
-    tier row silently drops every config hanging under it and everything below
-    that. A tier edit must never be able to destroy a subtree by accident.
-    Removing a tier that still has children is therefore refused outright.
+    rather than deleted and recreated. That is deliberate and load-bearing,
+    and the reason was measured rather than assumed. Deleting a tier row that
+    has configs hanging under it corrupts data two different ways depending on
+    how the delete is issued:
+
+      ORM, db.delete(tier)   -> SQLAlchemy sees the child_configs relationship
+                                and issues UPDATE ... SET parent_tier_id=NULL
+                                first. The child SURVIVES, silently demoted
+                                from dependent to flat. Its prices stop being
+                                nested and start stacking additively, so the
+                                firm quietly begins quoting different numbers.
+      Raw SQL, DELETE ...    -> the database applies ON DELETE CASCADE
+                                unmediated and the child and its whole subtree
+                                are DELETED.
+
+    This function goes through the ORM, so the realistic failure here is the
+    silent demotion, which is the worse of the two because nothing disappears
+    and nothing errors. Either way a tier edit must never be able to restructure
+    a subtree by accident, so removing a tier that still has children is refused
+    outright and directed at change_dimension_direction.
+
+    tests/test_pricing_config_guards.py::test_tier_edit_preserves_child_configs
+    pins this, and its negative control is the delete-and-recreate rewrite.
     """
     config = _get_config(db, firm_id, config_id)
     dimension = _get_dimension(db, config.dimension_id)
