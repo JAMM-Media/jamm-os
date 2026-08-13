@@ -36,7 +36,7 @@ class Sequence(Base):
     # Uses use_alter=True to break the circular FK dependency between
     # sequences and sequence_versions (each references the other).
     current_version_id: Mapped[Optional[uuid.UUID]] = mapped_column(
-        ForeignKey("sequence_versions.id", ondelete="SET NULL", use_alter=True),
+        ForeignKey("sequence_versions.id", ondelete="SET NULL", use_alter=True, name="fk_sequences_current_version_id"),
         nullable=True,
     )
 
