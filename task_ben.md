@@ -74,74 +74,27 @@ This section exists because a past session confidently claimed specific files we
 
 # Section 3 - The task
 
-TASK 5 OF N: Standard tenant-isolation and RBAC test coverage for every new authenticated CRM endpoint, per Andrew's Step 5 instruction. Scope: app/api/leads.py and app/api/referral_partners.py only. The other new modules from tonight (Sequence, Step, StepEdge, SequenceGoal, Enrollment, LeadMessage) have no API router at all, by deliberate design in their original build tasks, so RBAC/tenant testing does not apply to them. The three public endpoints (intake, postmark_inbound, unsubscribe) already received tenant-isolation coverage in Step 2 and have no RBAC to test since they are deliberately unauthenticated.
+TASK: Give me the exact command to manually trigger run_nurture_tick() right now, without waiting for the cron interval. Do not run it yourself — I need to run it and watch it, but tell me precisely what to type.
 
-USE: claude fable-5
+USE: claude sonnet
 
 ENVIRONMENT SANITY CHECK:
-
 pwd
 
-State plainly that no path in this task resolves against /mnt/c/Users or any Windows-side copy.
+Confirm exactly /home/corby/jamm-os, no /mnt/c/Users resolution.
 
 VERIFY BEFORE ACT:
+cd /home/corby/jamm-os
+grep -n "def run_nurture_tick" app/services/nurture_execution_service.py
+head -20 app/services/nurture_execution_service.py
 
-cat app/api/leads.py
-cat app/api/referral_partners.py
-sed -n '1,60p' tests/conftest.py
-sed -n '150,300p' tests/conftest.py
-cat tests/test_tasks.py
-
-Paste all real output. Confirm the exact real role requirement on every single endpoint in both files (confirmed already: leads.py is require_staff_or_above throughout; referral_partners.py reads are require_staff_or_above, writes are require_manager_or_above). Confirm the real firm_a_owner, firm_a_staff, and firm_b_owner fixture shapes exactly as they exist today, and read the full real test_tasks.py file as the closest existing real precedent for both RBAC and tenant-isolation test structure in this codebase, since both new test files in this task should match its real conventions rather than invent new ones.
+Confirm the real function signature and the real import path.
 
 WHAT THIS IS:
-
-Per Andrew's Step 5 instruction: a tenant isolation test proving Firm A cannot read or write Firm B data through any endpoint, and RBAC tests confirming each endpoint rejects roles below its required level, for every new module. Applied here to the two real routers that actually have authenticated endpoints.
+I have one real enrollment (id c499e48d-cef8-483f-b965-902d1243df4c) due for the nurture tick right now, and I want to trigger the job manually rather than wait up to 15 minutes for the cron schedule, so I can watch the result immediately.
 
 CHANGE INSTRUCTIONS:
-
-Create tests/test_leads_rbac_and_tenant_isolation.py:
-
-1. RBAC: for each of the five real endpoints on leads.py (POST /leads/, GET /leads/, GET /leads/{id}, PATCH /leads/{id}, POST /leads/{id}/transition), confirm a client_portal_user role is rejected with 403, following the exact real pattern from test_tasks.py's test_client_cannot_list_tasks (real user creation via the users endpoint or direct model creation matching that file's real approach, real login, real token, real request, real 403 assertion). staff, manager, and firm_owner should all succeed (require_staff_or_above accepts all three), confirm this for at least the list and create endpoints using the real firm_a_staff fixture directly (no need to create a portal user by hand for the positive case, the fixture already exists).
-
-2. Tenant isolation, for EACH endpoint, not just one: using firm_a_owner and firm_b_owner fixtures, create a real Lead under Firm A, then attempt to GET/PATCH/transition it using Firm B's real auth headers. Assert every such attempt returns 404 (not 403, matching the real documented security reasoning already used elsewhere in this codebase for cross-tenant lookups: returning 404 instead of 403 prevents an attacker from confirming a record's existence across tenants, confirm this is the real actual behavior from VERIFY BEFORE ACT rather than assuming it). Also confirm GET /leads/ (list) run as Firm B never includes any Firm A lead in its results, using a real response-body assertion, not just a status code check.
-
-Create tests/test_referral_partners_rbac_and_tenant_isolation.py:
-
-3. RBAC: confirm firm_a_staff (staff role) gets 403 on the three manager-only endpoints (create, update, delete), using the real firm_a_staff fixture. Confirm firm_a_staff succeeds on the two staff-or-above read endpoints (list, get single). Confirm firm_a_owner (satisfies manager-or-above) succeeds on all five.
-
-4. Tenant isolation: create a real ReferralPartner under Firm A, attempt to read/update/delete it as Firm B, assert the real correct rejection status for each (confirm from VERIFY BEFORE ACT whether this module uses 404 or 403 for cross-tenant access, do not assume it matches leads.py without checking the real code). Confirm list as Firm B never includes Firm A's partner.
-
-5. Real test of the active-lead-before-delete check built earlier tonight: attempt to delete a ReferralPartner that has a real Lead referencing it via referral_partner_id. Confirm the real documented 409 response, using a real created Lead and real created ReferralPartner, not a mock.
-
-TEST DISCIPLINE:
-
-Pick ONE test from this task, the leads.py cross-tenant GET returning 404, as this task's real guard test. It must be watched to fail: temporarily remove or bypass the firm_id filter in the relevant real lookup function in app/crud/lead.py (confirm the exact real function and line from VERIFY BEFORE ACT before editing), run the specific test, confirm it goes genuinely red (likely showing a 200 with Firm A's real data returned to a Firm B request, which is the real breach this guards against), restore the real code, re-run to confirm green, run git diff to confirm the working tree is clean. Report the real before and after output in your summary. Ben will independently re-run this exact cycle himself regardless of what is reported.
-
-Never weaken an assertion to make a test pass. If any test in this task exposes a real defect in the already-shipped code, stop, do not modify the test to accommodate the defect, and report the defect plainly as a finding instead.
-
-Tests create their own firms, users, leads, and partners, and must not depend on seed data or test ordering.
-
-No em dashes anywhere in any test file, string, comment, or test name.
-
-VERIFY AFTER ACT:
-
-.venv/bin/pytest tests/test_leads_rbac_and_tenant_isolation.py tests/test_referral_partners_rbac_and_tenant_isolation.py -v 2>&1 | tail -100
-
-Paste the real, full output of both new files running in isolation.
-
-Then:
-
-.venv/bin/pytest > /tmp/pytest_output_step5.txt 2>&1
-echo "REAL EXIT CODE: $?"
-tail -40 /tmp/pytest_output_step5.txt
-
-Paste all real output. Confirm the real new test count and that the only failures present are the same 9 pre-existing Stripe failures.
-
-MANUAL VERIFICATION:
-
-Ben will independently re-run the real guard-test red/green cycle himself, live, same as every prior guard test tonight, before treating this as complete.
+None. Give me the exact real one-line or short command to run from an activated venv shell that imports and calls run_nurture_tick() directly, using the real confirmed import path from VERIFY BEFORE ACT. If it returns a summary dict, tell me what the output should look like so I know what to expect.
 
 GIT:
-
-Do not commit until Ben confirms the real red/green cycle output he has watched directly, plus the real full suite output.
+No commit. This task produces no code.

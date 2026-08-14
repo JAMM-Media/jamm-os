@@ -146,11 +146,26 @@ def transition_lead_stage(
     from attribution field updates and must not go through
     update_lead_with_precedence.
 
+    Won is terminal: raises ValueError on any transition attempt off won.
+    The won transition already created a real Client; reversing the stage does
+    not undo that. A proper un-convert is a separate, future action.
+
+    Lost is reopenable: a forward move off lost clears lost_reason and fires
+    a lead.reopened event carrying the prior lost_reason for the intelligence
+    layer.
+
     Raises ValueError if lost is requested with no lost_reason.
+    Raises ValueError if any transition is attempted off won.
     Caller converts ValueError to HTTP 400.
     """
     from app.core.enums import LeadLostReason
     from app.services.behavioral_log import log_event
+
+    if lead.stage == LeadStage.won.value:
+        raise ValueError(
+            "Won is a terminal stage. Transitions off won are not allowed. "
+            "A dedicated un-convert action is required."
+        )
 
     if new_stage == LeadStage.won:
         client = convert_lead_to_client(db, lead)
@@ -181,8 +196,26 @@ def transition_lead_stage(
             metadata={"lost_reason": str(lost_reason)},
         )
     else:
-        lead.stage = new_stage.value
-        db.commit()
-        db.refresh(lead)
+        if lead.stage == LeadStage.lost.value:
+            prior_lost_reason = lead.lost_reason
+            lead.lost_reason = None
+            lead.stage = new_stage.value
+            db.commit()
+            db.refresh(lead)
+            log_event(
+                event_type="lead.reopened",
+                firm_id=lead.firm_id,
+                entity_type="lead",
+                entity_id=lead.id,
+                actor_type="staff",
+                metadata={
+                    "new_stage": new_stage.value,
+                    "prior_lost_reason": prior_lost_reason,
+                },
+            )
+        else:
+            lead.stage = new_stage.value
+            db.commit()
+            db.refresh(lead)
 
     return lead

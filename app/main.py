@@ -20,6 +20,7 @@ from app.services.esign_reminder_service import run_esign_auto_reminders, run_es
 from app.services.invoice_service import run_invoice_overdue_sweep
 from app.services.findings_recheck import recheck_failed_findings
 from app.services.deadline_scheduler import check_approaching_deadlines
+from app.services.nurture_execution_service import run_nurture_tick
 from app.services.metric_pipeline import run_nightly_metric_recompute
 from app.services.irs_auth_service import check_expiring_authorizations
 from app.core.scheduler_lock import try_acquire_scheduler_lock, release_scheduler_lock
@@ -239,6 +240,19 @@ async def lifespan(app: FastAPI):
             minute=1,
             timezone="UTC",
             id="irs_authorization_expiry_check",
+            replace_existing=True,
+        )
+        # Runs every 15 minutes so no enrollment waits more than one quarter-hour
+        # past its scheduled next_action_time. Shorter than hourly cron jobs here
+        # because nurture latency is user-visible: a prospect receives an email
+        # up to interval-length late. 15 minutes is the deliberate trade-off
+        # between latency and DB load for a background tick that runs on every
+        # active enrollment across all firms.
+        scheduler.add_job(
+            run_nurture_tick,
+            trigger="cron",
+            minute="*/15",
+            id="nurture_execution_tick",
             replace_existing=True,
         )
         scheduler.start()

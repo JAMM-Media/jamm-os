@@ -202,7 +202,7 @@ class TestNoCodePathModifiesVersionPin:
         result = subprocess.run(
             [
                 "grep", "-rn",
-                r"\.sequence_version_id\s*=",
+                r"\.sequence_version_id\s*=[^=]",
                 "app/",
             ],
             capture_output=True,
