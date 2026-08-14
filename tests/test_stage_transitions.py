@@ -2,28 +2,19 @@
 
 """
 Tests for stage-transition behavior in transition_lead_stage().
-These tests document REAL CURRENT behavior, including where that behavior
-is more permissive than the contract may intend.
 
-KNOWN GAP
----------
-transition_lead_stage does not validate that a requested stage transition
-is a legitimate forward move, and does not reject transitions away from a
-terminal state (won or lost). The function has exactly two special cases:
-  - won: triggers Client creation
-  - lost: requires a lost_reason
-Everything else -- including backward moves and moves off terminal states --
-falls into the bare else branch and applies without any validation.
+TRANSITION RULES (per Andrew's ruling):
+  Won is terminal. No transition off won is allowed. The won transition
+  already created a real Client and flowed attribution forward; reversing
+  the stage does not undo that. A dedicated un-convert action is the
+  correct path and is not built here.
 
-This should be raised with Andrew as a real product decision:
-  - Should terminal states (won, lost) be locked against further transitions?
-  - Should backward moves require an explicit reason (like lost_reason does)?
-  - Or is this intentional flexibility -- e.g. marking a lead as re-engaged
-    after being lost?
+  Lost is reopenable as a deliberate action. Any forward move off lost
+  clears lost_reason and fires a lead.reopened event carrying the prior
+  lost_reason, so the intelligence layer sees revival as data, not a
+  silent edit.
 
-Until that decision is made, these tests record the current permissive
-behavior as fact so that any future enforcement change breaks them visibly
-rather than silently.
+  Identified through proposal: freely bidirectional, unchanged.
 """
 
 import uuid
@@ -164,80 +155,88 @@ class TestIntentionalTransitions:
 
 
 # ---------------------------------------------------------------------------
-# Gap probes -- document real permissive behavior, do NOT assert false safety
+# Enforced transition rules per Andrew's ruling
 # ---------------------------------------------------------------------------
 
-class TestKnownTransitionGaps:
-    def test_transition_from_won_backward_is_currently_unblocked(self):
-        """GAP: a lead already at won can be transitioned backward with no error.
+class TestEnforcedTransitionRules:
+    def test_won_stage_refuses_all_transitions(self):
+        """Won is terminal: any transition attempt off won raises ValueError.
 
-        The current code's else branch applies any non-won/non-lost stage
-        with zero current-state validation. This test asserts the REAL
-        permissive behavior -- that the backward transition succeeds -- so
-        this gap is on record and any future enforcement change breaks this
-        test visibly rather than silently.
+        Per Andrew's ruling: the won transition already created a real Client
+        and flowed attribution forward. Reversing the stage does not undo that
+        and would leave a lead that lies about its own history. A real
+        un-convert is a separate, future action.
 
-        The resulting state is inconsistent: stage='contacted' but
-        converted_client_id is still pointing to the Client that was
-        created during the won transition. This inconsistency is not caught
-        by the current code.
+        This is the GUARD TEST for this task. Red/green cycle:
+          Break: comment out the 'if lead.stage == LeadStage.won.value' check
+                 in transition_lead_stage.
+          Run:   this test -- expect RED (ValueError not raised, stage changes).
+          Restore: un-comment the check.
+          Rerun: confirm GREEN.
         """
-        firm = _make_firm("won-backward-firm")
+        firm = _make_firm("won-terminal-firm")
         lead = _make_lead(firm.id, LeadStage.proposal)
 
         db = TestingSessionLocal()
         try:
-            # First, transition to won.
             fresh_lead = db.query(Lead).filter(Lead.id == lead.id).first()
             won_lead = transition_lead_stage(db, fresh_lead, LeadStage.won)
             assert won_lead.stage == LeadStage.won.value
             assert won_lead.converted_client_id is not None
 
-            # Now attempt backward transition -- currently unblocked.
-            # Re-fetch since the session may have expired objects after commit.
             fresh_won_lead = db.query(Lead).filter(Lead.id == lead.id).first()
-            result = transition_lead_stage(db, fresh_won_lead, LeadStage.contacted)
+            with pytest.raises(ValueError, match="terminal"):
+                transition_lead_stage(db, fresh_won_lead, LeadStage.contacted)
 
-            # GAP: this succeeds when arguably it should be rejected.
-            assert result.stage == LeadStage.contacted.value, (
-                "GAP CONFIRMED: backward transition from won to contacted succeeded "
-                f"(no error raised). Stage is now {result.stage!r}."
+            unchanged = db.query(Lead).filter(Lead.id == lead.id).first()
+            assert unchanged.stage == LeadStage.won.value, (
+                f"Stage was changed despite ValueError. Got {unchanged.stage!r}"
             )
         finally:
             db.close()
 
-    def test_transition_from_lost_forward_is_currently_unblocked(self):
-        """GAP: a lead already at lost can be transitioned forward with no error.
+    def test_lost_stage_reopen_clears_reason_and_fires_revival_event(self):
+        """Reopening a lost lead: clears lost_reason, advances stage, fires lead.reopened.
 
-        Same gap as above -- the else branch applies non-won/non-lost stages
-        without validating the current state. This means a lost lead can be
-        re-staged as call_booked with no explicit re-engagement mechanism.
-
-        Test asserts the REAL permissive behavior so the gap is documented
-        and visible. Whether this is a bug or intentional flexibility (e.g.
-        recovering a previously lost lead) is a product decision for Andrew.
+        Per Andrew's ruling: lost is reopenable as a deliberate action, not a
+        silent edit. The event carries the prior lost_reason so the intelligence
+        layer sees revival as real data, not an ordinary stage change.
         """
-        firm = _make_firm("lost-forward-firm")
+        from app.models.behavioral_event import BehavioralEvent
+
+        firm = _make_firm("lost-reopen-firm")
         lead = _make_lead(firm.id, LeadStage.proposal)
 
         db = TestingSessionLocal()
         try:
-            # First, transition to lost.
             fresh_lead = db.query(Lead).filter(Lead.id == lead.id).first()
             lost_lead = transition_lead_stage(
                 db, fresh_lead, LeadStage.lost,
                 lost_reason=LeadLostReason.timing,
             )
             assert lost_lead.stage == LeadStage.lost.value
+            assert lost_lead.lost_reason == LeadLostReason.timing.value
 
-            # Now attempt forward transition -- currently unblocked.
             fresh_lost_lead = db.query(Lead).filter(Lead.id == lead.id).first()
             result = transition_lead_stage(db, fresh_lost_lead, LeadStage.call_booked)
 
-            # GAP: this succeeds when arguably it should require an explicit re-engagement reason.
             assert result.stage == LeadStage.call_booked.value, (
-                "GAP CONFIRMED: transition from lost to call_booked succeeded "
-                f"(no error raised). Stage is now {result.stage!r}."
+                f"Expected call_booked after reopen, got {result.stage!r}"
+            )
+            assert result.lost_reason is None, (
+                f"lost_reason must be cleared on reopen, got {result.lost_reason!r}"
+            )
+
+            event = db.query(BehavioralEvent).filter(
+                BehavioralEvent.firm_id == firm.id,
+                BehavioralEvent.event_type == "lead.reopened",
+            ).first()
+            assert event is not None, "lead.reopened event was not fired"
+            assert event.extra_metadata["new_stage"] == LeadStage.call_booked.value, (
+                f"Revival event new_stage wrong: {event.extra_metadata!r}"
+            )
+            assert event.extra_metadata["prior_lost_reason"] == LeadLostReason.timing.value, (
+                f"Revival event prior_lost_reason wrong: {event.extra_metadata!r}"
             )
         finally:
             db.close()
