@@ -86,6 +86,7 @@ from app.api.webhooks.postmark_inbound import router as postmark_inbound_router
 from app.api.leads import router as leads_router
 from app.api.referral_partners import router as referral_partners_router
 from app.api.financial_intelligence import router as financial_intelligence_router
+from app.api.pricing import router as pricing_router
 
 from app.db.base_class import Base
 from app.core.config import get_settings
@@ -343,6 +344,7 @@ app.include_router(unsubscribe_router)
 app.include_router(leads_router)
 app.include_router(referral_partners_router)
 app.include_router(financial_intelligence_router)
+app.include_router(pricing_router)
 
 
 @app.get("/")

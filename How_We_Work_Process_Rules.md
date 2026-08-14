@@ -1,6 +1,6 @@
 # How We Work: Verification and Debugging
 
-This file exists because of a specific, repeated failure. Twelve separate times, a signal reported success while the thing it was supposed to be watching was broken. Every instance cost real time, and every instance looked fine right up until someone checked by hand.
+This file exists because of a specific, repeated failure. Fourteen separate times, a signal reported success while the thing it was supposed to be watching was broken. Every instance cost real time, and every instance looked fine right up until someone checked by hand.
 
 These are not style preferences. Each rule below is here because ignoring it already cost us something.
 
@@ -10,7 +10,7 @@ These are not style preferences. Each rule below is here because ignoring it alr
 
 The failure mode is always the same shape. Something reports success. The report is accurate about what it measured. What it measured was not the thing that mattered.
 
-Twelve instances so far:
+Fourteen instances so far:
 
 1. **Unregistered expiry sweep.** The sweep was written, tested, and correct. It was never registered with the scheduler, so it never ran. Nothing errored, because nothing happened.
 2. **Anniversary job logging ERROR under a successful scheduler.** The scheduler reported healthy. The job inside it was failing every run. Scheduler health and job health are different measurements.
@@ -34,9 +34,21 @@ Twelve instances so far:
 
     **The practical rule: when a suite run follows a pull that changed existing models, a stale local test database is a suspect before the code is.** Check whether the columns actually exist in the test database before debugging anything else. It is a two-second query and it will save an hour of reading a correct diff looking for a bug that is not in it.
 
-Instances seven, nine, ten, and eleven are the purest forms of the pattern. The others are things that failed. Those four never failed. They made a category of failure unobservable, which is worse, because there was nothing to notice. Twelve belongs with them in substance even though it did eventually go red: the divergence it created was unobservable by construction and surfaced only by luck, and it would have kept hiding schema faults for as long as nobody happened to add a column to an existing table.
+13. **A migration chain that could not build from empty, behind a CI step nobody read.** During the public config endpoint session (Aug 14), the first attempt to run `alembic upgrade head` against a scratch database failed at revision `0051_add_metadata_to_concierge_notifications` with `DuplicateTable: relation "ix_concierge_notification_firm_is_read" already exists`. Revision `0038`, an ancestor, already creates an index by that exact name. So did `0051`, and the two had been colliding since June 10, 2026.
 
-When you find a thirteenth, add it here with its origin. The list is the point. Recognizing the shape early is worth more than any individual rule below.
+    Nobody noticed for two months because the collision is invisible to every database that was already past `0051` when it landed. Dev was past it. Production was past it. `alembic current` said head on both, correctly. The only environment that runs the chain from empty is CI, whose `Run migrations` step therefore failed on every push, which also means the test job behind it never ran. Section 5 of this file said, in as many words, that CI proves the migration chain executes. That sentence was the signal, and it had been false for two months while being quoted as reassurance.
+
+    The lesson is not about index names. It is that a claim of the form "CI proves X" is only worth the last time somebody looked at CI. Alembic runs the whole upgrade in one transaction by default, so the failure also rolled back cleanly and left no trace behind: a scratch database with zero tables and no `alembic_version` row, which reads as "nothing happened" rather than "something broke". Fixed with `if_not_exists=True` on the `0051` create, verified by running the chain from empty through to head and reading the resulting catalog rather than the exit status.
+
+14. **A uniqueness rule that no test could ever have exercised.** Found in the same session, while writing the guard test for `uq_enrollment_active_lead_sequence` that the session opener asked for. The partial unique index is created by migration `f2g3h4i5j6k7` and is not declared on the `Enrollment` model. `tests/conftest.py` builds the test database with `Base.metadata.create_all()`, which emits only what the models declare. So the index has never existed in any test run, on any machine, and the rule it enforces (a lead cannot be enrolled twice in the same sequence concurrently) is unenforced for the entire duration of every suite.
+
+    A search for a test asserting that rule found none, which is the only reason this did not surface as instance five: there was no test encoding the wrong expectation, because there was no test. Had anyone written the obvious one, "insert two active enrollments, expect IntegrityError", it would have failed locally against a database with no constraint, and the natural reading would have been that the constraint was broken rather than absent from this environment only.
+
+    This is instance seven's two-worlds divergence and instance nine's missing watcher in the same object. It is also why the guard written for it does not read the pytest database at all: it provisions a scratch database, runs the migration chain into it, and reads `pg_index` there, because that is the world the index lives in. A guard aimed at the ordinary test database would have been red on a healthy repo and could never have gone green.
+
+Instances seven, nine, ten, eleven, and fourteen are the purest forms of the pattern. The others are things that failed. Those five never failed. They made a category of failure unobservable, which is worse, because there was nothing to notice. Twelve belongs with them in substance even though it did eventually go red: the divergence it created was unobservable by construction and surfaced only by luck, and it would have kept hiding schema faults for as long as nobody happened to add a column to an existing table. Thirteen sits at the other end: it failed loudly, on every push, for two months, into a report nobody opened.
+
+When you find a fifteenth, add it here with its origin. The list is the point. Recognizing the shape early is worth more than any individual rule below.
 
 ---
 
@@ -96,7 +108,9 @@ Before considering any migration complete:
 
 Autogenerate only sees models that are imported. `app/models/__init__.py` discovers its own modules automatically, and `migrations/env.py` imports that package, so adding a model file is sufficient to register it. If that ever changes, the tests in `tests/test_model_registry.py` are the tripwire.
 
-CI runs `alembic upgrade head` against an empty Postgres database on every push. That job proves the migration chain executes. It does not yet prove the chain produces the schema the models describe, which is a separate comparison worth adding.
+CI runs `alembic upgrade head` against an empty Postgres database on every push. That job proves the migration chain executes, but only if somebody reads it: it had been failing on every push since June 10, 2026 and nobody noticed until August 14 (instance thirteen). It does not prove the chain produces the schema the models describe, which is a separate comparison worth adding.
+
+The chain-from-empty check is cheap enough to run locally and does not need CI's cooperation. Create a scratch database, point `DATABASE_URL` at it, run `alembic upgrade head`, and read the resulting catalog. The whole chain takes about five seconds. `tests/test_enrollment_active_index_guard.py` does exactly this and is the working example to copy.
 
 ---
 

@@ -19,7 +19,20 @@ def upgrade() -> None:
     op.add_column('concierge_notifications', sa.Column('metadata', sa.JSON(), nullable=True))
     # Rename index to match current model __table_args__
     op.drop_index('ix_concierge_notifications_firm_id_is_read', table_name='concierge_notifications', if_exists=True)
-    op.create_index('ix_concierge_notification_firm_is_read', 'concierge_notifications', ['firm_id', 'is_read'], unique=False)
+    # if_not_exists is load-bearing, not defensive decoration. Revision 0038
+    # (an ancestor of this one) already creates an index by this exact name, so
+    # on a database built from an empty schema this CREATE INDEX raised
+    # DuplicateTable and aborted the whole upgrade. Every database that was
+    # already past this revision when the collision was introduced carried on
+    # fine, which is why it stayed invisible: it only ever fired on a chain run
+    # from empty, which is precisely what CI does. Corrected August 14, 2026.
+    op.create_index(
+        'ix_concierge_notification_firm_is_read',
+        'concierge_notifications',
+        ['firm_id', 'is_read'],
+        unique=False,
+        if_not_exists=True,
+    )
 
 
 def downgrade() -> None:

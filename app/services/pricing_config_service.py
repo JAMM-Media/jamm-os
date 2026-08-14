@@ -1,11 +1,18 @@
 # app/services/pricing_config_service.py
 
-"""Save-time validation for the firm-scoped pricing tables.
+"""Save-time validation for the firm-scoped pricing tables, plus the merged
+fee schedule read.
 
 Every write to service_catalog_entries, firm_dimension_configs, firm_tiers and
 firm_option_prices goes through this module. The database enforces shape
 (single parent, branch uniqueness, referential integrity); this module enforces
 the rules that need to read more than one row.
+
+get_fee_schedule_config at the bottom of the file is the read side, added
+August 14, 2026 to back GET /api/pricing/config. It is the only function here
+that does not validate anything, and it is kept in this module rather than a
+new one because the merge it performs is the read-shaped twin of the write
+rules above: same six tables, same carve-out, same tenant scoping.
 
 Service-raise pattern: these functions raise HTTPException, the house domain
 exception used by every other service in this codebase. They never return a
@@ -72,11 +79,25 @@ from sqlalchemy.orm import Session
 from app.core.enums import DimensionKind, DimensionRole
 from app.models.complexity_dimension import ComplexityDimension
 from app.models.complexity_dimension_unit import ComplexityDimensionUnit
+from app.models.complexity_flag import ComplexityFlag
+from app.models.complexity_flag_engagement_type import ComplexityFlagEngagementType
 from app.models.complexity_vocabulary_option import ComplexityVocabularyOption
 from app.models.firm_dimension_config import FirmDimensionConfig
 from app.models.firm_option_price import FirmOptionPrice
 from app.models.firm_tier import FirmTier
 from app.models.service_catalog_entry import ServiceCatalogEntry
+from app.schemas.complexity_catalog import (
+    ComplexityDimensionOut,
+    ComplexityDimensionUnitOut,
+    ComplexityFlagEngagementTypeOut,
+    ComplexityFlagOut,
+    ComplexityVocabularyOptionOut,
+)
+from app.schemas.fee_schedule_config import (
+    FeeScheduleCatalogOut,
+    FeeScheduleConfigOut,
+    FirmPricingOut,
+)
 from app.schemas.firm_dimension_config import (
     FirmDimensionConfigCreate,
     FirmDimensionConfigOut,
@@ -689,6 +710,154 @@ def configure_dimension(
         )
 
     return FirmDimensionConfigOut.model_validate(config)
+
+
+# ---------------------------------------------------------------------------
+# Reading the merged fee schedule
+# ---------------------------------------------------------------------------
+
+def get_fee_schedule_config(
+    db: Session, *, firm_id: uuid.UUID
+) -> FeeScheduleConfigOut:
+    """The whole fee schedule for one firm: system catalog plus that firm's own
+    pricing attachments, in one object.
+
+    Backs GET /api/pricing/config. The router does nothing but authenticate,
+    check the role and call this.
+
+    TENANT SCOPING, TABLE BY TABLE, BECAUSE THE TWO GROUPS DO NOT MATCH THE
+    RESPONSE SHAPE EXACTLY.
+
+    Read unscoped, by the August 13, 2026 carve-out. These five tables carry no
+    firm_id column at all, so there is nothing to filter on and no firm owns
+    them:
+
+        complexity_flags
+        complexity_flag_engagement_types
+        complexity_dimensions
+        complexity_dimension_units
+        complexity_vocabulary_options
+
+    Scoped to firm_id, without exception:
+
+        service_catalog_entries      <- see below
+        firm_dimension_configs
+        firm_tiers
+        firm_option_prices
+
+    service_catalog_entries is reported under `catalog` in the response
+    because that is where the session spec put it and because it reads as
+    catalog content by name. It is NOT carve-out content. It has a firm_id
+    foreign key and holds each firm's own is_offered, pricing_mode and
+    base_fee, so it is queried firm-scoped like everything else a firm owns.
+    The spec's phrase "no firm_id filtering on any of these" is correct for the
+    five carve-out tables and would be a cross-tenant leak if applied to this
+    one. Raised with Andrew rather than resolved silently.
+
+    THE NULL-VERSUS-ZERO LAW. Nothing here touches a price. Rows are handed
+    straight to the Out schemas, which type every price as Optional[Decimal].
+    NULL stays null (unpriced, routes to quote) and 0.00 stays 0.00
+    (explicitly free). There is no `or 0`, no fill, no default anywhere in this
+    function, and there must never be one.
+
+    NO AUDIT LOG. A firm owner reading their own pricing configuration is not
+    one of the audited categories (document access, role changes, logins,
+    signature events, payment events, deletions). Nothing in this read touches
+    those, so no audit row is written. Deliberate, not an omission.
+
+    Ordering is stable rather than incidental so the response does not reshuffle
+    between identical calls.
+    """
+    flags = db.execute(
+        select(ComplexityFlag).order_by(ComplexityFlag.key)
+    ).scalars().all()
+
+    flag_engagement_types = db.execute(
+        select(ComplexityFlagEngagementType).order_by(
+            ComplexityFlagEngagementType.flag_id,
+            ComplexityFlagEngagementType.engagement_type,
+        )
+    ).scalars().all()
+
+    dimensions = db.execute(
+        select(ComplexityDimension).order_by(
+            ComplexityDimension.flag_id,
+            ComplexityDimension.hierarchy_rank,
+            ComplexityDimension.key,
+        )
+    ).scalars().all()
+
+    dimension_units = db.execute(
+        select(ComplexityDimensionUnit).order_by(
+            ComplexityDimensionUnit.dimension_id,
+            ComplexityDimensionUnit.key,
+        )
+    ).scalars().all()
+
+    vocabulary_options = db.execute(
+        select(ComplexityVocabularyOption).order_by(
+            ComplexityVocabularyOption.dimension_id,
+            ComplexityVocabularyOption.key,
+        )
+    ).scalars().all()
+
+    catalog_entries = db.execute(
+        select(ServiceCatalogEntry)
+        .where(ServiceCatalogEntry.firm_id == firm_id)
+        .order_by(ServiceCatalogEntry.engagement_type)
+    ).scalars().all()
+
+    configs = db.execute(
+        select(FirmDimensionConfig)
+        .where(FirmDimensionConfig.firm_id == firm_id)
+        .order_by(FirmDimensionConfig.created_at, FirmDimensionConfig.id)
+    ).scalars().all()
+
+    tiers = db.execute(
+        select(FirmTier)
+        .where(FirmTier.firm_id == firm_id)
+        .order_by(FirmTier.config_id, FirmTier.sort_order)
+    ).scalars().all()
+
+    option_prices = db.execute(
+        select(FirmOptionPrice)
+        .where(FirmOptionPrice.firm_id == firm_id)
+        .order_by(FirmOptionPrice.option_id)
+    ).scalars().all()
+
+    return FeeScheduleConfigOut(
+        firm_id=firm_id,
+        catalog=FeeScheduleCatalogOut(
+            complexity_flags=[ComplexityFlagOut.model_validate(row) for row in flags],
+            complexity_flag_engagement_types=[
+                ComplexityFlagEngagementTypeOut.model_validate(row)
+                for row in flag_engagement_types
+            ],
+            complexity_dimensions=[
+                ComplexityDimensionOut.model_validate(row) for row in dimensions
+            ],
+            complexity_dimension_units=[
+                ComplexityDimensionUnitOut.model_validate(row)
+                for row in dimension_units
+            ],
+            complexity_vocabulary_options=[
+                ComplexityVocabularyOptionOut.model_validate(row)
+                for row in vocabulary_options
+            ],
+            service_catalog_entries=[
+                ServiceCatalogEntryOut.model_validate(row) for row in catalog_entries
+            ],
+        ),
+        firm_pricing=FirmPricingOut(
+            firm_dimension_configs=[
+                FirmDimensionConfigOut.model_validate(row) for row in configs
+            ],
+            firm_tiers=[FirmTierOut.model_validate(row) for row in tiers],
+            firm_option_prices=[
+                FirmOptionPriceOut.model_validate(row) for row in option_prices
+            ],
+        ),
+    )
 
 
 # ---------------------------------------------------------------------------
