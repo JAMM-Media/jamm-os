@@ -16,9 +16,10 @@ import pytest
 from tests.conftest import TestingSessionLocal
 from app.models.firm import Firm
 from app.models.lead import Lead
-from app.models.sequence import Sequence, SequenceVersion, Step, StepEdge
+from app.models.sequence import Sequence, SequenceVersion, Step, StepEdge, SequenceGoal
 from app.models.enrollment import Enrollment
 from app.models.suppressed_email import SuppressedEmail
+from app.models.behavioral_event import BehavioralEvent
 from app.core.enums import LeadProvenance, EnrollmentStatus, StepType
 from app.crud.enrollment import get_due_enrollments
 from app.services.nurture_execution_service import run_nurture_tick
@@ -117,10 +118,11 @@ def _make_enrollment(
     sequence_version_id,
     current_step_id=None,
     next_action_time=None,
+    enrolled_at: datetime = None,
 ) -> Enrollment:
     db = TestingSessionLocal()
     try:
-        enrollment = Enrollment(
+        kwargs = dict(
             firm_id=firm_id,
             lead_id=lead_id,
             sequence_id=sequence_id,
@@ -128,10 +130,13 @@ def _make_enrollment(
             current_step_id=current_step_id,
             next_action_time=next_action_time,
         )
+        if enrolled_at is not None:
+            kwargs["enrolled_at"] = enrolled_at
+        enrollment = Enrollment(**kwargs)
         db.add(enrollment)
         db.commit()
         db.refresh(enrollment)
-        _ = enrollment.id, enrollment.status
+        _ = enrollment.id, enrollment.status, enrollment.enrolled_at
         return enrollment
     finally:
         db.close()
@@ -418,4 +423,453 @@ class TestDueEnrollmentsTenantIsolation:
         assert enr_b.id in due_b_ids, "Firm B enrollment must appear in Firm B's due list"
         assert enr_a.id not in due_b_ids, (
             "Tenant isolation breach: Firm A enrollment appeared in Firm B's due list"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Task 2 helpers
+# ---------------------------------------------------------------------------
+
+def _make_edge_with_loop_cap(from_step_id, to_step_id, loop_cap: int) -> StepEdge:
+    db = TestingSessionLocal()
+    try:
+        edge = StepEdge(
+            from_step_id=from_step_id,
+            to_step_id=to_step_id,
+            loop_cap=loop_cap,
+        )
+        db.add(edge)
+        db.commit()
+        db.refresh(edge)
+        _ = edge.id, edge.loop_cap
+        return edge
+    finally:
+        db.close()
+
+
+def _make_step_with_phase(version_id, step_key: str, phase: str, config: dict = None) -> Step:
+    db = TestingSessionLocal()
+    try:
+        step = Step(
+            sequence_version_id=version_id,
+            step_key=step_key,
+            step_type=StepType.email.value,
+            channel="email",
+            phase=phase,
+            config=config or {"subject": "Test Subject", "body": "<p>Test body</p>"},
+        )
+        db.add(step)
+        db.commit()
+        db.refresh(step)
+        _ = step.id, step.phase
+        return step
+    finally:
+        db.close()
+
+
+def _make_goal(
+    sequence_version_id,
+    goal_event: str,
+    target_step_id,
+    applies_to_phase: str = None,
+) -> SequenceGoal:
+    db = TestingSessionLocal()
+    try:
+        goal = SequenceGoal(
+            sequence_version_id=sequence_version_id,
+            goal_event=goal_event,
+            target_step_id=target_step_id,
+            applies_to_phase=applies_to_phase,
+        )
+        db.add(goal)
+        db.commit()
+        db.refresh(goal)
+        _ = goal.id, goal.goal_event
+        return goal
+    finally:
+        db.close()
+
+
+def _make_behavioral_event(
+    firm_id,
+    lead_id,
+    event_type: str,
+    occurred_at: datetime,
+) -> BehavioralEvent:
+    db = TestingSessionLocal()
+    try:
+        event = BehavioralEvent(
+            firm_id=firm_id,
+            event_type=event_type,
+            entity_type="lead",
+            entity_id=lead_id,
+            occurred_at=occurred_at,
+        )
+        db.add(event)
+        db.commit()
+        db.refresh(event)
+        _ = event.event_id, event.event_type
+        return event
+    finally:
+        db.close()
+
+
+def _set_next_action_time(enrollment_id, new_time: datetime):
+    """Reset an enrollment's next_action_time so it is picked up on the next tick."""
+    db = TestingSessionLocal()
+    try:
+        row = db.query(Enrollment).filter(Enrollment.id == enrollment_id).first()
+        if row is not None:
+            row.next_action_time = new_time
+            db.commit()
+    finally:
+        db.close()
+
+
+def _fetch_loop_counts(enrollment_id) -> dict:
+    db = TestingSessionLocal()
+    try:
+        row = db.query(Enrollment).filter(Enrollment.id == enrollment_id).first()
+        if row is None:
+            return {}
+        counts = dict(row.loop_counts) if row.loop_counts else {}
+        return counts
+    finally:
+        db.close()
+
+
+def _noop_send(*args, **kwargs):
+    pass
+
+
+# ---------------------------------------------------------------------------
+# GUARD TEST: loop_counts enforcement
+#
+# This test proves the loop_cap check refuses to advance an enrollment past
+# its cap. The watched-fail cycle:
+#
+#   BREAK: In run_nurture_tick(), comment out the block:
+#            if current_count >= edge.loop_cap:
+#                logger.warning(...)
+#                loop_capped += 1
+#                continue
+#          so that a capped edge is always followed regardless of count.
+#   RUN:   pytest tests/test_nurture_execution.py::TestLoopCapEnforcement::test_loop_cap_is_enforced -v
+#   EXPECT RED: AssertionError -- enrollment.current_step_id == step1.id
+#               (it advanced from step2 to step1 past the cap, should have stayed at step2)
+#   RESTORE: un-comment the cap block
+#   RERUN:  confirm GREEN -- enrollment stays at step2, loop_capped == 1
+# ---------------------------------------------------------------------------
+
+class TestLoopCapEnforcement:
+    def test_loop_cap_is_enforced(self, monkeypatch):
+        """Enrollment does not follow a loop-back edge once loop_cap is reached.
+
+        Graph: step1 --edge_fwd--> step2 --edge_loop(cap=1)--> step1
+
+        Tick 1: at step1, follows edge_fwd (no cap) to step2.
+        Tick 2: at step2, edge_loop count=0 < cap=1, follows, count becomes 1.
+        Tick 3: at step1, follows edge_fwd to step2.
+        Tick 4: at step2, edge_loop count=1 >= cap=1, refuses. loop_capped=1.
+        """
+        from app.services import email_service as email_mod
+        monkeypatch.setattr(email_mod.EmailService, "send_nurture_email", staticmethod(_noop_send))
+
+        firm = _make_firm(f"loop-cap-{uuid.uuid4().hex[:6]}")
+        lead = _make_lead(firm.id)
+        sequence, version = _make_sequence_and_version(firm.id)
+        step1 = _make_step(version.id, "S1")
+        step2 = _make_step(version.id, "S2")
+        edge_fwd = _make_edge(step1.id, step2.id)
+        edge_loop = _make_edge_with_loop_cap(step2.id, step1.id, loop_cap=1)
+
+        past = datetime.now(timezone.utc) - timedelta(hours=1)
+        enrollment = _make_enrollment(
+            firm_id=firm.id,
+            lead_id=lead.id,
+            sequence_id=sequence.id,
+            sequence_version_id=version.id,
+            current_step_id=step1.id,
+            next_action_time=past,
+        )
+
+        # Tick 1: step1 -> step2 via edge_fwd (no cap)
+        result1 = run_nurture_tick()
+        assert result1["checked"] == 1
+        assert result1["loop_capped"] == 0
+        fetched = _fetch_enrollment(enrollment.id)
+        assert fetched.current_step_id == step2.id
+
+        # Tick 2: step2 -> step1 via edge_loop, count=0 < 1, follows. count becomes 1.
+        _set_next_action_time(enrollment.id, past)
+        result2 = run_nurture_tick()
+        assert result2["checked"] == 1
+        assert result2["loop_capped"] == 0
+        fetched = _fetch_enrollment(enrollment.id)
+        assert fetched.current_step_id == step1.id
+        counts_after_tick2 = _fetch_loop_counts(enrollment.id)
+        assert counts_after_tick2.get(str(edge_loop.id), 0) == 1, (
+            f"Expected loop_counts[str(edge_loop.id)]=1 after tick 2, got {counts_after_tick2}"
+        )
+
+        # Tick 3: step1 -> step2 via edge_fwd (no cap)
+        _set_next_action_time(enrollment.id, past)
+        run_nurture_tick()
+        fetched = _fetch_enrollment(enrollment.id)
+        assert fetched.current_step_id == step2.id
+
+        # Tick 4: step2 tries edge_loop, count=1 >= cap=1, REFUSES.
+        _set_next_action_time(enrollment.id, past)
+        result4 = run_nurture_tick()
+        assert result4["checked"] == 1
+        assert result4["loop_capped"] == 1, (
+            f"Expected loop_capped=1 at cap, got {result4['loop_capped']}"
+        )
+        fetched = _fetch_enrollment(enrollment.id)
+        assert fetched.current_step_id == step2.id, (
+            f"Enrollment should stay at step2 when cap reached. Got {fetched.current_step_id!r}"
+        )
+
+    def test_loop_counts_increments_across_multiple_ticks(self, monkeypatch):
+        """loop_counts for an edge increments with each allowed loop traversal.
+
+        With cap=3, three traversals are allowed. After three, the fourth is refused.
+        This test confirms the count accumulates correctly across real tick calls,
+        not just within one.
+        """
+        from app.services import email_service as email_mod
+        monkeypatch.setattr(email_mod.EmailService, "send_nurture_email", staticmethod(_noop_send))
+
+        firm = _make_firm(f"loop-count-{uuid.uuid4().hex[:6]}")
+        lead = _make_lead(firm.id)
+        sequence, version = _make_sequence_and_version(firm.id)
+        step1 = _make_step(version.id, "S1")
+        step2 = _make_step(version.id, "S2")
+        edge_fwd = _make_edge(step1.id, step2.id)
+        edge_loop = _make_edge_with_loop_cap(step2.id, step1.id, loop_cap=3)
+
+        past = datetime.now(timezone.utc) - timedelta(hours=1)
+        enrollment = _make_enrollment(
+            firm_id=firm.id,
+            lead_id=lead.id,
+            sequence_id=sequence.id,
+            sequence_version_id=version.id,
+            current_step_id=step1.id,
+            next_action_time=past,
+        )
+
+        # Run 3 full loops (each loop = tick from step1 + tick from step2)
+        for expected_count in range(1, 4):
+            # From step1: advance to step2
+            _set_next_action_time(enrollment.id, past)
+            run_nurture_tick()
+            fetched = _fetch_enrollment(enrollment.id)
+            assert fetched.current_step_id == step2.id
+
+            # From step2: loop back to step1 (count goes up by 1)
+            _set_next_action_time(enrollment.id, past)
+            result = run_nurture_tick()
+            assert result["loop_capped"] == 0, (
+                f"Loop should not be capped yet (expected_count={expected_count})"
+            )
+            fetched = _fetch_enrollment(enrollment.id)
+            assert fetched.current_step_id == step1.id
+            counts = _fetch_loop_counts(enrollment.id)
+            assert counts.get(str(edge_loop.id), 0) == expected_count, (
+                f"Expected count={expected_count}, got {counts}"
+            )
+
+        # 4th attempt from step2: should be capped
+        _set_next_action_time(enrollment.id, past)
+        run_nurture_tick()
+        fetched = _fetch_enrollment(enrollment.id)
+        assert fetched.current_step_id == step2.id
+
+        _set_next_action_time(enrollment.id, past)
+        result_capped = run_nurture_tick()
+        assert result_capped["loop_capped"] == 1
+        fetched = _fetch_enrollment(enrollment.id)
+        assert fetched.current_step_id == step2.id, (
+            "Enrollment must stay at step2 when loop cap is reached"
+        )
+
+
+# ---------------------------------------------------------------------------
+# SequenceGoal jumps
+# ---------------------------------------------------------------------------
+
+class TestSequenceGoalJumps:
+    def test_goal_event_fires_jump_to_target_step(self, monkeypatch):
+        """A matching BehavioralEvent triggers a direct jump to the goal's target_step.
+
+        The jump replaces the normal linear advance. No email is sent on the
+        goal-jump tick; the enrollment is simply repositioned.
+        """
+        from app.services import email_service as email_mod
+        send_calls = []
+        monkeypatch.setattr(
+            email_mod.EmailService, "send_nurture_email",
+            staticmethod(lambda *a, **kw: send_calls.append((a, kw)))
+        )
+
+        firm = _make_firm(f"goal-jump-{uuid.uuid4().hex[:6]}")
+        lead = _make_lead(firm.id)
+        sequence, version = _make_sequence_and_version(firm.id)
+        step1 = _make_step(version.id, "S1")
+        step2 = _make_step(version.id, "S2")
+        step_target = _make_step(version.id, "TARGET")
+        _make_edge(step1.id, step2.id)
+        _make_goal(version.id, "lead.call_booked", step_target.id)
+
+        now = datetime.now(timezone.utc)
+        enrolled_at = now - timedelta(hours=2)
+        event_time = now - timedelta(hours=1)  # after enrolled_at
+
+        enrollment = _make_enrollment(
+            firm_id=firm.id,
+            lead_id=lead.id,
+            sequence_id=sequence.id,
+            sequence_version_id=version.id,
+            current_step_id=step1.id,
+            next_action_time=now - timedelta(minutes=5),
+            enrolled_at=enrolled_at,
+        )
+
+        _make_behavioral_event(
+            firm_id=firm.id,
+            lead_id=lead.id,
+            event_type="lead.call_booked",
+            occurred_at=event_time,
+        )
+
+        result = run_nurture_tick()
+
+        assert result["goal_jumps"] == 1, (
+            f"Expected goal_jumps=1, got {result['goal_jumps']}"
+        )
+        assert result["sent"] == 0, "No email should be sent on a goal-jump tick"
+        assert send_calls == [], "send_nurture_email must not be called on a goal-jump tick"
+
+        fetched = _fetch_enrollment(enrollment.id)
+        assert fetched.current_step_id == step_target.id, (
+            f"Enrollment must jump to target step. Got {fetched.current_step_id!r}, "
+            f"expected {step_target.id!r}"
+        )
+
+    def test_goal_event_before_enrolled_at_does_not_trigger(self, monkeypatch):
+        """A BehavioralEvent that fired before enrolled_at is ignored by goal detection.
+
+        The timing anchor is enrollment.enrolled_at: only events at or after that
+        time count. A pre-enrollment event must not redirect the sequence.
+        """
+        from app.services import email_service as email_mod
+        monkeypatch.setattr(email_mod.EmailService, "send_nurture_email", staticmethod(_noop_send))
+
+        firm = _make_firm(f"goal-pre-{uuid.uuid4().hex[:6]}")
+        lead = _make_lead(firm.id)
+        sequence, version = _make_sequence_and_version(firm.id)
+        step1 = _make_step(version.id, "S1")
+        step2 = _make_step(version.id, "S2")
+        step_target = _make_step(version.id, "TARGET")
+        _make_edge(step1.id, step2.id)
+        _make_goal(version.id, "lead.call_booked", step_target.id)
+
+        now = datetime.now(timezone.utc)
+        enrolled_at = now - timedelta(hours=2)
+        past = now - timedelta(minutes=5)
+        enrollment = _make_enrollment(
+            firm_id=firm.id,
+            lead_id=lead.id,
+            sequence_id=sequence.id,
+            sequence_version_id=version.id,
+            current_step_id=step1.id,
+            next_action_time=past,
+            enrolled_at=enrolled_at,
+        )
+
+        # Event fired BEFORE enrolled_at -- must not trigger the goal.
+        pre_enrollment_time = now - timedelta(hours=10)
+        _make_behavioral_event(
+            firm_id=firm.id,
+            lead_id=lead.id,
+            event_type="lead.call_booked",
+            occurred_at=pre_enrollment_time,
+        )
+
+        result = run_nurture_tick()
+
+        assert result["goal_jumps"] == 0, (
+            f"Expected goal_jumps=0 for pre-enrollment event, got {result['goal_jumps']}"
+        )
+        # Should have followed the normal linear advance to step2
+        fetched = _fetch_enrollment(enrollment.id)
+        assert fetched.current_step_id == step2.id, (
+            f"Enrollment should advance normally when goal event is pre-enrollment. "
+            f"Got {fetched.current_step_id!r}"
+        )
+
+    def test_goal_with_applies_to_phase_only_triggers_on_matching_phase(self, monkeypatch):
+        """A SequenceGoal with applies_to_phase only fires when the current step's phase matches.
+
+        If the current step is in a different phase, the goal is ignored and
+        the enrollment advances normally.
+        """
+        from app.services import email_service as email_mod
+        monkeypatch.setattr(email_mod.EmailService, "send_nurture_email", staticmethod(_noop_send))
+
+        firm = _make_firm(f"goal-phase-{uuid.uuid4().hex[:6]}")
+        lead = _make_lead(firm.id)
+        sequence, version = _make_sequence_and_version(firm.id)
+
+        # Step in "intro" phase, followed by a step in "followup" phase
+        step_intro = _make_step_with_phase(version.id, "INTRO", phase="intro")
+        step_followup = _make_step_with_phase(version.id, "FOLLOWUP", phase="followup")
+        step_target = _make_step(version.id, "TARGET")
+        _make_edge(step_intro.id, step_followup.id)
+        # Goal only applies in "followup" phase
+        _make_goal(version.id, "lead.call_booked", step_target.id, applies_to_phase="followup")
+
+        now = datetime.now(timezone.utc)
+        enrolled_at = now - timedelta(hours=2)
+        past = now - timedelta(minutes=5)
+        event_time = now - timedelta(hours=1)  # after enrolled_at
+
+        enrollment = _make_enrollment(
+            firm_id=firm.id,
+            lead_id=lead.id,
+            sequence_id=sequence.id,
+            sequence_version_id=version.id,
+            current_step_id=step_intro.id,
+            next_action_time=past,
+            enrolled_at=enrolled_at,
+        )
+
+        _make_behavioral_event(
+            firm_id=firm.id,
+            lead_id=lead.id,
+            event_type="lead.call_booked",
+            occurred_at=event_time,
+        )
+
+        # Tick 1: current step is "intro" phase. Goal applies_to_phase="followup" -- no match.
+        result1 = run_nurture_tick()
+        assert result1["goal_jumps"] == 0, (
+            f"Goal must not fire when step phase does not match applies_to_phase. "
+            f"Got goal_jumps={result1['goal_jumps']}"
+        )
+        fetched = _fetch_enrollment(enrollment.id)
+        assert fetched.current_step_id == step_followup.id, (
+            "Enrollment must advance normally when goal phase does not match"
+        )
+
+        # Tick 2: current step is now "followup" phase. Goal applies_to_phase="followup" -- match.
+        _set_next_action_time(enrollment.id, past)
+        result2 = run_nurture_tick()
+        assert result2["goal_jumps"] == 1, (
+            f"Goal must fire when step phase matches applies_to_phase. "
+            f"Got goal_jumps={result2['goal_jumps']}"
+        )
+        fetched = _fetch_enrollment(enrollment.id)
+        assert fetched.current_step_id == step_target.id, (
+            f"Enrollment must jump to target step when phase matches. Got {fetched.current_step_id!r}"
         )

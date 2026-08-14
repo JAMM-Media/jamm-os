@@ -1,12 +1,16 @@
 # app/services/nurture_execution_service.py
 """
-Nurture engine tick: walks active Enrollments one linear step forward.
+Nurture engine tick: walks active Enrollments forward one step.
 
-SCOPE (TASK 1 OF 2):
-- Processes only email-type Steps.
-- Advances enrollments with exactly one outgoing StepEdge (linear path only).
-- Does not handle branching, wait_fixed timing, wait_until_event, loop caps,
-  or SequenceGoal jumps -- those are reserved for Task 2.
+SCOPE (TASK 2 OF 2 ADDITIONS):
+- SequenceGoal jumps: if a behavioral event matching a goal has fired for the
+  enrollment's lead since enrollment, advance directly to the goal's target_step
+  instead of the normal next step.
+- loop_counts enforcement: edges with loop_cap set are only followed if the
+  enrollment's count for that specific edge (keyed by str(edge.id)) is below
+  the cap. At cap, the enrollment is logged and not advanced.
+- Branch evaluation on condition_label and wait/timeout mechanisms remain
+  deferred pending a design decision.
 
 STEP CONFIG SHAPE:
 Step.config is expected to contain {"subject": str, "body": str}. This shape
@@ -30,7 +34,8 @@ from sqlalchemy import exists
 from app.db.session import SessionLocal
 from app.models.lead import Lead
 from app.models.firm import Firm
-from app.models.sequence import Step, StepEdge
+from app.models.sequence import Step, StepEdge, SequenceGoal
+from app.models.behavioral_event import BehavioralEvent
 from app.core.enums import StepType
 from app.crud import enrollment as crud_enrollment
 from app.crud import lead_message as crud_lead_message
@@ -64,23 +69,58 @@ def _find_entry_step(db, sequence_version_id) -> Step | None:
     return None
 
 
+def _check_goal_jump(db, enrollment, current_step) -> "uuid.UUID | None":
+    """Return a target_step_id if a SequenceGoal fires for this enrollment, else None.
+
+    A goal fires when a matching BehavioralEvent exists with occurred_at at or
+    after enrollment.enrolled_at. If applies_to_phase is set on the goal, the
+    current step's phase must match.
+    """
+    goals = (
+        db.query(SequenceGoal)
+        .filter(SequenceGoal.sequence_version_id == enrollment.sequence_version_id)
+        .all()
+    )
+    for goal in goals:
+        if goal.applies_to_phase is not None and current_step.phase != goal.applies_to_phase:
+            continue
+        matching = (
+            db.query(BehavioralEvent)
+            .filter(
+                BehavioralEvent.event_type == goal.goal_event,
+                BehavioralEvent.entity_type == "lead",
+                BehavioralEvent.entity_id == enrollment.lead_id,
+                BehavioralEvent.occurred_at >= enrollment.enrolled_at,
+            )
+            .first()
+        )
+        if matching is not None:
+            return goal.target_step_id
+    return None
+
+
 def run_nurture_tick() -> dict:
-    """Walk all due active Enrollments forward one linear email step.
+    """Walk all due active Enrollments forward one email step.
 
     Creates its own DB session in a try/finally block, following the
     deadline_scheduler.py pattern. Never accepts or reuses a request session.
 
-    Returns a summary dict matching deadline_scheduler.py's return convention:
+    Returns a summary dict:
       {
         "checked": N,
         "sent": N,
         "suppressed": N,
         "skipped_branching": N,
         "failed_sends": N,
+        "goal_jumps": N,
+        "loop_capped": N,
       }
     """
+    import uuid as _uuid_mod
+
     db = SessionLocal()
     checked = sent = suppressed = skipped_branching = failed_sends = 0
+    goal_jumps = loop_capped = 0
 
     try:
         now = datetime.now(timezone.utc)
@@ -130,10 +170,30 @@ def run_nurture_tick() -> dict:
                 skipped_branching += 1
                 continue
 
-            # 4. Only email-type Steps are processed in Task 1.
+            # 4. SequenceGoal check -- before normal advance, see if a goal event
+            # has fired for this lead. If so, jump directly to the goal target.
+            # Write-then-send ordering: advance first, no email send on goal ticks.
+            goal_target_step_id = _check_goal_jump(db, enrollment, current_step)
+            if goal_target_step_id is not None:
+                crud_enrollment.advance_enrollment(
+                    db=db,
+                    enrollment_id=enrollment.id,
+                    new_current_step_id=goal_target_step_id,
+                    new_next_action_time=None,
+                )
+                goal_jumps += 1
+                logger.info(
+                    "nurture_tick: goal jump -- enrollment=%s lead=%s target_step=%s",
+                    enrollment.id,
+                    lead.id,
+                    goal_target_step_id,
+                )
+                continue
+
+            # 5. Only email-type Steps are processed.
             if current_step.step_type != StepType.email.value:
                 logger.info(
-                    "nurture_tick: enrollment=%s step=%s type=%s is not email (out of scope for task 1), skipping",
+                    "nurture_tick: enrollment=%s step=%s type=%s is not email, skipping",
                     enrollment.id,
                     current_step.id,
                     current_step.step_type,
@@ -141,7 +201,7 @@ def run_nurture_tick() -> dict:
                 skipped_branching += 1
                 continue
 
-            # 5. Determine next step -- must be exactly one outgoing edge.
+            # 6. Determine next step -- must be exactly one outgoing edge.
             edges = (
                 db.query(StepEdge)
                 .filter(StepEdge.from_step_id == current_step.id)
@@ -149,7 +209,7 @@ def run_nurture_tick() -> dict:
             )
             if len(edges) > 1:
                 logger.warning(
-                    "nurture_tick: enrollment=%s step=%s has %d outgoing edges (branching out of scope for task 1), skipping",
+                    "nurture_tick: enrollment=%s step=%s has %d outgoing edges (branching deferred), skipping",
                     enrollment.id,
                     current_step.id,
                     len(edges),
@@ -157,15 +217,36 @@ def run_nurture_tick() -> dict:
                 skipped_branching += 1
                 continue
 
-            next_step_id = edges[0].to_step_id if edges else None
+            next_step_id = None
+            updated_loop_counts = None
 
-            # 6. Render content from step config.
+            if edges:
+                edge = edges[0]
+                # 6a. loop_cap enforcement: only apply when edge.loop_cap is not null.
+                # Key is str(edge.id) -- uniquely identifies this back-edge.
+                if edge.loop_cap is not None:
+                    current_count = enrollment.loop_counts.get(str(edge.id), 0)
+                    if current_count >= edge.loop_cap:
+                        logger.warning(
+                            "nurture_tick: loop cap reached -- enrollment=%s edge=%s cap=%d count=%d",
+                            enrollment.id,
+                            edge.id,
+                            edge.loop_cap,
+                            current_count,
+                        )
+                        loop_capped += 1
+                        continue
+                    # Within cap: record the incremented count for the advance write.
+                    updated_loop_counts = {**enrollment.loop_counts, str(edge.id): current_count + 1}
+                next_step_id = edge.to_step_id
+
+            # 7. Render content from step config.
             # Shape {"subject": str, "body": str} is inferred -- see module docstring.
             config = current_step.config or {}
             subject = config.get("subject", "")
             body = config.get("body", "")
 
-            # 7. Look up firm for sending identity.
+            # 8. Look up firm for sending identity.
             firm = db.query(Firm).filter(Firm.id == enrollment.firm_id).first()
             from_name = firm.name if firm else "JAMM PX"
             sending_domain = (
@@ -174,7 +255,7 @@ def run_nurture_tick() -> dict:
                 else None
             )
 
-            # 8. WRITE FIRST -- advance enrollment before any send attempt.
+            # 9. WRITE FIRST -- advance enrollment before any send attempt.
             # This is the write-then-send guarantee. Do not move this below the
             # send call for any reason, including error-handling convenience.
             crud_enrollment.advance_enrollment(
@@ -182,9 +263,10 @@ def run_nurture_tick() -> dict:
                 enrollment_id=enrollment.id,
                 new_current_step_id=next_step_id,
                 new_next_action_time=None,
+                new_loop_counts=updated_loop_counts,
             )
 
-            # 9. Send the email. Failure here is fire-and-forget: the enrollment
+            # 10. Send the email. Failure here is fire-and-forget: the enrollment
             # is already advanced regardless of send outcome.
             reply_to = build_lead_reply_to(str(lead.id))
             try:
@@ -229,4 +311,6 @@ def run_nurture_tick() -> dict:
         "suppressed": suppressed,
         "skipped_branching": skipped_branching,
         "failed_sends": failed_sends,
+        "goal_jumps": goal_jumps,
+        "loop_capped": loop_capped,
     }

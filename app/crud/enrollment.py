@@ -45,18 +45,24 @@ def advance_enrollment(
     enrollment_id: UUID,
     new_current_step_id: Optional[UUID],
     new_next_action_time: Optional[datetime],
+    new_loop_counts: Optional[dict] = None,
 ) -> None:
-    """Write the new step and scheduled time to the enrollment.
+    """Write the new step, scheduled time, and optionally updated loop counts.
 
     Must be called BEFORE any email send. A crash between this write and the
     send produces a missed email, never a duplicate. This ordering is
     deliberate and must not be reversed.
+
+    new_loop_counts: if provided, replaces enrollment.loop_counts in the same
+    commit. Used when following a loop-back edge to record the incremented count.
     """
     enrollment = db.query(Enrollment).filter(Enrollment.id == enrollment_id).first()
     if enrollment is None:
         return
     enrollment.current_step_id = new_current_step_id
     enrollment.next_action_time = new_next_action_time
+    if new_loop_counts is not None:
+        enrollment.loop_counts = new_loop_counts
     db.commit()
 
 
