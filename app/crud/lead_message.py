@@ -18,3 +18,26 @@ def get_messages_for_lead(
         .order_by(LeadMessage.created_at)
         .all()
     )
+
+
+def create_lead_message(
+    db: Session,
+    firm_id: UUID,
+    lead_id: UUID,
+    body: str,
+    source: str | None = None,
+) -> LeadMessage:
+    """Record a sent nurture email as a LeadMessage row."""
+    msg = LeadMessage(
+        firm_id=firm_id,
+        lead_id=lead_id,
+        sender_id=None,
+        sender_role="staff",
+        body=body,
+        source=source,
+        is_deleted=False,
+    )
+    db.add(msg)
+    db.commit()
+    db.refresh(msg)
+    return msg
