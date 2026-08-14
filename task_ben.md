@@ -74,27 +74,84 @@ This section exists because a past session confidently claimed specific files we
 
 # Section 3 - The task
 
-TASK: Give me the exact command to manually trigger run_nurture_tick() right now, without waiting for the cron interval. Do not run it yourself — I need to run it and watch it, but tell me precisely what to type.
+TASK: Frontend hygiene batch. Three unrelated, low-risk cleanup items from the Aug 11 email exchange with Andrew. Each item is independent -- do not let one block the others.
 
 USE: claude sonnet
 
 ENVIRONMENT SANITY CHECK:
 pwd
 
-Confirm exactly /home/corby/jamm-os, no /mnt/c/Users resolution.
+State plainly: confirm the output is exactly /home/corby/jamm-os, and confirm no path resolved against /mnt/c/Users or any Windows-side copy.
+
+REPORTING DISCIPLINE / ANTI-HALLUCINATION:
+Quote all real output verbatim. Never paraphrase.
+If evidence is absent, STOP and report the absence rather than inferring.
+Take no action beyond what CHANGE INSTRUCTIONS explicitly names.
+Before claiming any file is stale, unused, or safe to delete, confirm it exists and state its real git tracking status, and search for any real reference to it elsewhere in the codebase before concluding it is unreferenced.
+Do NOT delete the file named "main" at the repo root under any circumstances in this task, regardless of what you find. Report findings only; Ben decides separately.
 
 VERIFY BEFORE ACT:
-cd /home/corby/jamm-os
-grep -n "def run_nurture_tick" app/services/nurture_execution_service.py
-head -20 app/services/nurture_execution_service.py
 
-Confirm the real function signature and the real import path.
+Block 1, current state:
+cd /home/corby/jamm-os
+git fetch origin
+git status --short
+git log --oneline -3
+
+Block 2, frontend test/tsx state:
+cat frontend/package.json
+find frontend -maxdepth 3 -iname "*.test.ts" -o -iname "*.test.tsx" -o -iname "*.spec.ts" -o -iname "*.spec.tsx" 2>/dev/null
+
+Report the real current devDependencies, whether tsx is already present, whether any test script exists, and which real file is the one existing test.
+
+Block 3, Growth Cooperative leftover strings:
+grep -rln "Growth Cooperative" frontend/src/ 2>/dev/null
+grep -rn "Growth Cooperative" frontend/src/ 2>/dev/null
+
+Report every real file and line where this string still appears.
+
+Block 4, the stray "main" file:
+ls -la main 2>/dev/null
+file main 2>/dev/null
+cat main 2>/dev/null
+git log --all --oneline -- main
+git log -p --follow -- main | head -60
+grep -rn "\"main\"\|'main'\|/main\b" package.json frontend/package.json .github/ 2>/dev/null
+
+Report: does this file exist at the repo root, what are its real contents (or confirm it is genuinely empty), what does its git history show (when added, by whom, in what commit, with what commit message), and is it referenced anywhere as an entry point, script target, or build artifact name. Do not conclude anything about safety to delete -- just report the real evidence.
 
 WHAT THIS IS:
-I have one real enrollment (id c499e48d-cef8-483f-b965-902d1243df4c) due for the nurture tick right now, and I want to trigger the job manually rather than wait up to 15 minutes for the cron schedule, so I can watch the result immediately.
+Three independent hygiene items, per Ben and Andrew's Aug 11 exchange: (1) get the one existing frontend test actually runnable via tsx plus a test script, (2) finish the Growth Cooperative to Peer Network rename Andrew made official Aug 11 by catching any leftover strings, (3) investigate but do NOT delete a stray empty file named "main" at the repo root -- Ben will decide on deletion after reviewing real findings.
 
 CHANGE INSTRUCTIONS:
-None. Give me the exact real one-line or short command to run from an activated venv shell that imports and calls run_nurture_tick() directly, using the real confirmed import path from VERIFY BEFORE ACT. If it returns a summary dict, tell me what the output should look like so I know what to expect.
+
+1. Add tsx to frontend's devDependencies (confirm the real current version convention used by other devDependencies in the same package.json -- match it rather than guessing a version). Add a test script to package.json's scripts block that actually runs the one existing test file found in Block 2, using tsx. Do not invent a broader test framework or configuration beyond what is needed to run the one existing test.
+
+2. For every real occurrence found in Block 3, replace "Growth Cooperative" with "Peer Network" in frontend/src/. Do not touch any occurrence outside frontend/src/ without reporting it first. Do not touch anything in docs/, backend code, or migration files even if it happens to contain the old name -- report those separately if found, do not change them in this task.
+
+3. No action on the "main" file. Report only, per Block 4.
+
+No em dashes anywhere in any file, string, comment, or commit message.
+
+VERIFY AFTER ACT:
+
+cd frontend
+npm run test 2>&1 | tail -30
+
+Confirm the one test actually runs and its real pass/fail result.
+
+grep -rn "Growth Cooperative" frontend/src/ 2>/dev/null
+
+Confirm this returns nothing -- zero remaining occurrences in frontend/src/.
+
+git diff --stat
+
+Paste the full real diff for review.
+
+MANUAL VERIFICATION:
+Restart frontend dev server before Ben spot-checks any UI screens that previously showed "Growth Cooperative" text, to confirm the rename displays correctly.
 
 GIT:
-No commit. This task produces no code.
+Do not commit until Ben reviews the real diff pasted in chat. After Ben confirms and pushes:
+git log --oneline -3
+Paste the real output confirming the new hash sits next to origin/main and origin/HEAD.
