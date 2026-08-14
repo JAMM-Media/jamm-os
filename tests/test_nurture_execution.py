@@ -16,6 +16,7 @@ import pytest
 from tests.conftest import TestingSessionLocal
 from app.models.firm import Firm
 from app.models.lead import Lead
+from app.models.lead_message import LeadMessage
 from app.models.sequence import Sequence, SequenceVersion, Step, StepEdge, SequenceGoal
 from app.models.enrollment import Enrollment
 from app.models.suppressed_email import SuppressedEmail
@@ -872,4 +873,438 @@ class TestSequenceGoalJumps:
         fetched = _fetch_enrollment(enrollment.id)
         assert fetched.current_step_id == step_target.id, (
             f"Enrollment must jump to target step when phase matches. Got {fetched.current_step_id!r}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Task 3 helpers -- wait_fixed / wait_until_event
+# ---------------------------------------------------------------------------
+
+def _make_wait_step(version_id, step_key: str, step_type: str, config: dict) -> Step:
+    """Create a wait_fixed or wait_until_event Step."""
+    db = TestingSessionLocal()
+    try:
+        step = Step(
+            sequence_version_id=version_id,
+            step_key=step_key,
+            step_type=step_type,
+            channel="email",
+            config=config,
+        )
+        db.add(step)
+        db.commit()
+        db.refresh(step)
+        _ = step.id, step.step_type, step.config
+        return step
+    finally:
+        db.close()
+
+
+def _make_labeled_edge(from_step_id, to_step_id, condition_label: str) -> StepEdge:
+    """Create a StepEdge with a condition_label."""
+    db = TestingSessionLocal()
+    try:
+        edge = StepEdge(
+            from_step_id=from_step_id,
+            to_step_id=to_step_id,
+            condition_label=condition_label,
+        )
+        db.add(edge)
+        db.commit()
+        db.refresh(edge)
+        _ = edge.id, edge.condition_label
+        return edge
+    finally:
+        db.close()
+
+
+def _make_lead_message(
+    firm_id,
+    lead_id,
+    source: str,
+    created_at: datetime,
+) -> LeadMessage:
+    """Create a LeadMessage record with a specific source and timestamp.
+
+    sender_role is always "lead" here -- inbound messages originate from the lead.
+    """
+    db = TestingSessionLocal()
+    try:
+        msg = LeadMessage(
+            firm_id=firm_id,
+            lead_id=lead_id,
+            sender_role="lead",
+            body="Test reply body",
+            source=source,
+            created_at=created_at,
+        )
+        db.add(msg)
+        db.commit()
+        db.refresh(msg)
+        _ = msg.id, msg.source, msg.created_at
+        return msg
+    finally:
+        db.close()
+
+
+# ---------------------------------------------------------------------------
+# TestWaitFixed
+# ---------------------------------------------------------------------------
+
+class TestWaitFixed:
+    """Tests for wait_fixed step type in the nurture tick loop.
+
+    Covers:
+    - When an enrollment advances INTO a wait_fixed step, next_action_time is
+      set to now + duration_seconds in the same write (not left null).
+    - An enrollment AT a wait_fixed step with a future next_action_time is not
+      picked up by the tick until the timer has elapsed.
+    """
+
+    def test_next_action_time_set_when_enrollment_arrives_at_wait_fixed(self, monkeypatch):
+        """Advancing into a wait_fixed step sets next_action_time to now + duration_seconds.
+
+        Setup: email step -> wait_fixed (60 s). Enroll at entry (no current_step_id),
+        run tick. The tick sends the email and advances to the wait_fixed step.
+        The resulting next_action_time must be approximately now + 60 seconds.
+        """
+        from app.services import email_service as email_mod
+        monkeypatch.setattr(email_mod.EmailService, "send_nurture_email", staticmethod(_noop_send))
+
+        firm = _make_firm(f"wf-arrival-{uuid.uuid4().hex[:6]}")
+        lead = _make_lead(firm.id)
+        sequence, version = _make_sequence_and_version(firm.id)
+
+        email_step = _make_step(version.id, "EMAIL_1")
+        wait_step = _make_wait_step(
+            version.id, "WAIT_60",
+            step_type=StepType.wait_fixed.value,
+            config={"duration_seconds": 60},
+        )
+        _make_edge(email_step.id, wait_step.id)
+
+        now = datetime.now(timezone.utc)
+        enrollment = _make_enrollment(
+            firm_id=firm.id,
+            lead_id=lead.id,
+            sequence_id=sequence.id,
+            sequence_version_id=version.id,
+            current_step_id=None,
+            next_action_time=now - timedelta(minutes=5),
+        )
+
+        before_tick = datetime.now(timezone.utc)
+        run_nurture_tick()
+        after_tick = datetime.now(timezone.utc)
+
+        fetched = _fetch_enrollment(enrollment.id)
+        assert fetched.current_step_id == wait_step.id, (
+            f"Enrollment must advance to the wait_fixed step after the email tick. "
+            f"Got {fetched.current_step_id!r}"
+        )
+        assert fetched.next_action_time is not None, (
+            "next_action_time must be set (not null) when arriving at a wait_fixed step"
+        )
+        earliest = before_tick + timedelta(seconds=60)
+        latest = after_tick + timedelta(seconds=60)
+        assert earliest <= fetched.next_action_time <= latest, (
+            f"next_action_time must be now + 60 s (expected between {earliest} and {latest}). "
+            f"Got {fetched.next_action_time!r}"
+        )
+
+    def test_wait_fixed_enrollment_not_advanced_before_timer_elapses(self, monkeypatch):
+        """An enrollment at a wait_fixed step with a future next_action_time is not processed.
+
+        The tick must not advance the enrollment until next_action_time <= now.
+        """
+        from app.services import email_service as email_mod
+        monkeypatch.setattr(email_mod.EmailService, "send_nurture_email", staticmethod(_noop_send))
+
+        firm = _make_firm(f"wf-early-{uuid.uuid4().hex[:6]}")
+        lead = _make_lead(firm.id)
+        sequence, version = _make_sequence_and_version(firm.id)
+
+        wait_step = _make_wait_step(
+            version.id, "WAIT_3600",
+            step_type=StepType.wait_fixed.value,
+            config={"duration_seconds": 3600},
+        )
+        next_email = _make_step(version.id, "NEXT_EMAIL")
+        _make_edge(wait_step.id, next_email.id)
+
+        now = datetime.now(timezone.utc)
+        future_deadline = now + timedelta(seconds=3600)
+        enrollment = _make_enrollment(
+            firm_id=firm.id,
+            lead_id=lead.id,
+            sequence_id=sequence.id,
+            sequence_version_id=version.id,
+            current_step_id=wait_step.id,
+            next_action_time=future_deadline,
+        )
+
+        run_nurture_tick()
+
+        fetched = _fetch_enrollment(enrollment.id)
+        assert fetched.current_step_id == wait_step.id, (
+            "Enrollment must remain at the wait_fixed step when the timer has not elapsed"
+        )
+        assert fetched.next_action_time == future_deadline, (
+            "next_action_time must not change when the enrollment is not yet due"
+        )
+
+
+# ---------------------------------------------------------------------------
+# TestWaitUntilEvent
+# ---------------------------------------------------------------------------
+
+class TestWaitUntilEvent:
+    """Tests for wait_until_event step type in the nurture tick loop.
+
+    GUARD TEST: test_reply_present_follows_replied_edge_not_timeout
+    Watched-fail cycle: temporarily forces the code to always pick the timeout
+    edge, confirms the test is red when a real reply exists, then restores
+    and confirms green. See class docstring of TestWriteThenSendGuarantee for
+    the guard-test pattern used in this file.
+    """
+
+    def test_reply_present_follows_replied_edge_not_timeout(self, monkeypatch):
+        """A LeadMessage present after arrival but before the deadline resolves the wait
+        via the 'replied' edge, not the 'timeout' edge.
+
+        GUARD TEST -- see watched-fail cycle in test run report.
+
+        Timeline:
+          arrival_time = now - 120 s
+          timeout      = 60 s
+          deadline     = arrival_time + 60 s  =  now - 60 s  (past, so enrollment is due)
+          reply        = arrival_time + 30 s  =  now - 90 s  (after arrival, before deadline)
+        """
+        from app.services import email_service as email_mod
+        monkeypatch.setattr(email_mod.EmailService, "send_nurture_email", staticmethod(_noop_send))
+
+        firm = _make_firm(f"wue-reply-{uuid.uuid4().hex[:6]}")
+        lead = _make_lead(firm.id)
+        sequence, version = _make_sequence_and_version(firm.id)
+
+        timeout_seconds = 60
+        now = datetime.now(timezone.utc)
+        arrival_time = now - timedelta(seconds=120)
+        deadline = arrival_time + timedelta(seconds=timeout_seconds)  # now - 60 s
+
+        wait_step = _make_wait_step(
+            version.id, "WAIT_EVENT",
+            step_type=StepType.wait_until_event.value,
+            config={"event": "lead.email_replied", "timeout_seconds": timeout_seconds},
+        )
+        replied_step = _make_step(version.id, "REPLIED_BRANCH")
+        timeout_step = _make_step(version.id, "TIMEOUT_BRANCH")
+        _make_labeled_edge(wait_step.id, replied_step.id, "replied")
+        _make_labeled_edge(wait_step.id, timeout_step.id, "timeout")
+
+        enrollment = _make_enrollment(
+            firm_id=firm.id,
+            lead_id=lead.id,
+            sequence_id=sequence.id,
+            sequence_version_id=version.id,
+            current_step_id=wait_step.id,
+            next_action_time=deadline,
+        )
+
+        # Reply arrived 30 s after the enrollment landed at this step (before deadline).
+        _make_lead_message(
+            firm_id=firm.id,
+            lead_id=lead.id,
+            source="inbound_email",
+            created_at=arrival_time + timedelta(seconds=30),
+        )
+
+        result = run_nurture_tick()
+
+        fetched = _fetch_enrollment(enrollment.id)
+        assert fetched.current_step_id == replied_step.id, (
+            f"A reply present after arrival must resolve via the 'replied' edge. "
+            f"Got {fetched.current_step_id!r} (timeout_step.id={timeout_step.id!r})"
+        )
+        assert result["timeouts_fired"] == 0, (
+            f"timeouts_fired must be 0 when the reply edge is taken. "
+            f"Got {result['timeouts_fired']}"
+        )
+
+    def test_no_reply_deadline_passed_follows_timeout_edge(self, monkeypatch):
+        """When no reply has arrived and the deadline has passed, the timeout edge is taken.
+
+        Timeline:
+          arrival_time = now - 120 s
+          timeout      = 60 s
+          deadline     = now - 60 s  (past, enrollment is due)
+          no LeadMessage
+        """
+        from app.services import email_service as email_mod
+        monkeypatch.setattr(email_mod.EmailService, "send_nurture_email", staticmethod(_noop_send))
+
+        firm = _make_firm(f"wue-timeout-{uuid.uuid4().hex[:6]}")
+        lead = _make_lead(firm.id)
+        sequence, version = _make_sequence_and_version(firm.id)
+
+        timeout_seconds = 60
+        now = datetime.now(timezone.utc)
+        arrival_time = now - timedelta(seconds=120)
+        deadline = arrival_time + timedelta(seconds=timeout_seconds)
+
+        wait_step = _make_wait_step(
+            version.id, "WAIT_EVENT",
+            step_type=StepType.wait_until_event.value,
+            config={"event": "lead.email_replied", "timeout_seconds": timeout_seconds},
+        )
+        replied_step = _make_step(version.id, "REPLIED_BRANCH")
+        timeout_step = _make_step(version.id, "TIMEOUT_BRANCH")
+        _make_labeled_edge(wait_step.id, replied_step.id, "replied")
+        _make_labeled_edge(wait_step.id, timeout_step.id, "timeout")
+
+        enrollment = _make_enrollment(
+            firm_id=firm.id,
+            lead_id=lead.id,
+            sequence_id=sequence.id,
+            sequence_version_id=version.id,
+            current_step_id=wait_step.id,
+            next_action_time=deadline,
+        )
+
+        # No LeadMessage created.
+
+        result = run_nurture_tick()
+
+        fetched = _fetch_enrollment(enrollment.id)
+        assert fetched.current_step_id == timeout_step.id, (
+            f"No reply present must resolve via the 'timeout' edge. "
+            f"Got {fetched.current_step_id!r}"
+        )
+        assert result["timeouts_fired"] >= 1, (
+            f"timeouts_fired must be incremented when the timeout edge is taken. "
+            f"Got {result['timeouts_fired']}"
+        )
+
+    def test_reply_before_deadline_resolves_even_on_late_tick(self, monkeypatch):
+        """A reply that arrived before the deadline resolves the wait via 'replied',
+        even when the tick runs well after the deadline (early-resolution case).
+
+        Timeline:
+          arrival_time = now - 180 s
+          timeout      = 60 s
+          deadline     = arrival_time + 60 s  =  now - 120 s  (well past)
+          reply        = arrival_time + 20 s  =  now - 160 s  (after arrival, before deadline)
+          tick runs now (60 s after deadline)
+        """
+        from app.services import email_service as email_mod
+        monkeypatch.setattr(email_mod.EmailService, "send_nurture_email", staticmethod(_noop_send))
+
+        firm = _make_firm(f"wue-early-{uuid.uuid4().hex[:6]}")
+        lead = _make_lead(firm.id)
+        sequence, version = _make_sequence_and_version(firm.id)
+
+        timeout_seconds = 60
+        now = datetime.now(timezone.utc)
+        arrival_time = now - timedelta(seconds=180)
+        deadline = arrival_time + timedelta(seconds=timeout_seconds)  # now - 120 s
+
+        wait_step = _make_wait_step(
+            version.id, "WAIT_EVENT",
+            step_type=StepType.wait_until_event.value,
+            config={"event": "lead.email_replied", "timeout_seconds": timeout_seconds},
+        )
+        replied_step = _make_step(version.id, "REPLIED_BRANCH")
+        timeout_step = _make_step(version.id, "TIMEOUT_BRANCH")
+        _make_labeled_edge(wait_step.id, replied_step.id, "replied")
+        _make_labeled_edge(wait_step.id, timeout_step.id, "timeout")
+
+        enrollment = _make_enrollment(
+            firm_id=firm.id,
+            lead_id=lead.id,
+            sequence_id=sequence.id,
+            sequence_version_id=version.id,
+            current_step_id=wait_step.id,
+            next_action_time=deadline,
+        )
+
+        # Reply arrived 20 s after enrollment landed here -- before the 60 s deadline.
+        _make_lead_message(
+            firm_id=firm.id,
+            lead_id=lead.id,
+            source="inbound_email",
+            created_at=arrival_time + timedelta(seconds=20),
+        )
+
+        result = run_nurture_tick()
+
+        fetched = _fetch_enrollment(enrollment.id)
+        assert fetched.current_step_id == replied_step.id, (
+            f"A reply before the deadline must resolve via 'replied' even when the tick "
+            f"runs well after the deadline. Got {fetched.current_step_id!r}"
+        )
+        assert result["timeouts_fired"] == 0, (
+            f"timeouts_fired must be 0 when reply edge is taken. Got {result['timeouts_fired']}"
+        )
+
+    def test_stale_reply_before_arrival_does_not_resolve_wait(self, monkeypatch):
+        """A LeadMessage created before the enrollment arrived at this step is stale
+        and must not count as a reply for this step.
+
+        The enrollment must follow the 'timeout' edge despite a LeadMessage existing.
+
+        Timeline:
+          arrival_time = now - 120 s
+          timeout      = 60 s
+          deadline     = now - 60 s  (past, enrollment is due)
+          stale reply  = arrival_time - 30 s  =  now - 150 s  (before arrival -- stale)
+        """
+        from app.services import email_service as email_mod
+        monkeypatch.setattr(email_mod.EmailService, "send_nurture_email", staticmethod(_noop_send))
+
+        firm = _make_firm(f"wue-stale-{uuid.uuid4().hex[:6]}")
+        lead = _make_lead(firm.id)
+        sequence, version = _make_sequence_and_version(firm.id)
+
+        timeout_seconds = 60
+        now = datetime.now(timezone.utc)
+        arrival_time = now - timedelta(seconds=120)
+        deadline = arrival_time + timedelta(seconds=timeout_seconds)
+
+        wait_step = _make_wait_step(
+            version.id, "WAIT_EVENT",
+            step_type=StepType.wait_until_event.value,
+            config={"event": "lead.email_replied", "timeout_seconds": timeout_seconds},
+        )
+        replied_step = _make_step(version.id, "REPLIED_BRANCH")
+        timeout_step = _make_step(version.id, "TIMEOUT_BRANCH")
+        _make_labeled_edge(wait_step.id, replied_step.id, "replied")
+        _make_labeled_edge(wait_step.id, timeout_step.id, "timeout")
+
+        enrollment = _make_enrollment(
+            firm_id=firm.id,
+            lead_id=lead.id,
+            sequence_id=sequence.id,
+            sequence_version_id=version.id,
+            current_step_id=wait_step.id,
+            next_action_time=deadline,
+        )
+
+        # Reply is from 30 s BEFORE the enrollment arrived at this step -- stale.
+        _make_lead_message(
+            firm_id=firm.id,
+            lead_id=lead.id,
+            source="inbound_email",
+            created_at=arrival_time - timedelta(seconds=30),
+        )
+
+        result = run_nurture_tick()
+
+        fetched = _fetch_enrollment(enrollment.id)
+        assert fetched.current_step_id == timeout_step.id, (
+            f"A LeadMessage created before arrival must not resolve the wait. "
+            f"Expected timeout_step ({timeout_step.id!r}), got {fetched.current_step_id!r}"
+        )
+        assert result["timeouts_fired"] >= 1, (
+            f"timeouts_fired must be incremented for a stale-reply timeout. "
+            f"Got {result['timeouts_fired']}"
         )
