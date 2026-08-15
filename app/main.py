@@ -21,6 +21,7 @@ from app.services.invoice_service import run_invoice_overdue_sweep
 from app.services.findings_recheck import recheck_failed_findings
 from app.services.deadline_scheduler import check_approaching_deadlines
 from app.services.nurture_execution_service import run_nurture_tick
+from app.services.post_call_detection_service import detect_past_end_bookings
 from app.services.metric_pipeline import run_nightly_metric_recompute
 from app.services.irs_auth_service import check_expiring_authorizations
 from app.core.scheduler_lock import try_acquire_scheduler_lock, release_scheduler_lock
@@ -255,6 +256,17 @@ async def lifespan(app: FastAPI):
             trigger="cron",
             minute="*/15",
             id="nurture_execution_tick",
+            replace_existing=True,
+        )
+        # Runs every 15 minutes, matching the nurture tick cadence. A staff
+        # member should receive the outcome-pending task promptly after a call
+        # ends, not hours later. The idempotency guard in
+        # detect_past_end_bookings prevents duplicate tasks on repeat runs.
+        scheduler.add_job(
+            detect_past_end_bookings,
+            trigger="cron",
+            minute="*/15",
+            id="post_call_detection_tick",
             replace_existing=True,
         )
         scheduler.start()

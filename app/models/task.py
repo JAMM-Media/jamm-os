@@ -57,6 +57,21 @@ class Task(Base):
         nullable=True,
     )
 
+    # Set only on post-call outcome tasks. Null for all other task types.
+    # SET NULL so the task survives if the booking row is ever removed.
+    booking_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("bookings.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
+    # Set alongside booking_id on post-call tasks. Null for all other task types.
+    lead_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("leads.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
     # 'client' or 'internal'. Kept as a plain String to match every other
     # status-like column on this model (status, and Engagement.engagement_type),
     # with the allowed values expressed as the TaskType enum in
@@ -90,6 +105,11 @@ class Task(Base):
     )
     notes: Mapped[str | None] = mapped_column(Text)
     is_completed: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    # Set by the outcome-marking endpoint. Null on all non-post-call tasks and
+    # on post-call tasks not yet resolved. Allowed values: call_held, not_a_fit,
+    # no_show -- matching the contract event names in section 9.1.
+    outcome: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

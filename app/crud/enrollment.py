@@ -77,3 +77,30 @@ def mark_enrollment_suppressed(
     enrollment.status = EnrollmentStatus.unsubscribed.value
     enrollment.stopped_at = datetime.now(timezone.utc)
     db.commit()
+
+
+def reactivate_enrollment(
+    db: Session,
+    enrollment_id: UUID,
+    firm_id: UUID,
+) -> Enrollment:
+    """Move a paused_reply enrollment back to active so the sequence resumes.
+
+    Raises ValueError if the enrollment is not found in this firm, or if its
+    current status is not paused_reply. Silently reactivating an already-active
+    or terminated enrollment would mask bugs in the caller; the guard is intentional.
+    """
+    enrollment = db.query(Enrollment).filter(
+        Enrollment.id == enrollment_id,
+        Enrollment.firm_id == firm_id,
+    ).first()
+    if enrollment is None:
+        raise ValueError("Enrollment not found in this firm")
+    if enrollment.status != EnrollmentStatus.paused_reply.value:
+        raise ValueError(
+            f"Cannot reactivate enrollment with status '{enrollment.status}': "
+            f"only paused_reply enrollments can be reactivated"
+        )
+    enrollment.status = EnrollmentStatus.active.value
+    db.commit()
+    return enrollment
