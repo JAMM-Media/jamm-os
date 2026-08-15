@@ -31,6 +31,7 @@ catch. The model declares `default=dict`, so the ORM cannot be trusted to
 produce a genuine NULL here.
 """
 
+import hashlib
 import json
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -255,6 +256,117 @@ class TestLoginMaxFailedAttemptsRead:
         )
         assert r2.status_code == 403, (
             f"populated policy did not lock on the second attempt: {r2.status_code}"
+        )
+
+    def test_explicit_json_null_policy_falls_back_to_the_default(self, client, blob_firm):
+        """A JSON null at password_policy must not break the failed login path.
+
+        The `.get("password_policy", {})` fallback only fires when the key is
+        ABSENT. A key present with a null value returns None, and the chained
+        .get on it raises AttributeError, taking down login for that firm.
+
+        This is reachable: PATCH /users/firm/settings takes an untyped dict and
+        imposes no schema, so any firm owner can write this value today. A null
+        policy means no policy, which is the same thing as an absent one.
+        """
+        _set_settings_blob(blob_firm["firm_id"], {"password_policy": None})
+
+        r = client.post(
+            "/auth/token",
+            json={"username": blob_firm["email"], "password": "wrongpassword"},
+        )
+
+        assert r.status_code == 401, (
+            f"a null password_policy should behave like an absent one, got {r.status_code}"
+        )
+
+        # And the default of 5 still governs: attempts 2 to 4 stay 401, 5 locks.
+        for attempt in range(2, 5):
+            rn = client.post(
+                "/auth/token",
+                json={"username": blob_firm["email"], "password": "wrongpassword"},
+            )
+            assert rn.status_code == 401, f"locked early on attempt {attempt}"
+
+        rlast = client.post(
+            "/auth/token",
+            json={"username": blob_firm["email"], "password": "wrongpassword"},
+        )
+        assert rlast.status_code == 403, (
+            f"null policy did not fall back to the default of 5: {rlast.status_code}"
+        )
+
+
+class TestPasswordResetPolicyRead:
+    """password_reset_service.py:105 reads the whole password_policy sub-object.
+
+    Same shape as the login read: the {} fallback only covers an ABSENT key,
+    and the retrieved value is handed straight to validate_password_policy,
+    which calls .get on it.
+    """
+
+    def _issue_reset_token(self, email):
+        """Seed a valid reset token for the user and return the raw token."""
+        from app.models.user import User
+
+        raw_token = f"resettoken{uuid.uuid4().hex}"
+        token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
+
+        db = TestingSessionLocal()
+        try:
+            user = db.query(User).filter(User.email == email).first()
+            user.password_reset_token_hash = token_hash
+            user.password_reset_expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
+            db.commit()
+        finally:
+            db.close()
+        return raw_token
+
+    @pytest.mark.parametrize("state", DEFAULTING_STATES)
+    def test_reset_succeeds_with_default_policy(self, client, blob_firm, state):
+        _set_settings_blob(blob_firm["firm_id"], _blob_for(state, None))
+        token = self._issue_reset_token(blob_firm["email"])
+
+        r = client.post(
+            "/auth/reset-password",
+            json={"token": token, "new_password": "brandnewpassword123"},
+        )
+
+        assert r.status_code == 200, f"{state} blob broke password reset: {r.text}"
+
+    def test_populated_policy_is_actually_enforced(self, client, blob_firm):
+        """min_length of 20 rejects an 11 character password.
+
+        The differential that proves the policy is genuinely read rather than
+        the reset simply always succeeding.
+        """
+        _set_settings_blob(
+            blob_firm["firm_id"],
+            {"password_policy": {"min_length": 20}},
+        )
+        token = self._issue_reset_token(blob_firm["email"])
+
+        r = client.post(
+            "/auth/reset-password",
+            json={"token": token, "new_password": "short123456"},
+        )
+
+        assert r.status_code == 400, f"policy was not enforced: {r.status_code}"
+        assert "20 characters" in r.json()["detail"]
+
+    def test_explicit_json_null_policy_falls_back_to_the_default(self, client, blob_firm):
+        """A JSON null at password_policy must not break password reset."""
+        _set_settings_blob(blob_firm["firm_id"], {"password_policy": None})
+        token = self._issue_reset_token(blob_firm["email"])
+
+        r = client.post(
+            "/auth/reset-password",
+            json={"token": token, "new_password": "brandnewpassword123"},
+        )
+
+        assert r.status_code == 200, (
+            f"a null password_policy should behave like an absent one, got "
+            f"{r.status_code} {r.text}"
         )
 
 

@@ -102,7 +102,11 @@ def reset_password(token: str, new_password: str, db: Session) -> tuple[bool, st
 
     firm = db.query(Firm).filter(Firm.id == user.firm_id).first()
     firm_settings = firm.settings or {} if firm else {}
-    policy = firm_settings.get("password_policy", {})
+    # `or {}` rather than a .get default: the default only fires when the key is
+    # absent, and the blob accepts arbitrary unvalidated values, so
+    # password_policy can legitimately be present and null. validate_password_policy
+    # calls .get on whatever it receives, so a null here would raise.
+    policy = firm_settings.get("password_policy") or {}
 
     policy_error = validate_password_policy(new_password, policy)
     if policy_error:

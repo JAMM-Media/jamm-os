@@ -103,7 +103,12 @@ def authenticate_staff(
 
             firm = db.query(Firm).filter(Firm.id == user.firm_id).first()
             firm_settings = firm.settings or {} if firm else {}
-            max_attempts = int(firm_settings.get("password_policy", {}).get("max_failed_attempts", 5))
+            # `or {}` rather than a .get default: the default only fires when the
+            # key is absent, and the blob accepts arbitrary unvalidated values, so
+            # password_policy can legitimately be present and null. A null policy
+            # means no policy, which is the same thing as an absent one.
+            policy = firm_settings.get("password_policy") or {}
+            max_attempts = int(policy.get("max_failed_attempts", 5))
 
             user.failed_login_count = (user.failed_login_count or 0) + 1
             if user.failed_login_count >= max_attempts:
