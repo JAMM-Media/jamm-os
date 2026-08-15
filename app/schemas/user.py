@@ -6,7 +6,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, EmailStr, ConfigDict
 
-from app.core.enums import UserRole
+from app.core.enums import MeetingLocationType, UserRole
 
 
 class UserBase(BaseModel):
@@ -29,6 +29,8 @@ class UserUpdate(BaseModel):
     is_active: Optional[bool] = None
     role: Optional[UserRole] = None
     cost_rate: Optional[float] = None
+    meeting_location_type: Optional[MeetingLocationType] = None
+    meeting_location_value: Optional[str] = None
 
 
 class UserOut(UserBase):
@@ -39,6 +41,8 @@ class UserOut(UserBase):
     concierge_active: bool = False
     concierge_entry_mode: Optional[str] = None
     concierge_suggestions_enabled: Optional[bool] = None
+    meeting_location_type: Optional[MeetingLocationType] = None
+    meeting_location_value: Optional[str] = None
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)

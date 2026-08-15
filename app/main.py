@@ -85,6 +85,7 @@ from app.api.intake import router as intake_router
 from app.api.unsubscribe import router as unsubscribe_router
 from app.api.webhooks.postmark_inbound import router as postmark_inbound_router
 from app.api.availability_windows import router as availability_windows_router
+from app.api.bookings import router as bookings_router
 from app.api.leads import router as leads_router
 from app.api.referral_partners import router as referral_partners_router
 from app.api.financial_intelligence import router as financial_intelligence_router
@@ -357,6 +358,7 @@ app.include_router(postmark_inbound_router)
 app.include_router(intake_router)
 app.include_router(unsubscribe_router)
 app.include_router(availability_windows_router)
+app.include_router(bookings_router)
 app.include_router(leads_router)
 app.include_router(referral_partners_router)
 app.include_router(financial_intelligence_router)

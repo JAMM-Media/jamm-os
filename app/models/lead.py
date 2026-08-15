@@ -146,3 +146,9 @@ class Lead(Base):
         back_populates="lead",
         cascade="all, delete-orphan",
     )
+
+    bookings: Mapped[list["Booking"]] = relationship(
+        "Booking",
+        back_populates="lead",
+        foreign_keys="[Booking.lead_id]",
+    )
