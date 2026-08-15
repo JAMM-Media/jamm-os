@@ -7,6 +7,9 @@ Given a staff member and a date range, computes the real list of bookable
 time slots by applying availability windows, daily caps, and buffer-padded
 conflict checks against existing bookings.
 
+Public shared surface (intentionally used by booking_service.py):
+  ACTIVE_STATUSES, get_window_for_day, slot_conflicts_with_booking.
+
 All datetimes are UTC-aware. AvailabilityWindow start_time/end_time are
 time-of-day (no timezone); they are combined with each calendar date and
 treated as UTC, matching the convention used by Booking.start_time/end_time.
@@ -32,10 +35,10 @@ logger = logging.getLogger(__name__)
 # Statuses that count as occupying a slot or the daily cap.
 # Explicitly excludes 'canceled' -- a canceled booking must not block time
 # or count against the cap.
-_ACTIVE_STATUSES = (BookingStatus.scheduled.value, BookingStatus.completed.value)
+ACTIVE_STATUSES = (BookingStatus.scheduled.value, BookingStatus.completed.value)
 
 
-def _get_window_for_day(
+def get_window_for_day(
     db: Session,
     staff_user_id: UUID,
     firm_id: UUID,
@@ -68,7 +71,7 @@ def _get_active_bookings_on_date(
         db.query(Booking)
         .filter(
             Booking.staff_user_id == staff_user_id,
-            Booking.status.in_(_ACTIVE_STATUSES),
+            Booking.status.in_(ACTIVE_STATUSES),
             Booking.start_time >= day_start,
             Booking.start_time < day_end,
         )
@@ -100,7 +103,7 @@ def _generate_candidate_slots(
     return slots
 
 
-def _slot_conflicts_with_booking(
+def slot_conflicts_with_booking(
     slot_start: datetime,
     slot_end: datetime,
     booking: Booking,
@@ -155,7 +158,7 @@ def compute_available_slots(
 
     while current_date <= end_date:
         day_of_week = current_date.weekday()  # 0=Monday, 6=Sunday
-        window = _get_window_for_day(db, staff_user_id, firm_id, day_of_week)
+        window = get_window_for_day(db, staff_user_id, firm_id, day_of_week)
 
         if window is None:
             current_date += timedelta(days=1)
@@ -185,7 +188,7 @@ def compute_available_slots(
             # Conflict check against every active booking on this date.
             conflicted = False
             for booking in active_bookings:
-                if _slot_conflicts_with_booking(
+                if slot_conflicts_with_booking(
                     slot_start,
                     slot_end,
                     booking,
