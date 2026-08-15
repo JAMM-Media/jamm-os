@@ -4,13 +4,14 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
+import sqlalchemy as sa
 from sqlalchemy import String, DateTime, Boolean, Text, Integer, ForeignKey, Numeric
 from sqlalchemy import Enum as PgEnum
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base_class import Base
-from app.core.enums import UserRole
+from app.core.enums import MeetingLocationType, UserRole
 
 
 class User(Base):
@@ -146,6 +147,20 @@ class User(Base):
         JSONB, nullable=True
     )
 
+    # Per-staff meeting location setting. Null means not yet configured.
+    # At booking time the booking-action endpoint reads these fields and writes
+    # the resulting string into Booking.location_snapshot.
+    meeting_location_type: Mapped[Optional[MeetingLocationType]] = mapped_column(
+        sa.Enum(MeetingLocationType, name="meetinglocationtype", native_enum=False),
+        nullable=True,
+    )
+
+    # The actual URL, phone number, or address corresponding to meeting_location_type.
+    meeting_location_value: Mapped[Optional[str]] = mapped_column(
+        String(500),
+        nullable=True,
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
@@ -188,4 +203,10 @@ class User(Base):
         back_populates="user",
         foreign_keys="[AvailabilityWindow.user_id]",
         cascade="all, delete-orphan",
+    )
+
+    bookings: Mapped[list["Booking"]] = relationship(
+        "Booking",
+        back_populates="staff_user",
+        foreign_keys="[Booking.staff_user_id]",
     )

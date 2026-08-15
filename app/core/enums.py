@@ -474,6 +474,34 @@ class EnrollmentStatus(str, Enum):
     paused_reply = "paused_reply"
 
 
+class BookingStatus(str, Enum):
+    """Status of a scheduled meeting with a lead.
+
+    Values correspond to the candidate event names in section 9.1:
+    lead.call_booked, lead.call_held, lead.call_no_show, lead.call_rescheduled.
+    canceled is implied by the rebook and recovery flow described in section 7.2.
+    """
+    scheduled = "scheduled"
+    completed = "completed"
+    no_show = "no_show"
+    canceled = "canceled"
+    rescheduled = "rescheduled"
+
+
+class MeetingLocationType(str, Enum):
+    """How a staff member receives meeting participants.
+
+    video  -- a permanent personal video room URL (Zoom, Meet, Teams).
+    phone  -- a phone number.
+    office -- a physical office address.
+
+    Stored native_enum=False per standing rules.
+    """
+    video = "video"
+    phone = "phone"
+    office = "office"
+
+
 class PricingMode(str, Enum):
     """
     How a firm's price for one service is served to a lead.
