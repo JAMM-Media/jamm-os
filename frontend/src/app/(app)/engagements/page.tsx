@@ -838,24 +838,19 @@ function BulkSendLetterModal({ open, onClose, selectedIds, engagements, clientMa
   useEffect(() => {
     if (!open) return
     setFetching(true)
-    Promise.all([
-      api.get('/esign/templates?limit=100'),
-      api.get('/users/firm'),
-    ])
-      .then(([templatesRes, firmRes]) => {
+    // Fee amounts are entered by hand. This used to prefill each engagement
+    // type's fee from the firm settings blob key settings.fee_schedule, retired
+    // August 15 2026 along with the writers that populated it. The firm fetch
+    // that fed it has been dropped with it, since nothing else here used it.
+    //
+    // The pricing config service (GET /api/pricing/config) is the future source:
+    // fee resolution belongs in the backend, and the resolved amount is stamped
+    // onto the letter at send time per the engagement letter snapshot design.
+    api.get('/esign/templates?limit=100')
+      .then((templatesRes) => {
         const items: LetterTemplate[] = templatesRes.data?.items ?? []
         setTemplates(items)
         if (items.length > 0) setTemplateId(items[0].id)
-
-        const schedule: Record<string, string> = firmRes.data?.settings?.fee_schedule ?? {}
-        const initial: Record<string, string> = {}
-        for (const eng of selectedEngagements) {
-          const key = eng.engagementType ?? '__none__'
-          if (!(key in initial) && key !== '__none__' && schedule[key]) {
-            initial[key] = `$${schedule[key]}`
-          }
-        }
-        setFeeAmounts(initial)
       })
       .catch(() => toast.error('Failed to load templates'))
       .finally(() => setFetching(false))

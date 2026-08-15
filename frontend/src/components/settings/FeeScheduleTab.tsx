@@ -1,4 +1,22 @@
 // frontend/src/components/settings/FeeScheduleTab.tsx
+//
+// TOMBSTONE. This tab is RETIRED as of August 15 2026 and is left in place
+// only until the pricing settings UI replaces it.
+//
+// Its save path no longer works. It writes settings.fee_schedule through
+// PATCH /users/firm/settings, and that key is now refused with a 422 naming
+// the retirement. The refusal is deliberately loud rather than a silent strip,
+// so this tab reports a real error instead of claiming a successful save while
+// writing nothing.
+//
+// Firm pricing now lives in the fee schedule system: the service catalog and
+// the firm scoped pricing tables, read through GET /api/pricing/config. That
+// system can express what this blob never could, notably unpriced (routes to
+// quote) versus priced at zero as physically distinct states.
+//
+// Do not repair this file. It dies with the pricing UI rebuild. The 16 item
+// hand copied list and label string tier matching below are exactly what the
+// replacement exists to remove.
 'use client'
 
 import { useState, useEffect } from 'react'
