@@ -10,6 +10,7 @@ from app.schemas.firm import FirmUpdate
 from app.services import s3 as s3_service
 from app.services.audit_service import write_audit_log
 from app.services.behavioral_log import log_event, log_setting_changes
+from app.services.firm_settings import reject_retired_settings_keys
 
 
 def update_firm_settings(
@@ -19,11 +20,13 @@ def update_firm_settings(
     payload: dict,
     firm_id: UUID,
 ):
+    # Refuse retired keys before anything else happens. The S3 logo cleanup
+    # below deletes objects, so a check placed after it would let a refused
+    # payload destroy the firm's existing logo on its way to being rejected.
+    reject_retired_settings_keys(payload)
+
     current_settings = firm.settings or {}
     merged = {**current_settings, **payload}
-
-    if "fee_schedule" in payload:
-        previous_schedule = current_settings.get("fee_schedule", {})
 
     # If portal_logo_s3_key is being replaced, delete the old logo from S3
     old_logo_key = current_settings.get("portal_logo_s3_key")
@@ -47,25 +50,6 @@ def update_firm_settings(
         firm,
         FirmUpdate(settings=merged),
     )
-    if "fee_schedule" in payload:
-        log_event(
-            firm_id=firm_id,
-            event_type="firm.fee_schedule_updated",
-            entity_type="firm",
-            entity_id=firm_id,
-            actor_type="staff",
-            actor_id=None,
-            metadata={
-                "fee_schedule": payload["fee_schedule"],
-                "previous_fee_schedule": previous_schedule,
-                "count": len(payload["fee_schedule"]),
-                "changed_types": [
-                    k for k in payload["fee_schedule"]
-                    if str(payload["fee_schedule"].get(k)) != str(previous_schedule.get(k))
-                ],
-            }
-        )
-
     log_setting_changes(
         firm_id=firm_id,
         actor_id=None,

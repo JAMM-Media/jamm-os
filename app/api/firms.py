@@ -24,6 +24,7 @@ from app.services.tax_organizer_service import seed_firm_organizer_templates
 from app.services.engagement_letter_seed import seed_firm_letter_templates
 from app.services import firm_service
 from app.services import s3 as s3_service
+from app.services.firm_settings import reject_retired_settings_keys
 
 router = APIRouter(prefix="/firms", tags=["firms"])
 
@@ -67,6 +68,8 @@ def update_my_firm(
     firm = crud_firm.get_firm(db, current_user.firm_id)
     if not firm:
         raise HTTPException(status_code=404, detail="Firm not found")
+
+    reject_retired_settings_keys(payload.settings)
 
     before = {
         "name": firm.name,
@@ -253,6 +256,9 @@ def update_firm(
     firm = crud_firm.get_firm(db, firm_id)
     if not firm:
         raise HTTPException(status_code=404, detail="Firm not found")
+
+    reject_retired_settings_keys(payload.settings)
+
     return crud_firm.update_firm(db, firm, payload)
 
 

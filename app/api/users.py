@@ -112,8 +112,11 @@ def update_my_firm_settings(
     """
     Allows a firm_owner to update their firm's settings JSON blob.
     Merges the payload into the existing settings dict rather than
-    replacing it entirely — so updating fee_schedule does not wipe
-    other settings keys.
+    replacing it entirely, so writing one key never wipes the others.
+
+    Refuses the retired fee_schedule key with 422. Firm pricing lives in
+    the fee schedule system now (the service catalog and the firm scoped
+    pricing tables), not in this blob.
     """
     firm = crud_firm.get_firm(db, current_firm.id)
     if not firm:
