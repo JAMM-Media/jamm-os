@@ -7,7 +7,6 @@ from decimal import Decimal
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from sqlalchemy import select
-from sqlalchemy.orm.attributes import flag_modified
 from app.db.session import SessionLocal
 from app.models.firm import Firm
 from app.models.user import User
@@ -64,30 +63,22 @@ def main():
             db.refresh(casey)
         print("Updated staff email logins.")
 
-        # STEP 2 — Seed fee schedule onto firm.settings
-        current_settings = firm.settings or {}
-        current_settings["fee_schedule"] = {
-            "tax_return_1040": "850",
-            "tax_return_1120": "2400",
-            "tax_return_1120s": "1800",
-            "tax_return_1065": "1600",
-            "tax_return_1041": "1200",
-            "tax_return_706": "3500",
-            "amended_return_1040x": "400",
-            "extension_4868": "150",
-            "extension_7004": "150",
-            "extension_8868": "150",
-            "bookkeeping_monthly": "600",
-            "bookkeeping_quarterly": "750",
-            "payroll_tax_941": "350",
-            "tax_planning_advisory": "300",
-            "audit_representation": "2500",
-            "custom": "",
-        }
-        firm.settings = current_settings
-        flag_modified(firm, "settings")
-        db.commit()
-        print("Seeded fee schedule.")
+        # STEP 2: RETIRED August 15 2026. Fee schedule seeding removed.
+        #
+        # This wrote a 16 key fee_schedule object into firm.settings, and it was
+        # the only code anywhere that populated that key with real content. The
+        # key is now retired and all three writer endpoints refuse it with a 422,
+        # so this step could no longer run through them even if it were kept.
+        #
+        # Fee data seeding moves to the pricing tables: the system owned
+        # complexity catalog (flags, dimensions, unit menus, vocabularies) plus
+        # the firm scoped pricing tables (service catalog entries, dimension
+        # configs, tiers, option prices). Those rows are authored in the catalog
+        # content session, which produces data and never migrations.
+        #
+        # Nothing later in this script depended on this step. STEP 3's letter
+        # template uses {{fee_amount}}, which is a merge field filled in at send
+        # time, not a value read from this blob.
 
         # STEP 3 — Add fourth engagement letter template (bookkeeping/recurring)
         existing_names = [
@@ -230,7 +221,7 @@ def main():
         print("  casey@demofirm.com / Demo2026!  (staff — Casey O'Brien)")
         print("Portal: corby0917@gmail.com / PortalDemo2026!  (Sarah Chen)")
         print()
-        print("Fee schedule seeded for 16 engagement types.")
+        print("Fee schedule seeding retired: pricing lives in the pricing tables now.")
         print("4th letter template: Bookkeeping & Recurring Services.")
         print("40 historical time entries — all timesheet tabs now covered.")
 
