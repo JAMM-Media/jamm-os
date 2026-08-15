@@ -18,9 +18,19 @@ from app.services.token_encryption import encrypt_token
 
 logger = logging.getLogger(__name__)
 
+# The Google scopes this app requests.
+#
+# DESCOPED August 15 2026: gmail.readonly and gmail.send were removed. Mailbox
+# access is no longer requested at all, and email sync ships disabled by default
+# (see is_email_sync_enabled in app/services/firm_settings.py).
+#
+# Calendar and identity are untouched and deliberately remain: the Google
+# calendar integration rides this same grant, there is no separate calendar
+# OAuth flow, so removing calendar.readonly here would break it.
+#
+# tests/test_google_oauth_scopes.py is the tripwire. Do not add a gmail scope
+# back without retiring that test on purpose.
 GMAIL_SCOPES = [
-    "https://www.googleapis.com/auth/gmail.readonly",
-    "https://www.googleapis.com/auth/gmail.send",
     "https://www.googleapis.com/auth/calendar.readonly",
     "https://www.googleapis.com/auth/userinfo.email",
     "openid",

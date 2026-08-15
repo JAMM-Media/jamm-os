@@ -11,6 +11,28 @@ thing with the same message.
 from fastapi import HTTPException, status
 
 
+def is_email_sync_enabled(firm) -> bool:
+    """Whether Gmail mailbox sync may run for this firm.
+
+    Email sync ships DISABLED by default, per the OAuth descope decision of
+    August 15 2026: gmail.readonly and gmail.send were removed from the
+    requested Google scope list, so a fresh authorization does not grant the
+    mailbox access this feature needs.
+
+    Absent, empty, and NULL settings all mean disabled. Only an explicit true
+    turns it on, which is why this tests identity against True rather than
+    truthiness: a stray non boolean in an unvalidated blob must not read as
+    consent to sync a firm's mail.
+
+    Before this existed nothing in the backend read email_sync_enabled at all.
+    The toggle was written by the settings tab and consulted only by the
+    frontend, which treated anything other than an explicit false as enabled.
+    The sweep itself ran for every connected integration regardless.
+    """
+    settings = getattr(firm, "settings", None) or {}
+    return settings.get("email_sync_enabled") is True
+
+
 # Keys that may no longer be written into the settings blob through any door.
 #
 # fee_schedule was retired on August 15 2026. Firm pricing moved to the service

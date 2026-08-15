@@ -14,8 +14,10 @@ from sqlalchemy.orm import Session
 
 from app.db.session import SessionLocal
 from app.models.client import Client
+from app.models.firm import Firm
 from app.models.integration import Integration
 from app.services.behavioral_log import log_event
+from app.services.firm_settings import is_email_sync_enabled
 from app.services.token_encryption import decrypt_token
 
 logger = logging.getLogger(__name__)
@@ -59,6 +61,18 @@ def get_fresh_credentials(integration: Integration) -> google.oauth2.credentials
 
 def extract_gmail_signals(firm_id: UUID, db: Session) -> dict:
     errors: list[str] = []
+
+    # 0. Email sync is opt in and ships disabled. Gated here rather than in the
+    # batch runner because this is the single entry point to the feature, so any
+    # future caller inherits the gate instead of having to remember it.
+    firm = db.query(Firm).filter(Firm.id == firm_id).first()
+    if not is_email_sync_enabled(firm):
+        return {
+            "firms_processed": 1,
+            "clients_with_signals": 0,
+            "threads_processed": 0,
+            "errors": [],
+        }
 
     # 1. Load integration
     integration = (
