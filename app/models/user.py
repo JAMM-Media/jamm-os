@@ -182,3 +182,10 @@ class User(Base):
         foreign_keys="[CPERecord.user_id]",
         cascade="all, delete-orphan",
     )
+
+    availability_windows: Mapped[list["AvailabilityWindow"]] = relationship(
+        "AvailabilityWindow",
+        back_populates="user",
+        foreign_keys="[AvailabilityWindow.user_id]",
+        cascade="all, delete-orphan",
+    )
