@@ -281,7 +281,7 @@ export default function EngagementsPage() {
             <option value="other">Other</option>
           </select>
 
-          {/* Form filter — only shown when category is tax_return */}
+          {/* Form filter - only shown when category is tax_return */}
           {categoryFilter === 'tax_return' && (
             <select
               value={formFilter}
@@ -399,7 +399,7 @@ export default function EngagementsPage() {
           </div>
         )}
 
-        {/* IRS Acknowledgment File upload — collapsible, secondary to main list */}
+        {/* IRS Acknowledgment File upload - collapsible, secondary to main list */}
         <div className="rounded-[8px] border border-surface-border dark:border-dark-border overflow-hidden">
           <button
             onClick={() => setAckUploaderOpen((o) => !o)}

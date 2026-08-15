@@ -26,9 +26,9 @@ router = APIRouter(prefix="/users", tags=["users"])
 
 
 # -------------------------------------------------------------------
-# POST /users/ — Create a new user
+# POST /users/ - Create a new user
 # Only firm_owner can add new staff to their firm.
-# firm_id is injected from the JWT — not taken from the request body.
+# firm_id is injected from the JWT - not taken from the request body.
 # -------------------------------------------------------------------
 @router.post("/", response_model=UserOut, status_code=status.HTTP_201_CREATED)
 def create_user(
@@ -43,13 +43,13 @@ def create_user(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Email already registered",
         )
-    # Override firm_id with the authenticated firm — never trust what's in the payload.
+    # Override firm_id with the authenticated firm - never trust what's in the payload.
     user_in_with_firm = user_in.model_copy(update={"firm_id": current_firm.id})
     return crud_user.create_user(db, user_in_with_firm)
 
 
 # -------------------------------------------------------------------
-# GET /users/ — List all users in this firm
+# GET /users/ - List all users in this firm
 # -------------------------------------------------------------------
 @router.get("/", response_model=PaginatedResponse[UserOut])
 def list_users(
@@ -66,7 +66,7 @@ def list_users(
 
 
 # -------------------------------------------------------------------
-# GET /users/me — Return the currently logged-in user
+# GET /users/me - Return the currently logged-in user
 # MUST be defined before GET /users/{user_id}
 # -------------------------------------------------------------------
 @router.get("/me", response_model=UserOut)
@@ -83,9 +83,9 @@ def read_users_me(
 
 
 # -------------------------------------------------------------------
-# GET /users/firm — Return the current user's firm details
+# GET /users/firm - Return the current user's firm details
 # Accessible to all staff roles (staff, manager, firm_owner).
-# system_admin is excluded by design — they are not firm members.
+# system_admin is excluded by design - they are not firm members.
 # -------------------------------------------------------------------
 @router.get("/firm", response_model=FirmOut)
 def get_my_firm(
@@ -100,7 +100,7 @@ def get_my_firm(
 
 
 # -------------------------------------------------------------------
-# PATCH /users/firm/settings — Firm owner updates their firm settings
+# PATCH /users/firm/settings - Firm owner updates their firm settings
 # -------------------------------------------------------------------
 @router.patch("/firm/settings", response_model=FirmOut)
 def update_my_firm_settings(
@@ -131,7 +131,7 @@ def update_my_firm_settings(
 
 
 # -------------------------------------------------------------------
-# GET /users/capacity — Firm-wide staff utilization
+# GET /users/capacity - Firm-wide staff utilization
 # Gated to manager or above: this returns personnel data for all staff.
 # -------------------------------------------------------------------
 @router.get("/capacity")
@@ -143,7 +143,7 @@ def get_staff_capacity_summary(
     from app.api.concierge.functions import get_staff_capacity
     return get_staff_capacity(firm_id=current_firm.id, db=db)
 
-# GET /users/{user_id}/workload — Tasks assigned to this user
+# GET /users/{user_id}/workload - Tasks assigned to this user
 # Accessible to any staff member (staff can view their own workload,
 # managers/owners can view anyone's).
 # -------------------------------------------------------------------
@@ -174,7 +174,7 @@ def get_user_workload(
 
 
 # -------------------------------------------------------------------
-# GET /users/{user_id} — Get a single user (must belong to same firm)
+# GET /users/{user_id} - Get a single user (must belong to same firm)
 # -------------------------------------------------------------------
 @router.get("/{user_id}", response_model=UserOut)
 def get_user(
@@ -193,7 +193,7 @@ def get_user(
 
 
 # -------------------------------------------------------------------
-# PATCH /users/{user_id} — Update a user
+# PATCH /users/{user_id} - Update a user
 # -------------------------------------------------------------------
 @router.patch("/{user_id}", response_model=UserOut)
 def update_user(
@@ -229,7 +229,7 @@ class _CostRateBody(BaseModel):
 
 
 # -------------------------------------------------------------------
-# PATCH /users/{user_id}/cost-rate — Set staff cost rate (firm_owner only)
+# PATCH /users/{user_id}/cost-rate - Set staff cost rate (firm_owner only)
 # -------------------------------------------------------------------
 @router.patch("/{user_id}/cost-rate", response_model=UserOut)
 def update_user_cost_rate(
@@ -252,7 +252,7 @@ def update_user_cost_rate(
 
 
 # -------------------------------------------------------------------
-# DELETE /users/{user_id} — Delete a user
+# DELETE /users/{user_id} - Delete a user
 # -------------------------------------------------------------------
 @router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_user(

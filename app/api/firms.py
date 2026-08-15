@@ -30,7 +30,7 @@ router = APIRouter(prefix="/firms", tags=["firms"])
 
 
 # ---------------------------------------------------------
-# CREATE — system_admin only
+# CREATE - system_admin only
 # Only JAMM PX staff (system_admin) can create new firms.
 # Firms are created when a new customer signs up.
 # ---------------------------------------------------------
@@ -57,7 +57,7 @@ def create_firm(
 
 
 # ---------------------------------------------------------
-# UPDATE MY FIRM — firm_owner only
+# UPDATE MY FIRM - firm_owner only
 # ---------------------------------------------------------
 @router.patch("/me", response_model=FirmOut)
 def update_my_firm(
@@ -107,7 +107,7 @@ class ConciergeSettingsUpdate(BaseModel):
 
 
 # ---------------------------------------------------------
-# UPDATE CONCIERGE SETTINGS — firm_owner only
+# UPDATE CONCIERGE SETTINGS - firm_owner only
 # ---------------------------------------------------------
 @router.patch("/me/concierge", response_model=FirmOut)
 def update_concierge_settings(
@@ -140,7 +140,7 @@ def update_concierge_settings(
 
 
 # ---------------------------------------------------------
-# LIST — system_admin only
+# LIST - system_admin only
 # ---------------------------------------------------------
 @router.get("/", response_model=PaginatedResponse[FirmOut])
 def list_firms(
@@ -154,7 +154,7 @@ def list_firms(
 
 
 # ---------------------------------------------------------
-# LOGO UPLOAD URL — firm_owner only
+# LOGO UPLOAD URL - firm_owner only
 # ---------------------------------------------------------
 
 LOGO_ALLOWED_TYPES = {
@@ -201,7 +201,7 @@ def get_logo_upload_url(
 
 
 # ---------------------------------------------------------
-# LOGO SERVE — public, no auth required
+# LOGO SERVE - public, no auth required
 # ---------------------------------------------------------
 
 @router.get("/logo/{firm_id}")
@@ -210,7 +210,7 @@ def get_firm_logo(
     db: Session = Depends(get_db),
 ):
     """
-    Public endpoint — no auth required.
+    Public endpoint - no auth required.
     Returns a 302 redirect to a fresh presigned S3 URL for the firm's logo.
     Returns 404 if the firm has no logo configured.
     Used as the img src for portal top bar and login page.
@@ -229,7 +229,7 @@ def get_firm_logo(
 
 
 # ---------------------------------------------------------
-# GET SINGLE — system_admin only
+# GET SINGLE - system_admin only
 # ---------------------------------------------------------
 @router.get("/{firm_id}", response_model=FirmOut)
 def get_firm(
@@ -244,7 +244,7 @@ def get_firm(
 
 
 # ---------------------------------------------------------
-# UPDATE — system_admin only
+# UPDATE - system_admin only
 # ---------------------------------------------------------
 @router.patch("/{firm_id}", response_model=FirmOut)
 def update_firm(
@@ -263,7 +263,7 @@ def update_firm(
 
 
 # ---------------------------------------------------------
-# DELETE — system_admin only
+# DELETE - system_admin only
 # Deleting a firm cascades to ALL its data. This is irreversible.
 # ---------------------------------------------------------
 @router.delete("/{firm_id}", status_code=status.HTTP_204_NO_CONTENT)

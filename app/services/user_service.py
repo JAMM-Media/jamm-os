@@ -38,7 +38,7 @@ def update_firm_settings(
             pass  # Never fail a settings save because of S3 cleanup
 
     if new_logo_key == "":
-        # Explicit empty string means remove logo — also delete from S3
+        # Explicit empty string means remove logo - also delete from S3
         if old_logo_key:
             try:
                 s3_service.delete_object(old_logo_key)

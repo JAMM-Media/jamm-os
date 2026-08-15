@@ -311,7 +311,7 @@ export function SendEngagementLetterModal({
 
         {mode === 'upload' && (
           <div className="flex flex-col gap-4">
-            {/* Auto-populated preview — same as template path */}
+            {/* Auto-populated preview - same as template path */}
             <div className="bg-surface-page dark:bg-[#252525] rounded-[6px] p-3 flex flex-col gap-2">
               <p className="text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em]">Auto-populated from engagement</p>
               <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">

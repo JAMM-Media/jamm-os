@@ -44,7 +44,7 @@ def main():
 
         print(f"Found firm: {firm.name} ({firm_id})")
 
-        # STEP 1 — Update staff emails to real login emails
+        # STEP 1 - Update staff emails to real login emails
         alex.email = "andrew@jammpx.com"
         alex.hashed_password = get_password_hash("Demo2026!")
         jordan.email = "ben@jammpx.com"
@@ -80,7 +80,7 @@ def main():
         # template uses {{fee_amount}}, which is a merge field filled in at send
         # time, not a value read from this blob.
 
-        # STEP 3 — Add fourth engagement letter template (bookkeeping/recurring)
+        # STEP 3 - Add fourth engagement letter template (bookkeeping/recurring)
         existing_names = [
             t.name for t in db.execute(
                 select(EngagementLetterTemplate).where(
@@ -113,9 +113,9 @@ def main():
             db.commit()
             print("Added bookkeeping engagement letter template.")
         else:
-            print("Bookkeeping letter template already exists — skipped.")
+            print("Bookkeeping letter template already exists - skipped.")
 
-        # STEP 4 — Add historical time entries so all timesheet tabs show data
+        # STEP 4 - Add historical time entries so all timesheet tabs show data
         # Load active engagements
         engagements = db.execute(
             select(Engagement).where(
@@ -215,15 +215,15 @@ def main():
         print()
         print("=== Seed Additions Complete ===")
         print("Staff logins:")
-        print("  andrew@jammpx.com / Demo2026!  (firm_owner — Alex Mercer)")
-        print("  ben@jammpx.com / Demo2026!  (manager — Jordan Reeves)")
-        print("  ben@mail.jammpx.com / Demo2026!  (staff — Taylor Kim)")
-        print("  casey@demofirm.com / Demo2026!  (staff — Casey O'Brien)")
+        print("  andrew@jammpx.com / Demo2026!  (firm_owner - Alex Mercer)")
+        print("  ben@jammpx.com / Demo2026!  (manager - Jordan Reeves)")
+        print("  ben@mail.jammpx.com / Demo2026!  (staff - Taylor Kim)")
+        print("  casey@demofirm.com / Demo2026!  (staff - Casey O'Brien)")
         print("Portal: corby0917@gmail.com / PortalDemo2026!  (Sarah Chen)")
         print()
         print("Fee schedule seeding retired: pricing lives in the pricing tables now.")
         print("4th letter template: Bookkeeping & Recurring Services.")
-        print("40 historical time entries — all timesheet tabs now covered.")
+        print("40 historical time entries - all timesheet tabs now covered.")
 
     except Exception as e:
         db.rollback()

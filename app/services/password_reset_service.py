@@ -41,7 +41,7 @@ def request_password_reset(email: str, db: Session) -> None:
     stores the SHA-256 hash, and sends the reset email.
 
     IMPORTANT: Always returns None regardless of whether the email
-    exists. This prevents user enumeration — the caller always returns
+    exists. This prevents user enumeration - the caller always returns
     the same response to the client.
 
     Never raises. Email send failure is logged and silently ignored.
@@ -86,7 +86,7 @@ def reset_password(token: str, new_password: str, db: Session) -> tuple[bool, st
     Returns (False, error_message) if the password violates the firm policy.
 
     On success, increments token_version to invalidate all existing
-    staff JWTs — forces a fresh login after password reset.
+    staff JWTs - forces a fresh login after password reset.
     """
     token_hash = _hash_token(token)
     now = datetime.now(timezone.utc)
