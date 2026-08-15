@@ -275,6 +275,7 @@ class NotificationType(str, Enum):
     client_anniversary = "client_anniversary"
     document_expiry_alert = "document_expiry_alert"
     peer_network_mention = "peer_network_mention"
+    lead_replied = "lead_replied"
 
 
 class NotificationChannel(str, Enum):
@@ -302,6 +303,7 @@ class NotificationEventType(str, Enum):
     extension_deadline = "extension_deadline"
     client_anniversary = "client_anniversary"
     document_expiry_alert = "document_expiry_alert"
+    lead_replied = "lead_replied"
 
 
 class CredentialType(str, Enum):
@@ -469,6 +471,7 @@ class EnrollmentStatus(str, Enum):
     removed_by_staff = "removed_by_staff"
     completed_dead_end = "completed_dead_end"
     completed_won = "completed_won"
+    paused_reply = "paused_reply"
 
 
 class PricingMode(str, Enum):

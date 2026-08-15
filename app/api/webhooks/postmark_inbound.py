@@ -10,10 +10,14 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from sqlalchemy.orm import Session
 
+from app.core.enums import EnrollmentStatus, NotificationType, RecipientType, UserRole
 from app.db.session import get_db
+from app.models.enrollment import Enrollment
 from app.models.lead import Lead
 from app.models.lead_message import LeadMessage
+from app.models.user import User
 from app.services.behavioral_log import log_event
+from app.services.notification_service import NotificationService
 
 logger = logging.getLogger(__name__)
 
@@ -109,4 +113,61 @@ def postmark_inbound(
     )
 
     logger.info("postmark_inbound: reply captured lead=%s message=%s", lead_id, message.id)
+
+    enrollment_id_for_log = None
+    try:
+        active_enrollment = (
+            db.query(Enrollment)
+            .filter(
+                Enrollment.lead_id == lead.id,
+                Enrollment.status == EnrollmentStatus.active.value,
+            )
+            .first()
+        )
+        if active_enrollment is not None:
+            enrollment_id_for_log = active_enrollment.id
+            active_enrollment.status = EnrollmentStatus.paused_reply.value
+            db.commit()
+            logger.info(
+                "postmark_inbound: enrollment paused lead=%s enrollment=%s",
+                lead.id,
+                active_enrollment.id,
+            )
+
+        firm_owner = (
+            db.query(User)
+            .filter(
+                User.firm_id == lead.firm_id,
+                User.role == UserRole.firm_owner,
+            )
+            .first()
+        )
+        if firm_owner is None:
+            logger.warning(
+                "postmark_inbound: no firm owner for firm=%s lead=%s -- notification skipped",
+                lead.firm_id,
+                lead.id,
+            )
+        else:
+            NotificationService.create_notification(
+                db=db,
+                firm_id=lead.firm_id,
+                recipient_id=firm_owner.id,
+                recipient_type=RecipientType.staff,
+                title="Lead replied -- automation paused",
+                body=(
+                    "A lead replied to an automated email. Their sequence has been paused"
+                    " and is awaiting your review before automation resumes."
+                ),
+                notification_type=NotificationType.lead_replied,
+                related_entity_type="lead",
+                related_entity_id=lead.id,
+            )
+    except Exception:
+        logger.exception(
+            "postmark_inbound: pause/notify failed lead=%s enrollment=%s",
+            lead.id,
+            enrollment_id_for_log,
+        )
+
     return {"status": "ok"}
