@@ -8,11 +8,16 @@ firm_option_prices goes through this module. The database enforces shape
 (single parent, branch uniqueness, referential integrity); this module enforces
 the rules that need to read more than one row.
 
-get_fee_schedule_config at the bottom of the file is the read side, added
-August 14, 2026 to back GET /api/pricing/config. It is the only function here
-that does not validate anything, and it is kept in this module rather than a
-new one because the merge it performs is the read-shaped twin of the write
-rules above: same six tables, same carve-out, same tenant scoping.
+get_fee_schedule_config is the read side, added August 14, 2026 to back
+GET /api/pricing/config. It is kept in this module rather than a new one
+because the merge it performs is the read-shaped twin of the write rules
+above: same six tables, same carve-out, same tenant scoping.
+
+get_public_intake_config sits directly beneath it, added August 16, 2026 to
+back the unauthenticated GET /intake/{slug}/pricing-config. It is the
+price-stripped public twin of that same read: the question tree a lead sees,
+with every commercial fact removed. It and get_fee_schedule_config are the
+only two functions in this module that validate nothing.
 
 Service-raise pattern: these functions raise HTTPException, the house domain
 exception used by every other service in this codebase. They never return a
@@ -69,6 +74,7 @@ the session summary, and closes with the durable fix above.
 """
 
 import uuid
+from collections import defaultdict
 from decimal import Decimal
 from typing import Optional
 
@@ -76,12 +82,18 @@ from fastapi import HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.core.enums import DimensionKind, DimensionRole
+from app.core.enums import (
+    ENGAGEMENT_TYPE_LABELS,
+    DimensionKind,
+    DimensionRole,
+    EngagementType,
+)
 from app.models.complexity_dimension import ComplexityDimension
 from app.models.complexity_dimension_unit import ComplexityDimensionUnit
 from app.models.complexity_flag import ComplexityFlag
 from app.models.complexity_flag_engagement_type import ComplexityFlagEngagementType
 from app.models.complexity_vocabulary_option import ComplexityVocabularyOption
+from app.models.firm import Firm
 from app.models.firm_dimension_config import FirmDimensionConfig
 from app.models.firm_option_price import FirmOptionPrice
 from app.models.firm_tier import FirmTier
@@ -104,6 +116,12 @@ from app.schemas.firm_dimension_config import (
 )
 from app.schemas.firm_option_price import FirmOptionPriceCreate, FirmOptionPriceOut
 from app.schemas.firm_tier import FirmTierBase, FirmTierOut
+from app.schemas.intake_pricing_config import (
+    IntakePricingConfigOut,
+    IntakeQuestionOptionOut,
+    IntakeQuestionOut,
+    IntakeServiceOut,
+)
 from app.schemas.service_catalog_entry import (
     ServiceCatalogEntryCreate,
     ServiceCatalogEntryOut,
@@ -857,6 +875,296 @@ def get_fee_schedule_config(
                 FirmOptionPriceOut.model_validate(row) for row in option_prices
             ],
         ),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Reading the public intake config. The stripped public twin of the read above.
+# ---------------------------------------------------------------------------
+
+def _engagement_type_label(engagement_type: str) -> Optional[str]:
+    """The lead-facing display string for a stored engagement_type value.
+
+    Read from ENGAGEMENT_TYPE_LABELS in app/core/enums.py, which is the single
+    backend source of truth for these strings and is kept complete by
+    tests/test_engagement_type_canon.py. NOT hand-copied here: a second list
+    would drift from the first, which is exactly what happened to the letter
+    templates settings tab.
+
+    Returns None rather than raising if the stored value is not an
+    EngagementType member. That should be impossible (the schema layer
+    validates it on the way in) but this is an unauthenticated read and it will
+    not be the thing that 500s over one bad catalog row.
+    """
+    try:
+        return ENGAGEMENT_TYPE_LABELS[EngagementType(engagement_type)]
+    except (ValueError, KeyError):
+        return None
+
+
+def get_public_intake_config(
+    db: Session, *, firm_id: uuid.UUID
+) -> IntakePricingConfigOut:
+    """The question tree one firm's public intake form renders.
+
+    Backs GET /intake/{slug}/pricing-config, per CRM Build Contract Addendum 1
+    section 9, flattened per Addendum 2. It is the stripped public twin of
+    get_fee_schedule_config above and lives beside it deliberately: same
+    tables, same carve-out, same tenant scoping, opposite audience.
+
+    Signature mirrors get_fee_schedule_config. firm_id is a required keyword
+    argument and is resolved from the slug by the router, never from a payload.
+
+    THE STRIPPING CONTRACT IS THIS FUNCTION'S REASON TO EXIST. The endpoint is
+    unauthenticated, so every commercial fact has to be gone before the
+    response leaves here: no price, no base_fee, no pricing_mode, no role, no
+    guard_threshold, no tier ranges or sort orders, no parent ids, no firm_id,
+    no config or tier ids, no timestamps. The schemas in
+    app/schemas/intake_pricing_config.py have no field capable of carrying any
+    of it, and tests/test_intake_pricing_config.py walks a serialized response
+    recursively to prove it. Note what this function never reads: firm_tiers
+    and firm_option_prices are not queried here at all.
+
+    THE APPLICABILITY RULE (ruled by Andrew, August 16, 2026). Configured means
+    asked; priced means automated. Two separate gates:
+
+    1. A question exists only if the firm has a firm_dimension_config row for
+       that dimension. The system catalog decides which engagement types a flag
+       is relevant to; the firm's own configs decide which of those questions
+       get asked at all. No config, no question.
+    2. Whether the configured thing carries a price is INVISIBLE here. A
+       configured-but-unpriced dimension is still served as a question. An
+       unpriced answer routes to quote at resolution time, which is downstream
+       behavior and none of this endpoint's business.
+
+    TENANT SCOPING. service_catalog_entries and firm_dimension_configs are
+    filtered on firm_id without exception. The five system catalog tables carry
+    no firm_id at all (the August 13, 2026 carve-out) and are read unscoped;
+    they are identical for every firm and contain nothing a firm owns.
+
+    Ordering is stable rather than incidental, so the same configuration
+    renders the same form on every call: flag key, then dimension
+    hierarchy_rank, then dimension key, then unit key where a dimension
+    produces more than one question.
+    """
+    # Re-read the firm rather than taking it from the caller so the signature
+    # can mirror get_fee_schedule_config. The router has already resolved the
+    # slug, so a miss here is not reachable through the endpoint; the 404 text
+    # matches the router's exactly anyway, so no caller can ever learn which of
+    # the two lookups failed.
+    firm = db.get(Firm, firm_id)
+    if firm is None:
+        raise HTTPException(status_code=404, detail="Intake form not found")
+
+    # 1. Offered services. Absence of a row means not offered, identical in
+    # meaning to a row with is_offered false, so the filter covers both.
+    entries = db.execute(
+        select(ServiceCatalogEntry)
+        .where(
+            ServiceCatalogEntry.firm_id == firm_id,
+            ServiceCatalogEntry.is_offered.is_(True),
+        )
+        .order_by(ServiceCatalogEntry.engagement_type)
+    ).scalars().all()
+
+    if not entries:
+        # A firm offering nothing is a real state, not an error. Empty list,
+        # HTTP 200.
+        return IntakePricingConfigOut(
+            slug=firm.slug, firm_name=firm.name, services=[]
+        )
+
+    offered_types = [entry.engagement_type for entry in entries]
+
+    # 2. Which flags apply to those services. Inactive flags are dropped here,
+    # which is what keeps their dimensions out of every service below.
+    flag_rows = db.execute(
+        select(ComplexityFlagEngagementType.engagement_type, ComplexityFlag)
+        .join(
+            ComplexityFlag,
+            ComplexityFlag.id == ComplexityFlagEngagementType.flag_id,
+        )
+        .where(
+            ComplexityFlag.is_active.is_(True),
+            ComplexityFlagEngagementType.engagement_type.in_(offered_types),
+        )
+    ).all()
+
+    flags_by_id: dict[uuid.UUID, ComplexityFlag] = {}
+    flag_ids_by_engagement_type: dict[str, set[uuid.UUID]] = defaultdict(set)
+    for engagement_type, flag in flag_rows:
+        flags_by_id[flag.id] = flag
+        flag_ids_by_engagement_type[engagement_type].add(flag.id)
+
+    # 3. What this firm has configured. Firm-scoped, joined to the system
+    # dimension so kind, key, question text and hierarchy_rank come along.
+    config_rows = db.execute(
+        select(FirmDimensionConfig, ComplexityDimension)
+        .join(
+            ComplexityDimension,
+            ComplexityDimension.id == FirmDimensionConfig.dimension_id,
+        )
+        .where(FirmDimensionConfig.firm_id == firm_id)
+    ).all()
+
+    # 4. DEDUPLICATION happens right here, and it is the only place it needs to.
+    # Collapsing the config rows into a dict keyed by dimension_id means a
+    # dimension configured on five branches is indistinguishable from one
+    # configured flat by the time anything below reads it. Chains shape
+    # pricing, not question visibility (Addendum 2), and the response carries
+    # no trace of how many configs exist or how they are wired.
+    dimensions_by_id: dict[uuid.UUID, ComplexityDimension] = {}
+    unit_ids_by_dimension: dict[uuid.UUID, set[uuid.UUID]] = defaultdict(set)
+    for config, dimension in config_rows:
+        if dimension.flag_id not in flags_by_id:
+            # The dimension's flag is inactive, or applies to no service this
+            # firm offers. Either way the question is not asked.
+            continue
+        dimensions_by_id[dimension.id] = dimension
+        if config.unit_id is not None:
+            unit_ids_by_dimension[dimension.id].add(config.unit_id)
+
+    # Units named by those configs. Unit selection is part of the configured
+    # gate: a firm that configured the accounts unit and not the transaction
+    # count unit is asked about accounts only.
+    unit_ids = {
+        unit_id for ids in unit_ids_by_dimension.values() for unit_id in ids
+    }
+    units_by_id: dict[uuid.UUID, ComplexityDimensionUnit] = {}
+    if unit_ids:
+        units_by_id = {
+            unit.id: unit
+            for unit in db.execute(
+                select(ComplexityDimensionUnit).where(
+                    ComplexityDimensionUnit.id.in_(unit_ids)
+                )
+            ).scalars().all()
+        }
+
+    # Active vocabulary for the configured categorical dimensions, ordered by
+    # key. Inactive options are excluded: a lead must not be offered an answer
+    # the system has retired.
+    categorical_ids = [
+        dimension.id
+        for dimension in dimensions_by_id.values()
+        if dimension.kind == DimensionKind.categorical
+    ]
+    options_by_dimension: dict[uuid.UUID, list[IntakeQuestionOptionOut]] = (
+        defaultdict(list)
+    )
+    if categorical_ids:
+        option_rows = db.execute(
+            select(ComplexityVocabularyOption)
+            .where(
+                ComplexityVocabularyOption.dimension_id.in_(categorical_ids),
+                ComplexityVocabularyOption.is_active.is_(True),
+            )
+            .order_by(
+                ComplexityVocabularyOption.dimension_id,
+                ComplexityVocabularyOption.key,
+            )
+        ).scalars().all()
+        for option in option_rows:
+            options_by_dimension[option.dimension_id].append(
+                IntakeQuestionOptionOut(id=option.id, label=option.label)
+            )
+
+    # 5. Build the questions once per dimension, then hand the same objects to
+    # every service whose flag they belong to. Each entry is paired with its
+    # sort key so ordering is applied per service without recomputing it.
+    questions_by_flag: dict[uuid.UUID, list[tuple[tuple, IntakeQuestionOut]]] = (
+        defaultdict(list)
+    )
+    for dimension_id, dimension in dimensions_by_id.items():
+        flag = flags_by_id[dimension.flag_id]
+
+        # 6. Stable ordering: flag key, hierarchy_rank, dimension key, then unit
+        # key to separate the several questions one numeric dimension can
+        # produce. Same input, same output, every call.
+        base_key = (flag.key, dimension.hierarchy_rank, dimension.key)
+
+        if dimension.kind == DimensionKind.numeric_range:
+            # One question per DISTINCT unit the firm's configs name. Configs
+            # whose unit_id is NULL contribute nothing and are not represented
+            # here at all.
+            #
+            # WHY A NULL unit_id OMITS THE QUESTION ENTIRELY. unit_id is
+            # ON DELETE SET NULL, so a config keeps existing after the system
+            # unit it counted in is removed from the catalog. A numeric
+            # question with no unit cannot be phrased to a lead: "how many?" of
+            # nothing is not a question. The alternative, guessing a unit,
+            # would ask the lead to answer in units the firm never configured
+            # and price the answer against tiers that mean something else.
+            # Omitting it means the answer is never collected, so the service
+            # routes to quote downstream, which is the designed worst case.
+            for unit_id in unit_ids_by_dimension.get(dimension_id, set()):
+                unit = units_by_id.get(unit_id)
+                if unit is None:
+                    continue
+                questions_by_flag[flag.id].append(
+                    (
+                        base_key + (unit.key,),
+                        IntakeQuestionOut(
+                            flag_key=flag.key,
+                            flag_name=flag.name,
+                            dimension_key=dimension.key,
+                            kind=dimension.kind.value,
+                            # The unit-specific phrasing, from the config's
+                            # chosen unit row rather than the dimension.
+                            question_text=unit.question_text,
+                            options=[],
+                        ),
+                    )
+                )
+        elif dimension.kind == DimensionKind.categorical:
+            questions_by_flag[flag.id].append(
+                (
+                    base_key + ("",),
+                    IntakeQuestionOut(
+                        flag_key=flag.key,
+                        flag_name=flag.name,
+                        dimension_key=dimension.key,
+                        kind=dimension.kind.value,
+                        question_text=dimension.question_text,
+                        options=options_by_dimension.get(dimension_id, []),
+                    ),
+                )
+            )
+        else:
+            # boolean. The dimension's own question text, no options.
+            questions_by_flag[flag.id].append(
+                (
+                    base_key + ("",),
+                    IntakeQuestionOut(
+                        flag_key=flag.key,
+                        flag_name=flag.name,
+                        dimension_key=dimension.key,
+                        kind=dimension.kind.value,
+                        question_text=dimension.question_text,
+                        options=[],
+                    ),
+                )
+            )
+
+    # 7. Assemble. An offered service with zero applicable configured questions
+    # still appears, with an empty questions list.
+    services: list[IntakeServiceOut] = []
+    for entry in entries:
+        collected: list[tuple[tuple, IntakeQuestionOut]] = []
+        for flag_id in flag_ids_by_engagement_type.get(entry.engagement_type, set()):
+            collected.extend(questions_by_flag.get(flag_id, []))
+        collected.sort(key=lambda pair: pair[0])
+
+        services.append(
+            IntakeServiceOut(
+                engagement_type=entry.engagement_type,
+                label=_engagement_type_label(entry.engagement_type),
+                questions=[question for _, question in collected],
+            )
+        )
+
+    return IntakePricingConfigOut(
+        slug=firm.slug, firm_name=firm.name, services=services
     )
 
 
