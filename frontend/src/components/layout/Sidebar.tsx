@@ -28,6 +28,7 @@ import {
   UserCog,
   Archive,
   Sprout,
+  TrendingUp,
 } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { cn } from '@/lib/utils'
@@ -38,6 +39,7 @@ import api from '@/lib/api'
 const navItems = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/clients', label: 'Clients', icon: Users },
+  { href: '/leads', label: 'Pipeline', icon: TrendingUp },
   { href: '/staff', label: 'Staff', icon: UserCog },
   { href: '/engagements', label: 'Engagements', icon: Briefcase },
   { href: '/templates', label: 'Templates', icon: LayoutTemplate },

@@ -28,6 +28,12 @@ export type BadgeVariant =
   | 'archived'
   | 'in_review'
   | 'done'
+  | 'identified'
+  | 'contacted'
+  | 'call_booked'
+  | 'proposal'
+  | 'won'
+  | 'lost'
 
 interface StatusBadgeProps {
   variant: BadgeVariant
@@ -168,6 +174,37 @@ const variantConfig: Record<BadgeVariant, { bg: string; text: string; border?: s
     bg: 'bg-status-green',
     text: 'text-status-green-text',
     defaultLabel: 'Done',
+  },
+  identified: {
+    bg: 'bg-[#E5E7EB]',
+    text: 'text-brand',
+    border: 'border border-[0.5px] border-brand',
+    defaultLabel: 'Identified',
+  },
+  contacted: {
+    bg: 'bg-status-amber',
+    text: 'text-status-amber-text',
+    defaultLabel: 'Contacted',
+  },
+  call_booked: {
+    bg: 'bg-status-blue',
+    text: 'text-status-blue-text',
+    defaultLabel: 'Call Booked',
+  },
+  proposal: {
+    bg: 'bg-[#DBEAFE]',
+    text: 'text-[#1E40AF]',
+    defaultLabel: 'Proposal',
+  },
+  won: {
+    bg: 'bg-status-green',
+    text: 'text-status-green-text',
+    defaultLabel: 'Won',
+  },
+  lost: {
+    bg: 'bg-status-red',
+    text: 'text-status-red-text',
+    defaultLabel: 'Lost',
   },
 }
 
