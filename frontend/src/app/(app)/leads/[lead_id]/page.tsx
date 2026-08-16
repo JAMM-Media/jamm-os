@@ -31,8 +31,45 @@ const LOST_REASONS = [
   { value: 'other', label: 'Other' },
 ]
 
+// Realistic next steps per stage. Won always uses the confirm gate.
+// Lost always shows the reason picker. Everything else is a direct transition.
+type QuickAction = { value: string; label: string; style: 'primary' | 'win' | 'danger' }
+const QUICK_TRANSITIONS: Record<string, QuickAction[]> = {
+  identified: [
+    { value: 'contacted',   label: 'Mark Contacted', style: 'primary' },
+    { value: 'lost',        label: 'Mark Lost',       style: 'danger'  },
+  ],
+  contacted: [
+    { value: 'call_booked', label: 'Book Call',       style: 'primary' },
+    { value: 'lost',        label: 'Mark Lost',       style: 'danger'  },
+  ],
+  call_booked: [
+    { value: 'proposal',   label: 'Send Proposal',   style: 'primary' },
+    { value: 'won',        label: 'Mark Won',         style: 'win'     },
+    { value: 'lost',       label: 'Mark Lost',        style: 'danger'  },
+  ],
+  proposal: [
+    { value: 'won',        label: 'Mark Won',         style: 'win'     },
+    { value: 'lost',       label: 'Mark Lost',        style: 'danger'  },
+  ],
+  lost: [
+    { value: 'contacted',  label: 'Reopen',           style: 'primary' },
+  ],
+}
+
+// Top accent strip color per stage, matching StatusBadge color tokens.
+const STAGE_ACCENT_BG: Record<string, string> = {
+  identified: 'bg-[#9CA3AF]',
+  contacted:  'bg-[#F59E0B]',
+  call_booked:'bg-[#3B82F6]',
+  proposal:   'bg-[#1E40AF]',
+  won:        'bg-[#22C55E]',
+  lost:       'bg-[#EF4444]',
+}
+
 const labelClass = 'text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em]'
 const valueClass = 'text-[13px] text-brand dark:text-[#EDEEF0]'
+const sectionHeadClass = 'text-[11px] font-semibold text-[#6B7280] uppercase tracking-[0.06em] mb-3'
 
 function formatDate(iso: string | null | undefined): string {
   if (!iso) return '-'
@@ -60,15 +97,18 @@ export default function LeadDetailPage() {
     [leadId]
   )
 
-  async function handleTransition() {
-    if (!transitionStage) return
+  // stageOverride lets quick-action buttons bypass state latency.
+  // All logic (confirm gate for won, lost_reason gate) is preserved exactly.
+  async function handleTransition(stageOverride?: string) {
+    const stage = stageOverride ?? transitionStage
+    if (!stage) return
 
-    if (transitionStage === 'lost' && !lostReason) {
+    if (stage === 'lost' && !lostReason) {
       toast.error('Select a reason before marking as lost.')
       return
     }
 
-    if (transitionStage === 'won') {
+    if (stage === 'won') {
       const confirmed = await confirm({
         message:
           'Marking this lead as Won creates a real Client record from their information.\n\nThis action cannot be undone through this screen. A dedicated un-convert action would be required to reverse it.',
@@ -83,15 +123,15 @@ export default function LeadDetailPage() {
     try {
       await leadsApi.transition(
         leadId,
-        transitionStage,
-        transitionStage === 'lost' ? lostReason : undefined
+        stage,
+        stage === 'lost' ? lostReason : undefined
       )
-      toast.success(`Lead moved to ${transitionStage.replace(/_/g, ' ')}`)
+      toast.success(`Lead moved to ${stage.replace(/_/g, ' ')}`)
       setTransitionStage('')
       setLostReason('')
       refetch()
 
-      if (transitionStage === 'won') {
+      if (stage === 'won') {
         router.push('/clients')
       }
     } catch (err: unknown) {
@@ -121,7 +161,11 @@ export default function LeadDetailPage() {
     )
   }
 
-  const availableStages = LEAD_STAGES.filter((s) => s.value !== lead.stage)
+  const quickActions = QUICK_TRANSITIONS[lead.stage] ?? []
+  const quickValues = new Set(quickActions.map((a) => a.value))
+  const otherStages = LEAD_STAGES.filter(
+    (s) => s.value !== lead.stage && !quickValues.has(s.value)
+  )
 
   return (
     <>
@@ -134,61 +178,66 @@ export default function LeadDetailPage() {
           ]}
         />
 
-        {/* Header */}
-        <div className="flex items-start justify-between mb-6">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <h1 className="text-2xl font-medium text-brand dark:text-[#EDEEF0]">{lead.name}</h1>
-              {lead.hot && <Flame className="h-5 w-5 text-[#F59E0B]" />}
-            </div>
-            <div className="flex items-center gap-2">
-              <StatusBadge variant={lead.stage as BadgeVariant} />
-              {lead.lostReason && (
-                <span className="text-[12px] text-[#6B7280]">
-                  {formatSource(lead.lostReason)}
-                </span>
-              )}
+        {/* Header card with stage-colored top accent */}
+        <div className="bg-surface-card dark:bg-dark-card rounded-[8px] border border-[0.5px] border-surface-border dark:border-dark-border overflow-hidden mb-4">
+          <div className={cn('h-[3px]', STAGE_ACCENT_BG[lead.stage] ?? 'bg-[#9CA3AF]')} />
+          <div className="px-5 py-4 flex items-start justify-between">
+            <div>
+              <div className="flex items-center gap-2 mb-1.5">
+                <h1 className="text-xl font-semibold text-brand dark:text-[#EDEEF0]">{lead.name}</h1>
+                {lead.hot && <Flame className="h-4.5 w-4.5 text-[#F59E0B]" />}
+              </div>
+              <div className="flex items-center gap-2">
+                <StatusBadge variant={lead.stage as BadgeVariant} />
+                {lead.lostReason && (
+                  <span className="text-[12px] text-[#6B7280]">
+                    {formatSource(lead.lostReason)}
+                  </span>
+                )}
+              </div>
             </div>
           </div>
         </div>
 
-        {/* Info card */}
-        <div className="bg-surface-card dark:bg-dark-card rounded-[8px] p-4 mb-4">
-          <div className="grid grid-cols-2 gap-x-6 gap-y-4">
-            <div className="flex flex-col gap-1">
+        {/* Contact section */}
+        <div className="bg-surface-card dark:bg-dark-card rounded-[8px] border border-[0.5px] border-surface-border dark:border-dark-border p-4 mb-3">
+          <p className={sectionHeadClass}>Contact</p>
+          <div className="grid grid-cols-2 gap-x-6 gap-y-3">
+            <div className="flex flex-col gap-0.5">
               <span className={labelClass}>Email</span>
               <span className={valueClass}>{lead.email ?? '-'}</span>
             </div>
-            <div className="flex flex-col gap-1">
+            <div className="flex flex-col gap-0.5">
               <span className={labelClass}>Phone</span>
               <span className={valueClass}>{lead.phone ?? '-'}</span>
             </div>
-            <div className="flex flex-col gap-1">
-              <span className={labelClass}>Stage</span>
-              <div className="w-fit">
-                <StatusBadge variant={lead.stage as BadgeVariant} />
-              </div>
-            </div>
-            <div className="flex flex-col gap-1">
-              <span className={labelClass}>Hot lead</span>
-              <span className={valueClass}>{lead.hot ? 'Yes' : 'No'}</span>
-            </div>
-            <div className="flex flex-col gap-1">
+          </div>
+        </div>
+
+        {/* Details section */}
+        <div className="bg-surface-card dark:bg-dark-card rounded-[8px] border border-[0.5px] border-surface-border dark:border-dark-border p-4 mb-4">
+          <p className={sectionHeadClass}>Details</p>
+          <div className="grid grid-cols-2 gap-x-6 gap-y-3">
+            <div className="flex flex-col gap-0.5">
               <span className={labelClass}>Referral source</span>
               <span className={valueClass}>{formatSource(lead.referralSource)}</span>
             </div>
-            <div className="flex flex-col gap-1">
+            <div className="flex flex-col gap-0.5">
+              <span className={labelClass}>Hot lead</span>
+              <span className={valueClass}>{lead.hot ? 'Yes' : 'No'}</span>
+            </div>
+            <div className="flex flex-col gap-0.5">
               <span className={labelClass}>Added</span>
               <span className={valueClass}>{formatDate(lead.createdAt)}</span>
             </div>
             {lead.serviceInterest && (
-              <div className="flex flex-col gap-1">
+              <div className="flex flex-col gap-0.5">
                 <span className={labelClass}>Service interest</span>
                 <span className={valueClass}>{formatSource(lead.serviceInterest)}</span>
               </div>
             )}
             {lead.urgency && (
-              <div className="flex flex-col gap-1">
+              <div className="flex flex-col gap-0.5">
                 <span className={labelClass}>Urgency</span>
                 <span className={valueClass}>{formatSource(lead.urgency)}</span>
               </div>
@@ -198,26 +247,61 @@ export default function LeadDetailPage() {
 
         {/* Stage transition */}
         {lead.stage !== 'won' && (
-          <div className="bg-surface-card dark:bg-dark-card rounded-[8px] p-4">
+          <div className="bg-surface-card dark:bg-dark-card rounded-[8px] border border-[0.5px] border-surface-border dark:border-dark-border p-4 mb-4">
             <h2 className="text-[13px] font-medium text-brand dark:text-[#EDEEF0] mb-3">
               Move stage
             </h2>
-            <div className="flex items-end gap-3 flex-wrap">
-              <div className="flex flex-col gap-1">
-                <label className={labelClass}>New stage</label>
-                <select
-                  value={transitionStage}
-                  onChange={(e) => { setTransitionStage(e.target.value); setLostReason('') }}
-                  className="h-8 px-2.5 rounded-[6px] border border-[0.5px] border-surface-border dark:border-dark-border bg-surface-page dark:bg-dark-page text-[12px] text-brand dark:text-[#EDEEF0] focus:outline-none focus:border-brand dark:focus:border-[#4A7FA5]"
-                >
-                  <option value="">Select stage...</option>
-                  {availableStages.map((s) => (
-                    <option key={s.value} value={s.value}>{s.label}</option>
-                  ))}
-                </select>
-              </div>
 
-              {transitionStage === 'lost' && (
+            {transitionStage !== 'lost' ? (
+              /* Quick action buttons */
+              <div className="flex items-center gap-2 flex-wrap">
+                {quickActions.map((action) => (
+                  <button
+                    key={action.value}
+                    disabled={transitioning}
+                    onClick={() => {
+                      if (action.value === 'lost') {
+                        setTransitionStage('lost')
+                      } else {
+                        handleTransition(action.value)
+                      }
+                    }}
+                    className={cn(
+                      'h-8 px-3 rounded-[6px] text-[12px] font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed',
+                      action.style === 'primary' && 'bg-brand dark:bg-brand-btn text-white hover:opacity-90',
+                      action.style === 'win'     && 'bg-status-green text-status-green-text hover:opacity-90',
+                      action.style === 'danger'  && 'bg-[#FEF2F2] border border-[#FECACA] text-[#DC2626] hover:bg-[#FEE2E2] dark:bg-[#3B1818] dark:border-[#7F1D1D] dark:text-[#FCA5A5]',
+                    )}
+                  >
+                    {transitioning ? '...' : action.label}
+                  </button>
+                ))}
+
+                {otherStages.length > 0 && (
+                  <select
+                    value=""
+                    disabled={transitioning}
+                    onChange={(e) => {
+                      const val = e.target.value
+                      if (!val) return
+                      if (val === 'lost') {
+                        setTransitionStage('lost')
+                      } else {
+                        handleTransition(val)
+                      }
+                    }}
+                    className="h-8 px-2.5 rounded-[6px] border border-[0.5px] border-surface-border dark:border-dark-border bg-surface-page dark:bg-dark-page text-[12px] text-[#6B7280] dark:text-[#9CA3AF] focus:outline-none focus:border-brand dark:focus:border-[#4A7FA5]"
+                  >
+                    <option value="">Other stage...</option>
+                    {otherStages.map((s) => (
+                      <option key={s.value} value={s.value}>{s.label}</option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            ) : (
+              /* Lost reason picker -- same gate as before */
+              <div className="flex items-end gap-3 flex-wrap">
                 <div className="flex flex-col gap-1">
                   <label className={labelClass}>Reason (required)</label>
                   <select
@@ -231,30 +315,31 @@ export default function LeadDetailPage() {
                     ))}
                   </select>
                 </div>
-              )}
-
-              <button
-                onClick={handleTransition}
-                disabled={
-                  !transitionStage ||
-                  transitioning ||
-                  (transitionStage === 'lost' && !lostReason)
-                }
-                className={cn(
-                  'h-8 px-3 rounded-[6px] text-[12px] font-medium transition-colors',
-                  transitionStage === 'won'
-                    ? 'bg-status-green text-status-green-text hover:opacity-90'
-                    : transitionStage === 'lost'
-                    ? 'bg-status-red text-status-red-text hover:opacity-90'
-                    : 'bg-brand dark:bg-brand-btn text-white hover:opacity-90',
-                  'disabled:opacity-40 disabled:cursor-not-allowed'
-                )}
-              >
-                {transitioning ? 'Moving...' : 'Move'}
-              </button>
-            </div>
+                <button
+                  onClick={() => handleTransition()}
+                  disabled={!lostReason || transitioning}
+                  className="h-8 px-3 rounded-[6px] text-[12px] font-medium bg-[#FEF2F2] border border-[#FECACA] text-[#DC2626] hover:bg-[#FEE2E2] dark:bg-[#3B1818] dark:border-[#7F1D1D] dark:text-[#FCA5A5] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {transitioning ? 'Marking...' : 'Confirm Lost'}
+                </button>
+                <button
+                  onClick={() => { setTransitionStage(''); setLostReason('') }}
+                  className="h-8 px-3 rounded-[6px] text-[12px] font-medium text-[#6B7280] hover:text-brand dark:hover:text-[#EDEEF0] transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
           </div>
         )}
+
+        {/* Activity placeholder */}
+        <div className="bg-surface-card dark:bg-dark-card rounded-[8px] border border-[0.5px] border-surface-border dark:border-dark-border p-4">
+          <h2 className="text-[13px] font-medium text-brand dark:text-[#EDEEF0] mb-3">Activity</h2>
+          <p className="text-[12px] text-[#9CA3AF] text-center py-6">
+            Activity will appear here.
+          </p>
+        </div>
       </div>
     </>
   )

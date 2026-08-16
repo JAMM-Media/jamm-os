@@ -20,6 +20,16 @@ const LEAD_STAGES = [
   { value: 'lost', label: 'Lost' },
 ]
 
+// Left-border accent color per stage, matching StatusBadge color tokens.
+const STAGE_LEFT_BORDER: Record<string, string> = {
+  identified: 'border-l-[#9CA3AF]',
+  contacted:  'border-l-[#F59E0B]',
+  call_booked:'border-l-[#3B82F6]',
+  proposal:   'border-l-[#1E40AF]',
+  won:        'border-l-[#22C55E]',
+  lost:       'border-l-[#EF4444]',
+}
+
 function formatDate(iso: string): string {
   if (!iso) return '-'
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
@@ -34,7 +44,7 @@ function LeadsTableSkeleton() {
   return (
     <div className="rounded-modal border border-[0.5px] border-surface-border dark:border-dark-border overflow-hidden">
       {Array.from({ length: 6 }).map((_, i) => (
-        <div key={i} className="flex items-center gap-4 px-4 py-3 border-b border-[0.5px] border-[#D5D8DE] dark:border-dark-card last:border-0">
+        <div key={i} className="flex items-center gap-4 px-4 py-2.5 border-b border-[0.5px] border-[#D5D8DE] dark:border-dark-card last:border-0">
           <div className="h-4 w-40 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded flex-1" />
           <div className="h-4 w-28 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded flex-shrink-0" />
           <div className="h-4 w-24 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded flex-shrink-0" />
@@ -147,11 +157,15 @@ export default function LeadsPage() {
                 <tr
                   key={lead.id}
                   className={cn(
-                    'bg-[#E4E6EA] dark:bg-[#2D2D2D] hover:bg-[#DDDFE3] dark:hover:bg-[#323232] transition-colors',
+                    'bg-[#E4E6EA] dark:bg-[#2D2D2D] hover:bg-[#DDDFE3] dark:hover:bg-[#323232] hover:shadow-sm transition-all',
                     i !== filtered.length - 1 && 'border-b border-[0.5px] border-[#D5D8DE] dark:border-[#383838]'
                   )}
                 >
-                  <td className="px-4 py-3">
+                  {/* First cell carries the stage accent border */}
+                  <td className={cn(
+                    'px-4 py-2.5 border-l-[3px]',
+                    STAGE_LEFT_BORDER[lead.stage] ?? 'border-l-[#9CA3AF]'
+                  )}>
                     <div className="flex items-center gap-2">
                       {lead.hot && <Flame className="h-3.5 w-3.5 text-[#F59E0B] flex-shrink-0" />}
                       <Link
@@ -162,20 +176,20 @@ export default function LeadsPage() {
                       </Link>
                     </div>
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-2.5">
                     <span className="text-[12px] text-[#374151] dark:text-[#9CA3AF]">
                       {lead.email ?? '-'}
                     </span>
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-2.5">
                     <StatusBadge variant={lead.stage as BadgeVariant} />
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-2.5">
                     <span className="text-[12px] text-[#374151] dark:text-[#9CA3AF]">
                       {formatSource(lead.referralSource)}
                     </span>
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-2.5">
                     <span className="text-[12px] text-[#374151] dark:text-[#9CA3AF]">
                       {formatDate(lead.createdAt)}
                     </span>
