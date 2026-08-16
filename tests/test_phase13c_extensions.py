@@ -136,31 +136,75 @@ def test_filing_extension_updates_engagement_deadline(client, firm_a_owner):
     assert r2.json()["extended_deadline"] == extended
 
 
+# Offsets from today for the deadline-watch test below, and the two windows
+# queried against them. They are offsets rather than calendar dates on
+# purpose: see the docstring on the test, and instance fifteen in
+# How_We_Work_Process_Rules.md.
+NEAR_FILING_OFFSET_DAYS = 5
+FAR_EXTENDED_OFFSET_DAYS = 120
+NARROW_WINDOW_DAYS = 60
+WIDE_WINDOW_DAYS = 200
+
+
 def test_deadline_watch_uses_extended_deadline_after_filing(client, firm_a_owner):
     """
-    After filing an extension, deadline-watch should use extended_deadline.
-    If the extended_deadline is far in the future (outside window),
-    the engagement should NOT appear in the deadline watch.
+    After filing an extension, deadline-watch uses extended_deadline rather
+    than filing_deadline.
+
+    EVERY DATE HERE IS COMPUTED FROM date.today(), the same clock
+    app/api/engagements.py deadline_watch reads, and the extended deadline is
+    passed EXPLICITLY instead of being left to default from the form type.
+    That is instance fifteen. This test used to query a hardcoded 60-day window
+    against the defaulted Oct 15 deadline, which sits outside that window for
+    most of the year and inside it from Aug 16 onward; it went red on
+    Aug 16, 2026 with no code change and would have gone silently green again
+    on Oct 15. Expectations computed as offsets from today hold on every
+    calendar day instead.
+
+    Leaving the deadline to default would not be enough to fix it. The default
+    is date(date.today().year, month, day) in app/crud/extension.py, so from
+    Oct 16 to Dec 31 it lands in the PAST, and a past deadline is excluded by
+    the today <= effective bound rather than by the window. The test would pass
+    for a reason that has nothing to do with the rule it names.
     """
     headers = firm_a_owner["headers"]
     cid = make_client(client, headers)
 
-    # Set filing_deadline to 5 days from now (within 60-day window)
-    soon = (date.today() + timedelta(days=5)).isoformat()
+    today = date.today()
+    filing = today + timedelta(days=NEAR_FILING_OFFSET_DAYS)
+    extended = today + timedelta(days=FAR_EXTENDED_OFFSET_DAYS)
+
     eng = make_engagement(client, headers, cid)
     client.patch(f"/engagements/{eng['id']}",
-                 json={"filing_deadline": soon}, headers=headers)
+                 json={"filing_deadline": filing.isoformat()}, headers=headers)
 
-    # File extension — extended_deadline defaults to Oct 15 (far in the future)
-    file_extension(client, headers, eng["id"], cid, form_type="4868")
+    r = file_extension(client, headers, eng["id"], cid, form_type="4868",
+                       extended_deadline=extended.isoformat())
+    assert r.status_code == 201
+    assert r.json()["extended_deadline"] == extended.isoformat()
 
-    # Deadline watch with 60-day window should NOT show this engagement
-    # because extended_deadline is Oct 15 (>60 days away for most of the year)
-    r = client.get("/engagements/deadline-watch?days=60", headers=headers)
+    # The narrow window contains the filing deadline and excludes the extended
+    # one BY CONSTRUCTION, so this engagement can only appear if deadline-watch
+    # is reading filing_deadline.
+    assert NEAR_FILING_OFFSET_DAYS < NARROW_WINDOW_DAYS < FAR_EXTENDED_OFFSET_DAYS
+    r = client.get(f"/engagements/deadline-watch?days={NARROW_WINDOW_DAYS}",
+                   headers=headers)
     assert r.status_code == 200
-    items = r.json()
-    # The engagement should not appear since extended_deadline overrides filing_deadline
-    assert not any(i["engagement_id"] == eng["id"] for i in items)
+    assert not any(i["engagement_id"] == eng["id"] for i in r.json())
+
+    # Positive control. Without it the assertion above passes just as happily
+    # against a deadline-watch that returns nothing at all, or that dropped
+    # this engagement for some reason unrelated to the window.
+    assert WIDE_WINDOW_DAYS > FAR_EXTENDED_OFFSET_DAYS
+    r = client.get(f"/engagements/deadline-watch?days={WIDE_WINDOW_DAYS}",
+                   headers=headers)
+    assert r.status_code == 200
+    watched = [i for i in r.json() if i["engagement_id"] == eng["id"]]
+    assert len(watched) == 1
+    # effective_deadline is the extended one, not the filing one, which is the
+    # precedence rule this test is named for, asserted directly.
+    assert watched[0]["effective_deadline"] == extended.isoformat()
+    assert watched[0]["filing_deadline"] == filing.isoformat()
 
 
 # ── engagement.extension_filed event ─────────────────────────────────────────
