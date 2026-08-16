@@ -12,8 +12,10 @@ from app.crud.firm import get_firm_by_slug
 from app.crud.lead import create_lead
 from app.db.session import get_db
 from app.core.enums import LeadProvenance
+from app.schemas.intake_pricing_config import IntakePricingConfigOut
 from app.schemas.lead import LeadCreate
 from app.services.behavioral_log import log_event
+from app.services.pricing_config_service import get_public_intake_config
 
 router = APIRouter(prefix="/intake", tags=["Intake"])
 
@@ -34,6 +36,53 @@ def intake_config(slug: str, db: Session = Depends(get_db)):
         "slug": firm.slug,
         "turnstile_site_key": settings.TURNSTILE_SITE_KEY,
     }
+
+
+# ---------------------------------------------------------------------------
+# Public pricing-config endpoint -- the question tree the intake form renders.
+# ---------------------------------------------------------------------------
+@router.get("/{slug}/pricing-config", response_model=IntakePricingConfigOut)
+@limiter.limit("30/minute")
+def intake_pricing_config(
+    slug: str,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Which services this firm offers, and the questions it has configured.
+
+    NO AUTH DEPENDENCY, ON PURPOSE. This is a public lead-facing surface by
+    design (CRM Build Contract Addendum 1 section 9): the intake form is
+    rendered to anonymous visitors who have no account and never will, so there
+    is nobody to authenticate. It is safe to be public ONLY because
+    get_public_intake_config strips every commercial fact before the response
+    leaves the service layer. No price, no base_fee, no pricing_mode, no role,
+    no guard_threshold, no tier ranges, no chain structure, no firm_id, no row
+    ids beyond the opaque system vocabulary option ids, no timestamps. What
+    survives is the set of facts a lead needs in order to answer a question.
+    tests/test_intake_pricing_config.py enforces that promise by walking a
+    serialized response recursively and failing on any forbidden key at any
+    depth. If that guard is ever deleted, this endpoint stops being safe to
+    serve without auth.
+
+    NOT PAGINATED, ON PURPOSE. Same reasoning as GET /api/pricing/config: this
+    is a single configuration object for one firm, not a list resource, so
+    PaginatedResponse[T] has nothing to apply to. The services collection
+    inside it is bounded by how many engagement types the firm offers.
+
+    Rate limited more generously than the 5/minute on submit below, because
+    that limit guards a write that creates a lead and this one guards a read
+    that creates nothing. A visitor legitimately loads this once per form view.
+
+    No behavioral event is logged here. Form-view and form-interaction events
+    belong to Ben's intake form phase and are captured there with the lead
+    context this anonymous read does not have.
+    """
+    firm = get_firm_by_slug(db, slug)
+    if not firm:
+        # Same message and status as the config endpoint above, so the error
+        # shape cannot be used to enumerate which slugs exist.
+        raise HTTPException(status_code=404, detail="Intake form not found")
+    return get_public_intake_config(db, firm_id=firm.id)
 
 
 class IntakeSubmitBody(BaseModel):
