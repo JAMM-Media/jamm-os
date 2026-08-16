@@ -10,7 +10,7 @@ These are not style preferences. Each rule below is here because ignoring it alr
 
 The failure mode is always the same shape. Something reports success. The report is accurate about what it measured. What it measured was not the thing that mattered.
 
-Fourteen instances so far:
+Fifteen instances so far:
 
 1. **Unregistered expiry sweep.** The sweep was written, tested, and correct. It was never registered with the scheduler, so it never ran. Nothing errored, because nothing happened.
 2. **Anniversary job logging ERROR under a successful scheduler.** The scheduler reported healthy. The job inside it was failing every run. Scheduler health and job health are different measurements.
@@ -46,9 +46,11 @@ Fourteen instances so far:
 
     This is instance seven's two-worlds divergence and instance nine's missing watcher in the same object. It is also why the guard written for it does not read the pytest database at all: it provisions a scratch database, runs the migration chain into it, and reads `pg_index` there, because that is the world the index lives in. A guard aimed at the ordinary test database would have been red on a healthy repo and could never have gone green.
 
+15. Instance fifteen (Aug 16, 2026. Origin: `tests/test_phase13c_extensions.py::test_deadline_watch_uses_extended_deadline_after_filing`). **A test whose pass/fail tracks the wall clock rather than the behavior it names.** The test hardcoded a 60-day window against a fixed Oct 15, 2026 deadline and asserted the deadline fell outside it; the assumption expired on Aug 16, 2026, exactly 60 days out, and the test went red with no code change. It would have gone silently green again on Oct 15 with no fix. This is the mirror of the usual shape in this file: a false RED rather than a false green. A false red is not harmless. It lengthens the tolerated-failure list, and a long tolerated list teaches people to stop reading red, which is how false greens later walk through the door. Rule: a test asserting date arithmetic computes its expectations from the same clock the code under test reads, or pins the clock. Any test that can change color with no code change is broken, regardless of which color it currently shows.
+
 Instances seven, nine, ten, eleven, and fourteen are the purest forms of the pattern. The others are things that failed. Those five never failed. They made a category of failure unobservable, which is worse, because there was nothing to notice. Twelve belongs with them in substance even though it did eventually go red: the divergence it created was unobservable by construction and surfaced only by luck, and it would have kept hiding schema faults for as long as nobody happened to add a column to an existing table. Thirteen sits at the other end: it failed loudly, on every push, for two months, into a report nobody opened.
 
-When you find a fifteenth, add it here with its origin. The list is the point. Recognizing the shape early is worth more than any individual rule below.
+When you find a sixteenth, add it here with its origin. The list is the point. Recognizing the shape early is worth more than any individual rule below.
 
 ---
 
