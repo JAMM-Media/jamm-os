@@ -41,6 +41,7 @@ The rules, in the order the task specifies them:
 6. Activation law                        -> upsert_service_catalog_entry
 7. Tenant isolation                      -> every query below
 8. Categorical branch ambiguity          -> _validate_categorical_branch_ambiguity
+9. The Other option is never priceable   -> _assert_option_is_not_other
 
 RULE 8, and why it exists.
 
@@ -71,6 +72,25 @@ Rule 8 is enforced in configure_dimension, which is where ambiguous shapes get
 created. change_dimension_direction is NOT covered: it can still move a config
 into an ambiguous arrangement. That gap is deliberate for now, is recorded in
 the session summary, and closes with the durable fix above.
+
+RULE 9, and why it exists.
+
+Every categorical dimension in the system catalog carries an Other option,
+seeded by scripts/seed_complexity_catalog.py (Open Ruling A in
+docs/complexity_catalog_content_v1.md). It exists so a lead whose situation the
+vocabulary does not describe still has a real, stable option ID to answer with
+instead of falling off the form.
+
+Other means precisely "the system does not know what this is". Attaching a
+price to it would take a lead the catalog could not classify and hand them a
+computed number anyway, which is a mispricing hole rather than an edge case.
+Left unpriced, the answer routes to quote under the universal quote law, and a
+human decides. That is the correct and only safe outcome, so rule 9 makes it
+the only reachable one.
+
+Note what rule 9 does NOT refuse: clearing a price. set_option_price with
+price=None is how an Other price seeded before this rule existed would be
+removed, so it stays available.
 """
 
 import uuid
@@ -411,6 +431,50 @@ def _assert_option_can_be_priced(
                 "would double count. Price the leaf instead."
             ),
         )
+
+
+# ---------------------------------------------------------------------------
+# Rule 9: the Other option is never priceable. See the module docstring for why.
+# ---------------------------------------------------------------------------
+
+# The key every categorical dimension's universal Other option is seeded under.
+# Kept in step with OTHER_OPTION_KEY in scripts/seed_complexity_catalog.py;
+# tests/test_complexity_catalog_seed.py pins that the two agree.
+OTHER_OPTION_KEY = "other"
+
+
+def _assert_option_is_not_other(
+    option: ComplexityVocabularyOption, incoming_price: Optional[Decimal]
+) -> None:
+    """Refuse to attach a price to a vocabulary option keyed "other".
+
+    THE ZERO CASE IS THE POINT, not an afterthought. Under the null-versus-zero
+    law an explicit 0.00 is a real price meaning "priced at zero", not an absent
+    one, so an Other priced at 0.00 would resolve to a computed total for a lead
+    nobody has classified. The test is `incoming_price is not None`, never a
+    truthiness test, so 0.00 is refused exactly as firmly as 500.00.
+
+    Clearing (price=None) is allowed through: see the module docstring.
+
+    Only the exact key "other" is refused. A tabled answer that merely reads as
+    a catch-all, such as the notice_type option "other_correspondence" on the
+    IRS notice flag, is ordinary priceable content and is deliberately not
+    caught here.
+    """
+    if incoming_price is None:
+        return
+    if option.key != OTHER_OPTION_KEY:
+        return
+    raise HTTPException(
+        status_code=422,
+        detail=(
+            f"Option '{option.key}' is the catch-all Other answer and cannot "
+            "carry a price. Other means the system could not classify the "
+            "lead's situation, so pricing it would produce a computed quote "
+            "for a case nobody has looked at. Leave it unpriced and it routes "
+            "to quote, which is the intended behavior."
+        ),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1310,6 +1374,9 @@ def set_option_price(
 
     data.price of None means unpriced, which routes to quote. It does not mean
     "leave the existing price alone" -- there is no such operation here.
+
+    Every rejection below runs before the row is touched, so a refused call
+    leaves firm_option_prices exactly as it found it.
     """
     option = _get_option(db, data.option_id)
     dimension = _get_dimension(db, option.dimension_id)
@@ -1323,6 +1390,7 @@ def set_option_price(
             ),
         )
 
+    _assert_option_is_not_other(option, data.price)
     _assert_option_can_be_priced(db, firm_id, data.option_id, data.price)
 
     row = db.execute(

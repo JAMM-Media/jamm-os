@@ -1026,3 +1026,133 @@ def test_option_child_refused_when_dimension_on_multiple_branches(db, firm_a, fl
     assert "more than one branch" in exc.value.detail
     assert "choice_dim" in exc.value.detail
     assert "leaf_dim" in exc.value.detail
+
+
+# ---------------------------------------------------------------------------
+# Rule 9: the Other option is never priceable
+#
+# Every categorical dimension in the system catalog carries an Other option
+# (scripts/seed_complexity_catalog.py, Open Ruling A). Pricing it would hand a
+# lead the catalog could not classify a computed number instead of routing them
+# to quote. These four tests cover the rule's whole surface: it fires on a real
+# price, it fires on an explicit zero, it does not fire on a clear, and it does
+# not fire on ordinary options.
+# ---------------------------------------------------------------------------
+
+def _dimension_with_other(db, flag):
+    """A categorical dimension carrying one tabled option plus the universal
+    Other, which is the shape the seed script produces for all 40 categoricals.
+    """
+    dimension, options = _categorical_dimension(
+        db, flag, "activity_type", rank=10, option_keys=("staking", "other")
+    )
+    tabled, other = options
+    return dimension, tabled, other
+
+
+def _option_price_rows(db, firm_id, option_id):
+    """Read firm_option_prices straight from the database.
+
+    Deliberately not through any service read. A read path's own filtering can
+    hide the row an assertion like this exists to catch, so the check that
+    nothing was written has to look at the table itself (How We Work, section
+    3).
+    """
+    return db.execute(
+        select(FirmOptionPrice).where(
+            FirmOptionPrice.firm_id == firm_id,
+            FirmOptionPrice.option_id == option_id,
+        )
+    ).scalars().all()
+
+
+def test_other_option_cannot_be_priced(db, firm_a, flag):
+    """Pricing the catch-all Other answer is refused, and nothing is written.
+
+    The no-row half is not decoration. Rejection guards have to run before side
+    effects, so a refusal that still left a firm_option_prices row behind would
+    be the mispricing hole this rule exists to close, merely with an error
+    message on top of it.
+    """
+    firm, user = firm_a
+    _dimension, _tabled, other = _dimension_with_other(db, flag)
+
+    with pytest.raises(HTTPException) as exc:
+        svc.set_option_price(
+            db,
+            firm_id=firm.id,
+            actor_id=user.id,
+            data=FirmOptionPriceCreate(option_id=other.id, price=Decimal("250.00")),
+        )
+
+    assert exc.value.status_code == 422
+    assert "cannot carry a price" in exc.value.detail
+    assert "routes to quote" in exc.value.detail
+
+    assert _option_price_rows(db, firm.id, other.id) == []
+
+
+def test_other_option_cannot_be_priced_at_zero(db, firm_a, flag):
+    """The null-versus-zero law applied to rule 9.
+
+    0.00 is a real price meaning "priced at zero", not an absent one, so an
+    Other priced at 0.00 still resolves to a computed total for a lead nobody
+    classified. This is the assertion that a truthiness check (`if price:`)
+    would silently fail while the test above kept passing, which is why it is a
+    separate test rather than a second assert.
+    """
+    firm, user = firm_a
+    _dimension, _tabled, other = _dimension_with_other(db, flag)
+
+    with pytest.raises(HTTPException) as exc:
+        svc.set_option_price(
+            db,
+            firm_id=firm.id,
+            actor_id=user.id,
+            data=FirmOptionPriceCreate(option_id=other.id, price=Decimal("0.00")),
+        )
+
+    assert exc.value.status_code == 422
+    assert _option_price_rows(db, firm.id, other.id) == []
+
+
+def test_other_option_price_can_still_be_cleared(db, firm_a, flag):
+    """Rule 9 refuses attaching a price, not clearing one.
+
+    price=None means unpriced, which is the state Other is supposed to be in.
+    Refusing this too would strand any Other price seeded before the rule
+    existed, with no supported way to remove it.
+    """
+    firm, user = firm_a
+    _dimension, _tabled, other = _dimension_with_other(db, flag)
+
+    result = svc.set_option_price(
+        db,
+        firm_id=firm.id,
+        actor_id=user.id,
+        data=FirmOptionPriceCreate(option_id=other.id, price=None),
+    )
+
+    assert result.price is None
+
+
+def test_ordinary_option_is_still_priceable(db, firm_a, flag):
+    """Counterweight. Rule 9 must refuse the Other option and nothing else.
+
+    Without this, a rule that rejected every option price would pass all three
+    tests above while breaking the entire pricing feature. It also pins that
+    only the exact key "other" is caught, so a tabled answer that merely reads
+    as a catch-all stays priceable.
+    """
+    firm, user = firm_a
+    _dimension, tabled, _other = _dimension_with_other(db, flag)
+
+    result = svc.set_option_price(
+        db,
+        firm_id=firm.id,
+        actor_id=user.id,
+        data=FirmOptionPriceCreate(option_id=tabled.id, price=Decimal("125.00")),
+    )
+
+    assert result.price == Decimal("125.00")
+    assert len(_option_price_rows(db, firm.id, tabled.id)) == 1
