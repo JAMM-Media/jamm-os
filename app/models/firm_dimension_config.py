@@ -12,6 +12,11 @@ A config is either flat or dependent, never both:
 
 The check constraint below enforces "never both". It deliberately does not
 enforce "at least one", because both-null is the legitimate flat case.
+
+Separately from direction, every config carries a SCOPE, added August 17, 2026:
+service_catalog_entry_id names the engagement type this config tree applies to,
+or is NULL for a blanket config that applies to every engagement type the
+system catalog maps the flag to. See the column comment below.
 """
 
 import uuid
@@ -41,19 +46,24 @@ class FirmDimensionConfig(Base):
             "NOT (parent_tier_id IS NOT NULL AND parent_option_id IS NOT NULL)",
             name="ck_firm_dimension_configs_single_parent",
         ),
-        # The same dimension may be configured once per branch, never twice on
-        # the same branch.
+        # The same dimension may be configured once per branch PER SCOPE, never
+        # twice on the same branch within the same scope. service_catalog_entry_id
+        # joined this constraint on August 17, 2026, which is what lets a firm
+        # configure the same dimension on the same branch position once as a
+        # blanket config and again scoped to a particular engagement type.
         #
-        # postgresql_nulls_not_distinct is load-bearing here, not decoration.
-        # Under Postgres default NULLS DISTINCT, two flat configs for the same
-        # dimension both read as (firm, dim, NULL, NULL) and BOTH insert
-        # cleanly, because NULL never equals NULL. That silently un-enforces
-        # this constraint for the flat case, which is the common case. Postgres
-        # 16.10 is live here and supports NULLS NOT DISTINCT, which makes the
-        # constraint mean what it says.
+        # postgresql_nulls_not_distinct is load-bearing here, not decoration,
+        # and it is now load-bearing for THREE nullable columns rather than two.
+        # Under Postgres default NULLS DISTINCT, two flat blanket configs for
+        # the same dimension both read as (firm, dim, NULL, NULL, NULL) and BOTH
+        # insert cleanly, because NULL never equals NULL. That silently
+        # un-enforces this constraint for the flat blanket case, which is the
+        # common case. Postgres 16.10 is live here and supports NULLS NOT
+        # DISTINCT, which makes the constraint mean what it says.
         UniqueConstraint(
             "firm_id",
             "dimension_id",
+            "service_catalog_entry_id",
             "parent_tier_id",
             "parent_option_id",
             name="uq_firm_dimension_configs_firm_dimension_branch",
@@ -72,6 +82,38 @@ class FirmDimensionConfig(Base):
     dimension_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("complexity_dimensions.id", ondelete="CASCADE"),
         nullable=False,
+        index=True,
+    )
+
+    # The engagement type this config tree is scoped to, added August 17, 2026.
+    #
+    #   NULL     -> BLANKET. Applies to every engagement type the system catalog
+    #               maps this dimension's flag to.
+    #   non-NULL -> SCOPED. Applies ONLY when pricing that engagement type.
+    #
+    # Precedence is WHOLESALE replacement, never a field-level merge: if any
+    # scoped root config exists for (dimension, engagement type), that tree
+    # entirely supplies the config and the blanket tree is not consulted at all.
+    #
+    # SCOPE IS UNIFORM WITHIN A TREE. Every child config under a scoped root
+    # carries the same scope as its root. That is enforced in
+    # pricing_config_service, NOT by this constraint, because a child references
+    # its parent tier or parent option rather than its parent config, so the
+    # database has no single row to compare against. The service guard is the
+    # only thing holding it.
+    #
+    # CASCADE rather than SET NULL, deliberately: a firm deleting its catalog
+    # entry for an engagement type is deleting the thing this tree exists to
+    # price. Demoting the tree to blanket on that delete would silently widen a
+    # per-engagement override to every engagement type, which is a mispricing
+    # rather than a cleanup.
+    service_catalog_entry_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey(
+            "service_catalog_entries.id",
+            ondelete="CASCADE",
+            name="fk_firm_dimension_configs_service_catalog_entry",
+        ),
+        nullable=True,
         index=True,
     )
 
