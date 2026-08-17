@@ -1,6 +1,24 @@
 // path: frontend/src/lib/api/leads.ts
 import api from '@/lib/api'
 
+export interface LeadActivityItem {
+  id: string
+  type: 'message' | 'event'
+  occurredAt: string
+  description: string
+  sourceType: string
+}
+
+function mapActivity(raw: Record<string, unknown>): LeadActivityItem {
+  return {
+    id: String(raw.id),
+    type: (raw.type as 'message' | 'event') ?? 'event',
+    occurredAt: String(raw.occurred_at ?? ''),
+    description: String(raw.description ?? ''),
+    sourceType: String(raw.source_type ?? ''),
+  }
+}
+
 export interface Lead {
   id: string
   firmId: string
@@ -44,6 +62,20 @@ function mapLead(raw: Record<string, unknown>): Lead {
 }
 
 export const leadsApi = {
+  create: async (payload: {
+    name: string
+    email?: string
+    phone?: string
+    referral_source?: string
+    hot?: boolean
+  }): Promise<Lead> => {
+    const { data } = await api.post('/api/v1/leads/', {
+      ...payload,
+      provenance: 'firm_entered',
+    })
+    return mapLead(data)
+  },
+
   list: async (opts?: {
     stage?: string
     hot?: boolean
@@ -80,5 +112,10 @@ export const leadsApi = {
     if (lostReason) body.lost_reason = lostReason
     const { data } = await api.post(`/api/v1/leads/${id}/transition`, body)
     return mapLead(data)
+  },
+
+  getActivity: async (id: string, limit = 50): Promise<LeadActivityItem[]> => {
+    const { data } = await api.get(`/api/v1/leads/${id}/activity`, { params: { limit } })
+    return Array.isArray(data) ? data.map(mapActivity) : []
   },
 }
