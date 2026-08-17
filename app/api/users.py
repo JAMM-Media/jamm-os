@@ -9,7 +9,7 @@ from uuid import UUID
 from app.db.session import get_db
 from app.models.user import User
 from app.models.firm import Firm
-from app.schemas.user import UserCreate, UserOut, UserUpdate
+from app.schemas.user import UserCreate, UserOut, UserUpdate, BookableStaffOut
 from app.schemas.task import TaskOut, TaskStatus
 from app.schemas.pagination import PaginatedResponse
 from app.utils.pagination import paginate
@@ -171,6 +171,37 @@ def get_user_workload(
         status=status.value if status else None,
     )
     return paginate(query, limit=limit, offset=offset)
+
+
+# -------------------------------------------------------------------
+# GET /users/bookable-staff - Staff-accessible list of users with availability windows
+# Must be registered BEFORE /{user_id} or FastAPI will try to parse
+# bookable-staff as a UUID and return 422.
+# -------------------------------------------------------------------
+@router.get("/bookable-staff", response_model=list[BookableStaffOut])
+def list_bookable_staff(
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    _: User = Depends(require_staff_or_above),
+):
+    """Staff-accessible list of users who have at least one AvailabilityWindow.
+    Returns only id and full_name -- no email, role, or other HR data.
+    Used by the booking UI staff picker. Any staff member may call this,
+    unlike GET /users/ which is firm_owner only.
+    """
+    from app.models.availability_window import AvailabilityWindow
+    user_ids = (
+        db.query(AvailabilityWindow.user_id)
+        .filter(AvailabilityWindow.firm_id == current_firm.id)
+        .distinct()
+        .subquery()
+    )
+    users = (
+        db.query(User)
+        .filter(User.id.in_(db.query(user_ids)), User.firm_id == current_firm.id)
+        .all()
+    )
+    return users
 
 
 # -------------------------------------------------------------------

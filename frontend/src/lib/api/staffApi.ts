@@ -135,4 +135,9 @@ export const staffApi = {
     const { data: result } = await api.post('/users/', data)
     return result
   },
+
+  listBookableStaff: async (): Promise<{ id: string; full_name: string | null }[]> => {
+    const { data } = await api.get('/users/bookable-staff')
+    return data
+  },
 }

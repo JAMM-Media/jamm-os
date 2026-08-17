@@ -10,6 +10,9 @@ import {
   RotateCcw, BellOff, MessageSquare, Clock, UserPlus, Check, X,
 } from 'lucide-react'
 import { leadsApi, type LeadActivityItem } from '@/lib/api'
+import { bookingsApi } from '@/lib/api/bookings'
+import { staffApi } from '@/lib/api/staffApi'
+import { BookCallModal } from '@/components/leads/BookCallModal'
 import { useFetch } from '@/lib/hooks/useFetch'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { Breadcrumb } from '@/components/layout/Breadcrumb'
@@ -236,6 +239,7 @@ export default function LeadDetailPage() {
   const [transitionStage, setTransitionStage] = useState('')
   const [lostReason, setLostReason] = useState('')
   const [transitioning, setTransitioning] = useState(false)
+  const [bookCallOpen, setBookCallOpen] = useState(false)
 
   const { data: lead, isLoading, refetch } = useFetch(
     () => leadsApi.get(leadId),
@@ -247,6 +251,22 @@ export default function LeadDetailPage() {
     [leadId]
   )
   const activity: LeadActivityItem[] = activityData ?? []
+
+  const { data: bookingsData } = useFetch(
+    () => bookingsApi.listByLead(leadId),
+    [leadId]
+  )
+  const latestBooking = bookingsData?.[0] ?? null
+
+  const { data: bookableStaffData } = useFetch(
+    () => staffApi.listBookableStaff(),
+    []
+  )
+  function staffName(staffUserId: string | null): string {
+    if (!staffUserId) return 'Unknown'
+    const match = bookableStaffData?.find((s) => s.id === staffUserId)
+    return match?.full_name ?? 'Unknown'
+  }
 
   // stageOverride lets quick-action buttons bypass state latency.
   // All logic (confirm gate for won, lost_reason gate) is preserved exactly.
@@ -325,6 +345,16 @@ export default function LeadDetailPage() {
   return (
     <>
       {ConfirmDialog}
+      <BookCallModal
+        open={bookCallOpen}
+        onClose={() => setBookCallOpen(false)}
+        leadId={leadId}
+        onBooked={() => {
+          refetch()
+          refetchActivity()
+          window.dispatchEvent(new Event('lead-updated'))
+        }}
+      />
       <div className="p-5">
         {/* Panel header: breadcrumb + close button */}
         <div className="flex items-center justify-between mb-5">
@@ -390,7 +420,9 @@ export default function LeadDetailPage() {
                         key={action.value}
                         disabled={transitioning}
                         onClick={() => {
-                          if (action.value === 'lost') {
+                          if (action.value === 'call_booked') {
+                            setBookCallOpen(true)
+                          } else if (action.value === 'lost') {
                             setTransitionStage('lost')
                           } else {
                             handleTransition(action.value)
@@ -511,6 +543,33 @@ export default function LeadDetailPage() {
             )}
           </div>
         </div>
+
+        {/* Scheduled Call card -- shown when a scheduled booking exists */}
+        {latestBooking && latestBooking.status === 'scheduled' && (
+          <div className="bg-white dark:bg-dark-card rounded-[10px] shadow-sm p-6 mb-5">
+            <p className={sectionHeadClass}>Scheduled Call</p>
+            <div className="grid grid-cols-2 gap-x-8 gap-y-5">
+              <div>
+                <p className={labelClass}>With</p>
+                <p className={valueClass}>{staffName(latestBooking.staffUserId)}</p>
+              </div>
+              <div>
+                <p className={labelClass}>When</p>
+                <p className={valueClass}>
+                  {new Date(latestBooking.startTime).toLocaleString('en-US', {
+                    month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+                  })}
+                </p>
+              </div>
+              {latestBooking.locationSnapshot && (
+                <div>
+                  <p className={labelClass}>Location</p>
+                  <p className={valueClass}>{latestBooking.locationSnapshot}</p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Activity timeline -- real LeadMessage + BehavioralEvent data */}
         <div className="bg-white dark:bg-dark-card rounded-[10px] shadow-sm p-6">

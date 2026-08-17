@@ -22,11 +22,68 @@ from app.models.firm import Firm
 from app.models.user import User
 from typing import Literal
 
-from app.schemas.booking import BookingOut
+from app.schemas.booking import BookingOut, SlotOut
 from app.services.booking_service import create_booking
 from app.services.booking_outcome_service import mark_booking_outcome
 
 router = APIRouter(prefix="/api/v1/bookings", tags=["Bookings"])
+
+
+from datetime import date, timedelta
+from app.services.slot_computation_service import compute_available_slots
+
+
+@router.get("/slots", response_model=list[SlotOut])
+def get_available_slots(
+    staff_user_id: UUID,
+    start_date: date | None = None,
+    end_date: date | None = None,
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    _: User = Depends(require_staff_or_above),
+):
+    """Real available slots for a staff member over a date range.
+    Defaults to today through 13 days out (14 days total) if not specified.
+    Range is capped at 60 days to prevent unbounded computation.
+    """
+    if start_date is None:
+        start_date = date.today()
+    if end_date is None:
+        end_date = start_date + timedelta(days=13)
+    if (end_date - start_date).days > 60:
+        raise HTTPException(status_code=400, detail="Date range cannot exceed 60 days")
+    staff_user = (
+        db.query(User)
+        .filter(User.id == staff_user_id, User.firm_id == current_firm.id)
+        .first()
+    )
+    if staff_user is None:
+        raise HTTPException(status_code=404, detail="Staff user not found in this firm")
+    slots = compute_available_slots(
+        db=db,
+        staff_user_id=staff_user_id,
+        firm_id=current_firm.id,
+        start_date=start_date,
+        end_date=end_date,
+    )
+    return slots
+
+
+@router.get("/", response_model=list[BookingOut])
+def list_bookings(
+    lead_id: UUID | None = None,
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    _: User = Depends(require_staff_or_above),
+):
+    """List bookings for the firm, optionally filtered by lead_id.
+    Ordered by start_time descending so the most recent/upcoming booking is first.
+    """
+    from app.models.booking import Booking
+    query = db.query(Booking).filter(Booking.firm_id == current_firm.id)
+    if lead_id is not None:
+        query = query.filter(Booking.lead_id == lead_id)
+    return query.order_by(Booking.start_time.desc()).all()
 
 
 class BookingCreateRequest(BaseModel):

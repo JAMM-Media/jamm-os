@@ -37,3 +37,8 @@ class BookingOut(BookingBase):
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class SlotOut(BaseModel):
+    start_time: datetime
+    end_time: datetime

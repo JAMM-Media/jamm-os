@@ -46,3 +46,9 @@ class UserOut(UserBase):
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class BookableStaffOut(BaseModel):
+    id: UUID
+    full_name: Optional[str] = None
+    model_config = ConfigDict(from_attributes=True)
