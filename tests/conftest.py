@@ -8,7 +8,7 @@ The DATABASE_URL environment variable must point to a real PostgreSQL instance.
 
 For local development, start the Docker database first:
     docker-compose up -d db
-    DATABASE_URL=postgresql://postgres:postgres123@localhost:5432/accounting_dev pytest
+    DATABASE_URL=postgresql+psycopg://postgres:postgres123@localhost:5432/accounting_dev pytest
 
 The SQLite approach was removed because:
 1. PostgreSQL handles UUIDs and enums differently than SQLite

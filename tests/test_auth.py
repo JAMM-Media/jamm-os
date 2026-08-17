@@ -15,10 +15,15 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 import os
 
-DATABASE_URL = os.environ.get(
-    "DATABASE_URL",
-    "postgresql://postgres:postgres123@localhost:5432/accounting_dev"
-)
+# No fallback default here, deliberately. This module builds its own engine
+# rather than using conftest's, so a default would be free to disagree with the
+# database the rest of the suite runs against. The previous default did, twice
+# over: it named accounting_dev rather than the test database, and it used a
+# plain postgresql:// prefix, which selects psycopg2 instead of psycopg 3 and
+# silently kills every sqlstate error-code guard. conftest.py loads .env.test
+# before any test module imports, so DATABASE_URL is always set by this point.
+# A KeyError here is the correct, loud outcome if it ever is not.
+DATABASE_URL = os.environ["DATABASE_URL"]
 engine = create_engine(DATABASE_URL)
 TestingSessionLocal = sessionmaker(bind=engine)
 
