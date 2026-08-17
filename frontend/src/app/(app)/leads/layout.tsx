@@ -4,7 +4,7 @@
 import { useState, useEffect } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Search, X, Flame, ChevronLeft, ChevronRight, Plus } from 'lucide-react'
+import { Search, X, Flame, ChevronLeft, ChevronRight, ChevronDown, Plus } from 'lucide-react'
 import { toast } from 'sonner'
 import { leadsApi, type Lead } from '@/lib/api'
 import { useFetch } from '@/lib/hooks/useFetch'
@@ -27,15 +27,6 @@ const LEAD_STAGES = [
   { value: 'won', label: 'Won' },
   { value: 'lost', label: 'Lost' },
 ]
-
-const STAGE_LEFT_BORDER: Record<string, string> = {
-  identified: 'border-l-[#9CA3AF]',
-  contacted:  'border-l-[#F59E0B]',
-  call_booked:'border-l-[#3B82F6]',
-  proposal:   'border-l-[#1E40AF]',
-  won:        'border-l-[#22C55E]',
-  lost:       'border-l-[#EF4444]',
-}
 
 const REFERRAL_SOURCE_OPTIONS = [
   { value: '', label: 'Unknown / not set' },
@@ -60,16 +51,63 @@ function formatSource(raw: string | null): string {
   return raw.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
 }
 
-function LeadsTableSkeleton({ slim }: { slim: boolean }) {
+function LeadsTableSkeleton({ slim, rowCount }: { slim: boolean; rowCount: number }) {
   return (
-    <div className="rounded-[10px] bg-white dark:bg-dark-card shadow-sm overflow-hidden">
-      {Array.from({ length: 6 }).map((_, i) => (
-        <div key={i} className="flex items-center gap-4 px-5 py-5 border-b border-[0.5px] border-[#E2E8EF] dark:border-dark-border last:border-0">
-          <div className="h-4 w-32 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded flex-1" />
-          {!slim && <div className="h-4 w-24 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded flex-shrink-0" />}
-          <div className="h-4 w-20 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded flex-shrink-0" />
-        </div>
-      ))}
+    <div className="rounded-[10px] bg-white dark:bg-dark-card border border-[0.5px] border-surface-border dark:border-dark-border overflow-hidden">
+      <table className="w-full border-collapse">
+        <thead>
+          <tr className="bg-surface-card dark:bg-[#252525] border-b border-[0.5px] border-surface-border dark:border-dark-border">
+            <th className="px-4 py-4 text-left text-[11px] font-semibold text-[#6B7280] uppercase tracking-[0.07em] whitespace-nowrap">
+              Lead Name
+            </th>
+            {!slim && (
+              <th className="px-4 py-4 text-left text-[11px] font-semibold text-[#6B7280] uppercase tracking-[0.07em] whitespace-nowrap">
+                Email
+              </th>
+            )}
+            <th className="px-4 py-4 text-left text-[11px] font-semibold text-[#6B7280] uppercase tracking-[0.07em] whitespace-nowrap">
+              Stage
+            </th>
+            {!slim && (
+              <>
+                <th className="px-4 py-4 text-left text-[11px] font-semibold text-[#6B7280] uppercase tracking-[0.07em] whitespace-nowrap">
+                  Referral Source
+                </th>
+                <th className="px-4 py-4 text-left text-[11px] font-semibold text-[#6B7280] uppercase tracking-[0.07em] whitespace-nowrap">
+                  Date Added
+                </th>
+              </>
+            )}
+          </tr>
+        </thead>
+        <tbody>
+          {Array.from({ length: rowCount }).map((_, i) => (
+            <tr key={i} className="border-b border-[0.5px] border-surface-border dark:border-dark-border last:border-0">
+              <td className="px-4 py-3">
+                <div className="h-4 w-32 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+              </td>
+              {!slim && (
+                <td className="px-4 py-3">
+                  <div className="h-4 w-24 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+                </td>
+              )}
+              <td className="px-4 py-3">
+                <div className="h-4 w-20 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+              </td>
+              {!slim && (
+                <>
+                  <td className="px-4 py-3">
+                    <div className="h-4 w-24 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="h-4 w-16 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+                  </td>
+                </>
+              )}
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   )
 }
@@ -203,7 +241,6 @@ export default function LeadsLayout({ children }: { children: React.ReactNode })
   const selectedLeadId = pathname.startsWith('/leads/') ? pathname.slice('/leads/'.length) : null
 
   const [stageFilter, setStageFilter] = useState('')
-  const [hotFilter, setHotFilter] = useState(false)
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const [addLeadOpen, setAddLeadOpen] = useState(false)
@@ -212,21 +249,19 @@ export default function LeadsLayout({ children }: { children: React.ReactNode })
   const [refetchKey, setRefetchKey] = useState(0)
 
   // Summary fetch: high limit to ensure accurate per-stage counts in the strip.
-  // Uses the same stage/hot filters as the table so counts stay contextual.
   const { data: summaryData } = useFetch(
-    () => leadsApi.list({ stage: stageFilter || undefined, hot: hotFilter || undefined, limit: 500 }),
-    [stageFilter, hotFilter, refetchKey]
+    () => leadsApi.list({ stage: stageFilter || undefined, limit: 500 }),
+    [stageFilter, refetchKey]
   )
 
   // Table fetch: real server-side pagination.
   const { data: tableData, isLoading } = useFetch(
     () => leadsApi.list({
       stage: stageFilter || undefined,
-      hot: hotFilter || undefined,
       limit: PAGE_SIZE,
       offset: (page - 1) * PAGE_SIZE,
     }),
-    [stageFilter, hotFilter, page, refetchKey]
+    [stageFilter, page, refetchKey]
   )
 
   // Listen for the custom event dispatched by the detail panel after a transition
@@ -256,9 +291,7 @@ export default function LeadsLayout({ children }: { children: React.ReactNode })
   const slim = selectedLeadId !== null
 
   return (
-    // bg-[#F7F9FC] overrides the global surface-page (#D6DEE6) for this route only.
-    // Ben's explicit decision: accepted inconsistency for the Pipeline page.
-    <div className="flex h-full overflow-hidden bg-[#F7F9FC] dark:bg-dark-page">
+    <div className="flex h-full overflow-hidden">
       <AddLeadModal
         open={addLeadOpen}
         onClose={() => setAddLeadOpen(false)}
@@ -269,116 +302,109 @@ export default function LeadsLayout({ children }: { children: React.ReactNode })
       <div className={cn(
         'flex flex-col flex-shrink-0 overflow-hidden',
         slim
-          ? 'w-[420px] border-r border-[#E2E8EF] dark:border-dark-border'
+          ? 'w-[420px] border-r border-surface-border dark:border-dark-border'
           : 'flex-1',
       )}>
         <div className="overflow-y-auto flex-1 p-6">
           {/* Page header */}
-          <div className="flex items-center justify-between mb-4">
-            <h1 className="text-[22px] font-semibold text-brand dark:text-[#EDEEF0] tracking-tight">Pipeline</h1>
+          <div className="flex items-center justify-between mb-5">
+            <h1 className="text-[28px] font-bold text-brand dark:text-[#EDEEF0] tracking-tight">Pipeline</h1>
             <button
               onClick={() => setAddLeadOpen(true)}
-              className="h-8 px-3 rounded-[6px] bg-brand dark:bg-brand-btn text-white text-[12px] font-semibold flex items-center gap-1.5 hover:opacity-90 transition-opacity"
+              className="h-10 px-4 rounded-[7px] bg-brand dark:bg-brand-btn text-white text-[14px] font-semibold flex items-center gap-1.5 hover:opacity-90 transition-opacity"
             >
-              <Plus className="h-3.5 w-3.5" />
+              <Plus className="h-4 w-4" />
               Add lead
             </button>
           </div>
 
-          {/* Summary strip -- real per-stage counts in a bordered container with dividers. Hidden in slim mode. */}
-          {!slim && !isLoading && leads.length > 0 && (
-            <div className="bg-white dark:bg-dark-card border border-[0.5px] border-[#E2E8EF] dark:border-dark-border rounded-[10px] mb-5 overflow-hidden">
-              <div className="flex items-stretch divide-x divide-[#E2E8EF] dark:divide-dark-border">
-                {/* Total: no stage dot */}
-                <div className="flex flex-col px-5 py-4 min-w-0">
-                  <p className="text-[26px] font-bold text-brand dark:text-[#EDEEF0] leading-none tabular-nums">
+          {/* Summary strip -- real per-stage counts. Hidden in slim mode. */}
+          {!slim && leads.length > 0 && (
+            <div className="bg-white dark:bg-dark-card border border-[0.5px] border-surface-border dark:border-dark-border rounded-card mb-4 overflow-hidden">
+              <div className="flex items-stretch">
+                {/* Total: visually separate from the stage breakdown -- extra right padding creates gap without a divider */}
+                <div className="flex-none flex flex-col pl-5 pr-10 py-5">
+                  <p className="text-[21px] font-bold text-brand dark:text-[#EDEEF0] leading-none tabular-nums">
                     {summaryData?.total ?? leads.length}
                   </p>
                   <p className="text-[11px] text-[#6B7280] mt-1.5 whitespace-nowrap">All leads</p>
                 </div>
-                {/* Per-stage counts with colored dots matching STAGE_LEFT_BORDER color values */}
-                {([
-                  { stage: 'identified',  label: 'Identified',  dot: '#9CA3AF' },
-                  { stage: 'contacted',   label: 'Contacted',   dot: '#F59E0B' },
-                  { stage: 'call_booked', label: 'Call Booked', dot: '#3B82F6' },
-                  { stage: 'proposal',    label: 'Proposal',    dot: '#1E40AF' },
-                  { stage: 'won',         label: 'Won',         dot: '#22C55E' },
-                  { stage: 'lost',        label: 'Lost',        dot: '#EF4444' },
-                ] as const).map(({ stage, label, dot }) => (
-                  <div key={stage} className="flex flex-col px-5 py-4 min-w-0">
-                    <p className="text-[26px] font-bold text-brand dark:text-[#EDEEF0] leading-none tabular-nums">
-                      {leads.filter((l) => l.stage === stage).length}
-                    </p>
-                    <div className="flex items-center gap-1 mt-1.5">
-                      <span className="h-[7px] w-[7px] rounded-full flex-shrink-0" style={{ backgroundColor: dot }} />
-                      <span className="text-[11px] text-[#6B7280] whitespace-nowrap">{label}</span>
+                {/* Per-stage counts with dividers between them */}
+                <div className="flex-1 flex items-stretch divide-x divide-surface-border dark:divide-dark-border">
+                  {([
+                    { stage: 'identified',  label: 'Identified',  dot: '#9CA3AF' },
+                    { stage: 'contacted',   label: 'Contacted',   dot: '#F59E0B' },
+                    { stage: 'call_booked', label: 'Call Booked', dot: '#3B82F6' },
+                    { stage: 'proposal',    label: 'Proposal',    dot: '#1E40AF' },
+                    { stage: 'won',         label: 'Won',         dot: '#22C55E' },
+                    { stage: 'lost',        label: 'Lost',        dot: '#EF4444' },
+                  ] as const).map(({ stage, label, dot }) => (
+                    <div key={stage} className="flex-1 flex flex-col px-5 py-5 min-w-0">
+                      <p className="text-[21px] font-bold text-brand dark:text-[#EDEEF0] leading-none tabular-nums">
+                        {leads.filter((l) => l.stage === stage).length}
+                      </p>
+                      <div className="flex items-center gap-1 mt-1.5">
+                        <span className="h-[7px] w-[7px] rounded-full flex-shrink-0" style={{ backgroundColor: dot }} />
+                        <span className="text-[11px] text-[#6B7280] whitespace-nowrap">{label}</span>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
             </div>
           )}
 
-          {/* Filters */}
-          <div className="flex items-center gap-2 mb-5 flex-wrap">
+          {/* Search and stage filter toolbar */}
+          <div className="flex items-center gap-3 mb-4 flex-wrap">
             <div className="relative">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[#9CA3AF]" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[#9CA3AF]" />
               <input
                 type="text"
                 placeholder="Search leads..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className={cn(
-                  'h-8 pl-8 pr-8 rounded-[6px] border border-[0.5px] border-surface-border dark:border-dark-border bg-white dark:bg-dark-card text-[12px] text-brand dark:text-[#EDEEF0] placeholder:text-[#9CA3AF] focus:outline-none focus:border-brand dark:focus:border-[#4A7FA5] shadow-sm',
-                  slim ? 'w-36' : 'w-52',
+                  'h-10 pl-9 pr-8 rounded-[6px] border border-[0.5px] border-surface-border dark:border-dark-border bg-surface-card dark:bg-dark-card text-[13px] text-brand dark:text-[#EDEEF0] placeholder:text-[#9CA3AF] focus:outline-none focus:border-brand dark:focus:border-[#4A7FA5]',
+                  slim ? 'w-40' : 'w-72',
                 )}
               />
               {search && (
                 <button
                   onClick={() => setSearch('')}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-[#9CA3AF] hover:text-brand"
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#9CA3AF] hover:text-brand"
                 >
                   <X className="h-3.5 w-3.5" />
                 </button>
               )}
             </div>
 
-            <select
-              value={stageFilter}
-              onChange={(e) => { setStageFilter(e.target.value); setPage(1) }}
-              className="h-8 px-2.5 rounded-[6px] border border-[0.5px] border-surface-border dark:border-dark-border bg-white dark:bg-dark-card text-[12px] text-brand dark:text-[#EDEEF0] focus:outline-none focus:border-brand dark:focus:border-[#4A7FA5] shadow-sm"
-            >
-              {LEAD_STAGES.map((s) => (
-                <option key={s.value} value={s.value}>{s.label}</option>
-              ))}
-            </select>
-
-            <button
-              onClick={() => { setHotFilter((v) => !v); setPage(1) }}
-              className={cn(
-                'h-8 px-3 rounded-[6px] border border-[0.5px] text-[12px] font-medium flex items-center gap-1.5 transition-colors shadow-sm',
-                hotFilter
-                  ? 'bg-[#FEF3C7] border-[#F59E0B] text-[#B45309]'
-                  : 'border-surface-border dark:border-dark-border bg-white dark:bg-dark-card text-[#6B7280] hover:text-brand dark:hover:text-[#EDEEF0]',
-              )}
-            >
-              <Flame className="h-3.5 w-3.5" />
-              Hot
-            </button>
+            <div className="relative">
+              <select
+                value={stageFilter}
+                onChange={(e) => { setStageFilter(e.target.value); setPage(1) }}
+                className="h-10 pl-3 pr-7 rounded-[6px] border border-[0.5px] border-surface-border dark:border-dark-border bg-surface-card dark:bg-dark-card text-[13px] text-brand dark:text-[#EDEEF0] focus:outline-none focus:border-brand dark:focus:border-[#4A7FA5] appearance-none"
+              >
+                {LEAD_STAGES.map((s) => (
+                  <option key={s.value} value={s.value}>{s.label}</option>
+                ))}
+              </select>
+              <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[#9CA3AF] pointer-events-none" />
+            </div>
           </div>
 
           {/* Table */}
           {isLoading ? (
-            <LeadsTableSkeleton slim={slim} />
+            <LeadsTableSkeleton slim={slim} rowCount={filtered.length > 0 ? Math.min(10, filtered.length) : 3} />
           ) : filtered.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 gap-2">
               <p className="text-[14px] font-medium text-brand dark:text-[#EDEEF0]">No leads found</p>
               <p className="text-[13px] text-[#6B7280]">
-                {stageFilter || hotFilter || search ? 'Try adjusting the filters.' : 'Leads will appear here once added.'}
+                {stageFilter || search ? 'Try adjusting the filters.' : 'Leads will appear here once added.'}
               </p>
             </div>
           ) : (
-            <div className="rounded-[10px] bg-white dark:bg-dark-card shadow-sm overflow-hidden">
+            <>
+            <div className="rounded-[10px] bg-white dark:bg-dark-card border border-[0.5px] border-surface-border dark:border-dark-border overflow-hidden">
               <table className="w-full border-collapse">
                 <colgroup>
                   {slim ? (
@@ -389,33 +415,33 @@ export default function LeadsLayout({ children }: { children: React.ReactNode })
                   ) : (
                     <>
                       <col style={{ width: '30%' }} />
-                      <col style={{ width: '22%' }} />
-                      <col style={{ width: '17%' }} />
+                      <col style={{ width: '27%' }} />
+                      <col style={{ width: '15%' }} />
                       <col style={{ width: '18%' }} />
-                      <col style={{ width: '13%' }} />
+                      <col style={{ width: '10%' }} />
                     </>
                   )}
                 </colgroup>
                 <thead>
-                  <tr className="bg-[#F8FAFC] dark:bg-[#1E2530] border-b border-[0.5px] border-[#E2E8EF] dark:border-dark-border">
-                    <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-[#6B7280] uppercase tracking-[0.07em] whitespace-nowrap">
-                      Name
+                  <tr className="bg-surface-card dark:bg-[#252525] border-b border-[0.5px] border-surface-border dark:border-dark-border">
+                    <th className="px-4 py-4 text-left text-[11px] font-semibold text-[#6B7280] uppercase tracking-[0.07em] whitespace-nowrap">
+                      Lead Name
                     </th>
                     {!slim && (
-                      <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-[#6B7280] uppercase tracking-[0.07em] whitespace-nowrap">
+                      <th className="px-4 py-4 text-left text-[11px] font-semibold text-[#6B7280] uppercase tracking-[0.07em] whitespace-nowrap">
                         Email
                       </th>
                     )}
-                    <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-[#6B7280] uppercase tracking-[0.07em] whitespace-nowrap">
+                    <th className="px-4 py-4 text-left text-[11px] font-semibold text-[#6B7280] uppercase tracking-[0.07em] whitespace-nowrap">
                       Stage
                     </th>
                     {!slim && (
                       <>
-                        <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-[#6B7280] uppercase tracking-[0.07em] whitespace-nowrap">
-                          Source
+                        <th className="px-4 py-4 text-left text-[11px] font-semibold text-[#6B7280] uppercase tracking-[0.07em] whitespace-nowrap">
+                          Referral Source
                         </th>
-                        <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-[#6B7280] uppercase tracking-[0.07em] whitespace-nowrap">
-                          Added
+                        <th className="px-4 py-4 text-left text-[11px] font-semibold text-[#6B7280] uppercase tracking-[0.07em] whitespace-nowrap">
+                          Date Added
                         </th>
                       </>
                     )}
@@ -428,46 +454,43 @@ export default function LeadsLayout({ children }: { children: React.ReactNode })
                       onClick={() => router.push(`/leads/${lead.id}`)}
                       className={cn(
                         'transition-colors duration-100 cursor-pointer',
-                        i !== filtered.length - 1 && 'border-b border-[0.5px] border-[#E8EDF3] dark:border-[#2D3440]',
+                        i !== filtered.length - 1 && 'border-b border-[0.5px] border-[#D5D8DE] dark:border-dark-card',
                         selectedLeadId === lead.id
-                          ? 'bg-[#EFF6FF] dark:bg-[#1E2D3D]'
-                          : 'hover:bg-[#F8FAFC] dark:hover:bg-[#252E3D]',
+                          ? 'bg-[#EEF2FF] dark:bg-[#1e2a40]'
+                          : 'hover:bg-surface-card dark:hover:bg-[#323232]',
                       )}
                     >
-                      <td className={cn(
-                        'px-4 py-5 border-l-[3px]',
-                        STAGE_LEFT_BORDER[lead.stage] ?? 'border-l-[#9CA3AF]',
-                      )}>
+                      <td className="px-4 py-3">
                         <div className="flex items-center gap-1.5 min-w-0">
                           {lead.hot && <Flame className="h-3.5 w-3.5 text-[#F59E0B] flex-shrink-0" />}
                           <Link
                             href={`/leads/${lead.id}`}
                             onClick={(e) => e.stopPropagation()}
-                            className="text-[13px] font-semibold text-brand dark:text-[#EDEEF0] hover:text-brand-light dark:hover:text-[#4A7FA5] hover:underline truncate"
+                            className="text-[15px] font-semibold text-brand dark:text-[#EDEEF0] hover:text-brand-light dark:hover:text-[#4A7FA5] hover:underline truncate"
                           >
                             {lead.name}
                           </Link>
                         </div>
                       </td>
                       {!slim && (
-                        <td className="px-4 py-5">
-                          <span className="text-[13px] text-[#4B5563] dark:text-[#9CA3AF]">
+                        <td className="px-4 py-3">
+                          <span className="text-[12px] text-[#6B7280] dark:text-[#9CA3AF]">
                             {lead.email ?? '-'}
                           </span>
                         </td>
                       )}
-                      <td className="px-4 py-5">
+                      <td className="px-4 py-3">
                         <StatusBadge variant={lead.stage as BadgeVariant} />
                       </td>
                       {!slim && (
                         <>
-                          <td className="px-4 py-5">
-                            <span className="text-[13px] text-[#4B5563] dark:text-[#9CA3AF]">
+                          <td className="px-4 py-3">
+                            <span className="text-[12px] text-[#6B7280] dark:text-[#9CA3AF]">
                               {formatSource(lead.referralSource)}
                             </span>
                           </td>
-                          <td className="px-4 py-5">
-                            <span className="text-[13px] text-[#4B5563] dark:text-[#9CA3AF]">
+                          <td className="px-4 py-3">
+                            <span className="text-[12px] text-[#6B7280] dark:text-[#9CA3AF]">
                               {formatDate(lead.createdAt)}
                             </span>
                           </td>
@@ -478,17 +501,19 @@ export default function LeadsLayout({ children }: { children: React.ReactNode })
                 </tbody>
               </table>
 
-              {/* Real pagination controls -- only shown when there is more than one page */}
-              {totalPages > 1 && (
-                <div className="flex items-center justify-between px-4 py-3 border-t border-[0.5px] border-[#E8EDF3] dark:border-dark-border">
-                  <p className="text-[12px] text-[#6B7280]">
-                    Showing {((page - 1) * PAGE_SIZE + 1).toLocaleString()} to {Math.min(page * PAGE_SIZE, totalCount).toLocaleString()} of {totalCount.toLocaleString()}
-                  </p>
+            </div>
+            {/* Pagination footnote -- outside the table card so it reads as a quiet annotation */}
+            {totalCount > 0 && (
+              <div className="flex items-center justify-between px-1 pt-2">
+                <p className="text-[11px] text-[#6B7280]">
+                  Showing {((page - 1) * PAGE_SIZE + 1).toLocaleString()} to {Math.min(page * PAGE_SIZE, totalCount).toLocaleString()} of {totalCount.toLocaleString()}
+                </p>
+                {totalPages > 1 && (
                   <div className="flex items-center gap-0.5">
                     <button
                       disabled={page === 1}
                       onClick={() => setPage((p) => p - 1)}
-                      className="h-7 w-7 rounded-[4px] flex items-center justify-center text-[#6B7280] hover:bg-[#F1F5F9] dark:hover:bg-[#2D3748] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                      className="h-7 w-7 rounded-[4px] flex items-center justify-center text-[#9CA3AF] hover:bg-surface-card dark:hover:bg-[#2D3748] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                     >
                       <ChevronLeft className="h-3.5 w-3.5" />
                     </button>
@@ -503,16 +528,16 @@ export default function LeadsLayout({ children }: { children: React.ReactNode })
                       }
                       return pages.map((p, i) =>
                         p === 'ellipsis' ? (
-                          <span key={`e${i}`} className="px-1 text-[12px] text-[#9CA3AF]">...</span>
+                          <span key={`e${i}`} className="px-1 text-[11px] text-[#9CA3AF]">...</span>
                         ) : (
                           <button
                             key={p}
                             onClick={() => setPage(p)}
                             className={cn(
-                              'h-7 min-w-[28px] px-2 rounded-[4px] text-[12px] transition-colors',
+                              'h-7 min-w-[28px] px-2 rounded-[4px] text-[11px] transition-colors',
                               p === page
                                 ? 'bg-brand dark:bg-brand-btn text-white font-semibold'
-                                : 'text-[#6B7280] hover:bg-[#F1F5F9] dark:hover:bg-[#2D3748]',
+                                : 'text-[#9CA3AF] hover:bg-surface-card dark:hover:bg-[#2D3748]',
                             )}
                           >
                             {p}
@@ -523,14 +548,15 @@ export default function LeadsLayout({ children }: { children: React.ReactNode })
                     <button
                       disabled={page >= totalPages}
                       onClick={() => setPage((p) => p + 1)}
-                      className="h-7 w-7 rounded-[4px] flex items-center justify-center text-[#6B7280] hover:bg-[#F1F5F9] dark:hover:bg-[#2D3748] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                      className="h-7 w-7 rounded-[4px] flex items-center justify-center text-[#9CA3AF] hover:bg-surface-card dark:hover:bg-[#2D3748] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                     >
                       <ChevronRight className="h-3.5 w-3.5" />
                     </button>
                   </div>
-                </div>
-              )}
-            </div>
+                )}
+              </div>
+            )}
+            </>
           )}
         </div>
       </div>
