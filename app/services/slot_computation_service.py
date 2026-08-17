@@ -11,16 +11,15 @@ Public shared surface (intentionally used by booking_service.py):
   ACTIVE_STATUSES, get_window_for_day, slot_conflicts_with_booking.
 
 All datetimes are UTC-aware. AvailabilityWindow start_time/end_time are
-time-of-day (no timezone); they are combined with each calendar date and
-treated as UTC, matching the convention used by Booking.start_time/end_time.
-No timezone conversion logic is performed here -- that is explicitly out of scope.
+time-of-day values interpreted in the firm's real local timezone (Firm.timezone),
+then converted to UTC before comparison against Booking.start_time/end_time.
 
-Out of scope: caching, timezone conversion, endpoint exposure, unique-per-meeting
-video links. Those are future tasks.
+Out of scope: caching, endpoint exposure, unique-per-meeting video links.
 """
 
 import logging
 from datetime import date, datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from typing import Optional
 from uuid import UUID
 
@@ -29,6 +28,7 @@ from sqlalchemy.orm import Session
 from app.core.enums import BookingStatus
 from app.models.availability_window import AvailabilityWindow
 from app.models.booking import Booking
+from app.models.firm import Firm
 
 logger = logging.getLogger(__name__)
 
@@ -60,13 +60,18 @@ def _get_active_bookings_on_date(
     db: Session,
     staff_user_id: UUID,
     calendar_date: date,
+    firm_timezone: str,
 ) -> list[Booking]:
     """Return all scheduled/completed bookings for this staff member on the given date.
 
+    calendar_date is a local calendar date in the firm timezone. Day boundaries are
+    computed in that timezone before converting to UTC for the DB query.
     Explicitly excludes canceled bookings -- they do not occupy slots or the cap.
     """
-    day_start = datetime.combine(calendar_date, datetime.min.time(), tzinfo=timezone.utc)
-    day_end = day_start + timedelta(days=1)
+    tz = ZoneInfo(firm_timezone)
+    next_day = calendar_date + timedelta(days=1)
+    day_start = datetime(calendar_date.year, calendar_date.month, calendar_date.day, tzinfo=tz).astimezone(timezone.utc)
+    day_end = datetime(next_day.year, next_day.month, next_day.day, tzinfo=tz).astimezone(timezone.utc)
     return (
         db.query(Booking)
         .filter(
@@ -82,15 +87,25 @@ def _get_active_bookings_on_date(
 def _generate_candidate_slots(
     window: AvailabilityWindow,
     calendar_date: date,
+    firm_timezone: str,
 ) -> list[dict]:
     """Chunk the availability window into meeting_duration_minutes increments.
 
+    window.start_time/end_time are local time values. They are interpreted in the
+    firm timezone and converted to UTC before slot generation.
     The last fragment is dropped if it is shorter than a full meeting duration.
     Returns a list of {start_time, end_time} dicts with UTC-aware datetimes.
     """
+    tz = ZoneInfo(firm_timezone)
     duration = timedelta(minutes=window.meeting_duration_minutes)
-    window_start = datetime.combine(calendar_date, window.start_time, tzinfo=timezone.utc)
-    window_end = datetime.combine(calendar_date, window.end_time, tzinfo=timezone.utc)
+    window_start = datetime(
+        calendar_date.year, calendar_date.month, calendar_date.day,
+        window.start_time.hour, window.start_time.minute, tzinfo=tz,
+    ).astimezone(timezone.utc)
+    window_end = datetime(
+        calendar_date.year, calendar_date.month, calendar_date.day,
+        window.end_time.hour, window.end_time.minute, tzinfo=tz,
+    ).astimezone(timezone.utc)
 
     slots = []
     slot_start = window_start
@@ -153,6 +168,9 @@ def compute_available_slots(
     if now is None:
         now = datetime.now(timezone.utc)
 
+    firm_obj = db.query(Firm).filter(Firm.id == firm_id).first()
+    firm_timezone = firm_obj.timezone if firm_obj else 'America/New_York'
+
     all_slots: list[dict] = []
     current_date = start_date
 
@@ -164,7 +182,7 @@ def compute_available_slots(
             current_date += timedelta(days=1)
             continue
 
-        active_bookings = _get_active_bookings_on_date(db, staff_user_id, current_date)
+        active_bookings = _get_active_bookings_on_date(db, staff_user_id, current_date, firm_timezone)
 
         # Daily cap check: if already at or above cap, skip the whole day.
         if window.daily_cap is not None and len(active_bookings) >= window.daily_cap:
@@ -175,7 +193,7 @@ def compute_available_slots(
             current_date += timedelta(days=1)
             continue
 
-        candidates = _generate_candidate_slots(window, current_date)
+        candidates = _generate_candidate_slots(window, current_date, firm_timezone)
 
         for slot in candidates:
             slot_start = slot["start_time"]

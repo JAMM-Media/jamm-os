@@ -28,7 +28,7 @@ from app.core.security import get_password_hash
 def _make_firm_and_owner(slug: str, client: TestClient) -> dict:
     db = TestingSessionLocal()
     try:
-        firm = Firm(name=f"Firm {slug}", slug=slug)
+        firm = Firm(name=f"Firm {slug}", slug=slug, timezone="UTC")
         db.add(firm)
         db.commit()
         db.refresh(firm)

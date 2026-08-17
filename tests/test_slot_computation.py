@@ -29,7 +29,7 @@ from app.services.slot_computation_service import compute_available_slots
 def _make_firm(slug: str) -> Firm:
     db = TestingSessionLocal()
     try:
-        firm = Firm(name=f"Firm {slug}", slug=slug)
+        firm = Firm(name=f"Firm {slug}", slug=slug, timezone="UTC")
         db.add(firm)
         db.commit()
         db.refresh(firm)
