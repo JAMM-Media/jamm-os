@@ -252,7 +252,7 @@ export default function LeadDetailPage() {
   )
   const activity: LeadActivityItem[] = activityData ?? []
 
-  const { data: bookingsData } = useFetch(
+  const { data: bookingsData, refetch: refetchBookings } = useFetch(
     () => bookingsApi.listByLead(leadId),
     [leadId]
   )
@@ -352,6 +352,7 @@ export default function LeadDetailPage() {
         onBooked={() => {
           refetch()
           refetchActivity()
+          refetchBookings()
           window.dispatchEvent(new Event('lead-updated'))
         }}
       />
