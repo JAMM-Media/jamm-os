@@ -1,5 +1,6 @@
 # app/api/leads.py
 
+from datetime import datetime
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from pydantic import BaseModel
@@ -162,3 +163,44 @@ def transition_lead(
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
     return updated
+
+
+# ---------------------------------------------------------
+# LEAD ACTIVITY TIMELINE
+#
+# Returns a merged, chronologically sorted (newest first) list of
+# LeadMessage and BehavioralEvent rows for this lead. Both sources
+# are tenant-scoped via firm_id. Limit defaults to 50.
+# ---------------------------------------------------------
+class LeadActivityItemOut(BaseModel):
+    id: str
+    type: str
+    occurred_at: datetime
+    description: str
+    source_type: str
+
+
+@router.get("/{lead_id}/activity", response_model=list[LeadActivityItemOut])
+def get_lead_activity(
+    lead_id: UUID,
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    _: object = Depends(require_staff_or_above),
+    limit: int = Query(50, le=200),
+):
+    lead = crud_lead.get_lead_for_firm(db, lead_id, current_firm.id)
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead not found")
+
+    from app.crud.lead_activity import get_lead_activity as _get_activity
+    items = _get_activity(db, lead_id=lead_id, firm_id=current_firm.id, limit=limit)
+    return [
+        LeadActivityItemOut(
+            id=item.id,
+            type=item.type,
+            occurred_at=item.occurred_at,
+            description=item.description,
+            source_type=item.source_type,
+        )
+        for item in items
+    ]
