@@ -395,6 +395,9 @@ export default function SettingsPage() {
   const [approvalRequired, setApprovalRequired] = useState<boolean | null>(null)
   const [savingApproval, setSavingApproval] = useState(false)
 
+  const [firmTimezone, setFirmTimezone] = useState('America/New_York')
+  const [savingTimezone, setSavingTimezone] = useState(false)
+
   const [emailReplyTo, setEmailReplyTo] = useState('')
   const [emailDisplayName, setEmailDisplayName] = useState('')
   const [savingEmail, setSavingEmail] = useState(false)
@@ -520,6 +523,7 @@ export default function SettingsPage() {
       setFirmContactEmail((firmData.settings.firm_contact_email as string) ?? '')
     }
     setReviewEnabled((firmData as (FirmDetails & { feature_flags?: Record<string, unknown> }) | undefined)?.feature_flags?.review_requests_enabled === true)
+    if (firmData?.timezone) setFirmTimezone(firmData.timezone)
   }, [firmData])
 
   async function handleSaveEmailSettings() {
@@ -605,6 +609,18 @@ export default function SettingsPage() {
       toast.error('Failed to save setting')
     } finally {
       setSavingApproval(false)
+    }
+  }
+
+  async function handleSaveTimezone() {
+    setSavingTimezone(true)
+    try {
+      await api.patch('/firms/me', { timezone: firmTimezone })
+      toast.success('Timezone saved')
+    } catch {
+      toast.error('Failed to save timezone')
+    } finally {
+      setSavingTimezone(false)
     }
   }
 
@@ -916,6 +932,39 @@ export default function SettingsPage() {
                       )}
                       style={{ marginTop: '2px' }}
                     />
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Timezone section */}
+            {isFirmOwner && (
+              <div className="bg-surface-card dark:bg-dark-card rounded-[10px] p-4 flex flex-col gap-3 max-w-lg" style={{ marginTop: '12px' }}>
+                <p className="text-[13px] font-medium text-brand dark:text-[#EDEEF0]">Timezone</p>
+                <div className="flex items-start gap-4">
+                  <div className="flex-1">
+                    <p className="text-[11px] text-[#6B7280] mb-2">
+                      Used for booking availability. Staff windows are interpreted in this timezone.
+                    </p>
+                    <select
+                      value={firmTimezone}
+                      onChange={(e) => setFirmTimezone(e.target.value)}
+                      className="w-full h-8 px-2.5 rounded-[6px] border border-[0.5px] border-surface-border dark:border-dark-border bg-surface-page dark:bg-dark-page text-[13px] text-brand dark:text-[#EDEEF0] focus:outline-none focus:border-brand dark:focus:border-brand"
+                    >
+                      <option value="America/New_York">Eastern (America/New_York)</option>
+                      <option value="America/Chicago">Central (America/Chicago)</option>
+                      <option value="America/Denver">Mountain (America/Denver)</option>
+                      <option value="America/Los_Angeles">Pacific (America/Los_Angeles)</option>
+                      <option value="America/Anchorage">Alaska (America/Anchorage)</option>
+                      <option value="Pacific/Honolulu">Hawaii (Pacific/Honolulu)</option>
+                    </select>
+                  </div>
+                  <button
+                    onClick={handleSaveTimezone}
+                    disabled={savingTimezone}
+                    className="mt-6 h-8 px-3 text-[13px] font-medium rounded-[6px] bg-brand text-white hover:bg-brand/90 transition-colors disabled:opacity-60 flex-shrink-0"
+                  >
+                    {savingTimezone ? 'Saving...' : 'Save'}
                   </button>
                 </div>
               </div>
