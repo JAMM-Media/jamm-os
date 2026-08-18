@@ -1,6 +1,6 @@
 # How We Work: Verification and Debugging
 
-This file exists because of a specific, repeated failure. Fourteen separate times, a signal reported success while the thing it was supposed to be watching was broken. Every instance cost real time, and every instance looked fine right up until someone checked by hand.
+This file exists because of a specific, repeated failure. Seventeen separate times, a signal reported success while the thing it was supposed to be watching was broken. Every instance cost real time, and every instance looked fine right up until someone checked by hand.
 
 These are not style preferences. Each rule below is here because ignoring it already cost us something.
 
@@ -10,7 +10,7 @@ These are not style preferences. Each rule below is here because ignoring it alr
 
 The failure mode is always the same shape. Something reports success. The report is accurate about what it measured. What it measured was not the thing that mattered.
 
-Fifteen instances so far:
+Seventeen instances so far:
 
 1. **Unregistered expiry sweep.** The sweep was written, tested, and correct. It was never registered with the scheduler, so it never ran. Nothing errored, because nothing happened.
 2. **Anniversary job logging ERROR under a successful scheduler.** The scheduler reported healthy. The job inside it was failing every run. Scheduler health and job health are different measurements.
@@ -48,9 +48,25 @@ Fifteen instances so far:
 
 15. Instance fifteen (Aug 16, 2026. Origin: `tests/test_phase13c_extensions.py::test_deadline_watch_uses_extended_deadline_after_filing`). **A test whose pass/fail tracks the wall clock rather than the behavior it names.** The test hardcoded a 60-day window against a fixed Oct 15, 2026 deadline and asserted the deadline fell outside it; the assumption expired on Aug 16, 2026, exactly 60 days out, and the test went red with no code change. It would have gone silently green again on Oct 15 with no fix. This is the mirror of the usual shape in this file: a false RED rather than a false green. A false red is not harmless. It lengthens the tolerated-failure list, and a long tolerated list teaches people to stop reading red, which is how false greens later walk through the door. Rule: a test asserting date arithmetic computes its expectations from the same clock the code under test reads, or pins the clock. Any test that can change color with no code change is broken, regardless of which color it currently shows.
 
+16. Instance sixteen (Aug 17, 2026. Origin: the `complexity_flags` survivorship ruling verification). **A column that counted as populated while containing nothing.** Two read-only queries minutes apart appeared to contradict each other. A count reported `1 / 1 / 1`: one engagement row, one non-NULL `complexity_flags`, one blob that was neither NULL nor `{}`. A `SELECT` of the same column on the same row, run immediately afterward, printed `None`. Neither result was stale and nothing wrote to the database in between. They disagreed because one asked Postgres and the other asked Python.
+
+    `jsonb` can store the JSON scalar `null`, and that is a *present* value, not an absent one. `IS NOT NULL` passes it, so `COUNT(complexity_flags)` counted it. `<> '{}'::jsonb` passes it too, because the scalar `null` is not the empty object, so the filter meant to say "has real content" counted it as content. And psycopg2 deserializes it to Python `None`, which is indistinguishable from what it hands back for a genuine SQL NULL. Every layer was individually correct and the composite measurement was false: on the same value, `jsonb_typeof` returned `'null'` while `IS NULL` returned false, and a predicate intended to mean "this engagement has complexity data" answered 1 for a table whose true answer was 0.
+
+    The write-path explanation is inference, not observation, and is recorded as such: a bare `JSONB` column with no `none_as_null=True` persists an assigned Python `None` as JSON `null` rather than SQL NULL, per SQLAlchemy's documented default. It was not exercised, because exercising it would have meant writing.
+
+    The rule: existence predicates on `jsonb` columns test `jsonb_typeof(col) = 'object'` (or whichever type the column is actually meant to hold) rather than a bare `IS NOT NULL`, and new JSONB columns declare `none_as_null=True` unless a stored JSON `null` is deliberately meaningful — in which case the deliberateness belongs in a comment on the column, so the next reader knows the ambiguity was chosen rather than inherited.
+
+    This is the same failure family as the August 15 password-policy bug, one layer down. There, a key present in the settings blob with a null value defeated a `.get(key, {})` fallback that only fires when the key is absent. Here, a column present with a null value defeats an `IS NOT NULL` that only fires when the column is absent. Present-but-null is not absent, at either layer. Section 7 applies exactly: of the two disagreeing measurements, the reassuring one — the tidy `1 / 1 / 1` — was the broken one.
+
+17. Instance seventeen (Aug 17, 2026. Origin: `tests/test_database_url_prefix.py`). **A negative control silently defeated by an override living in another file.** The session that added the `DATABASE_URL` prefix tripwire ran its negative control exactly as the task file prescribed: override `DATABASE_URL` in the shell with a plain `postgresql://` value, run pytest, watch the test go red. The test passed. `tests/conftest.py` calls `load_dotenv(".env.test", override=True)` before any app import, and `override=True` outranks a shell environment variable, so the injected value never reached the settings object the test reads. The control was not weak or badly aimed. It was structurally incapable of failing, and the recipe that produced it had been written down in advance and looked correct.
+
+    Had that green been taken at face value, the session would have reported "control run, test went red" on the strength of a control that controlled nothing, and the tripwire would have shipped in exactly the condition it was written to prevent: possibly working, never demonstrated. The bypass that did reach the settings object was `--noconftest`, which stops the dotenv override from loading at all. Under it the test failed on the scheme assertion, at the right line, for the right reason.
+
+    The rule: watching a control go red is not the last step, because a control can also fail to fail. Confirm that the control actually reaches the thing it tests, since the override defeating it can live in a file nobody is looking at, loaded before the code under test ever runs. Section 2 says a guard is not finished until you have watched it fail. This instance adds that a guard is not finished until you have also confirmed that what you did to make it fail is what actually made it fail. Kin to instance six, where the check and the failure ran in two different processes, and to the Aug 15 sweep-gate rewrite, where a test was structurally incapable of catching the failure it existed for.
+
 Instances seven, nine, ten, eleven, and fourteen are the purest forms of the pattern. The others are things that failed. Those five never failed. They made a category of failure unobservable, which is worse, because there was nothing to notice. Twelve belongs with them in substance even though it did eventually go red: the divergence it created was unobservable by construction and surfaced only by luck, and it would have kept hiding schema faults for as long as nobody happened to add a column to an existing table. Thirteen sits at the other end: it failed loudly, on every push, for two months, into a report nobody opened.
 
-When you find a sixteenth, add it here with its origin. The list is the point. Recognizing the shape early is worth more than any individual rule below.
+When you find an eighteenth, add it here with its origin. The list is the point. Recognizing the shape early is worth more than any individual rule below.
 
 ---
 
