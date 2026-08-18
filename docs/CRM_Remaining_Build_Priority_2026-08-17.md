@@ -52,27 +52,21 @@ The following contract requirements were confirmed present in the codebase durin
 
 ### 1. UTM-to-source_platform auto-derivation (Contract section 3.1, Layer 2)
 
-**Finding: OPEN. The field exists but the derivation is not implemented.**
-
-utm_source is captured verbatim on the lead (confirmed in `app/api/intake.py` line 160). source_platform is a field on Lead (confirmed in `app/models/lead.py` line 58). The SourcePlatform enum's own docstring in `app/core/enums.py` line 429 says explicitly: "Auto-derived from utm_source whenever the lead arrived through a tracked link."
-
-However: `grep -rn 'source_platform' app/api/intake.py app/services/` returned no results. The intake endpoint stores utm_source but never writes to source_platform. There is no mapping table, no derivation function, and no code path that translates utm_source="facebook" to source_platform=SourcePlatform.facebook.
-
-**What remains:** write the derivation function (utm_source string -> SourcePlatform enum value, using the mapping facebook/instagram/tiktok/linkedin/youtube/x/google/bing/nextdoor/other), call it in the intake lead-creation path, set source_platform on the lead if utm_source is present, and enforce the precedence rule (a UTM-derived platform is never overwritten by a hand-picked one).
+**Finding: RESOLVED 2026-08-18.**
+_derive_source_platform() added to app/api/intake.py, called before LeadCreate on every intake submission. Maps ten real platform values plus common aliases (fb, ig, twitter) to SourcePlatform, defaults any unrecognized utm_source to SourcePlatform.other, leaves source_platform null when utm_source is absent, and deliberately never produces the four cold_outreach-reserved values (email, phone, dm, direct_mail) -- covered by an explicit guard test. 7 new tests added to tests/test_intake_endpoint.py; all 10 pre-existing intake tests and all 21 intake pricing config tests confirmed still passing. Committed at 61cdb0b.
 
 ### 2. Nurture preset tree content (Contract sections 6, 11)
 
-**Finding: OPEN. The engine exists; the actual preset sequence data does not.**
+**Finding: RESOLVED (structure only) 2026-08-18. Real email sending is a separate, still-open follow-up -- see the new item below.**
+Andrew's real reference tree artifact (jamm_nurture_preset_tree.html, previously referenced by the contract but missing from the repo) was obtained and saved at docs/jamm_nurture_preset_tree.html. The full 75-node graph (3 triggers, four phases, long-term drip) is now seeded per-firm on firm creation via app/services/nurture_preset.py's seed_firm_nurture_preset(), parsed from the real tree file rather than hand-transcribed, following the same seeding pattern already used for automation presets and letter templates. A backfill script exists at scripts/seed_nurture_preset.py for firms created before this landed.
+One deliberate addition beyond the source artifact: a new node D7 ("Long-term drip exhausted") plus two loop caps, both required by Contract section 6.1's "no uncapped loop ever ships" rule, which the raw tree did not itself satisfy at two points. 39f->25 (the alt-channel booking retry loop) is capped at 2, mirroring the already-contract-ratified rebook loop, routing to the existing D3b dead end. LD4->14 (drip re-entry into Qualification) is capped at 3, routing to the new D7 node. Both were deliberate judgment calls made with Ben directly, not invented unilaterally by Claude Code, and are worth a heads-up to Andrew as a real, if small, structural addition to his diagram.
+Every email-type step in the seeded graph carries a placeholder config (subject/body keys present but unfilled, pending the real content session) -- the graph is structurally complete and inert. No email actually sends as a result of this work. 14 new tests in tests/test_nurture_preset_seed.py cover node/edge counts, structural integrity, tenant isolation, duplicate-seed safety, and full graph reachability via BFS from all trigger nodes (including LD1, a fourth trigger node inside the drip loop that was not originally anticipated in the task's scoping but is correct per the source tree). The reachability test was watched-fail-verified by hand before being trusted: the LD4->D7 edge was temporarily removed, the test correctly caught the resulting orphaned node, the edge was restored, and the test was confirmed green again. Full backend suite re-run clean afterward: 1115 passed, the same known 9 pre-existing Stripe webhook failures, zero regressions. Committed at 3edf259.
 
-The nurture engine infrastructure is fully built (Step types, SequenceGoal, wait_until_event, goal-jump). But no seed script, migration, or fixture was found that loads the specific Phase 1 four-touch acquisition sequence described in Contract section 11:
-- Four touches with 2/3/4/5-day escalating timeouts
-- Rebook loop capped at 2
-- Quarterly long-term drip with 90-day wait-or-engage check
-- Drip re-entry landing at Qualification
+### 2a. Real email sending against the now-seeded graph (new, 2026-08-18)
 
-`grep -rn 'Sequence(' scripts/` returned no output. `grep -rn 'seed_sequence\|nurture_preset\|acquisition_sequence'` across the entire repo returned only a reference in the CRM Acquisition Tracker doc itself. No Sequence, SequenceVersion, Step, or StepEdge rows are created by any existing script.
-
-**What remains:** implement the full preset tree as described in the contract and the reference tree artifact (jamm_nurture_preset_tree.html). This is a substantial build: every node of the tree becomes Step rows, every edge becomes StepEdge rows, goal nodes become SequenceGoal rows, and the whole structure must be seeded per-firm on creation (or loaded as a system preset). Contract section 11 specifies the defaults; the reference tree artifact has the node IDs (T1, E2, E5, R1, etc.).
+**Finding: OPEN. The graph is real; nothing sends yet.**
+run_nurture_tick() in app/services/nurture_execution_service.py can walk the seeded graph forward (confirmed capable of enforcing loop_cap, resolving wait_until_event vs wait_fixed, and firing goal jumps -- verified via the existing test_nurture_execution.py suite passing cleanly against the newly seeded data). But no code anywhere in the codebase actually sends an email through Postmark for a nurture step -- confirmed by grep, no Postmark send wrapper exists in app/services/ at all. Every email-type step's config is placeholder-only pending the copy session referenced in item 3's brainstorm work.
+**What remains:** build the actual Postmark send integration for email-type steps (subject/body rendering, the marketing/broadcast stream per Contract section 6.6, unsubscribe link injection, suppression list check before send), wired into run_nurture_tick(). This unblocks answer-button email links (old item 3, renumbered below), since a button embedded in an email needs a real, sent email to attach to.
 
 ### 3. Answer-button email links (Contract section 5)
 
@@ -213,11 +207,13 @@ The nurture engine does not currently implement the 8am-6pm firm-local send wind
 
 Priority follows Contract section 10.1's stated build sequence (attribution -> intake form -> Lead/pipeline -> booking/availability/lead detail -> nurture engine -> proposal/conversion), adjusted for what is already substantially complete.
 
-1. **UTM-to-source_platform auto-derivation** (Contract 3.1) -- small, surgical, unblocked. One function and one intake call. Should be done before the intake form goes live so attribution is exact from day one.
+1. ~~UTM-to-source_platform auto-derivation~~ -- COMPLETE 2026-08-18. See Part 2.
 
-2. **Answer-button email links** (Contract section 5) -- part of the nurture engine completing. Required before any question-bearing email (E2, E5 in the tree) can function as designed. Needs a signed URL scheme, a receive endpoint, and an intake form pre-fill path.
+2. ~~Nurture preset tree data~~ -- COMPLETE (structure only) 2026-08-18. See Part 2. Real email sending is now the actual blocker -- see item 2a below.
 
-3. **Nurture preset tree data** (Contract sections 6, 11) -- the engine infrastructure exists; loading the actual preset sequence data is the next substantial nurture build. Requires the reference tree artifact to be implemented step by step: every T, E, Q, R node becomes real Step rows, with timeouts matching section 11 defaults. This is the first time anything in the engine actually runs the acquisition preset rather than just being capable of running it.
+2a. **Real email sending against the seeded graph** -- the actual next unblocked item. Postmark integration for email-type steps: subject/body rendering, the marketing/broadcast stream, unsubscribe link injection, suppression list check before send, wired into run_nurture_tick(). Depends on nothing else outstanding.
+
+3. **Answer-button email links** (Contract section 5) -- now correctly sequenced after 2a, since a button embedded in an email needs a real, sent email to attach to. Once 2a lands: needs a signed URL scheme, a receive endpoint, and an intake form pre-fill path.
 
 4. **Firm business-hours send window** (Contract section 6.1) -- should accompany or immediately follow the preset data build, since the preset will start sending real emails. Firm.timezone infrastructure is ready.
 
