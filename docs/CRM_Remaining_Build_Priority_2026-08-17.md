@@ -167,6 +167,24 @@ However, no proposal send path exists yet (see item 6 above), so there is nothin
 
 **What remains:** call validate_context in the new proposal send service (part of item 6's build), using the same behavior: on any missing field, do not send, notify the firm owner with the specific fields, hold for review.
 
+
+### 10. Public intake form structure and context-question brainstorm (new, 2026-08-18)
+
+**Finding: TWO NEW SOURCE DOCUMENTS RECEIVED, NEITHER YET ACTED ON.**
+Andrew sent two documents on 2026-08-17/18, now saved at docs/Public_Intake_Form_Structure_Contract_v1.md and docs/JAMM_PX_Fee_Schedule_to_Intake_Form_Connected_Picture.md.
+
+The first locks the intake form's structure: a four-step flow (broad service, engagement type, complexities, contact capture), with a hard governance rule -- structure is Andrew's, copy and the context-question inventory and visual design are Ben's, and any structural change is a conversation first, not a unilateral edit.
+
+It also hands Ben a substantial, not-yet-started deliverable: a dedicated brainstorm session mapping the full context-question web for the entire top of the funnel (every context question a firm owner would want answered before a call, for every branch of Steps 1 and 2), pruned under a stated friction discipline, with conditional depth sketched explicitly for every surviving question, opt-out wording for each, and a rendering plan for the pre-call summary card. The output is a written document for Andrew to review before anything is built.
+
+The second document confirms, verified directly against the live codebase, that the intake pricing config endpoint (app/schemas/intake_pricing_config.py, GET /intake/{slug}/pricing-config) genuinely matches Addendum 2's flat-question-list design, and names two real gaps not previously documented in this file:
+
+- The endpoint currently ignores per-engagement-type scope, ruled fixed on 2026-08-17 but not yet built. A dimension configured only as an override for one engagement type currently incorrectly surfaces as a question under every service its flag maps to. Andrew states the response shape will not change when this lands, only which questions populate each service's list. Lands in his next backend session.
+- There is no design yet for how a lead's complexity-question answers persist on submit. IntakeSubmitBody currently carries no complexity answers at all. Explicitly flagged as needing agreement with Andrew before Ben builds it, not something to design unilaterally.
+- IntakeSubmitBody accepts how_did_you_hear but does not persist it; no column exists. A future attribution_notes column is noted in code comments but not built.
+
+**What remains:** (a) the brainstorm session itself, producing the written context-question document for Andrew's review; (b) once Andrew's scope-aware pass lands, confirm the frontend intake form still works correctly with more precise per-service question lists; (c) agree with Andrew on the submit-time payload shape for complexity answers before building the submit-side persistence; (d) decide the how_did_you_hear / attribution_notes gap, likely alongside the still-open referral-source required-field decision already tracked in this document.
+
 ---
 
 ## Part 3: Real Open Questions for Andrew
@@ -212,3 +230,5 @@ Priority follows Contract section 10.1's stated build sequence (attribution -> i
 8. **Proposal generation** (Contract section 7.4, Addendum 1 section 6) -- last major phase; depends on Andrew's preset template completion. Do not start until template availability is confirmed. Build in this order: (a) propose service and generate draft from template with validate_context; (b) Accept answer button and click endpoint; (c) auto_send toggle and conditional e-sign trigger.
 
 9. **Event-type string sign-off** (Contract section 9.1) -- coordinate with Andrew, not a build item. Should happen before the nurture preset tree goes live in any production firm, since sequence.* events will start firing at that point.
+
+10. **Public intake form context-question brainstorm session** (new 2026-08-18 deliverable) -- not a code task. A dedicated planning session producing a written document for Andrew's review before any frontend intake form work begins. Should happen early, since the frontend intake form build (item 8's proposal phase aside) depends on knowing the full context-question set before implementation, not after.
