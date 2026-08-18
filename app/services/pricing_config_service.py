@@ -31,17 +31,48 @@ payload. The system complexity catalog is read unscoped, by the August 13,
 
 The rules, in the order the task specifies them:
 
-1. Tier contiguity and completeness      -> _validate_tier_sequence
-2. Downhill-only linking                 -> _validate_downhill_link
-3. Leaf-only pricing, no double counting -> _assert_tier_can_be_priced,
-                                            _assert_parent_is_unpriced,
-                                            _assert_option_can_be_priced
-4. Direction change is explicit          -> change_dimension_direction
-5. Role and kind coherence               -> _validate_role_coherence
-6. Activation law                        -> upsert_service_catalog_entry
-7. Tenant isolation                      -> every query below
-8. Categorical branch ambiguity          -> _validate_categorical_branch_ambiguity
-9. The Other option is never priceable   -> _assert_option_is_not_other
+ 1. Tier contiguity and completeness      -> _validate_tier_sequence
+ 2. Downhill-only linking                 -> _validate_downhill_link
+ 3. Leaf-only pricing, no double counting -> _assert_tier_can_be_priced,
+                                             _assert_parent_is_unpriced,
+                                             _assert_option_can_be_priced
+ 4. Direction change is explicit          -> change_dimension_direction
+ 5. Role and kind coherence               -> _validate_role_coherence
+ 6. Activation law                        -> upsert_service_catalog_entry
+ 7. Tenant isolation                      -> every query below, and
+                                             _resolve_scope for the scope FK
+ 8. Categorical branch ambiguity          -> _validate_categorical_branch_ambiguity
+ 9. The Other option is never priceable   -> _assert_option_is_not_other
+10. Scope belongs to the calling firm     -> _resolve_scope
+11. Scope is uniform within a tree        -> _validate_scope_uniformity
+
+SCOPE, added August 17, 2026 (rules 10 and 11).
+
+firm_dimension_configs.service_catalog_entry_id names the engagement type a
+config tree prices, or is NULL for a blanket tree that applies to every
+engagement type the system catalog maps the flag to. Precedence is WHOLESALE
+replacement: if any scoped root exists for (dimension, engagement type), that
+tree entirely supplies the config and the blanket tree is not consulted. There
+is no field-level merge anywhere.
+
+Rule 10 is tenant isolation wearing a different hat. service_catalog_entry_id
+is a firm-owned foreign key arriving in a payload, so it is the one field on
+FirmDimensionConfigCreate that could point at another firm's row. _resolve_scope
+refuses that with a 404 rather than a 403, matching _get_config and _get_tier:
+the caller must not be able to learn whether another firm's catalog entry
+exists.
+
+Rule 11 exists because the database cannot enforce it. A child config
+references its parent TIER or parent OPTION, never its parent CONFIG, so there
+is no single row Postgres could compare scopes against. The service is the only
+thing holding scope uniformity, and if it stops, nothing goes red on its own.
+
+RULE 8 NOW EVALUATES WITHIN A SCOPE. A blanket config and a scoped config for
+the same dimension are NOT ambiguous with each other; that coexistence is the
+designed precedence and refusing it would refuse the feature. Two configs in
+the SAME scope remain subject to rule 8 exactly as before. _descendant_config_ids
+was made scope-aware in the same change, and that is load-bearing rather than
+tidiness: see the note on that function.
 
 RULE 8, and why it exists.
 
@@ -142,6 +173,7 @@ from app.schemas.intake_pricing_config import (
     IntakeQuestionOut,
     IntakeServiceOut,
 )
+from app.schemas.resolved_pricing_config import ResolvedPricingConfigOut
 from app.schemas.service_catalog_entry import (
     ServiceCatalogEntryCreate,
     ServiceCatalogEntryOut,
@@ -190,6 +222,174 @@ def _get_tier(db: Session, firm_id: uuid.UUID, tier_id: uuid.UUID) -> FirmTier:
     if tier is None:
         raise HTTPException(status_code=404, detail="Tier not found")
     return tier
+
+
+# ---------------------------------------------------------------------------
+# Scope. Rules 10 and 11. See the module docstring for the design.
+# ---------------------------------------------------------------------------
+
+def _scope_predicate(column, scope: Optional[uuid.UUID]):
+    """A SQL predicate meaning "this row is in this scope".
+
+    Takes the column explicitly because two tables carry a scope now:
+    FirmDimensionConfig.service_catalog_entry_id and
+    FirmOptionPrice.service_catalog_entry_id.
+
+    NOT a plain `column == scope`. Comparing a column to None in SQLAlchemy
+    renders `IS NULL`, but only because SQLAlchemy special-cases the Python
+    literal; passing a variable that happens to hold None through `==` is the
+    kind of thing that reads as correct and silently matches nothing if it ever
+    stops being special-cased. Writing the branch out means the blanket case is
+    visibly `IS NULL` rather than incidentally so.
+
+    This is the same present-but-null trap as instance sixteen, one layer over:
+    blanket is a real, matchable state, not an absent one.
+    """
+    if scope is None:
+        return column.is_(None)
+    return column == scope
+
+
+def _describe_scope(
+    db: Session, scope: Optional[uuid.UUID]
+) -> str:
+    """Human-readable scope for refusal messages.
+
+    Refusal messages have to name both scopes or the caller cannot tell which
+    end of the mismatch to fix, and a bare UUID is not something a firm owner
+    can act on, so the engagement type is resolved where it is known.
+    """
+    if scope is None:
+        return "blanket (every engagement type)"
+    entry = db.get(ServiceCatalogEntry, scope)
+    if entry is None:
+        return f"scoped to catalog entry {scope}"
+    return f"scoped to '{entry.engagement_type}'"
+
+
+def _resolve_scope(
+    db: Session,
+    firm_id: uuid.UUID,
+    service_catalog_entry_id: Optional[uuid.UUID],
+) -> Optional[ServiceCatalogEntry]:
+    """Rule 10. Resolve a scope reference, refusing anything not this firm's.
+
+    None is the blanket case and resolves to None without a query.
+
+    A non-None value is looked up FILTERED ON firm_id, so a reference to
+    another firm's catalog entry is indistinguishable from a reference to a row
+    that does not exist. That is deliberate: 404 rather than 403, matching
+    _get_config and _get_tier, so the caller cannot use this endpoint to
+    enumerate another firm's offered services.
+
+    Dormant entries (is_offered false) resolve normally. A firm may configure
+    overrides on a service it has not switched on yet; intake applicability is a
+    separate question and is decided elsewhere.
+    """
+    if service_catalog_entry_id is None:
+        return None
+
+    entry = db.execute(
+        select(ServiceCatalogEntry).where(
+            ServiceCatalogEntry.id == service_catalog_entry_id,
+            ServiceCatalogEntry.firm_id == firm_id,
+        )
+    ).scalar_one_or_none()
+    if entry is None:
+        raise HTTPException(
+            status_code=404, detail="Service catalog entry not found"
+        )
+    return entry
+
+
+def _validate_scope_uniformity(
+    db: Session,
+    firm_id: uuid.UUID,
+    scope: Optional[uuid.UUID],
+    parent_tier_id: Optional[uuid.UUID],
+    parent_option_id: Optional[uuid.UUID],
+) -> None:
+    """Rule 11. A child config carries the same scope as its parent config.
+
+    Both NULL counts as equal: a blanket child under a blanket parent is the
+    ordinary case, not a mismatch.
+
+    THE TWO PARENT KINDS ARE CHECKED DIFFERENTLY, because they name their
+    parent with different precision.
+
+    A parent TIER names its config exactly (firm_tiers.config_id), so the
+    parent's scope is read straight off that row and compared.
+
+    A parent OPTION names only a system vocabulary option, which belongs to the
+    system dimension rather than to any one firm config of it. That is the same
+    imprecision rule 8 exists to contain. So the parent config is taken to be
+    the config of that option's dimension IN THE CHILD'S OWN SCOPE, and the
+    check is that such a config exists. If configs of that dimension exist only
+    in OTHER scopes, the child is claiming a parent from a different scope and
+    is refused.
+
+    WHAT THIS DELIBERATELY DOES NOT REFUSE: hanging a child under an option of
+    a dimension the firm has not configured at all, in any scope. That shape
+    was reachable before scopes existed and this session is not the place to
+    start refusing it; with no parent config anywhere there is no scope to be
+    uniform with, so rule 11 has nothing to say about it.
+    """
+    if parent_tier_id is not None:
+        tier = _get_tier(db, firm_id, parent_tier_id)
+        parent_config = _get_config(db, firm_id, tier.config_id)
+        if parent_config.service_catalog_entry_id != scope:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Scope must be uniform within a config tree. The parent "
+                    f"config is {_describe_scope(db, parent_config.service_catalog_entry_id)}, "
+                    f"but this config was offered as {_describe_scope(db, scope)}. "
+                    "A child must carry the same scope as the config it hangs "
+                    "under."
+                ),
+            )
+        return
+
+    if parent_option_id is not None:
+        option = _get_option(db, parent_option_id)
+
+        in_scope = db.execute(
+            select(FirmDimensionConfig.id).where(
+                FirmDimensionConfig.firm_id == firm_id,
+                FirmDimensionConfig.dimension_id == option.dimension_id,
+                _scope_predicate(FirmDimensionConfig.service_catalog_entry_id, scope),
+            ).limit(1)
+        ).scalar_one_or_none()
+        if in_scope is not None:
+            return
+
+        # Selecting the ROW rather than the scope column, deliberately. A query
+        # for service_catalog_entry_id alone returns None both when there is no
+        # row at all and when the one row found is a blanket config, and those
+        # are opposite answers here. Present-but-null is not absent (instance
+        # sixteen); fetching the row keeps the two distinguishable.
+        elsewhere = db.execute(
+            select(FirmDimensionConfig).where(
+                FirmDimensionConfig.firm_id == firm_id,
+                FirmDimensionConfig.dimension_id == option.dimension_id,
+            ).limit(1)
+        ).scalar_one_or_none()
+
+        if elsewhere is None:
+            # Nothing configured for that dimension anywhere, so there is no
+            # parent config to be uniform with. See the docstring.
+            return
+
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Scope must be uniform within a config tree. The parent "
+                f"config is {_describe_scope(db, elsewhere.service_catalog_entry_id)}, "
+                f"but this config was offered as {_describe_scope(db, scope)}. "
+                "A child hanging under a vocabulary option must be in the same "
+                "scope as the config of that option's dimension."
+            ),
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -341,6 +541,15 @@ def _validate_downhill_link(
 # ---------------------------------------------------------------------------
 
 def _tier_has_children(db: Session, firm_id: uuid.UUID, tier_id: uuid.UUID) -> bool:
+    """DELIBERATELY NOT SCOPE-FILTERED, unlike _option_has_children below.
+
+    A tier belongs to exactly one config (firm_tiers.config_id) and therefore
+    sits in exactly one scope, and rule 11 makes every child under it carry that
+    same scope. So this query is already confined to one scope by construction
+    and an extra filter would be noise. The option version needs one because a
+    vocabulary option is system-owned and shared across every config of its
+    dimension, in every scope.
+    """
     return db.execute(
         select(FirmDimensionConfig.id).where(
             FirmDimensionConfig.firm_id == firm_id,
@@ -349,11 +558,25 @@ def _tier_has_children(db: Session, firm_id: uuid.UUID, tier_id: uuid.UUID) -> b
     ).scalar_one_or_none() is not None
 
 
-def _option_has_children(db: Session, firm_id: uuid.UUID, option_id: uuid.UUID) -> bool:
+def _option_has_children(
+    db: Session,
+    firm_id: uuid.UUID,
+    option_id: uuid.UUID,
+    scope: Optional[uuid.UUID],
+) -> bool:
+    """Whether anything hangs under this option WITHIN ONE SCOPE.
+
+    Scoped as of August 17, 2026. The leaf-only law is a statement about one
+    chain, and a chain lives entirely inside one scope (rule 11). A blanket
+    child under this option says nothing about whether the SCOPED price for it
+    would double count, and vice versa, so counting across scopes would refuse
+    prices that are perfectly safe.
+    """
     return db.execute(
         select(FirmDimensionConfig.id).where(
             FirmDimensionConfig.firm_id == firm_id,
             FirmDimensionConfig.parent_option_id == option_id,
+            _scope_predicate(FirmDimensionConfig.service_catalog_entry_id, scope),
         ).limit(1)
     ).scalar_one_or_none() is not None
 
@@ -363,10 +586,19 @@ def _assert_parent_is_unpriced(
     firm_id: uuid.UUID,
     parent_tier_id: Optional[uuid.UUID],
     parent_option_id: Optional[uuid.UUID],
+    scope: Optional[uuid.UUID],
 ) -> None:
     """Creating a child under a parent that currently carries a price is
     rejected. The price has to be cleared first, and clearing it is the
-    explicit direction-change action, not a side effect of this call."""
+    explicit direction-change action, not a side effect of this call.
+
+    scope is the CHILD'S scope, and it selects which option price to look at.
+    A blanket price on the parent option does not block a scoped child, and a
+    scoped price does not block a blanket child, because those two never
+    resolve together: the double counting this guard prevents can only happen
+    within one chain, and a chain lives in one scope. The tier branch needs no
+    scope argument for the reason given on _tier_has_children.
+    """
     if parent_tier_id is not None:
         tier = _get_tier(db, firm_id, parent_tier_id)
         if tier.price is not None:
@@ -384,6 +616,7 @@ def _assert_parent_is_unpriced(
             select(FirmOptionPrice).where(
                 FirmOptionPrice.firm_id == firm_id,
                 FirmOptionPrice.option_id == parent_option_id,
+                _scope_predicate(FirmOptionPrice.service_catalog_entry_id, scope),
             )
         ).scalar_one_or_none()
         if existing is not None and existing.price is not None:
@@ -418,11 +651,20 @@ def _assert_tier_can_be_priced(
 
 
 def _assert_option_can_be_priced(
-    db: Session, firm_id: uuid.UUID, option_id: uuid.UUID, incoming_price: Optional[Decimal]
+    db: Session,
+    firm_id: uuid.UUID,
+    option_id: uuid.UUID,
+    incoming_price: Optional[Decimal],
+    scope: Optional[uuid.UUID],
 ) -> None:
+    """The mirror of _assert_parent_is_unpriced for options, within one scope.
+
+    scope is the scope of the PRICE being set. Only children in that same scope
+    can double count with it.
+    """
     if incoming_price is None:
         return
-    if _option_has_children(db, firm_id, option_id):
+    if _option_has_children(db, firm_id, option_id, scope):
         raise HTTPException(
             status_code=400,
             detail=(
@@ -482,21 +724,41 @@ def _assert_option_is_not_other(
 # ---------------------------------------------------------------------------
 
 def _config_count_for_dimension(
-    db: Session, firm_id: uuid.UUID, dimension_id: uuid.UUID
+    db: Session,
+    firm_id: uuid.UUID,
+    dimension_id: uuid.UUID,
+    scope: Optional[uuid.UUID],
 ) -> int:
-    """How many times this firm has configured this dimension, across all branches."""
+    """How many times this firm has configured this dimension WITHIN ONE SCOPE,
+    across all branches.
+
+    Scoped as of August 17, 2026. Counting across scopes would make a blanket
+    config and a scoped config of the same dimension look like the two-branch
+    arrangement rule 8 refuses, which would refuse the override feature itself.
+    """
     return db.execute(
         select(func.count(FirmDimensionConfig.id)).where(
             FirmDimensionConfig.firm_id == firm_id,
             FirmDimensionConfig.dimension_id == dimension_id,
+            _scope_predicate(FirmDimensionConfig.service_catalog_entry_id, scope),
         )
     ).scalar_one()
 
 
 def _option_parented_child_exists(
-    db: Session, firm_id: uuid.UUID, dimension_id: uuid.UUID
+    db: Session,
+    firm_id: uuid.UUID,
+    dimension_id: uuid.UUID,
+    scope: Optional[uuid.UUID],
 ) -> bool:
-    """Whether any config hangs under any vocabulary option of this dimension."""
+    """Whether any config IN THIS SCOPE hangs under any vocabulary option of
+    this dimension.
+
+    Scope uniformity (rule 11) is what makes the scope filter here exact: a
+    child under an option of this dimension is in the same scope as the config
+    of that dimension it belongs to, so filtering on scope selects this
+    arrangement's children and nobody else's.
+    """
     option_ids = db.execute(
         select(ComplexityVocabularyOption.id).where(
             ComplexityVocabularyOption.dimension_id == dimension_id
@@ -509,6 +771,7 @@ def _option_parented_child_exists(
         select(FirmDimensionConfig.id).where(
             FirmDimensionConfig.firm_id == firm_id,
             FirmDimensionConfig.parent_option_id.in_(option_ids),
+            _scope_predicate(FirmDimensionConfig.service_catalog_entry_id, scope),
         ).limit(1)
     ).scalar_one_or_none() is not None
 
@@ -519,6 +782,7 @@ def _validate_categorical_branch_ambiguity(
     dimension: ComplexityDimension,
     parent: Optional[ComplexityDimension],
     parent_option_id: Optional[uuid.UUID],
+    scope: Optional[uuid.UUID],
 ) -> None:
     """Refuse both ways of creating a branch an option-parented child cannot name.
 
@@ -532,11 +796,22 @@ def _validate_categorical_branch_ambiguity(
     These are separate checks, not two views of one check. Either can fire
     while the other does not, depending on which side of the arrangement is
     created first.
+
+    BOTH CHECKS EVALUATE WITHIN ONE SCOPE, as of August 17, 2026. The ambiguity
+    rule 8 protects against is a child that cannot name which BRANCH it belongs
+    to. A blanket config and a scoped config of the same dimension are not two
+    branches of one arrangement, they are two arrangements, and scope
+    uniformity (rule 11) means a child names its scope outright. So a blanket
+    config and a scoped config coexisting is the designed precedence rather
+    than an ambiguity, and the counts below are filtered accordingly. Two
+    configs in the SAME scope are ambiguous exactly as before.
     """
     if dimension.kind == DimensionKind.categorical:
-        already_configured = _config_count_for_dimension(db, firm_id, dimension.id)
+        already_configured = _config_count_for_dimension(
+            db, firm_id, dimension.id, scope
+        )
         if already_configured >= 1 and _option_parented_child_exists(
-            db, firm_id, dimension.id
+            db, firm_id, dimension.id, scope
         ):
             raise HTTPException(
                 status_code=400,
@@ -553,14 +828,14 @@ def _validate_categorical_branch_ambiguity(
             )
 
     if parent_option_id is not None and parent is not None:
-        if _config_count_for_dimension(db, firm_id, parent.id) > 1:
+        if _config_count_for_dimension(db, firm_id, parent.id, scope) > 1:
             raise HTTPException(
                 status_code=400,
                 detail=(
                     f"Dimension '{dimension.key}' cannot hang under an option "
                     f"of '{parent.key}', because '{parent.key}' is configured "
-                    "on more than one branch. A child references the option "
-                    "alone, so it could not say which branch of "
+                    "on more than one branch in this scope. A child references "
+                    "the option alone, so it could not say which branch of "
                     f"'{parent.key}' it belongs to. Consolidate "
                     f"'{parent.key}' onto one branch first."
                 ),
@@ -727,13 +1002,24 @@ def configure_dimension(
     actor_id: uuid.UUID,
     data: FirmDimensionConfigCreate,
 ) -> FirmDimensionConfigOut:
-    """Attach one system dimension to one firm, flat or under a parent.
+    """Attach one system dimension to one firm, flat or under a parent, blanket
+    or scoped to one engagement type.
 
-    Runs rules 2, 3, 5 and 8. The single-parent rule is already guaranteed by
-    the Create schema and by the database check constraint, so it is not
-    re-checked here.
+    Runs rules 2, 3, 5, 8, 10 and 11. The single-parent rule is already
+    guaranteed by the Create schema and by the database check constraint, so it
+    is not re-checked here.
+
+    EVERY GUARD BELOW RUNS BEFORE db.add. A refused call writes nothing, per the
+    standing rule that rejection guards precede side effects. Rule 10 runs
+    first: a cross-firm scope reference is refused before this function does any
+    other work with it.
     """
     dimension = _get_dimension(db, data.dimension_id)
+
+    # Rule 10, first. Tenant isolation on the one firm-owned foreign key that
+    # arrives in the payload.
+    _resolve_scope(db, firm_id, data.service_catalog_entry_id)
+    scope = data.service_catalog_entry_id
 
     _validate_role_coherence(
         db, dimension, data.role, data.unit_id, data.guard_threshold
@@ -741,14 +1027,20 @@ def configure_dimension(
 
     parent = _parent_dimension(db, firm_id, data.parent_tier_id, data.parent_option_id)
     _validate_downhill_link(dimension, parent)
-    _assert_parent_is_unpriced(db, firm_id, data.parent_tier_id, data.parent_option_id)
+    _validate_scope_uniformity(
+        db, firm_id, scope, data.parent_tier_id, data.parent_option_id
+    )
+    _assert_parent_is_unpriced(
+        db, firm_id, data.parent_tier_id, data.parent_option_id, scope
+    )
     _validate_categorical_branch_ambiguity(
-        db, firm_id, dimension, parent, data.parent_option_id
+        db, firm_id, dimension, parent, data.parent_option_id, scope
     )
 
     config = FirmDimensionConfig(
         firm_id=firm_id,
         dimension_id=data.dimension_id,
+        service_catalog_entry_id=scope,
         role=data.role,
         unit_id=data.unit_id,
         guard_threshold=data.guard_threshold,
@@ -774,6 +1066,11 @@ def configure_dimension(
             "role": config.role.value,
             "direction": "dependent" if is_dependent else "flat",
             "parent_dimension_key": parent.key if parent is not None else None,
+            # Recorded as a plain flag alongside the id so the log stays
+            # readable without a join. The behavioral log is a recorder only;
+            # nothing operational reads this back.
+            "scope": "blanket" if scope is None else "engagement_type",
+            "service_catalog_entry_id": str(scope) if scope is not None else None,
         },
     )
 
@@ -795,6 +1092,233 @@ def configure_dimension(
 
 
 # ---------------------------------------------------------------------------
+# The resolver. Per-engagement-type precedence, applied.
+# ---------------------------------------------------------------------------
+
+def _root_configs(configs: list[FirmDimensionConfig]) -> list[FirmDimensionConfig]:
+    """The tops of trees: flat configs, hanging under nothing."""
+    return [
+        config
+        for config in configs
+        if config.parent_tier_id is None and config.parent_option_id is None
+    ]
+
+
+def resolve_pricing_config(
+    db: Session,
+    *,
+    firm_id: uuid.UUID,
+    engagement_type: Optional[str] = None,
+) -> ResolvedPricingConfigOut:
+    """The configuration that governs pricing for one engagement type.
+
+    This is the read fee resolution consumes, and the one the next session's
+    public intake config endpoint will consume. It is NOT get_fee_schedule_config:
+    that one is the owner's view of everything configured, blanket and scoped
+    together, for a settings UI to edit. This one returns exactly one answer per
+    dimension.
+
+    THE PRECEDENCE RULE, IN FULL.
+
+    With an engagement-type context that resolves to one of this firm's catalog
+    entries: for each dimension, if a SCOPED ROOT config exists for that
+    (dimension, entry), that tree supplies the dimension's configuration
+    entirely and the blanket tree for it is not returned at all. Otherwise the
+    blanket tree is returned. The decision is made per dimension, at the root,
+    and it is WHOLESALE: there is no field-level merge, at any depth.
+
+    Without a context, or with a context naming an engagement type this firm has
+    no catalog row for, the blanket configuration is returned. Absence of a
+    catalog row means not offered, so there is nothing for a scoped tree to
+    attach to.
+
+    NO FALLBACK EXISTS, IN ANY FORM. Ruled by Andrew, August 17, 2026, and this
+    paragraph is the statement of it because the behavior is easy to "fix" into
+    a bug later. Inside a winning scoped tree, an option with a cleared price
+    (a row with price NULL) and an option with NO ROW AT ALL behave IDENTICALLY:
+    both are unpriced, and both route to quote under the universal quote law.
+    Neither borrows the blanket price. A scoped tree answers for itself
+    completely, because anything else would be the field-level merge the design
+    forbids, arriving one row at a time.
+
+    The consequence is deliberate and is mitigated OUTSIDE this function: the
+    settings UI prefills a new override from the blanket values at creation
+    time, so a firm that overrides one answer does not silently unprice the
+    other twelve. That is the UI's job. Do not add a fallback here to make it
+    easier. If this function ever starts consulting a blanket row while a scoped
+    tree is winning, the wholesale-replacement guarantee is gone and every test
+    asserting zero blanket leakage is measuring nothing.
+
+    TENANT SCOPING. Every query below filters on firm_id without exception. The
+    only unscoped read is the vocabulary options lookup, which is carve-out
+    content carrying no firm_id (August 13, 2026).
+
+    THE NULL-VERSUS-ZERO LAW. Nothing here touches a price. Rows go straight to
+    the Out schemas. There is no `or 0`, no fill, no default, and there must
+    never be one.
+    """
+    # 1. Resolve the context to one of this firm's catalog entries. Filtered on
+    # firm_id, so another firm's engagement type can never resolve here.
+    entry: Optional[ServiceCatalogEntry] = None
+    if engagement_type is not None:
+        entry = db.execute(
+            select(ServiceCatalogEntry).where(
+                ServiceCatalogEntry.firm_id == firm_id,
+                ServiceCatalogEntry.engagement_type == engagement_type,
+            )
+        ).scalar_one_or_none()
+    scope_id: Optional[uuid.UUID] = entry.id if entry is not None else None
+
+    # 2. Load this firm's pricing rows once. Ordering is stable so identical
+    # calls return identical responses.
+    configs = db.execute(
+        select(FirmDimensionConfig)
+        .where(FirmDimensionConfig.firm_id == firm_id)
+        .order_by(FirmDimensionConfig.created_at, FirmDimensionConfig.id)
+    ).scalars().all()
+
+    if not configs:
+        return ResolvedPricingConfigOut(
+            firm_id=firm_id,
+            engagement_type=engagement_type,
+            service_catalog_entry_id=scope_id,
+        )
+
+    tiers = db.execute(
+        select(FirmTier)
+        .where(FirmTier.firm_id == firm_id)
+        .order_by(FirmTier.config_id, FirmTier.sort_order)
+    ).scalars().all()
+
+    # 3. Decide, per dimension, which scope wins. Only ROOT configs vote: a
+    # scoped child cannot exist without a scoped root above it (rule 11), so
+    # looking at roots is both sufficient and the thing the rule is stated in
+    # terms of.
+    roots = _root_configs(configs)
+
+    overridden_dimension_ids: list[uuid.UUID] = []
+    if scope_id is not None:
+        seen: set[uuid.UUID] = set()
+        for root in roots:
+            if (
+                root.service_catalog_entry_id == scope_id
+                and root.dimension_id not in seen
+            ):
+                seen.add(root.dimension_id)
+                overridden_dimension_ids.append(root.dimension_id)
+    overridden = set(overridden_dimension_ids)
+
+    def winning_scope(dimension_id: uuid.UUID) -> Optional[uuid.UUID]:
+        return scope_id if dimension_id in overridden else None
+
+    selected_roots = [
+        root
+        for root in roots
+        if root.service_catalog_entry_id == winning_scope(root.dimension_id)
+    ]
+
+    # 4. Walk down from the winning roots. Built in Python from the rows
+    # already loaded rather than by re-querying per node.
+    tier_to_config = {tier.id: tier.config_id for tier in tiers}
+
+    dimension_ids = {config.dimension_id for config in configs}
+    option_to_dimension: dict[uuid.UUID, uuid.UUID] = {}
+    if dimension_ids:
+        option_to_dimension = {
+            option.id: option.dimension_id
+            for option in db.execute(
+                select(ComplexityVocabularyOption).where(
+                    ComplexityVocabularyOption.dimension_id.in_(dimension_ids)
+                )
+            ).scalars().all()
+        }
+
+    # A config's children, keyed by parent config id. The option-parented case
+    # resolves its parent the same way rule 11 defines it: the config of that
+    # option's dimension IN THE SAME SCOPE as the child. Matching on scope is
+    # what keeps a blanket tree's walk out of a scoped tree.
+    configs_by_dimension_and_scope: dict[
+        tuple[uuid.UUID, Optional[uuid.UUID]], list[FirmDimensionConfig]
+    ] = defaultdict(list)
+    for config in configs:
+        configs_by_dimension_and_scope[
+            (config.dimension_id, config.service_catalog_entry_id)
+        ].append(config)
+
+    children_by_parent: dict[uuid.UUID, list[FirmDimensionConfig]] = defaultdict(list)
+    for config in configs:
+        if config.parent_tier_id is not None:
+            parent_config_id = tier_to_config.get(config.parent_tier_id)
+            if parent_config_id is not None:
+                children_by_parent[parent_config_id].append(config)
+        elif config.parent_option_id is not None:
+            parent_dimension_id = option_to_dimension.get(config.parent_option_id)
+            if parent_dimension_id is None:
+                continue
+            for candidate in configs_by_dimension_and_scope.get(
+                (parent_dimension_id, config.service_catalog_entry_id), []
+            ):
+                children_by_parent[candidate.id].append(config)
+
+    selected: list[FirmDimensionConfig] = []
+    seen_ids: set[uuid.UUID] = set()
+    frontier = list(selected_roots)
+    while frontier:
+        current = frontier.pop()
+        if current.id in seen_ids:
+            continue
+        seen_ids.add(current.id)
+        selected.append(current)
+        frontier.extend(children_by_parent.get(current.id, []))
+
+    # Restore the stable load order; the walk above visits depth-first.
+    selected.sort(key=lambda config: (config.created_at, str(config.id)))
+    selected_ids = {config.id for config in selected}
+
+    # 5. Tiers belonging to the winning configs only.
+    selected_tiers = [tier for tier in tiers if tier.config_id in selected_ids]
+
+    # 6. Option prices, read AT THE WINNING SCOPE ONLY. This is where the
+    # no-fallback ruling is enforced: for a dimension whose scoped tree won,
+    # only rows carrying that scope are eligible, so an option the firm never
+    # priced in this scope contributes nothing and routes to quote. The blanket
+    # row for the same option is deliberately not consulted.
+    eligible_pairs = {
+        (option_id, config.service_catalog_entry_id)
+        for config in selected
+        for option_id, dimension_id in option_to_dimension.items()
+        if dimension_id == config.dimension_id
+    }
+
+    selected_option_prices: list[FirmOptionPrice] = []
+    if eligible_pairs:
+        option_prices = db.execute(
+            select(FirmOptionPrice)
+            .where(FirmOptionPrice.firm_id == firm_id)
+            .order_by(FirmOptionPrice.option_id, FirmOptionPrice.id)
+        ).scalars().all()
+        selected_option_prices = [
+            row
+            for row in option_prices
+            if (row.option_id, row.service_catalog_entry_id) in eligible_pairs
+        ]
+
+    return ResolvedPricingConfigOut(
+        firm_id=firm_id,
+        engagement_type=engagement_type,
+        service_catalog_entry_id=scope_id,
+        overridden_dimension_ids=overridden_dimension_ids,
+        firm_dimension_configs=[
+            FirmDimensionConfigOut.model_validate(config) for config in selected
+        ],
+        firm_tiers=[FirmTierOut.model_validate(tier) for tier in selected_tiers],
+        firm_option_prices=[
+            FirmOptionPriceOut.model_validate(row) for row in selected_option_prices
+        ],
+    )
+
+
+# ---------------------------------------------------------------------------
 # Reading the merged fee schedule
 # ---------------------------------------------------------------------------
 
@@ -806,6 +1330,26 @@ def get_fee_schedule_config(
 
     Backs GET /api/pricing/config. The router does nothing but authenticate,
     check the role and call this.
+
+    THIS IS THE OWNER'S VIEW, NOT THE RESOLVED VIEW. It returns EVERYTHING the
+    firm has configured, blanket and scoped together, unfiltered by precedence,
+    because a settings UI has to render and edit both. resolve_pricing_config is
+    the other one: exactly one answer per dimension, precedence applied, for
+    fee resolution and the public intake endpoint. Do not swap them. Serving
+    this response to a lead would expose every engagement type's pricing at
+    once.
+
+    BLANKET AND SCOPED ARE DISTINGUISHABLE IN THE RESPONSE, which is the whole
+    reason the field was added to the Out schemas. Both
+    FirmDimensionConfigOut.service_catalog_entry_id and
+    FirmOptionPriceOut.service_catalog_entry_id are carried: None means blanket,
+    a value means that config or price applies only when pricing that
+    engagement type. The catalog block already contains the firm's
+    service_catalog_entries, so the UI can resolve those ids to engagement
+    types without a second request.
+
+    STILL firm_owner ONLY. The manager-toggle question remains deferred and
+    nothing here widens it; see the RBAC note on the router.
 
     TENANT SCOPING, TABLE BY TABLE, BECAUSE THE TWO GROUPS DO NOT MATCH THE
     RESPONSE SHAPE EXACTLY.
@@ -901,10 +1445,16 @@ def get_fee_schedule_config(
         .order_by(FirmTier.config_id, FirmTier.sort_order)
     ).scalars().all()
 
+    # option_id alone stopped being a unique sort key in Phase 2.5: one option
+    # can now carry a blanket price and one price per scoped engagement type.
+    # Ordering on it alone would leave the tie broken by whatever the database
+    # felt like, so identical calls could reshuffle. id is the tiebreaker
+    # because service_catalog_entry_id is nullable and NULLS ordering is a
+    # second thing to reason about for no benefit here.
     option_prices = db.execute(
         select(FirmOptionPrice)
         .where(FirmOptionPrice.firm_id == firm_id)
-        .order_by(FirmOptionPrice.option_id)
+        .order_by(FirmOptionPrice.option_id, FirmOptionPrice.id)
     ).scalars().all()
 
     return FeeScheduleConfigOut(
@@ -1370,10 +1920,24 @@ def set_option_price(
     actor_id: uuid.UUID,
     data: FirmOptionPriceCreate,
 ) -> FirmOptionPriceOut:
-    """Set or clear one firm's price on one categorical option.
+    """Set or clear one firm's price on one categorical option, in one scope.
 
     data.price of None means unpriced, which routes to quote. It does not mean
     "leave the existing price alone" -- there is no such operation here.
+
+    data.service_catalog_entry_id is the SCOPE, and it addresses a DIFFERENT
+    ROW rather than modifying one. Setting a scoped price never touches the
+    blanket price and vice versa; the two coexist and resolution picks between
+    them. That is the whole point of Phase 2.5: before it, one option had one
+    price per firm and per-engagement-type categorical overrides could not be
+    expressed at all.
+
+    Do not read the two None-able fields as related. price=None means unpriced;
+    service_catalog_entry_id=None means blanket. Clearing a scoped price
+    (price=None with a scope set) leaves a real row that says "this engagement
+    type has no price for this answer", which under the universal quote law
+    routes to quote rather than falling back to the blanket price. That is
+    deliberate: wholesale replacement means a scoped tree answers for itself.
 
     Every rejection below runs before the row is touched, so a refused call
     leaves firm_option_prices exactly as it found it.
@@ -1390,19 +1954,32 @@ def set_option_price(
             ),
         )
 
+    # Rule 10. Tenant isolation on the scope reference, before anything else
+    # reads it and well before any write.
+    scope = data.service_catalog_entry_id
+    _resolve_scope(db, firm_id, scope)
+
+    # Rule 9 is UNCHANGED by scoping and needs no scope argument. It keys on
+    # option.key alone, so the catch-all Other answer is refused a price
+    # identically inside a scoped tree and inside the blanket tree. Verified by
+    # test rather than assumed.
     _assert_option_is_not_other(option, data.price)
-    _assert_option_can_be_priced(db, firm_id, data.option_id, data.price)
+    _assert_option_can_be_priced(db, firm_id, data.option_id, data.price, scope)
 
     row = db.execute(
         select(FirmOptionPrice).where(
             FirmOptionPrice.firm_id == firm_id,
             FirmOptionPrice.option_id == data.option_id,
+            _scope_predicate(FirmOptionPrice.service_catalog_entry_id, scope),
         )
     ).scalar_one_or_none()
 
     if row is None:
         row = FirmOptionPrice(
-            firm_id=firm_id, option_id=data.option_id, price=data.price
+            firm_id=firm_id,
+            option_id=data.option_id,
+            service_catalog_entry_id=scope,
+            price=data.price,
         )
         db.add(row)
     else:
@@ -1426,6 +2003,23 @@ def _descendant_config_ids(
     Two ways down: through this config's own tiers (children point at a tier),
     and through the vocabulary options of this config's dimension (children
     point at an option). Both are walked.
+
+    THE OPTION WALK IS FILTERED ON SCOPE, AND THAT FILTER IS LOAD-BEARING.
+
+    A tier names its config exactly, so the tier walk is precise. The option
+    walk is not: it claims every config of this firm hanging under any option
+    of this dimension, which before scopes existed was the known imprecision
+    rule 8 contains. With scopes, that imprecision would reach ACROSS scopes.
+    A blanket config and a scoped config of the same categorical dimension are
+    designed to coexist (that is the whole feature), and without this filter a
+    direction change on the blanket config would walk into the scoped tree and
+    delete the tiers and option prices belonging to the override, and the
+    reverse. Rule 8 no longer refuses that arrangement, so nothing else would
+    stop it.
+
+    Scope uniformity (rule 11) is what makes the filter exact rather than
+    approximate: every config in a tree carries its root's scope, so "same
+    scope" and "same tree" agree for the option walk.
     """
     found: list[uuid.UUID] = []
     frontier = [config_id]
@@ -1465,6 +2059,12 @@ def _descendant_config_ids(
                     select(FirmDimensionConfig.id).where(
                         FirmDimensionConfig.firm_id == firm_id,
                         FirmDimensionConfig.parent_option_id.in_(option_ids),
+                        # Same scope only. See the docstring: without this the
+                        # walk crosses from a blanket tree into a scoped one.
+                        _scope_predicate(
+                            FirmDimensionConfig.service_catalog_entry_id,
+                            current.service_catalog_entry_id,
+                        ),
                     )
                 ).scalars().all()
             )
@@ -1497,6 +2097,15 @@ def change_dimension_direction(
 
     confirm must be passed True explicitly. The default is False so that no
     caller performs this by accident.
+
+    SCOPE IS NOT CHANGED HERE AND CANNOT BE. The moved config keeps its own
+    service_catalog_entry_id, and rule 11 is re-run against the NEW parent, so
+    a config cannot be moved out of its scope and under a parent in another
+    one. There is deliberately no re-scope operation in this build: re-scoping
+    a tree invalidates every price under it for the same reason a direction
+    change does, so it needs its own confirmed, audited action rather than a
+    quiet extra argument here. Recorded in the session summary as the next
+    thing this function will grow.
     """
     if not confirm:
         raise HTTPException(
@@ -1532,7 +2141,24 @@ def change_dimension_direction(
         db, firm_id, new_parent_tier_id, new_parent_option_id
     )
     _validate_downhill_link(dimension, after_parent)
-    _assert_parent_is_unpriced(db, firm_id, new_parent_tier_id, new_parent_option_id)
+    # Rule 11 on the update side. The config keeps its scope, so the new parent
+    # has to be in that same scope or the move would break tree uniformity.
+    # Runs before anything is deleted, per the rejection-before-side-effects
+    # rule: a refused move must not destroy the prices it was refused over.
+    _validate_scope_uniformity(
+        db,
+        firm_id,
+        config.service_catalog_entry_id,
+        new_parent_tier_id,
+        new_parent_option_id,
+    )
+    _assert_parent_is_unpriced(
+        db,
+        firm_id,
+        new_parent_tier_id,
+        new_parent_option_id,
+        config.service_catalog_entry_id,
+    )
 
     affected_ids = [config_id] + _descendant_config_ids(db, firm_id, config_id)
 
@@ -1557,10 +2183,21 @@ def change_dimension_direction(
             )
         ).scalars().all()
         if option_ids:
+            # SCOPE-FILTERED, and load-bearing for the same reason the option
+            # walk in _descendant_config_ids is. Every affected config carries
+            # the moved config's scope (rule 11), so only option prices in that
+            # scope belong to this tree. Without the filter, moving a blanket
+            # config would delete the per-engagement-type prices a firm set on
+            # the same vocabulary options in a scoped tree, and vice versa:
+            # silent destruction of an override the caller never mentioned.
             option_prices_to_delete = db.execute(
                 select(FirmOptionPrice).where(
                     FirmOptionPrice.firm_id == firm_id,
                     FirmOptionPrice.option_id.in_(option_ids),
+                    _scope_predicate(
+                        FirmOptionPrice.service_catalog_entry_id,
+                        config.service_catalog_entry_id,
+                    ),
                 )
             ).scalars().all()
 

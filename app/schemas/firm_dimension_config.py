@@ -12,6 +12,16 @@ Parent references are deliberately NOT settable through FirmDimensionConfigUpdat
 Moving a config between branches is destructive (it invalidates every price
 below it), so it goes through pricing_config_service.change_dimension_direction
 and its explicit confirm flag instead. No other code path may alter them.
+
+service_catalog_entry_id is the config's SCOPE, added August 17, 2026:
+
+    None      -> blanket, applies to every engagement type the flag maps to
+    set        -> scoped, applies only when pricing that engagement type
+
+It is settable at creation and absent from FirmDimensionConfigUpdate for the
+same reason the parent fields are: re-scoping a tree invalidates the prices
+underneath it exactly as a direction change does. There is no re-scope
+operation in this build; a tree is created in its scope or replaced.
 """
 
 import uuid
@@ -34,6 +44,10 @@ class FirmDimensionConfigCreate(FirmDimensionConfigBase):
     """firm_id is deliberately absent; it is injected server-side from the JWT."""
 
     dimension_id: uuid.UUID
+    # None means blanket. A non-None value must name a catalog entry belonging
+    # to the SAME firm; that is a tenant isolation check and lives in the
+    # service, because this schema has no idea which firm is calling.
+    service_catalog_entry_id: Optional[uuid.UUID] = None
     parent_tier_id: Optional[uuid.UUID] = None
     parent_option_id: Optional[uuid.UUID] = None
 
@@ -67,6 +81,9 @@ class FirmDimensionConfigOut(FirmDimensionConfigBase):
     id: uuid.UUID
     firm_id: uuid.UUID
     dimension_id: uuid.UUID
+    # Carried on the way out so the owner-facing merged config read can tell a
+    # blanket config from a scoped one and render both. None means blanket.
+    service_catalog_entry_id: Optional[uuid.UUID] = None
     parent_tier_id: Optional[uuid.UUID] = None
     parent_option_id: Optional[uuid.UUID] = None
     created_at: datetime
