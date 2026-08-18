@@ -91,8 +91,13 @@ def create_window(
         # Only convert unique-constraint violations (23505) to ValueError.
         # FK violations (23503) and other integrity errors are re-raised
         # so the router does not misreport them as duplicate-day conflicts.
-        pgcode = getattr(getattr(exc, "orig", None), "pgcode", None)
-        if pgcode == "23505":
+        orig = getattr(exc, "orig", None)
+        # psycopg3 (the canonical driver -- see requirements.txt) carries
+        # sqlstate, not pgcode. pgcode is a psycopg2-only attribute and is
+        # never present here. Check sqlstate first; fall back to pgcode
+        # defensively in case the driver ever changes.
+        code = getattr(orig, "sqlstate", None) or getattr(orig, "pgcode", None)
+        if code == "23505":
             raise ValueError(
                 f"A window already exists for this user on day_of_week {window_in.day_of_week}"
             )

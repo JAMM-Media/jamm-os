@@ -197,3 +197,64 @@ class TestAvailabilityWindowTenantIsolation:
             assert fetched.daily_cap == 4
         finally:
             db.close()
+
+
+class TestAvailabilityWindowDuplicateDayGuard:
+    """
+    GUARD TEST: creating a second window for the same user on the same
+    day_of_week must raise ValueError (which the router converts to a 409),
+    never let a raw IntegrityError escape as an unhandled 500.
+
+    Real bug this guards against (found by Andrew, confirmed against psycopg3):
+    the duplicate-day check originally read exc.orig.pgcode, a psycopg2-only
+    attribute that does not exist on a psycopg3 exception. psycopg3 carries
+    sqlstate instead. With the old code, this check always evaluated to
+    None == "23505" -> False, so the guard never fired and a real duplicate-day
+    attempt fell through to an unhandled 500 instead of a clean 409.
+
+    To watch this test fail: temporarily revert app/crud/availability_window.py
+    to read only exc.orig.pgcode instead of exc.orig.sqlstate, rerun this test,
+    and confirm it fails with an unhandled psycopg.errors.UniqueViolation
+    instead of a caught ValueError.
+    """
+
+    def test_duplicate_day_for_same_user_raises_value_error_not_raw_integrity_error(self):
+        from app.crud.availability_window import create_window
+        from app.schemas.availability_window import AvailabilityWindowCreate
+
+        firm = _make_firm(f"avail-dup-{uuid.uuid4().hex[:6]}")
+        user = _make_user(firm.id)
+
+        # Existing window already occupies day_of_week=2 for this user.
+        _make_window(firm.id, user.id, day_of_week=2)
+
+        db = TestingSessionLocal()
+        try:
+            duplicate_in = AvailabilityWindowCreate(
+                user_id=user.id,
+                day_of_week=2,
+                start_time=time(10, 0),
+                end_time=time(14, 0),
+                buffer_before_minutes=0,
+                buffer_after_minutes=0,
+                meeting_duration_minutes=30,
+                daily_cap=None,
+            )
+            try:
+                create_window(db, user.id, firm.id, duplicate_in)
+                assert False, (
+                    "Expected ValueError for duplicate day_of_week, but create_window "
+                    "succeeded instead. The unique constraint or the guard is not working."
+                )
+            except ValueError as exc:
+                assert "already exists" in str(exc), (
+                    f"Got a ValueError, but not the expected duplicate-day message: {exc}"
+                )
+            except Exception as exc:
+                assert False, (
+                    f"Expected a caught ValueError (409 path), but got an unhandled "
+                    f"{type(exc).__name__} instead: {exc}. This means the sqlstate/pgcode "
+                    f"guard is not catching the real driver's exception shape."
+                )
+        finally:
+            db.close()
