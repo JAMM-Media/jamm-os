@@ -691,6 +691,44 @@ def test_blanket_and_scoped_configs_are_not_ambiguous_with_each_other(db, firm_a
     assert len(rows) == 2
 
 
+def test_option_child_allowed_when_the_other_branch_is_in_another_scope(db, firm_a, flag):
+    """Rule 8 DIRECTION TWO, evaluated within a scope.
+
+    Direction two refuses hanging a child under an option whose dimension is
+    configured on more than one branch, because the child could not name which
+    branch it means. Counted across scopes, a dimension configured once blanket
+    and once scoped reads as two branches and this legitimate child would be
+    refused, which is the override feature refusing itself.
+
+    ADDED AFTER A NEGATIVE CONTROL FOUND THE GAP. The first control for the
+    scope filter on _config_count_for_dimension removed it and every test still
+    passed, because direction one's refusal needs BOTH a config count and an
+    option-parented child in the same scope, and rule 11 guarantees that
+    whenever the child exists in a scope the count in that scope is already at
+    least one. So direction one can never observe that filter, and nothing else
+    was watching it. This test is the assertion that does.
+    """
+    firm, user = firm_a
+    entry = _entry(db, firm, user, EngagementType.tax_return_1040.value)
+
+    choice, options = _categorical_dimension(db, flag, "choice_dim", rank=2)
+    leaf, leaf_unit = _numeric_dimension(db, flag, "leaf_dim", rank=5)
+
+    # One branch per scope: blanket flat, and scoped flat. Two rows for the
+    # dimension in total, but exactly one in each scope.
+    _configure(db, firm, user, choice, None, scope=None)
+    _configure(db, firm, user, choice, None, scope=entry.id)
+
+    # A child under an option, in the scoped tree. Its branch is unambiguous:
+    # there is exactly one config of choice_dim in this scope.
+    child = _configure(
+        db, firm, user, leaf, leaf_unit,
+        scope=entry.id, parent_option_id=options[0].id,
+    )
+    assert child.service_catalog_entry_id == entry.id
+    assert child.parent_option_id == options[0].id
+
+
 # ---------------------------------------------------------------------------
 # 5. Rule 9 inside a scoped tree. No new code was written for this; the test
 # exists to prove that scoping did not weaken it.
