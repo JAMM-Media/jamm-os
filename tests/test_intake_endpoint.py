@@ -25,7 +25,7 @@ import pytest
 from tests.conftest import TestingSessionLocal
 from app.models.firm import Firm
 from app.models.lead import Lead
-from app.core.enums import LeadProvenance
+from app.core.enums import LeadProvenance, SourcePlatform
 
 
 # ---------------------------------------------------------------------------
@@ -339,3 +339,127 @@ class TestIntakeInputValidation:
             assert lead.utm_source == garbage, "utm_source should be stored verbatim"
         finally:
             db.close()
+
+# ---------------------------------------------------------------------------
+# source_platform derivation from utm_source
+# ---------------------------------------------------------------------------
+
+class TestSourcePlatformDerivation:
+    """Tests for _derive_source_platform and its integration with intake_submit.
+
+    Per Acquisition Tracker section 3.1 Layer 2: source_platform is
+    auto-derived from utm_source whenever a lead arrives through a tracked
+    link. The derivation is case/whitespace-insensitive and maps common
+    variants (fb -> facebook, twitter -> x) to canonical SourcePlatform values.
+    """
+
+    def _submit_with_utm_source(self, client, firm, utm_source_value):
+        """Helper: submit a lead with the given utm_source, return the created lead."""
+        with patch("app.api.intake.http_requests.post", _turnstile_mock()):
+            r = client.post(
+                f"/intake/{firm.slug}/submit",
+                json={
+                    "name": "Attribution Test Lead",
+                    "email": f"attr-{uuid.uuid4()}@example.com",
+                    "turnstile_token": "tok",
+                    "utm_source": utm_source_value,
+                },
+            )
+        assert r.status_code == 201, f"Submission failed: {r.text}"
+        db = TestingSessionLocal()
+        try:
+            lead = db.query(Lead).filter(Lead.firm_id == firm.id).order_by(Lead.created_at.desc()).first()
+            assert lead is not None
+            return lead.source_platform
+        finally:
+            db.close()
+
+    def test_facebook_utm_source_maps_to_facebook(self, client):
+        """utm_source=facebook produces source_platform=facebook."""
+        firm = _make_firm(f"plat-fb-{uuid.uuid4().hex[:6]}", "Platform Test FB")
+        result = self._submit_with_utm_source(client, firm, "facebook")
+        assert result == SourcePlatform.facebook.value, (
+            f"Expected facebook, got {result!r}"
+        )
+
+    def test_facebook_case_insensitive(self, client):
+        """utm_source=' Facebook ' (with spaces and caps) maps to facebook."""
+        firm = _make_firm(f"plat-fbc-{uuid.uuid4().hex[:6]}", "Platform Test FB Case")
+        result = self._submit_with_utm_source(client, firm, " Facebook ")
+        assert result == SourcePlatform.facebook.value, (
+            f"Expected facebook from ' Facebook ', got {result!r}"
+        )
+
+    def test_fb_alias_maps_to_facebook(self, client):
+        """utm_source=FB (alias) maps to facebook."""
+        firm = _make_firm(f"plat-fba-{uuid.uuid4().hex[:6]}", "Platform Test FB Alias")
+        result = self._submit_with_utm_source(client, firm, "FB")
+        assert result == SourcePlatform.facebook.value, (
+            f"Expected facebook from 'FB', got {result!r}"
+        )
+
+    def test_unrecognized_utm_source_maps_to_other(self, client):
+        """An unrecognized utm_source maps to SourcePlatform.other, not null."""
+        firm = _make_firm(f"plat-unk-{uuid.uuid4().hex[:6]}", "Platform Test Unknown")
+        result = self._submit_with_utm_source(client, firm, "some_random_platform")
+        assert result == SourcePlatform.other.value, (
+            f"Expected other for unrecognized utm_source, got {result!r}"
+        )
+
+    def test_no_utm_source_leaves_source_platform_null(self, client):
+        """A submission with no utm_source leaves source_platform as None."""
+        firm = _make_firm(f"plat-null-{uuid.uuid4().hex[:6]}", "Platform Test Null")
+        with patch("app.api.intake.http_requests.post", _turnstile_mock()):
+            r = client.post(
+                f"/intake/{firm.slug}/submit",
+                json={
+                    "name": "No UTM Lead",
+                    "email": f"noutm-{uuid.uuid4()}@example.com",
+                    "turnstile_token": "tok",
+                    # no utm_source field at all
+                },
+            )
+        assert r.status_code == 201
+        db = TestingSessionLocal()
+        try:
+            lead = db.query(Lead).filter(Lead.firm_id == firm.id).first()
+            assert lead is not None
+            assert lead.source_platform is None, (
+                f"Expected source_platform=None when no utm_source, got {lead.source_platform!r}"
+            )
+        finally:
+            db.close()
+
+    def test_cold_outreach_email_value_is_not_producible_from_utm(self, client):
+        """GUARD TEST: utm_source='email' must NOT produce SourcePlatform.email.
+
+        SourcePlatform.email (and phone, dm, direct_mail) are reserved for the
+        cold_outreach mechanism per the enum's own docstring -- they describe how
+        a cold_outreach lead was contacted, not a web platform a UTM tag identifies.
+        A lead arriving through a web form with utm_source='email' gets
+        SourcePlatform.other, never SourcePlatform.email. This test exists to
+        prevent accidental future regressions that would expose the reserved values
+        via the UTM derivation path.
+        """
+        firm = _make_firm(f"plat-guard-{uuid.uuid4().hex[:6]}", "Platform Guard Test")
+        result = self._submit_with_utm_source(client, firm, "email")
+        # Must not be SourcePlatform.email -- that value is reserved for cold_outreach.
+        assert result != SourcePlatform.email.value, (
+            "utm_source='email' must never produce SourcePlatform.email -- "
+            "that value is reserved for the cold_outreach mechanism."
+        )
+        # Should fall through to SourcePlatform.other since 'email' is not in the mapping.
+        assert result == SourcePlatform.other.value, (
+            f"utm_source='email' should map to SourcePlatform.other, got {result!r}"
+        )
+
+    def test_phone_dm_direct_mail_also_map_to_other_not_reserved(self, client):
+        """The other three reserved cold_outreach values are also not producible from UTM."""
+        firm = _make_firm(f"plat-rsv-{uuid.uuid4().hex[:6]}", "Platform Reserved Test")
+        reserved = ("phone", "dm", "direct_mail")
+        for val in reserved:
+            result = self._submit_with_utm_source(client, firm, val)
+            assert result == SourcePlatform.other.value, (
+                f"utm_source={val!r} must not produce SourcePlatform.{val} -- "
+                f"that value is reserved for cold_outreach. Got {result!r}"
+            )

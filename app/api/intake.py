@@ -11,11 +11,41 @@ from app.core.rate_limit import limiter, check_email_rate_limit
 from app.crud.firm import get_firm_by_slug
 from app.crud.lead import create_lead
 from app.db.session import get_db
-from app.core.enums import LeadProvenance
+from app.core.enums import LeadProvenance, SourcePlatform
 from app.schemas.intake_pricing_config import IntakePricingConfigOut
 from app.schemas.lead import LeadCreate
 from app.services.behavioral_log import log_event
 from app.services.pricing_config_service import get_public_intake_config
+
+def _derive_source_platform(utm_source: str | None) -> SourcePlatform | None:
+    """Auto-derive SourcePlatform from a raw utm_source string.
+    Per Acquisition Tracker section 3.1 Layer 2: auto-derived from utm_source
+    whenever a lead arrives through a tracked link. Returns None if utm_source
+    is absent or does not match a known platform -- callers must not overwrite
+    an existing manually-picked value with None. Deliberately excludes email,
+    phone, dm, and direct_mail: those four SourcePlatform values are reserved
+    for the cold_outreach mechanism per the enum's own docstring and must
+    never be produced from a UTM tag.
+    """
+    if not utm_source:
+        return None
+    normalized = utm_source.strip().lower()
+    mapping = {
+        "facebook": SourcePlatform.facebook,
+        "fb": SourcePlatform.facebook,
+        "instagram": SourcePlatform.instagram,
+        "ig": SourcePlatform.instagram,
+        "tiktok": SourcePlatform.tiktok,
+        "linkedin": SourcePlatform.linkedin,
+        "youtube": SourcePlatform.youtube,
+        "x": SourcePlatform.x,
+        "twitter": SourcePlatform.x,
+        "google": SourcePlatform.google,
+        "bing": SourcePlatform.bing,
+        "nextdoor": SourcePlatform.nextdoor,
+    }
+    return mapping.get(normalized, SourcePlatform.other)
+
 
 router = APIRouter(prefix="/intake", tags=["Intake"])
 
@@ -151,11 +181,13 @@ def intake_submit(
     # referral_source is left null -- we do not attempt to map raw UTM strings
     # to ReferralSource enum values in this task. That mapping is a deliberate
     # design decision the CRM contract does not specify yet.
+    derived_platform = _derive_source_platform(body.utm_source)
     lead_in = LeadCreate(
         name=body.name,
         email=body.email,
         phone=body.phone,
         service_interest=body.service_interest,
+        source_platform=derived_platform,
         utm_campaign=body.utm_campaign,
         utm_source=body.utm_source,
         utm_medium=body.utm_medium,
