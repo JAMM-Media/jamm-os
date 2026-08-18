@@ -100,11 +100,38 @@ class IntakeServiceOut(BaseModel):
     """One service the firm offers, with its questions.
 
     engagement_type is the canonical stored value, which is what the intake
-    form submits back. label is the lead-facing display string from
+    form submits back. label is the formal display string from
     ENGAGEMENT_TYPE_LABELS in app/core/enums.py, the single backend source of
     truth for these strings; it is NOT a hand-copied list maintained here. It
     is Optional only to survive a stored engagement_type that is not an
     EngagementType member, which the schema layer normally prevents.
+
+    lead_facing_label and category are the two PRESENTATION fields added
+    August 18, 2026 for the intake form funnel. Both are content-free today on
+    purpose: their maps in app/core/enums.py ship empty and are filled by the
+    catalog content session. THE SHAPE BELOW IS FINAL REGARDLESS. Filling those
+    maps changes what these fields say and never whether they are here, which
+    is the whole reason they were added before their content existed.
+
+    lead_facing_label is the plain-English name a lead sees. It NEVER arrives
+    null while label is non-null: an engagement type with no LEAD_FACING_LABELS
+    entry falls back to its ENGAGEMENT_TYPE_LABELS value, so the form always has
+    something to render and never has to implement the fallback itself. Today,
+    with the map empty, it equals label for every service.
+
+    category is the broad bucket the form groups this service under, one of
+    ServiceCategory (tax, bookkeeping, advisory), serialized as its string
+    value. It is genuinely Optional and null is a real, permanent state, not a
+    gap waiting to be filled: a type with no ENGAGEMENT_TYPE_CATEGORIES entry
+    is uncategorized and the form renders it in a flat, ungrouped list. There
+    is deliberately no default bucket.
+
+    NEITHER FIELD IS A COMMERCIAL FACT, which is the only reason they are
+    allowed in this file at all. A bucket name and a friendly service name tell
+    a lead nothing about what anything costs. The stripping contract in the
+    module docstring above is unchanged by their presence, and
+    tests/test_intake_pricing_config.py still walks the whole response for
+    forbidden keys with both of these in it.
 
     questions may be empty. An offered service with nothing configured is a
     real state and appears with an empty list, not omitted.
@@ -112,6 +139,8 @@ class IntakeServiceOut(BaseModel):
 
     engagement_type: str
     label: Optional[str] = None
+    lead_facing_label: Optional[str] = None
+    category: Optional[str] = None
     questions: list[IntakeQuestionOut] = []
 
 

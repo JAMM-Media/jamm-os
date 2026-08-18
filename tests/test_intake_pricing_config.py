@@ -39,6 +39,7 @@ from app.core.enums import (
     DimensionRole,
     EngagementType,
     PricingMode,
+    ServiceCategory,
 )
 from app.models.complexity_dimension import ComplexityDimension
 from app.models.complexity_dimension_unit import ComplexityDimensionUnit
@@ -49,6 +50,7 @@ from app.models.firm_dimension_config import FirmDimensionConfig
 from app.models.firm_option_price import FirmOptionPrice
 from app.models.firm_tier import FirmTier
 from app.models.service_catalog_entry import ServiceCatalogEntry
+from app.services import pricing_config_service
 from app.services.pricing_config_service import get_public_intake_config
 from tests.conftest import TestingSessionLocal
 
@@ -262,6 +264,7 @@ def _configure(
     guard_threshold=None,
     parent_tier=None,
     parent_option=None,
+    scope=None,
 ):
     """One firm_dimension_configs row, inserted directly.
 
@@ -269,6 +272,11 @@ def _configure(
     The save-time rules are already pinned by tests/test_pricing_config_guards.py
     and this file is about what the read returns, which is the same division of
     labour tests/test_pricing_config_endpoint.py uses.
+
+    scope is a ServiceCatalogEntry or None, added August 18, 2026. None is the
+    blanket case and is what every test in this file wrote before that date,
+    which is exactly why the scoped path had no coverage here at all: the
+    helper had no way to express it, so no fixture could reach it.
     """
     config = FirmDimensionConfig(
         firm_id=firm_id,
@@ -278,6 +286,7 @@ def _configure(
         guard_threshold=guard_threshold,
         parent_tier_id=parent_tier.id if parent_tier is not None else None,
         parent_option_id=parent_option.id if parent_option is not None else None,
+        service_catalog_entry_id=scope.id if scope is not None else None,
     )
     db.add(config)
     db.commit()
@@ -994,3 +1003,471 @@ def test_question_order_is_stable_across_identical_calls(client, firm_a_owner, d
         "transaction_volume",
         "wallet_type",
     ]
+
+
+# ---------------------------------------------------------------------------
+# 11. SCOPE AWARENESS AND THE PRESENTATION FIELDS (August 18, 2026)
+#
+# Everything above this line was written when every config in this file was
+# blanket, because _configure had no way to express a scope. The endpoint was
+# reworked on August 18, 2026 to resolve per engagement type, and these are the
+# tests for that. The two failures they pin were both REAL and both present
+# before the rework: an override authored for one engagement type was asked on
+# every type the flag mapped to, and an override attached to a DORMANT service
+# was asked on every ACTIVE one.
+# ---------------------------------------------------------------------------
+
+# Distinctive money values for the scoped guard, in the same spirit as the
+# blanket ones above: no coincidental substring match is possible.
+SCOPED_TIER_PRICE = Decimal("9119.11")
+BLANKET_TIER_PRICE = Decimal("6116.61")
+EXPLICIT_ZERO = Decimal("0.00")
+
+
+def _seed_scoped_firm(db, firm_id, catalog):
+    """A firm whose 1040 is governed by a SCOPED override, not the blanket tree.
+
+    The blanket transaction_volume config is priced and is the LOSER: the scoped
+    root for the same dimension replaces it wholesale for this engagement type.
+    The scoped tree's tiers deliberately carry all three price states at once:
+
+        a real price   -> the ordinary commercial fact
+        explicit 0.00  -> priced at zero, which is NOT unpriced
+        NULL           -> unpriced, which is NOT zero
+
+    The two together are the null-versus-zero law in fixture form. In the
+    stripped output all three must be equally invisible, and the question must
+    be asked identically regardless of which of the three governs it. A response
+    that renders differently for a zero-priced tier than for a null one has
+    started leaking pricing through its shape rather than its fields.
+
+    Returns the catalog entry the scope points at.
+    """
+    entry = _offer(db, firm_id, TAX_1040, base_fee=BASE_FEE)
+
+    # Blanket, priced, phrased in transactions. Loses to the scoped root below.
+    blanket_volume = _configure(
+        db, firm_id, catalog["volume"], unit=catalog["transaction_count"]
+    )
+    _add_tiers(db, firm_id, blanket_volume, [BLANKET_TIER_PRICE])
+
+    # Scoped to this firm's own 1040 entry, phrased in accounts. Wins.
+    scoped_volume = _configure(
+        db, firm_id, catalog["volume"], unit=catalog["accounts"], scope=entry
+    )
+    _add_tiers(
+        db, firm_id, scoped_volume, [SCOPED_TIER_PRICE, EXPLICIT_ZERO, None]
+    )
+    return entry
+
+
+def test_no_commercial_fact_survives_from_a_scoped_override(
+    client, firm_a_owner, db
+):
+    """THE GUARD, on the scoped branch. Sibling of the blanket guard above.
+
+    The blanket guard cannot cover this. Every fixture it walks is blanket, so
+    it exercises one of the two branches the service now has, and a leak that
+    existed only on the scoped branch would pass it. This test is the same
+    forbidden-key machinery aimed at the branch the rework added.
+
+    Watched red three times before being accepted, because one control was not
+    enough to show this test earns its place:
+
+    1. A `price` field added to IntakeQuestionOut and populated from the
+       resolver's scoped tiers. Both this test and the blanket guard went red on
+       the forbidden key. That proves the walk works and proves nothing about
+       whether THIS test was needed, since the blanket guard caught it too.
+    2. The scoped price leaked BY VALUE into flag_name, an entirely legitimate
+       key no forbidden-key walk can see, and only on the overridden branch.
+       The blanket guard PASSED. This test failed on the by-value assertion.
+       That is the one that matters: it is a defect the pre-existing guard is
+       structurally incapable of catching, which is this test's whole reason to
+       exist.
+    3. The same leak narrowed to the EXPLICIT ZERO tier alone, to confirm the
+       null-versus-zero arm is live and 0.00 is treated as the real price it is
+       rather than as an absence. Red on "The value 0.00 appears".
+
+    The three-step restore is recorded in the session report.
+    """
+    catalog = _seed_catalog(db)
+    firm_id = uuid.UUID(firm_a_owner["firm_id"])
+    _seed_scoped_firm(db, firm_id, catalog)
+
+    response = client.get(endpoint(FIRM_A_SLUG))
+    assert response.status_code == 200, response.text
+    body = response.json()
+
+    # ------------------------------------------------------------------
+    # PROVE THE SCOPED BRANCH IS WHAT PRODUCED THIS RESPONSE. Without this,
+    # the walk below could be measuring the blanket path and would pass just
+    # as happily while the scoped branch leaked freely. The scoped tree is
+    # phrased in ACCOUNTS and the blanket one in TRANSACTIONS, so the question
+    # text is what tells the two apart.
+    # ------------------------------------------------------------------
+    texts = _question_texts(body)
+    assert ACCOUNTS_QUESTION in texts, (
+        f"The scoped override did not win, so this test never reached the "
+        f"branch it exists to guard. Questions served: {texts}"
+    )
+    assert TXN_COUNT_QUESTION not in texts, (
+        "The blanket config was served alongside the scoped override that "
+        "replaced it. Precedence is wholesale, so exactly one of these two "
+        f"questions may appear. Questions served: {texts}"
+    )
+
+    # ------------------------------------------------------------------
+    # The contract itself, on this branch.
+    # ------------------------------------------------------------------
+    offenders = [
+        (path, key) for path, key in _walk_keys(body) if key in FORBIDDEN_KEYS
+    ]
+    assert not offenders, (
+        "The public intake response leaks commercial facts from a SCOPED "
+        f"override. Forbidden keys found at: {offenders}"
+    )
+
+    config = get_public_intake_config(db, firm_id=firm_id)
+    dumped = config.model_dump()
+    decimals = [
+        (path, value)
+        for path, value in _walk_values(dumped)
+        if isinstance(value, Decimal)
+    ]
+    assert not decimals, (
+        f"Decimal-typed values survived from the scoped branch at: {decimals}"
+    )
+
+    dump_offenders = [
+        (path, key) for path, key in _walk_keys(dumped) if key in FORBIDDEN_KEYS
+    ]
+    assert not dump_offenders, (
+        f"Forbidden keys on the schema objects themselves: {dump_offenders}"
+    )
+
+    # By value. EXPLICIT_ZERO is in this list on purpose: an explicit 0.00 is a
+    # real price a firm chose, and leaking it tells a lead this service is free.
+    # It is exactly as forbidden as the four-figure one beside it.
+    serialized = response.text
+    for money in (
+        str(BASE_FEE),
+        str(SCOPED_TIER_PRICE),
+        str(BLANKET_TIER_PRICE),
+        str(EXPLICIT_ZERO),
+    ):
+        assert money not in serialized, (
+            f"The value {money} appears in the public response. A commercial "
+            "fact is being served under some other name."
+        )
+
+
+def test_a_scoped_override_is_invisible_to_the_engagement_type_it_is_not_for(
+    client, firm_a_owner, db
+):
+    """The bug the rework fixed, stated as a test.
+
+    Before August 18, 2026 this failed: the service loaded every config the firm
+    owned in one query and keyed them by dimension_id, so an override authored
+    for the 1040 was asked on the 1065 as well. Nothing about the response said
+    so, because the response carries no scope information; the 1065 simply asked
+    a question its firm had never configured for it.
+    """
+    catalog = _seed_catalog(db)
+    firm_id = uuid.UUID(firm_a_owner["firm_id"])
+
+    # THE CRYPTO FLAG IS MAPPED TO THE 1065 TOO, AND IT IS LOAD-BEARING.
+    # The whole claim of this test is that SCOPE is what keeps the override off
+    # the 1065. If the flag did not apply to the 1065 in the first place, the
+    # applicability filter would drop the question for an unrelated reason and
+    # this test would pass against code with no scope handling whatsoever. It
+    # was written that way first, and the negative control caught it: the
+    # control ran green until this mapping was added.
+    db.add(
+        ComplexityFlagEngagementType(
+            flag_id=catalog["crypto"].id, engagement_type=PARTNERSHIP_1065
+        )
+    )
+    db.commit()
+
+    # Both services active.
+    entry_1040 = _offer(db, firm_id, TAX_1040)
+    _offer(db, firm_id, PARTNERSHIP_1065)
+
+    # Blanket, so the 1065 has something of its own and the assertion below is
+    # not just reading an empty service.
+    _configure(db, firm_id, catalog["rental_dimension"])
+
+    # Scoped to the 1040 ONLY.
+    _configure(db, firm_id, catalog["wallet"], scope=entry_1040)
+
+    body = client.get(endpoint(FIRM_A_SLUG)).json()
+
+    assert WALLET_TYPE_QUESTION in _question_texts(body, TAX_1040), (
+        "The 1040 lost the override that was authored for it."
+    )
+    assert RENTAL_QUESTION in _question_texts(body, PARTNERSHIP_1065), (
+        "The 1065 lost its own blanket question, so this test is not "
+        "measuring what it claims to."
+    )
+    assert WALLET_TYPE_QUESTION not in _question_texts(body, PARTNERSHIP_1065), (
+        "A scoped override authored for the 1040 is being asked on the 1065. "
+        "This is the exact defect the August 18, 2026 rework fixed."
+    )
+
+
+def test_a_dormant_service_with_a_scoped_override_never_appears(
+    client, firm_a_owner, db
+):
+    """A switched-off service does not shape the form, however configured it is.
+
+    A firm may legitimately author overrides on a service before switching it
+    on, so a dormant entry carrying a fully configured scoped tree is a normal
+    state and not a broken one. It must contribute NOTHING: not its own entry in
+    the payload, and not its questions to anybody else's.
+
+    That second half is not hypothetical. Before the rework the dormant service
+    was correctly kept out of the services list while its scoped config was
+    still loaded into the shared question pool, so its questions were asked on
+    every ACTIVE service the flag mapped to. The service was invisible and its
+    configuration was not.
+
+    Watched red twice, one control per half of the claim:
+
+    1. The is_offered filter removed from the entries query. Red on the
+       services-list assertion: the dormant service appeared in the payload.
+    2. The pre-rework shape restored: every active service reading one global
+       pool of the firm's configs, with the dormant service still correctly
+       excluded from the services list. Red on the leak assertion, which is the
+       half that actually reproduces the old defect.
+
+    Control 2 ran GREEN on the first version of this fixture, which is why the
+    crypto mapping above exists. Recorded in the session report.
+    """
+    catalog = _seed_catalog(db)
+    firm_id = uuid.UUID(firm_a_owner["firm_id"])
+
+    # THE CRYPTO FLAG IS MAPPED TO THE 1065 AS WELL, AND THAT IS LOAD-BEARING.
+    # Without it the dormant service's override would sit on a flag that only
+    # applies to the dormant service, and the "leaked onto somebody else"
+    # assertion below could never fail no matter how broken the code was: the
+    # applicability filter would drop it for reasons that have nothing to do
+    # with dormancy. The two engagement types have to SHARE a flag for the leak
+    # this test guards against to be expressible at all.
+    db.add(
+        ComplexityFlagEngagementType(
+            flag_id=catalog["crypto"].id, engagement_type=PARTNERSHIP_1065
+        )
+    )
+    db.commit()
+
+    # Active, and configured, so the response is non-empty and the assertions
+    # below are made against a real payload rather than an empty one.
+    _offer(db, firm_id, TAX_1040)
+    _configure(db, firm_id, catalog["staking"])
+
+    # DORMANT, and carrying a scoped override on a dimension whose flag applies
+    # to the ACTIVE service too. This is the row that must reach nobody.
+    dormant = _offer(db, firm_id, PARTNERSHIP_1065, is_offered=False)
+    _configure(db, firm_id, catalog["wallet"], scope=dormant)
+
+    response = client.get(endpoint(FIRM_A_SLUG))
+    assert response.status_code == 200, response.text
+    body = response.json()
+
+    # The response has to be non-empty or everything below passes vacuously.
+    assert STAKING_QUESTION in _question_texts(body, TAX_1040), (
+        "The active service came back with nothing, so the absence of the "
+        "dormant one proves nothing."
+    )
+
+    served = [service["engagement_type"] for service in body["services"]]
+    assert served == [TAX_1040], (
+        f"A dormant service appears in the public payload. Served: {served}"
+    )
+
+    # And its question reached nobody else either. Asserted against the whole
+    # serialized response rather than one service, because the pre-rework
+    # failure put it on a DIFFERENT service than the one it belonged to.
+    assert WALLET_TYPE_QUESTION not in response.text, (
+        "A dormant service's configured question is being asked somewhere in "
+        "the public payload. The service was excluded; its configuration was "
+        "not."
+    )
+
+
+def test_an_active_service_with_no_configuration_of_its_own_has_no_questions(
+    client, firm_a_owner, db
+):
+    """Active-but-unconfigured is a legitimate state: the lead picks it and the
+    engagement routes to quote.
+
+    Stronger than test_an_offered_service_with_nothing_configured_has_empty_questions
+    above, which seeds a firm that has configured NOTHING AT ALL. That one cannot
+    tell "this service has no questions" apart from "the query returned nothing",
+    because both produce the same empty list. Here the firm is configured, the
+    other service is asking questions, and this one still has none of its own.
+
+    Watched red before being accepted: the service was made to omit any entry
+    whose question list came back empty. Recorded in the session report.
+    """
+    catalog = _seed_catalog(db)
+    firm_id = uuid.UUID(firm_a_owner["firm_id"])
+
+    _offer(db, firm_id, TAX_1040)
+    _configure(db, firm_id, catalog["staking"])
+
+    # Active, no configs of its own. The rental flag maps here and its dimension
+    # is deliberately left unconfigured: applicable is not the same as asked.
+    _offer(db, firm_id, PARTNERSHIP_1065)
+
+    response = client.get(endpoint(FIRM_A_SLUG))
+    assert response.status_code == 200, response.text
+    body = response.json()
+
+    served = [service["engagement_type"] for service in body["services"]]
+    # Ordered by engagement_type ascending, which is the service's own ORDER BY.
+    assert served == [TAX_1040, PARTNERSHIP_1065], (
+        f"The unconfigured service was dropped instead of served empty. "
+        f"Served: {served}"
+    )
+    assert _questions(body, PARTNERSHIP_1065) == []
+    # The configured one still works, so the empty list above is a real answer
+    # and not a symptom of the whole response having collapsed.
+    assert _question_texts(body, TAX_1040) == [STAKING_QUESTION]
+
+
+# ---------------------------------------------------------------------------
+# 12. The presentation fields
+# ---------------------------------------------------------------------------
+
+def test_lead_facing_label_falls_back_to_the_canonical_label(
+    client, firm_a_owner, db
+):
+    """LEAD_FACING_LABELS is sparse and empty today, so this is the live path.
+
+    Absence is the designed default here, not a gap: the payload must always
+    carry a renderable string so the form never has to implement the fallback
+    itself and no two consumers can disagree about it.
+    """
+    _seed_catalog(db)
+    firm_id = uuid.UUID(firm_a_owner["firm_id"])
+    _offer(db, firm_id, TAX_1040)
+
+    service = client.get(endpoint(FIRM_A_SLUG)).json()["services"][0]
+
+    canonical = ENGAGEMENT_TYPE_LABELS[EngagementType.tax_return_1040]
+    assert service["label"] == canonical
+    assert service["lead_facing_label"] == canonical, (
+        "With no override authored, lead_facing_label must serve the canonical "
+        "label rather than null. A null here pushes the fallback onto every "
+        "consumer of this endpoint."
+    )
+
+
+def test_lead_facing_label_serves_the_override_when_one_is_authored(
+    client, firm_a_owner, db, monkeypatch
+):
+    """The populated half of the fallback, which no fixture can reach today.
+
+    LEAD_FACING_LABELS ships empty, so the override branch is unreachable
+    through data alone and is patched here instead. Patched on the SERVICE
+    module rather than on app.core.enums, because the service imported the name
+    at import time and rebinding the enums module attribute would leave the
+    service reading its own original dict: the test would pass while measuring
+    nothing, which is instance seventeen's shape exactly.
+    """
+    _seed_catalog(db)
+    firm_id = uuid.UUID(firm_a_owner["firm_id"])
+    _offer(db, firm_id, TAX_1040)
+
+    monkeypatch.setattr(
+        pricing_config_service,
+        "LEAD_FACING_LABELS",
+        {EngagementType.tax_return_1040: "Personal Taxes"},
+    )
+
+    service = client.get(endpoint(FIRM_A_SLUG)).json()["services"][0]
+
+    assert service["lead_facing_label"] == "Personal Taxes"
+    # The canonical label is NOT replaced by the override. They are two fields
+    # for two audiences and the formal one still has to be there.
+    assert service["label"] == (
+        ENGAGEMENT_TYPE_LABELS[EngagementType.tax_return_1040]
+    )
+
+
+def test_category_is_null_when_the_type_is_not_mapped(client, firm_a_owner, db):
+    """Null category is a real, permanent state, not a gap awaiting content.
+
+    A type absent from ENGAGEMENT_TYPE_CATEGORIES is uncategorized and the form
+    renders it in a flat list. There is deliberately no default bucket: guessing
+    would put a service in front of leads under a heading its firm never chose.
+    """
+    _seed_catalog(db)
+    firm_id = uuid.UUID(firm_a_owner["firm_id"])
+    _offer(db, firm_id, TAX_1040)
+
+    service = client.get(endpoint(FIRM_A_SLUG)).json()["services"][0]
+    assert service["category"] is None
+
+
+def test_category_serves_the_string_value_when_mapped(
+    client, firm_a_owner, db, monkeypatch
+):
+    """Serialized as the plain string value, matching how kind is served.
+
+    Patched on the service module for the same reason as the label override
+    above. Ben's form switches on this string, so it has to be the enum's value
+    and not its repr.
+    """
+    _seed_catalog(db)
+    firm_id = uuid.UUID(firm_a_owner["firm_id"])
+    _offer(db, firm_id, TAX_1040)
+
+    monkeypatch.setattr(
+        pricing_config_service,
+        "ENGAGEMENT_TYPE_CATEGORIES",
+        {EngagementType.tax_return_1040: ServiceCategory.tax},
+    )
+
+    service = client.get(endpoint(FIRM_A_SLUG)).json()["services"][0]
+    assert service["category"] == "tax"
+    assert isinstance(service["category"], str)
+
+
+def test_the_presentation_fields_are_not_commercial_facts(
+    client, firm_a_owner, db, monkeypatch
+):
+    """The two new fields, populated, still pass the stripping walk.
+
+    They were added to a response whose entire justification is that it carries
+    no commercial fact. A bucket name and a friendly service name are not one,
+    but that claim is worth a test rather than a comment, and the walk has to be
+    run with them POPULATED or it is not walking them at all.
+    """
+    catalog = _seed_catalog(db)
+    firm_id = uuid.UUID(firm_a_owner["firm_id"])
+    _seed_rich_firm(db, firm_id, catalog)
+
+    monkeypatch.setattr(
+        pricing_config_service,
+        "LEAD_FACING_LABELS",
+        {EngagementType.tax_return_1040: "Personal Taxes"},
+    )
+    monkeypatch.setattr(
+        pricing_config_service,
+        "ENGAGEMENT_TYPE_CATEGORIES",
+        {EngagementType.tax_return_1040: ServiceCategory.tax},
+    )
+
+    response = client.get(endpoint(FIRM_A_SLUG))
+    body = response.json()
+
+    service = body["services"][0]
+    assert service["lead_facing_label"] == "Personal Taxes"
+    assert service["category"] == "tax"
+
+    offenders = [
+        (path, key) for path, key in _walk_keys(body) if key in FORBIDDEN_KEYS
+    ]
+    assert not offenders, f"Forbidden keys found at: {offenders}"

@@ -111,10 +111,16 @@ class EngagementType(str, Enum):
     transaction_advisory = "transaction_advisory"
 
 
-# Lead-facing display labels for every EngagementType member.
-# This is the single backend source of truth for these labels; the public
-# config endpoint serves them from here. Every member must have an entry,
-# enforced by tests/test_engagement_type_canon.py.
+# The CANONICAL display name for every EngagementType member: the formal,
+# form-number-bearing string ("Individual Tax Return (Form 1040)").
+# This is the single backend source of truth for these names and every member
+# must have an entry, enforced by tests/test_engagement_type_canon.py.
+#
+# NOT the same thing as LEAD_FACING_LABELS below, which is the optional
+# plain-English override a lead sees on the public intake form. This map was
+# called "lead-facing" before August 18, 2026, when the two audiences were
+# still the same one. They are not any more: this map is the complete, formal
+# canon, and that one is the sparse, friendly override that falls back here.
 ENGAGEMENT_TYPE_LABELS: dict[EngagementType, str] = {
     EngagementType.tax_return_1040: "Individual Tax Return (Form 1040)",
     EngagementType.tax_return_1040nr: "Nonresident Individual Tax Return (Form 1040-NR)",
@@ -160,6 +166,57 @@ ENGAGEMENT_TYPE_LABELS: dict[EngagementType, str] = {
     EngagementType.other_advisory: "Other Advisory",
     EngagementType.custom: "Custom Engagement",
 }
+
+
+class ServiceCategory(str, Enum):
+    """The broad service bucket an engagement type belongs to.
+
+    Presentation only. This is how the public intake form groups the services a
+    firm offers into sections a lead can scan; it carries no pricing meaning, no
+    deadline meaning, and nothing downstream branches on it.
+
+    Ruled by Andrew on August 18, 2026 to be exactly these three values. It is a
+    plain Python enum and NOT a database enum, because the map that uses it
+    (ENGAGEMENT_TYPE_CATEGORIES below) is system-shared content living in code
+    rather than a column. tests/test_engagement_type_presentation.py is what
+    enforces that no value outside this enum reaches the payload, which is the
+    job a sa.Enum column would otherwise have done.
+    """
+
+    tax = "tax"
+    bookkeeping = "bookkeeping"
+    advisory = "advisory"
+
+
+# The plain-English name a LEAD sees for an engagement type, overriding the
+# formal ENGAGEMENT_TYPE_LABELS canon above.
+#
+# DELIBERATELY SPARSE, AND DELIBERATELY EMPTY TODAY. A member absent from this
+# map is not an error and never will be: it falls back to its
+# ENGAGEMENT_TYPE_LABELS entry, which every member is guaranteed to have. That
+# is why there is no completeness test here and why one must never be added.
+# ENGAGEMENT_TYPE_LABELS has one because absence there IS a gap; absence here is
+# the designed default.
+#
+# Content is authored in the catalog content session. Filling this map changes
+# what the public intake payload SAYS and never what shape it has, so Ben can
+# build against the contract before a single entry exists.
+LEAD_FACING_LABELS: dict[EngagementType, str] = {}
+
+
+# The broad bucket each engagement type is grouped under on the intake form.
+#
+# DELIBERATELY SPARSE, AND DELIBERATELY EMPTY TODAY, for the same reason as
+# LEAD_FACING_LABELS. A member absent from this map serializes as a null
+# category and the form renders it in a flat, ungrouped list. There is no
+# fallback and no default bucket: guessing that an unmapped type is "tax" would
+# put a service in front of leads under a heading its firm never chose.
+#
+# System-shared content by nature. A 1040 is a tax service for every firm that
+# will ever exist, which is exactly why this lives in code beside the enum
+# rather than on a firm-scoped column where each firm would re-author it and
+# two firms could disagree.
+ENGAGEMENT_TYPE_CATEGORIES: dict[EngagementType, ServiceCategory] = {}
 
 
 class TaskStatus(str, Enum):
