@@ -10,6 +10,7 @@ export interface FirmDetails {
   staff_auth_policy: string
   settings: Record<string, unknown> | null
   feature_flags: Record<string, boolean> | null
+  timezone?: string
   created_at: string
   updated_at: string
 }

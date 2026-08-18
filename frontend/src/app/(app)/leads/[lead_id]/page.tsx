@@ -252,7 +252,7 @@ export default function LeadDetailPage() {
   )
   const activity: LeadActivityItem[] = activityData ?? []
 
-  const { data: bookingsData } = useFetch(
+  const { data: bookingsData, refetch: refetchBookings } = useFetch(
     () => bookingsApi.listByLead(leadId),
     [leadId]
   )
@@ -352,6 +352,7 @@ export default function LeadDetailPage() {
         onBooked={() => {
           refetch()
           refetchActivity()
+          refetchBookings()
           window.dispatchEvent(new Event('lead-updated'))
         }}
       />
@@ -412,7 +413,7 @@ export default function LeadDetailPage() {
 
             {/* Quick actions live here, near the stage badge */}
             {lead.stage !== 'won' && (
-              <div className="pt-4 border-t border-[0.5px] border-[#E8EDF3] dark:border-dark-border">
+              <div className="pt-4 border-t border-[#E8EDF3] dark:border-dark-border">
                 {transitionStage !== 'lost' ? (
                   <div className="flex items-center gap-2 flex-wrap">
                     {quickActions.map((action) => (

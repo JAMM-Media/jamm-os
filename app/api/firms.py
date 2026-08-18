@@ -79,6 +79,7 @@ def update_my_firm(
         "is_active": firm.is_active,
         "firm_type": firm.firm_type,
         "feature_flags": firm.feature_flags,
+        "timezone": firm.timezone,
     }
     updated = crud_firm.update_firm(db, firm, payload)
     after = {
@@ -89,6 +90,7 @@ def update_my_firm(
         "is_active": updated.is_active,
         "firm_type": updated.firm_type,
         "feature_flags": updated.feature_flags,
+        "timezone": updated.timezone,
     }
     from app.services.behavioral_log import log_setting_changes
     log_setting_changes(

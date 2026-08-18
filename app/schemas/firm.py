@@ -72,6 +72,7 @@ class FirmUpdate(BaseModel):
     feature_flags: Optional[dict] = None
     timesheet_approval_required: Optional[bool] = None
     signup_source: Optional[str] = None
+    timezone: Optional[str] = None
 
 
 class FirmOut(FirmBase):
@@ -81,6 +82,7 @@ class FirmOut(FirmBase):
     timesheet_approval_required: bool = False
     concierge_active: bool = True
     firm_type: Optional[str] = None
+    timezone: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 

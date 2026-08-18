@@ -47,6 +47,12 @@ class Firm(Base):
         index=True,
     )
 
+    timezone: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+        server_default='America/New_York',
+    )
+
     # settings stores firm-level preferences as a JSON blob.
     # Example: {"timezone": "America/New_York", "fiscal_year_start": "01-01"}
     # Using JSON here instead of individual columns lets us add settings

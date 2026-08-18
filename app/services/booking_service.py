@@ -20,6 +20,7 @@ Race condition handling:
 
 import logging
 from datetime import date, datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from uuid import UUID
 
 from sqlalchemy.orm import Session
@@ -27,6 +28,7 @@ from sqlalchemy.orm import Session
 from app.core.enums import BookingStatus, LeadStage
 from app.crud.lead import transition_lead_stage
 from app.models.booking import Booking
+from app.models.firm import Firm
 from app.models.lead import Lead
 from app.models.user import User
 from app.services.behavioral_log import log_event
@@ -90,6 +92,10 @@ def create_booking(
     if lead is None:
         raise ValueError("Lead not found in this firm")
 
+    # Look up the firm timezone for local date and day boundary calculations.
+    firm_obj = db.query(Firm).filter(Firm.id == firm_id).first()
+    firm_timezone = firm_obj.timezone if firm_obj else 'America/New_York'
+
     # Fail fast on terminal stage -- before any DB write.
     if lead.stage == LeadStage.won.value:
         raise ValueError(
@@ -97,7 +103,9 @@ def create_booking(
         )
 
     # Find the availability window for this day of week.
-    booking_date: date = start_time.date()
+    # Interpret start_time in the firm timezone to get the correct local date.
+    tz = ZoneInfo(firm_timezone)
+    booking_date: date = start_time.astimezone(tz).date()
     window = get_window_for_day(db, staff_user_id, firm_id, booking_date.weekday())
     if window is None:
         raise ValueError(
@@ -108,8 +116,9 @@ def create_booking(
     # this date. This is the first row-level lock in this codebase. The lock is held
     # until db.commit() (which happens inside transition_lead_stage), so a concurrent
     # request cannot slip through the availability re-check window.
-    day_start = datetime.combine(booking_date, datetime.min.time(), tzinfo=timezone.utc)
-    day_end = day_start + timedelta(days=1)
+    next_day = booking_date + timedelta(days=1)
+    day_start = datetime(booking_date.year, booking_date.month, booking_date.day, tzinfo=tz).astimezone(timezone.utc)
+    day_end = datetime(next_day.year, next_day.month, next_day.day, tzinfo=tz).astimezone(timezone.utc)
     existing_bookings = (
         db.query(Booking)
         .filter(

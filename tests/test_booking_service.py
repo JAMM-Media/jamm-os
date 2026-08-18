@@ -41,7 +41,7 @@ from app.services.nurture_execution_service import run_nurture_tick
 def _make_firm(slug: str) -> Firm:
     db = TestingSessionLocal()
     try:
-        firm = Firm(name=f"Firm {slug}", slug=slug)
+        firm = Firm(name=f"Firm {slug}", slug=slug, timezone="UTC")
         db.add(firm)
         db.commit()
         db.refresh(firm)
