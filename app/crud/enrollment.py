@@ -46,6 +46,8 @@ def advance_enrollment(
     new_current_step_id: Optional[UUID],
     new_next_action_time: Optional[datetime],
     new_loop_counts: Optional[dict] = None,
+    new_unsubscribe_token_hash: Optional[str] = None,
+    new_unsubscribe_token_expires_at: Optional[datetime] = None,
 ) -> None:
     """Write the new step, scheduled time, and optionally updated loop counts.
 
@@ -55,6 +57,10 @@ def advance_enrollment(
 
     new_loop_counts: if provided, replaces enrollment.loop_counts in the same
     commit. Used when following a loop-back edge to record the incremented count.
+
+    new_unsubscribe_token_hash / new_unsubscribe_token_expires_at: if provided,
+    written in the same commit as the step advance so the unsubscribe token is
+    durable before the email is sent.
     """
     enrollment = db.query(Enrollment).filter(Enrollment.id == enrollment_id).first()
     if enrollment is None:
@@ -63,6 +69,10 @@ def advance_enrollment(
     enrollment.next_action_time = new_next_action_time
     if new_loop_counts is not None:
         enrollment.loop_counts = new_loop_counts
+    if new_unsubscribe_token_hash is not None:
+        enrollment.unsubscribe_token_hash = new_unsubscribe_token_hash
+    if new_unsubscribe_token_expires_at is not None:
+        enrollment.unsubscribe_token_expires_at = new_unsubscribe_token_expires_at
     db.commit()
 
 
