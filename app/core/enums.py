@@ -194,9 +194,20 @@ class ServiceCategory(str, Enum):
 # DELIBERATELY SPARSE, AND DELIBERATELY EMPTY TODAY. A member absent from this
 # map is not an error and never will be: it falls back to its
 # ENGAGEMENT_TYPE_LABELS entry, which every member is guaranteed to have. That
-# is why there is no completeness test here and why one must never be added.
+# is why there is NO completeness test here and why one must never be added.
 # ENGAGEMENT_TYPE_LABELS has one because absence there IS a gap; absence here is
 # the designed default.
+#
+# THIS IS THE HALF OF THE RULE THAT DID NOT CHANGE. Both presentation maps
+# shipped empty and unguarded on August 18, 2026 under one shared rule. That
+# rule SPLIT the same day, when the intake structure contract made category a
+# routing field: ENGAGEMENT_TYPE_CATEGORIES above is now complete and has a
+# completeness test, and this map still has neither. The difference is not
+# importance, it is the fallback. A missing entry here degrades to a formal
+# label a lead can still read and act on. A missing entry there produced a
+# service no lead could reach. One is a cosmetic gap, the other was a dead end,
+# so they get opposite rules. Adding a completeness test here would encode the
+# retired shared rule and start failing on a state that is deliberate.
 #
 # Content is authored in the catalog content session. Filling this map changes
 # what the public intake payload SAYS and never what shape it has, so Ben can
@@ -206,17 +217,117 @@ LEAD_FACING_LABELS: dict[EngagementType, str] = {}
 
 # The broad bucket each engagement type is grouped under on the intake form.
 #
-# DELIBERATELY SPARSE, AND DELIBERATELY EMPTY TODAY, for the same reason as
-# LEAD_FACING_LABELS. A member absent from this map serializes as a null
-# category and the form renders it in a flat, ungrouped list. There is no
-# fallback and no default bucket: guessing that an unmapped type is "tax" would
-# put a service in front of leads under a heading its firm never chose.
+# COMPLETE, AND REQUIRED TO STAY COMPLETE. Every EngagementType member must have
+# an entry, enforced by tests/test_engagement_type_presentation.py.
+#
+# THIS MAP DID NOT ALWAYS CARRY THAT RULE, AND THE REASON IT DOES NOW IS THE
+# WHOLE POINT. It shipped deliberately empty on August 18, 2026, alongside
+# LEAD_FACING_LABELS below, on the reasoning that absence is a harmless default
+# both maps could share. Then docs/Public_Intake_Form_Structure_Contract_v1.md
+# landed and made category a ROUTING field: Step 1 of the intake form offers
+# three fixed answers (Tax / Bookkeeping / Advisory) and Step 2 shows only the
+# firm's active engagement types IN THE CHOSEN CATEGORY. There is no flat list
+# anywhere in that spine.
+#
+# So absence stopped being harmless for THIS map. A type with no entry here
+# belongs to none of the three Step 1 buckets and is unreachable through the
+# funnel: the lead cannot get to it, the firm cannot sell it, and NOTHING GOES
+# RED, because an uncategorized service is a valid payload and a dead form is
+# not an exception. That is why this map is complete and guarded and the one
+# below is neither. The two rules diverged on purpose, on August 18, 2026, and
+# the divergence is the fallback: a missing label falls back to a string that
+# always exists, and a missing category falls back to nothing at all.
 #
 # System-shared content by nature. A 1040 is a tax service for every firm that
 # will ever exist, which is exactly why this lives in code beside the enum
 # rather than on a firm-scoped column where each firm would re-author it and
 # two firms could disagree.
-ENGAGEMENT_TYPE_CATEGORIES: dict[EngagementType, ServiceCategory] = {}
+#
+# ASSIGNED BY THE LEAD'S MENTAL MODEL, NOT THE FIRM'S. The question each row
+# answers is which of the three Step 1 buttons a LEAD would press to find this
+# service, which is not always where a firm would file it internally. Ruled by
+# Andrew on August 18, 2026, with these deliberate calls worth knowing about
+# before anything is moved:
+#
+#   Tax planning is TAX, not advisory, even though the work is advisory and the
+#   label says so. A lead thinking "I want to pay less tax" presses Tax.
+#
+#   All four payroll services are BOOKKEEPING, including the three that are
+#   genuinely tax filings (941, 940, 1099 and W-2). A lead's word is "payroll"
+#   and splitting the cluster across two buttons would hide half of it from
+#   whoever only looked under one.
+#
+#   The assurance ladder (compilation, review, audit, agreed-upon procedures)
+#   is ADVISORY because there is no assurance bucket to put it in. The four
+#   stay together so a lead comparing rigor and price can see them side by
+#   side. If a fourth bucket is ever added, this is the group that wants it,
+#   and the Step 1 spine is locked, so that is a conversation first.
+#
+#   Audit Representation is TAX (IRS controversy) and has nothing to do with
+#   Financial Statement Audit in advisory. The name collision is a Step 2 copy
+#   hazard, not a category error.
+ENGAGEMENT_TYPE_CATEGORIES: dict[EngagementType, ServiceCategory] = {
+    # Tax: returns, extensions, other filings, IRS controversy, tax-benefit
+    # studies, and planning.
+    EngagementType.tax_return_1040: ServiceCategory.tax,
+    EngagementType.tax_return_1040nr: ServiceCategory.tax,
+    EngagementType.tax_return_1120: ServiceCategory.tax,
+    EngagementType.tax_return_1120s: ServiceCategory.tax,
+    EngagementType.tax_return_1065: ServiceCategory.tax,
+    EngagementType.tax_return_990: ServiceCategory.tax,
+    EngagementType.tax_return_1041: ServiceCategory.tax,
+    EngagementType.tax_return_706: ServiceCategory.tax,
+    EngagementType.tax_return_709: ServiceCategory.tax,
+    EngagementType.amended_return_1040x: ServiceCategory.tax,
+    EngagementType.amended_return_business: ServiceCategory.tax,
+    EngagementType.extension_4868: ServiceCategory.tax,
+    EngagementType.extension_7004: ServiceCategory.tax,
+    EngagementType.extension_8868: ServiceCategory.tax,
+    EngagementType.sales_use_tax: ServiceCategory.tax,
+    EngagementType.fbar_international: ServiceCategory.tax,
+    EngagementType.business_personal_property_tax: ServiceCategory.tax,
+    EngagementType.benefit_plan_5500: ServiceCategory.tax,
+    EngagementType.irs_notice_resolution: ServiceCategory.tax,
+    EngagementType.tax_resolution: ServiceCategory.tax,
+    # IRS controversy. Unrelated to Financial Statement Audit below.
+    EngagementType.audit_representation: ServiceCategory.tax,
+    EngagementType.rd_tax_credit_study: ServiceCategory.tax,
+    EngagementType.cost_segregation_study: ServiceCategory.tax,
+    # Advisory work, filed under Tax because that is the word the lead uses.
+    EngagementType.tax_planning_advisory: ServiceCategory.tax,
+
+    # Bookkeeping: the books, the systems that hold them, and payroll. The
+    # three payroll filings sit here rather than under Tax so the whole payroll
+    # cluster answers to one button.
+    EngagementType.bookkeeping_monthly: ServiceCategory.bookkeeping,
+    EngagementType.bookkeeping_quarterly: ServiceCategory.bookkeeping,
+    EngagementType.bookkeeping_cleanup: ServiceCategory.bookkeeping,
+    EngagementType.accounting_system_setup: ServiceCategory.bookkeeping,
+    EngagementType.payroll_processing: ServiceCategory.bookkeeping,
+    EngagementType.payroll_tax_941: ServiceCategory.bookkeeping,
+    EngagementType.payroll_tax_940: ServiceCategory.bookkeeping,
+    EngagementType.information_returns_1099_w2: ServiceCategory.bookkeeping,
+
+    # Advisory: the assurance ladder, plus everything sold as a project or a
+    # relationship rather than as a filing.
+    EngagementType.financial_statement_compilation: ServiceCategory.advisory,
+    EngagementType.financial_statement_review: ServiceCategory.advisory,
+    EngagementType.financial_statement_audit: ServiceCategory.advisory,
+    EngagementType.agreed_upon_procedures: ServiceCategory.advisory,
+    EngagementType.fractional_cfo: ServiceCategory.advisory,
+    EngagementType.entity_formation: ServiceCategory.advisory,
+    EngagementType.nonprofit_formation_exemption: ServiceCategory.advisory,
+    EngagementType.business_valuation: ServiceCategory.advisory,
+    EngagementType.transaction_advisory: ServiceCategory.advisory,
+    # The two catch-alls. They overlap with the intake form's own escape
+    # answers ("Not sure yet" at Step 1, "None of these quite fits" at Step 2),
+    # so whether they should be selectable at Step 2 at all is a live question
+    # for the form, not for this map. They are categorized because an
+    # uncategorized type is unreachable, which would decide that question by
+    # accident.
+    EngagementType.other_advisory: ServiceCategory.advisory,
+    EngagementType.custom: ServiceCategory.advisory,
+}
 
 
 class TaskStatus(str, Enum):

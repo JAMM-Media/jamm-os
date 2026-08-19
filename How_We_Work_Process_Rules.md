@@ -1,6 +1,6 @@
 # How We Work: Verification and Debugging
 
-This file exists because of a specific, repeated failure. Seventeen separate times, a signal reported success while the thing it was supposed to be watching was broken. Every instance cost real time, and every instance looked fine right up until someone checked by hand.
+This file exists because of a specific, repeated failure. Eighteen separate times, a signal reported success while the thing it was supposed to be watching was broken. Every instance cost real time, and every instance looked fine right up until someone checked by hand.
 
 These are not style preferences. Each rule below is here because ignoring it already cost us something.
 
@@ -10,7 +10,7 @@ These are not style preferences. Each rule below is here because ignoring it alr
 
 The failure mode is always the same shape. Something reports success. The report is accurate about what it measured. What it measured was not the thing that mattered.
 
-Seventeen instances so far:
+Eighteen instances so far:
 
 1. **Unregistered expiry sweep.** The sweep was written, tested, and correct. It was never registered with the scheduler, so it never ran. Nothing errored, because nothing happened.
 2. **Anniversary job logging ERROR under a successful scheduler.** The scheduler reported healthy. The job inside it was failing every run. Scheduler health and job health are different measurements.
@@ -64,9 +64,17 @@ Seventeen instances so far:
 
     The rule: watching a control go red is not the last step, because a control can also fail to fail. Confirm that the control actually reaches the thing it tests, since the override defeating it can live in a file nobody is looking at, loaded before the code under test ever runs. Section 2 says a guard is not finished until you have watched it fail. This instance adds that a guard is not finished until you have also confirmed that what you did to make it fail is what actually made it fail. Kin to instance six, where the check and the failure ran in two different processes, and to the Aug 15 sweep-gate rewrite, where a test was structurally incapable of catching the failure it existed for.
 
-Instances seven, nine, ten, eleven, and fourteen are the purest forms of the pattern. The others are things that failed. Those five never failed. They made a category of failure unobservable, which is worse, because there was nothing to notice. Twelve belongs with them in substance even though it did eventually go red: the divergence it created was unobservable by construction and surfaced only by luck, and it would have kept hiding schema faults for as long as nobody happened to add a column to an existing table. Thirteen sits at the other end: it failed loudly, on every push, for two months, into a report nobody opened.
+18. Instance eighteen (Aug 18, 2026. Origin: `tests/test_intake_pricing_config.py`, the scope-awareness guards written for the public intake config rework). **A negative control defeated by the fixture rather than by the assertion.** Two new tests existed to prove that one engagement type's pricing override is never asked on another engagement type: one for a scoped override crossing to a sibling service, one for an override attached to a *dormant* service reaching the active ones. Both were written, both passed, and both were then run against a deliberate reintroduction of the exact defect they described. **Both stayed green.**
 
-When you find an eighteenth, add it here with its origin. The list is the point. Recognizing the shape early is worth more than any individual rule below.
+    The assertions were correct and were aimed at the right value. The fixtures could not produce the failure. Each seeded the leaked question on a complexity flag that the system catalog mapped to only ONE of the two engagement types involved, so when the break dutifully pushed that question into the other service's list, an entirely separate and entirely legitimate filter, the flag-applicability check, dropped it one line later. The observable result was identical to correct behavior. A test that says "X must not appear on service B" proves nothing when X could never have appeared on service B under any implementation, and nothing about reading the test reveals that: the assertion, the fixture, and the break all look right individually, and the thing that defeats them is a rule living in a different table.
+
+    This is instance seventeen's shape moved one layer out. There the control was defeated by an override in another file loaded before the code under test; here it is defeated by catalog data that makes the leak unexpressible. Seventeen's rule was to confirm that what you did to make the test fail is what actually made it fail. Eighteen adds the case where nothing you do to the CODE can make it fail, because the SETUP forbids the outcome. Both fixtures were fixed by mapping a shared flag to both engagement types, so the two entities genuinely share the linking record the leak would have to travel along, and both controls then went red naming the right question. The repaired fixtures carry a comment saying that mapping is load-bearing, because it reads like incidental seed data and deleting it would silently restore the vacuum.
+
+    The generalisable rule: **a test that asserts a cross-entity leak cannot exist must seed a world where that leak is possible.** The two entities have to share whatever record links them, or the test is asserting the absence of something that was never on offer. When a control comes back green, the fixture is a suspect before the test is, and before the code is: check that the failure you are trying to observe is reachable at all from the data you set up, and check specifically for a second, unrelated filter that would discard the leaked row for its own good reasons. Section 2's rule is that a guard is not finished until you have watched it fail. Seventeen added that you must confirm what made it fail. Eighteen adds that if it will not fail, the first question is whether it *could*.
+
+Instances seven, nine, ten, eleven, and fourteen are the purest forms of the pattern. The others are things that failed. Those five never failed. They made a category of failure unobservable, which is worse, because there was nothing to notice. Twelve belongs with them in substance even though it did eventually go red: the divergence it created was unobservable by construction and surfaced only by luck, and it would have kept hiding schema faults for as long as nobody happened to add a column to an existing table. Thirteen sits at the other end: it failed loudly, on every push, for two months, into a report nobody opened. Eighteen belongs with the purest five as well, and is the most uncomfortable of them, because the guard was written correctly, aimed correctly, and put through the negative control this file mandates. Every step was followed and the result was still a test that could not fail. It was caught only because the control was run and its green was disbelieved.
+
+When you find a nineteenth, add it here with its origin. The list is the point. Recognizing the shape early is worth more than any individual rule below.
 
 ---
 

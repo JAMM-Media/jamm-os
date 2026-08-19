@@ -15,18 +15,47 @@ database would have enforced for free:
 This file is what replaces both. It is the only thing standing between a typo
 in the catalog content session and a payload served to anonymous visitors.
 
-ON VACUITY, STATED PLAINLY BECAUSE IT MATTERS. Both maps ship EMPTY today, so
-the four per-entry tests below currently iterate over nothing and pass without
-examining a single value. That is instance nine and fourteen's shape: a watcher
-that is not watching, indistinguishable from a healthy one. They are written
-now anyway, so the content session lands on top of a guard instead of writing
-one afterwards, and each was watched red against a deliberately bad entry
-before being accepted. The proof they are capable of failing is in the session
-report, not in their current green.
+THE TWO MAPS ARE GUARDED BY OPPOSITE RULES, AND THAT IS THE MOST IMPORTANT
+THING IN THIS FILE.
 
-test_service_category_has_exactly_the_ruled_values below is NOT vacuous today
-and never will be. It is the one test here that fails the moment somebody adds
-a fourth bucket without a ruling.
+    ENGAGEMENT_TYPE_CATEGORIES  must be COMPLETE. Guarded here.
+    LEAD_FACING_LABELS          must NOT be. Deliberately unguarded.
+
+They started under one shared rule on August 18, 2026: both shipped empty, both
+unguarded, absence treated as a harmless default in each. That held for exactly
+as long as it took docs/Public_Intake_Form_Structure_Contract_v1.md to land the
+same day and make category a ROUTING field. Step 1 of the intake form offers
+three fixed answers (Tax / Bookkeeping / Advisory); Step 2 shows only the firm's
+active engagement types IN THE CHOSEN CATEGORY; there is no flat list anywhere
+in that spine. A type with no category therefore belongs to no Step 1 bucket and
+cannot be reached by any lead, which is a bug that produces a dead form rather
+than an error. Nothing goes red on its own, because an uncategorized service is
+a perfectly valid payload.
+
+So the rule split, and the thing that decides which side a map falls on is its
+FALLBACK, not its importance. A missing lead-facing label degrades to a formal
+label that always exists and that a lead can still read. A missing category
+degrades to nothing. One is cosmetic, the other is a dead end.
+
+This is process rule 9 in its ordinary form: the rule changed on purpose, so
+the tests encoding the old one changed with it in the same commit. A
+completeness test for LEAD_FACING_LABELS would now be asserting the retired
+shared rule and would fail on a state that is deliberate, which is why its
+absence from this file is load-bearing rather than an oversight.
+
+ON VACUITY, STATED PLAINLY BECAUSE IT MATTERS. The four per-entry tests below
+iterate over whatever the maps contain. Now that ENGAGEMENT_TYPE_CATEGORIES is
+populated they examine 43 real values, but the two aimed at LEAD_FACING_LABELS
+still iterate over nothing and pass without examining anything, which is
+instance nine and fourteen's shape: a watcher that is not watching,
+indistinguishable from a healthy one. They are kept anyway, so the content
+session lands on top of a guard instead of writing one afterwards, and every
+test in this file was watched red against deliberately bad content before being
+accepted. The proof they can fail is in the session report, not in their green.
+
+test_service_category_has_exactly_the_ruled_values below has never been vacuous
+and never will be. It fails the moment somebody adds a fourth bucket without a
+ruling.
 """
 
 from app.core.enums import (
@@ -51,6 +80,63 @@ def test_service_category_has_exactly_the_ruled_values():
         "bookkeeping",
         "advisory",
     ]
+
+
+def test_every_engagement_type_has_a_category():
+    """COMPLETENESS. Every EngagementType member is reachable through Step 1.
+
+    This is the test the structure contract created. Category is a routing
+    field: Step 1 offers Tax / Bookkeeping / Advisory and Step 2 shows only the
+    active types in the chosen bucket, so a member missing from this map sits in
+    no bucket and no lead can ever select it. The firm switched the service on,
+    the endpoint serves it with a null category, every existing test stays
+    green, and the service is simply unsellable through the funnel.
+
+    That failure is invisible from every direction except this one. It is not an
+    exception, not a 500, and not a malformed payload; it is a correct response
+    describing a service nobody can get to. This test is the only thing that
+    turns it into a red line.
+
+    Watched red before being accepted: one entry removed from the map, confirmed
+    red naming that exact member, restored, re-run green. Recorded in the
+    session report.
+
+    DELIBERATELY NOT MIRRORED FOR LEAD_FACING_LABELS. See the module docstring:
+    that map's absences fall back to a label that always exists, so completeness
+    there would be asserting a rule that was retired on purpose.
+    """
+    missing = sorted(
+        member.name
+        for member in EngagementType
+        if member not in ENGAGEMENT_TYPE_CATEGORIES
+    )
+    assert not missing, (
+        f"{len(missing)} engagement type(s) have no category and are therefore "
+        f"unreachable through the intake form's Step 1 routing: {missing}. "
+        "Every member needs a bucket, because there is no flat list in the "
+        "locked four-step spine."
+    )
+
+
+def test_every_engagement_type_has_a_category_and_a_label_together():
+    """The two maps that must agree, checked against each other.
+
+    A type reachable at Step 1 has to render at Step 2. Completeness of the
+    category map and completeness of the canonical label map are separately
+    enforced (here and in tests/test_engagement_type_canon.py), and this asserts
+    the intersection actually holds rather than trusting that two independent
+    guards imply it.
+    """
+    unrenderable = sorted(
+        member.name
+        for member in EngagementType
+        if member in ENGAGEMENT_TYPE_CATEGORIES
+        and member not in ENGAGEMENT_TYPE_LABELS
+    )
+    assert not unrenderable, (
+        f"These types route at Step 1 but have no label to render at Step 2: "
+        f"{unrenderable}"
+    )
 
 
 def test_every_lead_facing_label_key_is_a_real_engagement_type():

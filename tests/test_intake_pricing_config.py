@@ -34,6 +34,7 @@ import pytest
 from sqlalchemy import func, select
 
 from app.core.enums import (
+    ENGAGEMENT_TYPE_CATEGORIES,
     ENGAGEMENT_TYPE_LABELS,
     DimensionKind,
     DimensionRole,
@@ -1396,43 +1397,64 @@ def test_lead_facing_label_serves_the_override_when_one_is_authored(
     )
 
 
-def test_category_is_null_when_the_type_is_not_mapped(client, firm_a_owner, db):
-    """Null category is a real, permanent state, not a gap awaiting content.
+def test_category_comes_from_the_real_map(client, firm_a_owner, db):
+    """The live path. Serialized as the plain string value of ServiceCategory.
 
-    A type absent from ENGAGEMENT_TYPE_CATEGORIES is uncategorized and the form
-    renders it in a flat list. There is deliberately no default bucket: guessing
-    would put a service in front of leads under a heading its firm never chose.
+    RENAMED AND REWRITTEN, August 18, 2026. This assertion used to read
+    `category is None`, under a test called
+    test_category_is_null_when_the_type_is_not_mapped, and it was correct for
+    the few hours that ENGAGEMENT_TYPE_CATEGORIES shipped empty. The structure
+    contract then made category a routing field, the map was populated for all
+    43 members, and the 1040 stopped being unmapped. Keeping the old assertion
+    would have encoded the empty map as the expectation and gone red on the fix,
+    which is process rule 9's whole subject.
+
+    Asserted against the map rather than the literal "tax" so this test cannot
+    disagree with the source of truth if a bucket is ever re-ruled. Ben's form
+    switches on this string, so it has to be the enum's value and not its repr.
     """
     _seed_catalog(db)
     firm_id = uuid.UUID(firm_a_owner["firm_id"])
     _offer(db, firm_id, TAX_1040)
+
+    service = client.get(endpoint(FIRM_A_SLUG)).json()["services"][0]
+
+    expected = ENGAGEMENT_TYPE_CATEGORIES[EngagementType.tax_return_1040].value
+    assert service["category"] == expected
+    assert isinstance(service["category"], str), (
+        "category must serialize as the enum's string value, not its repr."
+    )
+
+
+def test_category_is_null_when_a_type_has_no_entry(
+    client, firm_a_owner, db, monkeypatch
+):
+    """The unmapped branch, which data alone can no longer reach.
+
+    ENGAGEMENT_TYPE_CATEGORIES is complete and
+    tests/test_engagement_type_presentation.py keeps it that way, so no fixture
+    can produce an uncategorized service any more. The branch is patched into
+    existence here instead, because it still has to behave: the schema declares
+    category Optional, Ben's form has to tolerate a null, and a future
+    EngagementType member added without a bucket would land on exactly this path
+    between being added and the completeness test catching it.
+
+    What this pins is that the serializer returns null rather than GUESSING.
+    There is deliberately no default bucket, because defaulting an unmapped type
+    to tax would put a service in front of leads under a heading its firm never
+    chose, and would do it silently.
+
+    Patched on the service module rather than on app.core.enums, for the reason
+    given on the label override above.
+    """
+    _seed_catalog(db)
+    firm_id = uuid.UUID(firm_a_owner["firm_id"])
+    _offer(db, firm_id, TAX_1040)
+
+    monkeypatch.setattr(pricing_config_service, "ENGAGEMENT_TYPE_CATEGORIES", {})
 
     service = client.get(endpoint(FIRM_A_SLUG)).json()["services"][0]
     assert service["category"] is None
-
-
-def test_category_serves_the_string_value_when_mapped(
-    client, firm_a_owner, db, monkeypatch
-):
-    """Serialized as the plain string value, matching how kind is served.
-
-    Patched on the service module for the same reason as the label override
-    above. Ben's form switches on this string, so it has to be the enum's value
-    and not its repr.
-    """
-    _seed_catalog(db)
-    firm_id = uuid.UUID(firm_a_owner["firm_id"])
-    _offer(db, firm_id, TAX_1040)
-
-    monkeypatch.setattr(
-        pricing_config_service,
-        "ENGAGEMENT_TYPE_CATEGORIES",
-        {EngagementType.tax_return_1040: ServiceCategory.tax},
-    )
-
-    service = client.get(endpoint(FIRM_A_SLUG)).json()["services"][0]
-    assert service["category"] == "tax"
-    assert isinstance(service["category"], str)
 
 
 def test_the_presentation_fields_are_not_commercial_facts(
