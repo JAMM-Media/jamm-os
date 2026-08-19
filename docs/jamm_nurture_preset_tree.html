@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>JAMM PX · Lead Nurture Preset v1 · Reference Tree</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#1F3148;
+    --canvas:#F3F5F8;
+    --card:#FFFFFF;
+    --line:#93A1B1;
+    --trigger:#2F855A;
+    --email:#2B6CB0;
+    --wait:#B7791F;
+    --branch:#6D4FA3;
+    --action:#52616F;
+    --goalbg:#234E52;
+    --wonbg:#1C4532;
+    --deadbg:#7B2C24;
+    --hl:#1F3148;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;overflow:hidden;font-family:'IBM Plex Mono',ui-monospace,monospace;background:var(--canvas);color:var(--ink)}
+  header{position:fixed;top:0;left:0;right:0;z-index:40;background:var(--ink);color:#EDF1F6;padding:10px 16px;display:flex;align-items:baseline;gap:14px;flex-wrap:wrap}
+  header h1{font-family:'Space Grotesk',sans-serif;font-size:17px;font-weight:700;letter-spacing:.2px}
+  header .sub{font-size:11px;opacity:.75}
+  #viewport{position:absolute;inset:0;top:46px;overflow:hidden;cursor:grab;touch-action:none}
+  #viewport.dragging{cursor:grabbing}
+  #world{position:absolute;top:0;left:0;transform-origin:0 0;will-change:transform}
+  #edges{position:absolute;top:0;left:0;overflow:visible;pointer-events:none}
+  .edge{fill:none;stroke:var(--line);stroke-width:2}
+  .edge.loop{stroke-dasharray:6 5;stroke:#7C8FA3}
+  .edge.hl{stroke:var(--hl);stroke-width:3}
+  .elabel{font-size:10px;font-weight:600;fill:#5A6B7E;paint-order:stroke;stroke:var(--canvas);stroke-width:4px;stroke-linejoin:round}
+  .elabel.yes{fill:#276749}.elabel.no{fill:#9B2C2C}.elabel.t{fill:#975A16}
+  .node{position:absolute;width:252px;background:var(--card);border:1px solid #D5DCE4;border-left:4px solid var(--action);border-radius:8px;padding:8px 10px 9px;box-shadow:0 1px 2px rgba(31,49,72,.08);cursor:pointer}
+  .node:hover{box-shadow:0 3px 10px rgba(31,49,72,.16)}
+  .node.sel{outline:3px solid var(--hl);outline-offset:1px}
+  .node .id{display:inline-block;font-size:10px;font-weight:600;padding:1px 6px;border-radius:4px;background:#EDF1F6;color:#3A4B5E;margin-right:6px;vertical-align:1px}
+  .node .kind{font-size:9px;letter-spacing:.8px;text-transform:uppercase;font-weight:600;color:var(--action)}
+  .node h3{font-family:'Space Grotesk',sans-serif;font-size:13px;font-weight:700;margin:3px 0 2px;line-height:1.25}
+  .node p{font-size:10.5px;line-height:1.35;color:#4A5A6B}
+  .node.trigger{border-left-color:var(--trigger)}.node.trigger .kind{color:var(--trigger)}
+  .node.email{border-left-color:var(--email)}.node.email .kind{color:var(--email)}
+  .node.wait{border-left-color:var(--wait)}.node.wait .kind{color:var(--wait)}
+  .node.branch{border-left-color:var(--branch)}.node.branch .kind{color:var(--branch)}
+  .node.goal,.node.won,.node.dead{border:none;color:#F2F6F4}
+  .node.goal{background:var(--goalbg)}.node.won{background:var(--wonbg)}.node.dead{background:var(--deadbg)}
+  .node.goal .kind,.node.won .kind,.node.dead .kind{color:#CBD9D4;opacity:.9}
+  .node.goal p,.node.won p,.node.dead p{color:#D8E2DD}
+  .node.goal .id,.node.won .id,.node.dead .id{background:rgba(255,255,255,.16);color:#fff}
+  .phase{position:absolute;border-radius:14px;border:1.5px dashed #C3CDD8;background:rgba(255,255,255,.35)}
+  .phase b{position:absolute;top:-11px;left:18px;background:var(--canvas);padding:0 8px;font-family:'Space Grotesk',sans-serif;font-size:12px;letter-spacing:1.5px;color:#5A6B7E}
+  .gbanner{position:absolute;width:560px;background:#fff;border:1px solid #D5DCE4;border-radius:10px;padding:12px 14px;font-size:10.5px;line-height:1.5;color:#3A4B5E}
+  .gbanner h4{font-family:'Space Grotesk',sans-serif;font-size:12px;letter-spacing:1px;text-transform:uppercase;color:var(--ink);margin-bottom:5px}
+  #legend{position:fixed;left:12px;bottom:12px;z-index:40;background:#fff;border:1px solid #D5DCE4;border-radius:10px;padding:10px 12px;font-size:10.5px;box-shadow:0 2px 10px rgba(31,49,72,.12)}
+  #legend div{display:flex;align-items:center;gap:7px;margin:3px 0}
+  #legend i{width:12px;height:12px;border-radius:3px;display:inline-block}
+  #controls{position:fixed;right:12px;bottom:12px;z-index:40;display:flex;flex-direction:column;gap:6px}
+  #controls button{width:40px;height:36px;border:1px solid #D5DCE4;background:#fff;border-radius:8px;font-family:inherit;font-size:14px;font-weight:600;color:var(--ink);cursor:pointer}
+  #controls button:hover{background:#EDF1F6}
+  #hint{position:fixed;right:60px;bottom:16px;z-index:39;font-size:10px;color:#7C8FA3}
+  @media(max-width:640px){.gbanner{width:400px}header .sub{display:none}}
+</style>
+</head>
+<body>
+<header>
+  <h1>JAMM PX · Lead Nurture Preset v1</h1>
+  <span class="sub">reference tree for the CRM contract · email-only v1 · every send fires a behavioral event · waits see replies via inbound Postmark</span>
+</header>
+<div id="viewport"><div id="world">
+  <svg id="edges"></svg>
+</div></div>
+<div id="legend">
+  <div><i style="background:var(--trigger)"></i> Trigger (enrolls the lead)</div>
+  <div><i style="background:var(--email)"></i> Email send</div>
+  <div><i style="background:var(--wait)"></i> Wait (duration / until event, with timeout)</div>
+  <div><i style="background:var(--branch)"></i> If / Else branch</div>
+  <div><i style="background:var(--action)"></i> Internal action (task, tag, field write, notify)</div>
+  <div><i style="background:var(--goalbg)"></i> Goal event (jump here from anywhere)</div>
+  <div><i style="background:var(--wonbg)"></i> Won · converts to Client</div>
+  <div><i style="background:var(--deadbg)"></i> Dead end · lost with reason</div>
+  <div style="margin-top:5px;color:#7C8FA3">dashed line = loop / re-entry &nbsp;·&nbsp; click a node to trace its lines</div>
+</div>
+<div id="controls">
+  <button id="zin" title="Zoom in">+</button>
+  <button id="zout" title="Zoom out">&minus;</button>
+  <button id="zfit" title="Fit whole tree" style="font-size:10px">FIT</button>
+  <button id="z100" title="Actual size" style="font-size:10px">100%</button>
+</div>
+<div id="hint">drag to pan · wheel to zoom</div>
+<script>
+const COLW=300, ROWH=118, MX=340, MY=90, W=252, H=86;
+const X=c=>MX+c*COLW, Y=r=>MY+r*ROWH;
+const nodes=[
+ // ---------------- TRIGGERS ----------------
+ {id:'T1',t:'trigger',c:1,r:0,h:'Intake form submitted',d:'Public intake page. Source, platform, UTM captured automatically. Auto-enrolls.'},
+ {id:'T2',t:'trigger',c:2,r:0,h:'Lead created manually',d:'Staff adds a lead. Source picked from enum. Enroll toggle on create.'},
+ {id:'T3',t:'trigger',c:3,r:0,h:'Stage set to Contacted',d:'Manual stage move can enroll a lead that skipped the form.'},
+ // ---------------- PHASE 1 ----------------
+ {id:'1',t:'action',c:2,r:1,h:'Notify firm: new lead',d:'In-app + email alert to owner with source, platform, and form answers.'},
+ {id:'2',t:'email',c:2,r:2,h:'E1 · Welcome / received',d:'"Got your inquiry" + what happens next. Sends near-instant (speed-to-lead).'},
+ {id:'3',t:'wait',c:2,r:3,h:'Wait until reply',d:'Timeout 2 days. Reply detected via inbound Postmark on the lead thread.'},
+ {id:'4',t:'branch',c:2,r:4,h:'Replied?',d:'Any reply routes to Qualification. Writes first_response_time to the lead.'},
+ {id:'5',t:'email',c:2,r:5,h:'E2 · Nudge + question',d:'Short bump. Embeds the first qualification question to invite an easy reply.'},
+ {id:'6',t:'wait',c:2,r:6,h:'Wait until reply',d:'Timeout 3 days.'},
+ {id:'7',t:'branch',c:2,r:7,h:'Replied?',d:''},
+ {id:'8',t:'email',c:2,r:8,h:'E3 · Value touch',d:'Lead magnet: deadline checklist / "what to bring" guide. Click also counts as engagement.'},
+ {id:'9',t:'wait',c:2,r:9,h:'Wait until reply or click',d:'Timeout 4 days.'},
+ {id:'10',t:'branch',c:2,r:10,h:'Engaged?',d:''},
+ {id:'11',t:'email',c:2,r:11,h:'E4 · Breakup',d:'"Closing the file" + one-click "still interested" link. Highest reply rate of the set.'},
+ {id:'12',t:'wait',c:2,r:12,h:'Wait until reply or click',d:'Timeout 5 days.'},
+ {id:'13',t:'branch',c:2,r:13,h:'Engaged?',d:''},
+ {id:'D1',t:'dead',c:0.75,r:13,h:'Lost · unresponsive',d:'Tag cold. lost_reason=unresponsive. To Long-Term Drip. Owner notified with one-click take-over.'},
+ // ---------------- PHASE 2 ----------------
+ {id:'14',t:'action',c:2,r:15.4,h:'Task: review reply',d:'Assign to owner/staff. Lead marked engaged. Response threaded onto the lead record.'},
+ {id:'15',t:'email',c:2,r:16.4,h:'E5 · Qualification ask',d:'Links to a short structured form (same machinery as the intake page): service need, individual vs business, entity type, revenue band, timeline question. Prose replies still count as engagement; staff capture the fields.'},
+ {id:'16',t:'wait',c:2,r:17.4,h:'Wait until reply',d:'Timeout 3 days.'},
+ {id:'17',t:'branch',c:2,r:18.4,h:'Answered?',d:''},
+ {id:'18',t:'email',c:3.6,r:18.4,h:'E6 · Gentle re-ask',d:'One retry only. Reframes the questions as "so we can point you to the right person."'},
+ {id:'19',t:'wait',c:3.6,r:19.4,h:'Wait until reply',d:'Timeout 3 days.'},
+ {id:'20',t:'branch',c:3.6,r:20.4,h:'Answered?',d:''},
+ {id:'D2a',t:'dead',c:5,r:20.4,h:'Lost · unresponsive',d:'Engaged once, went dark on questions. lost_reason=unresponsive. To Long-Term Drip. Owner notified, one-click take-over.'},
+ {id:'21',t:'action',c:2,r:19.6,h:'Write structured fields',d:'service_interest, entity_type, revenue_band, urgency written from FORM answers (or staff capture from a prose reply). Never machine-parsed. Pipeline can filter on them.'},
+ {id:'22',t:'branch',c:2,r:20.7,h:'Fit check',d:'Service offered by firm AND revenue/complexity above the firm-set floor?'},
+ {id:'R1',t:'action',c:0.75,r:20.7,h:'Flag unqualified · owner review',d:'Owner notified with the answers the lead gave. Decline email HELD for one-click approval. Owner can override back into the sequence instead. Nothing external sends without a human.'},
+ {id:'D2',t:'dead',c:0.75,r:21.9,h:'Lost · unqualified',d:'On approval: E7 polite decline + referral suggestion sends. lost_reason=unqualified. Filtered on purpose: never counts against conversion.'},
+ {id:'23',t:'branch',c:2,r:21.8,h:'Urgency?',d:'From the timeline question on the form (filing deadline / IRS notice in hand) or a staff mark. Never inferred from text.'},
+ {id:'24',t:'action',c:3.6,r:22.6,h:'Hot lead alert',d:'Immediate owner notification. Hot leads should get a human same-day, not just the sequence.'},
+ // ---------------- PHASE 3 ----------------
+ {id:'25',t:'email',c:2,r:23.8,h:'E8 · Booking invite',d:'Native JAMM booking link (firm calendar). lead.call_booked is the goal this phase watches.'},
+ {id:'26',t:'wait',c:2,r:24.8,h:'Wait until booked',d:'Goal-watched. Timeout 3 days.'},
+ {id:'27',t:'branch',c:2,r:25.8,h:'Booked?',d:''},
+ {id:'39a',t:'email',c:0.55,r:25.8,h:'E9 · Booking nudge',d:'Two suggested times in plain text + the link again.'},
+ {id:'39b',t:'wait',c:0.55,r:26.8,h:'Wait until booked',d:'Timeout 3 days.'},
+ {id:'39c',t:'branch',c:0.55,r:27.8,h:'Booked?',d:''},
+ {id:'39d',t:'email',c:0.55,r:28.8,h:'E10 · Alt channel offer',d:'"Prefer email? Reply with your questions." Also creates task: owner personal outreach.'},
+ {id:'39e',t:'wait',c:0.55,r:29.8,h:'Wait until reply',d:'Timeout 4 days.'},
+ {id:'39f',t:'branch',c:0.55,r:30.8,h:'Engaged?',d:'Yes loops back to the booking invite.'},
+ {id:'D3b',t:'dead',c:0.55,r:31.9,h:'Lost · unresponsive',d:'Qualified but never booked. To Long-Term Drip. Owner notified, one-click take-over. This bucket is a metric worth watching.'},
+ {id:'G1',t:'goal',c:2,r:26.9,h:'GOAL · Call booked',d:'Fires from anywhere in Phases 1-3 the moment a booking lands. Skips everything between.'},
+ {id:'28',t:'email',c:2,r:27.9,h:'E11 · Confirmation',d:'Time, who they meet, what to have handy. Calendar attachment.'},
+ {id:'29',t:'wait',c:2,r:28.9,h:'Wait until 24h before call',d:'Anchored to the booked slot, not a fixed delay.'},
+ {id:'30',t:'email',c:2,r:29.9,h:'E12 · Reminder',d:'Short. Reschedule link included: a reschedule is not a no-show.'},
+ {id:'31',t:'wait',c:2,r:30.9,h:'Wait until call time +1h',d:'Then check what happened.'},
+ {id:'32',t:'branch',c:2,r:31.9,h:'Call happened?',d:'Staff marks held / no-show on the lead (one click from the task).'},
+ {id:'33',t:'email',c:3.6,r:31.9,h:'E13 · Missed you',d:'No guilt. Rebook link. "Want us to just handle it by email instead?"'},
+ {id:'34',t:'wait',c:3.6,r:32.9,h:'Wait until rebooked',d:'Timeout 2 days.'},
+ {id:'35',t:'branch',c:3.6,r:33.9,h:'Rebooked?',d:'Yes loops to confirmation. Max 2 rebook loops, then falls through.'},
+ {id:'36',t:'email',c:5,r:33.9,h:'E14 · Second nudge',d:'Last rebook attempt, offers the email-only path.'},
+ {id:'37',t:'wait',c:5,r:34.9,h:'Wait until rebooked',d:'Timeout 3 days.'},
+ {id:'38',t:'branch',c:5,r:35.9,h:'Rebooked?',d:''},
+ {id:'D3',t:'dead',c:5,r:37,h:'Lost · unresponsive',d:'Booked once, vanished. To Long-Term Drip. Owner notified, one-click take-over.'},
+ // ---------------- PHASE 4 ----------------
+ {id:'40',t:'action',c:2,r:33.2,h:'Stage to Proposal + task',d:'Auto stage move. Task: prepare and send proposal, assigned from the call.'},
+ {id:'41',t:'wait',c:2,r:34.2,h:'Wait until proposal sent',d:'Waits on the staff action, not a timer. Nudges staff internally at 3 days.'},
+ {id:'42',t:'email',c:2,r:35.2,h:'E15 · Proposal delivered',d:'Generated from the firm engagement letter template already in JAMM for the selected service type, unsigned. Scope, fee, start date, one clear accept action.'},
+ {id:'43',t:'wait',c:2,r:36.2,h:'Wait until reply',d:'Timeout 4 days.'},
+ {id:'44',t:'branch',c:2,r:37.2,h:'Response?',d:'Accepted goes straight to Won. Anything else routes right.'},
+ {id:'W1',t:'won',c:2,r:38.5,h:'WON · Convert to Client',d:'Client created. Attribution + provenance flow forward. Accepted proposal becomes the e-sign engagement letter (existing Dropbox Sign flow). Exits every sequence. Onboarding begins.'},
+ {id:'45',t:'email',c:3.6,r:37.2,h:'E16 · Follow-up 1',d:'"Any questions on the proposal?" Light.'},
+ {id:'45b',t:'wait',c:3.6,r:38.2,h:'Wait until reply',d:'Timeout 4 days.'},
+ {id:'46',t:'email',c:3.6,r:39.2,h:'E17 · Follow-up 2',d:'Addresses the two most common objections head-on. Offers a 10-minute call.'},
+ {id:'46b',t:'wait',c:3.6,r:40.2,h:'Wait until reply',d:'Timeout 5 days.'},
+ {id:'47',t:'branch',c:3.6,r:41.2,h:'Outcome?',d:'Reply parsed / staff tags it: price, competitor, timing, or silence.'},
+ {id:'48',t:'action',c:5.1,r:40.2,h:'Task: owner call',d:'Price objection gets a human. Optionally an adjusted proposal.'},
+ {id:'48b',t:'branch',c:5.1,r:41.2,h:'Closed?',d:'Yes routes to Won.'},
+ {id:'D4',t:'dead',c:5.1,r:42.3,h:'Lost · price',d:'Graceful close, door open. Light drip (2x/year).'},
+ {id:'D5',t:'dead',c:3.6,r:42.3,h:'Lost · chose competitor',d:'Graceful close + door-open email. Light drip. Competitor named if offered: gold for intelligence later.'},
+ {id:'49',t:'action',c:6.4,r:41.2,h:'Schedule re-engagement',d:'"After tax season" gets a date. lost_reason=timing recorded now; lead re-enters at Booking on that date.'},
+ {id:'D6',t:'dead',c:6.4,r:42.3,h:'Lost · unresponsive',d:'Silence after proposal. To Long-Term Drip. Owner notified, one-click take-over.'},
+ // ---------------- LONG-TERM DRIP ----------------
+ {id:'LD1',t:'trigger',c:0.55,r:44.6,h:'Drip entry',d:'Enrolled from any unresponsive/price/competitor dead end. Suppression list checked before every send.'},
+ {id:'LD2',t:'email',c:0.55,r:45.6,h:'E18 · Quarterly value',d:'Deadline reminders, law changes, one useful thing. Never "just checking in."'},
+ {id:'LD3',t:'wait',c:0.55,r:46.6,h:'Wait reply/click or 90d',d:'Whichever first.'},
+ {id:'LD4',t:'branch',c:0.55,r:47.6,h:'Engaged?',d:'Yes re-enters Qualification with history intact. No loops the drip. Unsubscribe exits forever.'},
+];
+const edges=[
+ ['T1','1'],['T2','1'],['T3','1'],
+ ['1','2'],['2','3'],['3','4'],
+ ['4','14','YES','yes','rail'],['4','5','NO','no'],
+ ['5','6'],['6','7'],
+ ['7','14','YES','yes','rail'],['7','8','NO','no'],
+ ['8','9'],['9','10'],
+ ['10','14','YES','yes','rail'],['10','11','NO','no'],
+ ['11','12'],['12','13'],
+ ['13','14','YES','yes','rail'],['13','D1','NO','no','side'],
+ ['14','15'],['15','16'],['16','17'],
+ ['17','21','YES','yes'],['17','18','NO','no','side'],
+ ['18','19'],['19','20'],
+ ['20','21','YES','yes','loop'],['20','D2a','NO','no','side'],
+ ['21','22'],
+ ['22','23','FIT','yes'],['22','R1','NOT FIT','no','side'],
+ ['R1','D2','APPROVED','no'],['R1','23','OVERRIDE','yes','loop'],
+ ['23','25','WARM','t'],['23','24','HOT','yes','side'],
+ ['24','25','','','loop'],
+ ['25','26'],['26','27'],
+ ['27','G1','YES','yes'],['27','39a','NO','no','side'],
+ ['39a','39b'],['39b','39c'],
+ ['39c','G1','YES','yes','loop'],['39c','39d','NO','no'],
+ ['39d','39e'],['39e','39f'],
+ ['39f','25','YES','yes','loop'],['39f','D3b','NO','no'],
+ ['G1','28'],['28','29'],['29','30'],['30','31'],['31','32'],
+ ['32','40','HELD','yes'],['32','33','NO-SHOW','no','side'],
+ ['33','34'],['34','35'],
+ ['35','28','YES','yes','loop'],['35','36','NO','no','side'],
+ ['36','37'],['37','38'],
+ ['38','28','YES','yes','loop'],['38','D3','NO','no'],
+ ['40','41'],['41','42'],['42','43'],['43','44'],
+ ['44','W1','ACCEPTED','yes'],['44','45','ELSE','no','side'],
+ ['45','45b'],['45b','46'],['46','46b'],['46b','47'],
+ ['47','48','PRICE','t','side'],['47','D5','COMPETITOR','no'],
+ ['47','49','TIMING','t','far'],['47','D6','SILENCE','no','far2'],
+ ['48','48b'],
+ ['48b','W1','YES','yes','loop'],['48b','D4','NO','no'],
+ ['49','25','AT DATE','t','loop'],
+ ['D1','LD1','','','loop'],['D3b','LD1','','','loop'],
+ ['LD1','LD2'],['LD2','LD3'],['LD3','LD4'],
+ ['LD4','LD2','NO · LOOP','no','loop'],['LD4','14','YES · RE-ENROLL','yes','loop'],
+];
+const phases=[
+ {c0:-0.2,r0:-0.55,c1:4.1,r1:0.62,label:'TRIGGERS'},
+ {c0:0.35,r0:0.7,c1:4.1,r1:14,label:'PHASE 1 · SPEED TO LEAD'},
+ {c0:0.35,r0:14.9,c1:6,r1:23.05,label:'PHASE 2 · QUALIFY'},
+ {c0:0.15,r0:23.3,c1:6,r1:32.6,label:'PHASE 3 · BOOK THE CALL'},
+ {c0:1.6,r0:32.75,c1:7.4,r1:43.4,label:'PHASE 4 · PROPOSE AND CLOSE'},
+ {c0:0.15,r0:44.05,c1:2.1,r1:48.7,label:'LONG-TERM DRIP'},
+];
+const world=document.getElementById('world');
+const svg=document.getElementById('edges');
+const nmap={};
+phases.forEach(p=>{
+  const el=document.createElement('div');el.className='phase';
+  el.style.left=(X(p.c0)-24)+'px';el.style.top=(Y(p.r0)-16)+'px';
+  el.style.width=(X(p.c1)-X(p.c0)+W+48)+'px';el.style.height=(Y(p.r1)-Y(p.r0)+H+32)+'px';
+  el.innerHTML='<b>'+p.label+'</b>';world.appendChild(el);
+});
+const gb=document.createElement('div');gb.className='gbanner';
+gb.style.left=(X(4.4))+'px';gb.style.top=(Y(0.75))+'px';
+gb.innerHTML='<h4>Global rules · apply to every node</h4>'+
+ 'STOP anywhere: unsubscribe (suppression list, exits forever) · converted to Client · staff removes from sequence.<br>'+
+ 'GOAL: a booking fired anywhere in Phases 1-3 jumps the lead straight to G1.<br>'+
+ 'Sends respect firm business hours (8am-6pm firm-local, configurable). All nurture mail rides the marketing Postmark stream, never transactional.<br>'+
+ 'Enrollments pin to the sequence version at enroll time; edits create a new version for new enrollments only.<br>'+
+ 'ONE ENGINE, MANY DOORS: email answer buttons, the form, and staff capture all write the same fields and advance the same tree. The form has no logic of its own; it asks whatever the tree says is unanswered next, one question per screen with a progress count (2 of 5).<br>FAST PATH: form completion runs the fit check instantly. FIT shows booking slots as the final step; NOT FIT ends on the identical warm thank-you (owner review + held decline run behind the scenes). First email to booked call can happen in one sitting; the waits below are the safety net, not the speed limit.<br>Branches fire on FACTS only: reply-exists, click, form answer, staff click, date passed. Free text never routes a branch.<br>Native booking runs on firm-set availability: per-staff weekly windows, meeting length, buffers, daily cap.<br>Bookings carry the meeting location automatically: per-staff video room link, phone, or office address, set once in settings and injected into the confirmation, reminder, and calendar event. Unique per-meeting links (Zoom / Meet APIs) are a fast-follow.<br>Booked calls carry full lead context: the calendar event shows a summary (source, answers, hot flag) and links to the lead detail view with the whole thread, so the owner walks into every call already briefed.<br>Every send, reply, click, branch outcome, and exit fires a behavioral event with the step id.';
+world.appendChild(gb);
+nodes.forEach(n=>{
+  const el=document.createElement('div');
+  el.className='node '+n.t;el.id='n_'+n.id;
+  const kind={trigger:'Trigger',email:'Email',wait:'Wait',branch:'If / Else',action:'Action',goal:'Goal event',won:'Converted',dead:'Dead end'}[n.t];
+  el.innerHTML='<span class="id">'+n.id+'</span><span class="kind">'+kind+'</span><h3>'+n.h+'</h3>'+(n.d?'<p>'+n.d+'</p>':'');
+  el.style.left=X(n.c)+'px';el.style.top=Y(n.r)+'px';
+  world.appendChild(el);
+  nmap[n.id]={...n,el};
+  el.addEventListener('click',e=>{e.stopPropagation();select(n.id);});
+});
+requestAnimationFrame(()=>{
+  Object.values(nmap).forEach(n=>{n.hh=n.el.offsetHeight;});
+  drawEdges();fit();
+});
+function pt(n,side){
+  const x=X(n.c),y=Y(n.r),h=n.hh||H;
+  if(side==='top')return[x+W/2,y];
+  if(side==='bottom')return[x+W/2,y+h];
+  if(side==='left')return[x,y+h/2];
+  if(side==='right')return[x+W,y+h/2];
+}
+function drawEdges(){
+  let maxX=0,maxY=0;
+  Object.values(nmap).forEach(n=>{maxX=Math.max(maxX,X(n.c)+W);maxY=Math.max(maxY,Y(n.r)+(n.hh||H));});
+  maxX=Math.max(maxX,X(4.4)+580);
+  svg.setAttribute('width',maxX+400);svg.setAttribute('height',maxY+300);
+  world.style.width=(maxX+400)+'px';world.style.height=(maxY+300)+'px';
+  let html='<defs><marker id="arr" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0,0 L7,3.5 L0,7 z" fill="#93A1B1"/></marker><marker id="arrh" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0,0 L7,3.5 L0,7 z" fill="#1F3148"/></marker></defs>';
+  edges.forEach((e,i)=>{
+    const[a,b,label,lt,mode]=e;const A=nmap[a],B=nmap[b];if(!A||!B)return;
+    let d='',lx=0,ly=0;
+    const loop=(mode==='loop');
+    if(mode==='side'||mode==='far'||mode==='far2'){
+      const dir=B.c>A.c?1:-1;
+      const p1=pt(A,dir>0?'right':'left');
+      const p2=pt(B,'top');
+      const off=mode==='far'?60:(mode==='far2'?84:0);
+      const midx=p2[0];
+      d=`M${p1[0]},${p1[1]} H${midx} V${p2[1]-6}`;
+      if(mode==='far'||mode==='far2'){
+        const railY=p1[1]+off;
+        d=`M${p1[0]},${p1[1]} H${p1[0]+dir*30} V${railY} H${midx} V${p2[1]-6}`;
+      }
+      lx=(p1[0]+midx)/2;ly=p1[1]-6;
+      if(mode==='far'||mode==='far2'){lx=p1[0]+dir*40;ly=p1[1]+off-6;}
+    } else if(mode==='rail'){
+      const p1=pt(A,'right');const p2=pt(B,'top');
+      const railX=X(4.05);
+      d=`M${p1[0]},${p1[1]} H${railX} V${p2[1]-40} H${p2[0]} V${p2[1]-6}`;
+      lx=p1[0]+34;ly=p1[1]-6;
+    } else if(loop){
+      const p1=pt(A,B.c>=A.c?'right':'left');
+      const p2=pt(B, B.r<A.r ? (B.c>A.c?'left':'right') : 'top');
+      const dir=B.c>=A.c?1:-1;
+      const bendX=p1[0]+dir*36;
+      if(B.r<A.r){
+        d=`M${p1[0]},${p1[1]} H${bendX} V${p2[1]} H${p2[0]+(B.c>A.c?-6:6)}`;
+      } else {
+        d=`M${p1[0]},${p1[1]} H${bendX} V${p2[1]-40} H${p2[0]} V${p2[1]-6}`;
+      }
+      lx=bendX+dir*6;ly=(p1[1]+ (B.r<A.r?p2[1]:p2[1]))/2;
+    } else {
+      const p1=pt(A,'bottom');const p2=pt(B,'top');
+      if(Math.abs(p1[0]-p2[0])<4){d=`M${p1[0]},${p1[1]} V${p2[1]-6}`;lx=p1[0]+8;ly=(p1[1]+p2[1])/2;}
+      else{const my=p1[1]+22;d=`M${p1[0]},${p1[1]} V${my} H${p2[0]} V${p2[1]-6}`;lx=(p1[0]+p2[0])/2;ly=my-5;}
+    }
+    html+=`<path class="edge${loop?' loop':''}" data-a="${a}" data-b="${b}" d="${d}" marker-end="url(#arr)"/>`;
+    if(label)html+=`<text class="elabel ${lt||''}" x="${lx}" y="${ly}">${label}</text>`;
+  });
+  svg.innerHTML=html;
+}
+let selected=null;
+function select(id){
+  if(selected)nmap[selected].el.classList.remove('sel');
+  if(selected===id){selected=null;}else{selected=id;nmap[id].el.classList.add('sel');}
+  svg.querySelectorAll('.edge').forEach(p=>{
+    const on=selected&&(p.dataset.a===selected||p.dataset.b===selected);
+    p.classList.toggle('hl',on);
+    p.setAttribute('marker-end',on?'url(#arrh)':'url(#arr)');
+  });
+}
+document.getElementById('viewport').addEventListener('click',()=>{if(selected)select(selected);});
+const vp=document.getElementById('viewport');
+let scale=1,tx=0,ty=0;
+function apply(){world.style.transform=`translate(${tx}px,${ty}px) scale(${scale})`;}
+function fit(){
+  const ww=parseFloat(world.style.width)||3000,wh=parseFloat(world.style.height)||5000;
+  const vw=vp.clientWidth,vh=vp.clientHeight;
+  scale=Math.min(vw/ww,vh/wh,1);
+  tx=(vw-ww*scale)/2;ty=10;apply();
+}
+function zoomAt(f,cx,cy){
+  const ns=Math.min(2.5,Math.max(0.05,scale*f));
+  tx=cx-(cx-tx)*(ns/scale);ty=cy-(cy-ty)*(ns/scale);scale=ns;apply();
+}
+vp.addEventListener('wheel',e=>{e.preventDefault();zoomAt(e.deltaY<0?1.12:0.89,e.clientX,e.clientY-46);},{passive:false});
+let drag=null;const ptrs=new Map();
+vp.addEventListener('pointerdown',e=>{vp.setPointerCapture(e.pointerId);ptrs.set(e.pointerId,[e.clientX,e.clientY]);if(ptrs.size===1){drag=[e.clientX-tx,e.clientY-ty];vp.classList.add('dragging');}});
+vp.addEventListener('pointermove',e=>{
+  if(!ptrs.has(e.pointerId))return;
+  const prev=[...ptrs.values()];
+  ptrs.set(e.pointerId,[e.clientX,e.clientY]);
+  if(ptrs.size===2){
+    const cur=[...ptrs.values()];
+    const d0=Math.hypot(prev[0][0]-prev[1][0],prev[0][1]-prev[1][1]);
+    const d1=Math.hypot(cur[0][0]-cur[1][0],cur[0][1]-cur[1][1]);
+    if(d0>0)zoomAt(d1/d0,(cur[0][0]+cur[1][0])/2,(cur[0][1]+cur[1][1])/2-46);
+    drag=null;
+  } else if(drag){tx=e.clientX-drag[0];ty=e.clientY-drag[1];apply();}
+});
+const up=e=>{ptrs.delete(e.pointerId);if(ptrs.size===0){drag=null;vp.classList.remove('dragging');}};
+vp.addEventListener('pointerup',up);vp.addEventListener('pointercancel',up);
+document.getElementById('zin').onclick=()=>zoomAt(1.25,vp.clientWidth/2,vp.clientHeight/2);
+document.getElementById('zout').onclick=()=>zoomAt(0.8,vp.clientWidth/2,vp.clientHeight/2);
+document.getElementById('zfit').onclick=fit;
+document.getElementById('z100').onclick=()=>{scale=1;tx=20;ty=20;apply();};
+window.addEventListener('resize',()=>{});
+</script>
+</body>
+</html>

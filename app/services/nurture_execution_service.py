@@ -37,7 +37,9 @@ A process crash after the write produces a missed email, never a duplicate.
 Do not reverse this ordering.
 """
 
+import hashlib
 import logging
+import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -54,6 +56,7 @@ from app.core.enums import StepType
 from app.crud import enrollment as crud_enrollment
 from app.crud import lead_message as crud_lead_message
 from app.crud.suppressed_email import is_suppressed
+from app.core.config import get_settings
 from app.services.email_service import EmailService, build_lead_reply_to
 
 logger = logging.getLogger(__name__)
@@ -394,12 +397,36 @@ def run_nurture_tick() -> dict:
                     updated_loop_counts = {**enrollment.loop_counts, str(edge.id): current_count + 1}
                 next_step_id = edge.to_step_id
 
-            # 9. Render content from step config.
+            # 9. Generate a fresh unsubscribe token for this specific send.
+            # Raw token is single-use and lives only in the email link; only the
+            # hash is written to the database. Long expiry (10 years) because an
+            # unsubscribe link that silently expires is a real compliance problem.
+            # Per contract section 6.6: every nurture send must carry an unsubscribe link.
+            settings = get_settings()
+            raw_unsubscribe_token = secrets.token_hex(32)
+            unsubscribe_token_hash = hashlib.sha256(raw_unsubscribe_token.encode()).hexdigest()
+            unsubscribe_token_expires_at = now + timedelta(days=3650)
+            unsubscribe_url = f"{settings.FRONTEND_URL}/unsubscribe/{raw_unsubscribe_token}"
+
+            # 10. Render content from step config and inject the unsubscribe link.
             config = current_step.config or {}
             subject = config.get("subject", "")
             body = config.get("body", "")
 
-            # 10. Look up firm for sending identity.
+            # Inject unsubscribe_url using the same {{key}} convention as letter_renderer.py.
+            # If the body contains {{unsubscribe_url}}, substitute it in place.
+            # If not (e.g. placeholder body or manually-authored body with no tag),
+            # append a plain unsubscribe footer so the link is never silently omitted.
+            if "{{unsubscribe_url}}" in body:
+                body = body.replace("{{unsubscribe_url}}", unsubscribe_url)
+            else:
+                body = (
+                    body
+                    + f'<p style="font-size:11px;color:#888;margin-top:32px;">'
+                    + f'<a href="{unsubscribe_url}">Unsubscribe</a> from these emails.</p>'
+                )
+
+            # 11. Look up firm for sending identity.
             firm = db.query(Firm).filter(Firm.id == enrollment.firm_id).first()
             from_name = firm.name if firm else "JAMM PX"
             sending_domain = (
@@ -408,7 +435,7 @@ def run_nurture_tick() -> dict:
                 else None
             )
 
-            # 11. WRITE FIRST -- advance enrollment before any send attempt.
+            # 12. WRITE FIRST -- advance enrollment before any send attempt.
             # Write-then-send guarantee: a crash after write produces a missed email,
             # never a duplicate. Do not move this below the send call.
             crud_enrollment.advance_enrollment(
@@ -417,9 +444,11 @@ def run_nurture_tick() -> dict:
                 new_current_step_id=next_step_id,
                 new_next_action_time=_compute_next_action_time(db, next_step_id, now),
                 new_loop_counts=updated_loop_counts,
+                new_unsubscribe_token_hash=unsubscribe_token_hash,
+                new_unsubscribe_token_expires_at=unsubscribe_token_expires_at,
             )
 
-            # 12. Send the email. Failure is fire-and-forget: enrollment is already advanced.
+            # 13. Send the email. Failure is fire-and-forget: enrollment is already advanced.
             reply_to = build_lead_reply_to(str(lead.id))
             try:
                 EmailService.send_nurture_email(

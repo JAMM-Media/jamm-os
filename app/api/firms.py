@@ -22,6 +22,7 @@ from app.models.user import User
 from app.services.automation_presets import seed_firm_presets
 from app.services.tax_organizer_service import seed_firm_organizer_templates
 from app.services.engagement_letter_seed import seed_firm_letter_templates
+from app.services.nurture_preset import seed_firm_nurture_preset
 from app.services import firm_service
 from app.services import s3 as s3_service
 from app.services.firm_settings import reject_retired_settings_keys
@@ -53,6 +54,8 @@ def create_firm(
     logger.info(f"Firm {new_firm.id} created with {seeded_templates} organizer templates")
     seeded_letters = seed_firm_letter_templates(firm_id=new_firm.id, db=db)
     logger.info(f"Firm {new_firm.id} created with {seeded_letters} letter templates")
+    seeded_nurture = seed_firm_nurture_preset(firm_id=new_firm.id, db=db)
+    logger.info(f"Firm {new_firm.id} created with {seeded_nurture} nurture preset steps")
     return new_firm
 
 

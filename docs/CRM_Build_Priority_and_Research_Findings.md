@@ -1,4 +1,4 @@
-<!-- Created 2026-08-14/15 during a live build session. Updated 2026-08-15 to reflect the completed backend booking sequence and two real bugs found and handled during the session. This document captures the full reasoning behind every item on the priority list, not just the item itself, so context is never lost to a closed chat window. -->
+<!-- Created 2026-08-14/15 during a live build session. Updated 2026-08-15 to reflect the completed backend booking sequence and two real bugs found and handled during the session. Updated again 2026-08-17 to reflect the resolved driver contradiction, the duplicate-day guard fix, the complete staff-facing booking UI, and the complete firm timezone system. This document captures the full reasoning behind every item on the priority list, not just the item itself, so context is never lost to a closed chat window. -->
 
 # CRM Build Priority List and Research Findings
 
@@ -59,15 +59,49 @@ Two honest open findings from this task, not yet resolved:
 
 ---
 
+## Part 1B: Staff-Facing Booking UI and Firm Timezone System -- COMPLETE (2026-08-17)
+Built in the session immediately following Part 1's completion. All items below were built, reviewed diff-by-diff against real output (never a trusted summary), tested with real watched-fail cycles where applicable, and pushed to origin/main.
+
+### Pipeline UI -- COMPLETE
+Built as a split-pane layout: a persistent table on the left, a URL-driven detail panel on the right. Includes a real activity timeline pulling from LeadMessage and BehavioralEvent, a StageProgressBar, contextual quick-action buttons per stage, and a summary strip with real per-stage counts. Page title is "Pipeline," not "Leads" -- a deliberate, permanent decision. Three real structural bugs found via live browser DOM measurement during this build (summary strip unmounting on filter change, skeleton row count not tracking real count, skeleton missing a header row causing a ~49px jump on every transition) were all fixed in the same session.
+
+### Two real backend gaps found and closed before the booking UI could work at all
+compute_available_slots() existed and worked but was never exposed over HTTP -- no endpoint anywhere called it. GET /users/ (the only staff-listing endpoint) requires firm_owner, so a regular staff member could not populate a staff picker. Both fixed:
+- GET /api/v1/bookings/slots -- wraps compute_available_slots, staff-accessible, tenant-scoped, 60-day range cap.
+- GET /users/bookable-staff -- staff-accessible, returns only id and full_name (no email, role, or other HR data) for users who have at least one AvailabilityWindow configured. Deliberately narrower than GET /users/, matching the existing RBAC pattern on availability-windows where team scheduling visibility is open to all staff but full HR data is not.
+- GET /api/v1/bookings/ with an optional lead_id filter -- needed so the frontend could show a lead's existing booking.
+
+### A real bug found in existing code: "Book Call" was bypassing the entire booking engine
+The contacted stage's Book Call quick action called handleTransition('call_booked') directly -- a bare stage change with no Booking row ever created, completely bypassing the row-level locking, slot-conflict re-check, and atomic stage transition built in Part 1. Fixed: Book Call now opens a real BookCallModal (staff picker, then real open slots grouped by day); the stage transition to call_booked now only happens as a side effect of a real booking being created via the existing create_booking() function, exactly as originally designed.
+
+### Two real bugs found and fixed via direct browser verification, not caught by any test
+- The Scheduled Call card never appeared after a successful booking. Root cause: the bookingsData useFetch call was never given its own refetch function, so onBooked never refreshed it. One-line fix, confirmed in the browser afterward.
+- A pre-existing (not introduced by this session) full border box around the Book Call / Mark Lost / Other stage button row, caused by border-[0.5px] setting all four sides while border-t only overrode the top width, leaving the other three sides visible. Fixed by removing the redundant border-[0.5px] utility.
+
+### Firm timezone system -- COMPLETE
+Real gap found via direct browser test: AvailabilityWindow times were being treated as UTC directly with zero timezone conversion -- explicitly documented as "out of scope" in slot_computation_service.py's own docstring. A 9am-5pm window displayed as 5am-1pm in the browser. Fixed with a real, three-part build:
+- Backend: Firm.timezone (String, server_default America/New_York as a safe migration value only, not a design assumption), migration b2321b6bb22a. slot_computation_service.py and booking_service.py both localize AvailabilityWindow times using the firm's real timezone via zoneinfo before converting to UTC, replacing the previous direct-UTC-tagging. Proven correct with a real watched-fail cycle and five new tests in test_slot_timezone.py covering LA, NY, Chicago, and UTC, deliberately including a January/July pair for Los Angeles to catch the PST/PDT DST boundary, not just a single fixed offset. Existing slot/booking tests updated to set timezone explicitly rather than relying on an implicit UTC assumption -- no existing assertions were changed, only made explicit.
+- Frontend: a real Timezone setting added to Settings > Firm, a six-option dropdown (Eastern/Central/Mountain/Pacific/Alaska/Hawaii) wired to the existing PATCH /firms/me endpoint, so a firm outside Eastern time has a real way to correct the migration default. Verified in the browser: setting a firm to Pacific correctly shifted a 9am-5pm window's displayed slots by the correct three-hour offset relative to Eastern.
+This closes a real correctness gap that would otherwise have silently shown every non-Eastern firm the wrong booking times with no way to fix it.
+
+---
+
 ## Part 2: Open Findings From Tonight, Requiring Andrew's Input Before Proceeding
 
-### The pgcode/sqlstate driver contradiction
+### The pgcode/sqlstate driver contradiction -- RESOLVED
+Andrew ran a full check across production, the repo's dependency pins, and CI. Verdict: psycopg3 is canonical everywhere that counts -- production runs psycopg 3.3.4 with no psycopg2 in the venv, requirements.txt pins psycopg[binary] only, and CI has never run psycopg2. The real root cause was neither environment being misconfigured: .env.example -- the file the README tells every new setup to copy -- has carried a plain postgresql:// prefix since June 2. SQLAlchemy selects its driver from the URL prefix, not from what happens to be installed, so a plain prefix silently selects psycopg2 whenever it is importable, which it was on both Andrew's and Ben's machines because create_test_db.py imports it and it appears in no requirements file. Same repo, same real packages, one string different in a file nobody had reason to suspect. "Which driver is installed" was never the right diagnostic question.
+Andrew fixed .env.example, updated the README's copy-env step to state the prefix requirement and why, added tests/test_database_url_prefix.py as a permanent tripwire (asserts both the resolved settings URL and the template itself carry the correct prefix), removed a hardcoded plain-prefix fallback in test_auth.py, and corrected the conftest docstring example. Landed as ad5674f, on main as 5815afd.
+Ben's local fix: corrected DATABASE_URL in both .env and .env.test to the postgresql+psycopg:// prefix, confirmed via a real engine.dialect.driver check returning "psycopg", and confirmed tests/test_database_url_prefix.py passes locally. The known 10-failure baseline from the first full-suite run of the 2026-08-17 session is now back to 9 -- this was never a ninth pre-existing failure, it was this exact bug surfacing for the first time in a complete run.
+Incidental corroboration: the availability-window duplicate-day guard's failing test (see below) errored with psycopg.errors.UniqueViolation -- a real psycopg3 exception with no .pgcode attribute -- directly confirming the guard's 409 branch was unreachable dead code, independent of and consistent with Andrew's diagnosis.
 
-Andrew's baseline found the availability-window duplicate-day check broken under what he identified as `psycopg3`. Ben's independent, empirical check on his own machine found the opposite: `psycopg2` is genuinely in use, the existing code is correct for that driver, and the guard test passes cleanly against a freshly rebuilt database with zero code changes. Both findings are real and empirically confirmed on their respective machines. The most likely explanation is that the two environments are running different Postgres drivers, not that either person's diagnosis is wrong. Escalated to Andrew directly with the full empirical evidence, asking him to check how the driver is actually pinned (`requirements.txt` / lockfile) and confirm which one is canonical, since applying either suggested fix blind risks breaking whichever environment is not currently broken. No code changed. Waiting on his reply.
+### Availability-window duplicate-day guard -- RESOLVED
+The guard in app/crud/availability_window.py read exc.orig.pgcode, a psycopg2-only attribute that does not exist on a psycopg3 exception. This meant the check pgcode == "23505" always evaluated None == "23505" -> False, so the guard's 409 branch was permanently unreachable -- a real duplicate-day attempt fell through to an unhandled 500 instead of a clean 409, and no automated test existed anywhere to catch this; the 409 path had only ever been verified by hand.
+Fixed to read exc.orig.sqlstate first, with a defensive fallback to .pgcode in case the driver ever changes again. A real guard test was written and does not just claim correctness -- it was watched fail first (reverted to pgcode-only, confirmed a genuine unhandled psycopg.errors.UniqueViolation escaping instead of a caught ValueError), then watched pass again after the real fix was restored, then confirmed via git diff that the restore left no stray changes. Committed at 06c59fa.
 
 ### `delete_engagement` guard — still not built
 
-Real, known, severe data-loss bug found in the project's own Consolidated Roadmap document hours into this session: deleting an engagement does not check for attached documents, time entries, or invoices before deleting, and the permanent event log misrepresents the outcome as `engagement.archived` when the true outcome was permanent destruction. Described in the roadmap itself as a small fix, matching an existing pattern already used for invoices, requiring no migration. Placed in the priority list by severity, not build-sequence order. Not yet touched. This is the next actionable, unblocked item as of this update.
+Investigated directly against the real, current codebase during the 2026-08-17 session and found already fixed -- not the severe open bug this document originally described. A real guard exists checking for attached documents, time entries, and invoices before allowing deletion, and the permanent event log correctly fires engagement.deleted, not the previously-assumed engagement.archived. Verified empirically against production via a direct API call that refused deletion of an engagement with an attached document.
+One real, still-open question surfaced during this same investigation: whether the cascade-delete behavior on the 8 CASCADE foreign keys pointing at engagements (document_requests, extensions, tax_organizers, engagement_members, time_entries, qc_checklist_items, recurring_engagement_log, tasks) is intentional across all 8, or whether some should be blocked like the three checked types above rather than cascading silently. The full list, with a one-line description of what each table holds, was sent to Andrew directly. He has asked to rule on all 8 at once, sorted into work-product-vs-overhead, rather than deciding a few and leaving others unexamined. Awaiting his ruling.
 
 ### Scheduler multi-worker safety — RESOLVED, no longer open
 
@@ -99,13 +133,7 @@ One real gap worth naming: the abandoned-form escalation chain this ruling descr
 
 ## Part 3: Deferred to Their Own Session (Unchanged)
 
-### Pipeline UI, including the won-transition confirmation dialog
-
-Confirmed by direct reconnaissance: no lead-related frontend screen exists anywhere in this codebase — no list view, no detail view, no API calls from the frontend to any of the five real lead endpoints that already work. The reusable confirmation-dialog component (`useConfirm`) already exists and is used elsewhere, but has nowhere to attach to yet. The contract describes the real lead detail view as a major, unified surface, explicitly warning against building "four partial context displays" instead of one real one. Deferred to its own dedicated session rather than built sight-unseen late at night.
-
-### Booking-facing frontend UI
-
-Depends on the pipeline UI existing first, and on Andrew's public intake config endpoint for any lead-facing (non-staff) booking flow.
+Nothing currently deferred as of 2026-08-17. Both items previously listed here (Pipeline UI, Booking-facing frontend UI) are complete -- see Part 1B.
 
 ---
 
@@ -138,11 +166,11 @@ Proposal-to-engagement handoff, lead-source ROI reporting, and referral-partner 
 3. ~~Slot computation~~ — DONE (`4565c90`, `bea6ceb`)
 4. ~~The booking action endpoint~~ — DONE (`1920609`)
 5. ~~Post-call outcome handling~~ — DONE (`202b620`, `921fc57`)
-6. **`delete_engagement` guard — NEXT. Real, severe, unblocked, not yet started.**
+6. ~~`delete_engagement` guard~~ -- ALREADY FIXED, confirmed via direct investigation 2026-08-17. See Part 2. Open sub-question (8-FK cascade classification) sent to Andrew, awaiting his ruling.
 7. ~~Scheduler multi-worker safety~~ — RESOLVED, confirmed safe by Andrew
 8. Gmail scope console removal — half done (Andrew's backend half landed); Ben's manual console step not yet confirmed
-9. Pipeline UI, including the won-transition confirmation dialog — its own dedicated session
-10. Booking-facing frontend UI — after pipeline UI and the public intake endpoint both exist
+9. ~~Pipeline UI~~ -- COMPLETE 2026-08-17. See Part 1B.
+10. ~~Booking-facing frontend UI (staff-facing half)~~ -- COMPLETE 2026-08-17. See Part 1B. Lead-facing self-booking half still deferred, depends on Andrew's public intake endpoint.
 11. Test database stability fix, transaction-rollback instead of TRUNCATE — needs Andrew's buy-in; case reinforced by a second independent incident tonight
 12. Onboarding checklist + intake questionnaire auto-triggered on `won`
 13. Referral partner scorecard (tracking only)
@@ -153,5 +181,6 @@ Proposal-to-engagement handoff, lead-source ROI reporting, and referral-partner 
 17. Automatic lead routing/assignment — kept in the list at Ben's explicit direction, despite a real, raised caution that it may be better suited to larger firms than JAMM's near-term 2-to-40-staff target customer
 18. Capacity-based intake gating — no established industry pattern exists to copy; if built, must require explicit human confirmation to activate, never auto-pause lead intake unilaterally
 19. ~~Notification taxonomy~~ — RESOLVED, full three-tier ruling delivered by Andrew, ready to build whenever prioritized
+20. ~~Firm timezone setting for non-Eastern firms~~ -- COMPLETE 2026-08-17. See Part 1B.
 
-**Open, unresolved, waiting on Andrew before any related code changes:** the pgcode/sqlstate driver contradiction (Part 2).
+**Open, unresolved, waiting on Andrew:** ruling on the 8-FK engagement cascade-delete classification (Part 2). The pgcode/sqlstate driver contradiction is RESOLVED -- see Part 2.
