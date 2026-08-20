@@ -147,3 +147,34 @@ export async function getPortalBillingDetail(): Promise<BillingDetailReport[]> {
   const data = await res.json()
   return Array.isArray(data) ? data : []
 }
+
+export interface PortalNotification {
+  id: string
+  title: string
+  body: string | null
+  notification_type: string
+  is_read: boolean
+  is_pinned: boolean
+  read_at: string | null
+  related_entity_type: string | null
+  related_entity_id: string | null
+  created_at: string
+}
+
+export async function getPortalNotifications(limit = 20): Promise<PortalNotification[]> {
+  const res = await fetch(`${BASE}/portal/notifications?limit=${limit}`, {
+    headers: portalHeaders(),
+  })
+  if (!res.ok) throw new Error('fetch failed')
+  const data = await res.json()
+  return Array.isArray(data) ? data : []
+}
+
+export async function markAllPortalNotificationsRead(): Promise<{ marked_read: number }> {
+  const res = await fetch(`${BASE}/portal/notifications/read-all`, {
+    method: 'POST',
+    headers: portalHeaders(),
+  })
+  if (!res.ok) throw new Error('fetch failed')
+  return res.json()
+}

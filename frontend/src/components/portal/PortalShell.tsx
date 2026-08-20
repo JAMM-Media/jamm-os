@@ -3,6 +3,7 @@
 
 import { useState } from 'react'
 import { usePortalUnreadMessages } from './usePortalUnreadMessages'
+import { PortalNotificationBell } from './PortalNotificationBell'
 
 interface PortalShellProps {
   firmName: string
@@ -72,13 +73,16 @@ export function PortalShell({
           )}
           <span className="text-[10px]" style={{ color: subtitleColor }}>Client Portal</span>
         </div>
-        <div
-          className="w-8 h-8 rounded-full flex items-center justify-center cursor-pointer"
-          style={{ backgroundColor: avatarColor }}
-        >
-          <span className="text-[11px] font-medium text-white">
-            {clientName?.charAt(0).toUpperCase() ?? '?'}
-          </span>
+        <div className="flex items-center gap-2">
+          <PortalNotificationBell />
+          <div
+            className="w-8 h-8 rounded-full flex items-center justify-center cursor-pointer"
+            style={{ backgroundColor: avatarColor }}
+          >
+            <span className="text-[11px] font-medium text-white">
+              {clientName?.charAt(0).toUpperCase() ?? '?'}
+            </span>
+          </div>
         </div>
       </div>
 
