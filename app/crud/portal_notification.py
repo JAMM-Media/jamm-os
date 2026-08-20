@@ -45,26 +45,6 @@ def get_pending_by_type(
     return db.execute(stmt).scalar_one_or_none()
 
 
-def delete_notification(
-    db: Session,
-    notification_id: uuid.UUID,
-    client_id: uuid.UUID,
-    firm_id: uuid.UUID,
-) -> bool:
-    """Delete a specific notification scoped to this client. Returns True if deleted."""
-    stmt = select(PortalNotification).where(
-        PortalNotification.id == notification_id,
-        PortalNotification.client_id == client_id,
-        PortalNotification.firm_id == firm_id,
-    )
-    notification = db.execute(stmt).scalar_one_or_none()
-    if notification is None:
-        return False
-    db.delete(notification)
-    db.commit()
-    return True
-
-
 def get_notifications_for_client(
     db: Session,
     client_id: uuid.UUID,

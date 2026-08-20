@@ -392,12 +392,13 @@ class TestRaceConditionNoOverwrite:
 class TestTenantIsolationHttp:
 
     def test_client_b_cannot_submit_for_client_a(self, client):
-        """A portal user logged in as Client B cannot write to Client A's record.
+        """Within the same firm, Client B's submission only affects Client B.
 
-        The POST /portal/attribution-survey endpoint always writes to the
-        currently authenticated portal client -- there is no client_id
-        parameter to target another client. This test confirms Client B's
-        submission only affects Client B.
+        The POST /portal/attribution-survey endpoint writes to the authenticated
+        client's own record -- there is no client_id parameter. This test
+        confirms there is no accidental cross-client bleed within a single firm.
+        It does NOT demonstrate cross-firm isolation; see
+        test_cross_firm_client_cannot_affect_different_firm for that.
         """
         firm = _make_firm()
         client_a = _make_client(firm.id, referral_source=None,
@@ -426,6 +427,63 @@ class TestTenantIsolationHttp:
         # Client B must be updated.
         b_fresh = _get_client_fresh(client_b.id)
         assert b_fresh.referral_source == ReferralSource.google_search
+
+    def test_cross_firm_client_cannot_affect_different_firm(self, client):
+        """A client authenticated with Firm B cannot read or affect Firm A's survey.
+
+        Firm A has Client A with blank attribution -- the survey notification exists
+        for Firm A's client. Firm B's Client B logs in and submits the survey.
+        Client A's referral_source must remain None, and Firm A's survey notification
+        must still exist (untouched). Only Client B's data changes.
+
+        This is the real multi-tenant isolation test: two separate firms, each
+        with their own portal client, and a concrete attempt by one to affect
+        the other through the live HTTP endpoints.
+        """
+        firm_a = _make_firm()
+        firm_b = _make_firm()
+
+        client_a = _make_client(firm_a.id, referral_source=None,
+                                 email=f"ca-{uuid.uuid4().hex[:6]}@firma.com")
+        client_b = _make_client(firm_b.id, referral_source=None,
+                                 email=f"cb-{uuid.uuid4().hex[:6]}@firmb.com")
+
+        # Ensure the attribution survey notification exists for Firm A's client.
+        db = TestingSessionLocal()
+        try:
+            ca_db = db.query(Client).filter(Client.id == client_a.id).first()
+            ensure_attribution_survey_notification(db, ca_db)
+        finally:
+            db.close()
+
+        assert _count_survey_notifications(client_a.id) == 1, (
+            "Firm A's client must have a survey notification before the cross-firm attempt"
+        )
+
+        # Log in as Firm B's client and submit the survey.
+        token = _make_portal_token(client_b, client)
+        headers = {"Authorization": f"Bearer {token}"}
+
+        resp = client.post(
+            "/portal/attribution-survey",
+            json={"answer": "social_media"},
+            headers=headers,
+        )
+        assert resp.status_code == 200
+        assert resp.json()["written"] is True
+
+        # Firm A's client must be completely unaffected.
+        a_fresh = _get_client_fresh(client_a.id)
+        assert a_fresh.referral_source is None, (
+            "Firm A's client referral_source must not be affected by Firm B's submission"
+        )
+        assert _count_survey_notifications(client_a.id) == 1, (
+            "Firm A's attribution survey notification must still exist and be untouched"
+        )
+
+        # Firm B's client must have the update.
+        b_fresh = _get_client_fresh(client_b.id)
+        assert b_fresh.referral_source == ReferralSource.social_media
 
 
 # ---------------------------------------------------------------------------
