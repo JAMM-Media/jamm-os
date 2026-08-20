@@ -12,9 +12,10 @@ from app.schemas.lead import LeadCreate, LeadUpdate, LeadOut
 from app.schemas.pagination import PaginatedResponse
 from app.utils.pagination import paginate
 from app.crud import lead as crud_lead
+from app.crud import enrollment as crud_enrollment
 from app.dependencies.auth import get_current_user
 from app.dependencies.tenant import get_current_firm
-from app.dependencies.roles import require_staff_or_above
+from app.dependencies.roles import require_staff_or_above, require_manager_or_above
 from app.models.user import User
 from app.core.enums import LeadProvenance, LeadStage, LeadLostReason
 
@@ -204,3 +205,63 @@ def get_lead_activity(
         )
         for item in items
     ]
+
+
+# ---------------------------------------------------------
+# ENROLLMENT APPROVAL ACTIONS (Contract section 6.7)
+#
+# Release a held_for_approval enrollment via the APPROVED or OVERRIDE edge.
+# Only firm_owner and manager can take this action (require_manager_or_above).
+# Enrollment must belong to a lead in the caller's firm.
+# ---------------------------------------------------------
+
+@router.post("/{lead_id}/enrollments/{enrollment_id}/approve-hold", status_code=200)
+def approve_enrollment_hold(
+    lead_id: UUID,
+    enrollment_id: UUID,
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    current_user: User = Depends(require_manager_or_above),
+):
+    """Approve a held R1 enrollment: advance via the APPROVED edge and reactivate."""
+    lead = crud_lead.get_lead_for_firm(db, lead_id=lead_id, firm_id=current_firm.id)
+    if lead is None:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    try:
+        enrollment = crud_enrollment.release_enrollment_hold(
+            db=db,
+            enrollment_id=enrollment_id,
+            firm_id=current_firm.id,
+            lead_id=lead_id,
+            condition_label="APPROVED",
+            user_id=current_user.id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {"enrollment_id": str(enrollment.id), "status": enrollment.status}
+
+
+@router.post("/{lead_id}/enrollments/{enrollment_id}/override-hold", status_code=200)
+def override_enrollment_hold(
+    lead_id: UUID,
+    enrollment_id: UUID,
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    current_user: User = Depends(require_manager_or_above),
+):
+    """Override a held R1 enrollment: advance via the OVERRIDE edge (back into the sequence)."""
+    lead = crud_lead.get_lead_for_firm(db, lead_id=lead_id, firm_id=current_firm.id)
+    if lead is None:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    try:
+        enrollment = crud_enrollment.release_enrollment_hold(
+            db=db,
+            enrollment_id=enrollment_id,
+            firm_id=current_firm.id,
+            lead_id=lead_id,
+            condition_label="OVERRIDE",
+            user_id=current_user.id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {"enrollment_id": str(enrollment.id), "status": enrollment.status}

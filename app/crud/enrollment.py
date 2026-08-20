@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.models.enrollment import Enrollment
 from app.core.enums import EnrollmentStatus
+from app.services.audit_service import write_audit_log
 
 
 def get_enrollment_for_firm(
@@ -113,4 +114,100 @@ def reactivate_enrollment(
         )
     enrollment.status = EnrollmentStatus.active.value
     db.commit()
+    return enrollment
+
+
+def hold_enrollment_for_approval(db: Session, enrollment_id: UUID) -> None:
+    """Put an enrollment into held_for_approval state, awaiting firm-owner action.
+
+    Clears next_action_time so the engine never re-picks it up automatically.
+    The enrollment stays at its current step until the firm owner approves or
+    overrides via release_enrollment_hold(). Per Contract section 6.7.
+    """
+    enrollment = db.query(Enrollment).filter(Enrollment.id == enrollment_id).first()
+    if enrollment is None:
+        return
+    enrollment.status = EnrollmentStatus.held_for_approval.value
+    enrollment.next_action_time = None
+    db.commit()
+    write_audit_log(
+        db=db,
+        firm_id=enrollment.firm_id,
+        action="enrollment.held_for_approval",
+        actor_id=None,
+        actor_type="system",
+        entity_type="enrollment",
+        entity_id=enrollment_id,
+        metadata={"lead_id": str(enrollment.lead_id)},
+    )
+
+
+def release_enrollment_hold(
+    db: Session,
+    enrollment_id: UUID,
+    firm_id: UUID,
+    lead_id: UUID,
+    condition_label: str,
+    user_id: Optional[UUID] = None,
+) -> Enrollment:
+    """Advance a held_for_approval enrollment via the named outgoing edge.
+
+    condition_label is the edge label to follow (e.g. "APPROVED" or "OVERRIDE").
+    lead_id must match the enrollment's lead_id: the enrollment must belong to the
+    lead named in the URL, not just the firm.
+    Sets status back to active with next_action_time = now so the engine picks it
+    up on the next tick.
+
+    Raises ValueError if:
+    - enrollment not found in this firm
+    - enrollment does not belong to the given lead_id
+    - enrollment is not in held_for_approval state
+    - no outgoing edge with the given condition_label exists from the current step
+    """
+    from app.models.sequence import StepEdge
+
+    enrollment = db.query(Enrollment).filter(
+        Enrollment.id == enrollment_id,
+        Enrollment.firm_id == firm_id,
+    ).first()
+    if enrollment is None:
+        raise ValueError("Enrollment not found in this firm")
+    if enrollment.lead_id != lead_id:
+        raise ValueError(
+            "Enrollment does not belong to the given lead"
+        )
+    if enrollment.status != EnrollmentStatus.held_for_approval.value:
+        raise ValueError(
+            f"Cannot release enrollment with status '{enrollment.status}': "
+            f"only held_for_approval enrollments can be released"
+        )
+    edge = db.query(StepEdge).filter(
+        StepEdge.from_step_id == enrollment.current_step_id,
+        StepEdge.condition_label == condition_label,
+    ).first()
+    if edge is None:
+        raise ValueError(
+            f"No outgoing edge with condition_label='{condition_label}' "
+            f"from step {enrollment.current_step_id}"
+        )
+    from_step_id = enrollment.current_step_id
+    enrollment.current_step_id = edge.to_step_id
+    enrollment.status = EnrollmentStatus.active.value
+    enrollment.next_action_time = datetime.now(timezone.utc)
+    db.commit()
+    write_audit_log(
+        db=db,
+        firm_id=firm_id,
+        action=f"enrollment.hold_{condition_label.lower()}",
+        actor_id=user_id,
+        actor_type="staff" if user_id else "system",
+        entity_type="enrollment",
+        entity_id=enrollment_id,
+        metadata={
+            "lead_id": str(lead_id),
+            "from_step_id": str(from_step_id),
+            "to_step_id": str(edge.to_step_id),
+            "condition_label": condition_label,
+        },
+    )
     return enrollment
