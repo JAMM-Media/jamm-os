@@ -64,9 +64,8 @@ Every email-type step in the seeded graph carries a placeholder config (subject/
 
 ### 2a. Real email sending against the now-seeded graph (new, 2026-08-18)
 
-**Finding: OPEN. The graph is real; nothing sends yet.**
-run_nurture_tick() in app/services/nurture_execution_service.py can walk the seeded graph forward (confirmed capable of enforcing loop_cap, resolving wait_until_event vs wait_fixed, and firing goal jumps -- verified via the existing test_nurture_execution.py suite passing cleanly against the newly seeded data). But no code anywhere in the codebase actually sends an email through Postmark for a nurture step -- confirmed by grep, no Postmark send wrapper exists in app/services/ at all. Every email-type step's config is placeholder-only pending the copy session referenced in item 3's brainstorm work.
-**What remains:** build the actual Postmark send integration for email-type steps (subject/body rendering, the marketing/broadcast stream per Contract section 6.6, unsubscribe link injection, suppression list check before send), wired into run_nurture_tick(). This unblocks answer-button email links (old item 3, renumbered below), since a button embedded in an email needs a real, sent email to attach to.
+**Finding: COMPLETE 2026-08-20.**
+EmailService.send_nurture_email() wired into run_nurture_tick() via the Postmark broadcast stream (Contract section 6.6). Write-then-send ordering guarantee: advance_enrollment() is called before the send call, so a crash after the write produces a missed email, never a duplicate. Unsubscribe link injected per contract section 6.6 requirement. Suppression list checked before every send. Business-hours window (item 4) checks whether the firm window is open before allowing send; E1 bypasses the window per Deep Research on speed-to-lead. R1 hold-for-approval (item 5) gates the unqualified-decline step for firm-owner review before the send is allowed. All tested and committed across multiple sessions -- see items 4, 5, and the business-hours and R1 commits for the full detail.
 
 ### 3. Answer-button email links (Contract section 5)
 
@@ -82,23 +81,15 @@ The contract states: "a question's options render as buttons; each button is a l
 
 ### 4. Portal attribution survey (Contract section 4.1)
 
-**Finding: OPEN. The client_reported enum value exists; the survey does not.**
-
-`grep -rn 'client_reported'` confirmed the provenance enum value exists and the precedence logic (fills blanks only, never overwrites) is implemented in `app/crud/lead.py`. But `grep -rn 'attribution.*survey\|blank.*attribution\|portal.*survey\|pinned.*notification'` returned no results for any survey-related logic.
-
-The contract specifies: a one-question survey for existing clients whose attribution is blank, riding the portal notification system as a pinned type that clears only on completion (not on read-all), never rendered when attribution is already set, answers writing with client_reported provenance.
-
-**What remains:** identify which clients have blank referral_source (no attribution), create a pinned portal notification type for the survey, build the survey question UI in the portal, wire the submit to write the client's attribution with client_reported provenance and remove the notification.
+**Finding: COMPLETE 2026-08-20.**
+Committed at 230efe0 (core build) and f17e955 (CRLF cleanup, dead-code removal, cross-firm isolation test). Pinned portal notification (`is_pinned` column, migration c3a8c478ba34) survives mark-all-read and cannot be individually marked read -- clears only on survey completion. Survey fires for blank-attribution clients on every portal dashboard visit (idempotent). Options list: all real ReferralSource enum values with human-readable labels, "Do not remember" appended last (maps to ReferralSource.unknown on submit). Submit fills `client.referral_source` if blank only (never overwrites firm-entered or lead-captured attribution); race-condition case (field set concurrently before submit) skips the write but still clears the notification. Real cross-firm isolation confirmed: Firm B client submission cannot affect Firm A client's record or notification.
 
 ### 5. R1 review-and-hold pattern (Contract section 6.7)
 
-**Finding: OPEN. No review-hold or take-over mechanism exists.**
+**Finding: COMPLETE 2026-08-20.**
+Committed at 788f96a (core mechanism) and 7ca132c (audit logging, ownership check, endpoint test coverage). Core mechanism: `hold_for_approval` step-level config flag (same shape as `bypass_business_hours`), `held_for_approval` EnrollmentStatus, firm-owner notification fires synchronously when R1 is reached. Approve/override endpoints at `POST /api/v1/leads/{lead_id}/enrollments/{enrollment_id}/approve-hold` and `.../override-hold`, guarded by `require_manager_or_above`. Follow-up (7ca132c) added audit logging on every approve/override action, a lead-enrollment ownership check preventing cross-lead approvals within the same firm, and real HTTP endpoint-level test coverage for RBAC (staff 403) and cross-firm isolation. R1 is the only step carrying the flag; no other step in the 76-node tree is gated.
 
-`grep -rn 'hold_for.*approval\|needs_review\|pending_review\|review_queue\|one.click.*take.over\|pull.*manual'` returned no results outside the concierge context (which is a different system). The concept of holding an outgoing email for owner approval before it sends does not exist anywhere in the codebase.
-
-The contract requires: the unqualified-decline email (R1 on the tree) is held; the owner is notified with the lead's answers; the owner approves the decline in one click or overrides the lead back into the sequence. Additionally: every dead end notifies the owner with a one-click take-over that pulls the lead into manual mode.
-
-**What remains:** implement the review-hold pattern as a standing automation feature -- a step type or a flag on steps whose external consequence requires human approval before firing. Specifically: hold the R1 decline email, create a Notification for the firm owner with the lead context, expose the approve/override actions. Also implement the dead-end notification with a one-click take-over that exits the lead from the sequence and marks it for manual handling.
+Note: "every dead end notifies the owner with a one-click take-over" from Contract section 6.7 is not yet built. The R1 node's review-hold is the specific case the contract names concretely. The standing dead-end take-over pattern is a separate, not-yet-scoped follow-up.
 
 ### 6. Proposal generation (Contract section 7.4, Addendum 1 section 6)
 
@@ -209,10 +200,6 @@ As of 2026-08-17, it is not known whether Andrew has completed his preset templa
 
 The nurture engine does not currently implement the 8am-6pm firm-local send window. Emails are sent whenever the scheduler tick runs. This is not a blocker for the engine being functional, but it is a contract requirement (section 6.1: "Send windows: firm business hours, 8am to 6pm firm-local, configurable") that must ship before the engine is considered contract-complete. Firm.timezone is now available (2026-08-17), so the localization infrastructure is in place. The question is where in the execution loop to implement the window check -- clarify with Andrew whether the window should hold the email until the next business-hours window, or delay next_action_time to the start of the next window.
 
-### Hot lead immediate owner alert (Contract section 7.5)
-
-`grep -rn 'hot.*alert\|hot_lead.*notif'` returned no results. The hot flag exists on the Lead model and the UI surfaces it (Flame icon in the Pipeline table), but no immediate notification fires when a lead is marked hot or arrives hot from the intake form. The contract says: "Hot fires an immediate owner alert; hot leads should get a human same-day, not just the sequence." This is not currently built and was not investigated in prior sessions. Raised here for Andrew's awareness as a small, focused build.
-
 ---
 
 ## Part 4: Priority Order
@@ -223,17 +210,19 @@ Priority follows Contract section 10.1's stated build sequence (attribution -> i
 
 2. ~~Nurture preset tree data~~ -- COMPLETE (structure only) 2026-08-18. See Part 2. Real email sending is now the actual blocker -- see item 2a below.
 
-2a. **Real email sending against the seeded graph** -- the actual next unblocked item. Postmark integration for email-type steps: subject/body rendering, the marketing/broadcast stream, unsubscribe link injection, suppression list check before send, wired into run_nurture_tick(). Depends on nothing else outstanding.
+2a. ~~**Real email sending against the seeded graph**~~ -- COMPLETE 2026-08-20. EmailService.send_nurture_email() wired into run_nurture_tick() via Postmark broadcast stream, with write-then-send ordering guarantee, unsubscribe link injection, suppression check, and business-hours gating. See Part 2, item 2a.
 
 3. **Answer-button email links** (Contract section 5) -- BLOCKED ON ANDREW. IntakeSubmitBody carries zero fields for complexity-question answers on either intake door; there is no agreed design for how answers persist on submit. An email is out to Andrew awaiting his reply on the submit-payload design. No build starts here until that design is agreed. See Part 2, item 3.
 
 4. ~~**Firm business-hours send window**~~ (Contract section 6.1) -- COMPLETE 2026-08-20. Firm.business_hours_start / business_hours_end columns (migration eac959ec4c4e), server_default 8 and 18 (8am-6pm firm-local), reusing the ZoneInfo(firm_timezone) pattern from slot_computation_service.py and booking_service.py. Due email steps outside the window hold (current_step_id unchanged, next_action_time pushed 30 minutes) and are retried on the next tick, matching how every other real-time check in run_nurture_tick() already works. Per-step bypass_business_hours config flag built; set True on E1 (step_key="2", Welcome / received) only, after Deep Research (MIT/InsideSales Lead Response Management Study, 15k+ leads across 6 companies; corroborated by a 2021 InsideSales analysis of 55 million sales activities) confirmed every major CRM platform (HubSpot, Pardot, Chili Piper) bypasses business hours for the first automated response to a new inbound lead and respects the window on all subsequent nurture touches. Every other email step (E2 through E18) respects the window.
 
-5. **R1 review-and-hold pattern** (Contract section 6.7) -- the unqualified decline email (R1 node) must be held for approval before the preset tree can be considered complete. Build as a step-level flag or a step type, not as a special-case R1 hack.
+5. ~~**R1 review-and-hold pattern**~~ (Contract section 6.7) -- COMPLETE 2026-08-20. Step-level hold_for_approval flag, held_for_approval enrollment status, firm-owner notification, approve/override endpoints with RBAC and audit logging. Committed at 788f96a and 7ca132c. See Part 2, item 5.
 
-6. **Portal attribution survey** (Contract section 4.1) -- relatively self-contained. Depends on the portal notification system (already exists). Small build but important for data quality on legacy client books.
+6. ~~**Portal attribution survey**~~ (Contract section 4.1) -- COMPLETE 2026-08-20. Pinned notification, fill-blank-only referral_source write, do-not-remember option last, cross-firm isolation confirmed. Committed at 230efe0 and f17e955. See Part 2, item 4.
 
-7. **Hot lead immediate alert** (Contract section 7.5) -- small, focused. Fire a Notification when is_hot is set to true, or when a lead arrives via intake with urgency indicating a hard deadline.
+7. ~~**Hot lead immediate alert**~~ (Contract section 7.5) -- COMPLETE 2026-08-20. maybe_fire_hot_lead_alert() in app/services/lead_alert_service.py fires synchronously on the hot flag's false-to-true transition (via either lead creation or PATCH update). Reuses the same firm-owner lookup and notification pattern as R1. Committed at 0da3d82. Note: the intake form has no path that sets hot=True from the urgency question -- that gap was flagged in the commit and is a separate scoped task.
+
+With items 2a, 4, 5, 6, and 7 all complete, item 3 (answer-button email links, blocked on Andrew's submit-payload design response) is the only item blocking the nurture sequence's full feature completeness. Items 8, 9, and 10 are the remaining genuinely open work items.
 
 8. **Proposal generation** (Contract section 7.4, Addendum 1 section 6) -- last major phase; depends on Andrew's preset template completion. Do not start until template availability is confirmed. Build in this order: (a) propose service and generate draft from template with validate_context; (b) Accept answer button and click endpoint; (c) auto_send toggle and conditional e-sign trigger.
 
