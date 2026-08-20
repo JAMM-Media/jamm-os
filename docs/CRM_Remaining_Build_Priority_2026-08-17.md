@@ -70,13 +70,15 @@ run_nurture_tick() in app/services/nurture_execution_service.py can walk the see
 
 ### 3. Answer-button email links (Contract section 5)
 
-**Finding: OPEN. No answer-button rendering or click-handling exists.**
+**Finding: BLOCKED ON ANDREW. No answer-button rendering or click-handling exists, and a required upstream design decision is pending.**
 
 `grep -rn 'answer.*button\|answer_button\|answer_button_clicked\|lead.answer_button_clicked'` across `app/` returned zero results. The event type `lead.answer_button_clicked` listed in Contract section 9.1 as a candidate name does not appear anywhere in the codebase.
 
 The contract states: "a question's options render as buttons; each button is a link with the answer baked in, so one tap records structured data and lands the prospect on the form with that question pre-filled." This is a complete subsystem: email template rendering that turns question options into click-links, an endpoint that receives the click, records the answer, and redirects to the pre-filled form.
 
-**What remains:** build the answer-button URL generation (probably at email send time, encoding the answer and lead identifier into a signed URL), build the endpoint that receives the click, writes the structured answer to the lead, fires `lead.answer_button_clicked`, and redirects to the intake form with that question pre-filled.
+**Blocker:** Clicking an answer button must write a real answer to a real complexity question against a real lead, through the same path the intake form uses on submit. But IntakeSubmitBody currently carries zero fields for complexity-question answers on either intake door. There is no agreed design for how complexity answers persist at all -- flagged explicitly in item 10 above (Public Intake Form document review). An email was sent to Andrew awaiting his reply on the submit-payload design. No build should start here until that design is agreed.
+
+**What remains (post-agreement):** build the answer-button URL generation (at email send time, encoding the agreed answer field and lead identifier into a signed URL), build the endpoint that receives the click, writes the structured answer to the lead via the agreed submit path, fires `lead.answer_button_clicked`, and redirects to the intake form with that question pre-filled.
 
 ### 4. Portal attribution survey (Contract section 4.1)
 
@@ -179,6 +181,16 @@ The second document confirms, verified directly against the live codebase, that 
 
 **What remains:** (a) the brainstorm session itself, producing the written context-question document for Andrew's review; (b) once Andrew's scope-aware pass lands, confirm the frontend intake form still works correctly with more precise per-service question lists; (c) agree with Andrew on the submit-time payload shape for complexity answers before building the submit-side persistence; (d) decide the how_did_you_hear / attribution_notes gap, likely alongside the still-open referral-source required-field decision already tracked in this document.
 
+### 11. Deep Research findings: long-term drip burst cadence and dormancy-reason segmentation (2026-08-20)
+
+**Finding: TRACKED, NOT YET SCOPED, NOT YET BUILT.**
+
+Two findings surfaced from the same Perplexity Deep Research session that produced the E1 bypass ruling. Neither is a build task yet; both are logged here so they are not lost.
+
+**Long-term drip -- missing front-loaded burst for freshly-cold leads.** The current tree goes from cold-exit directly into the single quarterly LD1-LD4 loop. Research found 8-18% reactivation rates for an early-burst sequence (Day 0, 7, and 14 touches shortly after a lead goes cold) versus 1-3% for a single distant quarterly touch alone. A possible structural addition: a short early-burst phase inserted before the drip loop, routing into LD1 on completion. This would be a real change to Andrew's original tree design; under the standing naming/structural-changes-are-a-conversation-first agreement, this should be raised with Andrew for discussion rather than built unilaterally.
+
+**Dormancy-reason segmentation.** The tree currently routes all cold leads through the same long-term drip regardless of why they went cold. Research found that competitor loss, price objection, and unresponsive leads each respond to different cadences and messaging angles. A possible future enhancement: a branch at cold-exit that segments by lost_reason and routes into differentiated drip tracks. This is also a material tree change and falls under the same conversation-first agreement with Andrew.
+
 ---
 
 ## Part 3: Real Open Questions for Andrew
@@ -213,9 +225,9 @@ Priority follows Contract section 10.1's stated build sequence (attribution -> i
 
 2a. **Real email sending against the seeded graph** -- the actual next unblocked item. Postmark integration for email-type steps: subject/body rendering, the marketing/broadcast stream, unsubscribe link injection, suppression list check before send, wired into run_nurture_tick(). Depends on nothing else outstanding.
 
-3. **Answer-button email links** (Contract section 5) -- now correctly sequenced after 2a, since a button embedded in an email needs a real, sent email to attach to. Once 2a lands: needs a signed URL scheme, a receive endpoint, and an intake form pre-fill path.
+3. **Answer-button email links** (Contract section 5) -- BLOCKED ON ANDREW. IntakeSubmitBody carries zero fields for complexity-question answers on either intake door; there is no agreed design for how answers persist on submit. An email is out to Andrew awaiting his reply on the submit-payload design. No build starts here until that design is agreed. See Part 2, item 3.
 
-4. **Firm business-hours send window** (Contract section 6.1) -- should accompany or immediately follow the preset data build, since the preset will start sending real emails. Firm.timezone infrastructure is ready.
+4. ~~**Firm business-hours send window**~~ (Contract section 6.1) -- COMPLETE 2026-08-20. Firm.business_hours_start / business_hours_end columns (migration eac959ec4c4e), server_default 8 and 18 (8am-6pm firm-local), reusing the ZoneInfo(firm_timezone) pattern from slot_computation_service.py and booking_service.py. Due email steps outside the window hold (current_step_id unchanged, next_action_time pushed 30 minutes) and are retried on the next tick, matching how every other real-time check in run_nurture_tick() already works. Per-step bypass_business_hours config flag built; set True on E1 (step_key="2", Welcome / received) only, after Deep Research (MIT/InsideSales Lead Response Management Study, 15k+ leads across 6 companies; corroborated by a 2021 InsideSales analysis of 55 million sales activities) confirmed every major CRM platform (HubSpot, Pardot, Chili Piper) bypasses business hours for the first automated response to a new inbound lead and respects the window on all subsequent nurture touches. Every other email step (E2 through E18) respects the window.
 
 5. **R1 review-and-hold pattern** (Contract section 6.7) -- the unqualified decline email (R1 node) must be held for approval before the preset tree can be considered complete. Build as a step-level flag or a step type, not as a special-case R1 hack.
 
