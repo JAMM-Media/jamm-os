@@ -29,8 +29,6 @@ Andrew's sign-off (event names freeze once a firm goes live, Contract 9.1).
 
 import uuid
 from datetime import datetime, timedelta, timezone
-from unittest.mock import patch
-
 import pytest
 
 from tests.conftest import TestingSessionLocal
@@ -241,22 +239,29 @@ class TestDeadEndNotReprocessed:
 
 class TestWatchedFailDeadEndBug:
     """
-    Watched-fail verification record:
+    Watched-fail verification record (Option A -- source modification).
 
-    Old behavior (simulated by patching StepType.dead_end to a value that
-    does not match any branch): the dead_end step falls through to
-    "not processable, skipping", incrementing skipped_branching and leaving
-    next_action_time unchanged. The enrollment stays due and is re-fetched
-    forever.
+    The dead_end branch in nurture_execution_service.py was temporarily
+    disabled by changing its condition to `if False:  # WATCHED-FAIL BREAK`.
+    With that break in place, this test went RED:
 
-    With the break active: the second tick re-selects and re-processes the
-    enrollment (checked=1, skipped_branching=1 again) -- RED.
+        AssertionError: dead_ends_reached must be 1 when the branch fires
+        assert 0 == 1
+        (r1["skipped_branching"] was 1, r1["dead_ends_reached"] was 0)
 
-    With the fix restored: the second tick selects zero enrollments -- GREEN.
+    The enrollment was still active with next_action_time unchanged after the
+    first tick, and a second tick re-selected and re-skipped it (r2["checked"]=1,
+    r2["skipped_branching"]=1) -- confirming the infinite loop.
+
+    The break was then restored. Test is now GREEN.
     """
 
-    def test_watched_fail_old_behavior_loops_then_fix_terminates(self, monkeypatch):
-        """Simulate old fallthrough: enrollment stays due indefinitely (red), then fix (green)."""
+    def test_watched_fail_dead_end_branch_prevents_infinite_loop(self, monkeypatch):
+        """With the real fix: dead_end is terminated in one tick and never re-selected.
+
+        This test's assertions go RED when the dead_end branch is disabled (source
+        modified to `if False:`), confirming it catches the actual bug.
+        """
         monkeypatch.setattr(
             "app.services.nurture_execution_service.NotificationService.create_notification",
             lambda **kw: None,
@@ -267,76 +272,36 @@ class TestWatchedFailDeadEndBug:
         ver_id, seq_id, step_id = _make_dead_end_sequence(firm.id)
         enrollment = _make_enrollment_at_dead_end(firm.id, lead.id, seq_id, ver_id, step_id)
 
-        # --- RED: simulate old fallthrough by patching StepType.dead_end to a sentinel
-        # value that doesn't match the new branch check, so dead_end falls through
-        # to the generic "not processable" branch.
-        with patch(
-            "app.services.nurture_execution_service.StepType",
-        ) as mock_step_type:
-            # Copy all real values but make dead_end not match anything
-            import app.core.enums as _enums
-            real_st = _enums.StepType
-
-            class FakeStepType:
-                dead_end = "__DISABLED__"  # will not match StepType.dead_end.value
-                email = real_st.email.value
-                wait_fixed = real_st.wait_fixed.value
-                wait_until_event = real_st.wait_until_event.value
-                action = real_st.action.value
-
-            mock_step_type.dead_end = property(lambda self: type("", (), {"value": "__DISABLED__"})())
-            mock_step_type.email = property(lambda self: type("", (), {"value": real_st.email.value})())
-
-            # With the patched StepType, dead_end won't match the new branch; it
-            # falls through to "not processable" and skipped_branching increments.
-            # Since next_action_time is not cleared, the enrollment stays due.
-
-        # Actually, the cleanest watched-fail for this is to manually set the enrollment
-        # back to active with next_action_time in the past after the "old" tick, then
-        # show it gets re-selected. We simulate the old behavior by directly observing
-        # that if next_action_time were NOT cleared, the enrollment would be re-selected.
-
-        # Run with the real fix.
+        # First tick: the dead_end branch fires and terminates the enrollment.
+        # RED when branch disabled: dead_ends_reached=0, skipped_branching=1.
         r1 = run_nurture_tick()
-        assert r1["dead_ends_reached"] == 1, "Fix must catch the dead_end on first tick"
+        assert r1["dead_ends_reached"] == 1, (
+            "dead_ends_reached must be 1 when the branch fires"
+        )
+        assert r1["skipped_branching"] == 0, (
+            "Dead_end must not fall through to skipped_branching"
+        )
 
         db = TestingSessionLocal()
         try:
-            refreshed = db.query(Enrollment).filter(Enrollment.id == enrollment.id).first()
-            assert refreshed.next_action_time is None, (
-                "Fix: next_action_time must be None after dead_end"
+            after_first = db.query(Enrollment).filter(Enrollment.id == enrollment.id).first()
+            assert after_first.status == EnrollmentStatus.completed_dead_end.value, (
+                f"Enrollment must be completed_dead_end after first tick, got {after_first.status!r}"
+            )
+            assert after_first.next_action_time is None, (
+                "next_action_time must be None -- if not cleared, the enrollment stays due forever"
             )
         finally:
             db.close()
 
-        # --- Now simulate the bug: manually restore next_action_time and active status
-        # to what they would be if the old code ran (next_action_time unchanged).
-        db = TestingSessionLocal()
-        try:
-            broken = db.query(Enrollment).filter(Enrollment.id == enrollment.id).first()
-            broken.status = EnrollmentStatus.active.value
-            broken.next_action_time = _FAR_PAST
-            db.commit()
-        finally:
-            db.close()
-
-        # With the bug simulated (enrollment back to active + due): second tick
-        # would re-select it -- in the old code, dead_end would skip it again.
-        # But now with the fix, it terminates it again.
+        # Second tick: enrollment must NOT be re-selected as due.
+        # RED when branch disabled: enrollment still has original next_action_time,
+        # so r2["checked"]=1 and r2["skipped_branching"]=1 -- the infinite loop.
         r2 = run_nurture_tick()
-        assert r2["dead_ends_reached"] == 1, (
-            "Bug simulation: re-selecting the enrollment confirms it would loop "
-            "without the fix; with the fix it correctly terminates again"
+        assert r2["checked"] == 0, (
+            "Second tick must check zero enrollments -- the infinite-loop bug is broken"
         )
-
-        # Confirm it terminates again (fix works on re-entry too).
-        db = TestingSessionLocal()
-        try:
-            final = db.query(Enrollment).filter(Enrollment.id == enrollment.id).first()
-            assert final.status == EnrollmentStatus.completed_dead_end.value
-            assert final.next_action_time is None
-        finally:
-            db.close()
+        assert r2["dead_ends_reached"] == 0
 
 
 # ---------------------------------------------------------------------------
