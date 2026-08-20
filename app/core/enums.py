@@ -280,6 +280,10 @@ class NotificationType(str, Enum):
     # PROPOSED NAME -- pending Andrew's sign-off before any live firm is on this
     # (event names freeze once a firm goes live; this fires the hot lead alert).
     lead_hot_alert = "lead_hot_alert"
+    # PROPOSED NAME -- pending Andrew's sign-off.
+    # Fires when an enrollment reaches a dead_end step; triggers the firm-owner
+    # take-over notification per Contract section 6.7.
+    nurture_dead_end_reached = "nurture_dead_end_reached"
 
 
 class NotificationChannel(str, Enum):
@@ -309,6 +313,7 @@ class NotificationEventType(str, Enum):
     document_expiry_alert = "document_expiry_alert"
     lead_replied = "lead_replied"
     lead_hot_alert = "lead_hot_alert"
+    nurture_dead_end_reached = "nurture_dead_end_reached"
 
 
 class CredentialType(str, Enum):

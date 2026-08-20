@@ -272,3 +272,39 @@ def override_enrollment_hold(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     return {"enrollment_id": str(enrollment.id), "status": enrollment.status}
+
+
+@router.post("/{lead_id}/enrollments/{enrollment_id}/take-over", status_code=200)
+def take_over_dead_end_enrollment(
+    lead_id: UUID,
+    enrollment_id: UUID,
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    current_user: User = Depends(require_manager_or_above),
+):
+    """Acknowledge a dead-ended enrollment and pull the lead into manual mode.
+
+    Per Contract section 6.7: every dead end notifies the owner with a one-click
+    take-over. This endpoint is that click. "Manual mode" in this codebase means:
+    the enrollment stays completed_dead_end (already set by the tick), the firm
+    owner has explicitly acknowledged ownership, and the decision is audit-logged.
+    No new model fields are added -- the completed status itself tells the system
+    this lead is out of automation.
+
+    Note: a frontend UI surface (a take-over button in the lead detail view or
+    pipeline) is out of scope for this task and is a separate follow-up.
+    """
+    lead = crud_lead.get_lead_for_firm(db, lead_id=lead_id, firm_id=current_firm.id)
+    if lead is None:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    try:
+        enrollment = crud_enrollment.acknowledge_dead_end_takeover(
+            db=db,
+            enrollment_id=enrollment_id,
+            firm_id=current_firm.id,
+            lead_id=lead_id,
+            user_id=current_user.id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {"enrollment_id": str(enrollment.id), "status": enrollment.status}

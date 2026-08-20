@@ -90,6 +90,83 @@ def mark_enrollment_suppressed(
     db.commit()
 
 
+def mark_enrollment_dead_end(db: Session, enrollment_id: UUID) -> None:
+    """Terminate an enrollment that has reached a dead_end step.
+
+    Sets status to completed_dead_end, clears next_action_time so the engine
+    never re-selects this enrollment, and records stopped_at. Per Contract
+    section 6.7: every dead end notifies the owner; the caller in
+    nurture_execution_service.py fires the notification after this write.
+    """
+    enrollment = db.query(Enrollment).filter(Enrollment.id == enrollment_id).first()
+    if enrollment is None:
+        return
+    enrollment.status = EnrollmentStatus.completed_dead_end.value
+    enrollment.next_action_time = None
+    enrollment.stopped_at = datetime.now(timezone.utc)
+    db.commit()
+    write_audit_log(
+        db=db,
+        firm_id=enrollment.firm_id,
+        action="enrollment.dead_end_reached",
+        actor_id=None,
+        actor_type="system",
+        entity_type="enrollment",
+        entity_id=enrollment_id,
+        metadata={"lead_id": str(enrollment.lead_id)},
+    )
+
+
+def acknowledge_dead_end_takeover(
+    db: Session,
+    enrollment_id: UUID,
+    firm_id: UUID,
+    lead_id: UUID,
+    user_id: Optional[UUID] = None,
+) -> Enrollment:
+    """Record the firm owner's explicit take-over of a dead-ended lead.
+
+    "Manual mode" in this codebase means the lead has no active enrollment
+    (already true once completed_dead_end is set by the tick) and the firm
+    owner has explicitly acknowledged that they are handling the lead directly,
+    recorded here as an audit log entry. No new model field is needed because
+    the completed_dead_end status already tells the system the lead is out of
+    automation. No new columns are added.
+
+    This is structurally identical to release_enrollment_hold for R1: a firm-
+    owner action that resolves a pending state and writes an audit log.
+
+    Raises ValueError if:
+    - enrollment not found in this firm
+    - enrollment does not belong to the given lead_id
+    - enrollment is not in completed_dead_end state
+    """
+    enrollment = db.query(Enrollment).filter(
+        Enrollment.id == enrollment_id,
+        Enrollment.firm_id == firm_id,
+    ).first()
+    if enrollment is None:
+        raise ValueError("Enrollment not found in this firm")
+    if enrollment.lead_id != lead_id:
+        raise ValueError("Enrollment does not belong to the given lead")
+    if enrollment.status != EnrollmentStatus.completed_dead_end.value:
+        raise ValueError(
+            f"Cannot take over enrollment with status '{enrollment.status}': "
+            f"only completed_dead_end enrollments can be taken over"
+        )
+    write_audit_log(
+        db=db,
+        firm_id=firm_id,
+        action="enrollment.dead_end_takeover",
+        actor_id=user_id,
+        actor_type="staff" if user_id else "system",
+        entity_type="enrollment",
+        entity_id=enrollment_id,
+        metadata={"lead_id": str(lead_id)},
+    )
+    return enrollment
+
+
 def reactivate_enrollment(
     db: Session,
     enrollment_id: UUID,

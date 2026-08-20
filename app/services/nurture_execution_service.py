@@ -175,11 +175,13 @@ def run_nurture_tick() -> dict:
         "timeouts_fired": N,
         "held_for_business_hours": N,
         "held_for_approval": N,
+        "dead_ends_reached": N,
       }
     """
     db = SessionLocal()
     checked = sent = suppressed = skipped_branching = failed_sends = 0
     goal_jumps = loop_capped = timeouts_fired = held_for_business_hours = held_for_approval = 0
+    dead_ends_reached = 0
 
     try:
         now = datetime.now(timezone.utc)
@@ -413,6 +415,48 @@ def run_nurture_tick() -> dict:
                 )
                 continue
 
+            # 7.5. Dead_end steps: terminate the enrollment and notify the firm owner.
+            # Per Contract section 6.7: every dead end notifies the owner with a one-click
+            # take-over. This branch MUST come before the generic "not processable" fallthrough
+            # below -- without it, dead_end steps would increment skipped_branching and loop
+            # forever because next_action_time is never cleared (real, confirmed bug).
+            if current_step.step_type == StepType.dead_end.value:
+                crud_enrollment.mark_enrollment_dead_end(
+                    db=db, enrollment_id=enrollment.id
+                )
+                dead_ends_reached += 1
+                firm_owner = (
+                    db.query(User)
+                    .filter(
+                        User.firm_id == enrollment.firm_id,
+                        User.role == UserRole.firm_owner,
+                    )
+                    .first()
+                )
+                if firm_owner is not None:
+                    NotificationService.create_notification(
+                        db=db,
+                        firm_id=enrollment.firm_id,
+                        recipient_id=firm_owner.id,
+                        recipient_type=RecipientType.staff,
+                        title=f"Lead reached a dead end: {lead.name}",
+                        body=(
+                            f"Lead {lead.name} has reached the end of the nurture sequence"
+                            " with no further automated steps. Take over to handle this lead"
+                            " directly."
+                        ),
+                        notification_type=NotificationType.nurture_dead_end_reached,
+                        related_entity_type="lead",
+                        related_entity_id=lead.id,
+                    )
+                logger.info(
+                    "nurture_tick: dead_end reached -- enrollment=%s lead=%s step=%s",
+                    enrollment.id,
+                    lead.id,
+                    current_step.id,
+                )
+                continue
+
             # 8. Only email-type Steps proceed to send.
             if current_step.step_type != StepType.email.value:
                 logger.info(
@@ -587,4 +631,5 @@ def run_nurture_tick() -> dict:
         "timeouts_fired": timeouts_fired,
         "held_for_business_hours": held_for_business_hours,
         "held_for_approval": held_for_approval,
+        "dead_ends_reached": dead_ends_reached,
     }
