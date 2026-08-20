@@ -277,6 +277,9 @@ class NotificationType(str, Enum):
     peer_network_mention = "peer_network_mention"
     lead_replied = "lead_replied"
     nurture_hold_for_approval = "nurture_hold_for_approval"
+    # PROPOSED NAME -- pending Andrew's sign-off before any live firm is on this
+    # (event names freeze once a firm goes live; this fires the hot lead alert).
+    lead_hot_alert = "lead_hot_alert"
 
 
 class NotificationChannel(str, Enum):
@@ -305,6 +308,7 @@ class NotificationEventType(str, Enum):
     client_anniversary = "client_anniversary"
     document_expiry_alert = "document_expiry_alert"
     lead_replied = "lead_replied"
+    lead_hot_alert = "lead_hot_alert"
 
 
 class CredentialType(str, Enum):

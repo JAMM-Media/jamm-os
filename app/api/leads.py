@@ -18,6 +18,7 @@ from app.dependencies.tenant import get_current_firm
 from app.dependencies.roles import require_staff_or_above, require_manager_or_above
 from app.models.user import User
 from app.core.enums import LeadProvenance, LeadStage, LeadLostReason
+from app.services.lead_alert_service import maybe_fire_hot_lead_alert
 
 router = APIRouter(prefix="/api/v1/leads", tags=["Leads"])
 
@@ -56,6 +57,9 @@ def create_lead(
         entity_type="lead",
         entity_id=lead.id,
     )
+    # Fire hot lead alert if the lead was created already marked hot.
+    # previous_hot=False because new leads are never hot before creation.
+    maybe_fire_hot_lead_alert(db=db, lead=lead, previous_hot=False)
     return lead
 
 
@@ -112,6 +116,7 @@ def update_lead(
     lead = crud_lead.get_lead_for_firm(db, lead_id, current_firm.id)
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
+    was_hot = lead.hot
     updated = crud_lead.update_lead_with_precedence(
         db=db,
         lead=lead,
@@ -127,6 +132,8 @@ def update_lead(
         entity_type="lead",
         entity_id=lead.id,
     )
+    # Fire hot lead alert if this update just flipped the lead to hot.
+    maybe_fire_hot_lead_alert(db=db, lead=updated, previous_hot=was_hot)
     return updated
 
 
