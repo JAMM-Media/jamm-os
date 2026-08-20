@@ -51,14 +51,16 @@ from app.db.session import SessionLocal
 from app.models.lead import Lead
 from app.models.lead_message import LeadMessage
 from app.models.firm import Firm
+from app.models.user import User
 from app.models.sequence import Step, StepEdge, SequenceGoal
 from app.models.behavioral_event import BehavioralEvent
-from app.core.enums import StepType
+from app.core.enums import StepType, UserRole, RecipientType, NotificationType
 from app.crud import enrollment as crud_enrollment
 from app.crud import lead_message as crud_lead_message
 from app.crud.suppressed_email import is_suppressed
 from app.core.config import get_settings
 from app.services.email_service import EmailService, build_lead_reply_to
+from app.services.notification_service import NotificationService
 
 logger = logging.getLogger(__name__)
 
@@ -172,11 +174,12 @@ def run_nurture_tick() -> dict:
         "loop_capped": N,
         "timeouts_fired": N,
         "held_for_business_hours": N,
+        "held_for_approval": N,
       }
     """
     db = SessionLocal()
     checked = sent = suppressed = skipped_branching = failed_sends = 0
-    goal_jumps = loop_capped = timeouts_fired = held_for_business_hours = 0
+    goal_jumps = loop_capped = timeouts_fired = held_for_business_hours = held_for_approval = 0
 
     try:
         now = datetime.now(timezone.utc)
@@ -363,7 +366,54 @@ def run_nurture_tick() -> dict:
                 )
                 continue  # no email send for wait steps
 
-            # 7. Only email-type Steps proceed to send.
+            # 7. Action steps with hold_for_approval: hold for firm-owner review before any
+            # external action fires. Per Contract section 6.7: any automated action with
+            # external consequences is held for human approval -- concretely, R1 (the
+            # unqualified decline) is HELD; the owner approves or overrides. This is a
+            # status change to held_for_approval, NOT the business-hours retry hold:
+            # an approval hold requires an explicit human release; a timing hold retries
+            # automatically. Conflating them would hide a pending decision behind a counter.
+            if (
+                current_step.step_type == StepType.action.value
+                and (current_step.config or {}).get("hold_for_approval")
+            ):
+                crud_enrollment.hold_enrollment_for_approval(
+                    db=db, enrollment_id=enrollment.id
+                )
+                held_for_approval += 1
+                firm_owner = (
+                    db.query(User)
+                    .filter(
+                        User.firm_id == enrollment.firm_id,
+                        User.role == UserRole.firm_owner,
+                    )
+                    .first()
+                )
+                if firm_owner is not None:
+                    NotificationService.create_notification(
+                        db=db,
+                        firm_id=enrollment.firm_id,
+                        recipient_id=firm_owner.id,
+                        recipient_type=RecipientType.staff,
+                        title="Lead pending approval -- decline held",
+                        body=(
+                            f"An automated decline for lead {lead.name} is awaiting"
+                            " your approval. Approve to send the decline email, or"
+                            " override to return the lead to the sequence."
+                        ),
+                        notification_type=NotificationType.nurture_hold_for_approval,
+                        related_entity_type="lead",
+                        related_entity_id=lead.id,
+                    )
+                logger.info(
+                    "nurture_tick: held for approval -- enrollment=%s lead=%s step=%s",
+                    enrollment.id,
+                    lead.id,
+                    current_step.id,
+                )
+                continue
+
+            # 8. Only email-type Steps proceed to send.
             if current_step.step_type != StepType.email.value:
                 logger.info(
                     "nurture_tick: enrollment=%s step=%s type=%s not processable, skipping",
@@ -536,4 +586,5 @@ def run_nurture_tick() -> dict:
         "loop_capped": loop_capped,
         "timeouts_fired": timeouts_fired,
         "held_for_business_hours": held_for_business_hours,
+        "held_for_approval": held_for_approval,
     }

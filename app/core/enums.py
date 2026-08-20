@@ -276,6 +276,7 @@ class NotificationType(str, Enum):
     document_expiry_alert = "document_expiry_alert"
     peer_network_mention = "peer_network_mention"
     lead_replied = "lead_replied"
+    nurture_hold_for_approval = "nurture_hold_for_approval"
 
 
 class NotificationChannel(str, Enum):
@@ -472,6 +473,7 @@ class EnrollmentStatus(str, Enum):
     completed_dead_end = "completed_dead_end"
     completed_won = "completed_won"
     paused_reply = "paused_reply"
+    held_for_approval = "held_for_approval"
 
 
 class BookingStatus(str, Enum):

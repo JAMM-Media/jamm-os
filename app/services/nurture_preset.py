@@ -393,7 +393,12 @@ def _build_step_config(step_key: str, t_raw: str, headline: str, description: st
             action_kind = "notify_owner"
         else:
             action_kind = "internal_action"
-        return {"headline": headline, "description": description, "action_kind": action_kind}
+        config: dict = {"headline": headline, "description": description, "action_kind": action_kind}
+        if step_key == "R1":
+            # R1 is the only step whose external consequence (the unqualified decline email)
+            # must be held for firm-owner approval before sending -- Contract section 6.7.
+            config["hold_for_approval"] = True
+        return config
     if t_raw in ("trigger", "goal", "won", "dead"):
         return {"headline": headline, "description": description}
     return {"headline": headline, "description": description}
