@@ -53,6 +53,17 @@ class Firm(Base):
         server_default='America/New_York',
     )
 
+    business_hours_start: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        server_default='8',
+    )
+    business_hours_end: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        server_default='18',
+    )
+
     # settings stores firm-level preferences as a JSON blob.
     # Example: {"timezone": "America/New_York", "fiscal_year_start": "01-01"}
     # Using JSON here instead of individual columns lets us add settings

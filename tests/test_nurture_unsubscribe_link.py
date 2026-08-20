@@ -41,7 +41,9 @@ from app.services.unsubscribe_service import verify_and_process_unsubscribe
 def _make_firm(slug: str) -> Firm:
     db = TestingSessionLocal()
     try:
-        firm = Firm(name=f"Firm {slug}", slug=slug, timezone="UTC")
+        # business_hours_start=0 / end=24: sends never held by time-of-day here.
+        firm = Firm(name=f"Firm {slug}", slug=slug, timezone="UTC",
+                    business_hours_start=0, business_hours_end=24)
         db.add(firm)
         db.commit()
         db.refresh(firm)
