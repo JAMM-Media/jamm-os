@@ -35,6 +35,7 @@ Real, established values from the portal redesign (light theme + sidebar, commit
 - JAMM navy (product brand, used sparingly outside per-firm theming): `#1F3148`
 - JAMM gold (reserved for pinned/action-required notification treatment): `#B07D3A`
 - Amber warning text (due-soon calendar icon, "Due soon" stat subtext): `#D97706`
+- Folder brand yellow (folder iconography in stat cards and document table): `#FBBF24` -- distinct from the amber warning color; bright saturated yellow, not an urgency signal
 
 ## Rule
 Before estimating a color for any new portal page, check this file first. If a genuinely new color is needed, add it here with its real hex and where it's used, rather than inventing a one-off value.

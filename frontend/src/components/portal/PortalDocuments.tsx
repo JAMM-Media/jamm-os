@@ -10,6 +10,7 @@ import {
   Upload,
   Search,
   ChevronLeft,
+  Users,
 } from 'lucide-react'
 import { getPortalDocuments, getPortalFolders } from '@/lib/portal-api'
 import type { PortalDocument, PortalFolder } from '@/lib/portal-api'
@@ -52,38 +53,52 @@ function FileIcon({ fileType }: { fileType: string }) {
   return <File size={15} style={{ color: '#9CA3AF' }} className="flex-shrink-0" />
 }
 
-// Stat card: label -> large number -> subtext -> small "View..." link.
-// viewLabel/onViewClick are optional; omit to render no link.
+// Stat card: icon badge + label -> large number -> subtext -> small "View..." link.
+// icon/viewLabel/onViewClick are optional.
 function StatSection({
   value,
   label,
   subtext,
+  icon,
   viewLabel,
   onViewClick,
 }: {
   value: number
   label: string
   subtext: string
+  icon?: React.ReactNode
   viewLabel?: string
   onViewClick?: () => void
 }) {
   return (
-    <div className="px-5 py-4 flex flex-col">
-      <p className="text-[11px] font-medium mb-2" style={{ color: '#9CA3AF' }}>{label}</p>
-      <p className="text-[40px] font-bold leading-none mb-1" style={{ color: '#1F3148' }}>
-        {value}
-      </p>
-      <p className="text-[11px] leading-snug" style={{ color: '#9CA3AF' }}>{subtext}</p>
-      {viewLabel && onViewClick && (
-        <button
-          type="button"
-          onClick={onViewClick}
-          className="mt-1.5 text-left text-[11px] font-medium transition-opacity hover:opacity-70 self-start"
-          style={{ color: '#3A6A94' }}
+    <div className="px-5 py-4 flex items-center gap-4">
+      {/* Large icon circle on the left, vertically centered -- matches mock layout */}
+      {icon && (
+        <div
+          className="w-11 h-11 rounded-full flex items-center justify-center flex-shrink-0"
+          style={{ backgroundColor: '#F3F4F6' }}
         >
-          {viewLabel}
-        </button>
+          {icon}
+        </div>
       )}
+      {/* Text column to the right of the icon */}
+      <div className="flex flex-col min-w-0">
+        <p className="text-[11px] font-medium mb-1" style={{ color: '#9CA3AF' }}>{label}</p>
+        <p className="text-[32px] font-bold leading-none mb-1" style={{ color: '#1F3148' }}>
+          {value}
+        </p>
+        <p className="text-[11px] leading-snug" style={{ color: '#9CA3AF' }}>{subtext}</p>
+        {viewLabel && onViewClick && (
+          <button
+            type="button"
+            onClick={onViewClick}
+            className="mt-1.5 text-left text-[11px] font-medium transition-opacity hover:opacity-70 self-start"
+            style={{ color: '#3A6A94' }}
+          >
+            {viewLabel}
+          </button>
+        )}
+      </div>
     </div>
   )
 }
@@ -100,6 +115,7 @@ export function PortalDocuments({ firmName, accentColor = '#3A6A94' }: PortalDoc
   const [activeTab, setActiveTab] = useState<Tab>('all')
   const [searchQuery, setSearchQuery] = useState('')
   const [toast, setToast] = useState<string | null>(null)
+  const [showingFoldersOnly, setShowingFoldersOnly] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const load = useCallback(async () => {
@@ -125,6 +141,7 @@ export function PortalDocuments({ firmName, accentColor = '#3A6A94' }: PortalDoc
     setFolderLoading(true)
     setActiveTab('all')
     setSearchQuery('')
+    setShowingFoldersOnly(false)
     try {
       const docs = await getPortalDocuments(folder.id)
       setViewDocuments(docs)
@@ -143,6 +160,16 @@ export function PortalDocuments({ firmName, accentColor = '#3A6A94' }: PortalDoc
     setActiveFolderName(null)
     setActiveTab('all')
     setSearchQuery('')
+    setShowingFoldersOnly(false)
+  }, [allDocuments])
+
+  const viewFoldersOnly = useCallback(() => {
+    setViewDocuments(allDocuments)
+    setActiveFolderId(null)
+    setActiveFolderName(null)
+    setActiveTab('all')
+    setSearchQuery('')
+    setShowingFoldersOnly(true)
   }, [allDocuments])
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -220,7 +247,10 @@ export function PortalDocuments({ firmName, accentColor = '#3A6A94' }: PortalDoc
   ]
 
   // Whether the table has anything to show at all.
-  const hasTableContent = showFolderRows || displayed.length > 0
+  // In folders-only mode, only folders count; document rows are hidden.
+  const hasTableContent = showingFoldersOnly
+    ? folders.length > 0
+    : (showFolderRows || displayed.length > 0)
 
   return (
     <div className="p-6 flex flex-col gap-6">
@@ -238,13 +268,15 @@ export function PortalDocuments({ firmName, accentColor = '#3A6A94' }: PortalDoc
           value={folders.length}
           label="Folders"
           subtext="Active folders"
+          icon={<Folder size={18} fill='#FBBF24' style={{ color: '#FBBF24' }} />}
           viewLabel="View folders"
-          onViewClick={exitFolder}
+          onViewClick={viewFoldersOnly}
         />
         <StatSection
           value={activeDocs.length}
           label="Documents"
           subtext="All files"
+          icon={<FileText size={18} style={{ color: '#3B82F6' }} />}
           viewLabel="View all"
           onViewClick={() => { setActiveTab('all'); setSearchQuery('') }}
         />
@@ -252,6 +284,7 @@ export function PortalDocuments({ firmName, accentColor = '#3A6A94' }: PortalDoc
           value={sharedCount}
           label="Shared with you"
           subtext="From your firm"
+          icon={<Users size={18} style={{ color: '#6B7280' }} />}
           viewLabel="View shared"
           onViewClick={() => { setActiveTab('shared'); setSearchQuery('') }}
         />
@@ -259,6 +292,7 @@ export function PortalDocuments({ firmName, accentColor = '#3A6A94' }: PortalDoc
           value={uploadedCount}
           label="Uploaded by you"
           subtext="Your uploads"
+          icon={<Upload size={18} style={{ color: '#374151' }} />}
           viewLabel="View uploads"
           onViewClick={() => { setActiveTab('uploaded'); setSearchQuery('') }}
         />
@@ -276,7 +310,7 @@ export function PortalDocuments({ firmName, accentColor = '#3A6A94' }: PortalDoc
             type="text"
             placeholder="Search documents by keyword"
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => { setSearchQuery(e.target.value); setShowingFoldersOnly(false) }}
             className="w-full h-9 pl-9 pr-3 rounded-lg border border-gray-200 bg-white text-[13px] outline-none focus:ring-2 focus:ring-blue-100"
             style={{ color: '#1F3148' }}
           />
@@ -309,6 +343,7 @@ export function PortalDocuments({ firmName, accentColor = '#3A6A94' }: PortalDoc
               onClick={() => {
                 setActiveTab(key)
                 setSearchQuery('')
+                setShowingFoldersOnly(false)
               }}
               className="px-4 py-2.5 text-[13px] font-medium transition-colors relative"
               style={{ color: isActive ? '#1F3148' : '#6B7280' }}
@@ -398,7 +433,13 @@ export function PortalDocuments({ firmName, accentColor = '#3A6A94' }: PortalDoc
               )}
             </div>
           ) : (
-            <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+            <>
+              {showingFoldersOnly && !activeFolderId && (
+                <h2 className="text-[13px] font-semibold mb-3" style={{ color: '#374151' }}>
+                  All folders
+                </h2>
+              )}
+              <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-gray-100">
@@ -454,7 +495,7 @@ export function PortalDocuments({ firmName, accentColor = '#3A6A94' }: PortalDoc
                               className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0"
                               style={{ backgroundColor: '#E5E7EB' }}
                             >
-                              <Folder size={13} style={{ color: '#6B7280' }} />
+                              <Folder size={13} fill='#FBBF24' style={{ color: '#FBBF24' }} />
                             </div>
                             <span
                               className="text-[13px] font-medium truncate"
@@ -473,8 +514,8 @@ export function PortalDocuments({ firmName, accentColor = '#3A6A94' }: PortalDoc
                     )
                   })}
 
-                  {/* Document rows */}
-                  {displayed.map((doc, idx) => {
+                  {/* Document rows -- hidden in folders-only view */}
+                  {!showingFoldersOnly && displayed.map((doc, idx) => {
                     // Split at last dot so truncation never cuts into the extension.
                     const dotIdx = doc.name.lastIndexOf('.')
                     const basename = dotIdx > 0 ? doc.name.slice(0, dotIdx) : doc.name
@@ -531,7 +572,8 @@ export function PortalDocuments({ firmName, accentColor = '#3A6A94' }: PortalDoc
                   })}
                 </tbody>
               </table>
-            </div>
+              </div>
+            </>
           )}
         </>
       )}
