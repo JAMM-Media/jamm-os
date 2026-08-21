@@ -161,8 +161,8 @@ export interface PortalNotification {
   created_at: string
 }
 
-export async function getPortalNotifications(limit = 20): Promise<PortalNotification[]> {
-  const res = await fetch(`${BASE}/portal/notifications?limit=${limit}`, {
+export async function getPortalNotifications(limit = 20, skip = 0): Promise<PortalNotification[]> {
+  const res = await fetch(`${BASE}/portal/notifications?limit=${limit}&skip=${skip}`, {
     headers: portalHeaders(),
   })
   if (!res.ok) throw new Error('fetch failed')
@@ -176,5 +176,33 @@ export async function markAllPortalNotificationsRead(): Promise<{ marked_read: n
     headers: portalHeaders(),
   })
   if (!res.ok) throw new Error('fetch failed')
+  return res.json()
+}
+
+export interface SurveyOption {
+  value: string
+  label: string
+}
+
+export interface AttributionSurveyData {
+  question: string
+  options: SurveyOption[]
+}
+
+export async function getAttributionSurvey(): Promise<AttributionSurveyData> {
+  const res = await fetch(`${BASE}/portal/attribution-survey`, {
+    headers: portalHeaders(),
+  })
+  if (!res.ok) throw new Error('fetch failed')
+  return res.json()
+}
+
+export async function submitAttributionSurvey(answer: string): Promise<{ written: boolean }> {
+  const res = await fetch(`${BASE}/portal/attribution-survey`, {
+    method: 'POST',
+    headers: portalHeaders(),
+    body: JSON.stringify({ answer }),
+  })
+  if (!res.ok) throw new Error('submit failed')
   return res.json()
 }

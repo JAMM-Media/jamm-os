@@ -2,8 +2,10 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { Bell, X, Pin } from 'lucide-react'
 import { usePortalNotifications } from './usePortalNotifications'
+import { PortalAttributionSurvey } from './PortalAttributionSurvey'
 import type { PortalNotification } from '@/lib/portal-api'
 
 // JAMM brand gold -- used for pinned/action-required treatment only.
@@ -62,17 +64,17 @@ function buildGroups(notifications: PortalNotification[]): {
 function PinnedRow({
   notification,
   onClose,
+  onOpenSurvey,
 }: {
   notification: PortalNotification
   onClose: () => void
+  onOpenSurvey: () => void
 }) {
   const [hovered, setHovered] = useState(false)
 
   const handleClick = () => {
-    // Gap: the attribution survey frontend screen is not yet built (separate follow-up task).
-    // Clicking a pinned notification closes the popover. The notification remains
-    // pinned and unread until the survey is actually submitted.
     onClose()
+    onOpenSurvey()
   }
 
   return (
@@ -142,10 +144,12 @@ function NormalRow({ notification }: { notification: PortalNotification }) {
 }
 
 export function PortalNotificationBell() {
+  const router = useRouter()
   const [open, setOpen] = useState(false)
+  const [surveyOpen, setSurveyOpen] = useState(false)
   const buttonRef = useRef<HTMLButtonElement>(null)
   const popoverRef = useRef<HTMLDivElement>(null)
-  const { notifications, unreadCount, loading, markAllRead } = usePortalNotifications()
+  const { notifications, unreadCount, loading, markAllRead, refetch } = usePortalNotifications()
 
   const hasUnreadNonPinned = notifications.some(n => !n.is_read && !n.is_pinned)
   const { pinned, groups } = buildGroups(notifications)
@@ -173,17 +177,27 @@ export function PortalNotificationBell() {
     // popover stays open so user sees the updated read state
   }
 
+  const handleOpenSurvey = () => {
+    setOpen(false)
+    setSurveyOpen(true)
+  }
+
+  const handleSurveyComplete = async () => {
+    setSurveyOpen(false)
+    await refetch()
+  }
+
   return (
     <>
       <button
         ref={buttonRef}
         type="button"
         onClick={() => setOpen(prev => !prev)}
-        className="relative flex items-center justify-center w-8 h-8 rounded-full transition-colors"
-        style={{ backgroundColor: open ? 'rgba(255,255,255,0.12)' : 'transparent' }}
+        className="relative flex items-center justify-center w-8 h-8 rounded-full transition-colors hover:bg-gray-100"
+        style={{ backgroundColor: open ? '#F3F4F6' : 'transparent' }}
         aria-label="Notifications"
       >
-        <Bell size={16} className="text-white" />
+        <Bell size={16} style={{ color: '#374151' }} />
         {unreadCount > 0 && (
           <span
             className="absolute -top-0.5 -right-0.5 min-w-[14px] h-[14px] rounded-full flex items-center justify-center text-[8px] font-bold px-[3px]"
@@ -193,6 +207,13 @@ export function PortalNotificationBell() {
           </span>
         )}
       </button>
+
+      {surveyOpen && (
+        <PortalAttributionSurvey
+          onClose={() => setSurveyOpen(false)}
+          onComplete={handleSurveyComplete}
+        />
+      )}
 
       {open && (
         // Popover uses fixed positioning so it renders correctly on all screen widths
@@ -268,7 +289,7 @@ export function PortalNotificationBell() {
                       Action Required
                     </p>
                     {pinned.map(n => (
-                      <PinnedRow key={n.id} notification={n} onClose={() => setOpen(false)} />
+                      <PinnedRow key={n.id} notification={n} onClose={() => setOpen(false)} onOpenSurvey={handleOpenSurvey} />
                     ))}
                     {groups.length > 0 && (
                       <div
@@ -305,14 +326,14 @@ export function PortalNotificationBell() {
               className="border-t px-4 py-2.5 flex-shrink-0"
               style={{ borderColor: 'rgba(255,255,255,0.08)' }}
             >
-              {/* Gap: a full notification history page does not exist yet.
-                  This is a follow-up task. The button is present but inert for now. */}
               <button
                 type="button"
-                className="text-[11px] w-full text-center transition-opacity"
-                style={{ color: '#6B7280' }}
-                title="Full notification history -- follow-up task"
-                onClick={() => setOpen(false)}
+                className="text-[11px] w-full text-center transition-opacity hover:opacity-70"
+                style={{ color: '#60A5FA' }}
+                onClick={() => {
+                  setOpen(false)
+                  router.push('/portal/notifications')
+                }}
               >
                 View all notifications
               </button>

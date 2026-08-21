@@ -521,8 +521,23 @@ def portal_dashboard(
         for env in envelopes
     ]
 
-    # TODO: populate when Phase 4 DocumentRequest model is built
-    pending_document_requests: list[dict] = []
+    # Document requests: open (pending/partial) + completed within the current month.
+    # Naming note: "pending_document_requests" is the existing response key name.
+    # It now includes recently-completed items so the frontend Completed stat card
+    # can show a real count. The frontend splits active vs completed client-side
+    # by checking status == 'complete'. Renaming the key would be an API contract
+    # change; flagged for future consideration when the contract is revisited.
+    open_requests = crud_dr.get_pending_for_client(db, client_id=client_id, firm_id=firm_id)
+    completed_requests = crud_dr.get_recently_completed_for_client(db, client_id=client_id, firm_id=firm_id)
+    pending_document_requests = [
+        {
+            "id": str(dr.id),
+            "title": dr.title,
+            "due_date": dr.due_date.isoformat() if dr.due_date else None,
+            "status": dr.status,
+        }
+        for dr in [*open_requests, *completed_requests]
+    ]
 
     # Ensure the attribution survey notification exists if this client's
     # referral_source is blank. Idempotent: safe to call on every dashboard visit.
