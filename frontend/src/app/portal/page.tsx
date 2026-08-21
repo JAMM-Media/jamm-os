@@ -2,7 +2,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { loadStripe } from '@stripe/stripe-js'
 import { Elements } from '@stripe/react-stripe-js'
 import { PortalShell } from '@/components/portal/PortalShell'
@@ -35,21 +35,25 @@ interface PortalMe {
 
 export default function PortalPage() {
   const router = useRouter()
-  const [activeTab, setActiveTab] = useState(() => {
-    if (typeof window !== 'undefined') {
-      const params = new URLSearchParams(window.location.search)
-      const tab = params.get('tab')
-      if (tab) return tab
-    }
-    return 'todo'
-  })
-  const [deepLinkOrganizerId, setDeepLinkOrganizerId] = useState<string | null>(() => {
-    if (typeof window !== 'undefined') {
-      return new URLSearchParams(window.location.search).get('organizer_id')
-    }
-    return null
-  })
+  const searchParams = useSearchParams()
+  const [activeTab, setActiveTab] = useState(searchParams.get('tab') ?? 'todo')
+  const [deepLinkOrganizerId, setDeepLinkOrganizerId] = useState<string | null>(
+    searchParams.get('organizer_id')
+  )
   const [me, setMe] = useState<PortalMe | null>(null)
+
+  // Sync activeTab and deepLinkOrganizerId whenever the URL search params change.
+  // The lazy useState initializer only runs on the initial mount; useSearchParams
+  // returns a live object that updates on every client-side navigation, so this
+  // useEffect is what actually catches router.push('/portal?tab=documents') calls
+  // from other pages in the same session.
+  useEffect(() => {
+    setActiveTab(searchParams.get('tab') ?? 'todo')
+  }, [searchParams])
+
+  useEffect(() => {
+    setDeepLinkOrganizerId(searchParams.get('organizer_id'))
+  }, [searchParams])
 
   useEffect(() => {
     const token = localStorage.getItem('portal_access_token')
