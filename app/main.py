@@ -40,6 +40,7 @@ from app.api.users import router as users_router
 from app.api.contacts import router as contacts_router
 from app.api.firms import router as firms_router
 from app.api.documents import router as documents_router
+from app.api.folders import router as folders_router
 from app.api.document_requests import router as document_requests_router
 from app.api.checklist_templates import router as checklist_templates_router
 from app.api.esign import router as esign_router
@@ -322,6 +323,7 @@ app.include_router(engagement_members_router)
 app.include_router(tasks_router)
 app.include_router(contacts_router)
 app.include_router(documents_router)
+app.include_router(folders_router)
 app.include_router(document_requests_router)
 app.include_router(checklist_templates_router)
 app.include_router(esign_router)

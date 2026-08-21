@@ -700,23 +700,44 @@ def portal_upload_document(
     }
 
 
+@router.get("/folders", response_model=list)
+def portal_list_folders(
+    current_client: Client = Depends(get_current_portal_client),
+    db: Session = Depends(get_db),
+):
+    """List all folders visible to the authenticated portal client. Read-only."""
+    from app.crud import folder as crud_folder
+    from app.schemas.folder import FolderOut
+    folders = crud_folder.list_folders_for_client(
+        db=db,
+        firm_id=current_client.firm_id,
+        client_id=current_client.id,
+    )
+    return [FolderOut.model_validate(f).model_dump() for f in folders]
+
+
 @router.get("/documents")
 def portal_list_documents(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),
+    folder_id: Optional[UUID] = Query(None),
     current_client: Client = Depends(get_current_portal_client),
     db: Session = Depends(get_db),
 ):
     """Return client-visible documents for the authenticated portal client."""
     from app.models.document import Document
-    docs = db.execute(
+    stmt = (
         select(Document)
         .where(
             Document.firm_id == current_client.firm_id,
             Document.client_id == current_client.id,
             Document.visibility == "client_visible",
         )
-        .order_by(Document.created_at.desc())
+    )
+    if folder_id is not None:
+        stmt = stmt.where(Document.folder_id == folder_id)
+    docs = db.execute(
+        stmt.order_by(Document.created_at.desc())
         .offset(skip)
         .limit(limit)
     ).scalars().all()
