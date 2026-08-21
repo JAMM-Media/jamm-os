@@ -1,7 +1,7 @@
 // frontend/src/components/portal/PortalShell.tsx
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   CheckSquare,
@@ -11,8 +11,9 @@ import {
   BookOpen,
   MessageSquare,
   Settings,
-  CircleHelp,
+  Bell,
   ChevronDown,
+  LogOut,
 } from 'lucide-react'
 import { usePortalUnreadMessages } from './usePortalUnreadMessages'
 import { PortalNotificationBell } from './PortalNotificationBell'
@@ -43,8 +44,6 @@ interface PortalShellProps {
 // Light neutral for the main content area. Replaces the per-firm pageColor in the
 // shell layout; content pages will get their own light-theme pass separately.
 const CONTENT_BG = '#F7F8FA'
-const TOP_BAR_BG = '#FFFFFF'
-const TOP_BAR_BORDER = '#E5E7EB'
 
 const NAV_ITEMS = [
   { key: 'todo',            label: 'To-do',          Icon: CheckSquare },
@@ -73,6 +72,20 @@ export function PortalShell({
   const router = useRouter()
   const { unreadCount, markAsRead } = usePortalUnreadMessages()
   const [logoError, setLogoError] = useState(false)
+  const [avatarOpen, setAvatarOpen] = useState(false)
+  const avatarRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    function handleOutsideClick(e: MouseEvent) {
+      if (avatarRef.current && !avatarRef.current.contains(e.target as Node)) {
+        setAvatarOpen(false)
+      }
+    }
+    if (avatarOpen) {
+      document.addEventListener('mousedown', handleOutsideClick)
+    }
+    return () => document.removeEventListener('mousedown', handleOutsideClick)
+  }, [avatarOpen])
 
   const sidebarTextActive = '#FFFFFF'
   const sidebarTextMuted = 'rgba(255, 255, 255, 0.75)'
@@ -140,62 +153,85 @@ export function PortalShell({
               </button>
             )
           })}
-        </nav>
-
-        <div className="mx-3 border-t mt-2 mb-2" style={{ borderColor: 'rgba(255,255,255,0.10)' }} />
-
-        {/* Settings at bottom */}
-        <div className="px-2 pb-5">
+          {/* Notifications: routes to the full history page, distinct from the bell popover */}
           <button
             type="button"
-            onClick={() => router.push('/portal/settings')}
-            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition-colors hover:opacity-80"
-            style={{ color: sidebarTextMuted }}
+            onClick={() => router.push('/portal/notifications')}
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition-colors"
+            style={{
+              backgroundColor: 'transparent',
+              color: sidebarTextMuted,
+              borderLeft: '3px solid transparent',
+            }}
           >
-            <Settings size={16} className="flex-shrink-0" />
-            <span className="text-[14px] font-medium">Settings</span>
+            <Bell size={16} className="flex-shrink-0" />
+            <span className="text-[14px] font-medium flex-1 truncate">Notifications</span>
           </button>
-        </div>
+        </nav>
       </div>
 
       {/* Main content column */}
-      <div className="flex-1 flex flex-col h-screen overflow-hidden">
-        {/* Top bar */}
-        <div
-          className="h-14 flex items-center justify-end px-5 gap-3 flex-shrink-0 border-b"
-          style={{ backgroundColor: TOP_BAR_BG, borderColor: TOP_BAR_BORDER }}
-        >
-          {/* Help: icon + text label, matching the mock. No destination wired yet. */}
-          <button
-            type="button"
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full transition-colors hover:bg-gray-100"
-            style={{ color: '#6B7280' }}
-            aria-label="Help"
-          >
-            <CircleHelp size={16} />
-            <span className="text-[12px] font-medium">Help</span>
-          </button>
-
+      <div className="flex-1 flex flex-col h-screen overflow-hidden relative">
+        {/* Floating bell + avatar: no bar, no background, no border -- sits on CONTENT_BG */}
+        <div className="absolute top-4 right-5 z-10 flex items-center gap-3 pointer-events-auto">
           <PortalNotificationBell />
 
-          {/* Firm name + avatar + dropdown chevron (chevron is visual placeholder, no menu wired) */}
-          <div className="flex items-center gap-2 px-2 py-1 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">
-            <div
-              className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0"
-              style={{ backgroundColor: avatarColor }}
+          {/* Avatar dropdown -- Settings + Logout */}
+          <div className="relative" ref={avatarRef}>
+            <button
+              type="button"
+              onClick={() => setAvatarOpen((v) => !v)}
+              className="flex items-center gap-1.5 rounded-lg px-1 py-1 hover:bg-black/5 transition-colors"
+              aria-label="Account menu"
             >
-              <span className="text-[10px] font-semibold text-white">
-                {clientName?.charAt(0).toUpperCase() ?? '?'}
-              </span>
-            </div>
-            <span className="text-[12px] font-medium max-w-[140px] truncate" style={{ color: '#374151' }}>
-              {firmName}
-            </span>
-            <ChevronDown size={13} style={{ color: '#9CA3AF' }} className="flex-shrink-0" />
+              <div
+                className="w-9 h-9 rounded-full flex items-center justify-center"
+                style={{ backgroundColor: avatarColor }}
+              >
+                <span className="text-[10px] font-semibold text-white">
+                  {clientName?.charAt(0).toUpperCase() ?? '?'}
+                </span>
+              </div>
+              <ChevronDown size={13} style={{ color: '#9CA3AF' }} className="flex-shrink-0" />
+            </button>
+            {avatarOpen && (
+              <div className="absolute right-0 top-full mt-1.5 w-52 rounded-xl bg-white border border-gray-100 shadow-lg overflow-hidden z-20">
+                {/* "Signed in as" header -- non-clickable identity row */}
+                <div className="px-4 py-3">
+                  <p className="text-[11px]" style={{ color: '#9CA3AF' }}>Signed in as</p>
+                  <p className="text-[12px] font-medium truncate mt-0.5" style={{ color: '#374151' }}>
+                    {clientName}
+                  </p>
+                </div>
+                <div className="h-px bg-gray-100" />
+                <button
+                  type="button"
+                  onClick={() => { setAvatarOpen(false); router.push('/portal/settings') }}
+                  className="w-full flex items-center gap-2.5 px-4 py-2.5 text-left text-[13px] hover:bg-gray-50 transition-colors"
+                  style={{ color: '#374151' }}
+                >
+                  <Settings size={14} style={{ color: '#6B7280' }} />
+                  Settings
+                </button>
+                <div className="h-px bg-gray-100 mx-3" />
+                <button
+                  type="button"
+                  onClick={() => {
+                    localStorage.removeItem('portal_access_token')
+                    router.push('/portal/login')
+                  }}
+                  className="w-full flex items-center gap-2.5 px-4 py-2.5 text-left text-[13px] hover:bg-gray-50 transition-colors"
+                  style={{ color: '#DC2626' }}
+                >
+                  <LogOut size={14} style={{ color: '#DC2626' }} />
+                  Log out
+                </button>
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Scrollable content area */}
+        {/* Scrollable content area: starts at top of column, no bar above it */}
         <main className="flex-1 overflow-y-auto" style={{ backgroundColor: CONTENT_BG }}>
           {children}
         </main>
