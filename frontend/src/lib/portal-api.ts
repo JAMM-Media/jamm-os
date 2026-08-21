@@ -46,6 +46,16 @@ export interface PortalDocument {
   is_superseded: boolean
 }
 
+export interface PortalFolder {
+  id: string
+  name: string
+  parent_folder_id: string | null
+  firm_id: string
+  client_id: string
+  created_at: string
+  updated_at: string
+}
+
 export interface PortalMessage {
   id: string
   body: string
@@ -77,8 +87,18 @@ export async function getPortalInvoices(): Promise<PortalInvoicesResponse> {
   return res.json()
 }
 
-export async function getPortalDocuments(): Promise<PortalDocument[]> {
-  const res = await fetch(`${BASE}/portal/documents`, { headers: portalHeaders() })
+export async function getPortalDocuments(folderId?: string): Promise<PortalDocument[]> {
+  const url = folderId
+    ? `${BASE}/portal/documents?folder_id=${folderId}`
+    : `${BASE}/portal/documents`
+  const res = await fetch(url, { headers: portalHeaders() })
+  if (!res.ok) throw new Error('fetch failed')
+  const data = await res.json()
+  return Array.isArray(data) ? data : []
+}
+
+export async function getPortalFolders(): Promise<PortalFolder[]> {
+  const res = await fetch(`${BASE}/portal/folders`, { headers: portalHeaders() })
   if (!res.ok) throw new Error('fetch failed')
   const data = await res.json()
   return Array.isArray(data) ? data : []
