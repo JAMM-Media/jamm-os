@@ -30,6 +30,56 @@ def create_document_request(
     return request
 
 
+def get_pending_for_client(
+    db: Session,
+    client_id: UUID,
+    firm_id: UUID,
+) -> list[DocumentRequest]:
+    """Return document requests that are still open (pending or partial) for a
+    specific client in a specific firm.
+
+    Used by the portal dashboard to surface tasks for the authenticated client.
+    Scoped to BOTH firm_id AND client_id so no cross-firm data can leak.
+    """
+    stmt = (
+        select(DocumentRequest)
+        .where(
+            DocumentRequest.firm_id == firm_id,
+            DocumentRequest.client_id == client_id,
+            DocumentRequest.status.in_(["pending", "partial"]),
+        )
+        .order_by(DocumentRequest.due_date.asc().nulls_last(), DocumentRequest.created_at.desc())
+    )
+    return list(db.execute(stmt).scalars().all())
+
+
+def get_recently_completed_for_client(
+    db: Session,
+    client_id: UUID,
+    firm_id: UUID,
+) -> list[DocumentRequest]:
+    """Return document requests completed within the current calendar month for a
+    specific client in a specific firm.
+
+    Scoped to BOTH firm_id AND client_id for tenant isolation.
+    Used by the portal dashboard to populate the Completed stat card count.
+    Rows with completed_at=NULL are excluded regardless of status.
+    """
+    now = datetime.now(timezone.utc)
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    stmt = (
+        select(DocumentRequest)
+        .where(
+            DocumentRequest.firm_id == firm_id,
+            DocumentRequest.client_id == client_id,
+            DocumentRequest.status == "complete",
+            DocumentRequest.completed_at >= month_start,
+        )
+        .order_by(DocumentRequest.completed_at.desc())
+    )
+    return list(db.execute(stmt).scalars().all())
+
+
 def get_document_request(
     db: Session,
     request_id: UUID,

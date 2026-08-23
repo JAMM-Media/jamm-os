@@ -83,6 +83,14 @@ class Document(Base):
         default="internal",
     )
 
+    # Folder assignment. NULL means the document lives at root level.
+    # SET NULL on folder delete so documents are never lost when a folder is removed.
+    folder_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("folders.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
@@ -99,6 +107,7 @@ class Document(Base):
     client: Mapped["Client"] = relationship("Client", back_populates="documents")
     engagement: Mapped["Engagement"] = relationship("Engagement", back_populates="documents")
     uploader: Mapped["User | None"] = relationship("User", foreign_keys=[uploaded_by])
+    folder: Mapped[Optional["Folder"]] = relationship("Folder", back_populates="documents")
     audit_logs: Mapped[list["DocumentAuditLog"]] = relationship(
         "DocumentAuditLog",
         back_populates="document",

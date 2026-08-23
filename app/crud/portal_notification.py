@@ -22,11 +22,27 @@ def create_notification(
         notification_type=data.notification_type,
         related_entity_type=data.related_entity_type,
         related_entity_id=data.related_entity_id,
+        is_pinned=data.is_pinned,
     )
     db.add(notification)
     db.commit()
     db.refresh(notification)
     return notification
+
+
+def get_pending_by_type(
+    db: Session,
+    client_id: uuid.UUID,
+    firm_id: uuid.UUID,
+    notification_type: str,
+) -> PortalNotification | None:
+    """Return an existing notification of the given type for this client, if any."""
+    stmt = select(PortalNotification).where(
+        PortalNotification.client_id == client_id,
+        PortalNotification.firm_id == firm_id,
+        PortalNotification.notification_type == notification_type,
+    )
+    return db.execute(stmt).scalar_one_or_none()
 
 
 def get_notifications_for_client(
@@ -83,6 +99,10 @@ def mark_as_read(
     notification = db.execute(stmt).scalar_one_or_none()
     if notification is None:
         return None
+    # Pinned notifications cannot be marked read via this path.
+    # They clear only on explicit completion (e.g. survey submission).
+    if notification.is_pinned:
+        return notification
     notification.is_read = True
     notification.read_at = datetime.now(timezone.utc)
     db.commit()
@@ -95,7 +115,11 @@ def mark_all_as_read(
     client_id: uuid.UUID,
     firm_id: uuid.UUID,
 ) -> int:
-    """Mark all unread notifications as read. Returns count updated."""
+    """Mark all non-pinned unread notifications as read. Returns count updated.
+
+    Pinned notifications (e.g. attribution survey) survive mark-all-read and
+    clear only on explicit completion, per Contract section 4.1.
+    """
     now = datetime.now(timezone.utc)
     stmt = (
         update(PortalNotification)
@@ -103,6 +127,7 @@ def mark_all_as_read(
             PortalNotification.client_id == client_id,
             PortalNotification.firm_id == firm_id,
             PortalNotification.is_read.is_(False),
+            PortalNotification.is_pinned.is_(False),
         )
         .values(is_read=True, read_at=now)
     )
@@ -124,6 +149,7 @@ def create_bulk_notifications(
             notification_type=n.notification_type,
             related_entity_type=n.related_entity_type,
             related_entity_id=n.related_entity_id,
+            is_pinned=n.is_pinned,
         )
         for n in notifications
     ]

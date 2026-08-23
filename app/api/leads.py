@@ -12,11 +12,13 @@ from app.schemas.lead import LeadCreate, LeadUpdate, LeadOut
 from app.schemas.pagination import PaginatedResponse
 from app.utils.pagination import paginate
 from app.crud import lead as crud_lead
+from app.crud import enrollment as crud_enrollment
 from app.dependencies.auth import get_current_user
 from app.dependencies.tenant import get_current_firm
-from app.dependencies.roles import require_staff_or_above
+from app.dependencies.roles import require_staff_or_above, require_manager_or_above
 from app.models.user import User
 from app.core.enums import LeadProvenance, LeadStage, LeadLostReason
+from app.services.lead_alert_service import maybe_fire_hot_lead_alert
 
 router = APIRouter(prefix="/api/v1/leads", tags=["Leads"])
 
@@ -55,6 +57,9 @@ def create_lead(
         entity_type="lead",
         entity_id=lead.id,
     )
+    # Fire hot lead alert if the lead was created already marked hot.
+    # previous_hot=False because new leads are never hot before creation.
+    maybe_fire_hot_lead_alert(db=db, lead=lead, previous_hot=False)
     return lead
 
 
@@ -111,6 +116,7 @@ def update_lead(
     lead = crud_lead.get_lead_for_firm(db, lead_id, current_firm.id)
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
+    was_hot = lead.hot
     updated = crud_lead.update_lead_with_precedence(
         db=db,
         lead=lead,
@@ -126,6 +132,8 @@ def update_lead(
         entity_type="lead",
         entity_id=lead.id,
     )
+    # Fire hot lead alert if this update just flipped the lead to hot.
+    maybe_fire_hot_lead_alert(db=db, lead=updated, previous_hot=was_hot)
     return updated
 
 
@@ -204,3 +212,99 @@ def get_lead_activity(
         )
         for item in items
     ]
+
+
+# ---------------------------------------------------------
+# ENROLLMENT APPROVAL ACTIONS (Contract section 6.7)
+#
+# Release a held_for_approval enrollment via the APPROVED or OVERRIDE edge.
+# Only firm_owner and manager can take this action (require_manager_or_above).
+# Enrollment must belong to a lead in the caller's firm.
+# ---------------------------------------------------------
+
+@router.post("/{lead_id}/enrollments/{enrollment_id}/approve-hold", status_code=200)
+def approve_enrollment_hold(
+    lead_id: UUID,
+    enrollment_id: UUID,
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    current_user: User = Depends(require_manager_or_above),
+):
+    """Approve a held R1 enrollment: advance via the APPROVED edge and reactivate."""
+    lead = crud_lead.get_lead_for_firm(db, lead_id=lead_id, firm_id=current_firm.id)
+    if lead is None:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    try:
+        enrollment = crud_enrollment.release_enrollment_hold(
+            db=db,
+            enrollment_id=enrollment_id,
+            firm_id=current_firm.id,
+            lead_id=lead_id,
+            condition_label="APPROVED",
+            user_id=current_user.id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {"enrollment_id": str(enrollment.id), "status": enrollment.status}
+
+
+@router.post("/{lead_id}/enrollments/{enrollment_id}/override-hold", status_code=200)
+def override_enrollment_hold(
+    lead_id: UUID,
+    enrollment_id: UUID,
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    current_user: User = Depends(require_manager_or_above),
+):
+    """Override a held R1 enrollment: advance via the OVERRIDE edge (back into the sequence)."""
+    lead = crud_lead.get_lead_for_firm(db, lead_id=lead_id, firm_id=current_firm.id)
+    if lead is None:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    try:
+        enrollment = crud_enrollment.release_enrollment_hold(
+            db=db,
+            enrollment_id=enrollment_id,
+            firm_id=current_firm.id,
+            lead_id=lead_id,
+            condition_label="OVERRIDE",
+            user_id=current_user.id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {"enrollment_id": str(enrollment.id), "status": enrollment.status}
+
+
+@router.post("/{lead_id}/enrollments/{enrollment_id}/take-over", status_code=200)
+def take_over_dead_end_enrollment(
+    lead_id: UUID,
+    enrollment_id: UUID,
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    current_user: User = Depends(require_manager_or_above),
+):
+    """Acknowledge a dead-ended enrollment and pull the lead into manual mode.
+
+    Per Contract section 6.7: every dead end notifies the owner with a one-click
+    take-over. This endpoint is that click. "Manual mode" in this codebase means:
+    the enrollment stays completed_dead_end (already set by the tick), the firm
+    owner has explicitly acknowledged ownership, and the decision is audit-logged.
+    No new model fields are added -- the completed status itself tells the system
+    this lead is out of automation.
+
+    Note: a frontend UI surface (a take-over button in the lead detail view or
+    pipeline) is out of scope for this task and is a separate follow-up.
+    """
+    lead = crud_lead.get_lead_for_firm(db, lead_id=lead_id, firm_id=current_firm.id)
+    if lead is None:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    try:
+        enrollment = crud_enrollment.acknowledge_dead_end_takeover(
+            db=db,
+            enrollment_id=enrollment_id,
+            firm_id=current_firm.id,
+            lead_id=lead_id,
+            user_id=current_user.id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {"enrollment_id": str(enrollment.id), "status": enrollment.status}

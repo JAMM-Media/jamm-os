@@ -2,23 +2,29 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { FileUp, PenLine, CreditCard, CheckCircle2 } from 'lucide-react'
-import { getPortalDashboard } from '@/lib/portal-api'
-import type { PortalDashboard } from '@/lib/portal-api'
+import { FileUp, PenLine, ChevronRight, File, Receipt, CircleHelp, UserCheck, Lightbulb, CalendarDays } from 'lucide-react'
+import { getPortalDashboard, getPortalDocuments } from '@/lib/portal-api'
+import type { PortalDocument } from '@/lib/portal-api'
+
+// Props interface is preserved unchanged so portal/page.tsx needs no edits.
+// cardColor, portalMode, textPrimary, textMuted are accepted but not used here;
+// the To-do page uses the fixed light-theme palette from the PortalShell rebuild.
+interface PortalTodoProps {
+  clientFirstName: string
+  accentColor?: string
+  cardColor?: string
+  portalMode?: 'light' | 'dark'
+  textPrimary?: string
+  textMuted?: string
+}
 
 interface ActionItem {
   id: string
-  type: 'document-request' | 'signature' | 'invoice'
+  type: 'document-request' | 'signature'
   title: string
   description: string
   dueDate?: string
   completed: boolean
-}
-
-function getIcon(type: ActionItem['type'], iconColor: string) {
-  if (type === 'document-request') return <FileUp className="h-5 w-5" style={{ color: iconColor }} />
-  if (type === 'signature') return <PenLine className="h-5 w-5" style={{ color: iconColor }} />
-  return <CreditCard className="h-5 w-5" style={{ color: iconColor }} />
 }
 
 function formatDate(iso: string | null | undefined): string {
@@ -30,214 +36,351 @@ function formatDate(iso: string | null | undefined): string {
   })
 }
 
-function EngagementBadge({ status, accentColor }: { status: string; accentColor: string }) {
-  const getStyle = (): React.CSSProperties => {
-    switch (status) {
-      case 'active':
-        return { backgroundColor: accentColor, color: '#FFFFFF' }
-      case 'in_progress':
-        return { backgroundColor: accentColor, color: '#FFFFFF' }
-      case 'in_review':
-        return { backgroundColor: '#FEF3C7', color: '#92400E' }
-      case 'completed':
-        return { backgroundColor: '#D1FAE5', color: '#065F46' }
-      case 'overdue':
-      case 'blocked':
-        return { backgroundColor: '#FEE2E2', color: '#991B1B' }
-      case 'awaiting_docs':
-        return { backgroundColor: '#FEF3C7', color: '#92400E' }
-      case 'planning':
-      case 'draft':
-      case 'archived':
-      case 'cancelled':
-      case 'not_started':
-      default:
-        return { backgroundColor: '#E5E7EB', color: '#1F3148', border: '0.5px solid #1F3148' }
-    }
-  }
-  return (
-    <span
-      className="text-[10px] font-medium px-1.5 py-0.5 rounded-[4px] capitalize"
-      style={getStyle()}
-    >
-      {status.replace(/_/g, ' ')}
-    </span>
-  )
+// Due date display: plain text + calendar icon, no pill background.
+// Overdue retains the real date so information is not lost.
+// Color rules confirmed from mock: overdue=red, within 7 days=amber, later=dark gray.
+function getDueDateDisplay(iso?: string): { color: string; label: string } | null {
+  if (!iso) return null
+  const dateStr = formatDate(iso)
+  const daysUntil = Math.floor((new Date(iso).getTime() - Date.now()) / 86400000)
+  if (daysUntil < 0) return { color: '#DC2626', label: `Overdue - ${dateStr}` }
+  if (daysUntil <= 7) return { color: '#D97706', label: `Due ${dateStr}` }
+  return { color: '#374151', label: `Due ${dateStr}` }
 }
 
-function ActionCard({ item, accentColor, cardColor, primaryText, mutedText, iconColor }: {
-  item: ActionItem
-  accentColor: string
-  cardColor: string
-  primaryText: string
-  mutedText: string
-  iconColor: string
+// Description generator: frontend-only heuristic since DocumentRequest has no
+// description/notes field (only title, due_date, status, checklist_items JSON).
+// The checklist_items descriptions are not returned by the portal dashboard endpoint.
+// Each call produces a sentence specific to the task title so rows are not identical.
+function getTaskDescription(type: 'document-request' | 'signature', title: string): string {
+  if (type === 'signature') return 'Please review and sign this document.'
+  const t = title.toLowerCase()
+  if (t.includes('receipt') || t.includes('expense')) return `Please provide your ${title}.`
+  if (t.includes('questionnaire')) return 'Please complete the client questionnaire.'
+  if (t.includes('review') || t.includes('approve')) return `Please review: ${title}.`
+  return `Please upload your ${title}.`
+}
+
+// Single-container stat strip: one white card with internal dividers (not four separate cards).
+// Each section's content is identical to the prior StatCard but without its own border.
+function StatSection({ value, label, subtext, valueColor, subtextColor = '#9CA3AF' }: {
+  value: number
+  label: string
+  subtext: string
+  valueColor: string
+  subtextColor?: string
 }) {
   return (
-    <div
-      className="flex items-center justify-between gap-4 rounded-[8px] px-5 py-4"
-      style={{ backgroundColor: cardColor, opacity: item.completed ? 0.7 : 1 }}
-    >
-      <div className="flex items-start gap-3 min-w-0">
-        <div className="flex-shrink-0 mt-0.5">{getIcon(item.type, iconColor)}</div>
-        <div className="min-w-0">
-          <p className="text-[14px] font-medium leading-tight" style={{ color: primaryText }}>{item.title}</p>
-          <p className="text-[13px] mt-0.5 leading-snug" style={{ color: mutedText }}>{item.description}</p>
-          {item.dueDate && !item.completed && (
-            <p className="text-[13px] mt-1" style={{ color: mutedText }}>Due {item.dueDate}</p>
-          )}
-        </div>
-      </div>
-      {item.completed ? (
-        <CheckCircle2 className="h-5 w-5 text-[#10B981] flex-shrink-0" />
-      ) : (
-        <button
-          className="flex-shrink-0 h-10 px-4 rounded-[6px] text-white text-[13px] font-medium hover:opacity-90 transition-opacity whitespace-nowrap"
-          style={{ backgroundColor: accentColor }}
-        >
-          {item.type === 'document-request'
-            ? 'Upload'
-            : item.type === 'signature'
-            ? 'Review & Sign'
-            : 'Pay Now'}
-        </button>
-      )}
+    <div className="px-5 py-4 flex flex-col">
+      <p className="text-[11px] font-medium mb-2" style={{ color: '#9CA3AF' }}>{label}</p>
+      <p className="text-[40px] font-bold leading-none mb-1" style={{ color: valueColor }}>
+        {value}
+      </p>
+      <p className="text-[11px] leading-snug" style={{ color: subtextColor }}>{subtext}</p>
     </div>
   )
 }
 
-interface PortalTodoProps {
-  clientFirstName: string
-  accentColor?: string
-  cardColor?: string
-  portalMode?: 'light' | 'dark'
-  textPrimary?: string
-  textMuted?: string
+// Icon selection rule: signature type always gets PenLine. For document-request types,
+// the task title is matched case-insensitively against keywords:
+//   "receipt" or "expense" -> Receipt
+//   "questionnaire" or "question" -> CircleHelp
+//   "review" or "approve" -> UserCheck
+//   all others -> FileUp (generic document upload)
+// This is a frontend-only heuristic; the backend carries no sub-type field.
+// Icon color is dark neutral (#374151) per mock, not the accent blue.
+function getTaskIcon(item: ActionItem): React.ReactNode {
+  const iconColor = '#374151'
+  if (item.type === 'signature') return <PenLine size={16} style={{ color: iconColor }} />
+  const t = item.title.toLowerCase()
+  if (t.includes('receipt') || t.includes('expense')) return <Receipt size={16} style={{ color: iconColor }} />
+  if (t.includes('questionnaire') || t.includes('question')) return <CircleHelp size={16} style={{ color: iconColor }} />
+  if (t.includes('review') || t.includes('approve')) return <UserCheck size={16} style={{ color: iconColor }} />
+  return <FileUp size={16} style={{ color: iconColor }} />
 }
 
-export function PortalTodo({ clientFirstName, accentColor = '#3A6A94', cardColor = '#383838', portalMode = 'dark', textPrimary = '#EDEEF0', textMuted = '#9CA3AF' }: PortalTodoProps) {
-  const primaryText = textPrimary
-  const mutedText = textMuted
-  const iconColor = portalMode === 'light' ? '#6B7280' : '#9CA3AF'
+function TaskRow({ item }: { item: ActionItem }) {
+  const dueDateDisplay = getDueDateDisplay(item.dueDate)
 
+  return (
+    <div className="bg-white rounded-xl border border-gray-100 px-5 py-4 flex items-center gap-4">
+      {/* Circular badge with muted gray background and dark icon, matching mock */}
+      <div
+        className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0"
+        style={{ backgroundColor: '#E5E7EB' }}
+      >
+        {getTaskIcon(item)}
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-[14px] font-semibold truncate" style={{ color: '#1F3148' }}>
+          {item.title}
+        </p>
+        <p className="text-[12px] mt-0.5 truncate" style={{ color: '#6B7280' }}>
+          {item.description}
+        </p>
+      </div>
+      <div className="flex items-center gap-3 flex-shrink-0">
+        {dueDateDisplay && (
+          <div className="flex items-center gap-1 whitespace-nowrap">
+            <CalendarDays size={12} style={{ color: dueDateDisplay.color }} />
+            <span className="text-[11px] font-medium" style={{ color: dueDateDisplay.color }}>
+              {dueDateDisplay.label}
+            </span>
+          </div>
+        )}
+        <ChevronRight size={16} style={{ color: '#9CA3AF' }} />
+      </div>
+    </div>
+  )
+}
+
+function DocRow({ doc, isLast }: { doc: PortalDocument; isLast: boolean }) {
+  // Split name into base + extension so truncation never cuts into the extension.
+  const dotIdx = doc.name.lastIndexOf('.')
+  const basename = dotIdx > 0 ? doc.name.slice(0, dotIdx) : doc.name
+  const ext = dotIdx > 0 ? doc.name.slice(dotIdx) : ''
+
+  return (
+    <tr className={isLast ? '' : 'border-b border-gray-50'}>
+      <td className="px-5 py-3">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <File size={14} style={{ color: '#9CA3AF' }} className="flex-shrink-0" />
+          <div className="flex items-baseline min-w-0">
+            <span className="text-[13px] font-medium truncate" style={{ color: '#1F3148' }}>{basename}</span>
+            <span className="text-[13px] font-medium flex-shrink-0" style={{ color: '#1F3148' }}>{ext}</span>
+          </div>
+        </div>
+      </td>
+      <td className="px-5 py-3 whitespace-nowrap">
+        <span className="text-[12px]" style={{ color: '#6B7280' }}>
+          {formatDate(doc.uploaded_at)}
+        </span>
+      </td>
+      <td className="px-5 py-3">
+        <span
+          className="text-[11px] font-medium px-2 py-0.5 rounded-[4px]"
+          style={{ backgroundColor: '#D1FAE5', color: '#065F46' }}
+        >
+          Uploaded
+        </span>
+      </td>
+    </tr>
+  )
+}
+
+// Pass (a): "Need help?" right panel -- present in mock, was absent from current implementation.
+function NeedHelpPanel({ accentColor }: { accentColor: string }) {
+  return (
+    <div className="w-60 flex-shrink-0">
+      <div className="bg-white rounded-xl border border-gray-100 p-5 flex flex-col gap-3">
+        <div className="flex items-center gap-2">
+          <Lightbulb size={16} style={{ color: '#1F3148' }} />
+          <p className="text-[14px] font-semibold" style={{ color: '#1F3148' }}>Need help?</p>
+        </div>
+        <p className="text-[12px] leading-relaxed" style={{ color: '#6B7280' }}>
+          If you have any questions about your tasks or need to share information, reach out to your accountant.
+        </p>
+        <a
+          href="/portal?tab=messages"
+          className="block text-center text-[12px] font-semibold px-4 py-2 rounded-lg text-white transition-opacity hover:opacity-80"
+          style={{ backgroundColor: '#1F3148' }}
+        >
+          Send a message
+        </a>
+      </div>
+    </div>
+  )
+}
+
+export function PortalTodo({ accentColor = '#3A6A94' }: PortalTodoProps) {
   const [items, setItems] = useState<ActionItem[]>([])
-  const [engagements, setEngagements] = useState<PortalDashboard['active_engagements']>([])
+  const [docs, setDocs] = useState<PortalDocument[]>([])
   const [loading, setLoading] = useState(true)
 
-  const fetchDashboard = useCallback(async () => {
+  const load = useCallback(async () => {
     setLoading(true)
     try {
-      const data = await getPortalDashboard()
+      const [dashboard, documents] = await Promise.all([
+        getPortalDashboard(),
+        getPortalDocuments(),
+      ])
 
       const mapped: ActionItem[] = [
-        ...data.pending_document_requests.map((dr) => ({
+        ...dashboard.pending_document_requests.map(dr => ({
           id: dr.id,
           type: 'document-request' as const,
           title: dr.title ?? 'Document Request',
-          description: 'Please upload the requested documents.',
+          description: getTaskDescription('document-request', dr.title ?? 'Document Request'),
           dueDate: dr.due_date ?? undefined,
-          completed: dr.status === 'approved',
+          completed: dr.status === 'complete',
         })),
-        ...data.pending_signatures.map((sig) => ({
+        ...dashboard.pending_signatures.map(sig => ({
           id: sig.id,
           type: 'signature' as const,
           title: 'Signature Required',
           description: sig.sent_at
-            ? `Sent ${formatDate(sig.sent_at)} — please review and sign.`
+            ? `Sent ${formatDate(sig.sent_at)} - please review and sign.`
             : 'Please review and sign the document.',
-          completed: sig.status === 'signed' || sig.status === 'completed',
+          dueDate: undefined,
+          completed: sig.status === 'completed',
         })),
       ]
+
       setItems(mapped)
-      setEngagements(data.active_engagements)
+      setDocs(documents.filter(d => !d.is_superseded).slice(0, 5))
+    } catch {
+      // leave empty state on error
     } finally {
       setLoading(false)
     }
   }, [])
 
   useEffect(() => {
-    fetchDashboard()
-  }, [fetchDashboard])
-
-  const active = items.filter((i) => !i.completed)
-  const completed = items.filter((i) => i.completed)
+    load()
+  }, [load])
 
   if (loading) {
-    const barStyle = { backgroundColor: portalMode === 'light' ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.12)' }
     return (
-      <div className="p-5 flex flex-col gap-3 max-w-2xl mx-auto">
-        {[1, 2, 3].map((i) => (
-          <div key={i} className="flex items-center justify-between gap-4 rounded-[8px] px-5 py-4" style={{ backgroundColor: cardColor }}>
-            <div className="flex items-start gap-3">
-              <div className="h-5 w-5 rounded flex-shrink-0 mt-0.5 animate-pulse" style={barStyle} />
-              <div className="flex flex-col gap-1.5">
-                <div className="h-3 w-40 rounded animate-pulse" style={barStyle} />
-                <div className="h-3 w-56 rounded animate-pulse" style={barStyle} />
-              </div>
-            </div>
-            <div className="h-5 w-5 rounded-full flex-shrink-0 animate-pulse" style={barStyle} />
-          </div>
+      <div className="p-6 flex flex-col gap-4">
+        {[1, 2, 3].map(i => (
+          <div key={i} className="h-16 rounded-xl animate-pulse bg-white border border-gray-100" />
         ))}
       </div>
     )
   }
 
+  const active = items.filter(i => !i.completed)
+  const completed = items.filter(i => i.completed)
+  const overdueCount = active.filter(i => i.dueDate && new Date(i.dueDate).getTime() < Date.now()).length
+  const dueThisWeekCount = active.filter(i => {
+    if (!i.dueDate) return false
+    const days = Math.floor((new Date(i.dueDate).getTime() - Date.now()) / 86400000)
+    return days >= 0 && days <= 7
+  }).length
+
   return (
-    <div className="p-6 flex flex-col gap-6 max-w-2xl mx-auto">
+    <div className="p-6 flex flex-col gap-6">
+      {/* Pass (a): page title + subtitle -- present in mock, was absent */}
       <div>
-        <p className="text-[18px] font-medium" style={{ color: primaryText }}>Hello, {clientFirstName}</p>
-        <p className="text-[14px] mt-0.5" style={{ color: mutedText }}>
-          {active.length === 0
-            ? "You're all caught up."
-            : `You have ${active.length} item${active.length !== 1 ? 's' : ''} that need${active.length === 1 ? 's' : ''} your attention.`}
+        <h1 className="text-[22px] font-bold" style={{ color: '#1F3148' }}>To-do</h1>
+        <p className="text-[13px] mt-1" style={{ color: '#6B7280' }}>
+          Here are the tasks and action items that need your attention.
         </p>
       </div>
 
-      {active.length > 0 && (
-        <div>
-          <p className="text-[12px] font-medium uppercase tracking-[0.05em] mb-2" style={{ color: mutedText }}>
-            Action needed
-          </p>
-          <div className="flex flex-col gap-3">
-            {active.map((item) => (
-              <ActionCard key={item.id} item={item} accentColor={accentColor} cardColor={cardColor} primaryText={primaryText} mutedText={mutedText} iconColor={iconColor} />
-            ))}
-          </div>
-        </div>
-      )}
+      {/* Stat strip: single container with divide-x dividers (not four separate cards) */}
+      <div className="bg-white rounded-xl border border-gray-100 grid grid-cols-4 divide-x divide-gray-100">
+        <StatSection
+          value={active.length}
+          label="Open tasks"
+          subtext="Due soon"
+          valueColor="#1F3148"
+          subtextColor="#D97706"
+        />
+        <StatSection
+          value={overdueCount}
+          label="Overdue"
+          subtext="Needs immediate attention"
+          valueColor={overdueCount > 0 ? '#DC2626' : '#1F3148'}
+        />
+        <StatSection
+          value={dueThisWeekCount}
+          label="Due this week"
+          subtext="Within the next 7 days"
+          valueColor="#1F3148"
+        />
+        <StatSection
+          value={completed.length}
+          label="Completed"
+          subtext="This month"
+          valueColor={completed.length > 0 ? '#059669' : '#1F3148'}
+        />
+      </div>
 
-      {engagements.length > 0 && (
-        <div>
-          <p className="text-[12px] font-medium uppercase tracking-[0.05em] mb-2" style={{ color: mutedText }}>
-            Active engagements
-          </p>
-          <div className="flex flex-col gap-3">
-            {engagements.map((eng) => (
-              <div
-                key={eng.id}
-                className="flex items-center justify-between rounded-[8px] px-4 py-3"
-                style={{ backgroundColor: cardColor }}
-              >
-                <p className="text-[14px] font-medium" style={{ color: primaryText }}>{eng.name}</p>
-                <EngagementBadge status={eng.status} accentColor={accentColor} />
+      {/* Pass (a): two-column zone -- main content left, "Need help?" right */}
+      <div className="flex gap-6 items-start">
+        {/* Left: tasks + recent documents */}
+        <div className="flex-1 min-w-0 flex flex-col gap-6">
+          {/* Open tasks */}
+          {/* Pass (c): section heading changed to sentence case, 13px semi-bold */}
+          <section>
+            <h2 className="text-[13px] font-semibold mb-3" style={{ color: '#374151' }}>
+              Open tasks
+            </h2>
+            {active.length === 0 ? (
+              <div className="bg-white rounded-xl border border-gray-100 px-5 py-10 text-center">
+                <p className="text-[14px]" style={{ color: '#6B7280' }}>
+                  You are all caught up. No open tasks.
+                </p>
               </div>
-            ))}
-          </div>
-        </div>
-      )}
+            ) : (
+              <div className="flex flex-col gap-2">
+                {active.map(item => (
+                  <TaskRow key={item.id} item={item} accentColor={accentColor} />
+                ))}
+              </div>
+            )}
+          </section>
 
-      {completed.length > 0 && (
-        <div>
-          <p className="text-[12px] font-medium uppercase tracking-[0.05em] mb-2" style={{ color: mutedText }}>
-            Completed
-          </p>
-          <div className="flex flex-col gap-3">
-            {completed.map((item) => (
-              <ActionCard key={item.id} item={item} accentColor={accentColor} cardColor={cardColor} primaryText={primaryText} mutedText={mutedText} iconColor={iconColor} />
-            ))}
-          </div>
+          {/* Recent documents */}
+          <section>
+            <h2 className="text-[13px] font-semibold mb-3" style={{ color: '#374151' }}>
+              Recent documents
+            </h2>
+            <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+              {docs.length === 0 ? (
+                <div className="px-5 py-10 text-center">
+                  <p className="text-[14px]" style={{ color: '#6B7280' }}>No documents yet.</p>
+                </div>
+              ) : (
+                <>
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b border-gray-100">
+                        <th
+                          className="text-left px-5 py-3 text-[11px] font-medium"
+                          style={{ color: '#9CA3AF' }}
+                        >
+                          Document
+                        </th>
+                        <th
+                          className="text-left px-5 py-3 text-[11px] font-medium"
+                          style={{ color: '#9CA3AF' }}
+                        >
+                          Uploaded
+                        </th>
+                        <th
+                          className="text-left px-5 py-3 text-[11px] font-medium"
+                          style={{ color: '#9CA3AF' }}
+                        >
+                          Status
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {docs.map((doc, idx) => (
+                        <DocRow key={doc.id} doc={doc} isLast={idx === docs.length - 1} />
+                      ))}
+                    </tbody>
+                  </table>
+                  <div className="border-t border-gray-100 px-5 py-3">
+                    <a
+                      href="/portal?tab=documents"
+                      className="text-[12px] font-medium transition-opacity hover:opacity-70"
+                      style={{ color: accentColor }}
+                    >
+                      View all documents
+                    </a>
+                  </div>
+                </>
+              )}
+            </div>
+          </section>
         </div>
-      )}
+
+        {/* Right: "Need help?" panel */}
+        <NeedHelpPanel accentColor={accentColor} />
+      </div>
     </div>
   )
 }

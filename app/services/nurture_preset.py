@@ -360,12 +360,19 @@ def _node_type(t_raw: str) -> StepType:
 def _build_step_config(step_key: str, t_raw: str, headline: str, description: str) -> dict:
     """Build the type-specific config dict for a step."""
     if t_raw == "email":
-        return {
+        config: dict = {
             "subject": "PENDING COPY",
             "body": "PENDING COPY",
             "headline": headline,
             "description": description,
         }
+        if step_key == "2":
+            # E1 (Welcome / received) sends immediately regardless of business hours.
+            # Speed-to-lead: contact/qualification odds decay sharply within minutes
+            # (MIT/InsideSales Lead Response Management Study, 15k+ leads). Every
+            # other email step in the tree respects the business-hours window.
+            config["bypass_business_hours"] = True
+        return config
     if t_raw == "wait":
         wc = _WAIT_CONFIG[step_key]
         return {"headline": headline, "description": description, **wc}
@@ -386,7 +393,12 @@ def _build_step_config(step_key: str, t_raw: str, headline: str, description: st
             action_kind = "notify_owner"
         else:
             action_kind = "internal_action"
-        return {"headline": headline, "description": description, "action_kind": action_kind}
+        config: dict = {"headline": headline, "description": description, "action_kind": action_kind}
+        if step_key == "R1":
+            # R1 is the only step whose external consequence (the unqualified decline email)
+            # must be held for firm-owner approval before sending -- Contract section 6.7.
+            config["hold_for_approval"] = True
+        return config
     if t_raw in ("trigger", "goal", "won", "dead"):
         return {"headline": headline, "description": description}
     return {"headline": headline, "description": description}

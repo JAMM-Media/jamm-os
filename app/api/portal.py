@@ -15,6 +15,7 @@ from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, status, UploadFile
+from pydantic import BaseModel
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -22,6 +23,11 @@ from sqlalchemy.orm import Session
 from app.core.rate_limit import limiter, check_email_rate_limit
 from app.crud import document_request as crud_dr
 from app.crud import portal_notification as crud_notification
+from app.services.attribution_survey_service import (
+    ensure_attribution_survey_notification,
+    get_survey_options,
+    submit_attribution_answer,
+)
 from app.crud import portal_session as crud_portal_session
 from app.crud import tax_organizer as crud_organizer
 from app.schemas.tax_organizer import TaxOrganizerWithTemplate, PortalOrganizerSaveRequest
@@ -515,8 +521,27 @@ def portal_dashboard(
         for env in envelopes
     ]
 
-    # TODO: populate when Phase 4 DocumentRequest model is built
-    pending_document_requests: list[dict] = []
+    # Document requests: open (pending/partial) + completed within the current month.
+    # Naming note: "pending_document_requests" is the existing response key name.
+    # It now includes recently-completed items so the frontend Completed stat card
+    # can show a real count. The frontend splits active vs completed client-side
+    # by checking status == 'complete'. Renaming the key would be an API contract
+    # change; flagged for future consideration when the contract is revisited.
+    open_requests = crud_dr.get_pending_for_client(db, client_id=client_id, firm_id=firm_id)
+    completed_requests = crud_dr.get_recently_completed_for_client(db, client_id=client_id, firm_id=firm_id)
+    pending_document_requests = [
+        {
+            "id": str(dr.id),
+            "title": dr.title,
+            "due_date": dr.due_date.isoformat() if dr.due_date else None,
+            "status": dr.status,
+        }
+        for dr in [*open_requests, *completed_requests]
+    ]
+
+    # Ensure the attribution survey notification exists if this client's
+    # referral_source is blank. Idempotent: safe to call on every dashboard visit.
+    ensure_attribution_survey_notification(db, current_client)
 
     # Notifications
     unread_count = crud_notification.get_unread_count(db, client_id, firm_id)
@@ -675,23 +700,44 @@ def portal_upload_document(
     }
 
 
+@router.get("/folders", response_model=list)
+def portal_list_folders(
+    current_client: Client = Depends(get_current_portal_client),
+    db: Session = Depends(get_db),
+):
+    """List all folders visible to the authenticated portal client. Read-only."""
+    from app.crud import folder as crud_folder
+    from app.schemas.folder import FolderOut
+    folders = crud_folder.list_folders_for_client(
+        db=db,
+        firm_id=current_client.firm_id,
+        client_id=current_client.id,
+    )
+    return [FolderOut.model_validate(f).model_dump() for f in folders]
+
+
 @router.get("/documents")
 def portal_list_documents(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),
+    folder_id: Optional[UUID] = Query(None),
     current_client: Client = Depends(get_current_portal_client),
     db: Session = Depends(get_db),
 ):
     """Return client-visible documents for the authenticated portal client."""
     from app.models.document import Document
-    docs = db.execute(
+    stmt = (
         select(Document)
         .where(
             Document.firm_id == current_client.firm_id,
             Document.client_id == current_client.id,
             Document.visibility == "client_visible",
         )
-        .order_by(Document.created_at.desc())
+    )
+    if folder_id is not None:
+        stmt = stmt.where(Document.folder_id == folder_id)
+    docs = db.execute(
+        stmt.order_by(Document.created_at.desc())
         .offset(skip)
         .limit(limit)
     ).scalars().all()
@@ -779,13 +825,61 @@ def portal_mark_all_notifications_read(
     current_client: Client = Depends(get_current_portal_client),
     db: Session = Depends(get_db),
 ):
-    """Mark all notifications as read for the current client."""
+    """Mark all non-pinned notifications as read for the current client.
+
+    Pinned notifications (e.g. attribution survey) are excluded and remain
+    until explicitly completed, per Contract section 4.1.
+    """
     count = crud_notification.mark_all_as_read(
         db,
         client_id=current_client.id,
         firm_id=current_client.firm_id,
     )
     return {"marked_read": count}
+
+
+# ===========================================================================
+# ATTRIBUTION SURVEY (Contract section 4.1)
+# Pinned notification for clients with blank referral_source.
+# ===========================================================================
+
+@router.get("/attribution-survey")
+def portal_get_attribution_survey(
+    current_client: Client = Depends(get_current_portal_client),
+    db: Session = Depends(get_db),
+):
+    """Return the attribution survey question and options for the current client.
+
+    Only relevant when the client has no referral_source. Callers should check
+    whether the pinned attribution_survey notification exists before rendering.
+    """
+    return {
+        "question": "How did you first hear about us?",
+        "options": get_survey_options(),
+    }
+
+
+class AttributionAnswerIn(BaseModel):
+    answer: str
+
+
+@router.post("/attribution-survey")
+def portal_submit_attribution_survey(
+    payload: AttributionAnswerIn,
+    current_client: Client = Depends(get_current_portal_client),
+    db: Session = Depends(get_db),
+):
+    """Submit an answer to the attribution survey.
+
+    Writes to Client.referral_source if blank (client_reported provenance).
+    If the field is already set (race condition), the write is skipped but
+    the notification is still cleared. Returns {"written": bool}.
+    """
+    try:
+        result = submit_attribution_answer(db, current_client, payload.answer)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return result
 
 
 # ===========================================================================

@@ -46,6 +46,16 @@ export interface PortalDocument {
   is_superseded: boolean
 }
 
+export interface PortalFolder {
+  id: string
+  name: string
+  parent_folder_id: string | null
+  firm_id: string
+  client_id: string
+  created_at: string
+  updated_at: string
+}
+
 export interface PortalMessage {
   id: string
   body: string
@@ -77,8 +87,18 @@ export async function getPortalInvoices(): Promise<PortalInvoicesResponse> {
   return res.json()
 }
 
-export async function getPortalDocuments(): Promise<PortalDocument[]> {
-  const res = await fetch(`${BASE}/portal/documents`, { headers: portalHeaders() })
+export async function getPortalDocuments(folderId?: string): Promise<PortalDocument[]> {
+  const url = folderId
+    ? `${BASE}/portal/documents?folder_id=${folderId}`
+    : `${BASE}/portal/documents`
+  const res = await fetch(url, { headers: portalHeaders() })
+  if (!res.ok) throw new Error('fetch failed')
+  const data = await res.json()
+  return Array.isArray(data) ? data : []
+}
+
+export async function getPortalFolders(): Promise<PortalFolder[]> {
+  const res = await fetch(`${BASE}/portal/folders`, { headers: portalHeaders() })
   if (!res.ok) throw new Error('fetch failed')
   const data = await res.json()
   return Array.isArray(data) ? data : []
@@ -146,4 +166,63 @@ export async function getPortalBillingDetail(): Promise<BillingDetailReport[]> {
   if (!res.ok) throw new Error('fetch failed')
   const data = await res.json()
   return Array.isArray(data) ? data : []
+}
+
+export interface PortalNotification {
+  id: string
+  title: string
+  body: string | null
+  notification_type: string
+  is_read: boolean
+  is_pinned: boolean
+  read_at: string | null
+  related_entity_type: string | null
+  related_entity_id: string | null
+  created_at: string
+}
+
+export async function getPortalNotifications(limit = 20, skip = 0): Promise<PortalNotification[]> {
+  const res = await fetch(`${BASE}/portal/notifications?limit=${limit}&skip=${skip}`, {
+    headers: portalHeaders(),
+  })
+  if (!res.ok) throw new Error('fetch failed')
+  const data = await res.json()
+  return Array.isArray(data) ? data : []
+}
+
+export async function markAllPortalNotificationsRead(): Promise<{ marked_read: number }> {
+  const res = await fetch(`${BASE}/portal/notifications/read-all`, {
+    method: 'POST',
+    headers: portalHeaders(),
+  })
+  if (!res.ok) throw new Error('fetch failed')
+  return res.json()
+}
+
+export interface SurveyOption {
+  value: string
+  label: string
+}
+
+export interface AttributionSurveyData {
+  question: string
+  options: SurveyOption[]
+}
+
+export async function getAttributionSurvey(): Promise<AttributionSurveyData> {
+  const res = await fetch(`${BASE}/portal/attribution-survey`, {
+    headers: portalHeaders(),
+  })
+  if (!res.ok) throw new Error('fetch failed')
+  return res.json()
+}
+
+export async function submitAttributionSurvey(answer: string): Promise<{ written: boolean }> {
+  const res = await fetch(`${BASE}/portal/attribution-survey`, {
+    method: 'POST',
+    headers: portalHeaders(),
+    body: JSON.stringify({ answer }),
+  })
+  if (!res.ok) throw new Error('submit failed')
+  return res.json()
 }

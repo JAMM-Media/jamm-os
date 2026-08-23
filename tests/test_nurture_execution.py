@@ -33,7 +33,10 @@ from app.services.nurture_execution_service import run_nurture_tick
 def _make_firm(slug: str) -> Firm:
     db = TestingSessionLocal()
     try:
-        firm = Firm(name=f"Nurture Test Firm {slug}", slug=slug)
+        # business_hours_start=0 / end=24 so sends are never held by time-of-day
+        # in these tests, which test other behaviors and don't need a time window.
+        firm = Firm(name=f"Nurture Test Firm {slug}", slug=slug,
+                    business_hours_start=0, business_hours_end=24)
         db.add(firm)
         db.commit()
         db.refresh(firm)

@@ -480,3 +480,77 @@ class TestTenantIsolation:
             assert ids_a.isdisjoint(ids_b), "Firm A and Firm B share Step IDs -- rows are not independent"
         finally:
             db.close()
+
+
+# ---------------------------------------------------------------------------
+# Bypass business hours: E1 only
+# ---------------------------------------------------------------------------
+
+class TestBypassBusinessHoursFlag:
+    """
+    E1 (step_key="2", Welcome / received) carries bypass_business_hours: True.
+    Every other seeded email step must NOT have this flag set to True.
+
+    Research basis: MIT/InsideSales Lead Response Management Study (15k+ leads).
+    Contact odds drop 100x when first contact is delayed beyond 5 minutes.
+    HubSpot, Pardot, and Chili Piper all implement the same split: first
+    automated response bypasses business hours; all subsequent drip touches
+    respect the window. E1 is the only first-contact step in this tree.
+    """
+
+    def test_e1_has_bypass_flag(self):
+        """After seeding, step_key '2' (E1) has bypass_business_hours: True in config."""
+        firm = _make_firm(f"bybh-e1-{uuid.uuid4().hex[:6]}")
+        ver_id, _ = _seed(firm.id)
+
+        db = TestingSessionLocal()
+        try:
+            e1 = (
+                db.query(Step)
+                .filter(Step.sequence_version_id == ver_id, Step.step_key == "2")
+                .first()
+            )
+            assert e1 is not None, "Step with step_key='2' (E1) not found after seeding"
+            assert (e1.config or {}).get("bypass_business_hours") is True, (
+                f"E1 (step_key='2') must have bypass_business_hours: True in config. "
+                f"Got config={e1.config!r}"
+            )
+        finally:
+            db.close()
+
+    def test_all_other_email_steps_do_not_have_bypass_flag(self):
+        """Every seeded email step except step_key '2' must NOT have bypass_business_hours: True.
+
+        Loops over all seeded Steps whose step_type is 'email' and step_key != '2'.
+        Fails on the first violating step rather than silently passing a spot-check.
+        """
+        from app.core.enums import StepType
+
+        firm = _make_firm(f"bybh-others-{uuid.uuid4().hex[:6]}")
+        ver_id, _ = _seed(firm.id)
+
+        db = TestingSessionLocal()
+        try:
+            other_email_steps = (
+                db.query(Step)
+                .filter(
+                    Step.sequence_version_id == ver_id,
+                    Step.step_type == StepType.email.value,
+                    Step.step_key != "2",
+                )
+                .all()
+            )
+            assert len(other_email_steps) > 0, (
+                "No other email steps found -- test setup is wrong"
+            )
+            violators = [
+                s.step_key
+                for s in other_email_steps
+                if (s.config or {}).get("bypass_business_hours") is True
+            ]
+            assert len(violators) == 0, (
+                f"These email steps (other than E1) have bypass_business_hours: True "
+                f"but must not: step_keys={violators!r}"
+            )
+        finally:
+            db.close()

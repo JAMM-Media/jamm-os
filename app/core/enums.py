@@ -444,6 +444,14 @@ class NotificationType(str, Enum):
     document_expiry_alert = "document_expiry_alert"
     peer_network_mention = "peer_network_mention"
     lead_replied = "lead_replied"
+    nurture_hold_for_approval = "nurture_hold_for_approval"
+    # PROPOSED NAME -- pending Andrew's sign-off before any live firm is on this
+    # (event names freeze once a firm goes live; this fires the hot lead alert).
+    lead_hot_alert = "lead_hot_alert"
+    # PROPOSED NAME -- pending Andrew's sign-off.
+    # Fires when an enrollment reaches a dead_end step; triggers the firm-owner
+    # take-over notification per Contract section 6.7.
+    nurture_dead_end_reached = "nurture_dead_end_reached"
 
 
 class NotificationChannel(str, Enum):
@@ -472,6 +480,8 @@ class NotificationEventType(str, Enum):
     client_anniversary = "client_anniversary"
     document_expiry_alert = "document_expiry_alert"
     lead_replied = "lead_replied"
+    lead_hot_alert = "lead_hot_alert"
+    nurture_dead_end_reached = "nurture_dead_end_reached"
 
 
 class CredentialType(str, Enum):
@@ -640,6 +650,7 @@ class EnrollmentStatus(str, Enum):
     completed_dead_end = "completed_dead_end"
     completed_won = "completed_won"
     paused_reply = "paused_reply"
+    held_for_approval = "held_for_approval"
 
 
 class BookingStatus(str, Enum):

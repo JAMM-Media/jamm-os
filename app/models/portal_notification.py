@@ -46,6 +46,10 @@ class PortalNotification(Base):
     is_read: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     read_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
+    # Pinned notifications survive mark-all-read and cannot be individually
+    # marked read. They clear only on explicit completion (e.g. survey answer).
+    is_pinned: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, server_default="false")
+
     # Soft reference — e.g. "engagement", "document_request", "invoice"
     related_entity_type: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     # FK-less soft reference, looked up at read time

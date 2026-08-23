@@ -43,6 +43,7 @@ import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import exists
 
@@ -50,14 +51,16 @@ from app.db.session import SessionLocal
 from app.models.lead import Lead
 from app.models.lead_message import LeadMessage
 from app.models.firm import Firm
+from app.models.user import User
 from app.models.sequence import Step, StepEdge, SequenceGoal
 from app.models.behavioral_event import BehavioralEvent
-from app.core.enums import StepType
+from app.core.enums import StepType, UserRole, RecipientType, NotificationType
 from app.crud import enrollment as crud_enrollment
 from app.crud import lead_message as crud_lead_message
 from app.crud.suppressed_email import is_suppressed
 from app.core.config import get_settings
 from app.services.email_service import EmailService, build_lead_reply_to
+from app.services.notification_service import NotificationService
 
 logger = logging.getLogger(__name__)
 
@@ -143,6 +146,17 @@ def _compute_next_action_time(db, step_id: Optional[uuid.UUID], now: datetime) -
     return None
 
 
+def _is_within_business_hours(now: datetime, firm_timezone: str, start_hour: int, end_hour: int) -> bool:
+    """Return True if now falls within [start_hour, end_hour) in the firm's local timezone.
+
+    Uses the same ZoneInfo(firm_timezone) pattern as slot_computation_service.py
+    and booking_service.py. start_hour is inclusive, end_hour is exclusive.
+    """
+    tz = ZoneInfo(firm_timezone)
+    local_now = now.astimezone(tz)
+    return start_hour <= local_now.hour < end_hour
+
+
 def run_nurture_tick() -> dict:
     """Walk all due active Enrollments forward one step.
 
@@ -159,11 +173,15 @@ def run_nurture_tick() -> dict:
         "goal_jumps": N,
         "loop_capped": N,
         "timeouts_fired": N,
+        "held_for_business_hours": N,
+        "held_for_approval": N,
+        "dead_ends_reached": N,
       }
     """
     db = SessionLocal()
     checked = sent = suppressed = skipped_branching = failed_sends = 0
-    goal_jumps = loop_capped = timeouts_fired = 0
+    goal_jumps = loop_capped = timeouts_fired = held_for_business_hours = held_for_approval = 0
+    dead_ends_reached = 0
 
     try:
         now = datetime.now(timezone.utc)
@@ -350,7 +368,96 @@ def run_nurture_tick() -> dict:
                 )
                 continue  # no email send for wait steps
 
-            # 7. Only email-type Steps proceed to send.
+            # 7. Action steps with hold_for_approval: hold for firm-owner review before any
+            # external action fires. Per Contract section 6.7: any automated action with
+            # external consequences is held for human approval -- concretely, R1 (the
+            # unqualified decline) is HELD; the owner approves or overrides. This is a
+            # status change to held_for_approval, NOT the business-hours retry hold:
+            # an approval hold requires an explicit human release; a timing hold retries
+            # automatically. Conflating them would hide a pending decision behind a counter.
+            if (
+                current_step.step_type == StepType.action.value
+                and (current_step.config or {}).get("hold_for_approval")
+            ):
+                crud_enrollment.hold_enrollment_for_approval(
+                    db=db, enrollment_id=enrollment.id
+                )
+                held_for_approval += 1
+                firm_owner = (
+                    db.query(User)
+                    .filter(
+                        User.firm_id == enrollment.firm_id,
+                        User.role == UserRole.firm_owner,
+                    )
+                    .first()
+                )
+                if firm_owner is not None:
+                    NotificationService.create_notification(
+                        db=db,
+                        firm_id=enrollment.firm_id,
+                        recipient_id=firm_owner.id,
+                        recipient_type=RecipientType.staff,
+                        title="Lead pending approval -- decline held",
+                        body=(
+                            f"An automated decline for lead {lead.name} is awaiting"
+                            " your approval. Approve to send the decline email, or"
+                            " override to return the lead to the sequence."
+                        ),
+                        notification_type=NotificationType.nurture_hold_for_approval,
+                        related_entity_type="lead",
+                        related_entity_id=lead.id,
+                    )
+                logger.info(
+                    "nurture_tick: held for approval -- enrollment=%s lead=%s step=%s",
+                    enrollment.id,
+                    lead.id,
+                    current_step.id,
+                )
+                continue
+
+            # 7.5. Dead_end steps: terminate the enrollment and notify the firm owner.
+            # Per Contract section 6.7: every dead end notifies the owner with a one-click
+            # take-over. This branch MUST come before the generic "not processable" fallthrough
+            # below -- without it, dead_end steps would increment skipped_branching and loop
+            # forever because next_action_time is never cleared (real, confirmed bug).
+            if current_step.step_type == StepType.dead_end.value:
+                crud_enrollment.mark_enrollment_dead_end(
+                    db=db, enrollment_id=enrollment.id
+                )
+                dead_ends_reached += 1
+                firm_owner = (
+                    db.query(User)
+                    .filter(
+                        User.firm_id == enrollment.firm_id,
+                        User.role == UserRole.firm_owner,
+                    )
+                    .first()
+                )
+                if firm_owner is not None:
+                    NotificationService.create_notification(
+                        db=db,
+                        firm_id=enrollment.firm_id,
+                        recipient_id=firm_owner.id,
+                        recipient_type=RecipientType.staff,
+                        title=f"Lead reached a dead end: {lead.name}",
+                        body=(
+                            f"Lead {lead.name} has reached the end of the nurture sequence"
+                            " with no further automated steps. Take over to handle this lead"
+                            " directly."
+                        ),
+                        notification_type=NotificationType.nurture_dead_end_reached,
+                        related_entity_type="lead",
+                        related_entity_id=lead.id,
+                    )
+                logger.info(
+                    "nurture_tick: dead_end reached -- enrollment=%s lead=%s step=%s",
+                    enrollment.id,
+                    lead.id,
+                    current_step.id,
+                )
+                continue
+
+            # 8. Only email-type Steps proceed to send.
             if current_step.step_type != StepType.email.value:
                 logger.info(
                     "nurture_tick: enrollment=%s step=%s type=%s not processable, skipping",
@@ -397,7 +504,43 @@ def run_nurture_tick() -> dict:
                     updated_loop_counts = {**enrollment.loop_counts, str(edge.id): current_count + 1}
                 next_step_id = edge.to_step_id
 
-            # 9. Generate a fresh unsubscribe token for this specific send.
+            # 9. Look up firm -- needed for business-hours check and sending identity.
+            # Moved here from the original step 11 position so the business-hours
+            # guard can read firm.timezone / business_hours_start / business_hours_end
+            # without a second query.
+            firm = db.query(Firm).filter(Firm.id == enrollment.firm_id).first()
+            from_name = firm.name if firm else "JAMM PX"
+            sending_domain = (
+                firm.sending_domain
+                if firm and firm.sending_domain_verified
+                else None
+            )
+
+            # 10. Business-hours check: hold if currently outside the firm's send window.
+            # Per contract section 6.1, nurture sends must respect firm business hours
+            # (default 8am-6pm firm-local). A step config with "bypass_business_hours": true
+            # skips this check -- the flag is built now but not applied to any seeded step.
+            bypass = (current_step.config or {}).get("bypass_business_hours", False)
+            if not bypass:
+                firm_timezone = firm.timezone if firm else 'America/New_York'
+                bh_start = firm.business_hours_start if firm else 8
+                bh_end = firm.business_hours_end if firm else 18
+                if not _is_within_business_hours(now, firm_timezone, bh_start, bh_end):
+                    crud_enrollment.advance_enrollment(
+                        db=db,
+                        enrollment_id=enrollment.id,
+                        new_current_step_id=enrollment.current_step_id,
+                        new_next_action_time=now + timedelta(minutes=30),
+                    )
+                    held_for_business_hours += 1
+                    logger.info(
+                        "nurture_tick: held for business hours -- enrollment=%s lead=%s",
+                        enrollment.id,
+                        lead.id,
+                    )
+                    continue
+
+            # 11. Generate a fresh unsubscribe token for this specific send.
             # Raw token is single-use and lives only in the email link; only the
             # hash is written to the database. Long expiry (10 years) because an
             # unsubscribe link that silently expires is a real compliance problem.
@@ -408,7 +551,7 @@ def run_nurture_tick() -> dict:
             unsubscribe_token_expires_at = now + timedelta(days=3650)
             unsubscribe_url = f"{settings.FRONTEND_URL}/unsubscribe/{raw_unsubscribe_token}"
 
-            # 10. Render content from step config and inject the unsubscribe link.
+            # 12. Render content from step config and inject the unsubscribe link.
             config = current_step.config or {}
             subject = config.get("subject", "")
             body = config.get("body", "")
@@ -426,16 +569,7 @@ def run_nurture_tick() -> dict:
                     + f'<a href="{unsubscribe_url}">Unsubscribe</a> from these emails.</p>'
                 )
 
-            # 11. Look up firm for sending identity.
-            firm = db.query(Firm).filter(Firm.id == enrollment.firm_id).first()
-            from_name = firm.name if firm else "JAMM PX"
-            sending_domain = (
-                firm.sending_domain
-                if firm and firm.sending_domain_verified
-                else None
-            )
-
-            # 12. WRITE FIRST -- advance enrollment before any send attempt.
+            # 13. WRITE FIRST -- advance enrollment before any send attempt.
             # Write-then-send guarantee: a crash after write produces a missed email,
             # never a duplicate. Do not move this below the send call.
             crud_enrollment.advance_enrollment(
@@ -448,7 +582,7 @@ def run_nurture_tick() -> dict:
                 new_unsubscribe_token_expires_at=unsubscribe_token_expires_at,
             )
 
-            # 13. Send the email. Failure is fire-and-forget: enrollment is already advanced.
+            # 14. Send the email. Failure is fire-and-forget: enrollment is already advanced.
             reply_to = build_lead_reply_to(str(lead.id))
             try:
                 EmailService.send_nurture_email(
@@ -495,4 +629,7 @@ def run_nurture_tick() -> dict:
         "goal_jumps": goal_jumps,
         "loop_capped": loop_capped,
         "timeouts_fired": timeouts_fired,
+        "held_for_business_hours": held_for_business_hours,
+        "held_for_approval": held_for_approval,
+        "dead_ends_reached": dead_ends_reached,
     }
