@@ -11,6 +11,12 @@ passing test proves only that it runs, not that it catches anything.
 These are service-level tests. There is no router for pricing config in this
 build, so they call pricing_config_service directly with an explicit firm_id,
 which is also the shape the tenant isolation tests need.
+
+STATUS CODES: every law refusal asserted in this file is 422, per the August
+2026 ruling recorded above the guard section of pricing_config_service.py.
+These assertions pinned 400 until that ruling; the behavior changed on purpose
+and the expectations were updated with it. 404 still means absent or another
+firm's row, and is asserted as 404 where it appears.
 """
 
 import uuid
@@ -187,7 +193,7 @@ def test_tier_contiguity_rejects_gap(db, firm_a, flag):
             tiers=[_tier(0, 10, "100", 0), _tier(15, 20, "200", 1)],
         )
 
-    assert exc.value.status_code == 400
+    assert exc.value.status_code == 422
     assert "gap" in exc.value.detail
     # The error names the offending boundary, not just the fact of a problem.
     assert "sort_order 0" in exc.value.detail
@@ -214,7 +220,7 @@ def test_tier_contiguity_rejects_overlap(db, firm_a, flag):
             tiers=[_tier(0, 15, "100", 0), _tier(10, 20, "200", 1)],
         )
 
-    assert exc.value.status_code == 400
+    assert exc.value.status_code == 422
     assert "overlap" in exc.value.detail
 
     remaining = db.execute(
@@ -268,7 +274,7 @@ def test_uphill_link_rejected(db, firm_a, flag):
             db, firm, user, coarse, coarse_unit, parent_tier_id=tiers[0].id
         )
 
-    assert exc.value.status_code == 400
+    assert exc.value.status_code == 422
     assert "Downhill-only linking" in exc.value.detail
 
 
@@ -292,7 +298,7 @@ def test_same_rank_link_rejected(db, firm_a, flag):
     with pytest.raises(HTTPException) as exc:
         _configure(db, firm, user, second, second_unit, parent_tier_id=tiers[0].id)
 
-    assert exc.value.status_code == 400
+    assert exc.value.status_code == 422
     assert "same rank" in exc.value.detail
 
 
@@ -337,7 +343,7 @@ def test_parent_tier_with_price_cannot_gain_child(db, firm_a, flag):
     with pytest.raises(HTTPException) as exc:
         _configure(db, firm, user, fine, fine_unit, parent_tier_id=tiers[0].id)
 
-    assert exc.value.status_code == 400
+    assert exc.value.status_code == 422
     assert "Clear the parent price first" in exc.value.detail
 
 
@@ -365,7 +371,7 @@ def test_tier_with_child_cannot_gain_price(db, firm_a, flag):
             tiers=[_tier(0, 10, "250.00", 0)],
         )
 
-    assert exc.value.status_code == 400
+    assert exc.value.status_code == 422
     assert "double count" in exc.value.detail
 
     # The rejected save left the tier exactly as it was, still unpriced.
@@ -441,7 +447,7 @@ def test_direction_change_requires_confirm(db, firm_a, flag):
             new_parent_option_id=None,
         )
 
-    assert exc.value.status_code == 400
+    assert exc.value.status_code == 422
     assert "confirm=True" in exc.value.detail
 
 
@@ -587,7 +593,7 @@ def test_activation_requires_pricing_mode(db, firm_a):
             ),
         )
 
-    assert exc.value.status_code == 400
+    assert exc.value.status_code == 422
     assert "half-on" in exc.value.detail
 
     # A service cannot be half-on: the refusal must leave no row behind.
@@ -761,7 +767,7 @@ def test_guard_role_requires_threshold(db, firm_a, flag):
     with pytest.raises(HTTPException) as exc:
         _configure(db, firm, user, dimension, unit, role=DimensionRole.guard)
 
-    assert exc.value.status_code == 400
+    assert exc.value.status_code == 422
     assert "guard_threshold" in exc.value.detail
 
 
@@ -772,7 +778,7 @@ def test_numeric_dimension_requires_unit(db, firm_a, flag):
     with pytest.raises(HTTPException) as exc:
         _configure(db, firm, user, dimension, None)
 
-    assert exc.value.status_code == 400
+    assert exc.value.status_code == 422
     assert "unit_id" in exc.value.detail
 
 
@@ -790,7 +796,7 @@ def test_categorical_dimension_cannot_have_tiers(db, firm_a, flag):
             tiers=[_tier(0, 10, "100", 0)],
         )
 
-    assert exc.value.status_code == 400
+    assert exc.value.status_code == 422
     assert "cannot have tiers" in exc.value.detail
 
 
@@ -817,7 +823,7 @@ def test_numeric_dimension_cannot_have_option_prices(db, firm_a, flag):
             ),
         )
 
-    assert exc.value.status_code == 400
+    assert exc.value.status_code == 422
     assert "cannot carry option prices" in exc.value.detail
 
 
@@ -941,7 +947,7 @@ def test_removing_parented_tier_is_refused(db, firm_a, flag):
             tiers=[_tier(0, 20, "150.00", 1)],
         )
 
-    assert exc.value.status_code == 400
+    assert exc.value.status_code == 422
     assert "change_dimension_direction" in exc.value.detail
 
     db.expire_all()
@@ -996,7 +1002,7 @@ def test_second_categorical_config_with_option_children_refused(db, firm_a, flag
     with pytest.raises(HTTPException) as exc:
         _configure(db, firm, user, choice, None, parent_tier_id=top_tiers[0].id)
 
-    assert exc.value.status_code == 400
+    assert exc.value.status_code == 422
     assert "second branch" in exc.value.detail
     assert "choice_dim" in exc.value.detail
 
@@ -1022,7 +1028,7 @@ def test_option_child_refused_when_dimension_on_multiple_branches(db, firm_a, fl
     with pytest.raises(HTTPException) as exc:
         _configure(db, firm, user, leaf, leaf_unit, parent_option_id=options[0].id)
 
-    assert exc.value.status_code == 400
+    assert exc.value.status_code == 422
     assert "more than one branch" in exc.value.detail
     assert "choice_dim" in exc.value.detail
     assert "leaf_dim" in exc.value.detail

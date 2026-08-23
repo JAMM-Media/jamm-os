@@ -77,6 +77,33 @@ class FirmDimensionConfigUpdate(BaseModel):
     guard_threshold: Optional[Decimal] = None
 
 
+class ConfigMoveRequest(BaseModel):
+    """Request body for POST /api/pricing/configs/{config_id}/move.
+
+    The config_id being moved arrives in the path, not here, so this carries
+    only the destination and the confirmation.
+
+    BOTH PARENT FIELDS MAY BE None, and that is a real request rather than a
+    malformed one: it means make this config flat. That is why neither field
+    is required and why there is no "at least one" validator.
+
+    only_one_parent is deliberately NOT mirrored here, unlike on
+    FirmDimensionConfigCreate. change_dimension_direction already refuses a
+    both-set payload with its own 422 and its own message, and the UI contract
+    is that guard refusal messages surface verbatim from response detail. A
+    schema validator here would intercept the payload first and replace that
+    message with Pydantic's generic validation envelope, so the service stays
+    the single voice for this rule.
+
+    confirm defaults to False so no caller performs a destructive move by
+    accident. The service refuses without it.
+    """
+
+    new_parent_tier_id: Optional[uuid.UUID] = None
+    new_parent_option_id: Optional[uuid.UUID] = None
+    confirm: bool = False
+
+
 class FirmDimensionConfigOut(FirmDimensionConfigBase):
     id: uuid.UUID
     firm_id: uuid.UUID

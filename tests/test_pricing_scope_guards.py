@@ -27,6 +27,12 @@ TWO NULLABLE FIELDS, UNRELATED MEANINGS. Read them apart throughout:
 These are service-level tests. There is no write router for pricing config, so
 they call pricing_config_service directly with an explicit firm_id, which is
 also the shape the tenant isolation tests need.
+
+STATUS CODES: every law refusal asserted in this file is 422, per the August
+2026 ruling recorded above the guard section of pricing_config_service.py.
+These assertions pinned 400 until that ruling; the behavior changed on purpose
+and the expectations were updated with it. 404 still means absent or another
+firm's row, and is asserted as 404 where it appears.
 """
 
 import uuid
@@ -510,7 +516,7 @@ def test_scoped_root_with_blanket_child_is_refused(db, firm_a, flag):
             db, firm, user, fine, fine_unit, scope=None, parent_tier_id=tier.id
         )
 
-    assert exc.value.status_code == 400
+    assert exc.value.status_code == 422
     assert "Scope must be uniform" in exc.value.detail
     # The message names BOTH scopes, or the caller cannot tell which end to fix.
     assert "tax_return_1040" in exc.value.detail
@@ -539,7 +545,7 @@ def test_blanket_root_with_scoped_child_is_refused(db, firm_a, flag):
             db, firm, user, fine, fine_unit, scope=entry.id, parent_tier_id=tier.id
         )
 
-    assert exc.value.status_code == 400
+    assert exc.value.status_code == 422
     assert "Scope must be uniform" in exc.value.detail
     assert "tax_return_1040" in exc.value.detail
     assert "blanket" in exc.value.detail
@@ -594,7 +600,7 @@ def test_option_parented_child_in_the_wrong_scope_is_refused(db, firm_a, flag):
             scope=entry.id, parent_option_id=options[0].id,
         )
 
-    assert exc.value.status_code == 400
+    assert exc.value.status_code == 422
     assert "Scope must be uniform" in exc.value.detail
     assert "same scope as the config of that option's dimension" in exc.value.detail
 
@@ -652,7 +658,7 @@ def test_same_scope_categorical_ambiguity_is_still_refused(db, firm_a, flag):
             scope=entry.id, parent_tier_id=top_tiers[0].id,
         )
 
-    assert exc.value.status_code == 400
+    assert exc.value.status_code == 422
     assert "second branch" in exc.value.detail
     assert "choice_dim" in exc.value.detail
 

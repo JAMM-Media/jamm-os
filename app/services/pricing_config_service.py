@@ -227,6 +227,33 @@ def _get_tier(db: Session, firm_id: uuid.UUID, tier_id: uuid.UUID) -> FirmTier:
 
 
 # ---------------------------------------------------------------------------
+# THE STATUS CODE RULING FOR EVERY GUARD BELOW. Ruled August 2026.
+#
+# Pricing law refusals are 422. The request was understood, was well formed,
+# and names real rows; it is refused because the pricing rules do not permit
+# what it asks for. Every guard in this section raises 422, without exception.
+#
+# 400 is reserved for a malformed request: something the service could not
+# make sense of at all. No guard in this file raises one.
+#
+# 404 is unchanged and means the row is absent or belongs to another firm.
+# _get_config, _get_dimension, _get_option, _get_tier and _resolve_scope keep
+# it. The cross-firm case deliberately answers 404 rather than 403 so a caller
+# cannot enumerate another firm's rows; see _resolve_scope.
+#
+# WHAT THIS RULING RESOLVED. Rule 9 (the Other option is never priceable)
+# raised 422 while every neighbouring law refusal raised 400, so two guards a
+# caller hits in the same request answered the same kind of refusal with two
+# different codes. The UI has to branch on the code to decide whether to show
+# the detail message verbatim, and a split like that makes that branch wrong
+# half the time. Rule 9 was the correct one and the rest were moved to it.
+#
+# Refusal MESSAGE text was deliberately not touched in the same change. The
+# messages are the UI contract and surface verbatim from response detail.
+# ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
 # Scope. Rules 10 and 11. See the module docstring for the design.
 # ---------------------------------------------------------------------------
 
@@ -341,7 +368,7 @@ def _validate_scope_uniformity(
         parent_config = _get_config(db, firm_id, tier.config_id)
         if parent_config.service_catalog_entry_id != scope:
             raise HTTPException(
-                status_code=400,
+                status_code=422,
                 detail=(
                     "Scope must be uniform within a config tree. The parent "
                     f"config is {_describe_scope(db, parent_config.service_catalog_entry_id)}, "
@@ -383,7 +410,7 @@ def _validate_scope_uniformity(
             return
 
         raise HTTPException(
-            status_code=400,
+            status_code=422,
             detail=(
                 "Scope must be uniform within a config tree. The parent "
                 f"config is {_describe_scope(db, elsewhere.service_catalog_entry_id)}, "
@@ -415,7 +442,7 @@ def _validate_tier_sequence(tiers: list[FirmTierBase]) -> list[FirmTierBase]:
     for tier in ordered:
         if tier.sort_order in seen_sort_orders:
             raise HTTPException(
-                status_code=400,
+                status_code=422,
                 detail=f"Duplicate sort_order {tier.sort_order} in tier list.",
             )
         seen_sort_orders.add(tier.sort_order)
@@ -424,7 +451,7 @@ def _validate_tier_sequence(tiers: list[FirmTierBase]) -> list[FirmTierBase]:
         is_last = index == len(ordered) - 1
         if tier.range_max is None and not is_last:
             raise HTTPException(
-                status_code=400,
+                status_code=422,
                 detail=(
                     f"Only the last tier may have an open top. The tier at "
                     f"sort_order {tier.sort_order} has no range_max but is "
@@ -433,7 +460,7 @@ def _validate_tier_sequence(tiers: list[FirmTierBase]) -> list[FirmTierBase]:
             )
         if tier.range_max is not None and tier.range_max <= tier.range_min:
             raise HTTPException(
-                status_code=400,
+                status_code=422,
                 detail=(
                     f"Tier at sort_order {tier.sort_order} has range_max "
                     f"{tier.range_max}, which is not above its range_min "
@@ -448,7 +475,7 @@ def _validate_tier_sequence(tiers: list[FirmTierBase]) -> list[FirmTierBase]:
             else:
                 problem = "overlap"
             raise HTTPException(
-                status_code=400,
+                status_code=422,
                 detail=(
                     f"Tier {problem} at the boundary between sort_order "
                     f"{previous.sort_order} and sort_order "
@@ -461,7 +488,7 @@ def _validate_tier_sequence(tiers: list[FirmTierBase]) -> list[FirmTierBase]:
     last = ordered[-1]
     if last.range_max is None and last.price is not None:
         raise HTTPException(
-            status_code=400,
+            status_code=422,
             detail=(
                 f"The open-top tier at sort_order {last.sort_order} is quote "
                 "territory and cannot carry a price."
@@ -503,7 +530,7 @@ def _validate_downhill_link(
 
     if not parent.linkable:
         raise HTTPException(
-            status_code=400,
+            status_code=422,
             detail=(
                 f"Dimension '{parent.key}' is marked not linkable and cannot be "
                 "a parent in a dependency chain."
@@ -511,7 +538,7 @@ def _validate_downhill_link(
         )
     if not child.linkable:
         raise HTTPException(
-            status_code=400,
+            status_code=422,
             detail=(
                 f"Dimension '{child.key}' is marked not linkable and cannot "
                 "hang under another dimension."
@@ -519,7 +546,7 @@ def _validate_downhill_link(
         )
     if parent.flag_id != child.flag_id:
         raise HTTPException(
-            status_code=400,
+            status_code=422,
             detail=(
                 f"Dimension '{child.key}' cannot hang under '{parent.key}': "
                 "they belong to different complexity flags."
@@ -528,7 +555,7 @@ def _validate_downhill_link(
     if child.hierarchy_rank <= parent.hierarchy_rank:
         direction = "the same rank as" if child.hierarchy_rank == parent.hierarchy_rank else "coarser than"
         raise HTTPException(
-            status_code=400,
+            status_code=422,
             detail=(
                 f"Downhill-only linking: '{child.key}' (hierarchy_rank "
                 f"{child.hierarchy_rank}) is {direction} '{parent.key}' "
@@ -605,7 +632,7 @@ def _assert_parent_is_unpriced(
         tier = _get_tier(db, firm_id, parent_tier_id)
         if tier.price is not None:
             raise HTTPException(
-                status_code=400,
+                status_code=422,
                 detail=(
                     f"Tier at sort_order {tier.sort_order} is priced at "
                     f"{tier.price}, so nothing may hang under it. Prices live "
@@ -623,7 +650,7 @@ def _assert_parent_is_unpriced(
         ).scalar_one_or_none()
         if existing is not None and existing.price is not None:
             raise HTTPException(
-                status_code=400,
+                status_code=422,
                 detail=(
                     f"Option {parent_option_id} is priced at {existing.price}, "
                     "so nothing may hang under it. Prices live only at the leaf "
@@ -642,7 +669,7 @@ def _assert_tier_can_be_priced(
         return
     if _tier_has_children(db, firm_id, tier.id):
         raise HTTPException(
-            status_code=400,
+            status_code=422,
             detail=(
                 f"Tier at sort_order {tier.sort_order} has dimension configs "
                 "hanging under it, so it cannot carry a price. Pricing it as "
@@ -668,7 +695,7 @@ def _assert_option_can_be_priced(
         return
     if _option_has_children(db, firm_id, option_id, scope):
         raise HTTPException(
-            status_code=400,
+            status_code=422,
             detail=(
                 f"Option {option_id} has dimension configs hanging under it, so "
                 "it cannot carry a price. Pricing it as well as its children "
@@ -816,7 +843,7 @@ def _validate_categorical_branch_ambiguity(
             db, firm_id, dimension.id, scope
         ):
             raise HTTPException(
-                status_code=400,
+                status_code=422,
                 detail=(
                     f"Dimension '{dimension.key}' is categorical, is already "
                     "configured, and has dependent configs hanging under its "
@@ -832,7 +859,7 @@ def _validate_categorical_branch_ambiguity(
     if parent_option_id is not None and parent is not None:
         if _config_count_for_dimension(db, firm_id, parent.id, scope) > 1:
             raise HTTPException(
-                status_code=400,
+                status_code=422,
                 detail=(
                     f"Dimension '{dimension.key}' cannot hang under an option "
                     f"of '{parent.key}', because '{parent.key}' is configured "
@@ -857,7 +884,7 @@ def _validate_role_coherence(
 ) -> None:
     if role == DimensionRole.guard and guard_threshold is None:
         raise HTTPException(
-            status_code=400,
+            status_code=422,
             detail=(
                 f"Dimension '{dimension.key}' is configured with role guard, "
                 "which requires a guard_threshold."
@@ -867,7 +894,7 @@ def _validate_role_coherence(
     if dimension.kind == DimensionKind.numeric_range:
         if unit_id is None:
             raise HTTPException(
-                status_code=400,
+                status_code=422,
                 detail=(
                     f"Dimension '{dimension.key}' is numeric_range, which "
                     "requires a unit_id naming what is being counted."
@@ -878,7 +905,7 @@ def _validate_role_coherence(
             raise HTTPException(status_code=404, detail="Dimension unit not found")
         if unit.dimension_id != dimension.id:
             raise HTTPException(
-                status_code=400,
+                status_code=422,
                 detail=(
                     f"Unit '{unit.key}' belongs to a different dimension and "
                     f"cannot be used with '{dimension.key}'."
@@ -886,7 +913,7 @@ def _validate_role_coherence(
             )
     elif unit_id is not None:
         raise HTTPException(
-            status_code=400,
+            status_code=422,
             detail=(
                 f"Dimension '{dimension.key}' is {dimension.kind.value}, not "
                 "numeric_range, so it cannot take a unit_id."
@@ -916,7 +943,7 @@ def upsert_service_catalog_entry(
     """
     if data.is_offered and data.pricing_mode is None:
         raise HTTPException(
-            status_code=400,
+            status_code=422,
             detail=(
                 f"Cannot offer '{data.engagement_type}' without a pricing_mode. "
                 "Activation requires pricing_mode in the same operation; a "
@@ -1958,7 +1985,7 @@ def save_tiers(
 
     if dimension.kind != DimensionKind.numeric_range:
         raise HTTPException(
-            status_code=400,
+            status_code=422,
             detail=(
                 f"Dimension '{dimension.key}' is {dimension.kind.value}, not "
                 "numeric_range, so it cannot have tiers."
@@ -1979,7 +2006,7 @@ def save_tiers(
         if tier.sort_order not in incoming_sort_orders:
             if _tier_has_children(db, firm_id, tier.id):
                 raise HTTPException(
-                    status_code=400,
+                    status_code=422,
                     detail=(
                         f"Tier at sort_order {tier.sort_order} still has "
                         "dimension configs hanging under it and cannot be "
@@ -2079,7 +2106,7 @@ def set_option_price(
 
     if dimension.kind != DimensionKind.categorical:
         raise HTTPException(
-            status_code=400,
+            status_code=422,
             detail=(
                 f"Dimension '{dimension.key}' is {dimension.kind.value}, not "
                 "categorical, so its answers cannot carry option prices."
@@ -2241,7 +2268,7 @@ def change_dimension_direction(
     """
     if not confirm:
         raise HTTPException(
-            status_code=400,
+            status_code=422,
             detail=(
                 "Changing a dimension's direction deletes every tier and "
                 "option price belonging to it and everything below it. Pass "
@@ -2251,7 +2278,7 @@ def change_dimension_direction(
 
     if new_parent_tier_id is not None and new_parent_option_id is not None:
         raise HTTPException(
-            status_code=400,
+            status_code=422,
             detail=(
                 "A config may hang under a tier or under an option, not both."
             ),
@@ -2400,3 +2427,192 @@ def change_dimension_direction(
     )
 
     return FirmDimensionConfigOut.model_validate(config)
+
+
+# ---------------------------------------------------------------------------
+# Deleting a config. Delete-and-recreate is the path for a scope change or for
+# removing a dimension, so this is the only way a config tree leaves the
+# database.
+# ---------------------------------------------------------------------------
+
+def delete_config(
+    db: Session,
+    *,
+    firm_id: uuid.UUID,
+    actor_id: uuid.UUID,
+    config_id: uuid.UUID,
+    confirm: bool = False,
+) -> None:
+    """Delete one config, everything below it, and every price they carry.
+
+    There is no re-scope and no un-parent operation in this build. A firm that
+    wants a config in a different scope, or wants a dimension gone, deletes and
+    recreates. That makes this the destructive twin of configure_dimension, and
+    it destroys strictly more than change_dimension_direction does: that one
+    clears prices and keeps the configs, this one takes the configs too.
+
+    WHAT IS DELETED, and in what order.
+
+      1. every option price belonging to the affected configs, in this tree's
+         scope
+      2. every tier belonging to the affected configs
+      3. the configs themselves, DEEPEST FIRST, root last
+
+    CHILDREN BEFORE PARENTS, EXPLICITLY. The ordering is not tidiness and the
+    reason was measured rather than assumed (see the note on save_tiers).
+    firm_tiers.child_configs carries no cascade, so deleting a tier through the
+    ORM issues UPDATE ... SET parent_tier_id = NULL on any config hanging under
+    it rather than removing it: the child SURVIVES, silently demoted from
+    dependent to flat, and its prices stop nesting and start stacking. Nothing
+    errors and nothing disappears, which is what makes it dangerous. Here every
+    such child is inside the affected set and is deleted in step 3, so the
+    demotion is transient rather than a leak, but the order is written out
+    explicitly so a later edit cannot reintroduce the silent-survivor shape by
+    reordering these blocks.
+
+    _descendant_config_ids appends a child only while processing its parent, so
+    a parent always precedes its children in that list. Walking it in reverse
+    is therefore deepest-first, and the root is deleted last.
+
+    NO TEST CAN CURRENTLY DISCRIMINATE THAT ORDERING, and the negative control
+    that tried says so: deleting the configs shallowest-first leaves every test
+    in tests/test_pricing_config_delete.py green. The reason is structural
+    rather than a gap in the tests. A config never references another config
+    directly (the link runs through a tier or a vocabulary option), so with the
+    tiers already gone there is no constraint left for the config order to
+    violate. The ordering is defensive against a future parent_config_id
+    column, which is the deferred fix recorded in the module docstring, and it
+    becomes load-bearing the moment that column lands. Treat it as unguarded
+    until then rather than as a rule something is watching.
+
+    SCOPE IS AN ABSOLUTE BOUNDARY HERE. The option-price query filters on this
+    tree's own service_catalog_entry_id, exactly as change_dimension_direction
+    does and for the same load-bearing reason: a blanket config and a scoped
+    override of the same categorical dimension are designed to coexist, and an
+    unfiltered delete would walk out of the tree it was asked about and destroy
+    the other one's prices. Deleting a scoped override never touches blanket
+    rows, and deleting a blanket config never touches a scoped override.
+
+    The tier query needs no scope filter: a tier names its config exactly
+    (firm_tiers.config_id) and every affected config is already in this tree.
+
+    CONFIRM, AND WHY THE LOOKUP COMES FIRST. change_dimension_direction checks
+    its confirm flag before doing anything else, because its refusal message is
+    generic. This refusal names what will actually be destroyed, including
+    counts, so the config has to be loaded to write it. _get_config is
+    therefore called first, and the ordering is deliberate in both directions:
+    a caller naming a config that does not exist, or one belonging to another
+    firm, gets 404 from _get_config and never reaches a message that would
+    confirm the row exists and tell them how much is hanging off it. Refusing
+    on confirm first would have leaked exactly that.
+
+    NOTHING IS WRITTEN ON THE REFUSAL PATH. Every read above happens before the
+    first db.delete, per the standing rule that rejection guards precede side
+    effects: a refused delete must not destroy anything on its way to the
+    refusal.
+    """
+    config = _get_config(db, firm_id, config_id)
+    dimension = _get_dimension(db, config.dimension_id)
+    scope = config.service_catalog_entry_id
+
+    descendant_ids = _descendant_config_ids(db, firm_id, config_id)
+    affected_ids = [config_id] + descendant_ids
+
+    affected_dimension_ids = db.execute(
+        select(FirmDimensionConfig.dimension_id).where(
+            FirmDimensionConfig.firm_id == firm_id,
+            FirmDimensionConfig.id.in_(affected_ids),
+        )
+    ).scalars().all()
+
+    tiers_to_delete = db.execute(
+        select(FirmTier).where(
+            FirmTier.firm_id == firm_id, FirmTier.config_id.in_(affected_ids)
+        )
+    ).scalars().all()
+
+    option_prices_to_delete = []
+    if affected_dimension_ids:
+        option_ids = db.execute(
+            select(ComplexityVocabularyOption.id).where(
+                ComplexityVocabularyOption.dimension_id.in_(affected_dimension_ids)
+            )
+        ).scalars().all()
+        if option_ids:
+            option_prices_to_delete = db.execute(
+                select(FirmOptionPrice).where(
+                    FirmOptionPrice.firm_id == firm_id,
+                    FirmOptionPrice.option_id.in_(option_ids),
+                    # See the docstring: this tree's scope only.
+                    _scope_predicate(
+                        FirmOptionPrice.service_catalog_entry_id, scope
+                    ),
+                )
+            ).scalars().all()
+
+    deleted_tier_count = len(tiers_to_delete)
+    deleted_option_price_count = len(option_prices_to_delete)
+
+    if not confirm:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"Deleting this configuration of '{dimension.key}' permanently "
+                f"removes it, the {len(descendant_ids)} dependent "
+                "configuration(s) beneath it, and every price they carry: "
+                f"{deleted_tier_count} tier(s) and "
+                f"{deleted_option_price_count} option price(s). This cannot be "
+                "undone and the prices cannot be recovered. Pass confirm=true "
+                "to proceed."
+            ),
+        )
+
+    # Order is load-bearing. See the docstring.
+    for option_price in option_prices_to_delete:
+        db.delete(option_price)
+    for tier in tiers_to_delete:
+        db.delete(tier)
+
+    # Deepest first, root last.
+    for descendant_id in reversed(descendant_ids):
+        descendant = db.get(FirmDimensionConfig, descendant_id)
+        if descendant is not None:
+            db.delete(descendant)
+    db.delete(config)
+
+    db.commit()
+
+    write_audit_log(
+        db,
+        firm_id=firm_id,
+        action="pricing.config_deleted",
+        actor_id=actor_id,
+        actor_type="staff",
+        entity_type="firm_dimension_config",
+        entity_id=config_id,
+        metadata={
+            "dimension_key": dimension.key,
+            "scope": "blanket" if scope is None else "engagement_type",
+            "service_catalog_entry_id": str(scope) if scope is not None else None,
+            "deleted_config_count": len(affected_ids),
+            "deleted_descendant_count": len(descendant_ids),
+            "deleted_tier_count": deleted_tier_count,
+            "deleted_option_price_count": deleted_option_price_count,
+        },
+    )
+
+    log_event(
+        event_type="pricing.config_deleted",
+        firm_id=firm_id,
+        entity_type="firm_dimension_config",
+        entity_id=config_id,
+        actor_type="staff",
+        actor_id=actor_id,
+        metadata={
+            "dimension_key": dimension.key,
+            "scope": "blanket" if scope is None else "engagement_type",
+            "deleted_config_count": len(affected_ids),
+            "deleted_tier_count": deleted_tier_count,
+            "deleted_option_price_count": deleted_option_price_count,
+        },
+    )
