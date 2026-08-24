@@ -316,7 +316,7 @@ export function PortalTodo({ accentColor = '#3A6A94' }: PortalTodoProps) {
             ) : (
               <div className="flex flex-col gap-2">
                 {active.map(item => (
-                  <TaskRow key={item.id} item={item} accentColor={accentColor} />
+                  <TaskRow key={item.id} item={item} />
                 ))}
               </div>
             )}
