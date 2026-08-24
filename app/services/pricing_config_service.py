@@ -159,6 +159,7 @@ from app.schemas.complexity_catalog import (
     ComplexityVocabularyOptionOut,
 )
 from app.schemas.fee_schedule_config import (
+    EngagementTypeOptionOut,
     FeeScheduleCatalogOut,
     FeeScheduleConfigOut,
     FirmPricingOut,
@@ -1489,6 +1490,24 @@ def get_fee_schedule_config(
     return FeeScheduleConfigOut(
         firm_id=firm_id,
         catalog=FeeScheduleCatalogOut(
+            # Every engagement type, dormant included. Built from the enum
+            # rather than from service_catalog_entries, whose rows are created
+            # lazily: a service the firm has never touched has no row and would
+            # otherwise be absent from the screen that exists to activate it.
+            # The three display strings come from the same helpers the public
+            # intake config uses, so the settings screen and the lead-facing
+            # form can never disagree about what a service is called.
+            engagement_types=[
+                EngagementTypeOptionOut(
+                    value=member.value,
+                    label=_engagement_type_label(member.value) or member.value,
+                    lead_facing_label=(
+                        _lead_facing_label(member.value) or member.value
+                    ),
+                    category=_engagement_category(member.value),
+                )
+                for member in EngagementType
+            ],
             complexity_flags=[ComplexityFlagOut.model_validate(row) for row in flags],
             complexity_flag_engagement_types=[
                 ComplexityFlagEngagementTypeOut.model_validate(row)

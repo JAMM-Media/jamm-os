@@ -22,6 +22,7 @@ each other on the way out any more than on the way in.
 """
 
 import uuid
+from typing import Optional
 
 from pydantic import BaseModel
 
@@ -38,6 +39,40 @@ from app.schemas.firm_tier import FirmTierOut
 from app.schemas.service_catalog_entry import ServiceCatalogEntryOut
 
 
+class EngagementTypeOptionOut(BaseModel):
+    """One engagement type as the settings screen needs to render it.
+
+    ADDED FOR THE PRICING SETTINGS UI. The owner-facing screen lists EVERY
+    engagement type, dormant ones included, because activating a dormant
+    service is the whole point of the top section. service_catalog_entries
+    cannot supply that list: its rows are created lazily, so a firm that has
+    never touched a service has no row for it and it would simply be missing
+    from the screen.
+
+    label, lead_facing_label and category are served rather than computed by
+    the caller, and that is load-bearing rather than a convenience. The
+    frontend already carries five separate hand-copied engagement type lists
+    that have drifted from each other and from the backend ("1040" versus
+    "1040 - Individual" versus "Tax Return - 1040"), which is the same drift
+    that hit the letter templates tab. The retired FeeScheduleTab names its own
+    16-item hand-copied list as the thing its replacement exists to remove, so
+    the replacement does not get to add a sixth.
+
+    lead_facing_label always carries a renderable string. The "use the override
+    if present, else the formal label" rule lives in the service and nowhere
+    else, deliberately: if the frontend implemented it, every consumer would
+    own a copy of the rule and they could disagree.
+
+    category may be None, and that is a real and permanent state rather than a
+    gap. An uncategorized type renders ungrouped. See _engagement_category.
+    """
+
+    value: str
+    label: str
+    lead_facing_label: str
+    category: Optional[str] = None
+
+
 class FeeScheduleCatalogOut(BaseModel):
     """The shared vocabulary every firm prices against.
 
@@ -47,6 +82,12 @@ class FeeScheduleCatalogOut(BaseModel):
     service_catalog_entries is the exception inside this block and is NOT
     unscoped. See the note on the field itself.
     """
+
+    # Every engagement type the system knows about, dormant or not, with the
+    # strings the owner screen renders. System-shared content derived from
+    # app/core/enums.py, not firm data: it is identical for every firm and
+    # carries no firm_id, exactly like the five carve-out collections.
+    engagement_types: list[EngagementTypeOptionOut]
 
     complexity_flags: list[ComplexityFlagOut]
     complexity_flag_engagement_types: list[ComplexityFlagEngagementTypeOut]

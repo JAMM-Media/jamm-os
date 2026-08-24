@@ -510,3 +510,61 @@ def test_null_firm_and_zero_firm_round_trip_independently(
     assert _decimal_or_none(
         body_b["catalog"]["service_catalog_entries"][0]["base_fee"]
     ) == Decimal("0.00")
+
+
+# ---------------------------------------------------------------------------
+# 5. The engagement_types block, added for the pricing settings UI.
+# ---------------------------------------------------------------------------
+
+def test_engagement_types_lists_every_type_dormant_included(client, firm_a_owner, db):
+    """Every EngagementType member appears, whether the firm offers it or not.
+
+    This is the block the settings screen renders its activation list from.
+    service_catalog_entries cannot supply it: rows are created lazily, so a
+    service the firm has never touched has no row. Firm A here has no catalog
+    entries at all, and the list must still be complete.
+    """
+    body = client.get(ENDPOINT, headers=firm_a_owner["headers"]).json()
+
+    assert body["catalog"]["service_catalog_entries"] == []
+
+    served = [e["value"] for e in body["catalog"]["engagement_types"]]
+    assert served == [m.value for m in EngagementType]
+    assert len(served) == len(set(served))
+
+
+def test_engagement_types_carry_renderable_display_strings(
+    client, firm_a_owner, db
+):
+    """label and lead_facing_label are always non-empty strings.
+
+    lead_facing_label falls back to the formal label when no override exists,
+    and that fallback lives in the service ON PURPOSE. If it were absent here
+    the frontend would have to implement it, and every consumer would then own
+    a copy of the rule and could disagree about it.
+
+    category may be null, which is a real state rather than a gap: an
+    uncategorized type renders ungrouped rather than being guessed into a
+    bucket its firm never chose.
+    """
+    body = client.get(ENDPOINT, headers=firm_a_owner["headers"]).json()
+    entries = body["catalog"]["engagement_types"]
+
+    for entry in entries:
+        assert isinstance(entry["label"], str) and entry["label"]
+        assert (
+            isinstance(entry["lead_facing_label"], str)
+            and entry["lead_facing_label"]
+        )
+        assert entry["category"] is None or isinstance(entry["category"], str)
+
+
+def test_engagement_types_are_identical_across_firms(
+    client, firm_a_owner, firm_b_owner, db
+):
+    """System-shared content, like the five carve-out collections. It carries
+    no firm_id and must not vary by caller."""
+    a = client.get(ENDPOINT, headers=firm_a_owner["headers"]).json()
+    b = client.get(ENDPOINT, headers=firm_b_owner["headers"]).json()
+    assert a["catalog"]["engagement_types"] == b["catalog"]["engagement_types"]
+

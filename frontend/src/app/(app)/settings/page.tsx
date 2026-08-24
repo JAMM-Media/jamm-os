@@ -14,6 +14,7 @@ import { settingsApi, type FirmDetails, type StaffMember } from '@/lib/api/setti
 import AutomationsTab from '@/components/settings/AutomationsTab'
 import SecurityTab from '@/components/settings/SecurityTab'
 import FeeScheduleTab from '@/components/settings/FeeScheduleTab'
+import PricingTab from '@/components/settings/PricingTab'
 import PortalBrandingTab from '@/components/settings/PortalBrandingTab'
 import MigrationTab from '@/components/settings/MigrationTab'
 import SendingDomainTab from '@/components/settings/SendingDomainTab'
@@ -285,6 +286,7 @@ const TABS = [
   { key: 'security', label: 'Security' },
   { key: 'automations', label: 'Automations' },
   { key: 'fee_schedule', label: 'Fee Schedule' },
+  { key: 'pricing', label: 'Pricing' },
   { key: 'billing', label: 'Billing' },
   { key: 'portal_branding', label: 'Portal' },
   { key: 'sending_domain', label: 'Email Domain' },
@@ -295,7 +297,7 @@ const TABS = [
 
 const SECTIONS = [
   { label: 'Account', keys: ['my_integrations', 'profile', 'security'] },
-  { label: 'Firm Settings', keys: ['firm', 'team', 'automations', 'fee_schedule', 'billing'] },
+  { label: 'Firm Settings', keys: ['firm', 'team', 'automations', 'fee_schedule', 'pricing', 'billing'] },
   { label: 'Portal', keys: ['portal_branding', 'portal_domain'] },
   { label: 'Email', keys: ['sending_domain', 'email_calendar'] },
   { label: 'Data', keys: ['migration'] },
@@ -639,6 +641,7 @@ export default function SettingsPage() {
     if (key === 'automations') return canSeeAutomations
     if (key === 'security') return canSeeSecurity
     if (key === 'fee_schedule') return isFirmOwner
+    if (key === 'pricing') return isFirmOwner
     if (key === 'billing') return isFirmOwner
     if (key === 'portal_branding') return isFirmOwner
     if (key === 'sending_domain') return canSeeSendingDomain
@@ -1418,6 +1421,8 @@ export default function SettingsPage() {
         {activeTab === 'automations' && canSeeAutomations && <AutomationsTab />}
 
         {/* Fee Schedule tab */}
+        {activeTab === 'pricing' && isFirmOwner && <PricingTab />}
+
         {activeTab === 'fee_schedule' && (
           <FeeScheduleTab
             firmSettings={firmData?.settings ?? null}
