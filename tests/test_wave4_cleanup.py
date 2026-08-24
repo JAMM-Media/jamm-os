@@ -10,7 +10,6 @@ from app.services.document_request_service import (
     update_checklist_item_status,
     update_document_request,
 )
-from app.services.engagement_service import update_complexity_flags
 
 
 def _mock_doc_request(item_id="item-1", item_status="pending"):
@@ -146,29 +145,3 @@ def test_due_date_unchanged_fires_nothing():
     event_types = [c.kwargs["event_type"] for c in mock_log.call_args_list]
     assert "document_request.due_date_changed" not in event_types
 
-
-# ---------------------------------------------------------------------------
-# Test 5 -- complexity flags update captures both from_flags and to_flags
-# ---------------------------------------------------------------------------
-def test_complexity_flags_captures_old():
-    mock_db = MagicMock()
-    mock_engagement = MagicMock()
-    mock_engagement.id = uuid.uuid4()
-    mock_engagement.engagement_type = "1040"
-    mock_engagement.complexity_flags = {"multi_state": False}
-
-    with patch("app.services.engagement_service.crud_engagement.get_engagement_for_firm", return_value=mock_engagement), \
-         patch("app.services.engagement_service.log_event") as mock_log:
-
-        update_complexity_flags(
-            db=mock_db,
-            engagement_id=mock_engagement.id,
-            firm_id=uuid.uuid4(),
-            flags={"multi_state": True, "k1_count": 3},
-            current_user_id=uuid.uuid4(),
-        )
-
-    assert mock_log.called
-    metadata = mock_log.call_args.kwargs["metadata"]
-    assert metadata["from_flags"] == {"multi_state": False}
-    assert metadata["to_flags"] == {"multi_state": True, "k1_count": 3}

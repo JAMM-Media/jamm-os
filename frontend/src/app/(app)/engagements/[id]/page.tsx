@@ -35,19 +35,6 @@ const TABS = [
 const labelClass = 'text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em]'
 const valueClass = 'text-[13px] text-brand dark:text-[#EDEEF0]'
 
-const COMPLEXITY_FLAG_LABELS: Record<string, string> = {
-  rental_property: 'Rental Property',
-  k1_involvement: 'K-1 Involvement',
-  foreign_accounts_fbar: 'Foreign Accounts / FBAR',
-  depreciation_schedules: 'Depreciation Schedules',
-  home_office: 'Home Office Deduction',
-  multiple_states: 'Multiple States',
-  trust_estate_involvement: 'Trust or Estate Involvement',
-  business_sale: 'Business Sale or Disposition',
-  equity_compensation: 'Equity Compensation / ISO / RSU',
-  crypto: 'Cryptocurrency',
-}
-
 function formatDate(dateStr: string | null | undefined): string {
   if (!dateStr) return '—'
   const d = new Date(dateStr)
@@ -248,28 +235,6 @@ export default function EngagementDetailPage() {
                   <span className={labelClass}>Created</span>
                   <span className={valueClass}>{formatDate(engagement.createdAt)}</span>
                 </div>
-
-                {engagement.complexityFlags && Object.keys(engagement.complexityFlags).length > 0 && (
-                  <div className="col-span-2 flex flex-col gap-1">
-                    <span className={labelClass}>Complexity Flags</span>
-                    <div className="flex flex-wrap gap-1.5">
-                      {Object.entries(engagement.complexityFlags).map(([key, value]) => {
-                        const baseLabel = COMPLEXITY_FLAG_LABELS[key] ?? key
-                        const displayLabel = value !== true && value
-                          ? `${baseLabel} — ${value}`
-                          : baseLabel
-                        return (
-                          <span
-                            key={key}
-                            className="bg-surface-page dark:bg-dark-page border border-surface-border dark:border-dark-border text-[12px] text-brand dark:text-[#EDEEF0] rounded-full px-2.5 py-0.5"
-                          >
-                            {displayLabel}
-                          </span>
-                        )
-                      })}
-                    </div>
-                  </div>
-                )}
               </div>
             </div>
 

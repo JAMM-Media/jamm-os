@@ -21,7 +21,6 @@ class EngagementBase(BaseModel):
     engagement_type: Optional[str] = None
     filing_deadline: Optional[date] = None
     extended_deadline: Optional[date] = None
-    complexity_flags: Optional[dict] = None
 
 
 class EngagementCreate(EngagementBase):
@@ -158,7 +157,3 @@ class BulkSendLetterResult(BaseModel):
     sent: int
     failed: int
     errors: list[str]
-
-
-class ComplexityFlagsUpdate(BaseModel):
-    flags: dict
