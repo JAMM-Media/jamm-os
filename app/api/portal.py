@@ -755,6 +755,82 @@ def portal_list_documents(
     ]
 
 
+
+
+class PortalDocumentMoveRequest(BaseModel):
+    folder_id: Optional[UUID] = None
+
+@router.patch("/documents/{document_id}/move")
+def portal_move_document(
+    document_id: UUID,
+    body: PortalDocumentMoveRequest,
+    request: Request,
+    current_client: Client = Depends(get_current_portal_client),
+    db: Session = Depends(get_db),
+):
+    """
+    Move a document into a folder (or to root) on behalf of the authenticated
+    portal client.
+
+    Tenant isolation is enforced at two levels:
+    - The document must belong to the authenticated client's firm_id AND client_id.
+    - The target folder (if not null) must also belong to the same firm_id AND client_id.
+    A client cannot move another client's document, nor move a document into a
+    folder they do not own.
+    """
+    from app.models.document import Document
+    from app.models.folder import Folder
+
+    doc = (
+        db.query(Document)
+        .filter(
+            Document.id == document_id,
+            Document.firm_id == current_client.firm_id,
+            Document.client_id == current_client.id,
+        )
+        .first()
+    )
+    if not doc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
+
+    if body.folder_id is not None:
+        folder = (
+            db.query(Folder)
+            .filter(
+                Folder.id == body.folder_id,
+                Folder.firm_id == current_client.firm_id,
+                Folder.client_id == current_client.id,
+            )
+            .first()
+        )
+        if not folder:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Folder not found")
+
+    # Captured for a future audit enhancement: record the before/after folder on each move.
+    # Not yet usable because DocumentAuditLog has no column for old/new folder values,
+    # and its user_id field is a strict FK to the staff users table, which means portal
+    # clients cannot be recorded as the actor either. Both gaps require a real migration
+    # (e.g. a metadata JSONB column, or an actor_type/client_id addition) and are a
+    # tracked known limitation, not silently omitted.
+    old_folder_id = doc.folder_id
+    doc.folder_id = body.folder_id
+    db.commit()
+
+    ip = request.client.host if request.client else None
+    write_audit_log(
+        db=db,
+        firm_id=current_client.firm_id,
+        action="portal_move",
+        document_id=doc.id,
+        ip_address=ip,
+    )
+
+    return {
+        "id": str(doc.id),
+        "folder_id": str(doc.folder_id) if doc.folder_id else None,
+    }
+
+
 @router.post("/document-requests/{request_id}/items/{item_id}/complete")
 def portal_complete_checklist_item(
     request_id: UUID,

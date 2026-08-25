@@ -226,3 +226,16 @@ export async function submitAttributionSurvey(answer: string): Promise<{ written
   if (!res.ok) throw new Error('submit failed')
   return res.json()
 }
+
+export async function movePortalDocument(
+  documentId: string,
+  folderId: string | null,
+): Promise<{ id: string; folder_id: string | null }> {
+  const res = await fetch(`${BASE}/portal/documents/${documentId}/move`, {
+    method: 'PATCH',
+    headers: portalHeaders(),
+    body: JSON.stringify({ folder_id: folderId }),
+  })
+  if (!res.ok) throw new Error('fetch failed')
+  return res.json()
+}
