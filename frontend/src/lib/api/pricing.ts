@@ -35,14 +35,65 @@ export interface ServiceCatalogEntry {
   baseFee: number | null
 }
 
+// The system catalog's own vocabulary, mirrored as unions rather than bare
+// strings so a typo in a comparison is a compile error. Values come from
+// DimensionKind and DimensionRole in app/core/enums.py.
+export type DimensionKind = 'boolean' | 'numeric_range' | 'categorical'
+export type DimensionRole = 'priced' | 'informational' | 'guard'
+
+// Rule 9: the catch-all Other option is never priceable. The service refuses
+// any price on an option with this key (_assert_option_is_not_other in
+// pricing_config_service.py, which pins the same literal). It is mirrored here
+// only to RENDER the option as unpriceable, never to decide anything the
+// server has not already decided.
+export const OTHER_OPTION_KEY = 'other'
+
+export interface ComplexityFlag {
+  id: string
+  key: string
+  name: string
+  description: string | null
+  isActive: boolean
+}
+
+// The system catalog's map from a flag to the engagement types it applies to.
+// A blanket config applies to a service only when this map links them, which
+// is why the settings screen reads it rather than assuming blanket means
+// everywhere.
+export interface ComplexityFlagEngagementType {
+  id: string
+  flagId: string
+  engagementType: string
+}
+
 export interface ComplexityDimension {
   id: string
   flagId: string
   key: string
-  kind: string
+  kind: DimensionKind
+  questionText: string | null
   hierarchyRank: number
   linkable: boolean
-  defaultRole: string | null
+  defaultRole: DimensionRole | null
+}
+
+// numeric_range dimensions only. The unit names what is being counted and
+// carries the lead-facing phrasing of the question.
+export interface ComplexityDimensionUnit {
+  id: string
+  dimensionId: string
+  key: string
+  label: string
+  questionText: string | null
+}
+
+// categorical dimensions only.
+export interface ComplexityVocabularyOption {
+  id: string
+  dimensionId: string
+  key: string
+  label: string
+  isActive: boolean
 }
 
 export interface FirmDimensionConfig {
@@ -52,7 +103,7 @@ export interface FirmDimensionConfig {
   serviceCatalogEntryId: string | null
   parentTierId: string | null
   parentOptionId: string | null
-  role: string
+  role: DimensionRole
   unitId: string | null
   guardThreshold: number | null
 }
@@ -77,7 +128,11 @@ export interface PricingConfig {
   firmId: string
   engagementTypes: EngagementTypeOption[]
   serviceCatalogEntries: ServiceCatalogEntry[]
+  flags: ComplexityFlag[]
+  flagEngagementTypes: ComplexityFlagEngagementType[]
   dimensions: ComplexityDimension[]
+  dimensionUnits: ComplexityDimensionUnit[]
+  vocabularyOptions: ComplexityVocabularyOption[]
   configs: FirmDimensionConfig[]
   tiers: FirmTier[]
   optionPrices: FirmOptionPrice[]
@@ -116,19 +171,59 @@ export function mapPricingConfig(raw: Record<string, unknown>): PricingConfig {
       pricingMode: (e.pricing_mode ?? null) as PricingMode | null,
       baseFee: money(e.base_fee),
     })),
+    flags: ((catalog.complexity_flags ?? []) as Record<string, unknown>[]).map((f) => ({
+      id: String(f.id),
+      key: String(f.key),
+      name: String(f.name),
+      description:
+        f.description === null || f.description === undefined ? null : String(f.description),
+      isActive: Boolean(f.is_active),
+    })),
+    flagEngagementTypes: (
+      (catalog.complexity_flag_engagement_types ?? []) as Record<string, unknown>[]
+    ).map((fe) => ({
+      id: String(fe.id),
+      flagId: String(fe.flag_id),
+      engagementType: String(fe.engagement_type),
+    })),
     dimensions: ((catalog.complexity_dimensions ?? []) as Record<string, unknown>[]).map(
       (d) => ({
         id: String(d.id),
         flagId: String(d.flag_id),
         key: String(d.key),
-        kind: String(d.kind),
+        kind: String(d.kind) as DimensionKind,
+        questionText:
+          d.question_text === null || d.question_text === undefined
+            ? null
+            : String(d.question_text),
         hierarchyRank: Number(d.hierarchy_rank),
         linkable: Boolean(d.linkable),
         defaultRole: d.default_role === null || d.default_role === undefined
           ? null
-          : String(d.default_role),
+          : (String(d.default_role) as DimensionRole),
       })
     ),
+    dimensionUnits: (
+      (catalog.complexity_dimension_units ?? []) as Record<string, unknown>[]
+    ).map((u) => ({
+      id: String(u.id),
+      dimensionId: String(u.dimension_id),
+      key: String(u.key),
+      label: String(u.label),
+      questionText:
+        u.question_text === null || u.question_text === undefined
+          ? null
+          : String(u.question_text),
+    })),
+    vocabularyOptions: (
+      (catalog.complexity_vocabulary_options ?? []) as Record<string, unknown>[]
+    ).map((o) => ({
+      id: String(o.id),
+      dimensionId: String(o.dimension_id),
+      key: String(o.key),
+      label: String(o.label),
+      isActive: Boolean(o.is_active),
+    })),
     configs: ((firmPricing.firm_dimension_configs ?? []) as Record<string, unknown>[]).map(
       (c) => ({
         id: String(c.id),
@@ -146,7 +241,7 @@ export function mapPricingConfig(raw: Record<string, unknown>): PricingConfig {
           c.parent_option_id === null || c.parent_option_id === undefined
             ? null
             : String(c.parent_option_id),
-        role: String(c.role),
+        role: String(c.role) as DimensionRole,
         unitId: c.unit_id === null || c.unit_id === undefined ? null : String(c.unit_id),
         guardThreshold: money(c.guard_threshold),
       })

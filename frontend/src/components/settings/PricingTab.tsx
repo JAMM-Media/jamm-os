@@ -18,8 +18,10 @@
 //   - An activated but unconfigured service is a LEGITIMATE state, not an
 //     error. It says so, plainly, and says what happens to leads.
 //
-// This file currently contains the top section only. The complexity
-// configuration section is the next piece.
+// The complexity configuration section renders inside an open service, below
+// that service's activation controls, which is what "the selected engagement
+// type" means on this screen: the open row is the selection. It lives in
+// ./pricing/ComplexitySection.tsx.
 
 'use client'
 
@@ -29,9 +31,11 @@ import { toast } from 'sonner'
 import {
   pricingApi,
   refusalMessage,
+  type PricingConfig,
   type PricingMode,
   type ServiceCatalogEntry,
 } from '@/lib/api/pricing'
+import ComplexitySection from './pricing/ComplexitySection'
 
 const PRICING_MODES: { value: PricingMode; label: string; help: string }[] = [
   { value: 'fixed', label: 'Fixed fee', help: 'One price for the service.' },
@@ -144,6 +148,7 @@ export default function PricingTab() {
           key={category}
           heading={category}
           types={data.engagementTypes.filter((t) => t.category === category)}
+          pricing={data}
           entryFor={entryFor}
           configCountFor={configCountFor}
           blanketConfigCount={blanketConfigCount}
@@ -156,6 +161,7 @@ export default function PricingTab() {
         <ServiceGroup
           heading="Other services"
           types={uncategorized}
+          pricing={data}
           entryFor={entryFor}
           configCountFor={configCountFor}
           blanketConfigCount={blanketConfigCount}
@@ -170,6 +176,7 @@ export default function PricingTab() {
 function ServiceGroup({
   heading,
   types,
+  pricing,
   entryFor,
   configCountFor,
   blanketConfigCount,
@@ -178,6 +185,7 @@ function ServiceGroup({
 }: {
   heading: string
   types: { value: string; label: string; leadFacingLabel: string; category: string | null }[]
+  pricing: PricingConfig
   entryFor: (t: string) => ServiceCatalogEntry | undefined
   configCountFor: (e: ServiceCatalogEntry | undefined) => number
   blanketConfigCount: number
@@ -197,6 +205,7 @@ function ServiceGroup({
           <ServiceRow
             key={t.value}
             type={t}
+            pricing={pricing}
             entry={entryFor(t.value)}
             configCount={configCountFor(entryFor(t.value))}
             blanketConfigCount={blanketConfigCount}
@@ -211,6 +220,7 @@ function ServiceGroup({
 
 function ServiceRow({
   type,
+  pricing,
   entry,
   configCount,
   blanketConfigCount,
@@ -218,6 +228,7 @@ function ServiceRow({
   saving,
 }: {
   type: { value: string; label: string; leadFacingLabel: string; category: string | null }
+  pricing: PricingConfig
   entry: ServiceCatalogEntry | undefined
   configCount: number
   blanketConfigCount: number
@@ -378,6 +389,20 @@ function ServiceRow({
               Choose how this service is priced before turning it on. A service cannot
               be half on.
             </span>
+          )}
+
+          {/* Below the activation controls, for the open service. A service
+              that is off is not configured here: complexity pricing only ever
+              runs for a service a lead can pick. */}
+          {/* entry is checked rather than isOffered alone: the section needs
+              the catalog entry itself, and a service is only ever offered
+              because that row exists. */}
+          {entry && isOffered ? (
+            <ComplexitySection data={pricing} engagementType={type.value} entry={entry} />
+          ) : (
+            <div className="text-[12px] text-[#6B7280] pt-3 border-t border-surface-border dark:border-dark-border">
+              Turn this service on to configure its complexity pricing.
+            </div>
           )}
         </div>
       )}
