@@ -13,7 +13,6 @@ import api from '@/lib/api'
 import { settingsApi, type FirmDetails, type StaffMember } from '@/lib/api/settingsApi'
 import AutomationsTab from '@/components/settings/AutomationsTab'
 import SecurityTab from '@/components/settings/SecurityTab'
-import FeeScheduleTab from '@/components/settings/FeeScheduleTab'
 import PricingTab from '@/components/settings/PricingTab'
 import PortalBrandingTab from '@/components/settings/PortalBrandingTab'
 import MigrationTab from '@/components/settings/MigrationTab'
@@ -285,7 +284,6 @@ const TABS = [
   { key: 'team', label: 'Team' },
   { key: 'security', label: 'Security' },
   { key: 'automations', label: 'Automations' },
-  { key: 'fee_schedule', label: 'Fee Schedule' },
   { key: 'pricing', label: 'Pricing' },
   { key: 'billing', label: 'Billing' },
   { key: 'portal_branding', label: 'Portal' },
@@ -297,7 +295,7 @@ const TABS = [
 
 const SECTIONS = [
   { label: 'Account', keys: ['my_integrations', 'profile', 'security'] },
-  { label: 'Firm Settings', keys: ['firm', 'team', 'automations', 'fee_schedule', 'pricing', 'billing'] },
+  { label: 'Firm Settings', keys: ['firm', 'team', 'automations', 'pricing', 'billing'] },
   { label: 'Portal', keys: ['portal_branding', 'portal_domain'] },
   { label: 'Email', keys: ['sending_domain', 'email_calendar'] },
   { label: 'Data', keys: ['migration'] },
@@ -640,7 +638,6 @@ export default function SettingsPage() {
     if (key === 'my_integrations') return true
     if (key === 'automations') return canSeeAutomations
     if (key === 'security') return canSeeSecurity
-    if (key === 'fee_schedule') return isFirmOwner
     if (key === 'pricing') return isFirmOwner
     if (key === 'billing') return isFirmOwner
     if (key === 'portal_branding') return isFirmOwner
@@ -1420,15 +1417,8 @@ export default function SettingsPage() {
         {/* Automations tab */}
         {activeTab === 'automations' && canSeeAutomations && <AutomationsTab />}
 
-        {/* Fee Schedule tab */}
+        {/* Pricing tab */}
         {activeTab === 'pricing' && isFirmOwner && <PricingTab />}
-
-        {activeTab === 'fee_schedule' && (
-          <FeeScheduleTab
-            firmSettings={firmData?.settings ?? null}
-            onSaved={() => { /* firmData will refetch on next focus */ }}
-          />
-        )}
 
         {/* Portal Branding tab */}
         {activeTab === 'portal_branding' && isFirmOwner && <PortalBrandingTab />}

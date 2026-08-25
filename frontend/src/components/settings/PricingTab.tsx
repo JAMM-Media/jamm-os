@@ -1,8 +1,9 @@
 // frontend/src/components/settings/PricingTab.tsx
 //
-// The pricing settings tab. Replaces FeeScheduleTab, whose settings blob save
-// path is dead and whose 16-item hand-copied engagement list is exactly what
-// this exists to remove.
+// The pricing settings tab. It replaces the retired fee schedule tab, deleted
+// in this session: that tab's settings blob save path was already dead, and
+// its 16-item hand-copied engagement list is exactly what this exists to
+// remove.
 //
 // STRUCTURE AND CORRECTNESS ARE THE DELIVERABLE HERE. Ben takes a visual pass
 // later. The behaviours that must survive that pass are the ones below, and
