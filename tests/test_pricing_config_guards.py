@@ -344,7 +344,7 @@ def test_parent_tier_with_price_cannot_gain_child(db, firm_a, flag):
         _configure(db, firm, user, fine, fine_unit, parent_tier_id=tiers[0].id)
 
     assert exc.value.status_code == 422
-    assert "Clear the parent price first" in exc.value.detail
+    assert "Clear that tier's price first" in exc.value.detail
 
 
 def test_tier_with_child_cannot_gain_price(db, firm_a, flag):
@@ -948,7 +948,7 @@ def test_removing_parented_tier_is_refused(db, firm_a, flag):
         )
 
     assert exc.value.status_code == 422
-    assert "change_dimension_direction" in exc.value.detail
+    assert "Delete those child configurations first" in exc.value.detail
 
     db.expire_all()
 

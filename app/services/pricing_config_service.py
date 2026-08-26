@@ -211,6 +211,42 @@ def _get_dimension(db: Session, dimension_id: uuid.UUID) -> ComplexityDimension:
     return dimension
 
 
+def _dimension_display(db: Session, dimension: ComplexityDimension) -> str:
+    """How a dimension is named in refusal copy. Ruled by Andrew, Aug 26, 2026.
+
+    Refusal detail strings are rendered verbatim by the settings UI, so they are
+    load-bearing UI text and must name a dimension in words rather than by its
+    catalog key. complexity_dimensions has no label column, so this mirrors the
+    naming precedent the frontend already uses:
+
+      - question_text present: "<flag name>: <question_text>"
+      - otherwise:             "<flag name> (<dimension key>)"
+
+    The key deliberately survives in the fallback. question_text is nullable
+    until the content session fills it, and two dimensions under one flag would
+    otherwise be indistinguishable in a refusal that names both. Once
+    question_text exists the key drops out of the copy on its own, with no
+    further code change.
+
+    Display only: this never raises and never writes. The flag is fetched with
+    one explicit select rather than through dimension.flag, so the helper does
+    not depend on the dimension being attached to a session. If the flag cannot
+    be resolved, which the FK should make impossible, it falls back to the bare
+    key rather than failing the refusal it was called to phrase.
+    """
+    flag_name = db.execute(
+        select(ComplexityFlag.name).where(ComplexityFlag.id == dimension.flag_id)
+    ).scalar_one_or_none()
+
+    if not flag_name:
+        return dimension.key
+
+    question_text = (dimension.question_text or "").strip()
+    if question_text:
+        return f"{flag_name}: {question_text}"
+    return f"{flag_name} ({dimension.key})"
+
+
 def _get_option(db: Session, option_id: uuid.UUID) -> ComplexityVocabularyOption:
     option = db.get(ComplexityVocabularyOption, option_id)
     if option is None:
@@ -521,11 +557,15 @@ def _parent_dimension(
 
 
 def _validate_downhill_link(
-    child: ComplexityDimension, parent: Optional[ComplexityDimension]
+    db: Session, child: ComplexityDimension, parent: Optional[ComplexityDimension]
 ) -> None:
     """A config may only take a parent that is strictly coarser than itself,
     within the same flag. Uphill and same-rank links are rejected, and either
-    dimension being unlinkable rejects the link outright."""
+    dimension being unlinkable rejects the link outright.
+
+    db is here only so the refusals can name both dimensions in words through
+    _dimension_display. The rule itself reads nothing from the database.
+    """
     if parent is None:
         return
 
@@ -533,24 +573,25 @@ def _validate_downhill_link(
         raise HTTPException(
             status_code=422,
             detail=(
-                f"Dimension '{parent.key}' is marked not linkable and cannot be "
-                "a parent in a dependency chain."
+                f"Dimension '{_dimension_display(db, parent)}' is marked not "
+                "linkable and cannot be a parent in a dependency chain."
             ),
         )
     if not child.linkable:
         raise HTTPException(
             status_code=422,
             detail=(
-                f"Dimension '{child.key}' is marked not linkable and cannot "
-                "hang under another dimension."
+                f"Dimension '{_dimension_display(db, child)}' is marked not "
+                "linkable and cannot hang under another dimension."
             ),
         )
     if parent.flag_id != child.flag_id:
         raise HTTPException(
             status_code=422,
             detail=(
-                f"Dimension '{child.key}' cannot hang under '{parent.key}': "
-                "they belong to different complexity flags."
+                f"Dimension '{_dimension_display(db, child)}' cannot hang under "
+                f"'{_dimension_display(db, parent)}': they belong to different "
+                "complexity flags."
             ),
         )
     if child.hierarchy_rank <= parent.hierarchy_rank:
@@ -558,10 +599,11 @@ def _validate_downhill_link(
         raise HTTPException(
             status_code=422,
             detail=(
-                f"Downhill-only linking: '{child.key}' (hierarchy_rank "
-                f"{child.hierarchy_rank}) is {direction} '{parent.key}' "
-                f"(hierarchy_rank {parent.hierarchy_rank}), so it cannot hang "
-                "under it. A child must be strictly finer than its parent."
+                f"Downhill-only linking: '{_dimension_display(db, child)}' "
+                f"(hierarchy_rank {child.hierarchy_rank}) is {direction} "
+                f"'{_dimension_display(db, parent)}' (hierarchy_rank "
+                f"{parent.hierarchy_rank}), so it cannot hang under it. A child "
+                "must be strictly finer than its parent."
             ),
         )
 
@@ -619,8 +661,8 @@ def _assert_parent_is_unpriced(
     scope: Optional[uuid.UUID],
 ) -> None:
     """Creating a child under a parent that currently carries a price is
-    rejected. The price has to be cleared first, and clearing it is the
-    explicit direction-change action, not a side effect of this call.
+    rejected. The price has to be cleared first, by an ordinary price edit on
+    the parent, and clearing it is never a side effect of this call.
 
     scope is the CHILD'S scope, and it selects which option price to look at.
     A blanket price on the parent option does not block a scoped child, and a
@@ -637,8 +679,9 @@ def _assert_parent_is_unpriced(
                 detail=(
                     f"Tier at sort_order {tier.sort_order} is priced at "
                     f"{tier.price}, so nothing may hang under it. Prices live "
-                    "only at the leaf of a chain. Clear the parent price first "
-                    "via change_dimension_direction, then add the child."
+                    "only at the leaf of a chain. Clear that tier's price first "
+                    "(save the tiers again with that band's price set to null), "
+                    "then add the child."
                 ),
             )
     if parent_option_id is not None:
@@ -650,13 +693,21 @@ def _assert_parent_is_unpriced(
             )
         ).scalar_one_or_none()
         if existing is not None and existing.price is not None:
+            # Read on the refusal path only, to name the option in words. The
+            # FK behind the price row makes the fallback unreachable; it is
+            # here so a missing label can never turn this 422 into a 404.
+            option_label = db.execute(
+                select(ComplexityVocabularyOption.label).where(
+                    ComplexityVocabularyOption.id == parent_option_id
+                )
+            ).scalar_one_or_none() or str(parent_option_id)
             raise HTTPException(
                 status_code=422,
                 detail=(
-                    f"Option {parent_option_id} is priced at {existing.price}, "
+                    f"Option '{option_label}' is priced at {existing.price}, "
                     "so nothing may hang under it. Prices live only at the leaf "
-                    "of a chain. Clear the parent price first via "
-                    "change_dimension_direction, then add the child."
+                    "of a chain. Clear that option's price first (set it to "
+                    "null), then add the child."
                 ),
             )
 
@@ -695,12 +746,19 @@ def _assert_option_can_be_priced(
     if incoming_price is None:
         return
     if _option_has_children(db, firm_id, option_id, scope):
+        # Read on the refusal path only, to name the option in words. See the
+        # note on the option branch of _assert_parent_is_unpriced.
+        option_label = db.execute(
+            select(ComplexityVocabularyOption.label).where(
+                ComplexityVocabularyOption.id == option_id
+            )
+        ).scalar_one_or_none() or str(option_id)
         raise HTTPException(
             status_code=422,
             detail=(
-                f"Option {option_id} has dimension configs hanging under it, so "
-                "it cannot carry a price. Pricing it as well as its children "
-                "would double count. Price the leaf instead."
+                f"Option '{option_label}' has dimension configs hanging under "
+                "it, so it cannot carry a price. Pricing it as well as its "
+                "children would double count. Price the leaf instead."
             ),
         )
 
@@ -740,7 +798,7 @@ def _assert_option_is_not_other(
     raise HTTPException(
         status_code=422,
         detail=(
-            f"Option '{option.key}' is the catch-all Other answer and cannot "
+            f"Option '{option.label}' is the catch-all Other answer and cannot "
             "carry a price. Other means the system could not classify the "
             "lead's situation, so pricing it would produce a computed quote "
             "for a case nobody has looked at. Leave it unpriced and it routes "
@@ -846,28 +904,31 @@ def _validate_categorical_branch_ambiguity(
             raise HTTPException(
                 status_code=422,
                 detail=(
-                    f"Dimension '{dimension.key}' is categorical, is already "
-                    "configured, and has dependent configs hanging under its "
-                    "options. It cannot be configured on a second branch: a "
-                    "child hanging under an option would have no way to say "
-                    "which branch it belongs to, and a later direction change "
-                    "would delete prices from both. Remove the dependent "
-                    "configs first, or price this dimension on its existing "
-                    "branch."
+                    f"Dimension '{_dimension_display(db, dimension)}' is "
+                    "categorical, is already configured, and has dependent "
+                    "configs hanging under its options. It cannot be configured "
+                    "on a second branch: a child hanging under an option would "
+                    "have no way to say which branch it belongs to, and a later "
+                    "direction change would delete prices from both. Remove the "
+                    "dependent configs first, or price this dimension on its "
+                    "existing branch."
                 ),
             )
 
     if parent_option_id is not None and parent is not None:
         if _config_count_for_dimension(db, firm_id, parent.id, scope) > 1:
+            # Resolved once: the parent is named four times in this refusal.
+            parent_display = _dimension_display(db, parent)
             raise HTTPException(
                 status_code=422,
                 detail=(
-                    f"Dimension '{dimension.key}' cannot hang under an option "
-                    f"of '{parent.key}', because '{parent.key}' is configured "
-                    "on more than one branch in this scope. A child references "
-                    "the option alone, so it could not say which branch of "
-                    f"'{parent.key}' it belongs to. Consolidate "
-                    f"'{parent.key}' onto one branch first."
+                    f"Dimension '{_dimension_display(db, dimension)}' cannot "
+                    f"hang under an option of '{parent_display}', because "
+                    f"'{parent_display}' is configured on more than one branch "
+                    "in this scope. A child references the option alone, so it "
+                    "could not say which branch of "
+                    f"'{parent_display}' it belongs to. Consolidate "
+                    f"'{parent_display}' onto one branch first."
                 ),
             )
 
@@ -887,8 +948,8 @@ def _validate_role_coherence(
         raise HTTPException(
             status_code=422,
             detail=(
-                f"Dimension '{dimension.key}' is configured with role guard, "
-                "which requires a guard_threshold."
+                f"Dimension '{_dimension_display(db, dimension)}' is configured "
+                "with role guard, which requires a guard_threshold."
             ),
         )
 
@@ -897,8 +958,9 @@ def _validate_role_coherence(
             raise HTTPException(
                 status_code=422,
                 detail=(
-                    f"Dimension '{dimension.key}' is numeric_range, which "
-                    "requires a unit_id naming what is being counted."
+                    f"Dimension '{_dimension_display(db, dimension)}' is "
+                    "numeric_range, which requires a unit_id naming what is "
+                    "being counted."
                 ),
             )
         unit = db.get(ComplexityDimensionUnit, unit_id)
@@ -908,16 +970,17 @@ def _validate_role_coherence(
             raise HTTPException(
                 status_code=422,
                 detail=(
-                    f"Unit '{unit.key}' belongs to a different dimension and "
-                    f"cannot be used with '{dimension.key}'."
+                    f"Unit '{unit.label}' belongs to a different dimension and "
+                    f"cannot be used with '{_dimension_display(db, dimension)}'."
                 ),
             )
     elif unit_id is not None:
         raise HTTPException(
             status_code=422,
             detail=(
-                f"Dimension '{dimension.key}' is {dimension.kind.value}, not "
-                "numeric_range, so it cannot take a unit_id."
+                f"Dimension '{_dimension_display(db, dimension)}' is "
+                f"{dimension.kind.value}, not numeric_range, so it cannot take "
+                "a unit_id."
             ),
         )
 
@@ -1056,7 +1119,7 @@ def configure_dimension(
     )
 
     parent = _parent_dimension(db, firm_id, data.parent_tier_id, data.parent_option_id)
-    _validate_downhill_link(dimension, parent)
+    _validate_downhill_link(db, dimension, parent)
     _validate_scope_uniformity(
         db, firm_id, scope, data.parent_tier_id, data.parent_option_id
     )
@@ -2006,8 +2069,9 @@ def save_tiers(
         raise HTTPException(
             status_code=422,
             detail=(
-                f"Dimension '{dimension.key}' is {dimension.kind.value}, not "
-                "numeric_range, so it cannot have tiers."
+                f"Dimension '{_dimension_display(db, dimension)}' is "
+                f"{dimension.kind.value}, not numeric_range, so it cannot have "
+                "tiers."
             ),
         )
 
@@ -2029,8 +2093,9 @@ def save_tiers(
                     detail=(
                         f"Tier at sort_order {tier.sort_order} still has "
                         "dimension configs hanging under it and cannot be "
-                        "removed by a tier edit. Move or remove the child "
-                        "configs first via change_dimension_direction."
+                        "removed by a tier edit. Delete those child "
+                        "configurations first, or move them under a different "
+                        "parent, then edit the tiers."
                     ),
                 )
 
@@ -2127,8 +2192,9 @@ def set_option_price(
         raise HTTPException(
             status_code=422,
             detail=(
-                f"Dimension '{dimension.key}' is {dimension.kind.value}, not "
-                "categorical, so its answers cannot carry option prices."
+                f"Dimension '{_dimension_display(db, dimension)}' is "
+                f"{dimension.kind.value}, not categorical, so its answers "
+                "cannot carry option prices."
             ),
         )
 
@@ -2318,7 +2384,7 @@ def change_dimension_direction(
     after_parent = _parent_dimension(
         db, firm_id, new_parent_tier_id, new_parent_option_id
     )
-    _validate_downhill_link(dimension, after_parent)
+    _validate_downhill_link(db, dimension, after_parent)
     # Rule 11 on the update side. The config keeps its scope, so the new parent
     # has to be in that same scope or the move would break tree uniformity.
     # Runs before anything is deleted, per the rejection-before-side-effects
@@ -2576,7 +2642,8 @@ def delete_config(
         raise HTTPException(
             status_code=422,
             detail=(
-                f"Deleting this configuration of '{dimension.key}' permanently "
+                "Deleting this configuration of "
+                f"'{_dimension_display(db, dimension)}' permanently "
                 f"removes it, the {len(descendant_ids)} dependent "
                 "configuration(s) beneath it, and every price they carry: "
                 f"{deleted_tier_count} tier(s) and "

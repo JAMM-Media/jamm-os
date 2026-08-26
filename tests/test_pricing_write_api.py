@@ -613,10 +613,10 @@ def test_priced_option_parent_refusal_reaches_the_client_verbatim(
         )
     ).first()
     expected = (
-        f"Option {catalog['option_one'].id} is priced at {stored.price}, "
+        f"Option '{catalog['option_one'].label}' is priced at {stored.price}, "
         "so nothing may hang under it. Prices live only at the leaf "
-        "of a chain. Clear the parent price first via "
-        "change_dimension_direction, then add the child."
+        "of a chain. Clear that option's price first (set it to "
+        "null), then add the child."
     )
     assert response.json()["detail"] == expected
 
