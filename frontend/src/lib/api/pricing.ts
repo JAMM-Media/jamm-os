@@ -17,7 +17,11 @@
 
 import api from '@/lib/api'
 
-export type PricingMode = 'fixed' | 'hourly' | 'range' | 'quote_only'
+// Mirrored as a union rather than bare strings so a typo in a comparison is
+// a compile error. Values come from PricingMode in app/core/enums.py and
+// must stay identical to it: the backend validates against that enum, so an
+// invented value here is a 422 at save time, not a frontend-only mistake.
+export type PricingMode = 'fixed' | 'starting_at' | 'quote_required'
 
 export interface EngagementTypeOption {
   value: string

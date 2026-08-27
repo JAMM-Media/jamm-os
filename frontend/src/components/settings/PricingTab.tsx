@@ -39,13 +39,20 @@ import {
 import ComplexitySection from './pricing/ComplexitySection'
 
 const PRICING_MODES: { value: PricingMode; label: string; help: string }[] = [
-  { value: 'fixed', label: 'Fixed fee', help: 'One price for the service.' },
-  { value: 'hourly', label: 'Hourly', help: 'Billed by time at your rate.' },
-  { value: 'range', label: 'Range', help: 'A quoted band rather than one number.' },
   {
-    value: 'quote_only',
-    label: 'Quote only',
-    help: 'Always routed to a quote, never priced automatically.',
+    value: 'fixed',
+    label: 'Fixed fee',
+    help: 'Runs full automatic pricing. The computed number is the price a lead sees.',
+  },
+  {
+    value: 'starting_at',
+    label: 'Starting at',
+    help: 'Same automatic pricing, but proposals show it as a starting at price.',
+  },
+  {
+    value: 'quote_required',
+    label: 'Quote required',
+    help: 'No number is shown. Leads for this service always route to you for a quote.',
   },
 ]
 
