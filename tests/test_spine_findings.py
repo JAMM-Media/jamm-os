@@ -12,6 +12,7 @@ from app.core.enums import BetterDirection, GateBar, GateStatus, MetricWindowTyp
 from app.models.finding import Finding
 from app.models.firm import Firm
 from app.models.metric_registry import MetricRegistry
+from app.models.platform_event import PlatformEvent
 from app.schemas.finding import FindingCreate
 from app.services.findings import create_or_update_finding, get_findings_for_firm
 
@@ -178,7 +179,9 @@ def test_fingerprint_upsert_produces_one_row_with_updated_statistics():
 
 
 def test_network_wide_findings_with_same_fingerprint_dedupe_via_coalesce_index():
-    with patch("app.services.findings.log_event") as mock_log_event:
+    with patch("app.services.findings.log_event") as mock_log_event, patch(
+        "app.services.behavioral_log.SessionLocal", TestingSessionLocal
+    ):
         db = TestingSessionLocal()
         try:
             first = create_or_update_finding(
@@ -209,9 +212,26 @@ def test_network_wide_findings_with_same_fingerprint_dedupe_via_coalesce_index()
             assert len(rows) == 1
             assert rows[0].statistics == {"n": 2}
 
-            # Null-firm findings never fire a behavioral event: behavioral_events.firm_id
-            # is NOT NULL and there is no firm to attribute the event to.
+            # Routing rule (Ruling 1, Aug 26, 2026): a null-firm finding fires
+            # to platform_events, never to behavioral_events, whose firm_id is
+            # NOT NULL. Both halves are asserted. The negative half alone used
+            # to be the whole story, when the null-firm case fired nothing.
             mock_log_event.assert_not_called()
+
+            platform_rows = (
+                db.query(PlatformEvent)
+                .filter(PlatformEvent.entity_id == first.id)
+                .order_by(PlatformEvent.occurred_at)
+                .all()
+            )
+            assert len(platform_rows) == 2, (
+                "expected two platform_events rows for this finding (created "
+                f"then recomputed), found {len(platform_rows)}"
+            )
+            assert [row.event_type for row in platform_rows] == [
+                "finding.created",
+                "finding.recomputed",
+            ]
         finally:
             db.close()
 

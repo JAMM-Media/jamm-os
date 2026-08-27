@@ -16,7 +16,7 @@ from app.core.intelligence_constants import (
     SEVERITY_MODIFIER_CAP,
 )
 from app.models.finding import Finding
-from app.services.findings import fire_finding_event_if_firm_scoped
+from app.services.findings import fire_finding_event
 
 
 class GateResult(BaseModel):
@@ -165,6 +165,6 @@ def judge_finding(db: Session, finding_id: uuid.UUID, floors_by_technique: dict)
         event_metadata["failure_reason"] = finding.failure_reason
 
     event_type = "finding.gate_passed" if result.passed else "finding.gate_failed"
-    fire_finding_event_if_firm_scoped(finding, event_type, event_metadata)
+    fire_finding_event(finding, event_type, event_metadata)
 
     return finding

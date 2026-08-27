@@ -1,7 +1,5 @@
 # app/services/findings.py
 
-import logging
-import os
 import uuid
 from typing import Optional
 
@@ -9,24 +7,22 @@ from sqlalchemy.orm import Session
 
 from app.core.enums import GateBar, GateStatus, SubjectType
 from app.models.finding import Finding
-from app.services.behavioral_log import log_event
-
-log = logging.getLogger(__name__)
+from app.services.behavioral_log import log_event, log_platform_event
 
 
-def fire_finding_event_if_firm_scoped(finding: Finding, event_type: str, metadata: dict) -> None:
+def fire_finding_event(finding: Finding, event_type: str, metadata: dict) -> None:
     """
-    behavioral_events.firm_id is a NOT NULL FK to firms.id, so a null-firm
-    (network-wide) finding has no firm to attribute the event to and the
-    event is skipped entirely.
+    Routes a finding event to the log that can hold it.
 
-    KNOWN CAPTURE GAP: network-wide findings currently generate zero
-    behavioral signal. Resolving this is a BLOCKING PRECONDITION of the
-    correlation engine build (the first technique expected to produce
-    null-firm findings in volume) — that session must decide between
-    widening behavioral_events.firm_id to nullable or standing up a
-    separate platform-wide event stream. Deliberately deferred, not an
-    oversight.
+    A firm-scoped finding fires a behavioral event, which is firm attributed.
+    A network-wide finding (firm_id null) has no firm to attribute anything
+    to, so its event goes to platform_events instead, the sibling log that
+    carries no firm_id by design.
+
+    Ruling 1, Aug 26, 2026. This closes the null-firm capture gap: network-wide
+    findings used to produce no signal at all, and the choice was between
+    widening behavioral_events.firm_id to nullable or standing up a separate
+    stream. The separate stream won. behavioral_events.firm_id stays NOT NULL.
     """
     if finding.firm_id is not None:
         log_event(
@@ -38,14 +34,12 @@ def fire_finding_event_if_firm_scoped(finding: Finding, event_type: str, metadat
         )
         return
 
-    if os.environ.get("JAMM_TESTING") != "1":
-        log.error(
-            "findings.null_firm_event_skipped: %s fired for finding %s with no firm_id; "
-            "behavioral signal was dropped pending the correlation engine session's "
-            "capture-gap decision",
-            event_type,
-            finding.id,
-        )
+    log_platform_event(
+        event_type=event_type,
+        entity_type="finding",
+        entity_id=finding.id,
+        metadata=metadata,
+    )
 
 
 def create_or_update_finding(
@@ -65,8 +59,9 @@ def create_or_update_finding(
     Inserts with gate_status pending, or on an existing fingerprint match,
     updates statistics/data_sufficiency and resets gate_status to pending
     for re-judgment. Fires finding.created on insert, finding.recomputed on
-    update, for firm-scoped findings only (see fire_finding_event_if_firm_scoped
-    for the null-firm capture gap).
+    update. Firm-scoped findings fire to behavioral_events and network-wide
+    findings fire to platform_events (see fire_finding_event for the routing
+    rule).
     """
     if subject_type == SubjectType.metric and subject_key != metric_key:
         raise ValueError("subject_key must equal metric_key when subject_type is metric")
@@ -98,7 +93,7 @@ def create_or_update_finding(
         db.commit()
         db.refresh(existing)
 
-        fire_finding_event_if_firm_scoped(existing, "finding.recomputed", event_metadata)
+        fire_finding_event(existing, "finding.recomputed", event_metadata)
         return existing
 
     finding = Finding(
@@ -116,7 +111,7 @@ def create_or_update_finding(
     db.commit()
     db.refresh(finding)
 
-    fire_finding_event_if_firm_scoped(finding, "finding.created", event_metadata)
+    fire_finding_event(finding, "finding.created", event_metadata)
     return finding
 
 

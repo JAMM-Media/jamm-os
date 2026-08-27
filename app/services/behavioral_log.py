@@ -15,6 +15,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.core.config import get_settings
 from app.models.behavioral_event import BehavioralEvent
+from app.models.platform_event import PlatformEvent
 
 log = logging.getLogger(__name__)
 
@@ -125,6 +126,83 @@ def log_event(
                 log.warning("behavioral_log.log_event failed: %s", exc)
         except Exception as exc:
             log.warning("behavioral_log.log_event failed: %s", exc)
+        finally:
+            if db is not None:
+                db.close()
+
+    if os.environ.get("JAMM_TESTING") == "1":
+        _write()
+    else:
+        threading.Thread(target=_write, daemon=True).start()
+
+
+# Deliberately a line-for-line mirror of log_event() above, not a shared
+# helper. Ruled Aug 26, 2026: log_event has its own guard tests and the
+# only common ground is the try/except/finally shell. Do not refactor the
+# two into one without a ruling.
+def log_platform_event(
+    *,
+    event_type: str,
+    entity_type: Optional[str] = None,
+    entity_id: Optional[uuid.UUID] = None,
+    metadata: Optional[dict] = None,
+) -> None:
+    """
+    Fire-and-forget writer for platform_events, the log of events that belong
+    to no firm (network-wide findings). Sibling of log_event(), which writes
+    the firm-scoped behavioral_events.
+
+    Deliberately mirrors log_event()'s mechanism rather than sharing a helper
+    with it: the production-marker refusal, the dedicated SessionLocal, the
+    timeout branch, the swallow-everything branch, the close in finally, and
+    the synchronous-under-JAMM_TESTING versus daemon-thread split. log_event()
+    has its own guard tests and this session does not refactor guarded
+    behavior it does not need to touch.
+
+    There is no firm_id, no actor, no session_id and no request_id here.
+    Nothing this function writes is ever read by operational control flow.
+
+    Ruled Aug 26, 2026 (Ruling 1).
+    """
+
+    def _write(
+        event_type=event_type,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        metadata=metadata,
+    ) -> None:
+        db = None
+        try:
+            if os.environ.get("JAMM_TESTING") == "1":
+                db_url = get_settings().DATABASE_URL
+                if any(marker in db_url for marker in _PRODUCTION_MARKERS):
+                    log.warning(
+                        "behavioral_log.log_platform_event skipped: JAMM_TESTING=1 but "
+                        "DATABASE_URL looks like production; refusing to connect"
+                    )
+                    return
+
+            db = SessionLocal()
+
+            event = PlatformEvent(
+                event_type=event_type,
+                entity_type=entity_type,
+                entity_id=entity_id,
+                extra_metadata=metadata,
+            )
+            db.add(event)
+            db.commit()
+        except OperationalError as exc:
+            orig = str(getattr(exc, "orig", exc)).lower()
+            if "timeout" in orig:
+                log.warning(
+                    "behavioral_log.log_platform_event: connection timed out after %ss",
+                    CONNECT_TIMEOUT_SECONDS,
+                )
+            else:
+                log.warning("behavioral_log.log_platform_event failed: %s", exc)
+        except Exception as exc:
+            log.warning("behavioral_log.log_platform_event failed: %s", exc)
         finally:
             if db is not None:
                 db.close()
