@@ -181,11 +181,6 @@ async def lifespan(app: FastAPI):
             id="esign_escalation_check",
             replace_existing=True,
         )
-        # Scheduler invokes with no floors argument, so recheck_failed_findings
-        # defaults to an empty floors_by_technique and every finding it touches
-        # fails closed. Wiring a real floors source into this job is a BLOCKING
-        # precondition of the first technique build, alongside the floor
-        # registry design itself.
         scheduler.add_job(
             recheck_failed_findings,
             trigger="cron",

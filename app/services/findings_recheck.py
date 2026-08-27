@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from app.core.enums import GateStatus
+from app.core.technique_floors import get_floors_by_technique
 from app.db.session import SessionLocal
 from app.models.finding import Finding
 from app.services.confidence_gate import judge_finding
@@ -18,21 +19,18 @@ def recheck_failed_findings(floors_by_technique: Optional[dict] = None) -> dict:
     ix_findings_failed partial index), re-runs judge_finding on each, and
     stamps last_recheck_at on every row it touches regardless of outcome.
 
-    floors_by_technique defaults to {} — today no technique has authored
-    its floors yet, so every finding fails closed via judge_finding's
-    fail-closed rule (a technique absent from the dict never passes
-    sufficiency).
-
-    The scheduler (app/main.py) currently invokes this with no floors
-    argument at all, so every scheduled recheck run defaults to an empty
-    floors_by_technique and fails every finding it touches closed. Wiring
-    a real floors source into this job is a BLOCKING precondition of the
-    first technique build, alongside the floor registry design itself.
+    floors_by_technique defaults to the Andrew-owned registry in
+    app/core/technique_floors.py, read at call time so the value is always
+    live. A caller passing an explicit dict, including an explicit empty {},
+    overrides the registry and is honored as passed. The registry ships empty,
+    so until a technique authors its floors every finding still fails closed
+    via judge_finding's fail-closed rule. Ruling 2, Aug 26, 2026.
 
     Creates its own SessionLocal() in a try/finally block, per the
     background-task rule: never inherit the request session.
     """
-    floors_by_technique = floors_by_technique if floors_by_technique is not None else {}
+    if floors_by_technique is None:
+        floors_by_technique = get_floors_by_technique()
 
     db = SessionLocal()
     try:

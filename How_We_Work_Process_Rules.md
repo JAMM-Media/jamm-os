@@ -1,6 +1,6 @@
 # How We Work: Verification and Debugging
 
-This file exists because of a specific, repeated failure. Eighteen separate times, a signal reported success while the thing it was supposed to be watching was broken. Every instance cost real time, and every instance looked fine right up until someone checked by hand.
+This file exists because of a specific, repeated failure. Nineteen separate times, a signal reported success while the thing it was supposed to be watching was broken. Every instance cost real time, and every instance looked fine right up until someone checked by hand.
 
 These are not style preferences. Each rule below is here because ignoring it already cost us something.
 
@@ -10,7 +10,7 @@ These are not style preferences. Each rule below is here because ignoring it alr
 
 The failure mode is always the same shape. Something reports success. The report is accurate about what it measured. What it measured was not the thing that mattered.
 
-Eighteen instances so far:
+Nineteen instances so far:
 
 1. **Unregistered expiry sweep.** The sweep was written, tested, and correct. It was never registered with the scheduler, so it never ran. Nothing errored, because nothing happened.
 2. **Anniversary job logging ERROR under a successful scheduler.** The scheduler reported healthy. The job inside it was failing every run. Scheduler health and job health are different measurements.
@@ -74,11 +74,15 @@ Eighteen instances so far:
 
     This is instance seventeen's shape moved one layer out. There the control was defeated by an override in another file loaded before the code under test; here it is defeated by catalog data that makes the leak unexpressible. Seventeen's rule was to confirm that what you did to make the test fail is what actually made it fail. Eighteen adds the case where nothing you do to the CODE can make it fail, because the SETUP forbids the outcome. Both fixtures were fixed by mapping a shared flag to both engagement types, so the two entities genuinely share the linking record the leak would have to travel along, and both controls then went red naming the right question. The repaired fixtures carry a comment saying that mapping is load-bearing, because it reads like incidental seed data and deleting it would silently restore the vacuum.
 
-    The generalisable rule: **a test that asserts a cross-entity leak cannot exist must seed a world where that leak is possible.** The two entities have to share whatever record links them, or the test is asserting the absence of something that was never on offer. When a control comes back green, the fixture is a suspect before the test is, and before the code is: check that the failure you are trying to observe is reachable at all from the data you set up, and check specifically for a second, unrelated filter that would discard the leaked row for its own good reasons. Section 2's rule is that a guard is not finished until you have watched it fail. Seventeen added that you must confirm what made it fail. Eighteen adds that if it will not fail, the first question is whether it *could*.
+    The generalisable rule: **a test that asserts a cross-entity leak cannot exist must seed a world where that leak is possible.** The two entities have to share whatever record links them, or the test is asserting the absence of something that was never on offer. When a control comes back green, the fixture is a suspect before the test is, and before the code is: check that the failure you are trying to observe is reachable at all from the data you set up, and check specifically for a second, unrelated filter that would discard the leaked row for its own good reasons. Section 2's rule is that a guard is not finished until you have watched it fail. Seventeen added that you must confirm what made it fail. Eighteen adds that if it will not fail, the first question is whether it *could*. Third recurrence (Aug 26, 2026. Origin: `tests/test_platform_events.py`, the null-firm routing guards): the control that made the null-firm branch write to `behavioral_events` with a made-up firm_id went red on the platform-side assertion, not the behavioral-side one, because `log_event` swallows the foreign-key violation by design and no row landed anywhere. Proving the behavioral-side assertion load-bearing needed a second control that satisfied the platform-side assertion first, using a real firm_id, so only the behavioral assertion could catch it.
+
+19. Instance nineteen (Aug 26, 2026. Origin: the `app/main.py` scheduler comment removal in the platform_events session). **A file write that changed lines the edit never touched.** `app/main.py` holds 386 CRLF line endings and 2 bare-LF ones, and writing the file back in text mode silently normalized those 2 lines, producing `git diff` hunks on two unrelated `documents_router` imports while the intended five-line deletion was itself correct. The edit script asserted its anchor was unique, applied cleanly, and reported success; nothing but `git diff` revealed the damage.
+
+    The rule: after any tool-driven file write, compare `git diff --numstat` against `git diff --ignore-cr-at-eol --numstat` on every touched file. Identical counts mean the diff is real; a mismatch is line-ending damage, so revert and redo the edit in binary mode, preserving the original bytes. This is the standing `.gitattributes` agenda item arriving as a concrete failure: the repo still has no `.gitattributes`, so nothing normalizes endings on checkout and every mixed-ending file is a trap of this shape (see also f17e955, the CRLF cleanup that fixed one file's symptoms without closing the cause).
 
 Instances seven, nine, ten, eleven, and fourteen are the purest forms of the pattern. The others are things that failed. Those five never failed. They made a category of failure unobservable, which is worse, because there was nothing to notice. Twelve belongs with them in substance even though it did eventually go red: the divergence it created was unobservable by construction and surfaced only by luck, and it would have kept hiding schema faults for as long as nobody happened to add a column to an existing table. Thirteen sits at the other end: it failed loudly, on every push, for two months, into a report nobody opened. Eighteen belongs with the purest five as well, and is the most uncomfortable of them, because the guard was written correctly, aimed correctly, and put through the negative control this file mandates. Every step was followed and the result was still a test that could not fail. It was caught only because the control was run and its green was disbelieved.
 
-When you find a nineteenth, add it here with its origin. The list is the point. Recognizing the shape early is worth more than any individual rule below.
+When you find a twentieth, add it here with its origin. The list is the point. Recognizing the shape early is worth more than any individual rule below.
 
 ---
 
