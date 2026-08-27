@@ -470,6 +470,119 @@ def portal_set_password(
     return {"success": True}
 
 
+
+
+class PortalProfileUpdateRequest(BaseModel):
+    name: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+
+
+@router.get("/account/profile")
+def portal_get_profile(
+    current_client: Client = Depends(get_current_portal_client),
+    db: Session = Depends(get_db),
+):
+    """Return the authenticated portal client's editable profile fields."""
+    return {
+        "name": current_client.name,
+        "email": current_client.email,
+        "phone": current_client.phone,
+    }
+
+
+@router.patch("/account/profile")
+def portal_update_profile(
+    body: PortalProfileUpdateRequest,
+    current_client: Client = Depends(get_current_portal_client),
+    db: Session = Depends(get_db),
+):
+    """
+    Update the authenticated portal client's name, email, and/or phone.
+    Scoped strictly to the authenticated client's own record via get_current_portal_client --
+    no client_id is accepted from the request body.
+    """
+    if body.name is not None:
+        n = body.name.strip()
+        if not n:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Name cannot be blank.",
+            )
+        current_client.name = n
+
+    if body.email is not None:
+        e = body.email.strip()
+        if "@" not in e or "." not in e.rsplit("@", 1)[-1]:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Invalid email address.",
+            )
+        existing = db.query(Client).filter(
+            Client.email == e,
+            Client.id != current_client.id,
+        ).first()
+        if existing:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Email is already in use.",
+            )
+        current_client.email = e
+
+    if body.phone is not None:
+        current_client.phone = body.phone.strip() or None
+
+    db.commit()
+    return {
+        "name": current_client.name,
+        "email": current_client.email,
+        "phone": current_client.phone,
+    }
+
+
+@router.get("/account/sessions")
+def portal_list_sessions(
+    current_client: Client = Depends(get_current_portal_client),
+    db: Session = Depends(get_db),
+):
+    """Return all active (non-revoked) portal sessions for the authenticated client."""
+    sessions = crud_portal_session.get_active_sessions_for_client(
+        db=db,
+        client_id=current_client.id,
+        firm_id=current_client.firm_id,
+    )
+    return [
+        {
+            "id": str(s.id),
+            "created_at": s.created_at.isoformat(),
+            "last_active_at": s.last_active_at.isoformat(),
+            "ip_address": s.ip_address,
+            "user_agent": s.user_agent,
+        }
+        for s in sessions
+    ]
+
+
+@router.delete("/account/sessions/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
+def portal_revoke_session_by_id(
+    session_id: UUID,
+    current_client: Client = Depends(get_current_portal_client),
+    db: Session = Depends(get_db),
+):
+    """
+    Revoke a specific portal session. Ownership is enforced via client_id AND firm_id --
+    a client may only revoke their own sessions, never another client's.
+    """
+    session = db.query(PortalSession).filter(
+        PortalSession.id == session_id,
+        PortalSession.client_id == current_client.id,
+        PortalSession.firm_id == current_client.firm_id,
+        PortalSession.is_revoked.is_(False),
+    ).first()
+    if not session:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+    crud_portal_session.revoke_session(db, session, revoked_by="client")
+
 @router.get("/dashboard", response_model=PortalDashboardOut)
 def portal_dashboard(
     current_client: Client = Depends(get_current_portal_client),
