@@ -71,6 +71,7 @@ from app.schemas.portal import MagicLinkRequest, MagicLinkResponse, ClientMagicL
 from app.services import document_request_service as dr_service
 from app.services import portal_magic_link
 from app.services import portal_service
+from app.services.email_service import EmailService
 
 settings = get_settings()
 
@@ -1312,6 +1313,64 @@ def portal_pay_invoice(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invoice not found")
 
     return portal_service.pay_invoice(db=db, invoice=invoice, invoice_id=invoice_id, client=current_client)
+
+
+@router.post("/invoices/{invoice_id}/email")
+def portal_email_invoice(
+    invoice_id: UUID,
+    current_client: Client = Depends(get_current_portal_client),
+    db: Session = Depends(get_db),
+):
+    """
+    Send the authenticated client a copy of their own invoice by email.
+
+    Tenant isolation: scoped to the client's own invoice via client_id AND firm_id.
+    The destination email is always the authenticated client's own address; no
+    client-supplied address is accepted to prevent use as a relay/spam vector.
+    """
+    invoice = get_portal_invoice(
+        db,
+        invoice_id=invoice_id,
+        client_id=current_client.id,
+        firm_id=current_client.firm_id,
+    )
+    if invoice is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invoice not found")
+
+    if not current_client.email:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No email address on file for your account.",
+        )
+
+    firm = db.execute(select(Firm).where(Firm.id == current_client.firm_id)).scalar_one_or_none()
+    if firm is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Firm not found")
+
+    email_settings = EmailService.get_firm_email_settings(firm)
+    amount_due = f"${float(invoice.total_amount):,.2f}" if invoice.total_amount else "N/A"
+    due_date_str = invoice.due_date.strftime("%B %d, %Y") if invoice.due_date else "N/A"
+
+    try:
+        EmailService.send_invoice_email(
+            to_email=current_client.email,
+            firm_name=firm.name,
+            recipient_name=current_client.name,
+            invoice_number=invoice.invoice_number,
+            amount_due=amount_due,
+            due_date=due_date_str,
+            payment_url=f"{settings.FRONTEND_URL}/portal",
+            reply_to=email_settings.get("reply_to"),
+            display_name=email_settings.get("display_name"),
+            sending_domain=email_settings.get("sending_domain"),
+        )
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Failed to send email. Please try again.",
+        )
+
+    return {"sent": True}
 
 
 # ===========================================================================

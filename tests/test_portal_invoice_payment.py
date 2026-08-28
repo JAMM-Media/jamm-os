@@ -184,3 +184,78 @@ def test_void_invoice_cannot_be_paid(client, firm_a_owner):
 
     assert r.status_code == 404, r.json()
     assert r.json()["detail"] == "Invoice not found"
+
+
+# ===========================================================================
+# EMAIL COPY ENDPOINT TESTS
+# POST /portal/invoices/{invoice_id}/email
+# ===========================================================================
+
+def test_client_can_email_own_invoice(client, firm_a_owner, mock_email_service):
+    """
+    A client requesting an email copy of their own invoice receives 200 {"sent": true}
+    and the underlying EmailService._send is invoked with the authenticated client's
+    own email address.
+    """
+    firm_id = firm_a_owner["firm_id"]
+    portal = _create_portal_client(firm_id)
+    headers = _portal_login(client, firm_id, portal["email"], portal["password"])
+    inv_id = _create_invoice(firm_id, portal["client_id"], InvoiceStatus.sent)
+
+    r = client.post(f"/portal/invoices/{inv_id}/email", headers=headers)
+
+    assert r.status_code == 200, r.json()
+    assert r.json() == {"sent": True}
+    assert len(mock_email_service) == 1, (
+        f"Expected exactly one email to be sent, got {len(mock_email_service)}"
+    )
+    assert mock_email_service[0]["to_email"] == portal["email"], (
+        f"Email went to {mock_email_service[0]['to_email']!r}, expected {portal['email']!r}"
+    )
+
+
+def test_client_cannot_email_another_clients_invoice(client, firm_a_owner, mock_email_service):
+    """
+    A client requesting an email copy of an invoice that belongs to a different
+    client (even within the same firm) receives 404. No email is sent.
+    """
+    firm_id = firm_a_owner["firm_id"]
+    owner = _create_portal_client(firm_id)
+    requester = _create_portal_client(firm_id)
+    headers = _portal_login(client, firm_id, requester["email"], requester["password"])
+    inv_id = _create_invoice(firm_id, owner["client_id"], InvoiceStatus.sent)
+
+    r = client.post(f"/portal/invoices/{inv_id}/email", headers=headers)
+
+    assert r.status_code == 404, r.json()
+    assert r.json()["detail"] == "Invoice not found"
+    assert len(mock_email_service) == 0, (
+        f"No email should be sent when the invoice is not owned by the requester; "
+        f"got {len(mock_email_service)} email(s)"
+    )
+
+
+def test_endpoint_ignores_email_in_request_body(client, firm_a_owner, mock_email_service):
+    """
+    If the client includes an 'email' field in the request body, the endpoint
+    must ignore it and always send to the authenticated client's own address.
+    This prevents the endpoint from being used as a relay for arbitrary addresses.
+    """
+    firm_id = firm_a_owner["firm_id"]
+    portal = _create_portal_client(firm_id)
+    headers = _portal_login(client, firm_id, portal["email"], portal["password"])
+    inv_id = _create_invoice(firm_id, portal["client_id"], InvoiceStatus.sent)
+
+    r = client.post(
+        f"/portal/invoices/{inv_id}/email",
+        headers=headers,
+        json={"email": "attacker@evil.com"},
+    )
+
+    assert r.status_code == 200, r.json()
+    assert r.json() == {"sent": True}
+    assert len(mock_email_service) == 1
+    assert mock_email_service[0]["to_email"] == portal["email"], (
+        f"Email went to {mock_email_service[0]['to_email']!r} instead of the "
+        f"authenticated client's address {portal['email']!r}"
+    )

@@ -168,7 +168,7 @@ function PaymentForm({ clientSecret, onSuccess, onCancel }: PaymentFormProps) {
   )
 }
 
-type StatusFilter = 'all' | 'sent' | 'overdue' | 'paid' | 'draft' | 'void'
+type StatusFilter = 'all' | 'open' | 'sent' | 'overdue' | 'paid' | 'draft' | 'void'
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function PortalInvoices({ accentColor: _a, cardColor: _c, portalMode: _p, textPrimary: _tp, textMuted: _tm }: { accentColor?: string; cardColor?: string; portalMode?: 'light' | 'dark'; textPrimary?: string; textMuted?: string }) {
@@ -274,6 +274,7 @@ export function PortalInvoices({ accentColor: _a, cardColor: _c, portalMode: _p,
     }
   }
 
+
   // Compute stats
   const currentYear = new Date().getFullYear()
   const unpaid = invoices.filter((i) => i.status === 'sent' || i.status === 'overdue')
@@ -289,7 +290,9 @@ export function PortalInvoices({ accentColor: _a, cardColor: _c, portalMode: _p,
   // Apply status filter
   const filtered = statusFilter === 'all'
     ? invoices
-    : invoices.filter((i) => i.status === statusFilter)
+    : statusFilter === 'open'
+      ? invoices.filter((i) => i.status === 'sent' || i.status === 'overdue')
+      : invoices.filter((i) => i.status === statusFilter)
 
   if (loading) {
     return (
@@ -332,6 +335,7 @@ export function PortalInvoices({ accentColor: _a, cardColor: _c, portalMode: _p,
       chipBg: '#DBEAFE',
       chipColor: '#1E40AF',
       Icon: FileText,
+      filter: 'open' as StatusFilter,
     },
     {
       label: 'Total due',
@@ -339,6 +343,7 @@ export function PortalInvoices({ accentColor: _a, cardColor: _c, portalMode: _p,
       chipBg: '#FEF3C7',
       chipColor: '#D97706',
       Icon: DollarSign,
+      filter: 'open' as StatusFilter,
     },
     {
       label: 'Paid this year',
@@ -346,6 +351,7 @@ export function PortalInvoices({ accentColor: _a, cardColor: _c, portalMode: _p,
       chipBg: '#D1FAE5',
       chipColor: '#059669',
       Icon: CheckCircle2,
+      filter: 'paid' as StatusFilter,
     },
     {
       label: 'Total invoices',
@@ -353,6 +359,7 @@ export function PortalInvoices({ accentColor: _a, cardColor: _c, portalMode: _p,
       chipBg: '#F3F4F6',
       chipColor: '#6B7280',
       Icon: Receipt,
+      filter: 'all' as StatusFilter,
     },
   ]
 
@@ -382,7 +389,7 @@ export function PortalInvoices({ accentColor: _a, cardColor: _c, portalMode: _p,
                 {card.value}
               </p>
               <button
-                onClick={() => setStatusFilter('all')}
+                onClick={() => setStatusFilter(card.filter)}
                 className="mt-1.5 text-left text-[11px] font-medium transition-opacity hover:opacity-70 self-start"
                 style={{ color: '#3A6A94' }}
               >
@@ -404,6 +411,7 @@ export function PortalInvoices({ accentColor: _a, cardColor: _c, portalMode: _p,
             style={{ color: '#1F3148' }}
           >
             <option value="all">All statuses</option>
+            <option value="open">Open</option>
             <option value="sent">Due</option>
             <option value="overdue">Overdue</option>
             <option value="paid">Paid</option>
@@ -511,16 +519,17 @@ export function PortalInvoices({ accentColor: _a, cardColor: _c, portalMode: _p,
                           Download PDF
                         </button>
 
-                        {/* Email a copy -- disabled, no portal endpoint exists */}
+                        {/* Email a copy -- backend endpoint exists; UI deferred to post-launch */}
                         <div
-                          className="flex items-start gap-2.5 px-3 py-2.5 border-t border-gray-100"
+                          className="w-full flex items-start gap-2.5 px-3 py-2.5 text-[13px] border-t border-gray-100"
+                          style={{ color: '#C4C9D1' }}
                           title="Email delivery coming soon"
                         >
-                          <Mail size={13} className="mt-0.5 flex-shrink-0" style={{ color: '#C4C9D1' }} />
-                          <div>
-                            <p className="text-[13px]" style={{ color: '#C4C9D1' }}>Email a copy</p>
-                            <p className="text-[10px]" style={{ color: '#C4C9D1' }}>Coming soon</p>
-                          </div>
+                          <Mail size={13} style={{ color: '#C4C9D1', marginTop: 1 }} />
+                          <span>
+                            Email a copy
+                            <span className="block text-[11px]">Coming soon</span>
+                          </span>
                         </div>
                       </div>
                     )}
