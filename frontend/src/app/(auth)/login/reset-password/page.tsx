@@ -22,7 +22,7 @@ function ResetPasswordContent() {
   const leftPanel = (
     <div className="hidden md:flex w-1/2 bg-brand flex-col p-10">
       <div className="flex items-center gap-2.5">
-        <img src="/jamm-logo-mark.svg" alt="" width={60} className="flex-shrink-0" />
+        <img src="/jamm-logo-mark-light.svg" alt="" width={60} className="flex-shrink-0" />
         <span className="text-white text-3xl font-medium">
           JAMM <span style={{ color: '#B07D3A' }}>PX</span>
         </span>
@@ -31,8 +31,11 @@ function ResetPasswordContent() {
         <div className="flex flex-col">
           <div className="h-[2px] mb-3" style={{ backgroundColor: '#B07D3A', width: '48px' }} />
           <h2 className="text-white text-7xl font-bold leading-tight">
-            Your firm.<br /><span style={{ color: '#B07D3A' }}>Under control.</span>
+            Trusted guidance.<br /><span style={{ color: '#B07D3A' }}>Real partnership.</span>
           </h2>
+          <p className="mt-4 text-[15px] leading-relaxed" style={{ color: 'rgba(255,255,255,0.65)' }}>
+            We're here to help you succeed every step of the way.
+          </p>
         </div>
       </div>
     </div>
