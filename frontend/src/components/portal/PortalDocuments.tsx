@@ -75,7 +75,7 @@ function StatSection({
       {/* Large icon circle on the left, vertically centered -- matches mock layout */}
       {icon && (
         <div
-          className="w-11 h-11 rounded-full flex items-center justify-center flex-shrink-0"
+          className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0"
           style={{ backgroundColor: '#F3F4F6' }}
         >
           {icon}
@@ -84,7 +84,7 @@ function StatSection({
       {/* Text column to the right of the icon */}
       <div className="flex flex-col min-w-0">
         <p className="text-[11px] font-medium mb-1" style={{ color: '#9CA3AF' }}>{label}</p>
-        <p className="text-[32px] font-bold leading-none mb-1" style={{ color: '#1F3148' }}>
+        <p className="text-[24px] font-semibold leading-none mb-1" style={{ color: '#1F3148' }}>
           {value}
         </p>
         <p className="text-[11px] leading-snug" style={{ color: '#9CA3AF' }}>{subtext}</p>

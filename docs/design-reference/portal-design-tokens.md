@@ -37,5 +37,19 @@ Real, established values from the portal redesign (light theme + sidebar, commit
 - Amber warning text (due-soon calendar icon, "Due soon" stat subtext): `#D97706`
 - Folder brand yellow (folder iconography in stat cards and document table): `#FBBF24` -- distinct from the amber warning color; bright saturated yellow, not an urgency signal
 
+## Stat card standard (confirmed across Documents and Invoices pages)
+Use this standard when building any new page with a stat card strip. Do not reintroduce the old bubbly pattern.
+
+- Icon badge: `w-10 h-10 rounded-lg` (40px, softened square -- NOT rounded-full)
+- Icon badge background: page-specific color chip (e.g. `#DBEAFE` for informational, `#D1FAE5` for success)
+- Icon size inside badge: `size={18}`
+- Card layout: `px-5 py-4 flex items-center gap-4` (icon left, text column right)
+- Stat label: `text-[11px] font-medium mb-1`, color `#9CA3AF`
+- Stat value: `text-[24px] font-semibold leading-none mb-1`, color `#1F3148`
+- Subtext (optional): `text-[11px] leading-snug`, color `#9CA3AF`
+- View link (optional): `mt-1.5 text-left text-[11px] font-medium transition-opacity hover:opacity-70 self-start`, color `#3A6A94`
+
+Rationale: rounded-full at 40-44px reads as a bubble (consumer/wellness aesthetic). rounded-lg at 40px reads as a chip (financial product aesthetic). 24px semibold is clearly legible as a large stat without dominating the card.
+
 ## Rule
 Before estimating a color for any new portal page, check this file first. If a genuinely new color is needed, add it here with its real hex and where it's used, rather than inventing a one-off value.

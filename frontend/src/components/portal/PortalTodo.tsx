@@ -73,7 +73,7 @@ function StatSection({ value, label, subtext, valueColor, subtextColor = '#9CA3A
   return (
     <div className="px-5 py-4 flex flex-col">
       <p className="text-[11px] font-medium mb-2" style={{ color: '#9CA3AF' }}>{label}</p>
-      <p className="text-[40px] font-bold leading-none mb-1" style={{ color: valueColor }}>
+      <p className="text-[24px] font-semibold leading-none mb-1" style={{ color: valueColor }}>
         {value}
       </p>
       <p className="text-[11px] leading-snug" style={{ color: subtextColor }}>{subtext}</p>

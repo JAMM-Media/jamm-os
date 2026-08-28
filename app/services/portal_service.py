@@ -143,7 +143,7 @@ def log_invoice_viewed(*, db: Session, invoice, client):
 
 
 def pay_invoice(*, db: Session, invoice, invoice_id, client):
-    if invoice.status != InvoiceStatus.sent:
+    if invoice.status not in {InvoiceStatus.sent, InvoiceStatus.overdue}:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="This invoice is not available for payment",

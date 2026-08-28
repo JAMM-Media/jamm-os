@@ -386,7 +386,7 @@ export default function PortalOrganizer({ clientId: _clientId, initialOrganizerI
   // ---- LOADING DETAIL ----
   if (loadingDetail) {
     return (
-      <div className="p-6 flex flex-col gap-4 max-w-[880px]">
+      <div className="p-6 flex flex-col gap-4">
         <div className="bg-white rounded-xl border border-gray-100 p-5 flex flex-col gap-3">
           <div className="h-3 w-36 rounded animate-pulse bg-gray-100" />
           <div className="h-2 w-full rounded-full animate-pulse bg-gray-100" />
@@ -543,7 +543,7 @@ export default function PortalOrganizer({ clientId: _clientId, initialOrganizerI
     const pct = sections.length > 0 ? Math.round((completedCount / sections.length) * 100) : 0
 
     return (
-      <div className="p-6 flex flex-col gap-5 max-w-[880px]">
+      <div className="p-6 flex flex-col gap-5">
         <button
           onClick={closeOrganizer}
           className="self-start text-[13px] transition-opacity hover:opacity-70"

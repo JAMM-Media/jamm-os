@@ -1,18 +1,27 @@
 // frontend/src/components/portal/PortalInvoices.tsx
 'use client'
-import { formatLocalDate } from '@/lib/utils'
 
-import { useState, useEffect, useCallback } from 'react'
+import { formatLocalDate } from '@/lib/utils'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
-  CardNumberElement,
-  CardExpiryElement,
   CardCvcElement,
-  useStripe,
+  CardExpiryElement,
+  CardNumberElement,
   useElements,
+  useStripe,
 } from '@stripe/react-stripe-js'
 import type { StripeCardNumberElementOptions } from '@stripe/stripe-js'
 import { toast } from 'sonner'
-import { Loader2 } from 'lucide-react'
+import {
+  CheckCircle2,
+  DollarSign,
+  Download,
+  FileText,
+  Loader2,
+  Mail,
+  MoreHorizontal,
+  Receipt,
+} from 'lucide-react'
 import { getPortalInvoices } from '@/lib/portal-api'
 import type { PortalInvoice as PortalInvoiceItem } from '@/lib/portal-api'
 
@@ -29,63 +38,61 @@ function formatDate(dateStr: string | null): string {
   return formatLocalDate(dateStr, { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
+function getDescription(inv: PortalInvoiceItem): string {
+  const items = inv.line_items ?? []
+  if (items.length === 0) return 'Invoice'
+  if (items.length === 1) return items[0].description
+  return `${items[0].description} +${items.length - 1} more`
+}
+
 function StatusBadge({ status }: { status: PortalInvoiceItem['status'] }) {
-  const classMap: Record<string, string> = {
-    sent: 'bg-[#1E3A5F] text-[#7DA3C4]',
-    overdue: 'bg-[#7F1D1D] text-[#FCA5A5]',
-    paid: 'bg-[#14532D] text-[#86EFAC]',
-    draft: 'bg-[#292524] text-[#78716C]',
-    void: 'bg-[#292524] text-[#78716C]',
+  const styleMap: Record<string, { bg: string; text: string; label: string }> = {
+    sent:    { bg: '#FEF3C7', text: '#92400E', label: 'Due' },
+    overdue: { bg: '#FEE2E2', text: '#991B1B', label: 'Overdue' },
+    paid:    { bg: '#D1FAE5', text: '#065F46', label: 'Paid' },
+    draft:   { bg: '#F3F4F6', text: '#9CA3AF', label: 'Draft' },
+    void:    { bg: '#F3F4F6', text: '#9CA3AF', label: 'Void' },
   }
-  const labelMap: Record<string, string> = {
-    sent: 'Due',
-    overdue: 'Overdue',
-    paid: 'Paid',
-    draft: 'Draft',
-    void: 'Void',
-  }
+  const s = styleMap[status] ?? styleMap.draft
   return (
     <span
-      className={`text-[10px] font-medium px-1.5 py-0.5 rounded-[4px] ${classMap[status] ?? ''}`}
+      className="text-[11px] font-medium px-2 py-0.5 rounded-full whitespace-nowrap"
+      style={{ backgroundColor: s.bg, color: s.text }}
     >
-      {labelMap[status] ?? status}
+      {s.label}
     </span>
   )
 }
 
+// PaymentForm: real Stripe card-entry widget. Preserved exactly from prior implementation.
+// Hardcoded to light theme since the portal page is always light-themed.
 interface PaymentFormProps {
   clientSecret: string
   onSuccess: () => void
   onCancel: () => void
-  accentColor?: string
-  cardColor?: string
-  portalMode?: 'light' | 'dark'
 }
 
-function PaymentForm({ clientSecret, onSuccess, onCancel, accentColor = '#3A6A94', cardColor = '#383838', portalMode = 'dark' }: PaymentFormProps) {
+function PaymentForm({ clientSecret, onSuccess, onCancel }: PaymentFormProps) {
   const stripe = useStripe()
   const elements = useElements()
-  const isDark = portalMode !== 'light'
   const [loading, setLoading] = useState(false)
   const [stripeError, setStripeError] = useState<string | null>(null)
 
   const elementStyle: StripeCardNumberElementOptions['style'] = {
     base: {
-      color: isDark ? '#EDEEF0' : '#1F3148',
+      color: '#1F3148',
       fontSize: '13px',
       fontFamily: 'Inter, sans-serif',
-      '::placeholder': { color: isDark ? '#6B7280' : '#9CA3AF' },
+      '::placeholder': { color: '#9CA3AF' },
     },
     invalid: { color: '#991B1B' },
   }
 
-  const fieldBg = isDark ? '#383838' : '#F7F7F8'
-  const fieldBorder = isDark ? '#484848' : '#C8CDD6'
   const fieldStyle: React.CSSProperties = {
-    background: fieldBg,
-    border: `0.5px solid ${fieldBorder}`,
+    background: '#F7F8FA',
+    border: '1px solid #E5E7EB',
     borderRadius: 6,
-    height: 32,
+    height: 36,
     padding: '0 12px',
     display: 'flex',
     alignItems: 'center',
@@ -111,104 +118,48 @@ function PaymentForm({ clientSecret, onSuccess, onCancel, accentColor = '#3A6A94
     }
 
     if (paymentIntent?.status === 'succeeded') {
-      toast.success('Payment received — thank you.')
+      toast.success('Payment received. Thank you.')
       onSuccess()
     }
   }
 
-  const wrapperBg = cardColor
-  const wrapperBorder = isDark ? '#484848' : '#C8CDD6'
-  const confirmBg = accentColor
-  const cancelText = isDark ? '#EDEEF0' : '#1F3148'
-
   return (
-    <div
-      style={{
-        background: wrapperBg,
-        border: `0.5px solid ${wrapperBorder}`,
-        borderRadius: 8,
-        padding: '12px',
-        marginTop: 8,
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 8,
-      }}
-    >
+    <div className="mt-3 bg-white rounded-xl border border-gray-100 p-4 flex flex-col gap-3">
+      <p className="text-[13px] font-medium" style={{ color: '#1F3148' }}>Enter card details</p>
       <div style={fieldStyle}>
-        <CardNumberElement
-          options={{
-            style: elementStyle,
-            classes: { base: 'w-full' },
-          }}
-        />
+        <CardNumberElement options={{ style: elementStyle, classes: { base: 'w-full' } }} />
       </div>
-      <div style={{ display: 'flex', gap: 8 }}>
+      <div className="flex gap-3">
         <div style={{ ...fieldStyle, flex: 1 }}>
-          <CardExpiryElement
-            options={{
-              style: elementStyle,
-              classes: { base: 'w-full' },
-            }}
-          />
+          <CardExpiryElement options={{ style: elementStyle, classes: { base: 'w-full' } }} />
         </div>
         <div style={{ ...fieldStyle, flex: 1 }}>
-          <CardCvcElement
-            options={{
-              style: elementStyle,
-              classes: { base: 'w-full' },
-            }}
-          />
+          <CardCvcElement options={{ style: elementStyle, classes: { base: 'w-full' } }} />
         </div>
       </div>
 
       {stripeError && (
-        <p style={{ fontSize: 12, color: '#991B1B', margin: 0 }}>{stripeError}</p>
+        <p className="text-[12px]" style={{ color: '#DC2626' }}>{stripeError}</p>
       )}
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
+      <div className="flex items-center gap-2 mt-1">
         <button
           onClick={handleConfirm}
           disabled={loading || !stripe}
-          style={{
-            height: 32,
-            padding: '0 16px',
-            borderRadius: 6,
-            background: confirmBg,
-            color: '#FFFFFF',
-            fontSize: 12,
-            fontWeight: 500,
-            border: 'none',
-            cursor: loading || !stripe ? 'not-allowed' : 'pointer',
-            opacity: loading || !stripe ? 0.7 : 1,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-          }}
+          className="h-9 px-4 rounded-md text-[13px] font-medium text-white flex items-center gap-2 disabled:opacity-60 transition-opacity hover:opacity-90"
+          style={{ backgroundColor: '#1F3148' }}
         >
           {loading ? (
-            <>
-              <Loader2 style={{ width: 12, height: 12 }} className="animate-spin" />
-              Processing...
-            </>
+            <><Loader2 className="w-3.5 h-3.5 animate-spin" />Processing...</>
           ) : (
-            'Confirm Payment'
+            'Confirm payment'
           )}
         </button>
         <button
           onClick={onCancel}
           disabled={loading}
-          style={{
-            height: 32,
-            padding: '0 12px',
-            borderRadius: 6,
-            background: 'transparent',
-            color: cancelText,
-            fontSize: 12,
-            fontWeight: 500,
-            border: `0.5px solid ${fieldBorder}`,
-            cursor: loading ? 'not-allowed' : 'pointer',
-            opacity: loading ? 0.6 : 1,
-          }}
+          className="h-9 px-4 rounded-md text-[13px] border border-gray-200 transition-colors hover:bg-gray-50 disabled:opacity-60"
+          style={{ color: '#6B7280' }}
         >
           Cancel
         </button>
@@ -217,15 +168,25 @@ function PaymentForm({ clientSecret, onSuccess, onCancel, accentColor = '#3A6A94
   )
 }
 
-export function PortalInvoices({ accentColor = '#3A6A94', cardColor = '#383838', portalMode = 'dark', textPrimary = '#EDEEF0', textMuted = '#9CA3AF' }: { accentColor?: string; cardColor?: string; portalMode?: 'light' | 'dark'; textPrimary?: string; textMuted?: string }) {
-  const primaryText = textPrimary
-  const mutedText = textMuted
+type StatusFilter = 'all' | 'sent' | 'overdue' | 'paid' | 'draft' | 'void'
+
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export function PortalInvoices({ accentColor: _a, cardColor: _c, portalMode: _p, textPrimary: _tp, textMuted: _tm }: { accentColor?: string; cardColor?: string; portalMode?: 'light' | 'dark'; textPrimary?: string; textMuted?: string }) {
   const [invoices, setInvoices] = useState<PortalInvoiceItem[]>([])
   const [loading, setLoading] = useState(true)
   const [fetchError, setFetchError] = useState(false)
+
+  // Payment state
   const [activePayId, setActivePayId] = useState<string | null>(null)
   const [clientSecrets, setClientSecrets] = useState<Record<string, string>>({})
   const [payLoading, setPayLoading] = useState<string | null>(null)
+
+  // Filter state
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
+
+  // Three-dot menu state
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
 
   const fetchInvoices = useCallback(async () => {
     setLoading(true)
@@ -243,6 +204,19 @@ export function PortalInvoices({ accentColor = '#3A6A94', cardColor = '#383838',
   useEffect(() => {
     fetchInvoices()
   }, [fetchInvoices])
+
+  // Close three-dot menu on outside click
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setOpenMenuId(null)
+      }
+    }
+    if (openMenuId) {
+      document.addEventListener('mousedown', handleClickOutside)
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [openMenuId])
 
   async function handlePayNow(invoiceId: string) {
     if (clientSecrets[invoiceId]) {
@@ -277,29 +251,72 @@ export function PortalInvoices({ accentColor = '#3A6A94', cardColor = '#383838',
     setActivePayId(null)
   }
 
+  // Download PDF: real -- fetches with auth header, triggers browser download
+  async function handleDownloadPdf(inv: PortalInvoiceItem) {
+    setOpenMenuId(null)
+    const token = localStorage.getItem('portal_access_token')
+    try {
+      const res = await fetch(`/api/backend/portal/invoices/${inv.id}/pdf`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      })
+      if (!res.ok) throw new Error('Download failed')
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `invoice-${inv.invoice_number}.pdf`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    } catch {
+      toast.error('Could not download invoice. Please try again.')
+    }
+  }
+
+  // Compute stats
+  const currentYear = new Date().getFullYear()
   const unpaid = invoices.filter((i) => i.status === 'sent' || i.status === 'overdue')
   const paid = invoices.filter((i) => i.status === 'paid')
-  const totalOutstanding = unpaid.reduce((sum, i) => sum + Number(i.total_amount), 0)
+  const paidThisYear = paid.filter((i) => {
+    if (!i.paid_at) return false
+    return new Date(i.paid_at).getFullYear() === currentYear
+  })
+  const totalDue = unpaid.reduce((sum, i) => sum + Number(i.total_amount), 0)
+  const totalPaidThisYear = paidThisYear.reduce((sum, i) => sum + Number(i.total_amount), 0)
+  const totalCount = invoices.filter((i) => i.status !== 'draft').length
+
+  // Apply status filter
+  const filtered = statusFilter === 'all'
+    ? invoices
+    : invoices.filter((i) => i.status === statusFilter)
 
   if (loading) {
     return (
-      <div className="p-5 flex flex-col gap-3 max-w-2xl mx-auto">
-        {[1, 2, 3].map((i) => (
-          <div key={i} className="h-14 rounded-[8px] animate-pulse" style={{ backgroundColor: cardColor }} />
-        ))}
+      <div className="p-6 flex flex-col gap-4">
+        <div className="grid grid-cols-4 gap-4">
+          {[1, 2, 3, 4].map((i) => (
+            <div key={i} className="bg-white rounded-xl border border-gray-100 p-4 h-24 animate-pulse" />
+          ))}
+        </div>
+        <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="h-14 border-b border-gray-100 animate-pulse bg-gray-50" />
+          ))}
+        </div>
       </div>
     )
   }
 
   if (fetchError) {
     return (
-      <div className="p-5 max-w-2xl mx-auto">
-        <div className="rounded-[8px] px-4 py-6 flex flex-col items-center gap-3" style={{ backgroundColor: cardColor }}>
-          <p className="text-[13px]" style={{ color: mutedText }}>Failed to load invoices.</p>
+      <div className="p-6">
+        <div className="bg-white rounded-xl border border-gray-100 p-10 flex flex-col items-center gap-3">
+          <p className="text-[13px]" style={{ color: '#6B7280' }}>Failed to load invoices.</p>
           <button
             onClick={fetchInvoices}
-            className="h-8 px-4 rounded-[6px] text-white text-[12px] font-medium hover:opacity-90 transition-opacity"
-            style={{ backgroundColor: accentColor }}
+            className="h-9 px-4 rounded-md text-[13px] font-medium text-white transition-opacity hover:opacity-90"
+            style={{ backgroundColor: '#1F3148' }}
           >
             Retry
           </button>
@@ -308,124 +325,223 @@ export function PortalInvoices({ accentColor = '#3A6A94', cardColor = '#383838',
     )
   }
 
-  if (invoices.length === 0) {
-    return (
-      <div className="p-5 max-w-2xl mx-auto">
-        <div className="flex flex-col items-center gap-1 py-12">
-          <p className="text-[13px] font-medium" style={{ color: primaryText }}>No invoices yet.</p>
-          <p className="text-[12px]" style={{ color: mutedText }}>
-            Invoices from your accountant will appear here.
-          </p>
-        </div>
-      </div>
-    )
-  }
+  const STAT_CARDS = [
+    {
+      label: 'Open invoices',
+      value: String(unpaid.length),
+      chipBg: '#DBEAFE',
+      chipColor: '#1E40AF',
+      Icon: FileText,
+    },
+    {
+      label: 'Total due',
+      value: formatCurrency(totalDue),
+      chipBg: '#FEF3C7',
+      chipColor: '#D97706',
+      Icon: DollarSign,
+    },
+    {
+      label: 'Paid this year',
+      value: formatCurrency(totalPaidThisYear),
+      chipBg: '#D1FAE5',
+      chipColor: '#059669',
+      Icon: CheckCircle2,
+    },
+    {
+      label: 'Total invoices',
+      value: String(totalCount),
+      chipBg: '#F3F4F6',
+      chipColor: '#6B7280',
+      Icon: Receipt,
+    },
+  ]
 
   return (
-    <div className="p-6 flex flex-col gap-5 max-w-2xl mx-auto">
-      {/* Outstanding balance summary */}
-      {unpaid.length > 0 && (
-        <div className="rounded-[8px] px-5 py-4" style={{ backgroundColor: cardColor }}>
-          <p className="text-[12px] uppercase tracking-[0.05em]" style={{ color: mutedText }}>
-            Outstanding balance
-          </p>
-          <p className="text-[24px] font-medium mt-0.5" style={{ color: primaryText }}>
-            {formatCurrency(totalOutstanding)}
-          </p>
-        </div>
-      )}
-
-      {/* All-paid message */}
-      {unpaid.length === 0 && paid.length > 0 && (
-        <p className="text-[12px] text-center py-4" style={{ color: mutedText }}>
-          You&apos;re all caught up — no outstanding invoices.
+    <div className="p-6 flex flex-col gap-5">
+      {/* Page heading */}
+      <div>
+        <h1 className="text-[20px] font-bold" style={{ color: '#1F3148' }}>Invoices</h1>
+        <p className="text-[13px] mt-0.5" style={{ color: '#6B7280' }}>
+          View and pay your invoices, and keep track of your payment history.
         </p>
-      )}
+      </div>
 
-      {/* Unpaid invoices */}
-      {unpaid.length > 0 && (
-        <div>
-          <p className="text-[12px] font-medium uppercase tracking-[0.05em] mb-2" style={{ color: mutedText }}>
-            Due
-          </p>
-          <div className="flex flex-col gap-3">
-            {unpaid.map((inv) => (
+      {/* Stat cards */}
+      <div className="grid grid-cols-4 gap-4">
+        {STAT_CARDS.map((card) => (
+          <div key={card.label} className="bg-white rounded-xl border border-gray-100 px-5 py-4 flex items-center gap-4">
+            <div
+              className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0"
+              style={{ backgroundColor: card.chipBg }}
+            >
+              <card.Icon size={18} style={{ color: card.chipColor }} />
+            </div>
+            <div className="flex flex-col min-w-0">
+              <p className="text-[11px] font-medium mb-1" style={{ color: '#9CA3AF' }}>{card.label}</p>
+              <p className="text-[24px] font-semibold leading-none mb-1" style={{ color: '#1F3148' }}>
+                {card.value}
+              </p>
+              <button
+                onClick={() => setStatusFilter('all')}
+                className="mt-1.5 text-left text-[11px] font-medium transition-opacity hover:opacity-70 self-start"
+                style={{ color: '#3A6A94' }}
+              >
+                View all
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Filter row + table */}
+      <div className="flex flex-col gap-3">
+        <div className="flex items-center justify-between">
+          <p className="text-[14px] font-semibold" style={{ color: '#1F3148' }}>All invoices</p>
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
+            className="h-8 px-3 rounded-md text-[12px] border border-gray-200 bg-white focus:outline-none focus:border-[#1F3148] transition-colors cursor-pointer"
+            style={{ color: '#1F3148' }}
+          >
+            <option value="all">All statuses</option>
+            <option value="sent">Due</option>
+            <option value="overdue">Overdue</option>
+            <option value="paid">Paid</option>
+            <option value="draft">Draft</option>
+            <option value="void">Void</option>
+          </select>
+        </div>
+
+        {filtered.length === 0 ? (
+          <div className="bg-white rounded-xl border border-gray-100 p-10 text-center">
+            <p className="text-[13px]" style={{ color: '#6B7280' }}>
+              {invoices.length === 0
+                ? 'Invoices from your accountant will appear here.'
+                : 'No invoices match the selected filter.'}
+            </p>
+          </div>
+        ) : (
+          <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+            {/* Table header */}
+            <div className="grid grid-cols-[1fr_2fr_1fr_1fr_120px_140px] gap-0 border-b border-gray-100 px-4 py-2.5">
+              {['Invoice #', 'Description', 'Amount', 'Due date', 'Status', 'Action'].map((h) => (
+                <p key={h} className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: '#9CA3AF' }}>
+                  {h}
+                </p>
+              ))}
+            </div>
+
+            {/* Table rows */}
+            {filtered.map((inv) => (
               <div key={inv.id}>
-                <div className="flex items-center justify-between rounded-[8px] px-5 py-4" style={{ backgroundColor: cardColor }}>
-                  <div className="flex flex-col gap-0.5">
-                    <p className="text-[14px] font-medium" style={{ color: primaryText }}>
-                      {inv.invoice_number}
-                    </p>
-                    <div className="flex items-center gap-2">
-                      <StatusBadge status={inv.status} />
-                      <p className="text-[13px]" style={{ color: mutedText }}>
-                        Due {formatDate(inv.due_date)}
-                      </p>
-                    </div>
+                <div className="grid grid-cols-[1fr_2fr_1fr_1fr_120px_140px] items-center gap-0 px-4 py-3.5 border-b border-gray-100 last:border-b-0 hover:bg-gray-50 transition-colors">
+                  {/* Invoice # */}
+                  <p className="text-[13px] font-medium" style={{ color: '#1F3148' }}>
+                    {inv.invoice_number}
+                  </p>
+
+                  {/* Description */}
+                  <p className="text-[13px] truncate pr-4" style={{ color: '#6B7280' }}>
+                    {getDescription(inv)}
+                  </p>
+
+                  {/* Amount */}
+                  <p className="text-[13px] font-medium" style={{ color: '#1F3148' }}>
+                    {formatCurrency(Number(inv.total_amount))}
+                  </p>
+
+                  {/* Due date */}
+                  <p className="text-[13px]" style={{ color: '#6B7280' }}>
+                    {formatDate(inv.due_date)}
+                  </p>
+
+                  {/* Status */}
+                  <div>
+                    <StatusBadge status={inv.status} />
                   </div>
-                  <div className="flex items-center gap-3">
-                    <span className="text-[15px] font-medium" style={{ color: primaryText }}>
-                      {formatCurrency(Number(inv.total_amount))}
-                    </span>
+
+                  {/* Action */}
+                  <div className="flex items-center gap-2 relative" ref={openMenuId === inv.id ? menuRef : null}>
+                    {inv.status === 'sent' || inv.status === 'overdue' ? (
+                      <button
+                        onClick={() => handlePayNow(inv.id)}
+                        disabled={payLoading === inv.id}
+                        className="h-8 px-3 rounded-md text-[12px] font-medium text-white flex items-center gap-1.5 disabled:opacity-60 transition-opacity hover:opacity-90"
+                        style={{ backgroundColor: '#1F3148' }}
+                      >
+                        {payLoading === inv.id ? (
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                        ) : (
+                          'Pay now'
+                        )}
+                      </button>
+                    ) : inv.status === 'paid' ? (
+                      <button
+                        onClick={() => handleDownloadPdf(inv)}
+                        className="h-8 px-3 rounded-md text-[12px] font-medium border border-gray-200 transition-colors hover:bg-gray-50"
+                        style={{ color: '#6B7280' }}
+                      >
+                        View
+                      </button>
+                    ) : null}
+
+                    {/* Three-dot menu button */}
                     <button
-                      onClick={() => handlePayNow(inv.id)}
-                      disabled={payLoading === inv.id}
-                      className="h-10 px-4 rounded-[6px] text-white text-[13px] font-medium hover:opacity-90 transition-opacity flex items-center justify-center gap-1.5 disabled:opacity-60"
-                      style={{ backgroundColor: accentColor }}
+                      onClick={() => setOpenMenuId(openMenuId === inv.id ? null : inv.id)}
+                      className="w-7 h-7 rounded-md flex items-center justify-center transition-colors hover:bg-gray-100"
+                      style={{ color: '#9CA3AF' }}
+                      aria-label="More options"
                     >
-                      {payLoading === inv.id ? (
-                        <Loader2 className="w-3 h-3 animate-spin" />
-                      ) : (
-                        'Pay Now'
-                      )}
+                      <MoreHorizontal size={15} />
                     </button>
+
+                    {/* Three-dot dropdown menu */}
+                    {openMenuId === inv.id && (
+                      <div
+                        className="absolute right-0 top-full mt-1 w-44 bg-white rounded-xl border border-gray-100 shadow-lg z-20 overflow-hidden"
+                        ref={menuRef}
+                      >
+                        {/* Download PDF -- real */}
+                        <button
+                          onClick={() => handleDownloadPdf(inv)}
+                          className="w-full flex items-center gap-2.5 px-3 py-2.5 text-[13px] transition-colors hover:bg-gray-50 text-left"
+                          style={{ color: '#1F3148' }}
+                        >
+                          <Download size={13} style={{ color: '#6B7280' }} />
+                          Download PDF
+                        </button>
+
+                        {/* Email a copy -- disabled, no portal endpoint exists */}
+                        <div
+                          className="flex items-start gap-2.5 px-3 py-2.5 border-t border-gray-100"
+                          title="Email delivery coming soon"
+                        >
+                          <Mail size={13} className="mt-0.5 flex-shrink-0" style={{ color: '#C4C9D1' }} />
+                          <div>
+                            <p className="text-[13px]" style={{ color: '#C4C9D1' }}>Email a copy</p>
+                            <p className="text-[10px]" style={{ color: '#C4C9D1' }}>Coming soon</p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
+
+                {/* Stripe payment form, shown inline below the row */}
                 {activePayId === inv.id && clientSecrets[inv.id] && (
-                  <PaymentForm
-                    clientSecret={clientSecrets[inv.id]}
-                    onSuccess={() => handlePaymentSuccess(inv.id)}
-                    onCancel={() => setActivePayId(null)}
-                    accentColor={accentColor}
-                    cardColor={cardColor}
-                    portalMode={portalMode}
-                  />
+                  <div className="px-4 pb-4">
+                    <PaymentForm
+                      clientSecret={clientSecrets[inv.id]}
+                      onSuccess={() => handlePaymentSuccess(inv.id)}
+                      onCancel={() => setActivePayId(null)}
+                    />
+                  </div>
                 )}
               </div>
             ))}
           </div>
-        </div>
-      )}
-
-      {/* Paid invoices */}
-      {paid.length > 0 && (
-        <div>
-          <p className="text-[12px] font-medium uppercase tracking-[0.05em] mb-2" style={{ color: mutedText }}>
-            Paid
-          </p>
-          <div className="flex flex-col gap-3">
-            {paid.map((inv) => (
-              <div
-                key={inv.id}
-                className="flex items-center justify-between rounded-[8px] px-5 py-4 opacity-70"
-                style={{ backgroundColor: cardColor }}
-              >
-                <div className="flex flex-col gap-0.5">
-                  <p className="text-[12px] font-medium" style={{ color: primaryText }}>
-                    {inv.invoice_number}
-                  </p>
-                  <p className="text-[11px]" style={{ color: mutedText }}>
-                    Paid · {formatDate(inv.due_date)}
-                  </p>
-                </div>
-                <span className="text-[15px] font-medium text-[#10B981]">
-                  {formatCurrency(Number(inv.total_amount))}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   )
 }

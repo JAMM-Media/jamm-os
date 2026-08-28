@@ -24,6 +24,7 @@ export interface PortalInvoice {
   total_amount: number
   status: 'draft' | 'sent' | 'paid' | 'overdue' | 'void'
   due_date: string | null
+  paid_at: string | null
   sent_at: string | null
   created_at: string
   line_items?: PortalInvoiceLineItem[]
