@@ -51,5 +51,8 @@ Use this standard when building any new page with a stat card strip. Do not rein
 
 Rationale: rounded-full at 40-44px reads as a bubble (consumer/wellness aesthetic). rounded-lg at 40px reads as a chip (financial product aesthetic). 24px semibold is clearly legible as a large stat without dominating the card.
 
+- Billing hours badge (Total hours this year stat card on Billing Detail page): background `#EDE9FE`, icon color `#7C3AED`
+  Reason: no purple/violet chip existed. Violet reads as "time/duration" and is visually distinct from both the established green (money/success) and blue (informational) pairs. Follows the same lightness pattern: violet-100 bg / violet-600 icon.
+
 ## Rule
 Before estimating a color for any new portal page, check this file first. If a genuinely new color is needed, add it here with its real hex and where it's used, rather than inventing a one-off value.

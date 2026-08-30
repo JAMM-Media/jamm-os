@@ -139,34 +139,42 @@ export async function getPortalUnreadCount(clientId: string): Promise<number> {
   return data.unread_count ?? 0
 }
 
-export interface BillingDetailEntry {
-  date: string
-  staff_name: string
-  engagement_name: string
-  activity_type: string | null
+export interface BillingDetailLineItem {
+  name: string
   description: string
-  hours: number
-  hourly_rate: number
   amount: number
-  is_billable: boolean
 }
 
-export interface BillingDetailReport {
-  id: string
-  date_from: string | null
-  date_to: string | null
+export interface BillingDetailInvoiceEntry {
+  invoice_id: string
+  billed_on: string | null
+  subtotal: number
+  aggregate_hours: number
+  line_items: BillingDetailLineItem[]
+}
+
+export interface BillingDetailGroup {
+  engagement_key: string
   engagement_id: string | null
-  total_hours: number
-  total_amount: number
-  created_at: string
-  entries: BillingDetailEntry[]
+  engagement_name: string
+  combined_subtotal: number
+  combined_hours: number
+  invoices: BillingDetailInvoiceEntry[]
 }
 
-export async function getPortalBillingDetail(): Promise<BillingDetailReport[]> {
+export interface BillingDetailData {
+  groups: BillingDetailGroup[]
+  total_billed_this_year: number
+  average_per_engagement: number
+  total_hours_this_year: number
+  distinct_engagement_count: number
+  engagements_this_year_count: number
+}
+
+export async function getPortalBillingDetail(): Promise<BillingDetailData> {
   const res = await fetch(`${BASE}/portal/billing-detail`, { headers: portalHeaders() })
   if (!res.ok) throw new Error('fetch failed')
-  const data = await res.json()
-  return Array.isArray(data) ? data : []
+  return res.json()
 }
 
 export interface PortalNotification {

@@ -1493,26 +1493,159 @@ def portal_get_billing_detail(
     current_client: Client = Depends(get_current_portal_client),
     db: Session = Depends(get_db),
 ):
-    from app.models.billing_detail_report import BillingDetailReport
-    reports = db.execute(
-        select(BillingDetailReport)
+    """
+    Return engagement-level billing detail for the authenticated client. Each
+    group represents one distinct engagement (or one orphan invoice when no
+    engagement is linked), with that engagement's invoices nested inside,
+    sorted by billed-on date descending.
+
+    Tenant isolation: scoped to client_id AND firm_id throughout.
+    """
+    from app.models.invoice import Invoice
+    from app.models.time_entry import TimeEntry
+    from app.core.enums import InvoiceStatus
+    from sqlalchemy import func, extract
+
+    _VISIBLE = (InvoiceStatus.sent, InvoiceStatus.paid, InvoiceStatus.overdue)
+
+    invoices = db.execute(
+        select(Invoice)
         .where(
-            BillingDetailReport.firm_id == current_client.firm_id,
-            BillingDetailReport.client_id == current_client.id,
+            Invoice.client_id == current_client.id,
+            Invoice.firm_id == current_client.firm_id,
+            Invoice.status.in_(_VISIBLE),
+            Invoice.is_deleted == False,
         )
-        .order_by(BillingDetailReport.created_at.desc())
+        .order_by(Invoice.created_at.desc())
     ).scalars().all()
 
-    return [
-        {
-            "id": str(r.id),
-            "date_from": str(r.date_from) if r.date_from else None,
-            "date_to": str(r.date_to) if r.date_to else None,
-            "engagement_id": str(r.engagement_id) if r.engagement_id else None,
-            "total_hours": float(r.total_hours),
-            "total_amount": float(r.total_amount),
-            "created_at": r.created_at.isoformat(),
-            "entries": r.entries,
-        }
-        for r in reports
-    ]
+    invoice_ids = [inv.id for inv in invoices]
+
+    # Aggregate hours per invoice from time entries scoped to this firm
+    hours_by_invoice: dict = {}
+    if invoice_ids:
+        rows = db.execute(
+            select(TimeEntry.invoice_id, func.sum(TimeEntry.hours).label("h"))
+            .where(
+                TimeEntry.invoice_id.in_(invoice_ids),
+                TimeEntry.firm_id == current_client.firm_id,
+            )
+            .group_by(TimeEntry.invoice_id)
+        ).all()
+        hours_by_invoice = {str(row.invoice_id): float(row.h) for row in rows}
+
+    # Total hours this year for this client (all time entries on their engagements)
+    current_year = datetime.now(timezone.utc).year
+    hours_year_scalar = db.execute(
+        select(func.sum(TimeEntry.hours))
+        .where(
+            TimeEntry.firm_id == current_client.firm_id,
+            TimeEntry.engagement_id.in_(
+                select(Engagement.id).where(
+                    Engagement.client_id == current_client.id,
+                    Engagement.firm_id == current_client.firm_id,
+                )
+            ),
+            extract("year", TimeEntry.date) == current_year,
+        )
+    ).scalar()
+    total_hours_this_year = float(hours_year_scalar or 0)
+
+    # Engagement names in a single query to avoid N+1
+    engagement_ids = [inv.engagement_id for inv in invoices if inv.engagement_id]
+    engagement_names: dict = {}
+    if engagement_ids:
+        eng_rows = db.execute(
+            select(Engagement.id, Engagement.name).where(
+                Engagement.id.in_(engagement_ids),
+                Engagement.firm_id == current_client.firm_id,
+            )
+        ).all()
+        engagement_names = {str(row.id): row.name for row in eng_rows}
+
+    # Build engagement-level groups and accumulate this-year stats
+    total_billed_this_year = 0.0
+    unique_this_year: set = set()
+    distinct_all: set = set()
+    groups_dict: dict = {}
+
+    for inv in invoices:
+        billed_on_dt = inv.sent_at or inv.created_at
+        billed_on_str = billed_on_dt.strftime("%Y-%m-%d") if billed_on_dt else None
+
+        eng_name = engagement_names.get(str(inv.engagement_id), "Uncategorized") if inv.engagement_id else "Uncategorized"
+
+        # Extract line items: name, description, amount
+        raw_items = inv.line_items or []
+        line_items = []
+        for item in raw_items:
+            if isinstance(item, dict):
+                desc = item.get("description", "")
+                amount = item.get("total") or item.get("amount")
+                if amount is None:
+                    qty = float(item.get("quantity") or 0)
+                    price = float(item.get("unit_price") or 0)
+                    amount = qty * price
+                name = item.get("name", "")
+                line_items.append({"name": name, "description": desc, "amount": round(float(amount), 2)})
+
+        aggregate_hours = hours_by_invoice.get(str(inv.id), 0.0)
+
+        # Stats: year-scoped and all-time distinct engagement tracking
+        billed_year = billed_on_dt.year if billed_on_dt else None
+        if billed_year == current_year:
+            total_billed_this_year += float(inv.total_amount)
+            key_year = str(inv.engagement_id) if inv.engagement_id else str(inv.id)
+            unique_this_year.add(key_year)
+
+        key_all = str(inv.engagement_id) if inv.engagement_id else str(inv.id)
+        distinct_all.add(key_all)
+
+        # Group by engagement; orphan invoices are their own group
+        group_key = str(inv.engagement_id) if inv.engagement_id else str(inv.id)
+
+        if group_key not in groups_dict:
+            groups_dict[group_key] = {
+                "engagement_key": group_key,
+                "engagement_id": str(inv.engagement_id) if inv.engagement_id else None,
+                "engagement_name": eng_name,
+                "combined_subtotal": 0.0,
+                "combined_hours": 0.0,
+                "invoices": [],
+            }
+
+        groups_dict[group_key]["combined_subtotal"] += float(inv.total_amount)
+        groups_dict[group_key]["combined_hours"] += aggregate_hours
+        groups_dict[group_key]["invoices"].append({
+            "invoice_id": str(inv.id),
+            "billed_on": billed_on_str,
+            "subtotal": round(float(inv.total_amount), 2),
+            "aggregate_hours": round(aggregate_hours, 2),
+            "line_items": line_items,
+        })
+
+    # Finalise each group: round totals, sort invoices by billed_on descending
+    for g in groups_dict.values():
+        g["combined_subtotal"] = round(g["combined_subtotal"], 2)
+        g["combined_hours"] = round(g["combined_hours"], 2)
+        g["invoices"].sort(key=lambda x: x["billed_on"] or "", reverse=True)
+
+    # Sort groups by most recent invoice billed_on descending
+    groups = sorted(
+        list(groups_dict.values()),
+        key=lambda g: g["invoices"][0]["billed_on"] if g["invoices"] else "",
+        reverse=True,
+    )
+
+    n_unique = len(unique_this_year)
+    avg_per_engagement = round(total_billed_this_year / n_unique, 2) if n_unique > 0 else 0.0
+    distinct_engagement_count = len(distinct_all)
+
+    return {
+        "groups": groups,
+        "total_billed_this_year": round(total_billed_this_year, 2),
+        "average_per_engagement": avg_per_engagement,
+        "total_hours_this_year": round(total_hours_this_year, 2),
+        "distinct_engagement_count": distinct_engagement_count,
+        "engagements_this_year_count": n_unique,
+    }
