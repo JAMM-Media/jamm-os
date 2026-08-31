@@ -54,5 +54,13 @@ Rationale: rounded-full at 40-44px reads as a bubble (consumer/wellness aestheti
 - Billing hours badge (Total hours this year stat card on Billing Detail page): background `#EDE9FE`, icon color `#7C3AED`
   Reason: no purple/violet chip existed. Violet reads as "time/duration" and is visually distinct from both the established green (money/success) and blue (informational) pairs. Follows the same lightness pattern: violet-100 bg / violet-600 icon.
 
+## Message bubble colors (Messages page)
+
+- Staff message bubble: `#FFFFFF` (white) with `border border-gray-100` -- established card surface, no new token needed
+- Client message bubble: per-firm `accentColor` prop (variable, default `#3A6A94`) -- same accent token already used throughout the portal; no additional fixed-hex token required since this is intentionally firm-specific
+  **Deliberate override (confirmed by Ben):** The original mock used a warm peach color for the client bubble. That color was from a ChatGPT-generated mock and was not a real design decision. The final choice is the per-firm `accentColor` (default `#3A6A94`, JAMM navy accent) -- consistent with the portal's established brand language and already used throughout the portal for interactive/action elements.
+
+Rationale: client bubbles use the firm's own brand accent color to make replies feel like they belong to the conversation with that firm specifically. Staff bubbles use white so they read as neutral/informational, not competing with the brand accent.
+
 ## Rule
 Before estimating a color for any new portal page, check this file first. If a genuinely new color is needed, add it here with its real hex and where it's used, rather than inventing a one-off value.
