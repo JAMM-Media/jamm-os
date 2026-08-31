@@ -22,7 +22,7 @@ function ResetPasswordContent() {
   const leftPanel = (
     <div className="hidden md:flex w-1/2 bg-brand flex-col p-10">
       <div className="flex items-center gap-2.5">
-        <img src="/jamm-logo-mark-light.svg" alt="" width={60} className="flex-shrink-0" />
+        <img src="/jamm-logo-mark-light.svg" alt="" className="flex-shrink-0 h-8 w-auto" />
         <span className="text-white text-3xl font-medium">
           JAMM <span style={{ color: '#B07D3A' }}>PX</span>
         </span>

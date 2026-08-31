@@ -118,7 +118,7 @@ export default function LoginPage() {
       {/* Page header -- logo + wordmark, top-left */}
       <div className="px-16 pt-10">
         <div className="flex items-center gap-2.5">
-          <img src="/jamm-logo-mark.svg" alt="" width={60} className="flex-shrink-0" />
+          <img src="/jamm-logo-mark.svg" alt="" className="flex-shrink-0 h-8 w-auto" />
           <span className="text-brand dark:text-[#EDEEF0] text-2xl font-medium">
             JAMM <span style={{ color: '#B07D3A' }}>PX</span>
           </span>
