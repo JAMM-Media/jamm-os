@@ -57,6 +57,22 @@ class Engagement(Base):
     efiled_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+
+    # Stamped by the service layer on the transition INTO completed status,
+    # nowhere else. Deliberately NOT backfilled: engagements completed before
+    # this column existed stay NULL, so work_unbilled only ever fires for
+    # completions recorded after it landed.
+    #
+    # This column exists because completion previously survived only as a
+    # status string plus a behavioral event, and operational control flow is
+    # never allowed to read the behavioral log. updated_at is not a
+    # substitute: it moves on every write.
+    #
+    # Not cleared when an engagement is reopened. Readers pair it with a
+    # current status check rather than trusting it alone.
+    completed_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     irs_confirmation_number: Mapped[Optional[str]] = mapped_column(
         String(100), nullable=True
     )

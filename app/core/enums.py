@@ -723,3 +723,43 @@ class DimensionRole(str, Enum):
     priced = "priced"
     informational = "informational"
     guard = "guard"
+
+
+class SurfaceKind(str, Enum):
+    """
+    Which curated surface a surface_items row belongs to.
+
+    briefing    -> the Morning Briefing: entity-level urgency, ranked daily,
+                   capped, and stable for the day.
+    observatory -> the Observatory: firm-level standing significance, which
+                   persists for weeks until resolved or dismissed.
+
+    The column is explicit so the frontend never infers placement from
+    severity. A finding that is both urgent and significant produces two
+    rows, one per surface.
+
+    Copy vocabulary lives in the frontend, never here: briefing rows are
+    "items" and observatory rows are "material signals". Code identifiers
+    stay neutral.
+    """
+    briefing = "briefing"
+    observatory = "observatory"
+
+
+class DismissalReason(str, Enum):
+    """
+    Why an owner dismissed a surface item. Required on both surfaces.
+
+    not_relevant    -> the item does not apply. Never resurfaces.
+    already_handling -> the owner is on it. Starts a suppression window and
+                       the item resurfaces at expiry if still unresolved.
+    was_wrong       -> the item was factually wrong. Never resurfaces, and
+                       the row is flagged for later human review.
+
+    v1 records these and does nothing automatic with them. The response
+    rules (tightening on not_relevant, human review for was_wrong) are design
+    law for later sessions.
+    """
+    not_relevant = "not_relevant"
+    already_handling = "already_handling"
+    was_wrong = "was_wrong"

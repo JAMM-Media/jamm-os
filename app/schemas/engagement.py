@@ -67,6 +67,10 @@ class EngagementOut(EngagementBase):
     updated_at: datetime
     efiled_at: Optional[datetime] = None
     irs_confirmation_number: Optional[str] = None
+    # Served, never accepted. completed_at is stamped by the service layer
+    # on the transition into completed status and appears on no Create or
+    # Update schema, so no client can write it.
+    completed_at: Optional[datetime] = None
 
     model_config = ConfigDict(from_attributes=True)
 

@@ -146,6 +146,15 @@ async def update_engagement(
 
     new_status = str(updated.status) if updated.status else None
 
+    # Row governs. Stamp the operational completion timestamp on the
+    # transition INTO completed, before any event fires, so nothing
+    # downstream has to reconstruct completion from the behavioral log.
+    # This is the only place completed_at is ever written.
+    if new_status == "completed" and old_status != "completed":
+        updated.completed_at = datetime.now(timezone.utc)
+        db.commit()
+        db.refresh(updated)
+
     if payload.status is not None and payload.status != old_status:
         event_payload = {
             "firm_id": str(updated.firm_id),
