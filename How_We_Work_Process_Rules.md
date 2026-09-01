@@ -1,6 +1,6 @@
 # How We Work: Verification and Debugging
 
-This file exists because of a specific, repeated failure. Nineteen separate times, a signal reported success while the thing it was supposed to be watching was broken. Every instance cost real time, and every instance looked fine right up until someone checked by hand.
+This file exists because of a specific, repeated failure. Twenty separate times, a signal reported success while the thing it was supposed to be watching was broken. Every instance cost real time, and every instance looked fine right up until someone checked by hand.
 
 These are not style preferences. Each rule below is here because ignoring it already cost us something.
 
@@ -10,7 +10,7 @@ These are not style preferences. Each rule below is here because ignoring it alr
 
 The failure mode is always the same shape. Something reports success. The report is accurate about what it measured. What it measured was not the thing that mattered.
 
-Nineteen instances so far:
+Twenty instances so far:
 
 1. **Unregistered expiry sweep.** The sweep was written, tested, and correct. It was never registered with the scheduler, so it never ran. Nothing errored, because nothing happened.
 2. **Anniversary job logging ERROR under a successful scheduler.** The scheduler reported healthy. The job inside it was failing every run. Scheduler health and job health are different measurements.
@@ -80,9 +80,17 @@ Nineteen instances so far:
 
     The rule: after any tool-driven file write, compare `git diff --numstat` against `git diff --ignore-cr-at-eol --numstat` on every touched file. Identical counts mean the diff is real; a mismatch is line-ending damage, so revert and redo the edit in binary mode, preserving the original bytes. This is the standing `.gitattributes` agenda item arriving as a concrete failure: the repo still has no `.gitattributes`, so nothing normalizes endings on checkout and every mixed-ending file is a trap of this shape (see also f17e955, the CRLF cleanup that fixed one file's symptoms without closing the cause).
 
+20. Instance twenty (Sep 1, 2026. Origin: the Phase 0 baseline run of the surface_items lifecycle build). **A failing suite that reported exit code 0, because the pipeline answered for it.** The full suite was run as `python -u -m pytest -q -p no:cacheprovider 2>&1 | tail -60`. Pytest failed, once and expectedly, on the known `grep` portability test, and its own exit status was 1. What came back was **exit code 0**, because in a shell pipeline the status belongs to the LAST command, and the last command was `tail`, which had succeeded at printing lines. Nothing was wrong with pytest, nothing was wrong with `tail`, and the composite measurement was still false.
+
+    The wrong reading never landed, because the counts were taken from the summary line rather than the exit code, and that line said `1 failed, 1276 passed`. Had the code been trusted instead, a red suite would have been reported green on the strength of a number that was never about pytest at all. That is this file's founding shape arriving through the plumbing rather than through a test, and section 7 applies exactly: of the two available signals, the reassuring one was the broken one.
+
+    The buffering is the second half of it. `tail` emits nothing until its input closes, so a 31-minute run left a zero-byte output file for its entire duration, and a healthy slow run was indistinguishable from a hang. Telling them apart meant going around the pipeline entirely and reading `pg_stat_activity` to watch the suite move.
+
+    The rule: never pipe the suite through anything that eats its exit code. Run it unpiped, or capture with `tee` and read pytest's own status. Read the summary line, not the code. And treat a zero-byte output file from a long pipeline as evidence about the pipeline, not evidence about the run.
+
 Instances seven, nine, ten, eleven, and fourteen are the purest forms of the pattern. The others are things that failed. Those five never failed. They made a category of failure unobservable, which is worse, because there was nothing to notice. Twelve belongs with them in substance even though it did eventually go red: the divergence it created was unobservable by construction and surfaced only by luck, and it would have kept hiding schema faults for as long as nobody happened to add a column to an existing table. Thirteen sits at the other end: it failed loudly, on every push, for two months, into a report nobody opened. Eighteen belongs with the purest five as well, and is the most uncomfortable of them, because the guard was written correctly, aimed correctly, and put through the negative control this file mandates. Every step was followed and the result was still a test that could not fail. It was caught only because the control was run and its green was disbelieved.
 
-When you find a twentieth, add it here with its origin. The list is the point. Recognizing the shape early is worth more than any individual rule below.
+When you find a twenty-first, add it here with its origin. The list is the point. Recognizing the shape early is worth more than any individual rule below.
 
 ---
 
