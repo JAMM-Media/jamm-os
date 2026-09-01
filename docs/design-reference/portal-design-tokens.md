@@ -62,5 +62,18 @@ Rationale: rounded-full at 40-44px reads as a bubble (consumer/wellness aestheti
 
 Rationale: client bubbles use the firm's own brand accent color to make replies feel like they belong to the conversation with that firm specifically. Staff bubbles use white so they read as neutral/informational, not competing with the brand accent.
 
+## Notification icon badge colors (Notifications page)
+
+Notification rows use 36px circle badges (`w-9 h-9 rounded-full`) with a 16px lucide icon inside. Two semantic groups:
+
+- **Action-needed badge** (new message, overdue invoice, document request): background `#FEF3C7`, icon color `#D97706`
+  Rationale: reuses the established "Due soon / amber warning" status pill pair -- no new tokens required.
+
+- **Informational badge** (invoice paid, document uploaded, engagement update): background `#DBEAFE`, icon color `#3B82F6`
+  Rationale: background reuses the established "Later / informational" status pill background. Icon color `#3B82F6` (blue-500) is new -- the existing informational pill uses `#1E40AF` (blue-800) as TEXT on `#DBEAFE`, which is too dark when used as an icon color on the same background. `#3B82F6` reads clearly as an icon at 16px on `#DBEAFE` without the contrast issues of the darker text-optimized value.
+
+- **Unread indicator dot**: `#F97316` (orange-500)
+  Rationale: visually distinct from both the gold action badge (`#D97706`) and the blue informational badge (`#3B82F6`). Orange reads as "new / unseen" without competing with either established badge color.
+
 ## Rule
 Before estimating a color for any new portal page, check this file first. If a genuinely new color is needed, add it here with its real hex and where it's used, rather than inventing a one-off value.
