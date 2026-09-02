@@ -65,7 +65,8 @@ def verify_portal_domain(*, db: Session, firm, current_user_id):
                     txt_verified = True
                     break
     except ImportError:
-        txt_verified = True
+        logger.error('dnspython is not installed, cannot verify TXT record ownership')
+        txt_verified = False
     except Exception:
         txt_verified = False
 
