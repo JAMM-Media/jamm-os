@@ -54,7 +54,7 @@ export default function PortalLoginPage() {
         if (detail.toLowerCase().includes('no password')) {
           setNoPasswordSet(true)
         } else {
-          setLoginError(detail || 'Sign in failed. Please try again.')
+          setLoginError('Incorrect email or password.')
         }
         return
       }

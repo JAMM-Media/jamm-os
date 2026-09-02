@@ -45,8 +45,8 @@ def generate_magic_link(
             PortalSession.client_id == client_id,
             PortalSession.firm_id == firm_id,
             PortalSession.is_revoked.is_(False),
-        )
-    ).scalar_one_or_none()
+        ).order_by(PortalSession.created_at.desc())
+    ).scalars().first()
 
     is_new_session = session is None
     if is_new_session:

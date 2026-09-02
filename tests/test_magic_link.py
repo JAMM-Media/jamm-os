@@ -270,3 +270,60 @@ def test_exchange_magic_link_repeat_login_does_not_refire_first_login(client):
         assert login is not None
     finally:
         db.close()
+
+def test_generate_magic_link_with_multiple_existing_sessions_does_not_raise(client):
+    """
+    Calling generate_magic_link when the client already has multiple non-revoked
+    PortalSessions must not raise MultipleResultsFound. It should return 201 and
+    reuse the most recently created session.
+
+    Regression test for the scalar_one_or_none() -> scalars().first() fix.
+    """
+    import secrets
+    firm_id = _make_firm_owner(email="owner_ml7@test.com", slug="magic-firm-7")
+    client_id = _make_client(firm_id, email="client_ml7@test.com")
+
+    # Seed 3 non-revoked sessions to reproduce the crash condition
+    db = TestingSessionLocal()
+    try:
+        for _ in range(3):
+            session = PortalSession(
+                firm_id=firm_id,
+                client_id=client_id,
+                refresh_token_hash=hashlib.sha256(secrets.token_hex(32).encode()).hexdigest(),
+                access_jti=str(uuid.uuid4()),
+                expires_at=datetime.now(timezone.utc) + timedelta(days=30),
+            )
+            db.add(session)
+        db.commit()
+    finally:
+        db.close()
+
+    # Confirm 3 sessions exist before the call
+    db = TestingSessionLocal()
+    try:
+        from sqlalchemy import select as sa_select
+        count = len(db.execute(
+            sa_select(PortalSession).where(
+                PortalSession.client_id == client_id,
+                PortalSession.firm_id == firm_id,
+                PortalSession.is_revoked.is_(False),
+            )
+        ).scalars().all())
+        assert count == 3, f"expected 3 sessions, got {count}"
+    finally:
+        db.close()
+
+    login = client.post("/auth/token", json={"username": "owner_ml7@test.com", "password": "password123"})
+    assert login.status_code == 200, login.text
+    token = login.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    r = client.post(
+        "/portal/magic-link",
+        json={"client_id": str(client_id), "expiry_hours": 48},
+        headers=headers,
+    )
+    assert r.status_code == 201, r.text
+    data = r.json()
+    assert data["sent"] is True

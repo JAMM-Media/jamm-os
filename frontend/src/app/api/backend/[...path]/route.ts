@@ -82,6 +82,15 @@ async function proxyRequest(
 
     // If 401, attempt silent refresh then retry once
     if (res.status === 401) {
+      // Authentication endpoints return 401 for bad credentials, not
+      // expired sessions. Pass the real backend response through directly.
+      if (path === 'portal/auth/login') {
+        const data = await res.text()
+        return new NextResponse(data, {
+          status: 401,
+          headers: { 'Content-Type': res.headers.get('Content-Type') ?? 'application/json' },
+        })
+      }
       const newAccessToken = await attemptRefresh()
       if (newAccessToken) {
         // Retry the original request with the new token
