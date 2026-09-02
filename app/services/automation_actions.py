@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from app.models.engagement import Engagement
 from app.models.invoice import Invoice
 from app.models.client import Client
+from app.services.engagement_completion import stamp_completion_transition
 from app.core.enums import (
     AutomationActionType,
     EngagementStatus,
@@ -196,8 +197,12 @@ def _handle_update_engagement_status(
     if not engagement:
         return "update_engagement_status skipped: engagement not found"
 
+    old_status = engagement.status
     engagement.status = new_status
     engagement.updated_at = datetime.now(timezone.utc)
+    # Same stamp as every other completion path. An automation rule can move
+    # an engagement into completed, and work_unbilled reads completed_at.
+    stamp_completion_transition(engagement, old_status, new_status)
     db.commit()
     return f"Engagement {engagement_id} status updated to {new_status}"
 

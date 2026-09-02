@@ -16,6 +16,7 @@ from app.models.task import Task
 from app.models.document import Document
 from app.models.time_entry import TimeEntry
 from app.schemas.engagement import EngagementCreate
+from app.services.engagement_completion import stamp_completion_transition
 from app.core.enums import TriggerEvent
 from app.services.audit_service import write_audit_log
 from app.services.event_bus import emit_event
@@ -149,9 +150,7 @@ async def update_engagement(
     # Row governs. Stamp the operational completion timestamp on the
     # transition INTO completed, before any event fires, so nothing
     # downstream has to reconstruct completion from the behavioral log.
-    # This is the only place completed_at is ever written.
-    if new_status == "completed" and old_status != "completed":
-        updated.completed_at = datetime.now(timezone.utc)
+    if stamp_completion_transition(updated, old_status, new_status):
         db.commit()
         db.refresh(updated)
 
@@ -402,6 +401,9 @@ def bulk_update_engagements(
         old_extended = eng.extended_deadline
         if update.status is not None:
             eng.status = update.status
+            # Same stamp as every other completion path, inside the same
+            # transaction as the status write and before any event fires.
+            stamp_completion_transition(eng, old_status, update.status)
         if update.deadline_push_days is not None:
             delta = timedelta(days=update.deadline_push_days)
             if eng.extended_deadline is not None:
