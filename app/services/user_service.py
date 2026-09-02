@@ -10,7 +10,7 @@ from app.schemas.firm import FirmUpdate
 from app.services import s3 as s3_service
 from app.services.audit_service import write_audit_log
 from app.services.behavioral_log import log_event, log_setting_changes
-from app.services.firm_settings import reject_retired_settings_keys
+from app.services.firm_settings import reject_retired_settings_keys, validate_portal_color_settings
 
 
 def update_firm_settings(
@@ -24,6 +24,7 @@ def update_firm_settings(
     # below deletes objects, so a check placed after it would let a refused
     # payload destroy the firm's existing logo on its way to being rejected.
     reject_retired_settings_keys(payload)
+    validate_portal_color_settings(payload)
 
     current_settings = firm.settings or {}
     merged = {**current_settings, **payload}

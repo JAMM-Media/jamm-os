@@ -1,7 +1,7 @@
 // path: frontend/src/components/settings/PortalBrandingTab.tsx
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, MutableRefObject, Dispatch, SetStateAction } from 'react'
 import { toast } from 'sonner'
 import { Upload, X, Loader2 } from 'lucide-react'
 import api from '@/lib/api'
@@ -51,6 +51,21 @@ const LIGHT_DEFAULTS: ColorSet = {
 }
 
 const VALID_HEX = /^#[0-9A-Fa-f]{6}$/
+
+function wcagLinearize(c: number): number {
+  return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4)
+}
+function wcagLuminance(hex: string): number {
+  const r = parseInt(hex.slice(1, 3), 16) / 255
+  const g = parseInt(hex.slice(3, 5), 16) / 255
+  const b = parseInt(hex.slice(5, 7), 16) / 255
+  return 0.2126 * wcagLinearize(r) + 0.7152 * wcagLinearize(g) + 0.0722 * wcagLinearize(b)
+}
+function wcagContrast(hex1: string, hex2: string): number {
+  const l1 = wcagLuminance(hex1)
+  const l2 = wcagLuminance(hex2)
+  return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05)
+}
 const ACCEPTED_TYPES = ['image/png', 'image/jpeg', 'image/jpg', 'image/svg+xml', 'image/webp']
 const MAX_BYTES = 2 * 1024 * 1024
 
@@ -66,6 +81,197 @@ const COLOR_LABELS = [
   { key: 'text_muted', label: 'Secondary text' },
 ] as const
 
+
+interface ColorSectionProps {
+  mode: 'dark' | 'light'
+  colors: ColorSet
+  isActive: boolean
+  logoPreviewUrl: string | null
+  portalDisplayName: string
+  firmName: string
+  invalidFields: Set<string>
+  textRefs: MutableRefObject<Record<string, HTMLInputElement | null>>
+  onSetColor: (mode: 'dark' | 'light', key: keyof ColorSet, value: string) => void
+  onReset: () => void
+  onSetActive: () => void
+  onSetInvalidFields: Dispatch<SetStateAction<Set<string>>>
+}
+
+function ColorSection({
+  mode,
+  colors,
+  isActive,
+  logoPreviewUrl,
+  portalDisplayName,
+  firmName,
+  invalidFields,
+  textRefs,
+  onSetColor,
+  onReset,
+  onSetActive,
+  onSetInvalidFields,
+}: ColorSectionProps) {
+  const previewPage = VALID_HEX.test(colors.page) ? colors.page : (mode === 'dark' ? '#2D2D2D' : '#E4E6EA')
+  const previewTopBar = VALID_HEX.test(colors.top_bar) ? colors.top_bar : (mode === 'dark' ? '#1A2535' : '#1F3148')
+  const previewTabBar = VALID_HEX.test(colors.tab_bar) ? colors.tab_bar : (mode === 'dark' ? '#252525' : '#EDEEF0')
+  const previewAccent = VALID_HEX.test(colors.accent) ? colors.accent : (mode === 'dark' ? '#4A7FA5' : '#1F3148')
+  const previewAvatar = VALID_HEX.test(colors.avatar) ? colors.avatar : (mode === 'dark' ? '#3A6A94' : '#1F3148')
+  const primaryText = mode === 'light' ? '#1F3148' : '#EDEEF0'
+  const mutedText = '#9CA3AF'
+  const tabBorderColor = mode === 'light' ? '#C8CDD6' : '#383838'
+
+  return (
+    <div className={`flex flex-col gap-4 p-4 rounded-[8px] border ${isActive ? 'border-brand dark:border-brand-light' : 'border-surface-border dark:border-dark-border'}`}>
+      {/* Section header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="text-[13px] font-medium text-brand dark:text-[#EDEEF0]">
+            {mode === 'dark' ? 'Dark mode' : 'Light mode'}
+          </span>
+          {isActive && (
+            <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-[#D1FAE5] text-[#065F46]">
+              Active
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={onReset}
+            className="text-[11px] text-[#6B7280] hover:text-brand-light"
+          >
+            Reset to defaults
+          </button>
+          {!isActive && (
+            <button
+              type="button"
+              onClick={onSetActive}
+              className="text-[11px] font-medium text-brand-light hover:underline"
+            >
+              Set as active
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Color pickers */}
+      <div className="flex flex-col gap-2">
+        {COLOR_LABELS.map(({ key, label }) => {
+        const value = colors[key]
+        return (
+          <div key={key} className="flex items-center gap-3">
+            <input
+              type="color"
+              value={VALID_HEX.test(value) ? value : '#1F3148'}
+              onChange={(e) => {
+                onSetColor(mode, key, e.target.value)
+                const ref = textRefs.current[`${mode}-${key}`]
+                if (ref) ref.value = e.target.value
+              }}
+              className="w-8 h-8 rounded cursor-pointer border border-surface-border dark:border-dark-border p-0.5 flex-shrink-0"
+            />
+            <input
+              type="text"
+              defaultValue={value}
+              key={`${mode}-${key}`}
+              onChange={(e) => {
+                const v = e.target.value.trim()
+                const fid = `${mode}-${key}`
+                if (v.length > 0 && !VALID_HEX.test(v)) {
+                  onSetInvalidFields((s) => new Set([...s, fid]))
+                } else {
+                  onSetInvalidFields((s) => { const n = new Set(s); n.delete(fid); return n })
+                }
+              }}
+              onBlur={(e) => {
+                const v = e.target.value.trim()
+                const fid = `${mode}-${key}`
+                if (VALID_HEX.test(v)) {
+                  onSetColor(mode, key, v)
+                } else {
+                  e.target.value = value
+                }
+                onSetInvalidFields((s) => { const n = new Set(s); n.delete(fid); return n })
+              }}
+              ref={(el) => { textRefs.current[`${mode}-${key}`] = el }}
+              maxLength={7}
+              placeholder="#000000"
+              className={`w-28 rounded-[6px] border ${invalidFields.has(`${mode}-${key}`) ? 'border-red-400 ring-1 ring-red-400' : 'border-surface-border dark:border-dark-border'} bg-surface-page dark:bg-dark-page text-[12px] text-brand dark:text-[#EDEEF0] px-2 py-1 focus:outline-none`}
+            />
+            <span className="text-[12px] text-[#6B7280]">{label}</span>
+          </div>
+        )
+      })}
+      </div>
+
+      {/* Contrast warnings for real background/foreground pairs */}
+      {(() => {
+        type CP = { bg: keyof ColorSet; fg: keyof ColorSet; label: string }
+        const pairs: CP[] = [
+          { bg: 'page', fg: 'text_primary', label: 'Page / Primary text' },
+          { bg: 'page', fg: 'text_muted', label: 'Page / Secondary text' },
+          { bg: 'card', fg: 'text_primary', label: 'Card / Primary text' },
+          { bg: 'card', fg: 'text_muted', label: 'Card / Secondary text' },
+          { bg: 'top_bar', fg: 'subtitle', label: 'Top bar / Subtitle' },
+        ]
+        const warnings = pairs
+          .filter(({ bg, fg }) => VALID_HEX.test(colors[bg]) && VALID_HEX.test(colors[fg]))
+          .map(({ bg, fg, label }) => ({ label, ratio: wcagContrast(colors[bg], colors[fg]) }))
+          .filter(({ ratio }) => ratio < 4.5)
+        if (!warnings.length) return null
+        return (
+          <div className="flex flex-col gap-1 p-3 rounded-[6px] bg-[#FEF3C7] border border-[#FDE68A]">
+            <p className="text-[11px] font-semibold text-[#92400E]">Contrast warnings (below 4.5:1 recommended)</p>
+            {warnings.map(({ label, ratio }) => (
+              <p key={label} className="text-[11px] text-[#92400E]">
+                {label}: {ratio.toFixed(2)}:1
+              </p>
+            ))}
+            <p className="text-[10px] text-[#B45309] mt-0.5">These combinations may be hard to read. You can still save.</p>
+          </div>
+        )
+      })()}
+
+      {/* Mini preview */}
+      <div className="rounded-[6px] overflow-hidden border border-surface-border dark:border-dark-border">
+        <div className="flex items-center justify-between px-3 h-9" style={{ backgroundColor: previewTopBar }}>
+          <div className="flex items-center gap-1.5">
+            {logoPreviewUrl ? (
+              <img src={logoPreviewUrl} alt="" className="h-5 max-w-[80px] object-contain" onError={() => {}} />
+            ) : (
+              <span className="text-[11px] font-medium text-white">{portalDisplayName || firmName}</span>
+            )}
+            <span className="text-[9px]" style={{ color: VALID_HEX.test(colors.subtitle) ? colors.subtitle : '#7DA3C4' }}>Client Portal</span>
+          </div>
+          <div className="w-5 h-5 rounded-full flex items-center justify-center" style={{ backgroundColor: previewAvatar }}>
+            <span className="text-[9px] font-medium text-white">JD</span>
+          </div>
+        </div>
+        <div className="flex items-center px-2 h-7 border-b" style={{ backgroundColor: previewTabBar, borderColor: tabBorderColor }}>
+          {['To-do', 'Documents', 'Invoices'].map((t, i) => (
+            <span
+              key={t}
+              className="px-2 py-1 text-[10px]"
+              style={{
+                color: i === 0 ? primaryText : mutedText,
+                borderBottom: i === 0 ? `2px solid ${previewAccent}` : '2px solid transparent',
+                fontWeight: i === 0 ? 500 : 400,
+              }}
+            >
+              {t}
+            </span>
+          ))}
+        </div>
+        <div className="px-3 py-2" style={{ backgroundColor: previewPage }}>
+          <div className="rounded-[4px] px-3 py-2" style={{ backgroundColor: VALID_HEX.test(colors.card) ? colors.card : (mode === 'dark' ? '#383838' : '#EDEEF0') }}>
+            <span className="text-[10px]" style={{ color: mode === 'light' ? '#1F3148' : '#EDEEF0' }}>Card item</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function PortalBrandingTab() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -74,6 +280,8 @@ export default function PortalBrandingTab() {
   const [uploading, setUploading] = useState(false)
   const [logoPreviewUrl, setLogoPreviewUrl] = useState<string | null>(null)
   const [saveConfirmed, setSaveConfirmed] = useState(false)
+  const [invalidFields, setInvalidFields] = useState<Set<string>>(new Set())
+  const textRefs = useRef<Record<string, HTMLInputElement | null>>({})
   const [branding, setBranding] = useState<BrandingState>({
     portal_display_name: '',
     portal_logo_s3_key: null,
@@ -195,132 +403,20 @@ export default function PortalBrandingTab() {
   }
 
   function resetColors(mode: 'dark' | 'light') {
+    const defaults = mode === 'dark' ? DARK_DEFAULTS : LIGHT_DEFAULTS
     setBranding((b) => ({
       ...b,
-      [`colors_${mode}`]: mode === 'dark' ? { ...DARK_DEFAULTS } : { ...LIGHT_DEFAULTS },
+      [`colors_${mode}`]: { ...defaults },
     }))
+    for (const { key } of COLOR_LABELS) {
+      const ref = textRefs.current[`${mode}-${key}`]
+      if (ref) ref.value = defaults[key as keyof ColorSet]
+    }
   }
 
   const labelClass = 'text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em]'
   const inputClass = 'w-full rounded-[6px] border border-surface-border dark:border-dark-border bg-surface-page dark:bg-dark-page text-[13px] text-brand dark:text-[#EDEEF0] px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-brand'
   const hintClass = 'text-[11px] text-[#6B7280] mt-1'
-
-  function ColorSection({ mode }: { mode: 'dark' | 'light' }) {
-    const colors = mode === 'dark' ? branding.colors_dark : branding.colors_light
-    const isActive = branding.portal_mode === mode
-    const previewPage = VALID_HEX.test(colors.page) ? colors.page : (mode === 'dark' ? '#2D2D2D' : '#E4E6EA')
-    const previewTopBar = VALID_HEX.test(colors.top_bar) ? colors.top_bar : (mode === 'dark' ? '#1A2535' : '#1F3148')
-    const previewTabBar = VALID_HEX.test(colors.tab_bar) ? colors.tab_bar : (mode === 'dark' ? '#252525' : '#EDEEF0')
-    const previewAccent = VALID_HEX.test(colors.accent) ? colors.accent : (mode === 'dark' ? '#4A7FA5' : '#1F3148')
-    const previewAvatar = VALID_HEX.test(colors.avatar) ? colors.avatar : (mode === 'dark' ? '#3A6A94' : '#1F3148')
-    const primaryText = mode === 'light' ? '#1F3148' : '#EDEEF0'
-    const mutedText = '#9CA3AF'
-    const tabBorderColor = mode === 'light' ? '#C8CDD6' : '#383838'
-
-    return (
-      <div className={`flex flex-col gap-4 p-4 rounded-[8px] border ${isActive ? 'border-brand dark:border-brand-light' : 'border-surface-border dark:border-dark-border'}`}>
-        {/* Section header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="text-[13px] font-medium text-brand dark:text-[#EDEEF0]">
-              {mode === 'dark' ? 'Dark mode' : 'Light mode'}
-            </span>
-            {isActive && (
-              <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-[#D1FAE5] text-[#065F46]">
-                Active
-              </span>
-            )}
-          </div>
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={() => resetColors(mode)}
-              className="text-[11px] text-[#6B7280] hover:text-brand-light"
-            >
-              Reset to defaults
-            </button>
-            {!isActive && (
-              <button
-                type="button"
-                onClick={() => setBranding((b) => ({ ...b, portal_mode: mode }))}
-                className="text-[11px] font-medium text-brand-light hover:underline"
-              >
-                Set as active
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* Color pickers */}
-        <div className="flex flex-col gap-2">
-          {COLOR_LABELS.map(({ key, label }) => {
-          const value = colors[key]
-          return (
-            <div key={key} className="flex items-center gap-3">
-              <input
-                type="color"
-                value={VALID_HEX.test(value) ? value : '#1F3148'}
-                onChange={(e) => setColor(mode, key, e.target.value)}
-                className="w-8 h-8 rounded cursor-pointer border border-surface-border dark:border-dark-border p-0.5 flex-shrink-0"
-              />
-              <input
-                type="text"
-                defaultValue={value}
-                key={`${mode}-${key}-${value}`}
-                onBlur={(e) => {
-                  const v = e.target.value.trim()
-                  if (VALID_HEX.test(v)) setColor(mode, key, v)
-                  else e.target.value = value
-                }}
-                maxLength={7}
-                placeholder="#000000"
-                className="w-28 rounded-[6px] border border-surface-border dark:border-dark-border bg-surface-page dark:bg-dark-page text-[12px] text-brand dark:text-[#EDEEF0] px-2 py-1 focus:outline-none focus:ring-1 focus:ring-brand"
-              />
-              <span className="text-[12px] text-[#6B7280]">{label}</span>
-            </div>
-          )
-        })}
-        </div>
-
-        {/* Mini preview */}
-        <div className="rounded-[6px] overflow-hidden border border-surface-border dark:border-dark-border">
-          <div className="flex items-center justify-between px-3 h-9" style={{ backgroundColor: previewTopBar }}>
-            <div className="flex items-center gap-1.5">
-              {logoPreviewUrl ? (
-                <img src={logoPreviewUrl} alt="" className="h-5 max-w-[80px] object-contain" onError={() => {}} />
-              ) : (
-                <span className="text-[11px] font-medium text-white">{branding.portal_display_name || firmName}</span>
-              )}
-              <span className="text-[9px]" style={{ color: VALID_HEX.test(colors.subtitle) ? colors.subtitle : '#7DA3C4' }}>Client Portal</span>
-            </div>
-            <div className="w-5 h-5 rounded-full flex items-center justify-center" style={{ backgroundColor: previewAvatar }}>
-              <span className="text-[9px] font-medium text-white">JD</span>
-            </div>
-          </div>
-          <div className="flex items-center px-2 h-7 border-b" style={{ backgroundColor: previewTabBar, borderColor: tabBorderColor }}>
-            {['To-do', 'Documents', 'Invoices'].map((t, i) => (
-              <span
-                key={t}
-                className="px-2 py-1 text-[10px]"
-                style={{
-                  color: i === 0 ? primaryText : mutedText,
-                  borderBottom: i === 0 ? `2px solid ${previewAccent}` : '2px solid transparent',
-                  fontWeight: i === 0 ? 500 : 400,
-                }}
-              >
-                {t}
-              </span>
-            ))}
-          </div>
-          <div className="px-3 py-2" style={{ backgroundColor: previewPage }}>
-            <div className="rounded-[4px] px-3 py-2" style={{ backgroundColor: VALID_HEX.test(colors.card) ? colors.card : (mode === 'dark' ? '#383838' : '#EDEEF0') }}>
-              <span className="text-[10px]" style={{ color: mode === 'light' ? '#1F3148' : '#EDEEF0' }}>Card item</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    )
-  }
 
   if (loading) {
     return (
@@ -440,8 +536,34 @@ export default function PortalBrandingTab() {
           To find your brand colors: right-click any element on your website → Inspect → look for a # value in the CSS panel.
         </p>
         <div className="flex flex-col gap-4">
-          <ColorSection mode="dark" />
-          <ColorSection mode="light" />
+          <ColorSection
+            mode="dark"
+            colors={branding.colors_dark}
+            isActive={branding.portal_mode === 'dark'}
+            logoPreviewUrl={logoPreviewUrl}
+            portalDisplayName={branding.portal_display_name}
+            firmName={firmName}
+            invalidFields={invalidFields}
+            textRefs={textRefs}
+            onSetColor={setColor}
+            onReset={() => resetColors('dark')}
+            onSetActive={() => setBranding((b) => ({ ...b, portal_mode: 'dark' }))}
+            onSetInvalidFields={setInvalidFields}
+          />
+          <ColorSection
+            mode="light"
+            colors={branding.colors_light}
+            isActive={branding.portal_mode === 'light'}
+            logoPreviewUrl={logoPreviewUrl}
+            portalDisplayName={branding.portal_display_name}
+            firmName={firmName}
+            invalidFields={invalidFields}
+            textRefs={textRefs}
+            onSetColor={setColor}
+            onReset={() => resetColors('light')}
+            onSetActive={() => setBranding((b) => ({ ...b, portal_mode: 'light' }))}
+            onSetInvalidFields={setInvalidFields}
+          />
         </div>
       </div>
 

@@ -8,7 +8,12 @@ three separate endpoints can write the blob and they must all refuse the same
 thing with the same message.
 """
 
+import re
+
 from fastapi import HTTPException, status
+
+_HEX_RE = re.compile(r"^#[0-9A-Fa-f]{6}$")
+_PORTAL_COLOR_KEYS = ("portal_colors_dark", "portal_colors_light")
 
 
 def is_email_sync_enabled(firm) -> bool:
@@ -77,4 +82,39 @@ def reject_retired_settings_keys(settings) -> None:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=RETIRED_KEY_DETAIL,
+            )
+
+def validate_portal_color_settings(payload: dict) -> None:
+    """Reject portal color payloads containing non-hex color values.
+
+    Color values are injected as raw CSS property values in the client portal.
+    Allowing arbitrary strings would expose a CSS-injection vector in a
+    multi-tenant context. Only canonical 6-digit hex values (#rrggbb) pass.
+
+    Accepts None or an empty dict and does nothing.
+    """
+    if not payload:
+        return
+
+    for key in _PORTAL_COLOR_KEYS:
+        color_map = payload.get(key)
+        if color_map is None:
+            continue
+        if not isinstance(color_map, dict):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"{key} must be an object mapping color names to hex strings.",
+            )
+        bad = [
+            f"{k}: {v!r}"
+            for k, v in color_map.items()
+            if not isinstance(v, str) or not _HEX_RE.match(v)
+        ]
+        if bad:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=(
+                    f"Invalid color values in {key}: {', '.join(bad)}. "
+                    "Each color must be a 6-digit hex string such as #1F3148."
+                ),
             )
