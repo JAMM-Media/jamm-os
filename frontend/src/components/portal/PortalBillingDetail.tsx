@@ -48,8 +48,8 @@ const STAT_CARDS = [
   {
     key: 'hours',
     label: 'Total hours this year',
-    chipBg: '#EDE9FE',
-    chipColor: '#7C3AED',
+    chipBg: '#DBEAFE',
+    chipColor: '#3B82F6',
     Icon: Clock,
     format: (d: BillingDetailData) => d.total_hours_this_year.toFixed(2),
   },
