@@ -19,6 +19,7 @@ from app.services.outlook_signals_service import run_outlook_signals_for_all_fir
 from app.services.esign_reminder_service import run_esign_auto_reminders, run_esign_escalation_check
 from app.services.invoice_service import run_invoice_overdue_sweep
 from app.services.findings_recheck import recheck_failed_findings
+from app.services.surface_daily_job import run_surface_hourly_tick
 from app.services.deadline_scheduler import check_approaching_deadlines
 from app.services.nurture_execution_service import run_nurture_tick
 from app.services.post_call_detection_service import detect_past_end_bookings
@@ -81,6 +82,7 @@ from app.api.portal_domain import router as portal_domain_router
 from app.api.inbox import router as inbox_router
 from app.api.calendar import router as calendar_router
 from app.api.morning_briefing import router as morning_briefing_router
+from app.api.surface_items import router as surface_items_router
 from app.api.staff_credentials import router as staff_credentials_router
 from app.api.cpe_records import router as cpe_records_router
 from app.api.intake import router as intake_router
@@ -188,6 +190,23 @@ async def lifespan(app: FastAPI):
             hour=5,
             minute=0,
             id="findings_weekly_recheck",
+            replace_existing=True,
+        )
+        # Hourly, not daily: the briefing is built at 5am in each firm's OWN
+        # local time, and Firm.timezone says which. The tick reads the firm
+        # list and does nothing for firms whose local hour is not 5.
+        #
+        # timezone is pinned explicitly for the same reason the IRS expiry
+        # job pins it: BackgroundScheduler otherwise resolves the zone through
+        # tzlocal from the host, and nothing in this repo pins the droplet TZ.
+        # Here it only decides when the tick fires, since the per-firm hour is
+        # computed inside the job from real timezone data.
+        scheduler.add_job(
+            run_surface_hourly_tick,
+            trigger="cron",
+            minute=0,
+            timezone="UTC",
+            id="surface_items_hourly_tick",
             replace_existing=True,
         )
         scheduler.add_job(
@@ -361,6 +380,7 @@ app.include_router(portal_domain_router, prefix="/api/v1")
 app.include_router(inbox_router, prefix="/api/v1")
 app.include_router(calendar_router, prefix="/api/v1")
 app.include_router(morning_briefing_router, prefix="/api/v1")
+app.include_router(surface_items_router, prefix="/api/v1")
 app.include_router(staff_credentials_router)
 app.include_router(cpe_records_router)
 app.include_router(postmark_inbound_router)

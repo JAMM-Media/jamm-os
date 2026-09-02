@@ -88,3 +88,60 @@ class SurfaceItemOut(SurfaceItemBase):
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class SurfaceItemDismissRequest(BaseModel):
+    """
+    Dismissal requires a reason, one of exactly three. An invalid reason is a
+    422 from schema validation before the service is ever reached, and the
+    frontend surfaces that detail verbatim.
+    """
+
+    reason: DismissalReason
+
+
+class BriefingResponse(BaseModel):
+    """
+    Today's Briefing.
+
+    Deliberately not a PaginatedResponse. This is a curated sheet with a hard
+    cap of five, not a browsable collection: there is no next page, and the
+    fields below (the resolved-in-place count and the honest pending state)
+    have nowhere to live in that envelope. Reported as a considered deviation
+    from the paginate-every-list rule rather than an oversight.
+    """
+
+    items: list[SurfaceItemOut]
+    count: int
+    resolved_in_place: int
+    intelligence_pending: bool
+
+
+class ObservatoryResponse(BaseModel):
+    """
+    Standing material signals.
+
+    is_empty is explicit so the frontend never infers emptiness from a bare
+    list. On day one this is always empty, because nothing can be promoted
+    while the promotion registry is empty, and the empty state is honest about
+    that rather than implying all is well.
+    """
+
+    items: list[SurfaceItemOut]
+    count: int
+    is_empty: bool
+    intelligence_pending: bool
+
+
+class PromoteNextResponse(BaseModel):
+    """
+    The result of asking for one more item.
+
+    promoted is False with a plain detail string when nothing remains, which is
+    an honest answer rather than an error: running out of items is a normal
+    state of a good morning.
+    """
+
+    promoted: bool
+    detail: str
+    item: Optional[SurfaceItemOut] = None
