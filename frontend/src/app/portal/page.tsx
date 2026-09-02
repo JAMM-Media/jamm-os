@@ -13,7 +13,13 @@ import { PortalMessages } from '@/components/portal/PortalMessages'
 import PortalOrganizer from '@/components/portal/PortalOrganizer'
 import { PortalBillingDetail } from '@/components/portal/PortalBillingDetail'
 
-const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!)
+let _stripePromise: ReturnType<typeof loadStripe> | null = null
+function getStripePromise() {
+  if (!_stripePromise) {
+    _stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!)
+  }
+  return _stripePromise
+}
 
 interface PortalMe {
   client_id: string
@@ -74,6 +80,11 @@ export default function PortalPage() {
       })
   }, [router])
 
+  function handleTabChange(tab: string) {
+    setActiveTab(tab)
+    router.replace('/portal?tab=' + tab, { scroll: false })
+  }
+
   if (!me) {
     return (
       <div className="min-h-screen bg-[#2D2D2D] flex flex-col">
@@ -115,12 +126,12 @@ export default function PortalPage() {
       portalMode={me.portal_mode}
       clientName={me.client_name}
       activeTab={activeTab}
-      onTabChange={setActiveTab}
+      onTabChange={handleTabChange}
     >
       {activeTab === 'todo' && <PortalTodo clientFirstName={firstName} accentColor={me.portal_accent_color} cardColor={me.portal_card_color} portalMode={me.portal_mode} textPrimary={me.portal_text_primary} textMuted={me.portal_text_muted} />}
       {activeTab === 'documents' && <PortalDocuments firmName={me.portal_display_name || me.firm_name} accentColor={me.portal_accent_color} cardColor={me.portal_card_color} portalMode={me.portal_mode} textPrimary={me.portal_text_primary} textMuted={me.portal_text_muted} />}
       {activeTab === 'invoices' && (
-        <Elements stripe={stripePromise}>
+        <Elements stripe={getStripePromise()}>
           <PortalInvoices accentColor={me.portal_accent_color} cardColor={me.portal_card_color} portalMode={me.portal_mode} textPrimary={me.portal_text_primary} textMuted={me.portal_text_muted} />
         </Elements>
       )}
