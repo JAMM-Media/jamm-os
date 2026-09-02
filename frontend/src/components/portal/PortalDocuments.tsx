@@ -12,7 +12,7 @@ import {
   ChevronLeft,
   Users,
 } from 'lucide-react'
-import { getPortalDocuments, getPortalFolders } from '@/lib/portal-api'
+import { getPortalDocuments, getPortalFolders, getPortalDocumentDownloadUrl } from '@/lib/portal-api'
 import type { PortalDocument, PortalFolder } from '@/lib/portal-api'
 
 // Props interface unchanged so portal/page.tsx needs no edits.
@@ -116,6 +116,7 @@ export function PortalDocuments({ firmName, accentColor = '#3A6A94' }: PortalDoc
   const [searchQuery, setSearchQuery] = useState('')
   const [toast, setToast] = useState<string | null>(null)
   const [showingFoldersOnly, setShowingFoldersOnly] = useState(false)
+  const [hoveredDocId, setHoveredDocId] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const load = useCallback(async () => {
@@ -230,14 +231,15 @@ export function PortalDocuments({ firmName, accentColor = '#3A6A94' }: PortalDoc
       ? viewActive.filter((d) => d.uploaded_by === 'firm')
       : []
 
+  const normalizeSearch = (s: string) => s.toLowerCase().replace(/[-_ ]/g, '')
   const displayed = searchQuery.trim()
     ? tabFiltered.filter((d) =>
-        d.name.toLowerCase().includes(searchQuery.trim().toLowerCase())
+        normalizeSearch(d.name).includes(normalizeSearch(searchQuery.trim()))
       )
     : tabFiltered
 
   // Folders are only shown as rows when at root and on the "all" tab.
-  const showFolderRows = !activeFolderId && activeTab === 'all' && folders.length > 0
+  const showFolderRows = !activeFolderId && activeTab === 'all' && folders.length > 0 && !searchQuery.trim()
 
   const TABS: { key: Tab; label: string }[] = [
     { key: 'all', label: 'All Documents' },
@@ -427,7 +429,9 @@ export function PortalDocuments({ firmName, accentColor = '#3A6A94' }: PortalDoc
                     No documents yet.
                   </p>
                   <p className="text-[12px] mt-1" style={{ color: '#6B7280' }}>
-                    Your firm will share documents here.
+                    {activeTab === 'uploaded'
+                      ? "You haven't uploaded anything yet."
+                      : 'Your firm will share documents here.'}
                   </p>
                 </>
               )}
@@ -527,13 +531,23 @@ export function PortalDocuments({ firmName, accentColor = '#3A6A94' }: PortalDoc
                         className={isLast ? '' : 'border-b border-gray-50'}
                       >
                         <td className="px-5 py-3">
-                          <div className="flex items-center gap-2.5 min-w-0">
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              const { url } = await getPortalDocumentDownloadUrl(doc.id)
+                              window.open(url, '_blank', 'noreferrer')
+                            }}
+                            className="flex items-center gap-2.5 min-w-0 text-left hover:opacity-70 transition-opacity"
+                          >
                             <FileIcon fileType={doc.file_type} />
-                            <div className="flex items-baseline min-w-0">
+                            <div
+                              className="relative flex items-baseline min-w-0"
+                              onMouseEnter={() => setHoveredDocId(doc.id)}
+                              onMouseLeave={() => setHoveredDocId(null)}
+                            >
                               <span
                                 className="text-[13px] font-medium truncate"
                                 style={{ color: '#1F3148' }}
-                                title={doc.name}
                               >
                                 {basename}
                               </span>
@@ -543,8 +557,16 @@ export function PortalDocuments({ firmName, accentColor = '#3A6A94' }: PortalDoc
                               >
                                 {ext}
                               </span>
+                              {hoveredDocId === doc.id && (
+                                <div
+                                  className="pointer-events-none absolute left-0 top-full mt-1 z-30 max-w-[280px] whitespace-normal break-all rounded-md border border-gray-200 bg-white px-2.5 py-1.5 text-[12px] shadow-sm"
+                                  style={{ color: '#1F3148' }}
+                                >
+                                  {doc.name}
+                                </div>
+                              )}
                             </div>
-                          </div>
+                          </button>
                         </td>
                         {/* Type: de-emphasized -- real data but secondary metadata */}
                         <td className="px-4 py-3 whitespace-nowrap">

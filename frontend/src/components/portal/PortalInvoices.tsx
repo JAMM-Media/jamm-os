@@ -429,6 +429,7 @@ export function PortalInvoices({ accentColor: _a, cardColor: _c, portalMode: _p,
             </p>
           </div>
         ) : (
+          <div className="overflow-x-auto">
           <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
             {/* Table header */}
             <div className="grid grid-cols-[1fr_2fr_1fr_1fr_120px_140px] gap-0 border-b border-gray-100 px-4 py-2.5">
@@ -548,6 +549,7 @@ export function PortalInvoices({ accentColor: _a, cardColor: _c, portalMode: _p,
                 )}
               </div>
             ))}
+          </div>
           </div>
         )}
       </div>

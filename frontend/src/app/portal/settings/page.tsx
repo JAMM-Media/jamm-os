@@ -70,11 +70,18 @@ function formatSessionDate(iso: string): string {
 
 function formatUserAgent(ua: string | null): string {
   if (!ua) return 'Unknown device'
-  if (ua.includes('Chrome')) return 'Chrome'
-  if (ua.includes('Firefox')) return 'Firefox'
-  if (ua.includes('Safari')) return 'Safari'
-  if (ua.includes('Edge')) return 'Edge'
-  return 'Browser'
+  let browser = 'Browser'
+  if (ua.includes('Edg/') || ua.includes('Edge/')) browser = 'Edge'
+  else if (ua.includes('Chrome')) browser = 'Chrome'
+  else if (ua.includes('Firefox')) browser = 'Firefox'
+  else if (ua.includes('Safari')) browser = 'Safari'
+  let os = ''
+  if (ua.includes('iPhone') || ua.includes('iPad')) os = 'iOS'
+  else if (ua.includes('Android')) os = 'Android'
+  else if (ua.includes('Windows')) os = 'Windows'
+  else if (ua.includes('Mac OS X') || ua.includes('Macintosh')) os = 'Mac'
+  else if (ua.includes('Linux')) os = 'Linux'
+  return os ? browser + ' on ' + os : browser
 }
 
 function formatPhone(raw: string): string {
@@ -458,11 +465,6 @@ export default function PortalSettingsPage() {
                       <div className="flex-1 min-w-0">
                         <p className="text-[13px] font-medium" style={{ color: '#1F3148' }}>
                           {formatUserAgent(s.user_agent)}
-                          {s.ip_address && (
-                            <span className="font-normal ml-2 text-[12px]" style={{ color: '#9CA3AF' }}>
-                              {s.ip_address}
-                            </span>
-                          )}
                         </p>
                         <p className="text-[11px] mt-0.5" style={{ color: '#9CA3AF' }}>
                           Signed in {formatSessionDate(s.created_at)} &middot; Active {formatSessionDate(s.last_active_at)}

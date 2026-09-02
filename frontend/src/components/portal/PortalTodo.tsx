@@ -2,8 +2,9 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
 import { FileUp, PenLine, ChevronRight, File, Receipt, CircleHelp, UserCheck, Lightbulb, CalendarDays } from 'lucide-react'
-import { getPortalDashboard, getPortalDocuments } from '@/lib/portal-api'
+import { getPortalDashboard, getPortalDocuments, getPortalDocumentDownloadUrl } from '@/lib/portal-api'
 import type { PortalDocument } from '@/lib/portal-api'
 
 // Props interface is preserved unchanged so portal/page.tsx needs no edits.
@@ -100,10 +101,16 @@ function getTaskIcon(item: ActionItem): React.ReactNode {
 }
 
 function TaskRow({ item }: { item: ActionItem }) {
+  const router = useRouter()
   const dueDateDisplay = getDueDateDisplay(item.dueDate)
+  const dest = item.type === 'document-request' ? '/portal?tab=documents' : '/portal?tab=messages'
 
   return (
-    <div className="bg-white rounded-xl border border-gray-100 px-5 py-4 flex items-center gap-4">
+    <button
+      type="button"
+      onClick={() => router.push(dest)}
+      className="w-full text-left bg-white rounded-xl border border-gray-100 px-5 py-4 flex items-center gap-4 transition-colors hover:bg-gray-50"
+    >
       {/* Circular badge with muted gray background and dark icon, matching mock */}
       <div
         className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0"
@@ -130,7 +137,7 @@ function TaskRow({ item }: { item: ActionItem }) {
         )}
         <ChevronRight size={16} style={{ color: '#9CA3AF' }} />
       </div>
-    </div>
+    </button>
   )
 }
 
@@ -143,13 +150,20 @@ function DocRow({ doc, isLast }: { doc: PortalDocument; isLast: boolean }) {
   return (
     <tr className={isLast ? '' : 'border-b border-gray-50'}>
       <td className="px-5 py-3">
-        <div className="flex items-center gap-2.5 min-w-0">
+        <button
+          type="button"
+          onClick={async () => {
+            const { url } = await getPortalDocumentDownloadUrl(doc.id)
+            window.open(url, '_blank', 'noreferrer')
+          }}
+          className="flex items-center gap-2.5 min-w-0 text-left hover:opacity-70 transition-opacity"
+        >
           <File size={14} style={{ color: '#9CA3AF' }} className="flex-shrink-0" />
           <div className="flex items-baseline min-w-0">
             <span className="text-[13px] font-medium truncate" style={{ color: '#1F3148' }}>{basename}</span>
             <span className="text-[13px] font-medium flex-shrink-0" style={{ color: '#1F3148' }}>{ext}</span>
           </div>
-        </div>
+        </button>
       </td>
       <td className="px-5 py-3 whitespace-nowrap">
         <span className="text-[12px]" style={{ color: '#6B7280' }}>
@@ -171,7 +185,7 @@ function DocRow({ doc, isLast }: { doc: PortalDocument; isLast: boolean }) {
 // Pass (a): "Need help?" right panel -- present in mock, was absent from current implementation.
 function NeedHelpPanel({ accentColor }: { accentColor: string }) {
   return (
-    <div className="w-60 flex-shrink-0">
+    <div className="w-60">
       <div className="bg-white rounded-xl border border-gray-100 p-5 flex flex-col gap-3">
         <div className="flex items-center gap-2">
           <Lightbulb size={16} style={{ color: '#1F3148' }} />

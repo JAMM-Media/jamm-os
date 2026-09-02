@@ -213,7 +213,7 @@ SECTIONS = [
 # Deductions, Tax Payments, Investments: no answers -> Not started
 RESPONSES = {
     "personal_info": {
-        "full_name": "Ben Corbin",
+        "full_name": "Jordan Demo",
         "ssn_last4": "1234",
         "dob": "1985-03-15",
         "filing_status": "Single",

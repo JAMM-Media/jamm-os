@@ -862,7 +862,7 @@ def portal_list_documents(
             "uploaded_at": d.created_at.isoformat(),
             "file_type": d.content_type.split("/")[-1].upper() if d.content_type else "FILE",
             "file_size_kb": max(1, d.size_bytes // 1024),
-            "uploaded_by": "firm",
+            "uploaded_by": "client" if d.uploaded_by is None else "firm",
             "is_superseded": d.is_superseded,
         }
         for d in docs
@@ -942,6 +942,43 @@ def portal_move_document(
     return {
         "id": str(doc.id),
         "folder_id": str(doc.folder_id) if doc.folder_id else None,
+    }
+
+
+@router.get("/documents/{document_id}/download")
+def portal_download_document(
+    document_id: UUID,
+    current_client: Client = Depends(get_current_portal_client),
+    db: Session = Depends(get_db),
+):
+    """Return a short-lived signed URL for the authenticated client to download their document.
+
+    Tenant isolation: document must match client_id AND firm_id.
+    Returns 404 for any document that does not belong to this client.
+    Signed URL expires in PRESIGNED_URL_EXPIRY seconds (1 hour maximum).
+    """
+    from app.models.document import Document
+    from app.services.s3 import generate_presigned_url, PRESIGNED_URL_EXPIRY
+
+    doc = (
+        db.query(Document)
+        .filter(
+            Document.id == document_id,
+            Document.firm_id == current_client.firm_id,
+            Document.client_id == current_client.id,
+            Document.visibility == "client_visible",
+        )
+        .first()
+    )
+    if doc is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
+
+    url = generate_presigned_url(doc.s3_key)
+    return {
+        "document_id": str(doc.id),
+        "filename": doc.filename,
+        "url": url,
+        "expires_in_seconds": PRESIGNED_URL_EXPIRY,
     }
 
 

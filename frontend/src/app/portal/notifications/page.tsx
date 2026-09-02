@@ -16,7 +16,7 @@ import {
   FileCheck,
   Pencil,
 } from 'lucide-react'
-import { getPortalNotifications, type PortalNotification } from '@/lib/portal-api'
+import { getPortalNotifications, markPortalNotificationRead, notifDestination, type PortalNotification } from '@/lib/portal-api'
 import { PortalShell } from '@/components/portal/PortalShell'
 import { PortalAttributionSurvey } from '@/components/portal/PortalAttributionSurvey'
 
@@ -102,39 +102,6 @@ function resolveIcon(
       return { Icon: FileCheck, variant: 'blue' }
     default:
       return { Icon: Bell, variant: 'blue' }
-  }
-}
-
-// Returns the portal tab destination for a notification type, or null for
-// types with no real destination (system, unknown).
-function notifDestination(type: string): string | null {
-  switch (type) {
-    case 'message':
-    case 'new_message':
-      return '/portal?tab=messages'
-    case 'document_request':
-    case 'document_request_created':
-    case 'signature_needed':
-    case 'document_uploaded':
-    case 'document_ready':
-      return '/portal?tab=documents'
-    case 'payment_due':
-    case 'invoice_overdue':
-    case 'invoice_paid':
-    case 'invoice_sent':
-      return '/portal?tab=billing-detail'
-    case 'engagement_update':
-    case 'engagement_completed':
-    case 'todo':
-    case 'todo_assigned':
-    case 'to_do':
-      return '/portal?tab=todo'
-    case 'organizer_ready':
-    case 'tax_organizer':
-    case 'organizer_available':
-      return '/portal?tab=organizer'
-    default:
-      return null
   }
 }
 
@@ -283,11 +250,7 @@ export default function PortalNotificationsPage() {
   }
 
   const handleNavigate = (id: string, type: string) => {
-    const token = localStorage.getItem('portal_access_token')
-    const headers: Record<string, string> = {}
-    if (token) headers['Authorization'] = `Bearer ${token}`
-    // Fire-and-forget mark-as-read; navigate immediately for responsive UX
-    fetch(`/api/backend/portal/notifications/${id}/read`, { method: 'PATCH', headers }).catch(() => {})
+    markPortalNotificationRead(id).catch(() => {})
     setNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: true } : n))
     const dest = notifDestination(type)
     if (dest) router.push(dest)

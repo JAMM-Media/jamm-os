@@ -2,6 +2,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import { toast } from 'sonner'
 import { Briefcase, Calendar, Check, ChevronRight, DollarSign, FileText, Home, Info, Receipt, TrendingUp, User } from 'lucide-react'
 
 interface PortalOrganizerProps {
@@ -209,6 +210,7 @@ export default function PortalOrganizer({ clientId: _clientId, initialOrganizerI
       if (!submit) {
         setSavedNotice(true)
         setTimeout(() => setSavedNotice(false), 2000)
+        toast.success('Progress saved.')
       }
     } catch {
       // ignore

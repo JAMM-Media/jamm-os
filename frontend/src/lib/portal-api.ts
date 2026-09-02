@@ -248,3 +248,61 @@ export async function movePortalDocument(
   if (!res.ok) throw new Error('fetch failed')
   return res.json()
 }
+
+export async function markPortalNotificationRead(id: string): Promise<void> {
+  const token = typeof window !== 'undefined' ? localStorage.getItem('portal_access_token') : null
+  const headers: Record<string, string> = {}
+  if (token) headers['Authorization'] = `Bearer ${token}`
+  await fetch(`/api/backend/portal/notifications/${id}/read`, {
+    method: 'PATCH',
+    headers,
+  })
+}
+
+// Maps notification_type to the real portal tab destination.
+// Returns null for types with no actionable destination (system, unknown).
+export function notifDestination(type: string): string | null {
+  switch (type) {
+    case 'message':
+    case 'new_message':
+      return '/portal?tab=messages'
+    case 'document_request':
+    case 'document_request_created':
+    case 'signature_needed':
+    case 'document_uploaded':
+    case 'document_ready':
+      return '/portal?tab=documents'
+    case 'payment_due':
+    case 'invoice_overdue':
+    case 'invoice_paid':
+    case 'invoice_sent':
+      return '/portal?tab=billing-detail'
+    case 'engagement_update':
+    case 'engagement_completed':
+    case 'todo':
+    case 'todo_assigned':
+    case 'to_do':
+      return '/portal?tab=todo'
+    case 'organizer_ready':
+    case 'tax_organizer':
+    case 'organizer_available':
+      return '/portal?tab=organizer'
+    default:
+      return null
+  }
+}
+
+export interface PortalDocumentDownload {
+  document_id: string
+  filename: string
+  url: string
+  expires_in_seconds: number
+}
+
+export async function getPortalDocumentDownloadUrl(documentId: string): Promise<PortalDocumentDownload> {
+  const res = await fetch(`${BASE}/portal/documents/${documentId}/download`, {
+    headers: portalHeaders(),
+  })
+  if (!res.ok) throw new Error('fetch failed')
+  return res.json()
+}
