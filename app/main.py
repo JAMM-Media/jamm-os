@@ -88,6 +88,7 @@ from app.api.staff_credentials import router as staff_credentials_router
 from app.api.cpe_records import router as cpe_records_router
 from app.api.intake import router as intake_router
 from app.api.unsubscribe import router as unsubscribe_router
+from app.api.intake_token import router as intake_token_router
 from app.api.webhooks.postmark_inbound import router as postmark_inbound_router
 from app.api.availability_windows import router as availability_windows_router
 from app.api.bookings import router as bookings_router
@@ -388,6 +389,7 @@ app.include_router(cpe_records_router)
 app.include_router(postmark_inbound_router)
 app.include_router(intake_router)
 app.include_router(unsubscribe_router)
+app.include_router(intake_token_router)
 app.include_router(availability_windows_router)
 app.include_router(bookings_router)
 app.include_router(leads_router)
