@@ -15,7 +15,7 @@ export function PortalNotificationBell() {
   return (
     <button
       type="button"
-      onClick={() => router.push('/portal/notifications')}
+      onClick={() => router.push('/portal?tab=notifications')}
       className="relative flex items-center justify-center w-8 h-8 rounded-full transition-colors hover:bg-gray-100"
       aria-label="Notifications"
     >

@@ -52,6 +52,7 @@ const NAV_ITEMS = [
   { key: 'billing-detail', label: 'Billing Detail',  Icon: BarChart3 },
   { key: 'organizer',      label: 'Tax Organizer',   Icon: BookOpen },
   { key: 'messages',       label: 'Messages',        Icon: MessageSquare },
+  { key: 'notifications',  label: 'Notifications',   Icon: Bell },
 ]
 
 export function PortalShell({
@@ -153,20 +154,6 @@ export function PortalShell({
               </button>
             )
           })}
-          {/* Notifications: routes to the full history page, distinct from the bell popover */}
-          <button
-            type="button"
-            onClick={() => router.push('/portal/notifications')}
-            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition-colors"
-            style={{
-              backgroundColor: 'transparent',
-              color: sidebarTextMuted,
-              borderLeft: '3px solid transparent',
-            }}
-          >
-            <Bell size={16} className="flex-shrink-0" />
-            <span className="text-[14px] font-medium flex-1 truncate">Notifications</span>
-          </button>
         </nav>
       </div>
 

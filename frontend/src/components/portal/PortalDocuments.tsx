@@ -194,9 +194,18 @@ export function PortalDocuments({ firmName, accentColor = '#3A6A94' }: PortalDoc
             </div>
           ))}
         </div>
-        {[1, 2, 3].map((i) => (
-          <div key={i} className="h-12 rounded-xl animate-pulse bg-white border border-gray-100" />
-        ))}
+        <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="flex items-center gap-4 px-5 py-3 border-b border-gray-50 last:border-b-0">
+              <div className="w-4 h-4 rounded animate-pulse bg-gray-100 flex-shrink-0" />
+              <div className="h-3 w-44 rounded animate-pulse bg-gray-200 flex-1" />
+              <div className="h-5 w-14 rounded-full animate-pulse bg-gray-100" />
+              <div className="h-3 w-20 rounded animate-pulse bg-gray-100" />
+              <div className="h-3 w-14 rounded animate-pulse bg-gray-100" />
+              <div className="h-3 w-10 rounded animate-pulse bg-gray-100 ml-auto" />
+            </div>
+          ))}
+        </div>
       </div>
     )
   }
@@ -395,12 +404,16 @@ export function PortalDocuments({ firmName, accentColor = '#3A6A94' }: PortalDoc
 
           {/* Unified table: folder rows at top, then document rows */}
           {folderLoading ? (
-            <div className="flex flex-col gap-2">
+            <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
               {[1, 2, 3].map((i) => (
-                <div
-                  key={i}
-                  className="h-12 rounded-xl animate-pulse bg-white border border-gray-100"
-                />
+                <div key={i} className="flex items-center gap-4 px-5 py-3 border-b border-gray-50 last:border-b-0">
+                  <div className="w-4 h-4 rounded animate-pulse bg-gray-100 flex-shrink-0" />
+                  <div className="h-3 w-44 rounded animate-pulse bg-gray-200 flex-1" />
+                  <div className="h-5 w-14 rounded-full animate-pulse bg-gray-100" />
+                  <div className="h-3 w-20 rounded animate-pulse bg-gray-100" />
+                  <div className="h-3 w-14 rounded animate-pulse bg-gray-100" />
+                  <div className="h-3 w-10 rounded animate-pulse bg-gray-100 ml-auto" />
+                </div>
               ))}
             </div>
           ) : !hasTableContent ? (

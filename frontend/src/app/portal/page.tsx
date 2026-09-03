@@ -12,6 +12,7 @@ import { PortalInvoices } from '@/components/portal/PortalInvoices'
 import { PortalMessages } from '@/components/portal/PortalMessages'
 import PortalOrganizer from '@/components/portal/PortalOrganizer'
 import { PortalBillingDetail } from '@/components/portal/PortalBillingDetail'
+import { PortalNotifications } from '@/components/portal/PortalNotifications'
 
 let _stripePromise: ReturnType<typeof loadStripe> | null = null
 function getStripePromise() {
@@ -142,6 +143,7 @@ export default function PortalPage() {
         <PortalOrganizer clientId={me.client_id} initialOrganizerId={deepLinkOrganizerId} cardColor={me.portal_card_color} portalMode={me.portal_mode} textPrimary={me.portal_text_primary} textMuted={me.portal_text_muted} />
       )}
       {activeTab === 'billing-detail' && <PortalBillingDetail cardColor={me.portal_card_color} accentColor={me.portal_accent_color} portalMode={me.portal_mode} textPrimary={me.portal_text_primary} textMuted={me.portal_text_muted} />}
+      {activeTab === 'notifications' && <PortalNotifications />}
     </PortalShell>
   )
 }
