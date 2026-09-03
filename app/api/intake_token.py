@@ -3,7 +3,7 @@
 """
 Lead intake token router.
 
-Two sets of endpoints:
+Three sets of endpoints:
 
 1. Staff-authenticated: mint a token for an existing lead.
    POST /intake-token/mint
@@ -12,15 +12,20 @@ Two sets of endpoints:
    GET  /intake-token/validate/{token}
    POST /intake-token/answers/{token}
 
+3. Public, qualification answer click (from E2 email button):
+   GET  /intake-token/qualify/{token}?field=entity_type&value=individual
+
 All public endpoints are rate-limited using the same limiter as intake_submit.
-Responses on invalid/expired tokens are neutral 200s with status='invalid' --
-never 401, which the frontend proxy would misinterpret as a staff-token signal.
+Responses on invalid/expired tokens are neutral 200s (or redirects) with
+status='invalid' -- never 401, which the frontend proxy would misinterpret as
+a staff-token signal.
 """
 
 import uuid
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -33,7 +38,9 @@ from app.dependencies.roles import require_staff_or_above
 from app.dependencies.tenant import get_current_firm
 from app.models.firm import Firm
 from app.models.intake_answer import IntakeAnswer
+from app.models.lead import Lead
 from app.models.user import User
+from app.services.behavioral_log import log_event
 from app.services.intake_token_service import mint_intake_token, validate_intake_token
 
 router = APIRouter(prefix="/intake-token", tags=["Intake Token"])
@@ -204,3 +211,109 @@ def submit_answers(
         crud_intake_answer.bulk_create_intake_answers(db=db, answers=rows)
 
     return SubmitAnswersResponse(status="ok", written=len(rows))
+
+
+# ---------------------------------------------------------------------------
+# Public: qualification answer click from E2 email button
+# ---------------------------------------------------------------------------
+
+# Five real entity_type values, from Lead.entity_type's column comment.
+ENTITY_TYPE_VALUES: frozenset[str] = frozenset(
+    {"individual", "business", "trust", "estate", "non_profit"}
+)
+
+# Whitelist of Lead fields settable via the qualify endpoint today.
+# Extend both sets when a new qualification field is added; the endpoint
+# rejects any field name not in this set.
+QUALIFY_FIELD_WHITELIST: frozenset[str] = frozenset({"entity_type"})
+
+QUALIFY_VALUE_WHITELIST: dict[str, frozenset[str]] = {
+    "entity_type": ENTITY_TYPE_VALUES,
+}
+
+
+@router.get("/qualify/{token}", status_code=302)
+@limiter.limit("5/minute")
+def qualify_answer(
+    token: str,
+    field: str,
+    value: str,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """
+    Process a lead's qualification answer click from an E2 email button.
+
+    Whitelist: today only field='entity_type' with one of its five real values
+    is accepted. Any other field name or value returns 422.
+
+    On a valid token + valid field/value pair:
+      - Writes the field directly onto the Lead row (scoped to firm_id from token).
+      - Fires lead.answer_button_clicked via log_event.
+      - Redirects to {FRONTEND_URL}/intake-resume/{token}.
+
+    On an invalid or expired token:
+      - Redirects to the same intake-resume URL. The page already validates
+        the token itself on load and renders the expired state -- no duplication
+        needed here.
+
+    Always a redirect -- never JSON -- since this endpoint is the target of a
+    clickable link in an email.
+    """
+    from app.core.config import get_settings
+    settings = get_settings()
+    resume_url = f"{settings.FRONTEND_URL}/intake-resume/{token}"
+
+    # Whitelist: field name
+    if field not in QUALIFY_FIELD_WHITELIST:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                f"Field {field!r} is not accepted by this endpoint. "
+                f"Accepted fields: {sorted(QUALIFY_FIELD_WHITELIST)}"
+            ),
+        )
+
+    # Whitelist: value for the given field
+    allowed = QUALIFY_VALUE_WHITELIST.get(field, frozenset())
+    if value not in allowed:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                f"Value {value!r} is not valid for field {field!r}. "
+                f"Accepted: {sorted(allowed)}"
+            ),
+        )
+
+    # Validate token; invalid/expired tokens redirect to the resume page so
+    # the page's own state machine renders the correct expired UI.
+    result = validate_intake_token(db=db, raw_token=token)
+    if result["status"] != "valid":
+        return RedirectResponse(url=resume_url, status_code=302)
+
+    firm_id = uuid.UUID(result["firm_id"])
+    lead_id = uuid.UUID(result["lead_id"])
+
+    lead = (
+        db.query(Lead)
+        .filter(Lead.id == lead_id, Lead.firm_id == firm_id)
+        .first()
+    )
+    if lead is None:
+        return RedirectResponse(url=resume_url, status_code=302)
+
+    setattr(lead, field, value)
+    db.commit()
+
+    # PROPOSED NAME -- pending Andrew's sign-off (Contract section 9.1).
+    # Fires when a lead clicks an entity_type answer button in an E2 nurture email.
+    log_event(
+        event_type="lead.answer_button_clicked",
+        firm_id=firm_id,
+        entity_type="lead",
+        entity_id=lead_id,
+        actor_type="lead",
+        metadata={"field": field, "value": value},
+    )
+
+    return RedirectResponse(url=resume_url, status_code=302)

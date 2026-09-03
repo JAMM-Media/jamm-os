@@ -569,6 +569,28 @@ def run_nurture_tick() -> dict:
                     + f'<a href="{unsubscribe_url}">Unsubscribe</a> from these emails.</p>'
                 )
 
+            # 12b. For step_key "5" (E2 -- Nudge + question), mint a LeadIntakeToken
+            # and inject entity_type answer button URLs using the same {{key}} convention.
+            # If the body does not contain these tags, do nothing -- unlike the unsubscribe
+            # footer (compliance), these buttons are optional and must not be force-appended.
+            if current_step.step_key == "5":
+                from app.services.intake_token_service import mint_intake_token
+                raw_intake_token = mint_intake_token(
+                    db=db, firm_id=enrollment.firm_id, lead_id=lead.id
+                )
+                individual_url = (
+                    f"{settings.FRONTEND_URL}/api/backend/intake-token/qualify"
+                    f"/{raw_intake_token}?field=entity_type&value=individual"
+                )
+                business_url = (
+                    f"{settings.FRONTEND_URL}/api/backend/intake-token/qualify"
+                    f"/{raw_intake_token}?field=entity_type&value=business"
+                )
+                if "{{entity_type_individual_url}}" in body:
+                    body = body.replace("{{entity_type_individual_url}}", individual_url)
+                if "{{entity_type_business_url}}" in body:
+                    body = body.replace("{{entity_type_business_url}}", business_url)
+
             # 13. WRITE FIRST -- advance enrollment before any send attempt.
             # Write-then-send guarantee: a crash after write produces a missed email,
             # never a duplicate. Do not move this below the send call.

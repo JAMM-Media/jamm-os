@@ -452,6 +452,10 @@ class NotificationType(str, Enum):
     # Fires when an enrollment reaches a dead_end step; triggers the firm-owner
     # take-over notification per Contract section 6.7.
     nurture_dead_end_reached = "nurture_dead_end_reached"
+    # PROPOSED NAME -- pending Andrew's sign-off (Contract section 9.1).
+    # Fires when a lead clicks an entity_type answer button in an E2 nurture email
+    # via GET /intake-token/qualify/{token}?field=entity_type&value=<value>.
+    # String uses dot notation matching other behavioral event types (e.g. lead.created).
 
 
 class NotificationChannel(str, Enum):
