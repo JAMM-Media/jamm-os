@@ -44,6 +44,41 @@ class PortalPreviewMessageSummary(BaseModel):
     last_message_at: Optional[datetime] = None
 
 
+class PortalPreviewNotificationItem(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    title: str
+    body: Optional[str] = None
+    notification_type: str
+    is_read: bool
+    created_at: datetime
+
+
+class PortalPreviewNotificationSummary(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    unread_count: int
+    recent: list[PortalPreviewNotificationItem]
+
+
+class PortalPreviewBillingSummary(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    total_invoiced: float
+    total_outstanding: float
+    invoice_count: int
+
+
+class PortalPreviewOrganizerSummary(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    organizer_count: int
+    sent_count: int
+    in_progress_count: int
+    submitted_count: int
+
+
 class PortalPreviewOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -53,4 +88,7 @@ class PortalPreviewOut(BaseModel):
     documents: list[PortalPreviewDocumentItem]
     invoices: list[PortalPreviewInvoiceItem]
     messages: PortalPreviewMessageSummary
+    notifications: PortalPreviewNotificationSummary
+    billing: PortalPreviewBillingSummary
+    organizer: PortalPreviewOrganizerSummary
     generated_at: datetime

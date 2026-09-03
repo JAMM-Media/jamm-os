@@ -30,6 +30,33 @@ export interface PortalPreviewMessages {
   last_message_at: string | null
 }
 
+export interface PortalPreviewNotification {
+  id: string
+  title: string
+  body: string | null
+  notification_type: string
+  is_read: boolean
+  created_at: string
+}
+
+export interface PortalPreviewNotifications {
+  unread_count: number
+  recent: PortalPreviewNotification[]
+}
+
+export interface PortalPreviewBilling {
+  total_invoiced: number
+  total_outstanding: number
+  invoice_count: number
+}
+
+export interface PortalPreviewOrganizer {
+  organizer_count: number
+  sent_count: number
+  in_progress_count: number
+  submitted_count: number
+}
+
 export interface PortalPreviewData {
   client_id: string
   client_name: string
@@ -37,6 +64,9 @@ export interface PortalPreviewData {
   documents: PortalPreviewDocument[]
   invoices: PortalPreviewInvoice[]
   messages: PortalPreviewMessages
+  notifications: PortalPreviewNotifications
+  billing: PortalPreviewBilling
+  organizer: PortalPreviewOrganizer
   generated_at: string
 }
 
