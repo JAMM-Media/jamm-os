@@ -50,3 +50,4 @@ frontend/frontend_snapshot.txt
 frontend_snapshot.txt
 .playwright-mcp/
 *.png
+assets/
