@@ -108,6 +108,52 @@ def create_portal_access_token(
     return jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
 
+def create_preview_access_token(
+    client_id: uuid.UUID,
+    firm_id: uuid.UUID,
+) -> str:
+    """
+    Creates a short-lived JWT for staff-initiated portal previews.
+
+    Uses scope='portal_staff_preview' (distinct from 'client_portal') so this
+    token is accepted only by preview-specific endpoints. All regular portal
+    write endpoints check for scope='client_portal' and reject this token,
+    preventing any accidental write operations via the preview session.
+
+    Expiry: 10 minutes. Sufficient for a branding review; short enough to limit
+    risk if the URL is shared or accidentally logged.
+    """
+    now = datetime.now(timezone.utc)
+    expire = now + timedelta(minutes=10)
+    payload = {
+        "sub": str(client_id),
+        "firm_id": str(firm_id),
+        "scope": "portal_staff_preview",
+        "exp": expire,
+    }
+    return jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+
+
+def decode_preview_access_token(token: str) -> dict:
+    """
+    Decode and validate a portal staff preview token.
+
+    Raises HTTP 401 if invalid, expired, or wrong scope.
+    """
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate preview credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+    except JWTError:
+        raise credentials_exception
+    if payload.get("scope") != "portal_staff_preview":
+        raise credentials_exception
+    return payload
+
+
 def decode_portal_access_token(token: str) -> dict:
     """
     Decode and validate a portal access token.

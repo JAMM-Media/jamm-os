@@ -73,93 +73,42 @@ const COLOR_LABELS = [
   { key: 'top_bar', label: 'Top bar' },
   { key: 'page', label: 'Page background' },
   { key: 'tab_bar', label: 'Tab bar' },
-  { key: 'accent', label: 'Accent (tabs & buttons)' },
+  { key: 'accent', label: 'Accent' },
   { key: 'avatar', label: 'Client avatar' },
-  { key: 'subtitle', label: 'Subtitle text ("Client Portal")' },
-  { key: 'card', label: 'Card / item background' },
+  { key: 'subtitle', label: 'Subtitle' },
+  { key: 'card', label: 'Card background' },
   { key: 'text_primary', label: 'Primary text' },
   { key: 'text_muted', label: 'Secondary text' },
 ] as const
 
 
+// ColorSection: color editor only (2-column grid), no preview, no reset button.
+// Preview and reset live in PortalPreviewPanel (right-hand panel).
 interface ColorSectionProps {
   mode: 'dark' | 'light'
   colors: ColorSet
-  isActive: boolean
-  logoPreviewUrl: string | null
-  portalDisplayName: string
-  firmName: string
   invalidFields: Set<string>
   textRefs: MutableRefObject<Record<string, HTMLInputElement | null>>
   onSetColor: (mode: 'dark' | 'light', key: keyof ColorSet, value: string) => void
-  onReset: () => void
-  onSetActive: () => void
   onSetInvalidFields: Dispatch<SetStateAction<Set<string>>>
 }
 
 function ColorSection({
   mode,
   colors,
-  isActive,
-  logoPreviewUrl,
-  portalDisplayName,
-  firmName,
   invalidFields,
   textRefs,
   onSetColor,
-  onReset,
-  onSetActive,
   onSetInvalidFields,
 }: ColorSectionProps) {
-  const previewPage = VALID_HEX.test(colors.page) ? colors.page : (mode === 'dark' ? '#2D2D2D' : '#E4E6EA')
-  const previewTopBar = VALID_HEX.test(colors.top_bar) ? colors.top_bar : (mode === 'dark' ? '#1A2535' : '#1F3148')
-  const previewTabBar = VALID_HEX.test(colors.tab_bar) ? colors.tab_bar : (mode === 'dark' ? '#252525' : '#EDEEF0')
-  const previewAccent = VALID_HEX.test(colors.accent) ? colors.accent : (mode === 'dark' ? '#4A7FA5' : '#1F3148')
-  const previewAvatar = VALID_HEX.test(colors.avatar) ? colors.avatar : (mode === 'dark' ? '#3A6A94' : '#1F3148')
-  const primaryText = mode === 'light' ? '#1F3148' : '#EDEEF0'
-  const mutedText = '#9CA3AF'
-  const tabBorderColor = mode === 'light' ? '#C8CDD6' : '#383838'
-
   return (
-    <div className={`flex flex-col gap-4 p-4 rounded-[8px] border ${isActive ? 'border-brand dark:border-brand-light' : 'border-surface-border dark:border-dark-border'}`}>
-      {/* Section header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <span className="text-[13px] font-medium text-brand dark:text-[#EDEEF0]">
-            {mode === 'dark' ? 'Dark mode' : 'Light mode'}
-          </span>
-          {isActive && (
-            <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-[#D1FAE5] text-[#065F46]">
-              Active
-            </span>
-          )}
-        </div>
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={onReset}
-            className="text-[11px] text-[#6B7280] hover:text-brand-light"
-          >
-            Reset to defaults
-          </button>
-          {!isActive && (
-            <button
-              type="button"
-              onClick={onSetActive}
-              className="text-[11px] font-medium text-brand-light hover:underline"
-            >
-              Set as active
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Color pickers */}
-      <div className="flex flex-col gap-2">
+    <div className="flex flex-col gap-3">
+      {/* Color pickers in 2-column grid */}
+      <div className="grid grid-cols-2 gap-x-4 gap-y-2">
         {COLOR_LABELS.map(({ key, label }) => {
         const value = colors[key]
         return (
-          <div key={key} className="flex items-center gap-3">
+          <div key={key} className="flex items-center gap-2 min-w-0">
             <input
               type="color"
               value={VALID_HEX.test(value) ? value : '#1F3148'}
@@ -168,7 +117,7 @@ function ColorSection({
                 const ref = textRefs.current[`${mode}-${key}`]
                 if (ref) ref.value = e.target.value
               }}
-              className="w-8 h-8 rounded cursor-pointer border border-surface-border dark:border-dark-border p-0.5 flex-shrink-0"
+              className="w-7 h-7 rounded cursor-pointer border border-surface-border dark:border-dark-border p-0.5 flex-shrink-0"
             />
             <input
               type="text"
@@ -196,9 +145,9 @@ function ColorSection({
               ref={(el) => { textRefs.current[`${mode}-${key}`] = el }}
               maxLength={7}
               placeholder="#000000"
-              className={`w-28 rounded-[6px] border ${invalidFields.has(`${mode}-${key}`) ? 'border-red-400 ring-1 ring-red-400' : 'border-surface-border dark:border-dark-border'} bg-surface-page dark:bg-dark-page text-[12px] text-brand dark:text-[#EDEEF0] px-2 py-1 focus:outline-none`}
+              className={`w-24 rounded-[5px] border ${invalidFields.has(`${mode}-${key}`) ? 'border-red-400 ring-1 ring-red-400' : 'border-surface-border dark:border-dark-border'} bg-surface-page dark:bg-dark-page text-[11px] text-brand dark:text-[#EDEEF0] px-2 py-1 focus:outline-none flex-shrink-0`}
             />
-            <span className="text-[12px] text-[#6B7280]">{label}</span>
+            <span className="text-[11px] text-[#6B7280] truncate min-w-0">{label}</span>
           </div>
         )
       })}
@@ -231,46 +180,99 @@ function ColorSection({
           </div>
         )
       })()}
+    </div>
+  )
+}
 
-      {/* Mini preview */}
+
+// PortalPreviewPanel: live portal color preview (mini swatch) with reset and open-preview button.
+interface PortalPreviewPanelProps {
+  colors: ColorSet
+  mode: 'dark' | 'light'
+  logoPreviewUrl: string | null
+  portalDisplayName: string
+  firmName: string
+  onReset: () => void
+}
+
+function PortalPreviewPanel({
+  colors,
+  mode,
+  logoPreviewUrl,
+  portalDisplayName,
+  firmName,
+  onReset,
+}: PortalPreviewPanelProps) {
+  const [previewLoading, setPreviewLoading] = useState(false)
+  const previewPage = VALID_HEX.test(colors.page) ? colors.page : (mode === 'dark' ? '#2D2D2D' : '#E4E6EA')
+  const previewTopBar = VALID_HEX.test(colors.top_bar) ? colors.top_bar : (mode === 'dark' ? '#1A2535' : '#1F3148')
+  const previewAccent = VALID_HEX.test(colors.accent) ? colors.accent : (mode === 'dark' ? '#4A7FA5' : '#1F3148')
+
+  return (
+    <div className="flex flex-col gap-3">
+      {/* Panel header */}
+      <div className="flex flex-col gap-1">
+        <span className="text-[12px] font-semibold text-brand dark:text-[#EDEEF0]">Live portal preview</span>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={onReset}
+            className="text-[11px] text-[#6B7280] hover:text-brand-light transition-colors"
+          >
+            Reset to defaults
+          </button>
+          <button
+            type="button"
+            disabled={previewLoading}
+            onClick={async () => {
+              setPreviewLoading(true)
+              try {
+                const { data } = await api.post('/portal-preview/token')
+                const { preview_token } = data as { preview_token: string }
+                window.open(`/portal-preview?token=${encodeURIComponent(preview_token)}`, '_blank', 'noreferrer')
+              } catch (err: unknown) {
+                const status = (err as { response?: { status?: number } })?.response?.status
+                if (status === 404) {
+                  toast.error('No portal-enabled clients found. Enable portal access for at least one client first.')
+                } else {
+                  toast.error('Could not generate preview. Please try again.')
+                }
+              } finally {
+                setPreviewLoading(false)
+              }
+            }}
+            className="h-6 px-2 text-[11px] font-medium rounded-[4px] border border-surface-border dark:border-dark-border text-brand dark:text-[#EDEEF0] hover:bg-surface-card dark:hover:bg-dark-card transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {previewLoading ? 'Opening…' : 'Open preview'}
+          </button>
+        </div>
+      </div>
+
+      {/* Mini portal preview -- simple color swatch: top bar + accent against page background */}
       <div className="rounded-[6px] overflow-hidden border border-surface-border dark:border-dark-border">
-        <div className="flex items-center justify-between px-3 h-9" style={{ backgroundColor: previewTopBar }}>
-          <div className="flex items-center gap-1.5">
-            {logoPreviewUrl ? (
-              <img src={logoPreviewUrl} alt="" className="h-5 max-w-[80px] object-contain" onError={() => {}} />
-            ) : (
-              <span className="text-[11px] font-medium text-white">{portalDisplayName || firmName}</span>
-            )}
-            <span className="text-[9px]" style={{ color: VALID_HEX.test(colors.subtitle) ? colors.subtitle : '#7DA3C4' }}>Client Portal</span>
-          </div>
-          <div className="w-5 h-5 rounded-full flex items-center justify-center" style={{ backgroundColor: previewAvatar }}>
-            <span className="text-[9px] font-medium text-white">JD</span>
-          </div>
+        {/* Top bar strip */}
+        <div className="flex items-center gap-2 px-3 h-10" style={{ backgroundColor: previewTopBar }}>
+          {logoPreviewUrl ? (
+            <img src={logoPreviewUrl} alt="" className="h-5 max-w-[100px] object-contain" onError={() => {}} />
+          ) : (
+            <span className="text-[12px] font-semibold text-white">{portalDisplayName || firmName}</span>
+          )}
+          <span className="text-[10px]" style={{ color: VALID_HEX.test(colors.subtitle) ? colors.subtitle : '#7DA3C4' }}>Client Portal</span>
         </div>
-        <div className="flex items-center px-2 h-7 border-b" style={{ backgroundColor: previewTabBar, borderColor: tabBorderColor }}>
-          {['To-do', 'Documents', 'Invoices'].map((t, i) => (
-            <span
-              key={t}
-              className="px-2 py-1 text-[10px]"
-              style={{
-                color: i === 0 ? primaryText : mutedText,
-                borderBottom: i === 0 ? `2px solid ${previewAccent}` : '2px solid transparent',
-                fontWeight: i === 0 ? 500 : 400,
-              }}
-            >
-              {t}
-            </span>
-          ))}
-        </div>
-        <div className="px-3 py-2" style={{ backgroundColor: previewPage }}>
-          <div className="rounded-[4px] px-3 py-2" style={{ backgroundColor: VALID_HEX.test(colors.card) ? colors.card : (mode === 'dark' ? '#383838' : '#EDEEF0') }}>
-            <span className="text-[10px]" style={{ color: mode === 'light' ? '#1F3148' : '#EDEEF0' }}>Card item</span>
-          </div>
+        {/* Content area with accent sample */}
+        <div className="px-4 py-4" style={{ backgroundColor: previewPage }}>
+          <span
+            className="inline-block text-[12px] font-medium px-3 py-1.5 rounded-md text-white"
+            style={{ backgroundColor: previewAccent }}
+          >
+            View documents
+          </span>
         </div>
       </div>
     </div>
   )
 }
+
 
 export default function PortalBrandingTab() {
   const [loading, setLoading] = useState(true)
@@ -282,6 +284,7 @@ export default function PortalBrandingTab() {
   const [saveConfirmed, setSaveConfirmed] = useState(false)
   const [invalidFields, setInvalidFields] = useState<Set<string>>(new Set())
   const textRefs = useRef<Record<string, HTMLInputElement | null>>({})
+  const [activeModeTab, setActiveModeTab] = useState<'dark' | 'light'>('dark')
   const [branding, setBranding] = useState<BrandingState>({
     portal_display_name: '',
     portal_logo_s3_key: null,
@@ -302,13 +305,15 @@ export default function PortalBrandingTab() {
       setFirmName(data.name)
       const savedDark = (settings.portal_colors_dark as Partial<ColorSet>) || {}
       const savedLight = (settings.portal_colors_light as Partial<ColorSet>) || {}
+      const mode = (settings.portal_mode as 'light' | 'dark') || 'dark'
       setBranding({
         portal_display_name: (settings.portal_display_name as string) || data.name,
         portal_logo_s3_key: (settings.portal_logo_s3_key as string | null) || null,
-        portal_mode: (settings.portal_mode as 'light' | 'dark') || 'dark',
+        portal_mode: mode,
         colors_dark: { ...DARK_DEFAULTS, ...savedDark },
         colors_light: { ...LIGHT_DEFAULTS, ...savedLight },
       })
+      setActiveModeTab(mode)
       if (settings.portal_logo_s3_key) {
         setLogoPreviewUrl(`https://api.jammpx.com/firms/logo/${data.id}`)
       }
@@ -418,32 +423,40 @@ export default function PortalBrandingTab() {
   const inputClass = 'w-full rounded-[6px] border border-surface-border dark:border-dark-border bg-surface-page dark:bg-dark-page text-[13px] text-brand dark:text-[#EDEEF0] px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-brand'
   const hintClass = 'text-[11px] text-[#6B7280] mt-1'
 
+  const activeColors = activeModeTab === 'dark' ? branding.colors_dark : branding.colors_light
+  const isTabActive = activeModeTab === branding.portal_mode
+
   if (loading) {
     return (
-      <div className="flex flex-col gap-6 max-w-2xl">
-        {[1, 2, 3].map((i) => (
-          <div key={i} className="flex flex-col gap-1.5">
-            <div className="h-3 w-24 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
-            <div className="h-9 w-full bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded-[6px]" />
-          </div>
-        ))}
+      <div className="flex gap-6 items-start">
+        <div className="flex flex-col gap-5 flex-1 min-w-0">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="flex flex-col gap-1.5">
+              <div className="h-3 w-24 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+              <div className="h-9 w-full bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded-[6px]" />
+            </div>
+          ))}
+        </div>
+        <div className="w-80 flex-shrink-0 h-48 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded-[8px]" />
       </div>
     )
   }
 
   return (
-    <div className="flex flex-col gap-6 max-w-2xl">
+    <div className="flex gap-6 items-start">
 
-      {/* Setup status */}
-      <div className="flex flex-col gap-2 p-3 rounded-[8px] bg-surface-card dark:bg-dark-card border border-surface-border dark:border-dark-border">
-        <span className="text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em]">Setup status</span>
-        <div className="flex flex-col gap-1.5">
+      {/* Left: main editor */}
+      <div className="flex flex-col gap-5 flex-1 min-w-0">
+
+        {/* Setup status -- horizontal row of badges */}
+        <div className="flex items-center gap-4 p-3 rounded-[8px] bg-surface-card dark:bg-dark-card border border-surface-border dark:border-dark-border flex-wrap">
+          <span className="text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em] flex-shrink-0">Setup status</span>
           {[
             { done: branding.portal_display_name !== firmName && branding.portal_display_name.trim() !== '', label: 'Display name customized' },
             { done: !!branding.portal_logo_s3_key, label: 'Firm logo uploaded' },
             { done: JSON.stringify(branding.colors_dark) !== JSON.stringify(DARK_DEFAULTS) || JSON.stringify(branding.colors_light) !== JSON.stringify(LIGHT_DEFAULTS), label: 'Colors customized' },
           ].map(({ done, label }) => (
-            <div key={label} className="flex items-center gap-2">
+            <div key={label} className="flex items-center gap-1.5">
               <div className={`w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0 ${done ? 'bg-[#D1FAE5]' : 'bg-[#E5E7EB] dark:bg-[#333333]'}`}>
                 {done ? (
                   <svg className="w-2.5 h-2.5 text-[#065F46]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
@@ -457,129 +470,128 @@ export default function PortalBrandingTab() {
             </div>
           ))}
         </div>
-      </div>
 
-      {/* Display Name */}
-      <div className="flex flex-col gap-1.5">
-        <label className={labelClass}>Firm name in portal</label>
-        <input
-          type="text"
-          value={branding.portal_display_name}
-          onChange={(e) => setBranding((b) => ({ ...b, portal_display_name: e.target.value }))}
-          placeholder={firmName}
-          maxLength={100}
-          className={inputClass}
-        />
-        <p className={hintClass}>The name your clients see in the portal top bar. Defaults to your firm name.</p>
-      </div>
-
-      {/* Logo Upload */}
-      <div className="flex flex-col gap-1.5">
-        <span className={labelClass}>Firm logo</span>
-        <input
-          id="logo-upload-input"
-          type="file"
-          accept="image/png,image/jpeg,image/jpg,image/svg+xml,image/webp"
-          onChange={handleInputChange}
-          disabled={uploading}
-          style={{ display: 'none' }}
-        />
-        <input
-          id="logo-replace-input"
-          type="file"
-          accept="image/png,image/jpeg,image/jpg,image/svg+xml,image/webp"
-          onChange={handleInputChange}
-          disabled={uploading}
-          style={{ display: 'none' }}
-        />
-        {logoPreviewUrl ? (
-          <div className="flex items-center gap-3 p-3 rounded-[6px] border border-surface-border dark:border-dark-border bg-surface-page dark:bg-dark-page">
-            <img
-              src={logoPreviewUrl}
-              alt="Firm logo"
-              className="h-10 max-w-[160px] object-contain rounded"
-              onError={() => setLogoPreviewUrl(null)}
+        {/* Firm name + Logo -- side by side */}
+        <div className="grid grid-cols-2 gap-4">
+          {/* Firm name card */}
+          <div className="flex flex-col gap-1.5 p-4 rounded-[8px] bg-surface-card dark:bg-dark-card border border-surface-border dark:border-dark-border">
+            <label className={labelClass}>Firm name in portal</label>
+            <input
+              type="text"
+              value={branding.portal_display_name}
+              onChange={(e) => setBranding((b) => ({ ...b, portal_display_name: e.target.value }))}
+              placeholder={firmName}
+              maxLength={100}
+              className={inputClass}
             />
-            <div className="flex-1" />
-            <label htmlFor="logo-replace-input" className={`text-[12px] font-medium text-brand-light hover:underline cursor-pointer ${uploading ? 'opacity-50 pointer-events-none' : ''}`}>
-              Replace
-            </label>
-            <button type="button" onClick={handleRemoveLogo} disabled={saving || uploading} className="text-[12px] font-medium text-[#DC2626] hover:underline disabled:opacity-50 flex items-center gap-1">
-              <X className="w-3 h-3" />
-              Remove
-            </button>
+            <p className={hintClass}>Shown in the portal top bar. Defaults to your firm name.</p>
           </div>
-        ) : (
-          <label htmlFor="logo-upload-input" className={`flex flex-col items-center justify-center gap-2 h-24 rounded-[6px] border border-dashed border-surface-border dark:border-dark-border hover:border-brand-light dark:hover:border-brand-light transition-colors cursor-pointer ${uploading ? 'opacity-50 pointer-events-none' : ''}`}>
-            {uploading ? (
-              <>
-                <Loader2 className="w-5 h-5 text-[#6B7280] animate-spin" />
-                <span className="text-[12px] text-[#6B7280]">Uploading…</span>
-              </>
-            ) : (
-              <>
-                <Upload className="w-5 h-5 text-[#6B7280]" />
-                <span className="text-[12px] text-[#6B7280]">Click to upload logo</span>
-                <span className="text-[11px] text-[#9CA3AF]">PNG, JPG, SVG, WEBP — max 2MB</span>
-              </>
-            )}
-          </label>
-        )}
-        <p className={hintClass}>Displayed in the portal top bar instead of your firm name when set.</p>
-      </div>
 
-      {/* Color sections — dark and light side by side on wide, stacked on narrow */}
-      <div className="flex flex-col gap-3">
-        <span className={labelClass}>Portal colors</span>
-        <p className={hintClass}>
-          Configure colors for both modes. Use &ldquo;Set as active&rdquo; to choose which mode your clients see.
-          To find your brand colors: right-click any element on your website → Inspect → look for a # value in the CSS panel.
-        </p>
-        <div className="flex flex-col gap-4">
+          {/* Firm logo card */}
+          <div className="flex flex-col gap-1.5 p-4 rounded-[8px] bg-surface-card dark:bg-dark-card border border-surface-border dark:border-dark-border">
+            <span className={labelClass}>Firm logo</span>
+            <input id="logo-upload-input" type="file" accept="image/png,image/jpeg,image/jpg,image/svg+xml,image/webp" onChange={handleInputChange} disabled={uploading} style={{ display: 'none' }} />
+            <input id="logo-replace-input" type="file" accept="image/png,image/jpeg,image/jpg,image/svg+xml,image/webp" onChange={handleInputChange} disabled={uploading} style={{ display: 'none' }} />
+            {logoPreviewUrl ? (
+              <div className="flex items-center gap-3 p-2 rounded-[6px] border border-surface-border dark:border-dark-border bg-surface-page dark:bg-dark-page">
+                <img src={logoPreviewUrl} alt="Firm logo" className="h-8 max-w-[120px] object-contain rounded" onError={() => setLogoPreviewUrl(null)} />
+                <div className="flex-1" />
+                <label htmlFor="logo-replace-input" className={`text-[12px] font-medium text-brand-light hover:underline cursor-pointer ${uploading ? 'opacity-50 pointer-events-none' : ''}`}>Replace</label>
+                <button type="button" onClick={handleRemoveLogo} disabled={saving || uploading} className="text-[12px] font-medium text-[#DC2626] hover:underline disabled:opacity-50 flex items-center gap-1">
+                  <X className="w-3 h-3" />Remove
+                </button>
+              </div>
+            ) : (
+              <label htmlFor="logo-upload-input" className={`flex flex-col items-center justify-center gap-1.5 h-20 rounded-[6px] border border-dashed border-surface-border dark:border-dark-border hover:border-brand-light transition-colors cursor-pointer ${uploading ? 'opacity-50 pointer-events-none' : ''}`}>
+                {uploading ? (
+                  <><Loader2 className="w-4 h-4 text-[#6B7280] animate-spin" /><span className="text-[12px] text-[#6B7280]">Uploading...</span></>
+                ) : (
+                  <><Upload className="w-4 h-4 text-[#6B7280]" /><span className="text-[12px] text-[#6B7280]">Click to upload logo</span><span className="text-[11px] text-[#9CA3AF]">PNG, JPG, SVG, WEBP</span></>
+                )}
+              </label>
+            )}
+            <p className={hintClass}>Shown instead of firm name when set.</p>
+          </div>
+        </div>
+
+        {/* Portal branding card */}
+        <div className="flex flex-col gap-4 p-4 rounded-[8px] bg-surface-card dark:bg-dark-card border border-surface-border dark:border-dark-border">
+          <div>
+            <span className={labelClass}>Portal branding</span>
+            <p className={hintClass}>Configure colors for dark and light modes. Use the mode tabs to switch between them.</p>
+          </div>
+
+          {/* Tab switcher + active mode indicator */}
+          <div className="flex items-center gap-3">
+            <div className="flex rounded-[6px] border border-surface-border dark:border-dark-border overflow-hidden">
+              {(['dark', 'light'] as const).map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => setActiveModeTab(m)}
+                  className={`h-8 px-4 text-[12px] font-medium transition-colors ${
+                    activeModeTab === m
+                      ? 'bg-brand text-white'
+                      : 'bg-surface-page dark:bg-dark-page text-[#6B7280] hover:text-brand dark:hover:text-[#EDEEF0]'
+                  }`}
+                >
+                  {m === 'dark' ? 'Dark mode' : 'Light mode'}
+                </button>
+              ))}
+            </div>
+            {isTabActive ? (
+              <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-[#D1FAE5] text-[#065F46]">
+                Active mode
+              </span>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setBranding((b) => ({ ...b, portal_mode: activeModeTab }))}
+                className="text-[11px] font-medium text-brand-light hover:underline"
+              >
+                Set as active
+              </button>
+            )}
+          </div>
+
+          {/* Color editor for the currently selected mode tab */}
           <ColorSection
-            mode="dark"
-            colors={branding.colors_dark}
-            isActive={branding.portal_mode === 'dark'}
-            logoPreviewUrl={logoPreviewUrl}
-            portalDisplayName={branding.portal_display_name}
-            firmName={firmName}
+            mode={activeModeTab}
+            colors={activeColors}
             invalidFields={invalidFields}
             textRefs={textRefs}
             onSetColor={setColor}
-            onReset={() => resetColors('dark')}
-            onSetActive={() => setBranding((b) => ({ ...b, portal_mode: 'dark' }))}
-            onSetInvalidFields={setInvalidFields}
-          />
-          <ColorSection
-            mode="light"
-            colors={branding.colors_light}
-            isActive={branding.portal_mode === 'light'}
-            logoPreviewUrl={logoPreviewUrl}
-            portalDisplayName={branding.portal_display_name}
-            firmName={firmName}
-            invalidFields={invalidFields}
-            textRefs={textRefs}
-            onSetColor={setColor}
-            onReset={() => resetColors('light')}
-            onSetActive={() => setBranding((b) => ({ ...b, portal_mode: 'light' }))}
             onSetInvalidFields={setInvalidFields}
           />
         </div>
+
+        {/* Save */}
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={saving || uploading}
+            className="h-9 px-5 rounded-[6px] bg-brand text-white text-[13px] font-medium hover:opacity-90 disabled:opacity-50 transition-opacity"
+          >
+            {saving ? 'Saving...' : 'Save changes'}
+          </button>
+          {saveConfirmed && (
+            <span className="text-[11px] text-[#065F46] dark:text-[#34D399]">Changes are live in the client portal.</span>
+          )}
+        </div>
+
       </div>
 
-      {/* Save */}
-      <div className="flex items-center gap-3">
-        <button
-          type="button"
-          onClick={handleSave}
-          disabled={saving || uploading}
-          className="h-9 px-5 rounded-[6px] bg-brand text-white text-[13px] font-medium hover:opacity-90 disabled:opacity-50 transition-opacity"
-        >
-          {saving ? 'Saving…' : 'Save branding'}
-        </button>
-        {saveConfirmed && (
-          <span className="text-[11px] text-[#065F46] dark:text-[#34D399]">Changes are live in the client portal.</span>
-        )}
+      {/* Right: live portal preview panel */}
+      <div className="w-80 flex-shrink-0 sticky top-6 flex flex-col gap-3 p-4 rounded-[8px] bg-surface-card dark:bg-dark-card border border-surface-border dark:border-dark-border">
+        <PortalPreviewPanel
+          colors={activeColors}
+          mode={activeModeTab}
+          logoPreviewUrl={logoPreviewUrl}
+          portalDisplayName={branding.portal_display_name}
+          firmName={firmName}
+          onReset={() => resetColors(activeModeTab)}
+        />
       </div>
 
     </div>

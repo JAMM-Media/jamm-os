@@ -46,6 +46,7 @@ from app.api.document_requests import router as document_requests_router
 from app.api.checklist_templates import router as checklist_templates_router
 from app.api.esign import router as esign_router
 from app.api.portal import router as portal_router
+from app.api.portal_preview import router as portal_preview_router
 from app.api.invoices import router as invoices_router
 from app.api.time_entries import router as time_entries_router
 from app.api.stripe_connect import router as stripe_connect_router
@@ -342,6 +343,7 @@ app.include_router(document_requests_router)
 app.include_router(checklist_templates_router)
 app.include_router(esign_router)
 app.include_router(portal_router)
+app.include_router(portal_preview_router)
 app.include_router(invoices_router, prefix="/invoices", tags=["invoices"])
 app.include_router(time_entries_router, prefix="/time-entries", tags=["time-entries"])
 app.include_router(stripe_connect_router, prefix="/stripe", tags=["stripe"])
