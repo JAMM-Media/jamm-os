@@ -27,7 +27,7 @@ editing and version-publishing feature is built, and should be added then.
 Not simulated now with invented row mutations that no real code path produces.
 """
 
-import subprocess
+import ast
 import uuid
 import pathlib
 
@@ -177,6 +177,61 @@ class TestEnrollmentVersionPinField:
 
 
 # ---------------------------------------------------------------------------
+# Helper for the guard test: AST-based scan (see why below)
+# ---------------------------------------------------------------------------
+
+def _scan_for_sequence_version_id_assignments(app_dir: pathlib.Path) -> list[str]:
+    """Walk every .py file under app_dir and return one entry per assignment
+    to .sequence_version_id on an attribute (e.g. obj.sequence_version_id = x).
+
+    Uses ast.parse rather than grep for two reasons, both documented in
+    test_surface_gatekeeper_guard.py where this approach was first applied:
+
+    1. Portability: grep does not exist on Windows PowerShell. This file's prior
+       grep-based guard was the suite's one known failing test on Windows. Nothing
+       new should join it.
+
+    2. Precision: prose in docstrings and comments that DISCUSSES the guarded
+       field would match a text search and cause false positives. Walking the AST
+       ignores comments and docstrings entirely, so the guard can be strict about
+       executable code while files remain free to explain themselves.
+
+    The model's own column definition (sequence_version_id: Mapped[...] =
+    mapped_column(...)) is an ast.AnnAssign whose target is ast.Name, not
+    ast.Attribute, so it is structurally excluded without any explicit filter.
+    """
+    violations: list[str] = []
+    for py_file in sorted(app_dir.rglob("*.py")):
+        rel = py_file.relative_to(app_dir.parent)
+        try:
+            source = py_file.read_text(encoding="utf-8")
+            tree = ast.parse(source, filename=str(py_file))
+        except SyntaxError:
+            continue
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Assign):
+                for target in node.targets:
+                    if (
+                        isinstance(target, ast.Attribute)
+                        and target.attr == "sequence_version_id"
+                    ):
+                        violations.append(f"{rel}:{node.lineno}")
+            elif isinstance(node, ast.AugAssign):
+                if (
+                    isinstance(node.target, ast.Attribute)
+                    and node.target.attr == "sequence_version_id"
+                ):
+                    violations.append(f"{rel}:{node.lineno}")
+            elif isinstance(node, ast.AnnAssign):
+                if (
+                    isinstance(node.target, ast.Attribute)
+                    and node.target.attr == "sequence_version_id"
+                ):
+                    violations.append(f"{rel}:{node.lineno}")
+    return violations
+
+
+# ---------------------------------------------------------------------------
 # Test 2: Structural guard -- no code currently assigns to this field
 # (THE GUARD TEST for this file)
 # ---------------------------------------------------------------------------
@@ -185,7 +240,7 @@ class TestNoCodePathModifiesVersionPin:
     def test_no_code_path_currently_modifies_enrollment_sequence_version_id(self):
         """Guard: no attribute assignment to .sequence_version_id exists anywhere in app/.
 
-        Searches the real committed source tree at test time using grep.
+        Walks the real committed source tree at test time using an AST scan.
         If any code assigns to this field outside the model column definition,
         the test fails and names the file and line -- forcing a conscious
         decision about whether the assignment is safe.
@@ -198,27 +253,14 @@ class TestNoCodePathModifiesVersionPin:
         Exclusions: model column definitions (which use the annotation syntax
         'sequence_version_id: Mapped[...] = mapped_column(...)') do not match
         the attribute-access pattern '.<field> =', so no exclusions are needed.
+        See _scan_for_sequence_version_id_assignments for the structural reason.
         """
-        result = subprocess.run(
-            [
-                "grep", "-rn",
-                r"\.sequence_version_id\s*=[^=]",
-                "app/",
-            ],
-            capture_output=True,
-            text=True,
-            cwd=str(_REPO_ROOT),
-        )
+        violations = _scan_for_sequence_version_id_assignments(_REPO_ROOT / "app")
 
-        matches = [
-            line for line in result.stdout.splitlines()
-            if line.strip()
-        ]
-
-        assert matches == [], (
-            f"Found {len(matches)} assignment(s) to .sequence_version_id in app/. "
+        assert violations == [], (
+            f"Found {len(violations)} assignment(s) to .sequence_version_id in app/. "
             f"Each must be reviewed to confirm it does not violate version-pinning:\n"
-            + "\n".join(f"  {m}" for m in matches)
+            + "\n".join(f"  {v}" for v in violations)
         )
 
 
