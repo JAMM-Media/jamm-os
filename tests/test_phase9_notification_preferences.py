@@ -21,6 +21,7 @@ from app.core.enums import (
     NotificationType,
     NotificationChannel,
     NotificationEventType,
+    NotificationTier,
 )
 
 
@@ -117,6 +118,7 @@ def test_create_notification_creates_in_app_record_when_channel_both(client):
             title="Test notification",
             body="Test body",
             notification_type=NotificationType.task_assigned,
+                tier=NotificationTier.quiet,
         )
         assert notif is not None
         assert notif.id is not None
@@ -149,6 +151,7 @@ def test_channel_none_prevents_notification_creation(client):
             title="Suppressed",
             body="Should not be stored",
             notification_type=NotificationType.task_assigned,
+                tier=NotificationTier.quiet,
         )
         assert result is None
     finally:
@@ -176,6 +179,7 @@ def test_channel_in_app_creates_record_no_email(client):
                 title="In-app only",
                 body="No email expected",
                 notification_type=NotificationType.system,
+                tier=NotificationTier.quiet,
                 to_email="test@example.com",
             )
             # In-app record created
@@ -212,6 +216,7 @@ def test_channel_both_creates_record(client):
             title="Payment due",
             body="Your invoice is due",
             notification_type=NotificationType.payment_due,
+                tier=NotificationTier.quiet,
         )
         assert result is not None
 

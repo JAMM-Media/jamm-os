@@ -425,7 +425,7 @@ def _deliver_expiry_warning(
     warning a user can silently switch off, or that fails invisibly on a
     missing payload key, is not acceptable for this feature.
     """
-    from app.core.enums import NotificationType, RecipientType
+    from app.core.enums import NotificationType, NotificationTier, RecipientType
     from app.crud import user as crud_user
     from app.services.notification_service import NotificationService
 
@@ -464,6 +464,7 @@ def _deliver_expiry_warning(
             title=title,
             body=body,
             notification_type=NotificationType.irs_auth_expiry,
+            tier=NotificationTier.quiet,
             related_entity_type="irs_authorization",
             related_entity_id=authorization.id,
             force_in_app=True,

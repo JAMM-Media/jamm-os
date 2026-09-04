@@ -11,7 +11,7 @@ from app.crud import notification_preference as crud_notification_preference
 from app.crud.document import write_audit_log
 from app.models.notification import Notification
 from app.schemas.notification import NotificationCreate
-from app.core.enums import RecipientType, NotificationType, NotificationChannel, NotificationEventType
+from app.core.enums import RecipientType, NotificationType, NotificationChannel, NotificationEventType, NotificationTier
 
 logger = logging.getLogger(__name__)
 
@@ -27,11 +27,18 @@ class NotificationService:
         title: str,
         body: str,
         notification_type: NotificationType,
+        tier: NotificationTier,
         related_entity_type: Optional[str] = None,
         related_entity_id: Optional[uuid.UUID] = None,
         to_email: Optional[str] = None,
         force_in_app: bool = False,
     ) -> Optional[Notification]:
+        # silent tier: no Notification row written, no channel logic, no email.
+        # The behavioral event log (log_event calls near the call site) is the
+        # only record. See Andrew's loud/quiet/silent ruling.
+        if tier == NotificationTier.silent:
+            return None
+
         # force_in_app is for compliance notices the recipient may not opt out
         # of. A firm may stop the emails; a firm may not make the record
         # disappear from the app. It never forces an email.
@@ -63,6 +70,7 @@ class NotificationService:
                 title=title,
                 body=body,
                 notification_type=notification_type,
+                tier=tier,
                 related_entity_type=related_entity_type,
                 related_entity_id=related_entity_id,
             )

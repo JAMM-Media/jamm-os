@@ -6,7 +6,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
 
-from app.core.enums import RecipientType, NotificationType
+from app.core.enums import RecipientType, NotificationType, NotificationTier
 
 
 class NotificationBase(BaseModel):
@@ -15,6 +15,7 @@ class NotificationBase(BaseModel):
     title: str
     body: str
     notification_type: NotificationType
+    tier: NotificationTier
     related_entity_type: Optional[str] = None
     related_entity_id: Optional[UUID] = None
 

@@ -54,7 +54,7 @@ from app.models.firm import Firm
 from app.models.user import User
 from app.models.sequence import Step, StepEdge, SequenceGoal
 from app.models.behavioral_event import BehavioralEvent
-from app.core.enums import StepType, UserRole, RecipientType, NotificationType
+from app.core.enums import StepType, UserRole, RecipientType, NotificationType, NotificationTier
 from app.crud import enrollment as crud_enrollment
 from app.crud import lead_message as crud_lead_message
 from app.crud.suppressed_email import is_suppressed
@@ -420,6 +420,7 @@ def run_nurture_tick() -> dict:
                             " override to return the lead to the sequence."
                         ),
                         notification_type=NotificationType.nurture_hold_for_approval,
+                        tier=NotificationTier.quiet,
                         related_entity_type="lead",
                         related_entity_id=lead.id,
                     )
@@ -462,6 +463,7 @@ def run_nurture_tick() -> dict:
                             " directly."
                         ),
                         notification_type=NotificationType.nurture_dead_end_reached,
+                        tier=NotificationTier.quiet,
                         related_entity_type="lead",
                         related_entity_id=lead.id,
                     )

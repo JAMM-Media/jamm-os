@@ -23,6 +23,7 @@ def create_notification(
         title=data.title,
         body=data.body,
         notification_type=data.notification_type,
+        tier=data.tier,
         related_entity_type=data.related_entity_type,
         related_entity_id=data.related_entity_id,
     )

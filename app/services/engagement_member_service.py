@@ -26,7 +26,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.enums import NotificationType, RecipientType, UserRole
+from app.core.enums import NotificationType, NotificationTier, RecipientType, UserRole
 from app.crud import engagement_member as crud_member
 from app.models.engagement import Engagement
 from app.models.engagement_member import EngagementMember
@@ -315,6 +315,7 @@ def notify_engagement_administrators(
                 title=title,
                 body=body,
                 notification_type=NotificationType.system,
+                tier=NotificationTier.quiet,
                 related_entity_type="engagement",
                 related_entity_id=engagement_id,
             )

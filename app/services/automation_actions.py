@@ -376,7 +376,7 @@ def _handle_send_notification(
 ) -> str:
     from app.db.session import SessionLocal
     from app.services.notification_service import NotificationService
-    from app.core.enums import RecipientType, NotificationType
+    from app.core.enums import RecipientType, NotificationType, NotificationTier
 
     recipient_id_raw = payload.get("recipient_id")
     title = payload.get("title")
@@ -409,6 +409,10 @@ def _handle_send_notification(
             title=title,
             body=body,
             notification_type=notification_type,
+            # PROPOSED SCOPE BOUNDARY -- pending per-rule tier configuration.
+            # A firm-configurable tier per automation rule is real future work.
+            # Fixed to quiet for now per Andrew's taxonomy ruling.
+            tier=NotificationTier.quiet,
         )
         return f"Notification sent to recipient {recipient_id}"
     finally:

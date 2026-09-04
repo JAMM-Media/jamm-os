@@ -458,6 +458,18 @@ class NotificationType(str, Enum):
     # String uses dot notation matching other behavioral event types (e.g. lead.created).
 
 
+class NotificationTier(str, Enum):
+    """Three-tier delivery classification per Andrew's ruling.
+
+    loud   -- immediate interrupt (toast + notification center); human needed now.
+    quiet  -- notification center only; owner should learn it happened, no interrupt.
+    silent -- no Notification row written at all; behavioral log only.
+    """
+    loud = "loud"
+    quiet = "quiet"
+    silent = "silent"
+
+
 class NotificationChannel(str, Enum):
     in_app = "in_app"
     email = "email"

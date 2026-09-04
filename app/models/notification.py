@@ -9,7 +9,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
 from app.db.base_class import Base
-from app.core.enums import RecipientType, NotificationType
+from app.core.enums import RecipientType, NotificationType, NotificationTier
 
 
 class Notification(Base):
@@ -46,6 +46,11 @@ class Notification(Base):
 
     notification_type: Mapped[NotificationType] = mapped_column(
         SAEnum(NotificationType, name="notificationtype", native_enum=False),
+        nullable=False,
+    )
+
+    tier: Mapped[NotificationTier] = mapped_column(
+        SAEnum(NotificationTier, name="notificationtier", native_enum=False),
         nullable=False,
     )
 

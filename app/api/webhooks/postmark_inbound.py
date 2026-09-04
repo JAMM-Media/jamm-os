@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from sqlalchemy.orm import Session
 
-from app.core.enums import EnrollmentStatus, NotificationType, RecipientType, UserRole
+from app.core.enums import EnrollmentStatus, NotificationType, NotificationTier, RecipientType, UserRole
 from app.db.session import get_db
 from app.models.enrollment import Enrollment
 from app.models.lead import Lead
@@ -160,6 +160,7 @@ def postmark_inbound(
                     " and is awaiting your review before automation resumes."
                 ),
                 notification_type=NotificationType.lead_replied,
+                tier=NotificationTier.loud,
                 related_entity_type="lead",
                 related_entity_id=lead.id,
             )

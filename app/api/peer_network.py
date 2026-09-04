@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.dependencies.auth import get_current_user
-from app.core.enums import NotificationType, RecipientType, UserRole
+from app.core.enums import NotificationType, NotificationTier, RecipientType, UserRole
 from app.dependencies.roles import require_firm_owner, require_system_admin
 from app.models.peer_network import (ALLOWED_REACTIONS, PeerNetworkAlias, PeerNetworkMember, PeerNetworkMessage, PeerNetworkReaction, PeerNetworkRoom, PeerNetworkRoomMember)
 from app.models.user import User
@@ -721,6 +721,7 @@ def post_message(
                 title="You were mentioned in the Peer Network",
                 body=f"{member.handle} mentioned you {room_description}.",
                 notification_type=NotificationType.peer_network_mention,
+                tier=NotificationTier.quiet,
             )
         except Exception:
             pass  # notification failure must not abort the message
@@ -743,6 +744,7 @@ def post_message(
                     title="New announcement from JAMM",
                     body=f"{member.handle} posted a new announcement in the Peer Network.",
                     notification_type=NotificationType.peer_network_mention,
+                tier=NotificationTier.silent,
                 )
             except Exception:
                 pass

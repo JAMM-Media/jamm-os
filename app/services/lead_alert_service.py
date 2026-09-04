@@ -13,7 +13,7 @@ import logging
 
 from sqlalchemy.orm import Session
 
-from app.core.enums import NotificationType, RecipientType, UserRole
+from app.core.enums import NotificationType, NotificationTier, RecipientType, UserRole
 from app.models.lead import Lead
 from app.models.user import User
 from app.services.notification_service import NotificationService
@@ -63,6 +63,7 @@ def maybe_fire_hot_lead_alert(db: Session, lead: Lead, previous_hot: bool) -> No
             " Check their urgency notes and reach out before they look elsewhere."
         ),
         notification_type=NotificationType.lead_hot_alert,
+        tier=NotificationTier.loud,
         related_entity_type="lead",
         related_entity_id=lead.id,
     )

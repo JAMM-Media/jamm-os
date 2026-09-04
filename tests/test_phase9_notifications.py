@@ -15,7 +15,7 @@ from tests.conftest import TestingSessionLocal
 from app.models.firm import Firm
 from app.models.user import User
 from app.core.security import get_password_hash
-from app.core.enums import UserRole, RecipientType, NotificationType
+from app.core.enums import UserRole, RecipientType, NotificationType, NotificationTier
 
 
 # ---------------------------------------------------------------------------
@@ -55,9 +55,10 @@ def _login(http_client, email, password="testpass123"):
 def _create_notification_directly(firm_id, recipient_id, recipient_type=RecipientType.staff,
                                    notification_type=NotificationType.system,
                                    title="Test Notification", body="Test body",
-                                   is_read=False):
+                                   is_read=False, tier=None):
     """Insert a Notification directly into the DB for test setup."""
     from app.models.notification import Notification
+    from app.core.enums import NotificationTier
     db = TestingSessionLocal()
     try:
         n = Notification(
@@ -67,6 +68,7 @@ def _create_notification_directly(firm_id, recipient_id, recipient_type=Recipien
             title=title,
             body=body,
             notification_type=notification_type,
+            tier=tier if tier is not None else NotificationTier.quiet,
             is_read=is_read,
         )
         db.add(n)
@@ -98,6 +100,7 @@ def test_create_notification_for_staff_recipient(client):
             title="Task assigned to you",
             body="Please complete the tax return.",
             notification_type=NotificationType.task_assigned,
+                tier=NotificationTier.quiet,
         )
         assert n.id is not None
         assert n.firm_id == firm_id
@@ -127,6 +130,7 @@ def test_create_notification_for_client_recipient(client):
             title="Your document is ready",
             body="Please review your document.",
             notification_type=NotificationType.doc_request_ready,
+                tier=NotificationTier.quiet,
         )
         assert n.id is not None
         assert n.recipient_type == RecipientType.client

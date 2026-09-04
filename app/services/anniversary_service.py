@@ -9,7 +9,7 @@ from app.db.session import SessionLocal
 from app.models.client import Client
 from app.models.engagement import Engagement
 from app.models.user import User
-from app.core.enums import UserRole, RecipientType, NotificationType
+from app.core.enums import UserRole, RecipientType, NotificationType, NotificationTier
 from app.services.notification_service import NotificationService
 from app.services.behavioral_log import log_event
 
@@ -74,6 +74,7 @@ def check_client_anniversaries() -> None:
                         f"Last active: {last_date}."
                     ),
                     notification_type=NotificationType.client_anniversary,
+                    tier=NotificationTier.quiet,
                     related_entity_type="client",
                     related_entity_id=client.id,
                 )
@@ -142,6 +143,7 @@ def check_document_expiries() -> None:
                     notification_type=(
                         NotificationType.document_expiry_alert
                     ),
+                    tier=NotificationTier.quiet,
                     related_entity_type="client",
                     related_entity_id=expiry.client_id,
                 )
@@ -217,6 +219,7 @@ def check_credential_expiries() -> None:
                         f"{user_name}'s {credential.credential_type.value} expires on {credential.expires_at}."
                     ),
                     notification_type=NotificationType.deadline_alert,
+                    tier=NotificationTier.quiet,
                     related_entity_type="staff_credential",
                     related_entity_id=credential.id,
                 )
