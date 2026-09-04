@@ -17,7 +17,7 @@ Covers:
      string rejected with 422 on both LeadCreate and LeadUpdate paths.
 
 Note: E2 send-flow wiring (nurture_execution_service.py step_key='5' injection)
-was removed pending Andrew's pause/go decision on run_nurture_tick changes.
+is implemented in tests/test_nurture_e2_injection.py.
 """
 
 import hashlib

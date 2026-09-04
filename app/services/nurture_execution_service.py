@@ -585,6 +585,29 @@ def run_nurture_tick() -> dict:
                     + f'<a href="{unsubscribe_url}">Unsubscribe</a> from these emails.</p>'
                 )
 
+            # E2 step (step_key == "5"): mint a per-send intake token and inject two
+            # entity_type answer-button URLs. Minting happens here -- after the business-hours
+            # check has confirmed the send will proceed -- so no token row is created for a
+            # tick that merely checks and holds. If the body has neither merge key, the body
+            # sends unchanged (buttons are optional content, unlike the unsubscribe footer).
+            if current_step.step_key == "5":
+                from app.services.intake_token_service import mint_intake_token
+                raw_intake_token = mint_intake_token(
+                    db=db,
+                    firm_id=enrollment.firm_id,
+                    lead_id=enrollment.lead_id,
+                )
+                individual_url = (
+                    f"{settings.FRONTEND_URL}/api/backend/intake-token/qualify/{raw_intake_token}"
+                    "?field=entity_type&value=individual"
+                )
+                business_url = (
+                    f"{settings.FRONTEND_URL}/api/backend/intake-token/qualify/{raw_intake_token}"
+                    "?field=entity_type&value=business"
+                )
+                body = body.replace("{{entity_type_individual_url}}", individual_url)
+                body = body.replace("{{entity_type_business_url}}", business_url)
+
             # 13. WRITE FIRST -- advance enrollment before any send attempt.
             # Write-then-send guarantee: a crash after write produces a missed email,
             # never a duplicate. Do not move this below the send call.
