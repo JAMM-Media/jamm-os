@@ -51,6 +51,7 @@ def _make_firm(slug: str) -> Firm:
             timezone="UTC",
             business_hours_start=0,
             business_hours_end=24,
+            nurture_enabled=True,
         )
         db.add(firm)
         db.commit()

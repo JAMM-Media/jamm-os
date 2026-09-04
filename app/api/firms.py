@@ -83,7 +83,9 @@ def update_my_firm(
         "firm_type": firm.firm_type,
         "feature_flags": firm.feature_flags,
         "timezone": firm.timezone,
+        "nurture_enabled": firm.nurture_enabled,
     }
+    old_nurture_enabled = firm.nurture_enabled
     updated = crud_firm.update_firm(db, firm, payload)
     after = {
         "name": updated.name,
@@ -94,6 +96,7 @@ def update_my_firm(
         "firm_type": updated.firm_type,
         "feature_flags": updated.feature_flags,
         "timezone": updated.timezone,
+        "nurture_enabled": updated.nurture_enabled,
     }
     from app.services.behavioral_log import log_setting_changes
     log_setting_changes(
@@ -102,6 +105,42 @@ def update_my_firm(
         old_values=before,
         new_values=after,
     )
+
+    if payload.nurture_enabled is not None and updated.nurture_enabled != old_nurture_enabled:
+        from app.services.behavioral_log import log_event
+        log_event(
+            event_type="firm.nurture_toggled",
+            firm_id=updated.id,
+            entity_type="firm",
+            entity_id=updated.id,
+            actor_type="staff",
+            actor_id=current_user.id,
+            metadata={"nurture_enabled": updated.nurture_enabled},
+        )
+        if updated.nurture_enabled and not old_nurture_enabled:
+            from datetime import datetime, timezone
+            from app.models.enrollment import Enrollment
+            from app.models.sequence import Step
+            from app.core.enums import EnrollmentStatus, StepType
+            from app.services.nurture_execution_service import _compute_next_action_time
+            now = datetime.now(timezone.utc)
+            held = (
+                db.query(Enrollment)
+                .join(Step, Step.id == Enrollment.current_step_id)
+                .filter(
+                    Enrollment.firm_id == updated.id,
+                    Enrollment.status == EnrollmentStatus.active.value,
+                    Step.step_type.in_([
+                        StepType.wait_fixed.value,
+                        StepType.wait_until_event.value,
+                    ]),
+                )
+                .all()
+            )
+            for enr in held:
+                enr.next_action_time = _compute_next_action_time(db, enr.current_step_id, now)
+            db.commit()
+
     return updated
 
 
@@ -256,7 +295,7 @@ def update_firm(
     firm_id: UUID,
     payload: FirmUpdate,
     db: Session = Depends(get_db),
-    _: object = Depends(require_system_admin),
+    current_user: User = Depends(require_system_admin),
 ):
     firm = crud_firm.get_firm(db, firm_id)
     if not firm:
@@ -264,7 +303,45 @@ def update_firm(
 
     reject_retired_settings_keys(payload.settings)
 
-    return crud_firm.update_firm(db, firm, payload)
+    old_nurture_enabled = firm.nurture_enabled
+    updated = crud_firm.update_firm(db, firm, payload)
+
+    if payload.nurture_enabled is not None and updated.nurture_enabled != old_nurture_enabled:
+        from app.services.behavioral_log import log_event
+        log_event(
+            event_type="firm.nurture_toggled",
+            firm_id=updated.id,
+            entity_type="firm",
+            entity_id=updated.id,
+            actor_type="staff",
+            actor_id=current_user.id,
+            metadata={"nurture_enabled": updated.nurture_enabled},
+        )
+        if updated.nurture_enabled and not old_nurture_enabled:
+            from datetime import datetime, timezone
+            from app.models.enrollment import Enrollment
+            from app.models.sequence import Step
+            from app.core.enums import EnrollmentStatus, StepType
+            from app.services.nurture_execution_service import _compute_next_action_time
+            now = datetime.now(timezone.utc)
+            held = (
+                db.query(Enrollment)
+                .join(Step, Step.id == Enrollment.current_step_id)
+                .filter(
+                    Enrollment.firm_id == updated.id,
+                    Enrollment.status == EnrollmentStatus.active.value,
+                    Step.step_type.in_([
+                        StepType.wait_fixed.value,
+                        StepType.wait_until_event.value,
+                    ]),
+                )
+                .all()
+            )
+            for enr in held:
+                enr.next_action_time = _compute_next_action_time(db, enr.current_step_id, now)
+            db.commit()
+
+    return updated
 
 
 # ---------------------------------------------------------

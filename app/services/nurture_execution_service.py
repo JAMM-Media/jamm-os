@@ -178,6 +178,22 @@ def run_nurture_tick() -> dict:
         "dead_ends_reached": N,
       }
     """
+    if not get_settings().NURTURE_SENDS_ENABLED:
+        logger.info("nurture_tick: skipped -- sends are disabled at the environment level (NURTURE_SENDS_ENABLED=false)")
+        return {
+            "checked": 0,
+            "sent": 0,
+            "suppressed": 0,
+            "skipped_branching": 0,
+            "failed_sends": 0,
+            "goal_jumps": 0,
+            "loop_capped": 0,
+            "timeouts_fired": 0,
+            "held_for_business_hours": 0,
+            "held_for_approval": 0,
+            "dead_ends_reached": 0,
+        }
+
     db = SessionLocal()
     checked = sent = suppressed = skipped_branching = failed_sends = 0
     goal_jumps = loop_capped = timeouts_fired = held_for_business_hours = held_for_approval = 0

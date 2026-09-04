@@ -92,6 +92,10 @@ class Settings(BaseSettings):
     stripe_connect_client_id: str | None = None
     stripe_connect_redirect_uri: str = "https://api.jammpx.com/stripe/callback"
 
+    # Nurture send gate -- false when unset so no firm gets backlogged sends until
+    # explicitly enabled in the environment.
+    NURTURE_SENDS_ENABLED: bool = False
+
     # CORS
     BACKEND_CORS_ORIGINS: list[str] = [
         "http://localhost:3000",

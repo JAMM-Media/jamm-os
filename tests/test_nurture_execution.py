@@ -36,7 +36,8 @@ def _make_firm(slug: str) -> Firm:
         # business_hours_start=0 / end=24 so sends are never held by time-of-day
         # in these tests, which test other behaviors and don't need a time window.
         firm = Firm(name=f"Nurture Test Firm {slug}", slug=slug,
-                    business_hours_start=0, business_hours_end=24)
+                    business_hours_start=0, business_hours_end=24,
+                    nurture_enabled=True)
         db.add(firm)
         db.commit()
         db.refresh(firm)

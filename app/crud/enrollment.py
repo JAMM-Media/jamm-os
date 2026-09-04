@@ -7,6 +7,7 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from app.models.enrollment import Enrollment
+from app.models.firm import Firm
 from app.core.enums import EnrollmentStatus
 from app.services.audit_service import write_audit_log
 
@@ -25,16 +26,23 @@ def get_due_enrollments(
     firm_id: Optional[UUID],
     now: datetime,
 ) -> list[Enrollment]:
-    """Return active enrollments whose next_action_time is at or before now.
+    """Return active enrollments whose next_action_time is at or before now,
+    restricted to firms with nurture_enabled=True.
 
     If firm_id is None, queries across all firms (background job usage,
     matching the pattern in deadline_scheduler.py). If firm_id is provided,
-    scopes to that firm only (tenant-isolation usage).
+    scopes to that firm only (tenant-isolation usage). In both cases the
+    Firm join ensures toggle-off firms are excluded at the query level.
     """
-    query = db.query(Enrollment).filter(
-        Enrollment.status == EnrollmentStatus.active.value,
-        Enrollment.next_action_time.isnot(None),
-        Enrollment.next_action_time <= now,
+    query = (
+        db.query(Enrollment)
+        .join(Firm, Firm.id == Enrollment.firm_id)
+        .filter(
+            Enrollment.status == EnrollmentStatus.active.value,
+            Enrollment.next_action_time.isnot(None),
+            Enrollment.next_action_time <= now,
+            Firm.nurture_enabled == True,
+        )
     )
     if firm_id is not None:
         query = query.filter(Enrollment.firm_id == firm_id)
