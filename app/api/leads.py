@@ -122,6 +122,7 @@ def update_lead(
         lead=lead,
         update_in=payload,
         new_provenance=LeadProvenance.firm_entered,
+        actor_id=current_user.id,
     )
     write_audit_log(
         db=db,

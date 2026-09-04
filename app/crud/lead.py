@@ -69,6 +69,8 @@ def update_lead_with_precedence(
     lead: Lead,
     update_in: LeadUpdate,
     new_provenance: LeadProvenance,
+    actor_id=None,
+    actor_type: str = "staff",
 ) -> Lead:
     """Apply updates subject to provenance precedence rules.
 
@@ -84,6 +86,8 @@ def update_lead_with_precedence(
 
     changes = update_in.model_dump(exclude_unset=True, exclude={"provenance"})
 
+    _old_values = {f: getattr(lead, f) for f in changes}
+
     if incoming_tier >= current_tier:
         # Equal or higher tier: full update.
         for key, value in changes.items():
@@ -97,6 +101,21 @@ def update_lead_with_precedence(
 
     db.commit()
     db.refresh(lead)
+
+    from app.services.behavioral_log import log_event, build_changed_fields
+    _new_values = {f: getattr(lead, f) for f in changes}
+    _changed_fields = build_changed_fields(_old_values, _new_values)
+    if _changed_fields:
+        log_event(
+            event_type="lead.updated",
+            firm_id=lead.firm_id,
+            entity_type="lead",
+            entity_id=lead.id,
+            actor_type=actor_type,
+            actor_id=actor_id,
+            metadata={"changed_fields": _changed_fields},
+        )
+
     return lead
 
 
@@ -214,8 +233,17 @@ def transition_lead_stage(
                 },
             )
         else:
+            from_stage = lead.stage
             lead.stage = new_stage.value
             db.commit()
             db.refresh(lead)
+            log_event(
+                event_type="lead.stage_changed",
+                firm_id=lead.firm_id,
+                entity_type="lead",
+                entity_id=lead.id,
+                actor_type="staff",
+                metadata={"from_stage": from_stage, "to_stage": new_stage.value},
+            )
 
     return lead
