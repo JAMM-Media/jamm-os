@@ -748,6 +748,22 @@ def post_message(
                 )
             except Exception:
                 pass
+        try:
+            from app.services.behavioral_log import log_event
+            log_event(
+                event_type="peer_network.announcement_posted",
+                firm_id=member.firm_id,
+                entity_type="peer_network_message",
+                entity_id=message.id,
+                actor_type="staff",
+                actor_id=member.user_id,
+                metadata={
+                    "room_id": str(room_id),
+                    "recipient_count": len(all_active_members),
+                },
+            )
+        except Exception:
+            pass
 
     # Resolve mention tokens per sender (they are this response's viewer).
     mention_handle_map = {m.id: m.handle for m in mention_members}
