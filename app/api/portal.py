@@ -982,6 +982,52 @@ def portal_download_document(
     }
 
 
+@router.get("/signed-documents")
+def portal_list_signed_documents(
+    current_client: Client = Depends(get_current_portal_client),
+    db: Session = Depends(get_db),
+):
+    """
+    Return completed e-signature documents for the authenticated portal client.
+
+    Filters on status="signed" only. Document.visibility is intentionally not
+    filtered: signed documents always default to visibility="internal" because
+    no staff-facing control exists to change this field (confirmed in D2 discovery).
+    Filtering on "client_visible" would silently return zero results.
+    """
+    from app.models.document import Document
+
+    envelopes = db.execute(
+        select(SignatureEnvelope)
+        .where(
+            SignatureEnvelope.client_id == current_client.id,
+            SignatureEnvelope.firm_id == current_client.firm_id,
+            SignatureEnvelope.status == "signed",
+            SignatureEnvelope.signed_document_id.is_not(None),
+        )
+        .order_by(SignatureEnvelope.completed_at.desc())
+    ).scalars().all()
+
+    result = []
+    for env in envelopes:
+        doc = db.query(Document).filter(
+            Document.id == env.signed_document_id,
+            Document.firm_id == current_client.firm_id,
+        ).first()
+        if not doc:
+            continue
+        result.append({
+            "envelope_id": str(env.id),
+            "document_id": str(env.signed_document_id),
+            "filename": doc.filename,
+            "file_size_kb": max(1, doc.size_bytes // 1024),
+            "completed_at": env.completed_at.isoformat() if env.completed_at else None,
+            "signers": env.signers or [],
+            "subject": env.subject,
+        })
+    return result
+
+
 @router.post("/document-requests/{request_id}/items/{item_id}/complete")
 def portal_complete_checklist_item(
     request_id: UUID,

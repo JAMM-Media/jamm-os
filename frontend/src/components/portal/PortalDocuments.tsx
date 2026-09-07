@@ -12,9 +12,10 @@ import {
   ChevronLeft,
   Users,
   Loader2,
+  PenLine,
 } from 'lucide-react'
-import { getPortalDocuments, getPortalFolders, getPortalDocumentDownloadUrl, uploadPortalDocument, getPortalEngagements, movePortalDocument } from '@/lib/portal-api'
-import type { PortalDocument, PortalFolder, PortalEngagement } from '@/lib/portal-api'
+import { getPortalDocuments, getPortalFolders, getPortalDocumentDownloadUrl, uploadPortalDocument, getPortalEngagements, movePortalDocument, getPortalSignedDocuments } from '@/lib/portal-api'
+import type { PortalDocument, PortalFolder, PortalEngagement, PortalSignedDocument } from '@/lib/portal-api'
 
 // Props interface unchanged so portal/page.tsx needs no edits.
 // Dark-theme props (cardColor, portalMode, textPrimary, textMuted) are accepted
@@ -28,7 +29,7 @@ interface PortalDocumentsProps {
   textMuted?: string
 }
 
-type Tab = 'all' | 'uploaded' | 'shared' | 'favorites'
+type Tab = 'all' | 'uploaded' | 'shared' | 'favorites' | 'signed'
 
 function formatFileSize(kb: number): string {
   if (kb < 1024) return `${kb} KB`
@@ -123,6 +124,8 @@ export function PortalDocuments({ firmName, accentColor = '#3A6A94' }: PortalDoc
   const [engagements, setEngagements] = useState<PortalEngagement[]>([])
   const [pendingFile, setPendingFile] = useState<File | null>(null)
   const [selectedEngagementId, setSelectedEngagementId] = useState<string>('')
+  const [signedDocuments, setSignedDocuments] = useState<PortalSignedDocument[]>([])
+  const [signedLoading, setSignedLoading] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -226,6 +229,18 @@ export function PortalDocuments({ firmName, accentColor = '#3A6A94' }: PortalDoc
     setPendingFile(file)
   }
 
+  async function loadSignedDocuments() {
+    setSignedLoading(true)
+    try {
+      const docs = await getPortalSignedDocuments()
+      setSignedDocuments(docs)
+    } catch {
+      // leave previous list unchanged on error
+    } finally {
+      setSignedLoading(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="p-6 flex flex-col gap-4">
@@ -300,6 +315,7 @@ export function PortalDocuments({ firmName, accentColor = '#3A6A94' }: PortalDoc
     { key: 'uploaded', label: 'Uploaded by you' },
     { key: 'shared', label: 'Shared with you' },
     { key: 'favorites', label: 'Favorites' },
+    { key: 'signed', label: 'Signed' },
   ]
 
   // Whether the table has anything to show at all.
@@ -442,6 +458,7 @@ export function PortalDocuments({ firmName, accentColor = '#3A6A94' }: PortalDoc
                 setActiveTab(key)
                 setSearchQuery('')
                 setShowingFoldersOnly(false)
+                if (key === 'signed') loadSignedDocuments()
               }}
               className="px-4 py-2.5 text-[13px] font-medium transition-colors relative"
               style={{ color: isActive ? '#1F3148' : '#6B7280' }}
@@ -459,6 +476,84 @@ export function PortalDocuments({ firmName, accentColor = '#3A6A94' }: PortalDoc
       </div>
 
       {/* Favorites empty state */}
+      {/* Signed documents tab */}
+      {activeTab === 'signed' && (
+        <>
+          {signedLoading ? (
+            <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="flex items-center gap-4 px-5 py-3 border-b border-gray-50 last:border-b-0">
+                  <div className="w-4 h-4 rounded animate-pulse bg-gray-100 flex-shrink-0" />
+                  <div className="h-3 w-44 rounded animate-pulse bg-gray-200 flex-1" />
+                  <div className="h-3 w-24 rounded animate-pulse bg-gray-100" />
+                  <div className="h-3 w-20 rounded animate-pulse bg-gray-100" />
+                </div>
+              ))}
+            </div>
+          ) : signedDocuments.length === 0 ? (
+            <div className="bg-white rounded-xl border border-gray-100 px-5 py-12 text-center">
+              <PenLine size={24} className="mx-auto mb-3" style={{ color: '#D1D5DB' }} />
+              <p className="text-[14px] font-medium" style={{ color: '#1F3148' }}>No signed documents yet.</p>
+              <p className="text-[12px] mt-1" style={{ color: '#6B7280' }}>
+                Completed e-signature documents will appear here once you have signed them.
+              </p>
+            </div>
+          ) : (
+            <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-gray-100">
+                    <th className="text-left px-5 py-3 text-[11px] font-medium" style={{ color: '#9CA3AF' }}>Document</th>
+                    <th className="text-left px-4 py-3 text-[11px] font-medium" style={{ color: '#9CA3AF' }}>Signed by</th>
+                    <th className="text-left px-4 py-3 text-[11px] font-medium" style={{ color: '#9CA3AF' }}>Signed on</th>
+                    <th className="text-right px-5 py-3 text-[11px] font-medium" style={{ color: '#9CA3AF' }}>Size</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {signedDocuments.map((doc, idx) => {
+                    const isLast = idx === signedDocuments.length - 1
+                    const dotIdx = doc.filename.lastIndexOf('.')
+                    const basename = dotIdx > 0 ? doc.filename.slice(0, dotIdx) : doc.filename
+                    const ext = dotIdx > 0 ? doc.filename.slice(dotIdx) : ''
+                    const signerNames = (doc.signers || []).map((s) => s.name).filter(Boolean).join(', ')
+                    const signedOn = doc.completed_at ? formatDate(doc.completed_at) : 'Unknown'
+                    return (
+                      <tr key={doc.envelope_id} className={isLast ? '' : 'border-b border-gray-50'}>
+                        <td className="px-5 py-3">
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              const { url } = await getPortalDocumentDownloadUrl(doc.document_id)
+                              window.open(url, '_blank', 'noreferrer')
+                            }}
+                            className="flex items-center gap-2.5 min-w-0 text-left hover:opacity-70 transition-opacity"
+                          >
+                            <FileText size={15} style={{ color: '#EF4444' }} className="flex-shrink-0" />
+                            <span className="text-[13px] font-medium truncate" style={{ color: '#1F3148' }}>{basename}</span>
+                            <span className="text-[13px] font-medium flex-shrink-0" style={{ color: '#1F3148' }}>{ext}</span>
+                          </button>
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <span className="text-[12px]" style={{ color: '#6B7280' }}>
+                            {signerNames || 'Unknown'}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <span className="text-[12px]" style={{ color: '#6B7280' }}>{signedOn}</span>
+                        </td>
+                        <td className="px-5 py-3 text-right whitespace-nowrap">
+                          <span className="text-[12px]" style={{ color: '#6B7280' }}>{formatFileSize(doc.file_size_kb)}</span>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      )}
+
       {activeTab === 'favorites' && (
         <div className="bg-white rounded-xl border border-gray-100 px-5 py-12 text-center">
           <p className="text-[14px] font-medium" style={{ color: '#1F3148' }}>No favorites yet.</p>
@@ -468,7 +563,7 @@ export function PortalDocuments({ firmName, accentColor = '#3A6A94' }: PortalDoc
         </div>
       )}
 
-      {activeTab !== 'favorites' && (
+      {activeTab !== 'favorites' && activeTab !== 'signed' && (
         <>
           {/* Folder breadcrumb (when inside a folder) */}
           {activeFolderId && (

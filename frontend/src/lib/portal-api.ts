@@ -350,3 +350,27 @@ export async function uploadPortalDocument(
   }
   return res.json()
 }
+
+export interface PortalSignedDocumentSigner {
+  name: string
+  email: string
+  status: string
+  signed_at: string | null
+}
+
+export interface PortalSignedDocument {
+  envelope_id: string
+  document_id: string
+  filename: string
+  file_size_kb: number
+  completed_at: string | null
+  signers: PortalSignedDocumentSigner[]
+  subject: string | null
+}
+
+export async function getPortalSignedDocuments(): Promise<PortalSignedDocument[]> {
+  const res = await fetch(`${BASE}/portal/signed-documents`, { headers: portalHeaders() })
+  if (!res.ok) throw new Error('fetch failed')
+  const data = await res.json()
+  return Array.isArray(data) ? data : []
+}
