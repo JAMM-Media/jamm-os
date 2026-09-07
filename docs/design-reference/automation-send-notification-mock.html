@@ -1,0 +1,904 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>JAMM PX - Send Notification Action</title>
+<style>
+:root{
+  --navy:#1F3148;
+  --gold:#B07D3A;
+  --input:#F7F7F8;
+  --border:#C8CDD6;
+  --focus:#4A7FA5;
+  --helper:#6B7280;
+  --dark-text:#EDEEF0;
+  --dark-input:#2D2D2D;
+}
+
+*{box-sizing:border-box}
+
+body{
+  margin:0;
+  min-height:100vh;
+  background:#F7F7F8;
+  font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  color:var(--navy);
+  transition:background .16s ease,color .16s ease;
+}
+
+body.preview-dark{
+  background:#1F1F1F;
+  color:var(--dark-text);
+}
+
+.review-toolbar{
+  position:sticky;
+  top:0;
+  z-index:20;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:16px;
+  padding:10px 16px;
+  border-bottom:.5px solid var(--border);
+  background:#FFFFFF;
+}
+
+.preview-dark .review-toolbar{
+  background:#252525;
+  border-color:#4B4F57;
+}
+
+.review-label{
+  font-size:11px;
+  font-weight:600;
+  color:var(--navy);
+}
+
+.preview-dark .review-label{color:var(--dark-text)}
+
+.theme-toggle{
+  display:inline-flex;
+  align-items:center;
+  gap:3px;
+  padding:3px;
+  border:.5px solid var(--border);
+  border-radius:7px;
+  background:#FFFFFF;
+}
+
+.preview-dark .theme-toggle{
+  background:var(--dark-input);
+  border-color:#5A606A;
+}
+
+.theme-toggle button{
+  min-height:30px;
+  padding:0 10px;
+  border:0;
+  border-radius:5px;
+  background:transparent;
+  color:var(--navy);
+  font:inherit;
+  font-size:11px;
+  font-weight:600;
+  cursor:pointer;
+}
+
+.preview-dark .theme-toggle button{color:var(--dark-text)}
+
+.theme-toggle button.active{
+  background:var(--navy);
+  color:#FFFFFF;
+}
+
+.canvas{
+  width:min(780px,100%);
+  margin:0 auto;
+  padding:24px 18px 44px;
+}
+
+.action-card{
+  border:.5px solid var(--border);
+  border-radius:8px;
+  background:#FFFFFF;
+  overflow:hidden;
+}
+
+.preview-dark .action-card{
+  background:#252525;
+  border-color:#5A606A;
+}
+
+.action-card-header{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding:11px 13px;
+  border-bottom:.5px solid var(--border);
+}
+
+.preview-dark .action-card-header{border-color:#5A606A}
+
+.action-icon{
+  width:28px;
+  height:28px;
+  display:grid;
+  place-items:center;
+  border:.5px solid var(--border);
+  border-radius:6px;
+  color:var(--gold);
+  background:#FFFFFF;
+  flex:0 0 auto;
+}
+
+.preview-dark .action-icon{
+  background:var(--dark-input);
+  border-color:#5A606A;
+}
+
+.action-icon svg{width:15px;height:15px}
+
+.action-title-wrap{min-width:0}
+
+.action-title{
+  margin:0;
+  font-size:13px;
+  line-height:1.25;
+  font-weight:700;
+  color:var(--navy);
+}
+
+.preview-dark .action-title{color:var(--dark-text)}
+
+.action-subtitle{
+  margin:2px 0 0;
+  font-size:11px;
+  line-height:1.4;
+  color:var(--helper);
+}
+
+.preview-dark .action-subtitle{color:#AEB4BE}
+
+.action-body{
+  padding:14px 13px 16px;
+}
+
+.field{margin-bottom:17px}
+.field:last-child{margin-bottom:0}
+
+label,.field-label{
+  display:block;
+  margin-bottom:6px;
+  font-size:11px;
+  font-weight:500;
+  color:var(--navy);
+}
+
+.preview-dark label,
+.preview-dark .field-label{
+  color:var(--dark-text);
+}
+
+select,
+input[type="text"],
+textarea{
+  width:100%;
+  border:.5px solid var(--border);
+  border-radius:6px;
+  background:var(--input);
+  color:var(--navy);
+  font:inherit;
+  font-size:12px;
+  outline:none;
+  transition:border-color .15s ease,box-shadow .15s ease;
+}
+
+.preview-dark select,
+.preview-dark input[type="text"],
+.preview-dark textarea{
+  background:var(--dark-input);
+  border-color:#5A606A;
+  color:var(--dark-text);
+}
+
+select,
+input[type="text"]{
+  height:36px;
+  padding:0 10px;
+}
+
+textarea{
+  min-height:88px;
+  padding:9px 10px;
+  resize:vertical;
+  line-height:1.45;
+}
+
+select{
+  appearance:none;
+  background-image:
+    linear-gradient(45deg,transparent 50%,var(--navy) 50%),
+    linear-gradient(135deg,var(--navy) 50%,transparent 50%);
+  background-position:calc(100% - 15px) 15px,calc(100% - 11px) 15px;
+  background-size:4px 4px,4px 4px;
+  background-repeat:no-repeat;
+  padding-right:30px;
+}
+
+.preview-dark select{
+  background-image:
+    linear-gradient(45deg,transparent 50%,var(--dark-text) 50%),
+    linear-gradient(135deg,var(--dark-text) 50%,transparent 50%);
+}
+
+select:focus,
+input[type="text"]:focus,
+textarea:focus{
+  border-color:var(--focus);
+  box-shadow:0 0 0 2px rgba(74,127,165,.12);
+}
+
+.helper{
+  margin-top:6px;
+  font-size:11px;
+  line-height:1.45;
+  color:var(--helper);
+}
+
+.preview-dark .helper{color:#AEB4BE}
+
+.segmented{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:3px;
+  padding:3px;
+  border:.5px solid var(--border);
+  border-radius:7px;
+  background:#FFFFFF;
+}
+
+.preview-dark .segmented{
+  background:#252525;
+  border-color:#5A606A;
+}
+
+.segmented button{
+  min-height:34px;
+  padding:6px 9px;
+  border:0;
+  border-radius:5px;
+  background:transparent;
+  color:var(--navy);
+  font:inherit;
+  font-size:11px;
+  font-weight:600;
+  cursor:pointer;
+  white-space:nowrap;
+}
+
+.preview-dark .segmented button{color:var(--dark-text)}
+
+.segmented button.active{
+  background:var(--navy);
+  color:#FFFFFF;
+}
+
+.preview-wrap{
+  margin-top:10px;
+  padding:11px;
+  border:.5px solid var(--border);
+  border-radius:7px;
+  background:#FAFAFB;
+}
+
+.preview-dark .preview-wrap{
+  background:var(--dark-input);
+  border-color:#5A606A;
+}
+
+.preview-label{
+  margin-bottom:8px;
+  font-size:10px;
+  font-weight:650;
+  text-transform:uppercase;
+  letter-spacing:.04em;
+  color:var(--helper);
+}
+
+.preview-dark .preview-label{color:#AEB4BE}
+
+.screen{
+  position:relative;
+  min-height:164px;
+  border:.5px solid var(--border);
+  border-radius:6px;
+  background:#FFFFFF;
+  overflow:hidden;
+}
+
+.preview-dark .screen{
+  background:#252525;
+  border-color:#5A606A;
+}
+
+.screen-top{
+  height:26px;
+  display:flex;
+  align-items:center;
+  gap:5px;
+  padding:0 9px;
+  border-bottom:.5px solid var(--border);
+  background:var(--input);
+}
+
+.preview-dark .screen-top{
+  background:var(--dark-input);
+  border-color:#5A606A;
+}
+
+.traffic{
+  width:7px;
+  height:7px;
+  border-radius:50%;
+}
+
+.traffic.red{background:#D56A63}
+.traffic.yellow{background:#D7A64A}
+.traffic.green{background:#6E9E73}
+
+.screen-content{padding:12px}
+
+.skeleton-row{
+  height:6px;
+  border-radius:5px;
+  background:#E7E9ED;
+  margin-bottom:8px;
+}
+
+.preview-dark .skeleton-row{background:#3A3A3A}
+
+.skeleton-row.short{width:38%}
+.skeleton-row.mid{width:62%}
+.skeleton-row.long{width:82%}
+
+.toast{
+  position:absolute;
+  right:10px;
+  bottom:10px;
+  width:min(320px,calc(100% - 20px));
+  padding:9px 10px 10px;
+  border:.5px solid var(--border);
+  border-left:3px solid var(--gold);
+  border-radius:7px;
+  background:#FFFFFF;
+  box-shadow:0 8px 22px rgba(31,49,72,.12);
+}
+
+.preview-dark .toast{
+  background:var(--dark-input);
+  border-color:#5A606A;
+  border-left-color:var(--gold);
+  box-shadow:0 8px 22px rgba(0,0,0,.28);
+}
+
+.toast-meta{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+  margin-bottom:6px;
+}
+
+.toast-time{
+  font-size:10px;
+  color:var(--helper);
+}
+
+.preview-dark .toast-time{color:#AEB4BE}
+
+.dismiss{
+  width:20px;
+  height:20px;
+  display:grid;
+  place-items:center;
+  border:0;
+  border-radius:4px;
+  background:transparent;
+  color:var(--helper);
+  font-size:15px;
+  line-height:1;
+  cursor:default;
+  padding:0;
+}
+
+.preview-dark .dismiss{color:#AEB4BE}
+
+.toast-main{
+  display:flex;
+  align-items:flex-start;
+  gap:8px;
+}
+
+.mini-bell,.list-icon{
+  width:24px;
+  height:24px;
+  display:grid;
+  place-items:center;
+  border-radius:6px;
+  color:var(--gold);
+  background:var(--input);
+  flex:0 0 auto;
+}
+
+.preview-dark .mini-bell,
+.preview-dark .list-icon{
+  background:#252525;
+}
+
+.mini-bell svg,.list-icon svg{width:14px;height:14px}
+
+.preview-title{
+  margin-bottom:3px;
+  font-size:12px;
+  line-height:1.3;
+  font-weight:700;
+  color:var(--navy);
+  overflow-wrap:anywhere;
+}
+
+.preview-dark .preview-title{color:var(--dark-text)}
+
+.preview-body{
+  font-size:11px;
+  line-height:1.4;
+  color:var(--helper);
+  overflow-wrap:anywhere;
+}
+
+.preview-dark .preview-body{color:#AEB4BE}
+
+.list-preview{
+  display:flex;
+  justify-content:flex-end;
+  padding:12px 12px 0;
+}
+
+.bell-anchor{
+  position:relative;
+  width:30px;
+  height:30px;
+  display:grid;
+  place-items:center;
+  border:.5px solid var(--border);
+  border-radius:50%;
+  color:var(--navy);
+  background:#FFFFFF;
+}
+
+.preview-dark .bell-anchor{
+  background:var(--dark-input);
+  border-color:#5A606A;
+  color:var(--dark-text);
+}
+
+.bell-anchor svg{width:15px;height:15px}
+
+.badge{
+  position:absolute;
+  top:-4px;
+  right:-3px;
+  min-width:15px;
+  height:15px;
+  padding:0 4px;
+  display:grid;
+  place-items:center;
+  border:2px solid #FFFFFF;
+  border-radius:10px;
+  background:var(--gold);
+  color:#FFFFFF;
+  font-size:9px;
+  font-weight:700;
+}
+
+.preview-dark .badge{border-color:var(--dark-input)}
+
+.dropdown{
+  width:min(340px,calc(100% - 24px));
+  margin:8px 12px 12px auto;
+  border:.5px solid var(--border);
+  border-radius:7px;
+  background:#FFFFFF;
+  box-shadow:0 8px 22px rgba(31,49,72,.10);
+  overflow:hidden;
+}
+
+.preview-dark .dropdown{
+  background:var(--dark-input);
+  border-color:#5A606A;
+  box-shadow:0 8px 22px rgba(0,0,0,.28);
+}
+
+.dropdown-header{
+  padding:9px 11px;
+  border-bottom:.5px solid var(--border);
+  font-size:11px;
+  font-weight:700;
+  color:var(--navy);
+}
+
+.preview-dark .dropdown-header{
+  color:var(--dark-text);
+  border-color:#5A606A;
+}
+
+.notification-row{
+  display:flex;
+  gap:9px;
+  align-items:flex-start;
+  padding:10px 11px;
+}
+
+.caption{
+  margin:8px 1px 0;
+  font-size:11px;
+  line-height:1.45;
+  color:var(--helper);
+}
+
+.preview-dark .caption{color:#AEB4BE}
+
+@media(max-width:600px){
+  .canvas{padding:16px 12px 30px}
+  .segmented{grid-template-columns:1fr}
+  .segmented button{white-space:normal}
+}
+
+.action-list{
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+}
+
+.collapsed-action{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  min-height:46px;
+  padding:9px 12px;
+  border:.5px solid var(--border);
+  border-radius:8px;
+  background:#FFFFFF;
+}
+
+.preview-dark .collapsed-action{
+  background:#252525;
+  border-color:#5A606A;
+}
+
+.collapsed-left{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  min-width:0;
+}
+
+.collapsed-icon{
+  width:28px;
+  height:28px;
+  display:grid;
+  place-items:center;
+  border:.5px solid var(--border);
+  border-radius:6px;
+  background:#FFFFFF;
+  color:var(--navy);
+  flex:0 0 auto;
+}
+
+.preview-dark .collapsed-icon{
+  background:var(--dark-input);
+  border-color:#5A606A;
+  color:var(--dark-text);
+}
+
+.collapsed-icon svg{
+  width:14px;
+  height:14px;
+}
+
+.collapsed-copy{
+  min-width:0;
+}
+
+.collapsed-title{
+  font-size:12px;
+  font-weight:700;
+  color:var(--navy);
+  line-height:1.25;
+}
+
+.preview-dark .collapsed-title{
+  color:var(--dark-text);
+}
+
+.collapsed-summary{
+  margin-top:2px;
+  font-size:10.5px;
+  color:var(--helper);
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+
+.preview-dark .collapsed-summary{
+  color:#AEB4BE;
+}
+
+.collapsed-chevron{
+  color:var(--helper);
+  font-size:15px;
+  line-height:1;
+  flex:0 0 auto;
+}
+
+.preview-dark .collapsed-chevron{
+  color:#AEB4BE;
+}
+
+</style>
+</head>
+<body>
+  <div class="review-toolbar">
+    <div class="review-label">Preview aid only</div>
+    <div class="theme-toggle" role="group" aria-label="Preview theme">
+      <button id="lightPreviewBtn" class="active" type="button">Light</button>
+      <button id="darkPreviewBtn" type="button">Dark</button>
+    </div>
+  </div>
+
+  <main class="canvas">
+    <div class="action-list" aria-label="Automation actions">
+      <section class="collapsed-action" aria-label="Send Email action collapsed">
+        <div class="collapsed-left">
+          <div class="collapsed-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 6h16v12H4z"></path>
+              <path d="m4 7 8 6 8-6"></path>
+            </svg>
+          </div>
+          <div class="collapsed-copy">
+            <div class="collapsed-title">Send Email</div>
+            <div class="collapsed-summary">Send an email to the assigned contact</div>
+          </div>
+        </div>
+        <div class="collapsed-chevron" aria-hidden="true">›</div>
+      </section>
+
+      <section class="action-card" aria-label="Send Notification action configuration">
+      <div class="action-card-header">
+        <div class="action-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"></path>
+            <path d="M13.7 21a2 2 0 0 1-3.4 0"></path>
+          </svg>
+        </div>
+        <div class="action-title-wrap">
+          <h2 class="action-title">Send Notification</h2>
+          <p class="action-subtitle">Choose who receives it, how it is delivered, and what it says.</p>
+        </div>
+      </div>
+
+      <div class="action-body">
+        <div class="field">
+          <label for="recipient">Who should be notified?</label>
+          <select id="recipient">
+            <option>Firm Owner</option>
+            <option>Manager</option>
+            <option>Assigned Staff</option>
+            <option>Client</option>
+          </select>
+          <div class="helper">Assigned Staff means whoever the triggering item is assigned to.</div>
+        </div>
+
+        <div class="field">
+          <div class="field-label">How urgent is this?</div>
+          <div class="segmented" role="group" aria-label="Notification urgency">
+            <button type="button" id="urgentBtn" class="active" aria-pressed="true">Notify right away</button>
+            <button type="button" id="listBtn" aria-pressed="false">Save to list</button>
+          </div>
+
+          <div class="preview-wrap">
+            <div class="preview-label">Live preview</div>
+            <div id="previewHost"></div>
+            <p class="caption" id="previewCaption"></p>
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="title">Notification title</label>
+          <input id="title" type="text" placeholder="e.g. Engagement deadline approaching">
+        </div>
+
+        <div class="field">
+          <label for="body">Notification message</label>
+          <textarea id="body" placeholder="e.g. {{client_name}}'s {{engagement_type}} is due in 3 days."></textarea>
+          <div class="helper">You can use merge fields like client name and engagement type. They'll be filled in automatically when this fires.</div>
+        </div>
+      </div>
+      </section>
+
+      <section class="collapsed-action" aria-label="Create Task action collapsed">
+        <div class="collapsed-left">
+          <div class="collapsed-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="4" y="4" width="16" height="16" rx="2"></rect>
+              <path d="m8 12 2.5 2.5L16 9"></path>
+            </svg>
+          </div>
+          <div class="collapsed-copy">
+            <div class="collapsed-title">Create Task</div>
+            <div class="collapsed-summary">Create a follow-up task for the assigned staff member</div>
+          </div>
+        </div>
+        <div class="collapsed-chevron" aria-hidden="true">›</div>
+      </section>
+
+      <section class="collapsed-action" aria-label="Update Engagement action collapsed">
+        <div class="collapsed-left">
+          <div class="collapsed-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M7 3h10v4H7z"></path>
+              <path d="M5 7h14v14H5z"></path>
+              <path d="M8 11h8M8 15h6"></path>
+            </svg>
+          </div>
+          <div class="collapsed-copy">
+            <div class="collapsed-title">Update Engagement</div>
+            <div class="collapsed-summary">Update the engagement when this rule runs</div>
+          </div>
+        </div>
+        <div class="collapsed-chevron" aria-hidden="true">›</div>
+      </section>
+    </div>
+  </main>
+
+<script>
+(() => {
+  const bodyEl = document.body;
+  const lightPreviewBtn = document.getElementById('lightPreviewBtn');
+  const darkPreviewBtn = document.getElementById('darkPreviewBtn');
+  const urgentBtn = document.getElementById('urgentBtn');
+  const listBtn = document.getElementById('listBtn');
+  const titleInput = document.getElementById('title');
+  const bodyInput = document.getElementById('body');
+  const previewHost = document.getElementById('previewHost');
+  const caption = document.getElementById('previewCaption');
+
+  let mode = 'urgent';
+
+  const bellSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"></path><path d="M13.7 21a2 2 0 0 1-3.4 0"></path></svg>';
+
+  const mergeExamples = {
+    client_name: 'Riverside Tax',
+    engagement_type: '1040 return',
+    firm_name: 'Riverside Tax & Advisory',
+    days_until_due: '3'
+  };
+
+  function escapeHtml(value){
+    return value.replace(/[&<>"']/g, ch => ({
+      '&':'&amp;',
+      '<':'&lt;',
+      '>':'&gt;',
+      '"':'&quot;',
+      "'":'&#039;'
+    }[ch]));
+  }
+
+  function resolveMergeFields(value){
+    return value.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (match, key) => {
+      return Object.prototype.hasOwnProperty.call(mergeExamples, key) ? mergeExamples[key] : 'Example value';
+    });
+  }
+
+  function rawTitle(){
+    return titleInput.value.trim() || 'Engagement deadline approaching';
+  }
+
+  function rawBody(){
+    return bodyInput.value.trim() || "{{client_name}}'s {{engagement_type}} is due in 3 days.";
+  }
+
+  function render(){
+    const title = escapeHtml(resolveMergeFields(rawTitle()));
+    const message = escapeHtml(resolveMergeFields(rawBody()));
+
+    urgentBtn.classList.toggle('active', mode === 'urgent');
+    listBtn.classList.toggle('active', mode === 'list');
+    urgentBtn.setAttribute('aria-pressed', String(mode === 'urgent'));
+    listBtn.setAttribute('aria-pressed', String(mode === 'list'));
+
+    if(mode === 'urgent'){
+      previewHost.innerHTML = `
+        <div class="screen" aria-label="Immediate notification preview">
+          <div class="screen-top" aria-hidden="true">
+            <span class="traffic red"></span>
+            <span class="traffic yellow"></span>
+            <span class="traffic green"></span>
+          </div>
+          <div class="screen-content">
+            <div class="skeleton-row long"></div>
+            <div class="skeleton-row mid"></div>
+            <div class="skeleton-row short"></div>
+          </div>
+          <div class="toast">
+            <div class="toast-meta">
+              <span class="toast-time">Just now</span>
+              <button class="dismiss" type="button" tabindex="-1" aria-label="Dismiss preview">×</button>
+            </div>
+            <div class="toast-main">
+              <div class="mini-bell">${bellSvg}</div>
+              <div>
+                <div class="preview-title">${title}</div>
+                <div class="preview-body">${message}</div>
+              </div>
+            </div>
+          </div>
+        </div>`;
+      caption.textContent = "This will pop up immediately, interrupting whatever they're doing.";
+    } else {
+      previewHost.innerHTML = `
+        <div class="screen" aria-label="Notification list preview">
+          <div class="screen-top" aria-hidden="true">
+            <span class="traffic red"></span>
+            <span class="traffic yellow"></span>
+            <span class="traffic green"></span>
+          </div>
+          <div class="list-preview">
+            <div class="bell-anchor">${bellSvg}<span class="badge">1</span></div>
+          </div>
+          <div class="dropdown">
+            <div class="dropdown-header">Notifications</div>
+            <div class="notification-row">
+              <div class="list-icon">${bellSvg}</div>
+              <div>
+                <div class="preview-title">${title}</div>
+                <div class="preview-body">${message}</div>
+              </div>
+            </div>
+          </div>
+        </div>`;
+      caption.textContent = "This will appear in their notification list to check when they're ready. No interruption.";
+    }
+  }
+
+  function setPreviewTheme(theme){
+    const dark = theme === 'dark';
+    bodyEl.classList.toggle('preview-dark', dark);
+    lightPreviewBtn.classList.toggle('active', !dark);
+    darkPreviewBtn.classList.toggle('active', dark);
+  }
+
+  urgentBtn.addEventListener('click', () => {
+    mode = 'urgent';
+    render();
+  });
+
+  listBtn.addEventListener('click', () => {
+    mode = 'list';
+    render();
+  });
+
+  lightPreviewBtn.addEventListener('click', () => setPreviewTheme('light'));
+  darkPreviewBtn.addEventListener('click', () => setPreviewTheme('dark'));
+  titleInput.addEventListener('input', render);
+  bodyInput.addEventListener('input', render);
+
+  setPreviewTheme('light');
+  render();
+})();
+</script>
+</body>
+</html>

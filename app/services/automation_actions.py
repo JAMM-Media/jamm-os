@@ -374,30 +374,104 @@ def _handle_send_notification(
     payload: Dict[str, Any],
     db: Session,
 ) -> str:
+    """Resolve the recipient from config["recipient_role"] at execution time.
+
+    Config shape (set by the UI):
+      recipient_role: firm_owner | manager | assigned_staff | client
+      tier: loud | quiet
+      title: str (may contain {{merge_fields}})
+      body: str (may contain {{merge_fields}})
+
+    Backward compatibility: if recipient_role is absent (pre-existing rule
+    stored before this change), the handler skips with a warning rather than
+    crashing.
+    """
     from app.db.session import SessionLocal
+    from app.models.user import User
+    from app.models.task import Task
     from app.services.notification_service import NotificationService
-    from app.core.enums import RecipientType, NotificationType, NotificationTier
+    from app.core.enums import RecipientType, NotificationType, NotificationTier, UserRole
 
-    recipient_id_raw = payload.get("recipient_id")
-    title = payload.get("title")
+    recipient_role = config.get("recipient_role")
+    title = config.get("title", "")
+    body = config.get("body", "")
+    tier_raw = config.get("tier", "quiet")
 
-    if not recipient_id_raw or not title:
-        logger.warning("send_notification skipped: missing recipient_id or title in payload")
-        return "send_notification skipped: missing recipient_id or title"
+    if not recipient_role:
+        logger.warning("send_notification skipped: missing recipient_role in config")
+        return "send_notification skipped: missing recipient_role in config"
 
-    recipient_type_raw = payload.get("recipient_type", "staff")
-    body = payload.get("body", "")
-    notification_type_raw = payload.get("notification_type", "system")
-    firm_id_raw = payload.get("firm_id")
+    if not title:
+        logger.warning("send_notification skipped: missing title in config")
+        return "send_notification skipped: missing title in config"
 
     try:
-        recipient_id = UUID(str(recipient_id_raw)) if not isinstance(recipient_id_raw, UUID) else recipient_id_raw
-        firm_id = UUID(str(firm_id_raw)) if firm_id_raw and not isinstance(firm_id_raw, UUID) else firm_id_raw
-        recipient_type = RecipientType(recipient_type_raw)
-        notification_type = NotificationType(notification_type_raw)
-    except (ValueError, KeyError) as e:
-        logger.warning(f"send_notification skipped: invalid enum or UUID value: {e}")
-        return f"send_notification skipped: invalid value: {e}"
+        tier = NotificationTier(tier_raw)
+    except ValueError:
+        tier = NotificationTier.quiet
+
+    firm_id_raw = payload.get("firm_id")
+    if not firm_id_raw:
+        logger.warning("send_notification skipped: no firm_id in payload")
+        return "send_notification skipped: no firm_id in payload"
+    firm_id = UUID(str(firm_id_raw)) if not isinstance(firm_id_raw, UUID) else firm_id_raw
+
+    recipient_id = None
+    recipient_type = RecipientType.staff
+
+    if recipient_role == "firm_owner":
+        owner = db.query(User).filter(
+            User.firm_id == firm_id,
+            User.role == UserRole.firm_owner.value,
+        ).first()
+        if owner:
+            recipient_id = owner.id
+
+    elif recipient_role == "manager":
+        manager = db.query(User).filter(
+            User.firm_id == firm_id,
+            User.role == UserRole.manager.value,
+        ).first()
+        if manager:
+            recipient_id = manager.id
+        else:
+            owner = db.query(User).filter(
+                User.firm_id == firm_id,
+                User.role == UserRole.firm_owner.value,
+            ).first()
+            if owner:
+                recipient_id = owner.id
+
+    elif recipient_role == "assigned_staff":
+        task_id_raw = payload.get("task_id")
+        if task_id_raw:
+            task_id = UUID(str(task_id_raw)) if not isinstance(task_id_raw, UUID) else task_id_raw
+            task = db.query(Task).filter(
+                Task.id == task_id,
+                Task.firm_id == firm_id,
+            ).first()
+            if task and task.assigned_to:
+                recipient_id = task.assigned_to
+        if not recipient_id:
+            owner = db.query(User).filter(
+                User.firm_id == firm_id,
+                User.role == UserRole.firm_owner.value,
+            ).first()
+            if owner:
+                recipient_id = owner.id
+
+    elif recipient_role == "client":
+        client_id_raw = payload.get("client_id")
+        if client_id_raw:
+            recipient_id = UUID(str(client_id_raw)) if not isinstance(client_id_raw, UUID) else client_id_raw
+            recipient_type = RecipientType.client
+
+    if not recipient_id:
+        logger.warning(
+            "send_notification skipped: could not resolve recipient for role=%s firm=%s",
+            recipient_role, firm_id,
+        )
+        return f"send_notification skipped: no recipient found for role={recipient_role}"
 
     notification_db = SessionLocal()
     try:
@@ -408,16 +482,12 @@ def _handle_send_notification(
             recipient_type=recipient_type,
             title=title,
             body=body,
-            notification_type=notification_type,
-            # PROPOSED SCOPE BOUNDARY -- pending per-rule tier configuration.
-            # A firm-configurable tier per automation rule is real future work.
-            # Fixed to quiet for now per Andrew's taxonomy ruling.
-            tier=NotificationTier.quiet,
+            notification_type=NotificationType.system,
+            tier=tier,
         )
-        return f"Notification sent to recipient {recipient_id}"
+        return f"Notification sent to {recipient_role} (recipient={recipient_id})"
     finally:
         notification_db.close()
-
 
 def _handle_create_document_request(
     config: Dict[str, Any],
