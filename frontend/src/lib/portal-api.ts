@@ -306,3 +306,47 @@ export async function getPortalDocumentDownloadUrl(documentId: string): Promise<
   if (!res.ok) throw new Error('fetch failed')
   return res.json()
 }
+
+export interface PortalEngagement {
+  id: string
+  name: string
+  status: string
+}
+
+export async function getPortalEngagements(): Promise<PortalEngagement[]> {
+  const res = await fetch(`${BASE}/portal/engagements?limit=100`, { headers: portalHeaders() })
+  if (!res.ok) throw new Error('fetch failed')
+  const data = await res.json()
+  return Array.isArray(data) ? data : []
+}
+
+export interface PortalUploadResult {
+  id: string
+  filename: string
+  uploaded_at: string
+}
+
+export async function uploadPortalDocument(
+  file: File,
+  engagementId: string,
+): Promise<PortalUploadResult> {
+  const token = typeof window !== 'undefined' ? localStorage.getItem('portal_access_token') : null
+  const headers: Record<string, string> = {}
+  if (token) headers['Authorization'] = `Bearer ${token}`
+  // Do NOT include Content-Type -- browser sets multipart boundary automatically.
+  const form = new FormData()
+  form.append('file', file)
+  const res = await fetch(
+    `${BASE}/portal/documents/upload?engagement_id=${encodeURIComponent(engagementId)}`,
+    { method: 'POST', headers, body: form },
+  )
+  if (!res.ok) {
+    let detail = 'Upload failed'
+    try {
+      const err = await res.json()
+      if (err.detail) detail = String(err.detail)
+    } catch { /* ignore parse errors */ }
+    throw new Error(detail)
+  }
+  return res.json()
+}

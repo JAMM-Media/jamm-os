@@ -11,9 +11,10 @@ import {
   Search,
   ChevronLeft,
   Users,
+  Loader2,
 } from 'lucide-react'
-import { getPortalDocuments, getPortalFolders, getPortalDocumentDownloadUrl } from '@/lib/portal-api'
-import type { PortalDocument, PortalFolder } from '@/lib/portal-api'
+import { getPortalDocuments, getPortalFolders, getPortalDocumentDownloadUrl, uploadPortalDocument, getPortalEngagements, movePortalDocument } from '@/lib/portal-api'
+import type { PortalDocument, PortalFolder, PortalEngagement } from '@/lib/portal-api'
 
 // Props interface unchanged so portal/page.tsx needs no edits.
 // Dark-theme props (cardColor, portalMode, textPrimary, textMuted) are accepted
@@ -118,15 +119,25 @@ export function PortalDocuments({ firmName, accentColor = '#3A6A94' }: PortalDoc
   const [showingFoldersOnly, setShowingFoldersOnly] = useState(false)
   const [hoveredDocId, setHoveredDocId] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const [uploading, setUploading] = useState(false)
+  const [engagements, setEngagements] = useState<PortalEngagement[]>([])
+  const [pendingFile, setPendingFile] = useState<File | null>(null)
+  const [selectedEngagementId, setSelectedEngagementId] = useState<string>('')
 
   const load = useCallback(async () => {
     setLoading(true)
     setFetchError(false)
     try {
-      const [docs, flds] = await Promise.all([getPortalDocuments(), getPortalFolders()])
+      const [docs, flds, engs] = await Promise.all([
+        getPortalDocuments(),
+        getPortalFolders(),
+        getPortalEngagements(),
+      ])
       setAllDocuments(docs)
       setViewDocuments(docs)
       setFolders(flds)
+      setEngagements(engs)
+      if (engs.length > 0) setSelectedEngagementId(engs[0].id)
     } catch {
       setFetchError(true)
     } finally {
@@ -173,12 +184,46 @@ export function PortalDocuments({ firmName, accentColor = '#3A6A94' }: PortalDoc
     setShowingFoldersOnly(true)
   }, [allDocuments])
 
+  async function doUpload(file: File, engagementId: string, folderId: string | null) {
+    setUploading(true)
+    setPendingFile(null)
+    try {
+      const result = await uploadPortalDocument(file, engagementId)
+      if (folderId) {
+        try { await movePortalDocument(result.id, folderId) } catch { /* non-fatal: doc uploaded, not in folder */ }
+        const docs = await getPortalDocuments(folderId)
+        setViewDocuments(docs)
+      } else {
+        const [docs, flds] = await Promise.all([getPortalDocuments(), getPortalFolders()])
+        setAllDocuments(docs)
+        setViewDocuments(docs)
+        setFolders(flds)
+      }
+      setToast(`"${file.name}" uploaded successfully.`)
+      setTimeout(() => setToast(null), 4000)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Upload failed. Please try again.'
+      setToast(`Upload failed: ${msg}`)
+      setTimeout(() => setToast(null), 6000)
+    } finally {
+      setUploading(false)
+    }
+  }
+
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
-    setToast('Document uploads are coming soon.')
-    setTimeout(() => setToast(null), 4000)
     e.target.value = ''
+    if (engagements.length === 0) {
+      setToast('No active engagements. Contact your firm before uploading.')
+      setTimeout(() => setToast(null), 5000)
+      return
+    }
+    if (engagements.length === 1) {
+      doUpload(file, engagements[0].id, activeFolderId)
+      return
+    }
+    setPendingFile(file)
   }
 
   if (loading) {
@@ -327,12 +372,13 @@ export function PortalDocuments({ firmName, accentColor = '#3A6A94' }: PortalDoc
           />
         </div>
         <button
-          onClick={() => fileInputRef.current?.click()}
-          className="flex items-center gap-1.5 h-9 px-4 rounded-lg text-white text-[13px] font-medium hover:opacity-90 transition-opacity flex-shrink-0"
+          onClick={() => { if (!uploading && !pendingFile) fileInputRef.current?.click() }}
+          disabled={uploading}
+          className="flex items-center gap-1.5 h-9 px-4 rounded-lg text-white text-[13px] font-medium hover:opacity-90 transition-opacity flex-shrink-0 disabled:opacity-60"
           style={{ backgroundColor: accentColor }}
         >
-          <Upload size={14} />
-          Upload
+          {uploading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+          {uploading ? 'Uploading...' : 'Upload'}
         </button>
         <input
           type="file"
@@ -342,6 +388,47 @@ export function PortalDocuments({ firmName, accentColor = '#3A6A94' }: PortalDoc
           onChange={handleFileChange}
         />
       </div>
+
+      {/* Engagement picker -- shown when user selects a file and has multiple engagements */}
+      {pendingFile && engagements.length > 1 && (
+        <div className="bg-white rounded-xl border border-gray-100 p-4 flex flex-col gap-3">
+          <p className="text-[13px] font-medium" style={{ color: '#1F3148' }}>
+            Which engagement is this file for?
+          </p>
+          <p className="text-[12px]" style={{ color: '#6B7280' }}>
+            File: <span className="font-medium">{pendingFile.name}</span>
+          </p>
+          <select
+            value={selectedEngagementId}
+            onChange={(e) => setSelectedEngagementId(e.target.value)}
+            className="w-full h-9 px-3 rounded-lg border border-gray-200 bg-white text-[13px] outline-none"
+            style={{ color: '#1F3148' }}
+          >
+            {engagements.map((eng) => (
+              <option key={eng.id} value={eng.id}>{eng.name}</option>
+            ))}
+          </select>
+          <div className="flex gap-2 justify-end">
+            <button
+              type="button"
+              onClick={() => setPendingFile(null)}
+              className="h-8 px-3 rounded-lg border border-gray-200 text-[13px]"
+              style={{ color: '#6B7280' }}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => selectedEngagementId && doUpload(pendingFile, selectedEngagementId, activeFolderId)}
+              disabled={!selectedEngagementId || uploading}
+              className="h-8 px-4 rounded-lg text-white text-[13px] font-medium disabled:opacity-50"
+              style={{ backgroundColor: accentColor }}
+            >
+              Upload
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Tab row */}
       <div className="flex gap-0 border-b border-gray-100">

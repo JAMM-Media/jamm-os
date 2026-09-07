@@ -9,6 +9,8 @@ import io
 import uuid
 from unittest.mock import patch
 
+import pytest
+
 from sqlalchemy import select
 
 from app.models.client import Client
@@ -135,3 +137,30 @@ class TestPortalDocumentUpload:
             )
         finally:
             db.close()
+
+    def test_oversized_file_raises_413(self):
+        """Files exceeding MAX_UPLOAD_BYTES are rejected with a 413 before S3 is touched."""
+        from fastapi import HTTPException
+        from app.services.document_service import MAX_UPLOAD_BYTES
+
+        client_id, firm_id, engagement_id = _setup_firm_client_engagement()
+
+        db = TestingSessionLocal()
+        try:
+            client_obj = db.query(Client).filter(Client.id == client_id).first()
+            # One byte over the limit; size check happens before S3 upload so no mock needed.
+            oversized = _fake_upload_file(
+                content=b'x' * (MAX_UPLOAD_BYTES + 1),
+                filename="oversized.pdf",
+            )
+            with pytest.raises(HTTPException) as exc_info:
+                portal_service.upload_document(
+                    db=db,
+                    file=oversized,
+                    engagement_id=engagement_id,
+                    client=client_obj,
+                )
+            assert exc_info.value.status_code == 413
+        finally:
+            db.close()
+
