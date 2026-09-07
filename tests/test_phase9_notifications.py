@@ -291,21 +291,29 @@ def test_send_notification_action_creates_notification_record(client):
 
     firm_id, user_id = _make_firm_and_user("notif-auto-1", "auto1@test.com")
 
-    payload = {
-        "firm_id": str(firm_id),
-        "recipient_id": str(user_id),
-        "recipient_type": "staff",
+    # Config carries recipient_role, tier, title, and body -- the current
+    # handler contract. Payload carries only firm_id for role resolution.
+    config = {
+        "recipient_role": "firm_owner",
+        "tier": "quiet",
         "title": "Automation triggered notification",
         "body": "This was sent by an automation rule.",
-        "notification_type": "task_assigned",
+    }
+    payload = {
+        "firm_id": str(firm_id),
     }
 
-    # Execute the action directly — it creates its own DB session internally
-    result = automation_actions._handle_send_notification(
-        config={},
-        payload=payload,
-        db=None,  # handler creates its own session
-    )
+    # Pass a real session for role resolution; the handler opens its own
+    # session internally for the notification write.
+    action_db = TestingSessionLocal()
+    try:
+        result = automation_actions._handle_send_notification(
+            config=config,
+            payload=payload,
+            db=action_db,
+        )
+    finally:
+        action_db.close()
     assert "sent" in result.lower() or str(user_id) in result
 
     # Verify the record exists in the DB
