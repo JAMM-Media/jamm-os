@@ -58,7 +58,8 @@ def upload_document(*, db: Session, file: UploadFile, engagement_id, client):
         )
     except HTTPException:
         raise
-    except Exception:
+    except Exception as exc:
+        log.exception("portal upload_document failed: %s", exc)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Upload failed",
