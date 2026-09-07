@@ -55,6 +55,8 @@ def upload_document(*, db: Session, file: UploadFile, engagement_id, client):
             engagement_id=engagement_id,
             firm_id=client.firm_id,
             current_user_id=None,
+            source="client",
+            source_client_id=client.id,
         )
     except HTTPException:
         raise

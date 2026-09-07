@@ -99,6 +99,13 @@ class TestPortalDocumentUpload:
             assert record.uploaded_by is None, (
                 f"uploaded_by should be None for portal uploads; got {record.uploaded_by}"
             )
+            assert record.source == "client", (
+                f"source should be 'client' for portal uploads; got {record.source!r}"
+            )
+            assert record.source_client_id == client_id, (
+                f"source_client_id should be the portal client's UUID; "
+                f"got {record.source_client_id}"
+            )
             # Portal display logic: None means the upload came from the client side
             displayed_uploader = "client" if record.uploaded_by is None else "firm"
             assert displayed_uploader == "client"

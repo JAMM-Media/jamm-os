@@ -34,6 +34,8 @@ def upload_document(
     current_user_id: UUID,
     ip_address: Optional[str] = None,
     user_agent: Optional[str] = None,
+    source: str = "staff",
+    source_client_id: Optional[UUID] = None,
 ):
     db_client = db.query(Client).filter(
         Client.id == client_id,
@@ -74,6 +76,8 @@ def upload_document(
         content_type=content_type,
         size_bytes=len(content),
         doc_id=doc_id,
+        source=source,
+        source_client_id=source_client_id,
     )
 
     crud_document.write_audit_log(
@@ -97,7 +101,7 @@ def upload_document(
         metadata={
             "file_size": len(content),
             "content_type": content_type,
-            "upload_source": "staff",
+            "upload_source": source,
             "engagement_id": str(engagement_id),
             "client_id": str(client_id),
             "filename": file.filename,

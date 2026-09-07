@@ -11,21 +11,34 @@ from app.models.document import Document, DocumentAuditLog
 def create_document(
     db: Session,
     firm_id: uuid.UUID,
-    client_id: uuid.UUID,
-    engagement_id: uuid.UUID,
+    client_id: Optional[uuid.UUID],
+    engagement_id: Optional[uuid.UUID],
     uploaded_by: Optional[uuid.UUID],
     filename: str,
     s3_key: str,
     content_type: str,
     size_bytes: int,
     doc_id: Optional[uuid.UUID] = None,
+    source: str = "staff",
+    source_client_id: Optional[uuid.UUID] = None,
 ) -> Document:
+    # scope is derived from the FK combination and enforced by the DB CHECK
+    # constraint on documents.scope.
+    if engagement_id is not None:
+        scope = "engagement"
+    elif client_id is not None:
+        scope = "client"
+    else:
+        scope = "firm_library"
     doc = Document(
         id=doc_id or uuid.uuid4(),
         firm_id=firm_id,
         client_id=client_id,
         engagement_id=engagement_id,
+        scope=scope,
         uploaded_by=uploaded_by,
+        source=source,
+        source_client_id=source_client_id,
         filename=filename,
         s3_key=s3_key,
         content_type=content_type,

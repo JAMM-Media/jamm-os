@@ -123,6 +123,7 @@ class Client(Base):
 
     documents: Mapped[list["Document"]] = relationship(
         "Document",
+        foreign_keys="[Document.client_id]",
         back_populates="client",
         cascade="all, delete-orphan",
     )

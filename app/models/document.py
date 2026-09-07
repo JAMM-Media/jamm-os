@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import Boolean, String, Integer, DateTime, ForeignKey
+from sqlalchemy import Boolean, CheckConstraint, String, Integer, DateTime, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base_class import Base
@@ -12,28 +12,48 @@ from app.db.base_class import Base
 
 class Document(Base):
     """
-    Represents a file stored in S3 and linked to a client + engagement.
+    Represents a file stored in S3, scoped to a firm and optionally to a client
+    and/or engagement.
 
-    The file itself never lives on the application server. Only the S3 key,
-    metadata, and a reference to the owning firm/client/engagement are stored
-    here. Downloads are served exclusively via short-lived presigned URLs.
+    Scope rules (enforced by a database CHECK constraint):
+      engagement:   engagement_id NOT NULL AND client_id NOT NULL
+      client:       client_id NOT NULL AND engagement_id IS NULL
+      firm_library: client_id IS NULL AND engagement_id IS NULL
+
+    Source:
+      staff:  uploaded by a staff member (uploaded_by is set)
+      client: uploaded via the client portal (source_client_id is set, uploaded_by null)
+      system: auto-generated (both uploaded_by and source_client_id are null)
+
+    Triage status:
+      pending: newly client-uploaded, awaiting staff review/filing (Phase 5)
+      filed:   placed in a final location; no further triage needed
     """
 
     __tablename__ = "documents"
+    __table_args__ = (
+        CheckConstraint(
+            "(scope = 'engagement' AND engagement_id IS NOT NULL AND client_id IS NOT NULL)"
+            " OR (scope = 'client' AND client_id IS NOT NULL AND engagement_id IS NULL)"
+            " OR (scope = 'firm_library' AND client_id IS NULL AND engagement_id IS NULL)",
+            name="ck_documents_scope_fk_consistency",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
 
-    # Tenant isolation — every document belongs to one firm.
+    # Tenant isolation -- every document belongs to one firm.
     firm_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("firms.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
 
-    # Documents are dual-keyed: they belong to both a client and an engagement.
-    client_id: Mapped[uuid.UUID] = mapped_column(
+    # client_id is nullable to support firm_library-scoped documents.
+    # For engagement and client scopes it is always populated.
+    client_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         ForeignKey("clients.id", ondelete="CASCADE"),
-        nullable=False,
+        nullable=True,
         index=True,
     )
     engagement_id: Mapped[Optional[uuid.UUID]] = mapped_column(
@@ -42,19 +62,49 @@ class Document(Base):
         index=True,
     )
 
+    # Discriminator enforced by the DB CHECK constraint above.
+    scope: Mapped[str] = mapped_column(String(20), nullable=False)
+
     # Who uploaded this document. SET NULL so the document survives if the
-    # user is deleted (e.g. a staff member leaves the firm).
-    uploaded_by: Mapped[uuid.UUID | None] = mapped_column(
+    # user is deleted. Null for client-sourced and system-generated documents.
+    uploaded_by: Mapped[Optional[uuid.UUID]] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )
 
+    # Upload source classification.
+    # staff:  uploaded by a staff member (uploaded_by is set)
+    # client: uploaded via the portal (source_client_id is set)
+    # system: auto-generated (e.g. signed PDFs from e-sign flow)
+    source: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        server_default="staff",
+    )
+
+    # The portal client who uploaded this document, when source='client'.
+    # Distinct from client_id, which records whose document binder this belongs to.
+    source_client_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("clients.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
+    # Triage lifecycle. 'filed' means the document is placed; 'pending' means
+    # it awaits staff review. New uploads default to 'filed' until the Phase 5
+    # triage tray is built -- do NOT change this default before Phase 5 ships,
+    # or client-uploaded files will become invisible to staff.
+    triage_status: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        server_default="filed",
+    )
+
     # The original filename as provided by the uploader.
     filename: Mapped[str] = mapped_column(String(255), nullable=False)
 
-    # Full S3 object key: {firm_id}/{client_id}/{engagement_id_or_none}/{doc_id}/{filename}
-    # Unique constraint prevents accidental overwrites.
+    # Full S3 object key. Unique constraint prevents accidental overwrites.
     s3_key: Mapped[str] = mapped_column(String(512), nullable=False, unique=True)
 
     content_type: Mapped[str] = mapped_column(String(100), nullable=False)
@@ -91,6 +141,17 @@ class Document(Base):
         index=True,
     )
 
+    # Soft delete support (Phase 3). The existing hard-delete endpoint is not
+    # changed by this task; these columns are wired in Phase 3.
+    deleted_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    deleted_by: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
@@ -104,9 +165,21 @@ class Document(Base):
     )
 
     firm: Mapped["Firm"] = relationship("Firm", back_populates="documents")
-    client: Mapped["Client"] = relationship("Client", back_populates="documents")
-    engagement: Mapped["Engagement"] = relationship("Engagement", back_populates="documents")
-    uploader: Mapped["User | None"] = relationship("User", foreign_keys=[uploaded_by])
+    client: Mapped[Optional["Client"]] = relationship(
+        "Client", foreign_keys=[client_id], back_populates="documents"
+    )
+    source_client: Mapped[Optional["Client"]] = relationship(
+        "Client", foreign_keys=[source_client_id]
+    )
+    engagement: Mapped[Optional["Engagement"]] = relationship(
+        "Engagement", back_populates="documents"
+    )
+    uploader: Mapped[Optional["User"]] = relationship(
+        "User", foreign_keys=[uploaded_by]
+    )
+    deleter: Mapped[Optional["User"]] = relationship(
+        "User", foreign_keys=[deleted_by]
+    )
     folder: Mapped[Optional["Folder"]] = relationship("Folder", back_populates="documents")
     audit_logs: Mapped[list["DocumentAuditLog"]] = relationship(
         "DocumentAuditLog",
@@ -120,7 +193,7 @@ class DocumentAuditLog(Base):
     Immutable record of every significant action taken on a document.
 
     Written on: upload, download, delete.
-    Never updated — append-only by design.
+    Never updated -- append-only by design.
     """
 
     __tablename__ = "document_audit_logs"
@@ -134,14 +207,14 @@ class DocumentAuditLog(Base):
     )
 
     # Nullable so audit records survive document deletion.
-    document_id: Mapped[uuid.UUID | None] = mapped_column(
+    document_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         ForeignKey("documents.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )
 
     # Nullable so audit records survive user deletion.
-    user_id: Mapped[uuid.UUID | None] = mapped_column(
+    user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
@@ -151,7 +224,7 @@ class DocumentAuditLog(Base):
     action: Mapped[str] = mapped_column(String(50), nullable=False)
 
     # Stored for security auditing. IPv6 max length is 45 chars.
-    ip_address: Mapped[str | None] = mapped_column(String(45), nullable=True)
+    ip_address: Mapped[Optional[str]] = mapped_column(String(45), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -159,6 +232,7 @@ class DocumentAuditLog(Base):
         nullable=False,
     )
 
-    document: Mapped["Document | None"] = relationship("Document", back_populates="audit_logs")
-    user: Mapped["User | None"] = relationship("User", foreign_keys=[user_id])
-
+    document: Mapped[Optional["Document"]] = relationship(
+        "Document", back_populates="audit_logs"
+    )
+    user: Mapped[Optional["User"]] = relationship("User", foreign_keys=[user_id])
