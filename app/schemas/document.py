@@ -10,8 +10,8 @@ from pydantic import BaseModel, ConfigDict
 class DocumentOut(BaseModel):
     id: uuid.UUID
     firm_id: uuid.UUID
-    client_id: uuid.UUID
-    engagement_id: uuid.UUID
+    client_id: Optional[uuid.UUID] = None
+    engagement_id: Optional[uuid.UUID] = None
     uploaded_by: Optional[uuid.UUID]
     filename: str
     s3_key: str

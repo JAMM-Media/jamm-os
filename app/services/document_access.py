@@ -1,0 +1,225 @@
+# app/services/document_access.py
+"""
+The document access gate.
+
+A single service-layer function answers 'may this user access this document,'
+branching on document.scope. Every read, list, download, audit, and
+superseded-flag endpoint passes through this gate or its list-filtering
+equivalent. It is never reimplemented inline in an endpoint.
+
+Spec reference: Filesystem Build Specification, Section 6.
+
+Hardening notes:
+  B. Both 'document does not exist' and 'document exists but access denied'
+     raise HTTPException(404) with the IDENTICAL detail string (_NOT_FOUND).
+     Different messages, different shapes, or an echoed document ID are
+     information leaks regardless of status code.
+  C. assert_can_access_document must be called BEFORE any enrichment of the
+     document row (client name, engagement name, uploader name, filename
+     in a response body). No metadata is returned before auth passes.
+"""
+
+from uuid import UUID
+
+from fastapi import HTTPException, status
+from sqlalchemy import and_, or_
+from sqlalchemy.orm import Session
+
+from app.core.enums import UserRole
+from app.models.document import Document
+from app.models.engagement import Engagement
+from app.models.engagement_member import EngagementMember
+from app.models.user import User
+
+# Both "not found" and "access denied" return this identical detail string.
+_NOT_FOUND = "Document not found"
+
+# Roles that bypass engagement-membership gates entirely.
+_ELEVATED = frozenset([
+    UserRole.firm_owner.value,
+    UserRole.manager.value,
+    UserRole.system_admin.value,
+])
+
+
+def assert_can_access_document(
+    db: Session,
+    user: User,
+    document: Document,
+    firm_id: UUID,
+) -> None:
+    """
+    Raise HTTPException(404) if the user cannot access the document.
+
+    Scope rules:
+      firm_library: any staff member reads freely.
+      client:       user must be a member of at least one of the client's
+                    engagements within this firm.
+      engagement:   user must be a direct member of this specific engagement.
+
+    Managers and firm owners bypass the membership check entirely.
+    The response is identical (404, same body) whether the document does not
+    exist or exists but the user is denied, to prevent enumeration attacks.
+    """
+    if user.role in _ELEVATED:
+        return
+
+    scope = document.scope
+
+    if scope == "firm_library":
+        return
+
+    if scope == "engagement":
+        member = db.query(EngagementMember).filter(
+            EngagementMember.firm_id == firm_id,
+            EngagementMember.engagement_id == document.engagement_id,
+            EngagementMember.user_id == user.id,
+        ).first()
+        if not member:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_NOT_FOUND)
+        return
+
+    if scope == "client":
+        member = (
+            db.query(EngagementMember)
+            .join(Engagement, EngagementMember.engagement_id == Engagement.id)
+            .filter(
+                EngagementMember.firm_id == firm_id,
+                EngagementMember.user_id == user.id,
+                Engagement.client_id == document.client_id,
+                Engagement.firm_id == firm_id,
+            )
+            .first()
+        )
+        if not member:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_NOT_FOUND)
+        return
+
+    # Unknown scope: deny by default rather than silently granting access.
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_NOT_FOUND)
+
+
+def assert_can_delete_document(
+    db: Session,
+    user: User,
+    document: Document,
+    firm_id: UUID,
+) -> None:
+    """
+    Trio check for delete/restore.
+
+    Permitted: engagement administrator (engagement-scoped docs only),
+               manager, or firm owner.
+    Regular engagement members get read access but not delete.
+    For client-scoped and firm_library-scoped docs: manager/owner only
+    (no per-document engagement administrator role exists at those scopes).
+    Raises HTTPException(404) on denial to avoid confirming the document exists.
+    """
+    if user.role in _ELEVATED:
+        return
+
+    if document.scope == "engagement":
+        admin_member = db.query(EngagementMember).filter(
+            EngagementMember.firm_id == firm_id,
+            EngagementMember.engagement_id == document.engagement_id,
+            EngagementMember.user_id == user.id,
+            EngagementMember.is_administrator == True,
+        ).first()
+        if admin_member:
+            return
+
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_NOT_FOUND)
+
+
+def assert_can_upload_to_engagement(
+    db: Session,
+    user: User,
+    firm_id: UUID,
+    engagement_id: UUID,
+    client_id: UUID,
+) -> None:
+    """
+    Canonical relationship check for document upload (hardening A).
+
+    Verifies three things:
+    1. The engagement belongs to this firm.
+    2. The engagement's real client_id matches the supplied client_id
+       (parent-mismatch prevention: the two IDs must actually belong together
+       in the database, not just both individually valid).
+    3. The user is a member of this engagement, or manager/owner.
+
+    Both 'engagement not found' and 'client mismatch' return the same 404
+    to avoid leaking which part of the supplied data is wrong.
+    Raises 403 for membership denial (a legitimate user who is simply not
+    assigned to this engagement needs to know the reason, since both the
+    engagement and client genuinely exist).
+    """
+    engagement = db.query(Engagement).filter(
+        Engagement.id == engagement_id,
+        Engagement.firm_id == firm_id,
+    ).first()
+    if not engagement:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Engagement not found")
+
+    # Canonical relationship: supplied client_id must match the engagement's
+    # actual client_id, not merely be a valid client ID somewhere in the firm.
+    if engagement.client_id != client_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Engagement not found")
+
+    if user.role in _ELEVATED:
+        return
+
+    member = db.query(EngagementMember).filter(
+        EngagementMember.firm_id == firm_id,
+        EngagementMember.engagement_id == engagement_id,
+        EngagementMember.user_id == user.id,
+    ).first()
+    if not member:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not a member of this engagement",
+        )
+
+
+def filter_accessible_documents(query, db: Session, user: User, firm_id: UUID):
+    """
+    Filter a document SQLAlchemy query to only documents this user can access.
+
+    For managers and owners: no filter applied (full visibility).
+    For staff: only documents from their memberships are included, plus
+    firm_library-scoped documents (visible to all staff).
+
+    Applies the filter at the query layer so inaccessible documents are
+    never fetched, not returned and hidden client-side.
+    """
+    if user.role in _ELEVATED:
+        return query
+
+    eng_id_rows = db.query(EngagementMember.engagement_id).filter(
+        EngagementMember.user_id == user.id,
+        EngagementMember.firm_id == firm_id,
+    ).all()
+    eng_ids = [row[0] for row in eng_id_rows]
+
+    client_id_rows = (
+        db.query(Engagement.client_id)
+        .filter(
+            Engagement.id.in_(eng_ids),
+            Engagement.firm_id == firm_id,
+        )
+        .all()
+        if eng_ids else []
+    )
+    client_ids = [row[0] for row in client_id_rows]
+
+    conditions = [Document.scope == "firm_library"]
+    if eng_ids:
+        conditions.append(
+            and_(Document.scope == "engagement", Document.engagement_id.in_(eng_ids))
+        )
+    if client_ids:
+        conditions.append(
+            and_(Document.scope == "client", Document.client_id.in_(client_ids))
+        )
+
+    return query.filter(or_(*conditions))

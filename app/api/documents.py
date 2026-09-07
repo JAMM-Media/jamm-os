@@ -31,12 +31,20 @@ from app.models.signature_envelope import SignatureEnvelope
 from app.services import s3 as s3_service
 from app.services.audit_service import write_audit_log
 import app.services.document_service as document_service
+from app.services.document_access import (
+    assert_can_access_document,
+    assert_can_delete_document,
+    assert_can_upload_to_engagement,
+    filter_accessible_documents,
+)
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
+# Both "not found" and "access denied" use this identical detail string (hardening B).
+_NOT_FOUND = "Document not found"
+
 
 def _client_ip(request: Request) -> Optional[str]:
-    """Best-effort IP extraction for audit logging."""
     forwarded_for = request.headers.get("X-Forwarded-For")
     if forwarded_for:
         return forwarded_for.split(",")[0].strip()
@@ -44,7 +52,7 @@ def _client_ip(request: Request) -> Optional[str]:
 
 
 # -----------------------------------------------------------------------
-# POST /documents/upload — Upload a file to S3
+# POST /documents/upload -- Upload a file to S3
 # -----------------------------------------------------------------------
 @router.post("/upload", response_model=DocumentOut, status_code=status.HTTP_201_CREATED)
 def upload_document(
@@ -57,6 +65,13 @@ def upload_document(
     current_user: User = Depends(get_current_user),
     _: object = Depends(require_staff_or_above),
 ):
+    # Canonical-relationship check: verifies engagement.client_id matches the
+    # supplied client_id and that the user is a member (or manager/owner).
+    # This is hardening A -- parent-mismatch prevention.
+    assert_can_upload_to_engagement(
+        db, user=current_user, firm_id=current_firm.id,
+        engagement_id=engagement_id, client_id=client_id,
+    )
     return document_service.upload_document(
         db=db, file=file, client_id=client_id,
         engagement_id=engagement_id, firm_id=current_firm.id,
@@ -67,12 +82,13 @@ def upload_document(
 
 
 # -----------------------------------------------------------------------
-# GET /documents/ — List documents (scoped to firm; filterable)
+# GET /documents/ -- List documents (scoped to firm; filterable)
 # -----------------------------------------------------------------------
 @router.get("/", response_model=PaginatedResponse[DocumentOut])
 def list_documents(
     db: Session = Depends(get_db),
     current_firm: Firm = Depends(get_current_firm),
+    current_user: User = Depends(get_current_user),
     _: object = Depends(require_staff_or_above),
     client_id: Optional[uuid.UUID] = None,
     engagement_id: Optional[uuid.UUID] = None,
@@ -85,6 +101,8 @@ def list_documents(
         client_id=client_id,
         engagement_id=engagement_id,
     )
+    # Filter at the query layer so inaccessible documents are never fetched.
+    query = filter_accessible_documents(query, db, current_user, current_firm.id)
     total = query.count()
     docs = query.offset(offset).limit(limit).all()
 
@@ -131,20 +149,23 @@ def list_documents(
 
 
 # -----------------------------------------------------------------------
-# GET /documents/{document_id} — Return a single document
+# GET /documents/{document_id} -- Return a single document
 # -----------------------------------------------------------------------
 @router.get("/{document_id}", response_model=DocumentOut)
 def get_document(
     document_id: uuid.UUID,
     db: Session = Depends(get_db),
     current_firm: Firm = Depends(get_current_firm),
+    current_user: User = Depends(get_current_user),
     _: object = Depends(require_staff_or_above),
 ):
     doc = crud_document.get_document(db, document_id=document_id, firm_id=current_firm.id)
     if not doc:
-        raise HTTPException(status_code=404, detail="Document not found")
+        raise HTTPException(status_code=404, detail=_NOT_FOUND)
+    # Gate before any enrichment (hardening C). Denial raises 404 with the
+    # same detail string as not-found (hardening B).
+    assert_can_access_document(db, current_user, doc, current_firm.id)
 
-    # Enrich with envelope status
     envelope = db.query(SignatureEnvelope).filter(
         SignatureEnvelope.signed_document_id == document_id
     ).first()
@@ -165,7 +186,7 @@ def get_document(
 
 
 # -----------------------------------------------------------------------
-# GET /documents/{document_id}/download — Return a presigned URL
+# GET /documents/{document_id}/download -- Return a presigned URL
 # -----------------------------------------------------------------------
 @router.get("/{document_id}/download", response_model=DocumentDownloadResponse)
 def download_document(
@@ -176,13 +197,19 @@ def download_document(
     current_user: User = Depends(get_current_user),
     _: object = Depends(require_staff_or_above),
 ):
+    # Gate check before any URL generation (hardening B, C): no presigned URL
+    # is ever generated for a request the user cannot access.
+    _prefetch = crud_document.get_document(db, document_id=document_id, firm_id=current_firm.id)
+    if not _prefetch:
+        raise HTTPException(status_code=404, detail=_NOT_FOUND)
+    assert_can_access_document(db, current_user, _prefetch, current_firm.id)
+
     doc, url = document_service.download_document(
         db=db, document_id=document_id, firm_id=current_firm.id,
         current_user_id=current_user.id,
         ip_address=_client_ip(request),
         user_agent=request.headers.get("user-agent"),
     )
-    from app.schemas.document import DocumentDownloadResponse
     return DocumentDownloadResponse(
         document_id=doc.id,
         filename=doc.filename,
@@ -192,7 +219,7 @@ def download_document(
 
 
 # -----------------------------------------------------------------------
-# DELETE /documents/{document_id} — Delete from S3 and DB
+# DELETE /documents/{document_id} -- Delete from S3 and DB
 # -----------------------------------------------------------------------
 @router.delete("/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_document(
@@ -203,6 +230,11 @@ def delete_document(
     current_user: User = Depends(get_current_user),
     _: object = Depends(require_staff_or_above),
 ):
+    _prefetch = crud_document.get_document(db, document_id=document_id, firm_id=current_firm.id)
+    if not _prefetch:
+        raise HTTPException(status_code=404, detail=_NOT_FOUND)
+    assert_can_delete_document(db, current_user, _prefetch, current_firm.id)
+
     document_service.delete_document(
         db=db, document_id=document_id, firm_id=current_firm.id,
         current_user_id=current_user.id,
@@ -212,18 +244,20 @@ def delete_document(
 
 
 # -----------------------------------------------------------------------
-# GET /documents/{document_id}/audit — Audit trail for one document
+# GET /documents/{document_id}/audit -- Audit trail for one document
 # -----------------------------------------------------------------------
 @router.get("/{document_id}/audit", response_model=list[AuditLogOut])
 def get_audit_log(
     document_id: uuid.UUID,
     db: Session = Depends(get_db),
     current_firm: Firm = Depends(get_current_firm),
+    current_user: User = Depends(get_current_user),
     _: object = Depends(require_staff_or_above),
 ):
     doc = crud_document.get_document(db, document_id=document_id, firm_id=current_firm.id)
     if not doc:
-        raise HTTPException(status_code=404, detail="Document not found")
+        raise HTTPException(status_code=404, detail=_NOT_FOUND)
+    assert_can_access_document(db, current_user, doc, current_firm.id)
 
     return crud_document.list_audit_logs(
         db, firm_id=current_firm.id, document_id=document_id
@@ -231,7 +265,7 @@ def get_audit_log(
 
 
 # -----------------------------------------------------------------------
-# PATCH /documents/{document_id}/superseded — Mark/unmark as superseded
+# PATCH /documents/{document_id}/superseded -- Mark/unmark as superseded
 # -----------------------------------------------------------------------
 @router.patch("/{document_id}/superseded", response_model=DocumentOut)
 def patch_document_superseded(
@@ -239,11 +273,17 @@ def patch_document_superseded(
     body: DocumentSupersededUpdate,
     db: Session = Depends(get_db),
     current_firm: Firm = Depends(get_current_firm),
+    current_user: User = Depends(get_current_user),
     _: object = Depends(require_staff_or_above),
 ):
     doc = crud_document.get_document(db, document_id=document_id, firm_id=current_firm.id)
     if not doc:
-        raise HTTPException(status_code=404, detail="Document not found")
+        raise HTTPException(status_code=404, detail=_NOT_FOUND)
+    # Visibility gate (not trio): marking superseded is metadata management, not
+    # deletion. Any engagement member who can read a document can flag it.
+    # If the product model later restricts this to administrators, upgrade to
+    # assert_can_delete_document.
+    assert_can_access_document(db, current_user, doc, current_firm.id)
     doc.is_superseded = body.is_superseded
     db.commit()
     db.refresh(doc)
