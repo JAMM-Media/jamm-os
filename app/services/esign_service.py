@@ -118,6 +118,7 @@ def prepare_and_create_envelope(
         s3_key=s3_key,
         content_type="application/pdf",
         size_bytes=len(pdf_bytes),
+        source="system",
     )
 
     envelope_schema = SignatureEnvelopeCreate(
@@ -339,6 +340,7 @@ def upload_and_prepare_envelope(
         s3_key=s3_key,
         content_type="application/pdf",
         size_bytes=len(pdf_bytes),
+        source="system",
     )
 
     envelope_schema = SignatureEnvelopeCreate(
@@ -477,6 +479,7 @@ def store_signed_document(
             s3_key=s3_key,
             content_type="application/pdf",
             size_bytes=len(pdf_bytes),
+            source="system",
         )
 
         crud_envelope.update_signature_envelope(
