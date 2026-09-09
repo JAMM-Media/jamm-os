@@ -85,7 +85,11 @@ def _insert_document(firm_id: str, client_id: str, folder_id=None) -> str:
 
 
 def _create_folder(http_client, staff_headers: dict, firm_id: str, client_id: str, name="Test Folder") -> str:
-    r = http_client.post("/folders/", json={"name": name, "client_id": client_id}, headers=staff_headers)
+    r = http_client.post(
+        "/document-folders/",
+        json={"name": name, "scope": "client", "client_id": client_id},
+        headers=staff_headers,
+    )
     assert r.status_code == 201, r.json()
     return r.json()["id"]
 

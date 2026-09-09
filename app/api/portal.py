@@ -820,14 +820,15 @@ def portal_list_folders(
     db: Session = Depends(get_db),
 ):
     """List all folders visible to the authenticated portal client. Read-only."""
-    from app.crud import folder as crud_folder
-    from app.schemas.folder import FolderOut
-    folders = crud_folder.list_folders_for_client(
+    from app.crud import document_folder as crud_document_folder
+    from app.schemas.document_folder import DocumentFolderOut
+    folders = crud_document_folder.list_document_folders(
         db=db,
         firm_id=current_client.firm_id,
         client_id=current_client.id,
+        scope="client",
     )
-    return [FolderOut.model_validate(f).model_dump() for f in folders]
+    return [DocumentFolderOut.model_validate(f).model_dump() for f in folders]
 
 
 @router.get("/documents")
@@ -893,7 +894,7 @@ def portal_move_document(
     folder they do not own.
     """
     from app.models.document import Document
-    from app.models.folder import Folder
+    from app.models.document_folder import DocumentFolder
 
     doc = (
         db.query(Document)
@@ -909,11 +910,13 @@ def portal_move_document(
 
     if body.folder_id is not None:
         folder = (
-            db.query(Folder)
+            db.query(DocumentFolder)
             .filter(
-                Folder.id == body.folder_id,
-                Folder.firm_id == current_client.firm_id,
-                Folder.client_id == current_client.id,
+                DocumentFolder.id == body.folder_id,
+                DocumentFolder.firm_id == current_client.firm_id,
+                DocumentFolder.client_id == current_client.id,
+                DocumentFolder.scope == "client",
+                DocumentFolder.deleted_at.is_(None),
             )
             .first()
         )
