@@ -26,10 +26,12 @@ class DocumentOut(BaseModel):
     # Soft-delete fields (Phase 3): present in trash list; null for live documents.
     deleted_at: Optional[datetime] = None
     deleted_by: Optional[uuid.UUID] = None
+    folder_id: Optional[uuid.UUID] = None
     # Enrichment fields -- populated by API layer, not from DB model
     client_name: Optional[str] = None
     engagement_title: Optional[str] = None
     uploaded_by_name: Optional[str] = None
+    copied_from_document_id: Optional[uuid.UUID] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -102,3 +104,18 @@ class UploadCompleteRequest(BaseModel):
 class UploadCompleteResponse(BaseModel):
     document: Optional[DocumentOut] = None
     conflict: Optional[DuplicateConflict] = None
+
+
+class DocumentRenameRequest(BaseModel):
+    filename: str
+
+
+class DocumentMoveRequest(BaseModel):
+    folder_id: Optional[uuid.UUID] = None
+    engagement_id: Optional[uuid.UUID] = None
+    client_id: Optional[uuid.UUID] = None
+
+
+class DocumentCopyRequest(BaseModel):
+    folder_id: Optional[uuid.UUID] = None
+    duplicate_action: Optional[str] = None

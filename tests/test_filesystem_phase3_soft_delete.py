@@ -276,22 +276,24 @@ def test_restore_reappears_in_normal_list(client, firm_a_owner):
 def test_restore_preserves_folder_id(client, firm_a_owner):
     """folder_id is preserved through soft-delete and restore (not zeroed by either).
 
-    Uses a real Folder row to satisfy the FK constraint. No folder CRUD endpoints
-    exist yet, so the folder is created directly via TestingSessionLocal.
+    Uses a DocumentFolder row to satisfy the FK constraint (documents.folder_id
+    now references document_folders, updated in Phase 4 Task 2).
     """
-    from app.models.folder import Folder
+    from app.models.document_folder import DocumentFolder
 
     firm_id = firm_a_owner["firm_id"]
     headers = firm_a_owner["headers"]
     client_id, eng_id = _setup_client_and_engagement(client, headers)
     doc_id = _upload(client, headers, client_id, eng_id)
 
-    # Create a real folder row so the FK constraint is satisfied.
+    # Create a real DocumentFolder row so the FK constraint is satisfied.
     db = TestingSessionLocal()
     try:
-        folder = Folder(
+        folder = DocumentFolder(
             firm_id=firm_id,
+            scope="engagement",
             client_id=uuid.UUID(client_id),
+            engagement_id=uuid.UUID(eng_id),
             name="Test Folder",
         )
         db.add(folder)

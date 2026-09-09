@@ -67,6 +67,7 @@ def _insert_document(firm_id: str, client_id: str, folder_id=None) -> str:
         doc = Document(
             firm_id=uuid.UUID(firm_id),
             client_id=uuid.UUID(client_id),
+            scope="client",
             uploaded_by=None,
             filename="test.pdf",
             s3_key=f"test/{uuid.uuid4()}/test.pdf",

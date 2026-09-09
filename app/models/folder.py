@@ -64,4 +64,5 @@ class Folder(Base):
 
     firm: Mapped["Firm"] = relationship("Firm")
     client: Mapped["Client"] = relationship("Client")
-    documents: Mapped[list["Document"]] = relationship("Document", back_populates="folder")
+    # Note: Document.folder_id now references document_folders, not this table.
+    # This relationship is intentionally removed to avoid FK/relationship mismatch.

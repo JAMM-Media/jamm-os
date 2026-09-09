@@ -32,6 +32,9 @@ from app.schemas.document import (
     UploadUrlResponse,
     UploadCompleteRequest,
     UploadCompleteResponse,
+    DocumentRenameRequest,
+    DocumentMoveRequest,
+    DocumentCopyRequest,
 )
 from app.schemas.pagination import PaginatedResponse
 from app.crud import document as crud_document
@@ -46,6 +49,7 @@ from app.services.document_access import (
     assert_can_access_document,
     assert_can_delete_document,
     assert_can_upload_to_engagement,
+    assert_can_move_across_engagements,
     filter_accessible_documents,
 )
 
@@ -248,6 +252,113 @@ def complete_upload(
     return UploadCompleteResponse(
         conflict=result["conflict"]
     )
+
+
+# -----------------------------------------------------------------------
+# PATCH /documents/{document_id}/rename -- Rename a document
+# -----------------------------------------------------------------------
+@router.patch("/{document_id}/rename", response_model=DocumentOut)
+def rename_document(
+    document_id: uuid.UUID,
+    body: DocumentRenameRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    current_user: User = Depends(get_current_user),
+    _: object = Depends(require_staff_or_above),
+):
+    doc = crud_document.get_document(db, document_id=document_id, firm_id=current_firm.id)
+    if not doc:
+        raise HTTPException(status_code=404, detail=_NOT_FOUND)
+    assert_can_access_document(db, current_user, doc, current_firm.id)
+    renamed = document_service.rename_document(
+        db=db, document_id=document_id, firm_id=current_firm.id,
+        new_filename=body.filename,
+        current_user_id=current_user.id,
+        ip_address=_client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
+    return DocumentOut.model_validate(renamed)
+
+
+# -----------------------------------------------------------------------
+# PATCH /documents/{document_id}/move -- Move within scope or across engagements
+# -----------------------------------------------------------------------
+@router.patch("/{document_id}/move", response_model=DocumentOut)
+def move_document(
+    document_id: uuid.UUID,
+    body: DocumentMoveRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    current_user: User = Depends(get_current_user),
+    _: object = Depends(require_staff_or_above),
+):
+    src_doc = crud_document.get_document(db, document_id=document_id, firm_id=current_firm.id)
+    if not src_doc:
+        raise HTTPException(status_code=404, detail=_NOT_FOUND)
+    assert_can_access_document(db, current_user, src_doc, current_firm.id)
+
+    is_cross_engagement = (
+        body.engagement_id is not None
+        and body.engagement_id != src_doc.engagement_id
+    )
+
+    if is_cross_engagement:
+        assert_can_move_across_engagements(db, current_user, src_doc, current_firm.id)
+        moved = document_service.move_document_across_engagements(
+            db=db, user=current_user,
+            document_id=document_id, firm_id=current_firm.id,
+            dest_engagement_id=body.engagement_id,
+            dest_client_id=body.client_id,
+            target_folder_id=body.folder_id,
+            current_user_id=current_user.id,
+            ip_address=_client_ip(request),
+            user_agent=request.headers.get("user-agent"),
+        )
+    else:
+        moved = document_service.move_document(
+            db=db, user=current_user,
+            document_id=document_id, firm_id=current_firm.id,
+            target_folder_id=body.folder_id,
+            current_user_id=current_user.id,
+            ip_address=_client_ip(request),
+            user_agent=request.headers.get("user-agent"),
+        )
+    return DocumentOut.model_validate(moved)
+
+
+# -----------------------------------------------------------------------
+# POST /documents/{document_id}/copy -- Copy a document (in-place or cross-scope)
+# -----------------------------------------------------------------------
+@router.post("/{document_id}/copy", response_model=UploadCompleteResponse)
+def copy_document(
+    document_id: uuid.UUID,
+    body: DocumentCopyRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    current_user: User = Depends(get_current_user),
+    _: object = Depends(require_staff_or_above),
+):
+    # Source access re-verified at execution time inside the service.
+    doc = crud_document.get_document(db, document_id=document_id, firm_id=current_firm.id)
+    if not doc:
+        raise HTTPException(status_code=404, detail=_NOT_FOUND)
+    assert_can_access_document(db, current_user, doc, current_firm.id)
+
+    result = document_service.copy_document(
+        db=db, user=current_user,
+        document_id=document_id, firm_id=current_firm.id,
+        target_folder_id=body.folder_id,
+        current_user_id=current_user.id,
+        duplicate_action=body.duplicate_action,
+        ip_address=_client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
+    if result.get("document"):
+        return UploadCompleteResponse(document=DocumentOut.model_validate(result["document"]))
+    return UploadCompleteResponse(conflict=result["conflict"])
 
 
 # -----------------------------------------------------------------------

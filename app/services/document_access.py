@@ -19,6 +19,7 @@ Hardening notes:
      in a response body). No metadata is returned before auth passes.
 """
 
+from typing import Optional
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -289,3 +290,74 @@ def filter_accessible_documents(query, db: Session, user: User, firm_id: UUID):
         )
 
     return query.filter(or_(*conditions))
+
+
+def assert_can_move_across_engagements(
+    db: Session,
+    user: User,
+    document: Document,
+    firm_id: UUID,
+) -> None:
+    """Trio check for the cross-engagement misfile fix.
+
+    Identical logic to assert_can_delete_document: engagement administrator,
+    manager, or firm owner. Named separately because this is a move operation,
+    not a delete. The trio restriction applies because moving a document across
+    engagements changes its scope container and affects all members of both
+    source and destination engagements.
+    Raises HTTPException(404) on denial.
+    """
+    if user.role in _ELEVATED:
+        return
+
+    if document.scope == "engagement":
+        admin_member = db.query(EngagementMember).filter(
+            EngagementMember.firm_id == firm_id,
+            EngagementMember.engagement_id == document.engagement_id,
+            EngagementMember.user_id == user.id,
+            EngagementMember.is_administrator == True,
+        ).first()
+        if admin_member:
+            return
+
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_NOT_FOUND)
+
+
+def assert_can_write_to_destination(
+    db: Session,
+    user: User,
+    firm_id: UUID,
+    dest_scope: str,
+    dest_engagement_id: Optional[UUID],
+    dest_client_id: Optional[UUID],
+) -> None:
+    """Check write access to a copy destination.
+
+    firm_library: any staff member can write.
+    engagement: user must be a member of the destination engagement (or manager/owner).
+    client: manager or owner only (no engagement-level write path for client-scoped copies).
+    Raises HTTPException(403) on denial.
+    """
+    if user.role in _ELEVATED:
+        return
+
+    if dest_scope == "firm_library":
+        return
+
+    if dest_scope == "engagement":
+        member = db.query(EngagementMember).filter(
+            EngagementMember.firm_id == firm_id,
+            EngagementMember.engagement_id == dest_engagement_id,
+            EngagementMember.user_id == user.id,
+        ).first()
+        if not member:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not a member of the destination engagement",
+            )
+        return
+
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Manager or owner required for client-scoped copy destination",
+    )

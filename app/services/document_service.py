@@ -12,12 +12,17 @@ from sqlalchemy import select
 
 from app.crud import document as crud_document
 from app.models.client import Client
+from app.models.document_folder import DocumentFolder
 from app.models.engagement import Engagement
 from app.models.user import User
 from app.services import s3 as s3_service
 from app.services.audit_service import write_audit_log
 from app.services.behavioral_log import log_event
-from app.services.document_access import assert_can_upload_to_engagement
+from app.services.document_access import (
+    assert_can_upload_to_engagement,
+    assert_can_move_across_engagements,
+    assert_can_write_to_destination,
+)
 
 MAX_UPLOAD_BYTES = 250 * 1024 * 1024
 MAX_DIRECT_UPLOAD_BYTES = 250 * 1024 * 1024
@@ -518,3 +523,335 @@ def complete_upload(
     )
 
     return {"document": doc}
+
+
+def rename_document(
+    *,
+    db: Session,
+    document_id: UUID,
+    firm_id: UUID,
+    new_filename: str,
+    current_user_id: UUID,
+    ip_address: Optional[str] = None,
+    user_agent: Optional[str] = None,
+) -> "Document":
+    """Rename a document. Access: visibility gate (any user who can see it)."""
+    doc = crud_document.get_document(db, document_id=document_id, firm_id=firm_id)
+    if not doc:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    old_filename = doc.filename
+    doc.filename = new_filename
+    db.commit()
+    db.refresh(doc)
+
+    crud_document.write_audit_log(
+        db=db, firm_id=firm_id, action="rename",
+        document_id=doc.id, user_id=current_user_id, ip_address=ip_address,
+    )
+    write_audit_log(
+        db=db, firm_id=firm_id, action="document.renamed",
+        actor_id=current_user_id, actor_type="staff",
+        entity_type="document", entity_id=doc.id,
+        ip_address=ip_address, user_agent=user_agent,
+    )
+    log_event(
+        firm_id=firm_id,
+        event_type="document.renamed",
+        entity_type="document",
+        entity_id=doc.id,
+        actor_type="staff",
+        actor_id=current_user_id,
+        metadata={"from_filename": old_filename, "to_filename": new_filename},
+    )
+    return doc
+
+
+def move_document(
+    *,
+    db: Session,
+    user,
+    document_id: UUID,
+    firm_id: UUID,
+    target_folder_id: Optional[UUID],
+    current_user_id: UUID,
+    ip_address: Optional[str] = None,
+    user_agent: Optional[str] = None,
+) -> "Document":
+    """Move a document within its current scope container (same engagement/client/firm_library).
+
+    Access: visibility gate (any member who can see the document).
+    target_folder_id must belong to the SAME scope container as the document.
+    If it belongs to a different engagement, refuse with 400.
+    """
+    doc = crud_document.get_document(db, document_id=document_id, firm_id=firm_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    if target_folder_id is not None:
+        folder = db.query(DocumentFolder).filter(
+            DocumentFolder.id == target_folder_id,
+            DocumentFolder.firm_id == firm_id,
+            DocumentFolder.deleted_at.is_(None),
+        ).first()
+        if not folder:
+            raise HTTPException(status_code=404, detail="Destination folder not found")
+
+        # Verify same scope container.
+        if doc.scope == "engagement":
+            if folder.engagement_id != doc.engagement_id:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=(
+                        "Destination folder belongs to a different engagement. "
+                        "Use the cross-engagement move by supplying engagement_id."
+                    ),
+                )
+        elif doc.scope == "client":
+            if folder.client_id != doc.client_id:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Destination folder belongs to a different client.",
+                )
+        # firm_library: any folder with firm_library scope in the same firm is valid
+
+    old_folder_id = doc.folder_id
+    doc.folder_id = target_folder_id
+    db.commit()
+    db.refresh(doc)
+
+    crud_document.write_audit_log(
+        db=db, firm_id=firm_id, action="move",
+        document_id=doc.id, user_id=current_user_id, ip_address=ip_address,
+    )
+    write_audit_log(
+        db=db, firm_id=firm_id, action="document.moved",
+        actor_id=current_user_id, actor_type="staff",
+        entity_type="document", entity_id=doc.id,
+        ip_address=ip_address, user_agent=user_agent,
+    )
+    log_event(
+        firm_id=firm_id,
+        event_type="document.moved",
+        entity_type="document",
+        entity_id=doc.id,
+        actor_type="staff",
+        actor_id=current_user_id,
+        metadata={
+            "from_folder_id": str(old_folder_id) if old_folder_id else None,
+            "to_folder_id": str(target_folder_id) if target_folder_id else None,
+            "cross_engagement": False,
+        },
+    )
+    return doc
+
+
+def move_document_across_engagements(
+    *,
+    db: Session,
+    user,
+    document_id: UUID,
+    firm_id: UUID,
+    dest_engagement_id: UUID,
+    dest_client_id: UUID,
+    target_folder_id: Optional[UUID],
+    current_user_id: UUID,
+    ip_address: Optional[str] = None,
+    user_agent: Optional[str] = None,
+) -> "Document":
+    """Move a document to a different engagement (the misfile fix).
+
+    Trio-gated. Audit-logs both from and to engagement_id explicitly.
+    """
+    doc = crud_document.get_document(db, document_id=document_id, firm_id=firm_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    dest_eng = db.query(Engagement).filter(
+        Engagement.id == dest_engagement_id,
+        Engagement.firm_id == firm_id,
+        Engagement.client_id == dest_client_id,
+    ).first()
+    if not dest_eng:
+        raise HTTPException(status_code=404, detail="Destination engagement not found")
+
+    if target_folder_id is not None:
+        folder = db.query(DocumentFolder).filter(
+            DocumentFolder.id == target_folder_id,
+            DocumentFolder.firm_id == firm_id,
+            DocumentFolder.engagement_id == dest_engagement_id,
+            DocumentFolder.deleted_at.is_(None),
+        ).first()
+        if not folder:
+            raise HTTPException(status_code=404, detail="Destination folder not found in target engagement")
+
+    from_engagement_id = doc.engagement_id
+    from_client_id = doc.client_id
+
+    doc.engagement_id = dest_engagement_id
+    doc.client_id = dest_client_id
+    doc.folder_id = target_folder_id
+    db.commit()
+    db.refresh(doc)
+
+    crud_document.write_audit_log(
+        db=db, firm_id=firm_id, action="move_across_engagements",
+        document_id=doc.id, user_id=current_user_id, ip_address=ip_address,
+    )
+    write_audit_log(
+        db=db, firm_id=firm_id, action="document.moved_across_engagements",
+        actor_id=current_user_id, actor_type="staff",
+        entity_type="document", entity_id=doc.id,
+        ip_address=ip_address, user_agent=user_agent,
+    )
+    log_event(
+        firm_id=firm_id,
+        event_type="document.moved_across_engagements",
+        entity_type="document",
+        entity_id=doc.id,
+        actor_type="staff",
+        actor_id=current_user_id,
+        metadata={
+            "from_engagement_id": str(from_engagement_id) if from_engagement_id else None,
+            "to_engagement_id": str(dest_engagement_id),
+            "from_client_id": str(from_client_id) if from_client_id else None,
+            "to_client_id": str(dest_client_id),
+        },
+    )
+    return doc
+
+
+def copy_document(
+    *,
+    db: Session,
+    user,
+    document_id: UUID,
+    firm_id: UUID,
+    target_folder_id: Optional[UUID],
+    current_user_id: UUID,
+    duplicate_action: Optional[str] = None,
+    ip_address: Optional[str] = None,
+    user_agent: Optional[str] = None,
+) -> dict:
+    """Copy a document (create a new S3 object, new Document row).
+
+    S3 mechanism: server-side copy_object_within_bucket. No bytes downloaded.
+
+    Re-verifies source access and destination write access at execution time
+    (TOCTOU hardening: membership may have changed since the UI loaded).
+
+    Returns {"document": new_doc} or {"conflict": {...}} if duplicate handling
+    is needed.
+    """
+    src = crud_document.get_document(db, document_id=document_id, firm_id=firm_id)
+    if not src:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    # Resolve destination scope.
+    if target_folder_id is not None:
+        dest_folder = db.query(DocumentFolder).filter(
+            DocumentFolder.id == target_folder_id,
+            DocumentFolder.firm_id == firm_id,
+            DocumentFolder.deleted_at.is_(None),
+        ).first()
+        if not dest_folder:
+            raise HTTPException(status_code=404, detail="Destination folder not found")
+        dest_scope = dest_folder.scope
+        dest_engagement_id = dest_folder.engagement_id
+        dest_client_id = dest_folder.client_id
+    else:
+        # Copy-in-place: same scope as source.
+        dest_scope = src.scope
+        dest_engagement_id = src.engagement_id
+        dest_client_id = src.client_id
+        target_folder_id = src.folder_id
+
+    # Re-verify write access to destination at execution time.
+    assert_can_write_to_destination(
+        db, user=user, firm_id=firm_id,
+        dest_scope=dest_scope,
+        dest_engagement_id=dest_engagement_id,
+        dest_client_id=dest_client_id,
+    )
+
+    # Duplicate check in destination.
+    duplicate = crud_document.find_duplicate_filename(
+        db, firm_id=firm_id, engagement_id=dest_engagement_id,
+        folder_id=target_folder_id, filename=src.filename,
+    )
+
+    if duplicate and not duplicate_action:
+        return {
+            "conflict": {
+                "existing_id": duplicate.id,
+                "filename": duplicate.filename,
+            }
+        }
+
+    actual_filename = src.filename
+
+    if duplicate and duplicate_action == "replace":
+        duplicate.deleted_at = datetime.now(timezone.utc)
+        duplicate.deleted_by = current_user_id
+        db.commit()
+    elif duplicate and duplicate_action == "keep_both":
+        actual_filename = crud_document.next_available_filename(
+            db, firm_id=firm_id, engagement_id=dest_engagement_id,
+            folder_id=target_folder_id, filename=src.filename,
+        )
+
+    new_doc_id = uuid_module.uuid4()
+    new_s3_key = _build_s3_key(
+        firm_id, dest_client_id, dest_engagement_id, new_doc_id, actual_filename
+    )
+
+    s3_service.copy_object_within_bucket(src.s3_key, new_s3_key)
+
+    cross_client = (src.client_id != dest_client_id)
+
+    new_doc = crud_document.create_document(
+        db=db,
+        firm_id=firm_id,
+        client_id=dest_client_id,
+        engagement_id=dest_engagement_id,
+        uploaded_by=current_user_id,
+        filename=actual_filename,
+        s3_key=new_s3_key,
+        content_type=src.content_type,
+        size_bytes=src.size_bytes,
+        doc_id=new_doc_id,
+        source="staff",
+        copied_from_document_id=document_id,
+    )
+
+    crud_document.write_audit_log(
+        db=db, firm_id=firm_id, action="copy",
+        document_id=new_doc.id, user_id=current_user_id, ip_address=ip_address,
+    )
+    write_audit_log(
+        db=db, firm_id=firm_id, action="document.copied",
+        actor_id=current_user_id, actor_type="staff",
+        entity_type="document", entity_id=new_doc.id,
+        ip_address=ip_address, user_agent=user_agent,
+    )
+    log_event(
+        firm_id=firm_id,
+        event_type="document.copied",
+        entity_type="document",
+        entity_id=new_doc.id,
+        actor_type="staff",
+        actor_id=current_user_id,
+        metadata={
+            "source_document_id": str(document_id),
+            "source_scope": src.scope,
+            "source_engagement_id": str(src.engagement_id) if src.engagement_id else None,
+            "source_client_id": str(src.client_id) if src.client_id else None,
+            "dest_folder_id": str(target_folder_id) if target_folder_id else None,
+            "dest_scope": dest_scope,
+            "dest_engagement_id": str(dest_engagement_id) if dest_engagement_id else None,
+            "dest_client_id": str(dest_client_id) if dest_client_id else None,
+            "cross_client": cross_client,
+        },
+    )
+    return {"document": new_doc}

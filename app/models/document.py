@@ -134,9 +134,24 @@ class Document(Base):
     )
 
     # Folder assignment. NULL means the document lives at root level.
-    # SET NULL on folder delete so documents are never lost when a folder is removed.
+    #
+    # TODO(filesystem-phase-4): this column currently has NO database-level FK
+    # constraint. It holds a document_folders.id when set by staff-side move/copy
+    # operations (Phase 4 Task 2), or a folders.id (old portal-era table) when set
+    # by the portal move endpoint -- two different tables, one column, no way to
+    # tell which from the value alone.
+    #
+    # This is a deliberate, temporary state, not an oversight. The real fix is
+    # migrating the portal's GET /portal/folders endpoint and PortalDocuments.tsx
+    # off the old 'folders' table and onto 'document_folders' entirely, then
+    # dropping the old 'folders' table for good. That migration is scoped as its
+    # own separate task (supersede old folders, D4 decision made 2026-09-09) and
+    # is NOT solved here.
+    #
+    # Until that task ships: application-layer checks enforce which table is in
+    # use for a given write path. See app/api/portal.py (portal_move_document)
+    # and app/services/document_service.py (move_document, copy_document).
     folder_id: Mapped[Optional[uuid.UUID]] = mapped_column(
-        ForeignKey("folders.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )
@@ -149,6 +164,12 @@ class Document(Base):
     )
     deleted_by: Mapped[Optional[uuid.UUID]] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
+    # Provenance for copied documents. Not a FK -- the source may be in a
+    # different scope or may have been purged after the copy was made.
+    copied_from_document_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         nullable=True,
     )
 
@@ -180,7 +201,11 @@ class Document(Base):
     deleter: Mapped[Optional["User"]] = relationship(
         "User", foreign_keys=[deleted_by]
     )
-    folder: Mapped[Optional["Folder"]] = relationship("Folder", back_populates="documents")
+    folder: Mapped[Optional["DocumentFolder"]] = relationship(
+        "DocumentFolder",
+        primaryjoin="Document.folder_id == DocumentFolder.id",
+        foreign_keys="[Document.folder_id]",
+    )
     audit_logs: Mapped[list["DocumentAuditLog"]] = relationship(
         "DocumentAuditLog",
         back_populates="document",

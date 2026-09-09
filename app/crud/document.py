@@ -21,6 +21,7 @@ def create_document(
     doc_id: Optional[uuid.UUID] = None,
     source: str = "staff",
     source_client_id: Optional[uuid.UUID] = None,
+    copied_from_document_id: Optional[uuid.UUID] = None,
 ) -> Document:
     # scope is derived from the FK combination and enforced by the DB CHECK
     # constraint on documents.scope.
@@ -43,6 +44,7 @@ def create_document(
         s3_key=s3_key,
         content_type=content_type,
         size_bytes=size_bytes,
+        copied_from_document_id=copied_from_document_id,
     )
     db.add(doc)
     db.commit()
