@@ -18,7 +18,12 @@ from app.models.user import User
 from app.services import s3 as s3_service
 from app.services.audit_service import write_audit_log
 from app.services.behavioral_log import log_event
+from app.core.enums import NotificationType, NotificationTier, RecipientType
+from app.crud import document_folder as crud_document_folder
+from app.models.engagement_member import EngagementMember
 from app.services.document_access import (
+    assert_can_approve_document,
+    assert_can_reassign_document,
     assert_can_upload_to_engagement,
     assert_can_move_across_engagements,
     assert_can_write_to_destination,
@@ -44,6 +49,7 @@ def upload_document(
     user_agent: Optional[str] = None,
     source: str = "staff",
     source_client_id: Optional[UUID] = None,
+    client_note: Optional[str] = None,
 ):
     db_client = db.query(Client).filter(
         Client.id == client_id,
@@ -86,6 +92,8 @@ def upload_document(
         doc_id=doc_id,
         source=source,
         source_client_id=source_client_id,
+        triage_status="pending" if source == "client" else None,
+        client_note=client_note,
     )
 
     crud_document.write_audit_log(
@@ -116,7 +124,59 @@ def upload_document(
         }
     )
 
+    if source == "client":
+        _notify_engagement_staff_of_pending_upload(
+            firm_id=firm_id,
+            engagement_id=engagement_id,
+            doc_id=doc.id,
+            filename=file.filename,
+            client_name=db_client.name,
+        )
+
     return doc
+
+
+def _notify_engagement_staff_of_pending_upload(
+    *,
+    firm_id: UUID,
+    engagement_id: UUID,
+    doc_id: UUID,
+    filename: str,
+    client_name: str,
+) -> None:
+    """Notify all engagement members that a client-uploaded document awaits triage.
+
+    Uses a dedicated SessionLocal so the notification write is isolated from
+    the upload request session -- same pattern as engagement_member_service.
+    Fires exactly once: on arrival. approve and reassign do not call this.
+    """
+    from app.db.session import SessionLocal
+    from app.services.notification_service import NotificationService
+
+    notification_db = SessionLocal()
+    try:
+        recipient_ids = list(notification_db.execute(
+            select(EngagementMember.user_id).where(
+                EngagementMember.firm_id == firm_id,
+                EngagementMember.engagement_id == engagement_id,
+            )
+        ).scalars().all())
+
+        for recipient_id in recipient_ids:
+            NotificationService.create_notification(
+                db=notification_db,
+                firm_id=firm_id,
+                recipient_id=recipient_id,
+                recipient_type=RecipientType.staff,
+                title="Document received from client",
+                body=f"{client_name} uploaded \"{filename}\" -- review it in the triage tray.",
+                notification_type=NotificationType.system,
+                tier=NotificationTier.quiet,
+                related_entity_type="document",
+                related_entity_id=doc_id,
+            )
+    finally:
+        notification_db.close()
 
 
 def download_document(
@@ -855,3 +915,135 @@ def copy_document(
         },
     )
     return {"document": new_doc}
+
+
+def approve_pending_document(
+    *,
+    db: Session,
+    user,
+    document_id: UUID,
+    firm_id: UUID,
+    current_user_id: UUID,
+    ip_address: Optional[str] = None,
+    user_agent: Optional[str] = None,
+):
+    doc = crud_document.get_document(db, document_id=document_id, firm_id=firm_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    if doc.triage_status != "pending":
+        raise HTTPException(status_code=409, detail="This document has already been processed")
+
+    assert_can_approve_document(db=db, user=user, document=doc, firm_id=firm_id)
+
+    pbc_folder = crud_document_folder.get_document_folder_by_name(
+        db=db, firm_id=firm_id, engagement_id=doc.engagement_id, name="Provided by Client (PBC)",
+    ) if doc.engagement_id else None
+    if pbc_folder:
+        doc.folder_id = pbc_folder.id
+
+    doc.triage_status = "filed"
+    db.commit()
+    db.refresh(doc)
+
+    crud_document.write_audit_log(
+        db=db, firm_id=firm_id, action="approve",
+        document_id=doc.id, user_id=current_user_id, ip_address=ip_address,
+    )
+    write_audit_log(
+        db=db, firm_id=firm_id, action="document.approved",
+        actor_id=current_user_id, actor_type="staff",
+        entity_type="document", entity_id=doc.id,
+        ip_address=ip_address, user_agent=user_agent,
+    )
+    # NOTE: "document.approved" is flagged as unconfirmed against Andrew's blessed
+    # event-type list -- no docs/ file enumerates blessed event strings.
+    log_event(
+        firm_id=firm_id,
+        event_type="document.approved",
+        entity_type="document",
+        entity_id=doc.id,
+        actor_type="staff",
+        actor_id=current_user_id,
+        metadata={"filename": doc.filename, "folder_id": str(pbc_folder.id) if pbc_folder else None},
+    )
+    return doc
+
+
+def reassign_pending_document(
+    *,
+    db: Session,
+    user,
+    document_id: UUID,
+    firm_id: UUID,
+    dest_engagement_id: UUID,
+    current_user_id: UUID,
+    ip_address: Optional[str] = None,
+    user_agent: Optional[str] = None,
+):
+    doc = crud_document.get_document(db, document_id=document_id, firm_id=firm_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    if doc.triage_status != "pending":
+        raise HTTPException(status_code=409, detail="This document has already been processed")
+
+    assert_can_reassign_document(db=db, user=user, document=doc, firm_id=firm_id)
+
+    dest_engagement = db.query(Engagement).filter(
+        Engagement.id == dest_engagement_id,
+        Engagement.firm_id == firm_id,
+    ).first()
+    if not dest_engagement:
+        raise HTTPException(status_code=404, detail="Destination engagement not found")
+
+    # Cross-client guard: reassigning to an engagement under a different client
+    # would move a client's file into another client's binder -- a tenant data
+    # leak. This check mirrors the exact failure pattern in CVE-2026-47231
+    # (Admidio document module), where the destination was authorized but the
+    # source-destination client relationship was not validated.
+    if dest_engagement.client_id != doc.client_id:
+        raise HTTPException(
+            status_code=422,
+            detail="Cannot reassign to an engagement belonging to a different client",
+        )
+
+    pbc_folder = crud_document_folder.get_document_folder_by_name(
+        db=db, firm_id=firm_id, engagement_id=dest_engagement_id, name="Provided by Client (PBC)",
+    )
+    if pbc_folder:
+        doc.folder_id = pbc_folder.id
+    else:
+        doc.folder_id = None
+
+    doc.engagement_id = dest_engagement_id
+    doc.triage_status = "filed"
+    db.commit()
+    db.refresh(doc)
+
+    crud_document.write_audit_log(
+        db=db, firm_id=firm_id, action="reassign",
+        document_id=doc.id, user_id=current_user_id, ip_address=ip_address,
+    )
+    write_audit_log(
+        db=db, firm_id=firm_id, action="document.reassigned",
+        actor_id=current_user_id, actor_type="staff",
+        entity_type="document", entity_id=doc.id,
+        ip_address=ip_address, user_agent=user_agent,
+    )
+    # NOTE: "document.reassigned" is flagged as unconfirmed against Andrew's blessed
+    # event-type list -- no docs/ file enumerates blessed event strings.
+    log_event(
+        firm_id=firm_id,
+        event_type="document.reassigned",
+        entity_type="document",
+        entity_id=doc.id,
+        actor_type="staff",
+        actor_id=current_user_id,
+        metadata={
+            "filename": doc.filename,
+            "dest_engagement_id": str(dest_engagement_id),
+            "folder_id": str(pbc_folder.id) if pbc_folder else None,
+        },
+    )
+    return doc

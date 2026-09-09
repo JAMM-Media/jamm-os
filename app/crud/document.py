@@ -22,6 +22,8 @@ def create_document(
     source: str = "staff",
     source_client_id: Optional[uuid.UUID] = None,
     copied_from_document_id: Optional[uuid.UUID] = None,
+    triage_status: Optional[str] = None,
+    client_note: Optional[str] = None,
 ) -> Document:
     # scope is derived from the FK combination and enforced by the DB CHECK
     # constraint on documents.scope.
@@ -45,7 +47,12 @@ def create_document(
         content_type=content_type,
         size_bytes=size_bytes,
         copied_from_document_id=copied_from_document_id,
+        client_note=client_note,
     )
+    # Only set triage_status explicitly when the caller passes a value.
+    # None means "use the column server_default ('filed')".
+    if triage_status is not None:
+        doc.triage_status = triage_status
     db.add(doc)
     db.commit()
     db.refresh(doc)
@@ -77,15 +84,40 @@ def list_documents(
     client_id: Optional[uuid.UUID] = None,
     engagement_id: Optional[uuid.UUID] = None,
 ):
-    """Returns a query of live (not soft-deleted) documents scoped to the firm."""
+    """Returns a query of live (not soft-deleted) filed documents scoped to the firm.
+
+    Pending documents (triage_status='pending') are intentionally excluded here.
+    They appear only in list_pending_documents, so an unreviewed client-uploaded
+    file can never be mistaken for one that staff has already checked.
+    """
     query = db.query(Document).filter(
         Document.firm_id == firm_id,
         Document.deleted_at.is_(None),
+        Document.triage_status == "filed",
     )
     if client_id:
         query = query.filter(Document.client_id == client_id)
     if engagement_id:
         query = query.filter(Document.engagement_id == engagement_id)
+    return query
+
+
+def list_pending_documents(
+    db: Session,
+    firm_id: uuid.UUID,
+    engagement_id: Optional[uuid.UUID] = None,
+    client_id: Optional[uuid.UUID] = None,
+):
+    """Returns a query of live pending documents awaiting staff triage."""
+    query = db.query(Document).filter(
+        Document.firm_id == firm_id,
+        Document.deleted_at.is_(None),
+        Document.triage_status == "pending",
+    )
+    if engagement_id:
+        query = query.filter(Document.engagement_id == engagement_id)
+    if client_id:
+        query = query.filter(Document.client_id == client_id)
     return query
 
 
@@ -232,6 +264,7 @@ def search_documents(
     q = db.query(Document).filter(
         Document.firm_id == firm_id,
         Document.deleted_at.is_(None),
+        Document.triage_status == "filed",
         Document.filename.ilike(pattern, escape="\\"),
     )
     if scope:

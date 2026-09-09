@@ -36,7 +36,9 @@ _DOCS_PATH = Path(__file__).resolve().parent.parent / "app" / "api" / "documents
 
 _GATE_CALLS = frozenset([
     "assert_can_access_document",
+    "assert_can_approve_document",
     "assert_can_delete_document",
+    "assert_can_reassign_document",
     "assert_can_upload_to_engagement",
     "filter_accessible_documents",
 ])

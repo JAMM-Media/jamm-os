@@ -46,7 +46,7 @@ def end_session(*, db: Session, session, client):
         crud_portal_session.revoke_session(db, session, revoked_by="client")
 
 
-def upload_document(*, db: Session, file: UploadFile, engagement_id, client):
+def upload_document(*, db: Session, file: UploadFile, engagement_id, client, client_note=None):
     try:
         doc = document_service.upload_document(
             db=db,
@@ -57,6 +57,7 @@ def upload_document(*, db: Session, file: UploadFile, engagement_id, client):
             current_user_id=None,
             source="client",
             source_client_id=client.id,
+            client_note=client_note,
         )
     except HTTPException:
         raise

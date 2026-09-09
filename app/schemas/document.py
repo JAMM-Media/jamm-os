@@ -32,6 +32,8 @@ class DocumentOut(BaseModel):
     engagement_title: Optional[str] = None
     uploaded_by_name: Optional[str] = None
     copied_from_document_id: Optional[uuid.UUID] = None
+    triage_status: str = "filed"
+    client_note: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 

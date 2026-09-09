@@ -292,6 +292,71 @@ def filter_accessible_documents(query, db: Session, user: User, firm_id: UUID):
     return query.filter(or_(*conditions))
 
 
+def assert_can_approve_document(
+    db: Session,
+    user: User,
+    document: Document,
+    firm_id: UUID,
+) -> None:
+    """Trio check for approving a pending document.
+
+    Identical logic to assert_can_delete_document: engagement administrator,
+    manager, or firm owner. Named separately because this is a triage-approval
+    operation, not a delete. The trio restriction applies because approving
+    a client-uploaded file moves it into the engagement's live document set,
+    which is a consequential action that warrants the same elevated gate.
+    Raises HTTPException(404) on denial to avoid confirming the item exists.
+    """
+    if user.role in _ELEVATED:
+        return
+
+    if document.scope == "engagement":
+        admin_member = db.query(EngagementMember).filter(
+            EngagementMember.firm_id == firm_id,
+            EngagementMember.engagement_id == document.engagement_id,
+            EngagementMember.user_id == user.id,
+            EngagementMember.is_administrator == True,
+        ).first()
+        if admin_member:
+            return
+
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_NOT_FOUND)
+
+
+def assert_can_reassign_document(
+    db: Session,
+    user: User,
+    document: Document,
+    firm_id: UUID,
+) -> None:
+    """Trio check for reassigning a pending document to a different engagement.
+
+    Identical logic to assert_can_delete_document: engagement administrator,
+    manager, or firm owner. Named separately because this is a triage-reassign
+    operation, not a delete. The trio restriction applies because reassigning
+    moves a document across engagement containers, affecting members of both
+    source and destination. Note: this check confirms the actor's role only.
+    The cross-client boundary check (dest_engagement.client_id != doc.client_id)
+    is enforced separately in the service layer -- this guard and that check
+    are independent layers, not alternatives.
+    Raises HTTPException(404) on denial to avoid confirming the item exists.
+    """
+    if user.role in _ELEVATED:
+        return
+
+    if document.scope == "engagement":
+        admin_member = db.query(EngagementMember).filter(
+            EngagementMember.firm_id == firm_id,
+            EngagementMember.engagement_id == document.engagement_id,
+            EngagementMember.user_id == user.id,
+            EngagementMember.is_administrator == True,
+        ).first()
+        if admin_member:
+            return
+
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_NOT_FOUND)
+
+
 def assert_can_move_across_engagements(
     db: Session,
     user: User,

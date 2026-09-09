@@ -103,6 +103,21 @@ def soft_delete_document_folder(
     db.commit()
 
 
+def get_document_folder_by_name(
+    db: Session,
+    firm_id: uuid.UUID,
+    engagement_id: uuid.UUID,
+    name: str,
+) -> Optional[DocumentFolder]:
+    """Return the first live folder matching exactly this name within an engagement."""
+    return db.query(DocumentFolder).filter(
+        DocumentFolder.firm_id == firm_id,
+        DocumentFolder.engagement_id == engagement_id,
+        DocumentFolder.name == name,
+        DocumentFolder.deleted_at.is_(None),
+    ).first()
+
+
 def get_depth(db: Session, parent_folder_id: Optional[uuid.UUID], firm_id: uuid.UUID) -> int:
     """Walk the parent chain and return the depth of parent_folder_id (0 = root child).
     Used for the depth-20 tripwire."""

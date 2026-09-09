@@ -794,6 +794,7 @@ def portal_get_engagement(
 def portal_upload_document(
     file: UploadFile = File(...),
     engagement_id: Optional[UUID] = Query(None),
+    client_note: Optional[str] = Query(None),
     current_client: Client = Depends(get_current_portal_client),
     db: Session = Depends(get_db),
 ):
@@ -805,6 +806,7 @@ def portal_upload_document(
 
     doc = portal_service.upload_document(
         db=db, file=file, engagement_id=engagement_id, client=current_client,
+        client_note=client_note,
     )
 
     return {

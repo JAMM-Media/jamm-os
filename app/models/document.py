@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import Boolean, CheckConstraint, String, Integer, DateTime, ForeignKey
+from sqlalchemy import Boolean, CheckConstraint, String, Integer, DateTime, ForeignKey, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base_class import Base
@@ -100,6 +100,10 @@ class Document(Base):
         nullable=False,
         server_default="filed",
     )
+
+    # Optional note from the client explaining what they are uploading.
+    # Populated only for client-sourced uploads; null for staff and system.
+    client_note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     # The original filename as provided by the uploader.
     filename: Mapped[str] = mapped_column(String(255), nullable=False)
