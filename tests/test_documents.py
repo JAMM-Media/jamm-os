@@ -188,9 +188,10 @@ def test_delete_document(client, firm_a_owner):
     with patch("app.api.documents.s3_service.delete_object") as mock_del:
         r = client.delete(f"/documents/{doc_id}", headers=headers)
         assert r.status_code == 204
-        mock_del.assert_called_once()
+        # Phase 3: delete is now a soft delete -- S3 object is NOT destroyed.
+        mock_del.assert_not_called()
 
-    # Confirm it's gone
+    # Soft-deleted document is hidden from the normal list.
     r2 = client.get("/documents/", headers=headers)
     assert r2.json()["total"] == 0
 
@@ -252,13 +253,12 @@ def test_audit_log_records_delete(client, firm_a_owner):
     upload_r = _upload(client, headers, client_id, engagement_id)
     doc_id = upload_r.json()["id"]
 
-    with patch("app.api.documents.s3_service.delete_object"):
-        client.delete(f"/documents/{doc_id}", headers=headers)
+    client.delete(f"/documents/{doc_id}", headers=headers)
 
-    # After deletion, the document is gone but we can verify via the audit table directly
-    # by checking we get 404 (document deleted) — the logs persisted but endpoint is gone
+    # Phase 3: delete is a soft delete. The DB row survives but get_document excludes
+    # deleted docs, so the audit endpoint returns 404 for the same reason as not-found.
     r = client.get(f"/documents/{doc_id}/audit", headers=headers)
-    assert r.status_code == 404  # document gone, endpoint returns 404
+    assert r.status_code == 404
 
 
 def test_audit_log_nonexistent_document(client, firm_a_owner):

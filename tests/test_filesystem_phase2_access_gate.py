@@ -510,7 +510,24 @@ def test_all_document_endpoints_have_gate_call():
     To deliberately exempt an endpoint: add it to _EXPLICIT_EXEMPTIONS with a
     named reason, then remove it from the missing check below.
     """
-    missing = _find_ungated_endpoints(_DOCS_PATH.read_text())
+    # Endpoints deliberately exempt from the document-level gate requirement.
+    # Each must have an equivalent or stricter access control applied elsewhere.
+    _EXPLICIT_EXEMPTIONS = {
+        "purge_document": (
+            "Purge is firm-owner-only via require_firm_owner (stricter than the trio). "
+            "The document is verified to belong to this firm via get_document_any_state "
+            "with firm_id scoping inside the service function."
+        ),
+        "purge_all_trash": (
+            "Purge-all is firm-owner-only via require_firm_owner (stricter than the trio). "
+            "Scope filtering inside list_trash ensures only this firm's documents are affected."
+        ),
+    }
+
+    src = _DOCS_PATH.read_text()
+    raw_missing = _find_ungated_endpoints(src)
+    missing = [m for m in raw_missing if m.split(" ")[0] not in _EXPLICIT_EXEMPTIONS]
+
     assert not missing, (
         "Endpoints in documents.py with no document access gate call:\n"
         + "\n".join(f"  - {m}" for m in missing)
@@ -589,13 +606,22 @@ def test_ast_guard_catches_missing_gate_call():
         "Mutation did not change the source -- the gate call anchor is wrong."
     )
 
-    missing = _find_ungated_endpoints(mutated)
-    assert "upload_document" in [m.split(" ")[0] for m in missing], (
+    _EXEMPT = {"purge_document", "purge_all_trash"}
+
+    missing_mutated = [
+        m for m in _find_ungated_endpoints(mutated)
+        if m.split(" ")[0] not in _EXEMPT
+    ]
+    assert "upload_document" in [m.split(" ")[0] for m in missing_mutated], (
         f"AST guard should have flagged 'upload_document' as ungated, "
-        f"but missing list was: {missing}"
+        f"but non-exempt missing list was: {missing_mutated}"
     )
 
-    # Confirm the real (unmodified) file still passes.
-    assert not _find_ungated_endpoints(src), (
-        "The real documents.py has ungated endpoints -- gate wiring is broken."
+    # Confirm the real (unmodified) file still passes after exemptions.
+    non_exempt_missing = [
+        m for m in _find_ungated_endpoints(src)
+        if m.split(" ")[0] not in _EXEMPT
+    ]
+    assert not non_exempt_missing, (
+        "The real documents.py has ungated non-exempt endpoints -- gate wiring is broken."
     )

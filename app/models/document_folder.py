@@ -26,6 +26,14 @@ class DocumentFolder(Base):
     Nesting: parent_folder_id is self-referential with no database-level depth
     limit. A depth-20 creation tripwire must be enforced at the service layer
     when folder CRUD endpoints are added in a later phase.
+
+    Phase 3 soft-delete note: when folder deletion is built, it must soft-delete
+    the folder AND cascade the same soft-delete state to all contained documents
+    (set deleted_at/deleted_by on every Document where folder_id = this folder),
+    matching the document-level soft-delete pattern from Phase 3. The current
+    ondelete=SET NULL on Document.folder_id handles the FK null-out for hard
+    deletes but does not cascade soft-delete state -- that cascade must be
+    implemented explicitly in the folder-delete service function.
     """
 
     __tablename__ = "document_folders"

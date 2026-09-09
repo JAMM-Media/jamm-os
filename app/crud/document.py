@@ -51,6 +51,18 @@ def create_document(
 
 
 def get_document(db: Session, document_id: uuid.UUID, firm_id: uuid.UUID) -> Optional[Document]:
+    """Return a live (not soft-deleted) document. Returns None for deleted docs."""
+    return db.query(Document).filter(
+        Document.id == document_id,
+        Document.firm_id == firm_id,
+        Document.deleted_at.is_(None),
+    ).first()
+
+
+def get_document_any_state(
+    db: Session, document_id: uuid.UUID, firm_id: uuid.UUID
+) -> Optional[Document]:
+    """Return a document regardless of soft-delete state. Used by restore and purge."""
     return db.query(Document).filter(
         Document.id == document_id,
         Document.firm_id == firm_id,
@@ -63,8 +75,32 @@ def list_documents(
     client_id: Optional[uuid.UUID] = None,
     engagement_id: Optional[uuid.UUID] = None,
 ):
-    """Returns a query scoped to the firm, suitable for use with paginate()."""
-    query = db.query(Document).filter(Document.firm_id == firm_id)
+    """Returns a query of live (not soft-deleted) documents scoped to the firm."""
+    query = db.query(Document).filter(
+        Document.firm_id == firm_id,
+        Document.deleted_at.is_(None),
+    )
+    if client_id:
+        query = query.filter(Document.client_id == client_id)
+    if engagement_id:
+        query = query.filter(Document.engagement_id == engagement_id)
+    return query
+
+
+def list_trash(
+    db: Session,
+    firm_id: uuid.UUID,
+    scope: Optional[str] = None,
+    client_id: Optional[uuid.UUID] = None,
+    engagement_id: Optional[uuid.UUID] = None,
+):
+    """Returns a query of soft-deleted documents scoped to the firm."""
+    query = db.query(Document).filter(
+        Document.firm_id == firm_id,
+        Document.deleted_at.isnot(None),
+    )
+    if scope:
+        query = query.filter(Document.scope == scope)
     if client_id:
         query = query.filter(Document.client_id == client_id)
     if engagement_id:
@@ -73,6 +109,7 @@ def list_documents(
 
 
 def delete_document(db: Session, document: Document) -> None:
+    """Hard-delete (permanent, irreversible). Called only from purge service functions."""
     db.delete(document)
     db.commit()
 

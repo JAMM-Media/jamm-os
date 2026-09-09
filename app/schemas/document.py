@@ -23,7 +23,10 @@ class DocumentOut(BaseModel):
     created_at: datetime
     updated_at: datetime
     envelope_status: Optional[str] = None
-    # Enrichment fields — populated by API layer, not from DB model
+    # Soft-delete fields (Phase 3): present in trash list; null for live documents.
+    deleted_at: Optional[datetime] = None
+    deleted_by: Optional[uuid.UUID] = None
+    # Enrichment fields -- populated by API layer, not from DB model
     client_name: Optional[str] = None
     engagement_title: Optional[str] = None
     uploaded_by_name: Optional[str] = None
@@ -36,11 +39,23 @@ class DocumentSupersededUpdate(BaseModel):
 
 
 class DocumentDownloadResponse(BaseModel):
-    """Returned by the download endpoint — contains a short-lived presigned URL."""
     document_id: uuid.UUID
     filename: str
     url: str
     expires_in_seconds: int
+
+
+class PurgeConfirm(BaseModel):
+    """Body required for single-document permanent purge (Phase 3)."""
+    confirm: bool
+
+
+class PurgeAllConfirm(BaseModel):
+    """Body required for trash/purge-all (Phase 3)."""
+    confirm: bool
+    scope: Optional[str] = None           # "engagement" | "client" | "firm_library" | None (whole firm)
+    engagement_id: Optional[uuid.UUID] = None
+    client_id: Optional[uuid.UUID] = None
 
 
 class AuditLogOut(BaseModel):
