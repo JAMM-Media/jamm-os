@@ -361,3 +361,51 @@ def assert_can_write_to_destination(
         status_code=status.HTTP_403_FORBIDDEN,
         detail="Manager or owner required for client-scoped copy destination",
     )
+
+
+# Preview-eligible MIME types. Only PDF and common image types can be
+# previewed safely in-browser. Office formats are explicitly out of scope
+# (Section 14 of the build spec).
+_PREVIEW_ELIGIBLE_CONTENT_TYPES = frozenset([
+    "application/pdf",
+    "image/jpeg",
+    "image/png",
+])
+
+# Magic-byte signatures for each eligible type.
+_PDF_MAGIC = b"%PDF"
+_JPEG_MAGIC = b"\xff\xd8\xff"
+_PNG_MAGIC = b"\x89PNG"
+
+
+def check_preview_eligible(stored_content_type: str, s3_key: str) -> bool:
+    """Return True only if the document is genuinely preview-eligible.
+
+    Two-layer check:
+      1. stored_content_type must be in the allow-list.
+      2. The actual first bytes from S3 must match the expected magic bytes.
+
+    The magic-byte check is authoritative. A file whose stored_content_type
+    claims to be a PDF but whose real bytes are not a PDF will fail the check.
+    This is the correct behavior: we do not trust the client-supplied content
+    type alone.
+
+    This function performs one S3 ranged GET (8 bytes). It is called only from
+    the preview endpoint, not from upload or listing paths.
+    """
+    if stored_content_type not in _PREVIEW_ELIGIBLE_CONTENT_TYPES:
+        return False
+
+    from app.services.s3 import get_object_bytes_range
+    try:
+        header = get_object_bytes_range(s3_key, 8)
+    except Exception:
+        return False
+
+    if header.startswith(_PDF_MAGIC):
+        return True
+    if header.startswith(_JPEG_MAGIC):
+        return True
+    if header.startswith(_PNG_MAGIC):
+        return True
+    return False

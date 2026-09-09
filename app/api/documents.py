@@ -25,6 +25,7 @@ from app.schemas.document import (
     AuditLogOut,
     DocumentDownloadResponse,
     DocumentOut,
+    DocumentPreviewResponse,
     DocumentSupersededUpdate,
     PurgeAllConfirm,
     PurgeConfirm,
@@ -50,6 +51,7 @@ from app.services.document_access import (
     assert_can_delete_document,
     assert_can_upload_to_engagement,
     assert_can_move_across_engagements,
+    check_preview_eligible,
     filter_accessible_documents,
 )
 
@@ -362,6 +364,44 @@ def copy_document(
 
 
 # -----------------------------------------------------------------------
+# GET /documents/search -- Keyword search on filenames (access-gated)
+# NOTE: registered before /{document_id} and before / to avoid routing issues.
+# -----------------------------------------------------------------------
+@router.get("/search", response_model=PaginatedResponse[DocumentOut])
+def search_documents(
+    q: str = Query(..., min_length=2, description="Search query (minimum 2 characters)"),
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    current_user: User = Depends(get_current_user),
+    _: object = Depends(require_staff_or_above),
+    scope: Optional[str] = None,
+    client_id: Optional[uuid.UUID] = None,
+    engagement_id: Optional[uuid.UUID] = None,
+    limit: int = Query(50, le=100),
+    offset: int = 0,
+):
+    # 1. Firm boundary first.
+    # 2. filter_accessible_documents applied BEFORE count or pagination.
+    # 3. Wildcard-escaped ilike for the filename match.
+    # No count, facet, or aggregate from the pre-authorization candidate set
+    # is ever returned -- total reflects only the authorized, filtered result.
+    query = crud_document.search_documents(
+        db,
+        firm_id=current_firm.id,
+        query_str=q,
+        scope=scope,
+        client_id=client_id,
+        engagement_id=engagement_id,
+    )
+    query = filter_accessible_documents(query, db, current_user, current_firm.id)
+    total = query.count()
+    docs = query.offset(offset).limit(limit).all()
+
+    items = [DocumentOut.model_validate(doc) for doc in docs]
+    return {"total": total, "limit": limit, "offset": offset, "items": items}
+
+
+# -----------------------------------------------------------------------
 # GET /documents/ -- List documents (scoped to firm; filterable)
 # -----------------------------------------------------------------------
 @router.get("/", response_model=PaginatedResponse[DocumentOut])
@@ -493,6 +533,41 @@ def download_document(
     return DocumentDownloadResponse(
         document_id=doc.id,
         filename=doc.filename,
+        url=url,
+        expires_in_seconds=s3_service.PRESIGNED_URL_EXPIRY,
+    )
+
+
+# -----------------------------------------------------------------------
+# GET /documents/{document_id}/preview -- Return a preview URL if eligible
+# -----------------------------------------------------------------------
+@router.get("/{document_id}/preview", response_model=DocumentPreviewResponse)
+def preview_document(
+    document_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    current_user: User = Depends(get_current_user),
+    _: object = Depends(require_staff_or_above),
+):
+    # Access gate first (same as download). 404 = not found OR access denied.
+    doc = crud_document.get_document(db, document_id=document_id, firm_id=current_firm.id)
+    if not doc:
+        raise HTTPException(status_code=404, detail=_NOT_FOUND)
+    assert_can_access_document(db, current_user, doc, current_firm.id)
+
+    # Magic-byte check against actual S3 bytes, not stored content_type alone.
+    eligible = check_preview_eligible(doc.content_type, doc.s3_key)
+    if not eligible:
+        return DocumentPreviewResponse(
+            document_id=doc.id,
+            preview_available=False,
+            reason="File type not supported for in-browser preview",
+        )
+
+    url = s3_service.generate_presigned_url(doc.s3_key)
+    return DocumentPreviewResponse(
+        document_id=doc.id,
+        preview_available=True,
         url=url,
         expires_in_seconds=s3_service.PRESIGNED_URL_EXPIRY,
     )

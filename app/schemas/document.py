@@ -119,3 +119,11 @@ class DocumentMoveRequest(BaseModel):
 class DocumentCopyRequest(BaseModel):
     folder_id: Optional[uuid.UUID] = None
     duplicate_action: Optional[str] = None
+
+
+class DocumentPreviewResponse(BaseModel):
+    document_id: uuid.UUID
+    preview_available: bool
+    url: Optional[str] = None
+    expires_in_seconds: Optional[int] = None
+    reason: Optional[str] = None

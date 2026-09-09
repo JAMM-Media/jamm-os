@@ -206,3 +206,38 @@ def next_available_filename(
         if not exists:
             return candidate
         n += 1
+
+
+def search_documents(
+    db: Session,
+    firm_id: uuid.UUID,
+    query_str: str,
+    scope: Optional[str] = None,
+    client_id: Optional[uuid.UUID] = None,
+    engagement_id: Optional[uuid.UUID] = None,
+):
+    """Search live documents by filename using a case-insensitive LIKE.
+
+    Wildcard characters (% and _) in query_str are escaped so they match
+    literally, not as wildcards. The escape character is backslash.
+    Tenant boundary (firm_id) and soft-delete filter are applied first.
+    """
+    escaped = (
+        query_str
+        .replace("\\", "\\\\")
+        .replace("%", "\\%")
+        .replace("_", "\\_")
+    )
+    pattern = f"%{escaped}%"
+    q = db.query(Document).filter(
+        Document.firm_id == firm_id,
+        Document.deleted_at.is_(None),
+        Document.filename.ilike(pattern, escape="\\"),
+    )
+    if scope:
+        q = q.filter(Document.scope == scope)
+    if client_id:
+        q = q.filter(Document.client_id == client_id)
+    if engagement_id:
+        q = q.filter(Document.engagement_id == engagement_id)
+    return q
