@@ -79,7 +79,13 @@ def delete_object(s3_key: str) -> None:
     """
     Delete an object from S3.
 
-    S3 delete_object is idempotent — no error if the key doesn't exist.
+    S3 delete_object is idempotent -- no error if the key doesn't exist.
     """
     settings = get_settings()
     _get_client().delete_object(Bucket=settings.S3_BUCKET_NAME, Key=s3_key)
+
+
+def head_object(s3_key: str) -> dict:
+    """Return S3 object metadata. Raises botocore.exceptions.ClientError (404) if not found."""
+    settings = get_settings()
+    return _get_client().head_object(Bucket=settings.S3_BUCKET_NAME, Key=s3_key)

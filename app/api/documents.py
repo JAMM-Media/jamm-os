@@ -28,6 +28,10 @@ from app.schemas.document import (
     DocumentSupersededUpdate,
     PurgeAllConfirm,
     PurgeConfirm,
+    UploadUrlRequest,
+    UploadUrlResponse,
+    UploadCompleteRequest,
+    UploadCompleteResponse,
 )
 from app.schemas.pagination import PaginatedResponse
 from app.crud import document as crud_document
@@ -177,6 +181,73 @@ def purge_all_trash(
         user_agent=request.headers.get("user-agent"),
     )
     return {"purged": purged}
+
+
+# -----------------------------------------------------------------------
+# POST /documents/upload-url -- Issue a presigned PUT URL for direct-to-S3 upload
+# NOTE: registered before /{document_id} so "upload-url" is not read as a UUID.
+# -----------------------------------------------------------------------
+@router.post("/upload-url", response_model=UploadUrlResponse)
+def issue_upload_url(
+    body: UploadUrlRequest,
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    current_user: User = Depends(get_current_user),
+    _: object = Depends(require_staff_or_above),
+):
+    assert_can_upload_to_engagement(
+        db, user=current_user, firm_id=current_firm.id,
+        engagement_id=body.engagement_id, client_id=body.client_id,
+    )
+    result = document_service.issue_upload_url(
+        db=db,
+        firm_id=current_firm.id,
+        client_id=body.client_id,
+        engagement_id=body.engagement_id,
+        filename=body.filename,
+        content_type=body.content_type,
+        folder_id=body.folder_id,
+    )
+    return UploadUrlResponse(**result)
+
+
+# -----------------------------------------------------------------------
+# POST /documents/{document_id}/upload-complete -- Finalize a direct-to-S3 upload
+# -----------------------------------------------------------------------
+@router.post("/{document_id}/upload-complete", response_model=UploadCompleteResponse)
+def complete_upload(
+    document_id: uuid.UUID,
+    body: UploadCompleteRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    current_user: User = Depends(get_current_user),
+    _: object = Depends(require_staff_or_above),
+):
+    assert_can_upload_to_engagement(
+        db, user=current_user, firm_id=current_firm.id,
+        engagement_id=body.engagement_id, client_id=body.client_id,
+    )
+    result = document_service.complete_upload(
+        db=db,
+        user=current_user,
+        document_id=document_id,
+        firm_id=current_firm.id,
+        client_id=body.client_id,
+        engagement_id=body.engagement_id,
+        filename=body.filename,
+        content_type=body.content_type,
+        current_user_id=current_user.id,
+        folder_id=body.folder_id,
+        duplicate_action=body.duplicate_action,
+        ip_address=_client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
+    if result.get("document"):
+        return UploadCompleteResponse(document=DocumentOut.model_validate(result["document"]))
+    return UploadCompleteResponse(
+        conflict=result["conflict"]
+    )
 
 
 # -----------------------------------------------------------------------

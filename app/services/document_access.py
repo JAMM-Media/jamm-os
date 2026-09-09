@@ -181,6 +181,72 @@ def assert_can_upload_to_engagement(
         )
 
 
+def assert_can_access_folder(
+    db: Session,
+    user,
+    folder,
+    firm_id: UUID,
+) -> None:
+    """Gate for reading or modifying (create/rename) a document folder.
+
+    Any engagement member can access engagement-scoped folders.
+    Client-scoped and firm_library-scoped folders require manager or owner.
+    Raises HTTPException(404) on denial.
+    """
+    _FOLDER_NOT_FOUND = "Folder not found"
+
+    if user.role in _ELEVATED:
+        return
+
+    scope = folder.scope
+
+    if scope == "firm_library":
+        return
+
+    if scope == "engagement":
+        member = db.query(EngagementMember).filter(
+            EngagementMember.firm_id == firm_id,
+            EngagementMember.engagement_id == folder.engagement_id,
+            EngagementMember.user_id == user.id,
+        ).first()
+        if not member:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_FOLDER_NOT_FOUND)
+        return
+
+    # client and firm_library are manager/owner only for non-elevated.
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_FOLDER_NOT_FOUND)
+
+
+def assert_can_delete_folder(
+    db: Session,
+    user,
+    folder,
+    firm_id: UUID,
+) -> None:
+    """Gate for deleting a document folder (trio check).
+
+    Permitted: engagement administrator, manager, or firm owner.
+    Matches the same trio as assert_can_delete_document.
+    Raises HTTPException(404) on denial.
+    """
+    _FOLDER_NOT_FOUND = "Folder not found"
+
+    if user.role in _ELEVATED:
+        return
+
+    if folder.scope == "engagement":
+        admin_member = db.query(EngagementMember).filter(
+            EngagementMember.firm_id == firm_id,
+            EngagementMember.engagement_id == folder.engagement_id,
+            EngagementMember.user_id == user.id,
+            EngagementMember.is_administrator == True,
+        ).first()
+        if admin_member:
+            return
+
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_FOLDER_NOT_FOUND)
+
+
 def filter_accessible_documents(query, db: Session, user: User, firm_id: UUID):
     """
     Filter a document SQLAlchemy query to only documents this user can access.

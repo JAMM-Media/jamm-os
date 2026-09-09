@@ -68,3 +68,37 @@ class AuditLogOut(BaseModel):
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class UploadUrlRequest(BaseModel):
+    client_id: uuid.UUID
+    engagement_id: uuid.UUID
+    filename: str
+    content_type: str
+    folder_id: Optional[uuid.UUID] = None
+
+
+class UploadUrlResponse(BaseModel):
+    document_id: uuid.UUID
+    upload_url: str
+    s3_key: str
+    expires_in_seconds: int
+
+
+class DuplicateConflict(BaseModel):
+    existing_id: uuid.UUID
+    filename: str
+
+
+class UploadCompleteRequest(BaseModel):
+    filename: str
+    content_type: str
+    client_id: uuid.UUID
+    engagement_id: uuid.UUID
+    folder_id: Optional[uuid.UUID] = None
+    duplicate_action: Optional[str] = None  # "replace" | "keep_both"
+
+
+class UploadCompleteResponse(BaseModel):
+    document: Optional[DocumentOut] = None
+    conflict: Optional[DuplicateConflict] = None

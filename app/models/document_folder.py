@@ -81,6 +81,11 @@ class DocumentFolder(Base):
 
     name: Mapped[str] = mapped_column(String(255), nullable=False)
 
+    deleted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    deleted_by: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
@@ -103,3 +108,4 @@ class DocumentFolder(Base):
         remote_side="DocumentFolder.id",
         foreign_keys=[parent_folder_id],
     )
+    deleter: Mapped[Optional["User"]] = relationship("User", foreign_keys=[deleted_by])

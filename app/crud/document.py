@@ -146,3 +146,61 @@ def list_audit_logs(
     if document_id:
         query = query.filter(DocumentAuditLog.document_id == document_id)
     return query.order_by(DocumentAuditLog.created_at.desc())
+
+
+def find_duplicate_filename(
+    db: Session,
+    firm_id: uuid.UUID,
+    engagement_id: uuid.UUID,
+    folder_id: Optional[uuid.UUID],
+    filename: str,
+) -> Optional[Document]:
+    """Return the first live document with the same filename in the same folder slot, or None."""
+    query = db.query(Document).filter(
+        Document.firm_id == firm_id,
+        Document.engagement_id == engagement_id,
+        Document.filename == filename,
+        Document.deleted_at.is_(None),
+    )
+    if folder_id is not None:
+        query = query.filter(Document.folder_id == folder_id)
+    else:
+        query = query.filter(Document.folder_id.is_(None))
+    return query.first()
+
+
+def next_available_filename(
+    db: Session,
+    firm_id: uuid.UUID,
+    engagement_id: uuid.UUID,
+    folder_id: Optional[uuid.UUID],
+    filename: str,
+) -> str:
+    """Return the lowest-numbered suffixed filename not already in use.
+    'report.pdf' -> 'report (2).pdf', or 'report (3).pdf' if (2) exists, etc.
+    """
+    dot_pos = filename.rfind(".")
+    if dot_pos > 0:
+        stem = filename[:dot_pos]
+        ext = filename[dot_pos:]
+    else:
+        stem = filename
+        ext = ""
+
+    n = 2
+    while True:
+        candidate = f"{stem} ({n}){ext}"
+        q = db.query(Document).filter(
+            Document.firm_id == firm_id,
+            Document.engagement_id == engagement_id,
+            Document.filename == candidate,
+            Document.deleted_at.is_(None),
+        )
+        if folder_id is not None:
+            q = q.filter(Document.folder_id == folder_id)
+        else:
+            q = q.filter(Document.folder_id.is_(None))
+        exists = q.first()
+        if not exists:
+            return candidate
+        n += 1
