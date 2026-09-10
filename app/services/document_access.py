@@ -429,7 +429,10 @@ def assert_can_write_to_destination(
 ) -> None:
     """Check write access to a copy destination.
 
-    firm_library: any staff member can write.
+    firm_library: manager or owner only (same restriction as client-scoped; pushing to
+        the Firm Library is an outward-facing, firm-wide write that warrants the same gate).
+        Matches CVE-2026-9248 / CVE-2026-73612 pattern: copy destinations require their
+        own sensitivity check independent of source-document authorization.
     engagement: user must be a member of the destination engagement (or manager/owner).
     client: manager or owner only (no engagement-level write path for client-scoped copies).
     Raises HTTPException(403) on denial.
@@ -438,7 +441,10 @@ def assert_can_write_to_destination(
         return
 
     if dest_scope == "firm_library":
-        return
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Manager or owner required for firm library copy destination",
+        )
 
     if dest_scope == "engagement":
         member = db.query(EngagementMember).filter(

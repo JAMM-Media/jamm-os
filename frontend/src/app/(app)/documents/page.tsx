@@ -120,20 +120,23 @@ export default function DocumentsPage() {
             />
           </div>
           <ViewToggle value={view} onChange={setView} />
-          <input
-            ref={fileInputRef}
-            type="file"
-            className="hidden"
-            onChange={handleFileChange}
-            accept=".pdf,.doc,.docx,.xlsx,.xls,.csv,.png,.jpg,.jpeg"
-          />
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            disabled={uploading}
-            className="h-9 px-3 rounded-[6px] bg-brand dark:bg-brand-btn text-white text-[13px] font-medium hover:opacity-90 transition-opacity whitespace-nowrap flex-shrink-0 disabled:opacity-60"
-          >
-            {uploading ? 'Uploading...' : 'Upload Document'}
-          </button>
+          <div className="flex flex-col items-end gap-1 flex-shrink-0">
+            <input
+              ref={fileInputRef}
+              type="file"
+              className="hidden"
+              accept=".pdf,.doc,.docx,.xlsx,.xls,.csv,.png,.jpg,.jpeg"
+            />
+            <button
+              disabled
+              className="h-9 px-3 rounded-[6px] bg-brand dark:bg-brand-btn text-white text-[13px] font-medium whitespace-nowrap opacity-40 cursor-not-allowed"
+            >
+              Upload Document
+            </button>
+            <span className="text-[11px] text-[#6B7280] whitespace-nowrap">
+              Upload from the engagement&apos;s Documents tab.
+            </span>
+          </div>
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">

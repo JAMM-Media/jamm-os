@@ -541,3 +541,60 @@ def test_copy_into_destination_with_same_name_triggers_conflict(client, firm_a_o
     assert body["document"] is None, f"Expected no document on conflict, got {body['document']}"
     assert body["conflict"] is not None
     assert body["conflict"]["filename"] == "report.pdf"
+
+
+# ---------------------------------------------------------------------------
+# 12. test_copy_to_firm_library_folder_requires_manager_or_owner
+# ---------------------------------------------------------------------------
+
+def test_copy_to_firm_library_folder_requires_manager_or_owner(client, firm_a_owner):
+    """Plain staff member is denied 403 when copying to a firm_library-scoped folder.
+    A manager or firm owner performing the same copy succeeds.
+
+    This guards the authorization gap identified in Phase 6 discovery (D9):
+    assert_can_write_to_destination previously returned for any staff member when
+    dest_scope == "firm_library", allowing unauthorized writes to the Firm Library.
+    This matches the failure pattern in CVE-2026-9248 and CVE-2026-73612, where
+    copy/duplicate endpoints authorize on source access but not destination sensitivity.
+    """
+    firm_id = firm_a_owner["firm_id"]
+    owner_headers = firm_a_owner["headers"]
+
+    client_id, eng_id = _setup_client_and_engagement(client, owner_headers)
+    src_doc_id = _upload(client, owner_headers, client_id, eng_id, filename="policy.pdf")
+
+    # Create a firm_library-scoped destination folder (no client or engagement).
+    firm_lib_folder_id = _create_folder(firm_id, "firm_library")
+
+    # Plain staff member who CAN read the source (they are a member of the engagement).
+    email, password, user_id = _create_user(firm_id, role=UserRole.staff)
+    _add_member(firm_id, eng_id, user_id)
+    staff_headers = _login(client, email, password)
+
+    # Staff must be refused with 403 -- source access is not sufficient for
+    # firm_library destination writes.
+    with patch("app.services.s3.copy_object_within_bucket"):
+        r_staff = client.post(
+            f"/documents/{src_doc_id}/copy",
+            json={"folder_id": firm_lib_folder_id},
+            headers=staff_headers,
+        )
+
+    assert r_staff.status_code == 403, (
+        f"Non-elevated staff must be denied 403 on firm_library copy; got {r_staff.status_code}: {r_staff.text}"
+    )
+
+    # Owner must succeed.
+    with patch("app.services.s3.copy_object_within_bucket"):
+        r_owner = client.post(
+            f"/documents/{src_doc_id}/copy",
+            json={"folder_id": firm_lib_folder_id},
+            headers=owner_headers,
+        )
+
+    assert r_owner.status_code == 200, (
+        f"Firm owner must succeed on firm_library copy; got {r_owner.status_code}: {r_owner.text}"
+    )
+    new_doc = r_owner.json().get("document")
+    assert new_doc is not None, "Expected a document in the response body"
+    assert new_doc["copied_from_document_id"] == src_doc_id
