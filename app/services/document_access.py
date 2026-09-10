@@ -357,6 +357,37 @@ def assert_can_reassign_document(
     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_NOT_FOUND)
 
 
+def assert_can_share_document(
+    db: Session,
+    user: User,
+    document: Document,
+    firm_id: UUID,
+) -> None:
+    """Trio check for pushing a document to the client portal or revoking that.
+
+    Identical logic to assert_can_delete_document: engagement administrator,
+    manager, or firm owner. Named separately because pushing a document to the
+    client portal is an outward-facing act -- the client will see it -- with the
+    same stakes as sending it directly, per the spec. The permission tier must
+    match that consequence.
+    Raises HTTPException(404) on denial to avoid confirming the document exists.
+    """
+    if user.role in _ELEVATED:
+        return
+
+    if document.scope == "engagement":
+        admin_member = db.query(EngagementMember).filter(
+            EngagementMember.firm_id == firm_id,
+            EngagementMember.engagement_id == document.engagement_id,
+            EngagementMember.user_id == user.id,
+            EngagementMember.is_administrator == True,
+        ).first()
+        if admin_member:
+            return
+
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_NOT_FOUND)
+
+
 def assert_can_move_across_engagements(
     db: Session,
     user: User,

@@ -1047,3 +1047,103 @@ def reassign_pending_document(
         },
     )
     return doc
+
+
+def share_document_to_portal(
+    *,
+    db: Session,
+    document_id: UUID,
+    firm_id: UUID,
+    current_user_id: UUID,
+    ip_address: Optional[str] = None,
+    user_agent: Optional[str] = None,
+):
+    doc = crud_document.get_document(db, document_id=document_id, firm_id=firm_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    # firm_library documents have no client_id, so sharing them to the portal
+    # is meaningless: there is no client context to share with.
+    if doc.scope == "firm_library":
+        raise HTTPException(
+            status_code=422,
+            detail="Firm Library documents have no client to share with",
+        )
+
+    already_shared = doc.visibility == "client_visible"
+    if not already_shared:
+        doc.visibility = "client_visible"
+        db.commit()
+        db.refresh(doc)
+
+    # Audit both repeat and first-time pushes -- a repeated push attempt is
+    # itself worth recording.
+    crud_document.write_audit_log(
+        db=db, firm_id=firm_id, action="share_to_portal",
+        document_id=doc.id, user_id=current_user_id, ip_address=ip_address,
+    )
+    write_audit_log(
+        db=db, firm_id=firm_id, action="document.shared_to_portal",
+        actor_id=current_user_id, actor_type="staff",
+        entity_type="document", entity_id=doc.id,
+        ip_address=ip_address, user_agent=user_agent,
+    )
+    # NOTE: "document.shared_to_portal" is flagged as unconfirmed against
+    # Andrew's blessed event-type list -- no docs/ file enumerating blessed
+    # event strings was found as of this task.
+    log_event(
+        firm_id=firm_id,
+        event_type="document.shared_to_portal",
+        entity_type="document",
+        entity_id=doc.id,
+        actor_type="staff",
+        actor_id=current_user_id,
+        metadata={"filename": doc.filename, "was_already_shared": already_shared},
+    )
+    return doc
+
+
+def unshare_document_from_portal(
+    *,
+    db: Session,
+    document_id: UUID,
+    firm_id: UUID,
+    current_user_id: UUID,
+    ip_address: Optional[str] = None,
+    user_agent: Optional[str] = None,
+):
+    doc = crud_document.get_document(db, document_id=document_id, firm_id=firm_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    # No scope restriction needed: unsharing a firm_library doc that was never
+    # shareable is a natural no-op (it can never have reached client_visible).
+    already_internal = doc.visibility == "internal"
+    if not already_internal:
+        doc.visibility = "internal"
+        db.commit()
+        db.refresh(doc)
+
+    crud_document.write_audit_log(
+        db=db, firm_id=firm_id, action="unshare_from_portal",
+        document_id=doc.id, user_id=current_user_id, ip_address=ip_address,
+    )
+    write_audit_log(
+        db=db, firm_id=firm_id, action="document.unshared",
+        actor_id=current_user_id, actor_type="staff",
+        entity_type="document", entity_id=doc.id,
+        ip_address=ip_address, user_agent=user_agent,
+    )
+    # NOTE: "document.unshared" is flagged as unconfirmed against Andrew's
+    # blessed event-type list -- no docs/ file enumerating blessed event
+    # strings was found as of this task.
+    log_event(
+        firm_id=firm_id,
+        event_type="document.unshared",
+        entity_type="document",
+        entity_id=doc.id,
+        actor_type="staff",
+        actor_id=current_user_id,
+        metadata={"filename": doc.filename, "was_already_internal": already_internal},
+    )
+    return doc

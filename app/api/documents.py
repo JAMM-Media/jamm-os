@@ -53,6 +53,7 @@ from app.services.document_access import (
     assert_can_approve_document,
     assert_can_delete_document,
     assert_can_reassign_document,
+    assert_can_share_document,
     assert_can_upload_to_engagement,
     assert_can_move_across_engagements,
     check_preview_eligible,
@@ -784,6 +785,54 @@ def reassign_document(
         document_id=document_id,
         firm_id=current_firm.id,
         dest_engagement_id=dest_engagement_id,
+        current_user_id=current_user.id,
+        ip_address=_client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
+    return DocumentOut.model_validate(doc)
+
+
+@router.post("/{document_id}/share-to-portal", response_model=DocumentOut)
+def share_document_to_portal(
+    document_id: uuid.UUID,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    current_user: User = Depends(get_current_user),
+    _: object = Depends(require_staff_or_above),
+):
+    pre = crud_document.get_document(db, document_id=document_id, firm_id=current_firm.id)
+    if not pre:
+        raise HTTPException(status_code=404, detail=_NOT_FOUND)
+    assert_can_share_document(db, current_user, pre, current_firm.id)
+    doc = document_service.share_document_to_portal(
+        db=db,
+        document_id=document_id,
+        firm_id=current_firm.id,
+        current_user_id=current_user.id,
+        ip_address=_client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
+    return DocumentOut.model_validate(doc)
+
+
+@router.post("/{document_id}/unshare-from-portal", response_model=DocumentOut)
+def unshare_document_from_portal(
+    document_id: uuid.UUID,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    current_user: User = Depends(get_current_user),
+    _: object = Depends(require_staff_or_above),
+):
+    pre = crud_document.get_document(db, document_id=document_id, firm_id=current_firm.id)
+    if not pre:
+        raise HTTPException(status_code=404, detail=_NOT_FOUND)
+    assert_can_share_document(db, current_user, pre, current_firm.id)
+    doc = document_service.unshare_document_from_portal(
+        db=db,
+        document_id=document_id,
+        firm_id=current_firm.id,
         current_user_id=current_user.id,
         ip_address=_client_ip(request),
         user_agent=request.headers.get("user-agent"),

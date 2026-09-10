@@ -39,6 +39,7 @@ _GATE_CALLS = frozenset([
     "assert_can_approve_document",
     "assert_can_delete_document",
     "assert_can_reassign_document",
+    "assert_can_share_document",
     "assert_can_upload_to_engagement",
     "filter_accessible_documents",
 ])
