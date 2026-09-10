@@ -552,6 +552,35 @@ class MetricRunStatus(str, Enum):
     failed = "failed"
 
 
+class MetricPillar(str, Enum):
+    """Which Firm Profile pillar section a metric card lives in."""
+    client_intake = "client_intake"
+    performance = "performance"
+    retention_and_growth = "retention_and_growth"
+
+
+class MetricEntityType(str, Enum):
+    """The kind of thing a metric counts one unit of."""
+    lead = "lead"
+    client = "client"
+    engagement = "engagement"
+    task = "task"
+    document = "document"
+    document_request = "document_request"
+    invoice = "invoice"
+    envelope = "envelope"
+    automation_preset = "automation_preset"
+    firm = "firm"
+
+
+class MetricAxisKind(str, Enum):
+    """Which source of truth a sliceable axis key resolves against; exactly four, with no engagement_type kind because breakdowns are category-only (ruled Sep 10, 2026)."""
+    engagement_category = "engagement_category"
+    complexity_flag = "complexity_flag"
+    complexity_dimension = "complexity_dimension"
+    referral_source = "referral_source"
+
+
 class SubjectType(str, Enum):
     """What kind of thing a finding is about."""
     metric = "metric"
