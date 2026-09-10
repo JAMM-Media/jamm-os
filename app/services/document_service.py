@@ -425,8 +425,8 @@ def issue_upload_url(
     *,
     db: Session,
     firm_id: UUID,
-    client_id: UUID,
-    engagement_id: UUID,
+    client_id: Optional[UUID] = None,
+    engagement_id: Optional[UUID] = None,
     filename: str,
     content_type: str,
     folder_id: Optional[UUID] = None,
@@ -451,8 +451,8 @@ def complete_upload(
     user: User,
     document_id: UUID,
     firm_id: UUID,
-    client_id: UUID,
-    engagement_id: UUID,
+    client_id: Optional[UUID] = None,
+    engagement_id: Optional[UUID] = None,
     filename: str,
     content_type: str,
     current_user_id: UUID,
@@ -479,14 +479,22 @@ def complete_upload(
     """
     from botocore.exceptions import ClientError
 
-    # Re-authorize before touching anything. Membership can be revoked in the
-    # window between issue_upload_url and upload-complete (up to one presigned
-    # URL lifetime). This must be first -- before the idempotency guard, before
-    # HEAD, before any DB or S3 access.
-    assert_can_upload_to_engagement(
-        db, user=user, firm_id=firm_id,
-        engagement_id=engagement_id, client_id=client_id,
-    )
+    # Re-authorize before touching anything. Role/membership can be revoked in
+    # the window between issue_upload_url and upload-complete (presigned URL
+    # lifetime). This must be first -- before the idempotency guard, HEAD, or DB.
+    if engagement_id is not None:
+        assert_can_upload_to_engagement(
+            db, user=user, firm_id=firm_id,
+            engagement_id=engagement_id, client_id=client_id,
+        )
+    else:
+        dest_scope = "client" if client_id is not None else "firm_library"
+        assert_can_write_to_destination(
+            db, user=user, firm_id=firm_id,
+            dest_scope=dest_scope,
+            dest_engagement_id=None,
+            dest_client_id=client_id,
+        )
 
     # Check if document_id already completed (idempotency guard).
     existing = crud_document.get_document(db, document_id=document_id, firm_id=firm_id)

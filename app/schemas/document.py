@@ -75,8 +75,8 @@ class AuditLogOut(BaseModel):
 
 
 class UploadUrlRequest(BaseModel):
-    client_id: uuid.UUID
-    engagement_id: uuid.UUID
+    client_id: Optional[uuid.UUID] = None
+    engagement_id: Optional[uuid.UUID] = None
     filename: str
     content_type: str
     folder_id: Optional[uuid.UUID] = None
@@ -97,8 +97,8 @@ class DuplicateConflict(BaseModel):
 class UploadCompleteRequest(BaseModel):
     filename: str
     content_type: str
-    client_id: uuid.UUID
-    engagement_id: uuid.UUID
+    client_id: Optional[uuid.UUID] = None
+    engagement_id: Optional[uuid.UUID] = None
     folder_id: Optional[uuid.UUID] = None
     duplicate_action: Optional[str] = None  # "replace" | "keep_both"
 

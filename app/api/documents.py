@@ -56,6 +56,7 @@ from app.services.document_access import (
     assert_can_share_document,
     assert_can_upload_to_engagement,
     assert_can_move_across_engagements,
+    assert_can_write_to_destination,
     check_preview_eligible,
     filter_accessible_documents,
 )
@@ -206,10 +207,19 @@ def issue_upload_url(
     current_user: User = Depends(get_current_user),
     _: object = Depends(require_staff_or_above),
 ):
-    assert_can_upload_to_engagement(
-        db, user=current_user, firm_id=current_firm.id,
-        engagement_id=body.engagement_id, client_id=body.client_id,
-    )
+    if body.engagement_id is not None:
+        assert_can_upload_to_engagement(
+            db, user=current_user, firm_id=current_firm.id,
+            engagement_id=body.engagement_id, client_id=body.client_id,
+        )
+    else:
+        dest_scope = "client" if body.client_id is not None else "firm_library"
+        assert_can_write_to_destination(
+            db, user=current_user, firm_id=current_firm.id,
+            dest_scope=dest_scope,
+            dest_engagement_id=None,
+            dest_client_id=body.client_id,
+        )
     result = document_service.issue_upload_url(
         db=db,
         firm_id=current_firm.id,
@@ -235,10 +245,19 @@ def complete_upload(
     current_user: User = Depends(get_current_user),
     _: object = Depends(require_staff_or_above),
 ):
-    assert_can_upload_to_engagement(
-        db, user=current_user, firm_id=current_firm.id,
-        engagement_id=body.engagement_id, client_id=body.client_id,
-    )
+    if body.engagement_id is not None:
+        assert_can_upload_to_engagement(
+            db, user=current_user, firm_id=current_firm.id,
+            engagement_id=body.engagement_id, client_id=body.client_id,
+        )
+    else:
+        dest_scope = "client" if body.client_id is not None else "firm_library"
+        assert_can_write_to_destination(
+            db, user=current_user, firm_id=current_firm.id,
+            dest_scope=dest_scope,
+            dest_engagement_id=None,
+            dest_client_id=body.client_id,
+        )
     result = document_service.complete_upload(
         db=db,
         user=current_user,
