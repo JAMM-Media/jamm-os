@@ -83,6 +83,7 @@ def list_documents(
     firm_id: uuid.UUID,
     client_id: Optional[uuid.UUID] = None,
     engagement_id: Optional[uuid.UUID] = None,
+    scope: Optional[str] = None,
 ):
     """Returns a query of live (not soft-deleted) filed documents scoped to the firm.
 
@@ -99,6 +100,8 @@ def list_documents(
         query = query.filter(Document.client_id == client_id)
     if engagement_id:
         query = query.filter(Document.engagement_id == engagement_id)
+    if scope:
+        query = query.filter(Document.scope == scope)
     return query
 
 

@@ -493,6 +493,7 @@ def list_documents(
     _: object = Depends(require_staff_or_above),
     client_id: Optional[uuid.UUID] = None,
     engagement_id: Optional[uuid.UUID] = None,
+    scope: Optional[str] = None,
     limit: int = Query(50, le=500),
     offset: int = 0,
 ):
@@ -501,6 +502,7 @@ def list_documents(
         firm_id=current_firm.id,
         client_id=client_id,
         engagement_id=engagement_id,
+        scope=scope,
     )
     # Filter at the query layer so inaccessible documents are never fetched.
     query = filter_accessible_documents(query, db, current_user, current_firm.id)

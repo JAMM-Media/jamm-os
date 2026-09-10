@@ -221,7 +221,7 @@ function ClientDetailContent() {
   useEffect(() => {
     if (activeTab !== 'documents' || !clientId) return
     setDocsLoading(true)
-    api.get(`/documents/?client_id=${clientId}&limit=100`)
+    api.get(`/documents/?client_id=${clientId}&scope=client&limit=100`)
       .then((r) => setClientDocs(r.data?.items ?? []))
       .catch(() => {})
       .finally(() => setDocsLoading(false))
@@ -784,7 +784,7 @@ function ClientDetailContent() {
                     No documents yet
                   </p>
                   <p className="text-[12px] text-muted-foreground">
-                    Documents uploaded by this client will appear here.
+                    Formation docs, IDs, prior-preparer returns, and other permanent client records will appear here.
                   </p>
                 </div>
               ) : (

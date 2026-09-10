@@ -265,3 +265,93 @@ def test_audit_log_nonexistent_document(client, firm_a_owner):
     headers = firm_a_owner["headers"]
     r = client.get(f"/documents/{uuid.uuid4()}/audit", headers=headers)
     assert r.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Scope filter tests
+# ---------------------------------------------------------------------------
+
+def test_list_documents_scope_filter_returns_only_matching_scope(client, firm_a_owner):
+    """GET /documents/?scope=client returns only scope='client' documents.
+
+    Creates three documents for the same client_id (engagement-scoped,
+    client-scoped, firm_library-scoped) and confirms the scope filter
+    returns only the client-scoped one. This exercises the scope parameter
+    added to list_documents in Phase 6 Task 2, and guards against a leak
+    that would occur if the filter were absent or applied incorrectly.
+    """
+    from tests.conftest import TestingSessionLocal
+    from app.models.document import Document
+
+    firm_id = firm_a_owner["firm_id"]
+    headers = firm_a_owner["headers"]
+
+    # Create a client and engagement for the engagement-scoped doc.
+    client_id, engagement_id = _make_client_and_engagement(client, headers)
+
+    # Engagement-scoped doc -- uploaded via the normal HTTP path.
+    eng_doc_r = _upload(client, headers, client_id, engagement_id, filename="eng.txt")
+    assert eng_doc_r.status_code == 201, eng_doc_r.text
+    eng_doc_id = eng_doc_r.json()["id"]
+
+    # Client-scoped and firm_library-scoped docs inserted directly.
+    db = TestingSessionLocal()
+    try:
+        client_doc = Document(
+            firm_id=uuid.UUID(firm_id),
+            client_id=uuid.UUID(client_id),
+            scope="client",
+            filename="client_permanent.pdf",
+            s3_key=f"{firm_id}/{client_id}/None/{uuid.uuid4()}/client_permanent.pdf",
+            content_type="application/pdf",
+            size_bytes=1024,
+            source="staff",
+        )
+        db.add(client_doc)
+
+        lib_doc = Document(
+            firm_id=uuid.UUID(firm_id),
+            scope="firm_library",
+            filename="firm_template.pdf",
+            s3_key=f"{firm_id}/None/None/{uuid.uuid4()}/firm_template.pdf",
+            content_type="application/pdf",
+            size_bytes=512,
+            source="staff",
+        )
+        db.add(lib_doc)
+        db.commit()
+        db.refresh(client_doc)
+        db.refresh(lib_doc)
+        client_doc_id = str(client_doc.id)
+        lib_doc_id = str(lib_doc.id)
+    finally:
+        db.close()
+
+    # Scope filter: only client-scoped docs for this client.
+    r = client.get(
+        f"/documents/?client_id={client_id}&scope=client",
+        headers=headers,
+    )
+    assert r.status_code == 200, r.text
+    returned_ids = [d["id"] for d in r.json()["items"]]
+
+    assert client_doc_id in returned_ids, (
+        "client-scoped document must appear in scope=client results"
+    )
+    assert eng_doc_id not in returned_ids, (
+        "engagement-scoped document must NOT appear in scope=client results"
+    )
+    assert lib_doc_id not in returned_ids, (
+        "firm_library document must NOT appear in scope=client results"
+    )
+
+    # Sanity: without scope filter, all three are visible to the owner.
+    r_all = client.get(
+        f"/documents/?client_id={client_id}",
+        headers=headers,
+    )
+    assert r_all.status_code == 200
+    all_ids = [d["id"] for d in r_all.json()["items"]]
+    assert eng_doc_id in all_ids
+    assert client_doc_id in all_ids
+    # firm_library has no client_id so it does not appear in client_id-filtered list.
