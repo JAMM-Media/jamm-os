@@ -260,21 +260,25 @@ function CopyToModal({
   }, [selectedEngagementId])
 
   async function handleCopy(duplicateAction?: 'replace' | 'keep_both') {
-    // Resolve the destination folder_id.
-    // Firm Library: selectedFolderId '' = root (no folder_id sent = copy-in-place at source).
-    // Engagement: selectedEngFolderDecision '' = engagement root (no folder_id sent).
-    // NOTE: sending no folder_id for the engagement path falls back to copy-in-place at the
-    // SOURCE scope (firm_library) per copy_document's backend logic. "Engagement root" without
-    // a real folder_id is not expressible by this API. Users should select a real subfolder
-    // for engagement copies to land in the correct engagement.
-    const folderId = destType === 'firm_library'
-      ? (selectedFolderId || null)
-      : (selectedEngFolderDecision || null)
-
     setCopying(true)
     try {
       const body: Record<string, unknown> = {}
-      if (folderId) body.folder_id = folderId
+
+      if (destType === 'firm_library') {
+        // Firm Library root: no folder_id. A specific subfolder sends folder_id.
+        if (selectedFolderId) body.folder_id = selectedFolderId
+      } else {
+        // Engagement destination.
+        if (selectedEngFolderDecision) {
+          // Specific folder within the engagement: folder_id fully determines scope.
+          body.folder_id = selectedEngFolderDecision
+        } else {
+          // Engagement root: dest_engagement_id + dest_client_id, no folder_id.
+          body.dest_engagement_id = selectedEngagementId
+          body.dest_client_id = selectedClientId
+        }
+      }
+
       // duplicate_action is omitted on the first attempt so the backend can return
       // a real conflict object if a filename collision exists, instead of silently
       // overriding the user's intent.
