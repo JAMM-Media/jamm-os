@@ -34,6 +34,7 @@ class DocumentOut(BaseModel):
     copied_from_document_id: Optional[uuid.UUID] = None
     triage_status: str = "filed"
     client_note: Optional[str] = None
+    description: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -101,6 +102,7 @@ class UploadCompleteRequest(BaseModel):
     engagement_id: Optional[uuid.UUID] = None
     folder_id: Optional[uuid.UUID] = None
     duplicate_action: Optional[str] = None  # "replace" | "keep_both"
+    description: Optional[str] = None
 
 
 class UploadCompleteResponse(BaseModel):

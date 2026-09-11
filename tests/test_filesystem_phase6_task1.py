@@ -417,3 +417,81 @@ class TestFirmLibraryS3Key:
         assert "None" in row["s3_key"], (
             f"Expected 'None' in stored s3_key (accepted behavior per Section 18); got {row['s3_key']}"
         )
+
+
+# ---------------------------------------------------------------------------
+# description field threading
+# ---------------------------------------------------------------------------
+
+class TestDescriptionField:
+
+    def test_description_persists_on_firm_library_upload(self, client, firm_a_owner):
+        """A firm_library-scope complete_upload with description set persists the
+        value and returns it in DocumentOut. Confirms description threads through
+        UploadCompleteRequest -> complete_upload service -> create_document -> DB.
+        """
+        owner_headers = firm_a_owner["headers"]
+
+        url_r = _issue_url(client, owner_headers, {
+            "filename": "engagement_letter.pdf",
+            "content_type": "application/pdf",
+            "description": "Standard engagement letter for individual returns",
+        })
+        assert url_r.status_code == 200, url_r.text
+        doc_id = url_r.json()["document_id"]
+
+        complete_r = _complete_upload(client, owner_headers, doc_id, {
+            "filename": "engagement_letter.pdf",
+            "content_type": "application/pdf",
+            "description": "Standard engagement letter for individual returns",
+        })
+        assert complete_r.status_code == 200, complete_r.text
+
+        body = complete_r.json()
+        doc_resp = body.get("document")
+        assert doc_resp is not None, "Expected document in response"
+        assert doc_resp["description"] == "Standard engagement letter for individual returns", (
+            f"description must be returned in DocumentOut; got {doc_resp.get('description')}"
+        )
+
+        row = _get_doc_from_db(doc_id)
+        assert row is not None
+        assert row["scope"] == "firm_library"
+
+        # Also confirm the value is in the DB row directly.
+        from tests.conftest import TestingSessionLocal
+        from app.models.document import Document
+        db = TestingSessionLocal()
+        try:
+            doc = db.query(Document).filter(Document.id == doc_id).first()
+            assert doc is not None
+            assert doc.description == "Standard engagement letter for individual returns", (
+                f"description must persist in DB; got {doc.description}"
+            )
+        finally:
+            db.close()
+
+    def test_description_null_when_omitted(self, client, firm_a_owner):
+        """A complete_upload with no description set returns description: null,
+        not an error.
+        """
+        owner_headers = firm_a_owner["headers"]
+
+        url_r = _issue_url(client, owner_headers, {
+            "filename": "no_desc.pdf",
+            "content_type": "application/pdf",
+        })
+        assert url_r.status_code == 200, url_r.text
+        doc_id = url_r.json()["document_id"]
+
+        complete_r = _complete_upload(client, owner_headers, doc_id, {
+            "filename": "no_desc.pdf",
+            "content_type": "application/pdf",
+        })
+        assert complete_r.status_code == 200, complete_r.text
+
+        doc_resp = complete_r.json().get("document")
+        assert doc_resp is not None
+        assert doc_resp["description"] is None, (
+            f"description must be null when not supplied; got {doc_resp.get('description')}"
+        )

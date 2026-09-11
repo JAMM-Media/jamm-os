@@ -50,6 +50,7 @@ def upload_document(
     source: str = "staff",
     source_client_id: Optional[UUID] = None,
     client_note: Optional[str] = None,
+    description: Optional[str] = None,
 ):
     db_client = db.query(Client).filter(
         Client.id == client_id,
@@ -94,6 +95,7 @@ def upload_document(
         source_client_id=source_client_id,
         triage_status="pending" if source == "client" else None,
         client_note=client_note,
+        description=description,
     )
 
     crud_document.write_audit_log(
@@ -458,6 +460,7 @@ def complete_upload(
     current_user_id: UUID,
     folder_id: Optional[UUID] = None,
     duplicate_action: Optional[str] = None,
+    description: Optional[str] = None,
     ip_address: Optional[str] = None,
     user_agent: Optional[str] = None,
 ):
@@ -560,6 +563,7 @@ def complete_upload(
         size_bytes=size_bytes,
         doc_id=document_id,
         source="staff",
+        description=description,
     )
 
     crud_document.write_audit_log(

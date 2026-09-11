@@ -83,6 +83,7 @@ def upload_document(
     file: UploadFile = File(...),
     client_id: uuid.UUID = Query(...),
     engagement_id: uuid.UUID = Query(...),
+    description: Optional[str] = Query(None),
     db: Session = Depends(get_db),
     current_firm: Firm = Depends(get_current_firm),
     current_user: User = Depends(get_current_user),
@@ -99,6 +100,7 @@ def upload_document(
         db=db, file=file, client_id=client_id,
         engagement_id=engagement_id, firm_id=current_firm.id,
         current_user_id=current_user.id,
+        description=description,
         ip_address=_client_ip(request),
         user_agent=request.headers.get("user-agent"),
     )
@@ -270,6 +272,7 @@ def complete_upload(
         current_user_id=current_user.id,
         folder_id=body.folder_id,
         duplicate_action=body.duplicate_action,
+        description=body.description,
         ip_address=_client_ip(request),
         user_agent=request.headers.get("user-agent"),
     )

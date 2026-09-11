@@ -24,6 +24,7 @@ def create_document(
     copied_from_document_id: Optional[uuid.UUID] = None,
     triage_status: Optional[str] = None,
     client_note: Optional[str] = None,
+    description: Optional[str] = None,
 ) -> Document:
     # scope is derived from the FK combination and enforced by the DB CHECK
     # constraint on documents.scope.
@@ -48,6 +49,7 @@ def create_document(
         size_bytes=size_bytes,
         copied_from_document_id=copied_from_document_id,
         client_note=client_note,
+        description=description,
     )
     # Only set triage_status explicitly when the caller passes a value.
     # None means "use the column server_default ('filed')".

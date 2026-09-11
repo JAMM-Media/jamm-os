@@ -104,6 +104,7 @@ class Document(Base):
     # Optional note from the client explaining what they are uploading.
     # Populated only for client-sourced uploads; null for staff and system.
     client_note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     # The original filename as provided by the uploader.
     filename: Mapped[str] = mapped_column(String(255), nullable=False)
