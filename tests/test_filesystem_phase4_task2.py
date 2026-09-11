@@ -598,3 +598,137 @@ def test_copy_to_firm_library_folder_requires_manager_or_owner(client, firm_a_ow
     new_doc = r_owner.json().get("document")
     assert new_doc is not None, "Expected a document in the response body"
     assert new_doc["copied_from_document_id"] == src_doc_id
+
+
+# ---------------------------------------------------------------------------
+# dest_engagement_id / dest_client_id engagement-root copy tests
+# ---------------------------------------------------------------------------
+
+def test_copy_to_engagement_root_via_dest_engagement_id(client, firm_a_owner):
+    """Copying with dest_engagement_id + dest_client_id (no folder_id) creates
+    the new document at that engagement root: scope=engagement, folder_id=None.
+    """
+    firm_id = firm_a_owner["firm_id"]
+    owner_headers = firm_a_owner["headers"]
+
+    # Source document: upload to engagement A.
+    client_id, eng_a_id = _setup_client_and_engagement(client, owner_headers)
+    src_doc_id = _upload(client, owner_headers, client_id, eng_a_id, filename="template.pdf")
+
+    # Destination: a second engagement for the same client.
+    eng_b = client.post(
+        "/engagements/",
+        json={"name": f"Eng-B-{__import__('uuid').uuid4()}", "client_id": client_id},
+        headers=owner_headers,
+    )
+    assert eng_b.status_code == 201, eng_b.text
+    eng_b_id = eng_b.json()["id"]
+
+    with patch("app.services.s3.copy_object_within_bucket"):
+        r = client.post(
+            f"/documents/{src_doc_id}/copy",
+            json={"dest_engagement_id": eng_b_id, "dest_client_id": client_id},
+            headers=owner_headers,
+        )
+
+    assert r.status_code == 200, r.text
+    new_doc = r.json().get("document")
+    assert new_doc is not None, f"Expected document in response; got {r.json()}"
+    assert new_doc["engagement_id"] == eng_b_id
+    assert new_doc["folder_id"] is None, (
+        f"Engagement-root copy must have folder_id=None; got {new_doc['folder_id']}"
+    )
+    assert new_doc["copied_from_document_id"] == src_doc_id
+
+    # Verify directly in DB.
+    db = TestingSessionLocal()
+    try:
+        from app.models.document import Document as DocModel
+        row = db.query(DocModel).filter(DocModel.id == new_doc["id"]).first()
+        assert row is not None
+        assert str(row.engagement_id) == eng_b_id
+        assert row.folder_id is None
+        assert row.scope == "engagement"
+    finally:
+        db.close()
+
+
+def test_copy_to_engagement_root_wrong_client_refused(client, firm_a_owner):
+    """dest_engagement_id that does not belong to dest_client_id is refused with 404.
+
+    This mirrors move_document_across_engagements convention and guards the same
+    cross-client leak vector.
+
+    Watched-fail: with the dest_client_id check removed from the elif branch, this
+    test returned 200 instead of 404 -- confirmed red for the right reason before
+    the check was restored.
+    """
+    firm_id = firm_a_owner["firm_id"]
+    owner_headers = firm_a_owner["headers"]
+
+    # Source document on client A.
+    client_a_id, eng_a_id = _setup_client_and_engagement(client, owner_headers)
+    src_doc_id = _upload(client, owner_headers, client_a_id, eng_a_id, filename="template.pdf")
+
+    # A second, unrelated client with its own engagement.
+    cl_b = client.post("/clients/", json={"name": f"Client-B-{__import__('uuid').uuid4()}"}, headers=owner_headers)
+    assert cl_b.status_code == 201
+    client_b_id = cl_b.json()["id"]
+    eng_b = client.post(
+        "/engagements/",
+        json={"name": f"Eng-B-{__import__('uuid').uuid4()}", "client_id": client_b_id},
+        headers=owner_headers,
+    )
+    assert eng_b.status_code == 201
+    eng_b_id = eng_b.json()["id"]
+
+    # Attempt to copy to eng_b but claim it belongs to client_a (wrong client).
+    with patch("app.services.s3.copy_object_within_bucket"):
+        r = client.post(
+            f"/documents/{src_doc_id}/copy",
+            json={"dest_engagement_id": eng_b_id, "dest_client_id": client_a_id},
+            headers=owner_headers,
+        )
+
+    assert r.status_code == 404, (
+        f"Wrong-client dest_engagement_id must return 404; got {r.status_code}: {r.text}"
+    )
+
+
+def test_copy_to_engagement_non_member_refused(client, firm_a_owner):
+    """A staff member who is NOT a member of the destination engagement is refused 403.
+
+    Confirms assert_can_write_to_destination is genuinely called and enforced
+    on the new engagement-root-copy path.
+    """
+    firm_id = firm_a_owner["firm_id"]
+    owner_headers = firm_a_owner["headers"]
+
+    # Source document on engagement A.
+    client_id, eng_a_id = _setup_client_and_engagement(client, owner_headers)
+    src_doc_id = _upload(client, owner_headers, client_id, eng_a_id, filename="template.pdf")
+
+    # Destination engagement B (same client).
+    eng_b = client.post(
+        "/engagements/",
+        json={"name": f"Eng-B-{__import__('uuid').uuid4()}", "client_id": client_id},
+        headers=owner_headers,
+    )
+    assert eng_b.status_code == 201
+    eng_b_id = eng_b.json()["id"]
+
+    # Staff member who is a member of eng_a (can read source) but NOT eng_b.
+    email, password, user_id = _create_user(firm_id, role=UserRole.staff)
+    _add_member(firm_id, eng_a_id, user_id)
+    staff_headers = _login(client, email, password)
+
+    with patch("app.services.s3.copy_object_within_bucket"):
+        r = client.post(
+            f"/documents/{src_doc_id}/copy",
+            json={"dest_engagement_id": eng_b_id, "dest_client_id": client_id},
+            headers=staff_headers,
+        )
+
+    assert r.status_code == 403, (
+        f"Non-member of destination engagement must be refused 403; got {r.status_code}: {r.text}"
+    )

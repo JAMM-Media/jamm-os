@@ -380,6 +380,8 @@ def copy_document(
         db=db, user=current_user,
         document_id=document_id, firm_id=current_firm.id,
         target_folder_id=body.folder_id,
+        dest_engagement_id=body.dest_engagement_id,
+        dest_client_id=body.dest_client_id,
         current_user_id=current_user.id,
         duplicate_action=body.duplicate_action,
         ip_address=_client_ip(request),

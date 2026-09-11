@@ -29,6 +29,7 @@ import {
   Archive,
   Sprout,
   TrendingUp,
+  Library,
 } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { cn } from '@/lib/utils'
@@ -48,6 +49,7 @@ const navItems = [
   { href: '/archive', label: 'Archive', icon: Archive },
   { href: '/calendar', label: 'Calendar', icon: CalendarDays },
   { href: '/documents', label: 'Documents', icon: FileText },
+  { href: '/firm-library', label: 'Firm Library', icon: Library },
   { href: '/billing', label: 'Billing', icon: CreditCard },
   { href: '/inbox', label: 'Inbox', icon: Mail },
   { href: '/firm-chat', label: 'Firm Chat', icon: MessageSquare },

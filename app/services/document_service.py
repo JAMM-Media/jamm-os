@@ -801,6 +801,8 @@ def copy_document(
     document_id: UUID,
     firm_id: UUID,
     target_folder_id: Optional[UUID],
+    dest_engagement_id: Optional[UUID] = None,
+    dest_client_id: Optional[UUID] = None,
     current_user_id: UUID,
     duplicate_action: Optional[str] = None,
     ip_address: Optional[str] = None,
@@ -832,6 +834,20 @@ def copy_document(
         dest_scope = dest_folder.scope
         dest_engagement_id = dest_folder.engagement_id
         dest_client_id = dest_folder.client_id
+    elif dest_engagement_id is not None:
+        # Explicit engagement-root destination (no folder within it).
+        # Mirror move_document_across_engagements: validate that the engagement
+        # belongs to dest_client_id and to this firm.
+        dest_eng = db.query(Engagement).filter(
+            Engagement.id == dest_engagement_id,
+            Engagement.firm_id == firm_id,
+            Engagement.client_id == dest_client_id,
+        ).first()
+        if not dest_eng:
+            raise HTTPException(status_code=404, detail="Destination engagement not found")
+        dest_scope = "engagement"
+        # dest_engagement_id and dest_client_id are already the correct values from params.
+        target_folder_id = None  # engagement root: no subfolder
     else:
         # Copy-in-place: same scope as source.
         dest_scope = src.scope

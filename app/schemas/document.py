@@ -123,6 +123,8 @@ class DocumentMoveRequest(BaseModel):
 class DocumentCopyRequest(BaseModel):
     folder_id: Optional[uuid.UUID] = None
     duplicate_action: Optional[str] = None
+    dest_engagement_id: Optional[uuid.UUID] = None
+    dest_client_id: Optional[uuid.UUID] = None
 
 
 class DocumentPreviewResponse(BaseModel):
