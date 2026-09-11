@@ -66,6 +66,7 @@ def _create_document_in_firm(firm_id: uuid.UUID) -> uuid.UUID:
             firm_id=firm_id,
             client_id=client_obj.id,
             engagement_id=eng.id,
+            scope="engagement",
             filename="test.pdf",
             s3_key=f"{firm_id}/{uuid.uuid4()}/test.pdf",
             content_type="application/pdf",

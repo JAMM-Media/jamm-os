@@ -357,6 +357,7 @@ def test_superseded_row_survives_with_its_document_and_history(firm_a_owner):
         from app.models.document import Document
         doc = Document(
             firm_id=uuid.UUID(firm_id), client_id=cl.id,
+            scope="client",
             filename="8821-signed.pdf", s3_key=f"{firm_id}/8821.pdf",
             content_type="application/pdf", size_bytes=1024,
         )

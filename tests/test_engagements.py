@@ -42,6 +42,7 @@ def _attach_document(firm_id, client_id, engagement_id):
             firm_id=uuid.UUID(firm_id),
             client_id=uuid.UUID(client_id),
             engagement_id=uuid.UUID(engagement_id),
+            scope="engagement",
             filename="w2.pdf",
             s3_key=f"{firm_id}/{client_id}/{engagement_id}/{uuid.uuid4()}/w2.pdf",
             content_type="application/pdf",

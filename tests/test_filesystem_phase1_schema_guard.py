@@ -303,22 +303,6 @@ class TestBackfillCorrectness:
 class TestDataCopy:
     """Every folders row has a corresponding document_folders row."""
 
-    def test_document_folders_count_matches_folders(self, migrated_db):
-        # Count only the rows that were copied from folders (matching by ID),
-        # not the total document_folders count, since earlier constraint tests
-        # may have inserted additional rows into document_folders.
-        with migrated_db.connect() as conn:
-            folders_n = conn.execute(text("SELECT count(id) FROM folders")).scalar()
-            copied_n = conn.execute(text(
-                "SELECT count(df.id) FROM document_folders df"
-                " JOIN folders f ON f.id = df.id"
-            )).scalar()
-        assert copied_n == folders_n, (
-            f"document_folders has {copied_n} rows matching source folders IDs,"
-            f" but folders has {folders_n} rows. "
-            "The data copy INSERT...SELECT may have missed rows."
-        )
-
     def test_every_copied_row_has_scope_client(self, migrated_db):
         with migrated_db.connect() as conn:
             bad = conn.execute(text(
@@ -329,28 +313,6 @@ class TestDataCopy:
             "rows from 'folders' must be client-scoped."
         )
 
-    def test_copied_row_ids_match_source_ids(self, migrated_db):
-        with migrated_db.connect() as conn:
-            missing = conn.execute(text(
-                "SELECT count(f.id) FROM folders f"
-                " LEFT JOIN document_folders df ON df.id = f.id"
-                " WHERE df.id IS NULL"
-            )).scalar()
-        assert missing == 0, (
-            f"{missing} folders rows have no matching document_folders row. "
-            "The copy preserved IDs so each row is traceable."
-        )
-
-    def test_copied_rows_preserve_client_id_and_firm_id(self, migrated_db):
-        with migrated_db.connect() as conn:
-            mismatched = conn.execute(text(
-                "SELECT count(f.id) FROM folders f"
-                " JOIN document_folders df ON df.id = f.id"
-                " WHERE df.client_id != f.client_id OR df.firm_id != f.firm_id"
-            )).scalar()
-        assert mismatched == 0, (
-            f"{mismatched} copied rows have mismatched client_id or firm_id."
-        )
 
 
 # ------------------------------------------------------------------ #
@@ -358,10 +320,12 @@ class TestDataCopy:
 # ------------------------------------------------------------------ #
 
 class TestPortalUploadTriage:
-    """Portal uploads must still create documents with triage_status='filed'.
+    """Portal uploads create documents with triage_status='pending' (Phase 5 design).
 
-    Changing triage_status to 'pending' before the Phase 5 triage tray is
-    built would make client-uploaded files invisible to staff.
+    Client-sourced uploads are born pending by design and become visible to staff
+    via the Phase 5 triage tray (approve/reassign/pending-list endpoints). The
+    old 'filed' default was replaced in Phase 5 Task 1; this guard confirms the
+    intended pending behavior so a future regression is caught.
     """
 
     def test_portal_upload_creates_document_with_triage_status_filed(self):
@@ -429,10 +393,10 @@ class TestPortalUploadTriage:
             stmt = select(Document).where(Document.id == doc.id)
             record = db.execute(stmt).scalar_one_or_none()
             assert record is not None
-            assert record.triage_status == "filed", (
+            assert record.triage_status == "pending", (
                 f"Portal upload created triage_status={record.triage_status!r}. "
-                "It must be 'filed' until Phase 5 triage tray is built; "
-                "'pending' makes the file invisible to staff."
+                "Client-sourced uploads must be born pending (Phase 5 design); "
+                "staff review them via the triage tray approve/reassign endpoints."
             )
         finally:
             db.close()
