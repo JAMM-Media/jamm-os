@@ -590,3 +590,124 @@ def test_complete_upload_refused_after_membership_revoked(client, firm_a_owner):
         assert doc is None, "Document row must not exist after a refused upload-complete"
     finally:
         db.close()
+
+
+# ---------------------------------------------------------------------------
+# 12. Client-scope folder access for engagement members
+# ---------------------------------------------------------------------------
+
+def test_client_scope_folder_accessible_by_engagement_member(client, firm_a_owner):
+    """A staff member who belongs to one of a client's engagements can GET a
+    client-scoped folder for that same client.
+
+    Before the fix in assert_can_access_folder, the client scope fell straight
+    through to an unconditional 404 deny for any non-elevated user. After the
+    fix, client-scope access mirrors the document-level rule: any member of any
+    of the client's engagements is allowed, matching Section 6 of the spec.
+
+    Watched-fail: the positive case was confirmed to return 404 (instead of 200)
+    with the client branch temporarily removed from assert_can_access_folder.
+    """
+    firm_id = firm_a_owner["firm_id"]
+    owner_headers = firm_a_owner["headers"]
+
+    # Create a client and engagement for the membership check.
+    client_id, eng_id = _setup_client_and_engagement(client, owner_headers)
+
+    # Manager creates a client-scoped folder (requires manager/owner for creation).
+    r_folder = client.post("/document-folders/", json={
+        "scope": "client",
+        "name": "Client Permanent Docs",
+        "client_id": client_id,
+    }, headers=owner_headers)
+    assert r_folder.status_code == 201, r_folder.text
+    folder_id = r_folder.json()["id"]
+
+    # Plain staff member who is a member of the client's engagement.
+    email, password, user_id = _create_user(firm_id, role=UserRole.staff)
+    _add_member(firm_id, eng_id, user_id)
+    staff_headers = _login(client, email, password)
+
+    # Positive case: staff member CAN access the client-scoped folder.
+    r_get = client.get(f"/document-folders/{folder_id}", headers=staff_headers)
+    assert r_get.status_code == 200, (
+        f"Engagement member must be able to access client-scoped folder; got {r_get.status_code}: {r_get.text}"
+    )
+    assert r_get.json()["id"] == folder_id
+
+    # Negative case: staff member with NO membership in any of this client's
+    # engagements is still denied 404.
+    email2, password2, _ = _create_user(firm_id, role=UserRole.staff)
+    stranger_headers = _login(client, email2, password2)
+
+    r_denied = client.get(f"/document-folders/{folder_id}", headers=stranger_headers)
+    assert r_denied.status_code == 404, (
+        f"Staff with no client engagement membership must be denied 404; got {r_denied.status_code}: {r_denied.text}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# 13. Client-scope folder appears in list results for engagement members
+# ---------------------------------------------------------------------------
+
+def test_client_scope_folder_in_list_for_engagement_member(client, firm_a_owner):
+    """GET /document-folders/?scope=client&client_id=X returns client-scoped folders
+    for a staff member who belongs to one of the client's engagements.
+
+    Before the fix, list_document_folders filtered results through _can_access,
+    which had no client-scope branch and fell through to return False. After the
+    fix, filtering goes through assert_can_access_folder which has the correct
+    client-scope check added in the prior task, so the same staff member who
+    can GET a specific client-scoped folder now also sees it in list results.
+
+    Watched-fail: this test was confirmed to return an empty list (folder absent)
+    before the _can_access removal, even when the folder exists and the staff
+    member has the correct engagement membership.
+    """
+    firm_id = firm_a_owner["firm_id"]
+    owner_headers = firm_a_owner["headers"]
+
+    # Create a client with an engagement.
+    client_id, eng_id = _setup_client_and_engagement(client, owner_headers)
+
+    # Manager creates a client-scoped folder.
+    r_folder = client.post("/document-folders/", json={
+        "scope": "client",
+        "name": "Client Permanent Docs List",
+        "client_id": client_id,
+    }, headers=owner_headers)
+    assert r_folder.status_code == 201, r_folder.text
+    folder_id = r_folder.json()["id"]
+
+    # Plain staff member who is a member of the client's engagement.
+    email, password, user_id = _create_user(firm_id, role=UserRole.staff)
+    _add_member(firm_id, eng_id, user_id)
+    staff_headers = _login(client, email, password)
+
+    # Positive case: folder must appear in list results for the engagement member.
+    r_list = client.get(
+        f"/document-folders/?scope=client&client_id={client_id}",
+        headers=staff_headers,
+    )
+    assert r_list.status_code == 200, r_list.text
+    returned_ids = [f["id"] for f in r_list.json()]
+    assert folder_id in returned_ids, (
+        "Client-scoped folder must appear in list results for an engagement member; "
+        f"got {returned_ids}"
+    )
+
+    # Negative case: staff member with no membership in any of this client's
+    # engagements must not see the folder in list results.
+    email2, password2, _ = _create_user(firm_id, role=UserRole.staff)
+    stranger_headers = _login(client, email2, password2)
+
+    r_list2 = client.get(
+        f"/document-folders/?scope=client&client_id={client_id}",
+        headers=stranger_headers,
+    )
+    assert r_list2.status_code == 200, r_list2.text
+    returned_ids2 = [f["id"] for f in r_list2.json()]
+    assert folder_id not in returned_ids2, (
+        "Client-scoped folder must NOT appear in list results for a non-member; "
+        f"got {returned_ids2}"
+    )

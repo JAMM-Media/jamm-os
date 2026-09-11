@@ -191,7 +191,9 @@ def assert_can_access_folder(
     """Gate for reading or modifying (create/rename) a document folder.
 
     Any engagement member can access engagement-scoped folders.
-    Client-scoped and firm_library-scoped folders require manager or owner.
+    Any member of any of the client's engagements can access client-scoped folders,
+    mirroring the document-level rule in assert_can_access_document.
+    firm_library-scoped folders are readable by all staff.
     Raises HTTPException(404) on denial.
     """
     _FOLDER_NOT_FOUND = "Folder not found"
@@ -214,7 +216,23 @@ def assert_can_access_folder(
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_FOLDER_NOT_FOUND)
         return
 
-    # client and firm_library are manager/owner only for non-elevated.
+    if scope == "client":
+        member = (
+            db.query(EngagementMember)
+            .join(Engagement, EngagementMember.engagement_id == Engagement.id)
+            .filter(
+                EngagementMember.firm_id == firm_id,
+                EngagementMember.user_id == user.id,
+                Engagement.client_id == folder.client_id,
+                Engagement.firm_id == firm_id,
+            )
+            .first()
+        )
+        if not member:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_FOLDER_NOT_FOUND)
+        return
+
+    # Only firm_library falls through to deny for unknown scope.
     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_FOLDER_NOT_FOUND)
 
 

@@ -71,8 +71,15 @@ def list_document_folders(
         scope=scope, engagement_id=engagement_id,
         client_id=client_id, parent_folder_id=parent_folder_id,
     )
-    # Filter to only folders the user can access.
-    accessible = [f for f in folders if _can_access(db, current_user, f, current_firm.id)]
+    # Filter to only folders the user can access using the same gate function
+    # as single-folder GET, so list and individual access rules stay in sync.
+    accessible = []
+    for f in folders:
+        try:
+            assert_can_access_folder(db, current_user, f, current_firm.id)
+            accessible.append(f)
+        except HTTPException:
+            pass
     return [DocumentFolderOut.model_validate(f) for f in accessible]
 
 
@@ -128,19 +135,3 @@ def delete_document_folder(
         current_user_id=current_user.id,
     )
 
-
-def _can_access(db, user, folder, firm_id) -> bool:
-    """Non-raising membership check for list filtering."""
-    from app.services.document_access import _ELEVATED
-    from app.models.engagement_member import EngagementMember
-    if user.role in _ELEVATED:
-        return True
-    if folder.scope == "firm_library":
-        return True
-    if folder.scope == "engagement":
-        return db.query(EngagementMember).filter(
-            EngagementMember.firm_id == firm_id,
-            EngagementMember.engagement_id == folder.engagement_id,
-            EngagementMember.user_id == user.id,
-        ).first() is not None
-    return False
