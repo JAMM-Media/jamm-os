@@ -71,6 +71,8 @@ class EngagementOut(EngagementBase):
     # on the transition into completed status and appears on no Create or
     # Update schema, so no client can write it.
     completed_at: Optional[datetime] = None
+    finalized_at: Optional[datetime] = None
+    finalized_by: Optional[UUID] = None
 
     model_config = ConfigDict(from_attributes=True)
 

@@ -14,7 +14,7 @@ from app.models.firm import Firm
 from app.models.user import User
 from app.schemas.document_folder import DocumentFolderCreate, DocumentFolderOut, DocumentFolderUpdate
 from app.crud import document_folder as crud_folder
-from app.services.document_folder_service import create_folder, delete_folder_with_cascade
+from app.services.document_folder_service import create_folder, delete_folder_with_cascade, rename_folder
 from app.services.document_access import assert_can_access_folder, assert_can_delete_folder
 
 router = APIRouter(prefix="/document-folders", tags=["document-folders"])
@@ -112,7 +112,7 @@ def rename_document_folder(
     if not folder:
         raise HTTPException(status_code=404, detail="Folder not found")
     assert_can_access_folder(db, current_user, folder, current_firm.id)
-    updated = crud_folder.rename_document_folder(db, folder=folder, name=payload.name)
+    updated = rename_folder(db=db, folder=folder, firm_id=current_firm.id, name=payload.name)
     return DocumentFolderOut.model_validate(updated)
 
 

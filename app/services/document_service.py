@@ -27,6 +27,7 @@ from app.services.document_access import (
     assert_can_upload_to_engagement,
     assert_can_move_across_engagements,
     assert_can_write_to_destination,
+    assert_engagement_not_finalized,
 )
 
 MAX_UPLOAD_BYTES = 250 * 1024 * 1024
@@ -66,6 +67,8 @@ def upload_document(
     ).first()
     if not db_engagement:
         raise HTTPException(status_code=404, detail="Engagement not found")
+
+    assert_engagement_not_finalized(db, engagement_id)
 
     content = file.file.read(MAX_UPLOAD_BYTES + 1)
     if len(content) > MAX_UPLOAD_BYTES:
@@ -280,6 +283,8 @@ def soft_delete_document(
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
 
+    assert_engagement_not_finalized(db, doc.engagement_id)
+
     doc.deleted_at = datetime.now(timezone.utc)
     doc.deleted_by = current_user_id
     db.commit()
@@ -325,6 +330,8 @@ def restore_document(
     if not doc or doc.deleted_at is None:
         raise HTTPException(status_code=404, detail="Document not found")
 
+    assert_engagement_not_finalized(db, doc.engagement_id)
+
     doc.deleted_at = None
     doc.deleted_by = None
     db.commit()
@@ -358,6 +365,8 @@ def purge_document(
     doc = crud_document.get_document_any_state(db, document_id=document_id, firm_id=firm_id)
     if not doc or doc.deleted_at is None:
         raise HTTPException(status_code=404, detail="Document not found")
+
+    assert_engagement_not_finalized(db, doc.engagement_id)
 
     s3_key = doc.s3_key
     doc_id = doc.id
@@ -499,6 +508,8 @@ def complete_upload(
             dest_client_id=client_id,
         )
 
+    assert_engagement_not_finalized(db, engagement_id)
+
     # Check if document_id already completed (idempotency guard).
     existing = crud_document.get_document(db, document_id=document_id, firm_id=firm_id)
     if existing:
@@ -613,6 +624,8 @@ def rename_document(
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="Document not found")
 
+    assert_engagement_not_finalized(db, doc.engagement_id)
+
     old_filename = doc.filename
     doc.filename = new_filename
     db.commit()
@@ -660,6 +673,8 @@ def move_document(
     doc = crud_document.get_document(db, document_id=document_id, firm_id=firm_id)
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
+
+    assert_engagement_not_finalized(db, doc.engagement_id)
 
     if target_folder_id is not None:
         folder = db.query(DocumentFolder).filter(
@@ -747,6 +762,9 @@ def move_document_across_engagements(
     ).first()
     if not dest_eng:
         raise HTTPException(status_code=404, detail="Destination engagement not found")
+
+    assert_engagement_not_finalized(db, doc.engagement_id)
+    assert_engagement_not_finalized(db, dest_engagement_id)
 
     if target_folder_id is not None:
         folder = db.query(DocumentFolder).filter(
@@ -962,6 +980,7 @@ def approve_pending_document(
     if doc.triage_status != "pending":
         raise HTTPException(status_code=409, detail="This document has already been processed")
 
+    assert_engagement_not_finalized(db, doc.engagement_id)
     assert_can_approve_document(db=db, user=user, document=doc, firm_id=firm_id)
 
     pbc_folder = crud_document_folder.get_document_folder_by_name(
@@ -1024,6 +1043,8 @@ def reassign_pending_document(
     ).first()
     if not dest_engagement:
         raise HTTPException(status_code=404, detail="Destination engagement not found")
+
+    assert_engagement_not_finalized(db, dest_engagement_id)
 
     # Cross-client guard: reassigning to an engagement under a different client
     # would move a client's file into another client's binder -- a tenant data
@@ -1098,6 +1119,8 @@ def share_document_to_portal(
             detail="Firm Library documents have no client to share with",
         )
 
+    assert_engagement_not_finalized(db, doc.engagement_id)
+
     already_shared = doc.visibility == "client_visible"
     if not already_shared:
         doc.visibility = "client_visible"
@@ -1146,6 +1169,8 @@ def unshare_document_from_portal(
 
     # No scope restriction needed: unsharing a firm_library doc that was never
     # shareable is a natural no-op (it can never have reached client_visible).
+    assert_engagement_not_finalized(db, doc.engagement_id)
+
     already_internal = doc.visibility == "internal"
     if not already_internal:
         doc.visibility = "internal"

@@ -529,3 +529,56 @@ def check_preview_eligible(stored_content_type: str, s3_key: str) -> bool:
     if header.startswith(_PNG_MAGIC):
         return True
     return False
+
+
+# ---------------------------------------------------------------------------
+# Engagement finalize gate
+# ---------------------------------------------------------------------------
+
+def assert_engagement_not_finalized(db: Session, engagement_id) -> None:
+    """Refuse any document or folder mutation when the engagement is finalized.
+
+    Called at the start of every service-layer mutation function, after the
+    basic existence check and before any DB write. Raises 422 because
+    this is a business-rule refusal, not an access-denial.
+
+    Skips the check when engagement_id is None (client-scope or firm_library
+    documents have no engagement_id, so the finalize lock does not apply).
+    """
+    if engagement_id is None:
+        return
+    eng = db.query(Engagement).filter(Engagement.id == engagement_id).first()
+    if eng is not None and eng.finalized_at is not None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="This engagement's filesystem is finalized. No changes are permitted.",
+        )
+
+
+def assert_can_finalize_engagement(
+    db: Session,
+    user: User,
+    engagement_id,
+    firm_id,
+) -> None:
+    """Trio check for finalize and unfinalize.
+
+    Permitted: engagement administrator, manager, or firm owner.
+    Raises 422 on denial since the engagement existence is not secret here.
+    """
+    if user.role in _ELEVATED:
+        return
+
+    admin_member = db.query(EngagementMember).filter(
+        EngagementMember.firm_id == firm_id,
+        EngagementMember.engagement_id == engagement_id,
+        EngagementMember.user_id == user.id,
+        EngagementMember.is_administrator == True,
+    ).first()
+    if admin_member:
+        return
+
+    raise HTTPException(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        detail="Engagement administrator, manager, or firm owner required",
+    )

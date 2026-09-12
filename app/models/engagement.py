@@ -77,6 +77,16 @@ class Engagement(Base):
         String(100), nullable=True
     )
 
+    # Set by finalize_engagement; cleared by unfinalize_engagement.
+    # NULL means the engagement filesystem is open for writes.
+    # Non-NULL means all document/folder mutations are refused with 422.
+    finalized_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    finalized_by: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+
     @property
     def is_efileable(self) -> bool:
         from app.core.enums import EFILEABLE_ENGAGEMENT_TYPES

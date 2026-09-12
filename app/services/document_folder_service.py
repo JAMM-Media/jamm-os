@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.crud import document_folder as crud_folder
 from app.crud import document as crud_document
 from app.models.document_folder import DocumentFolder
+from app.services.document_access import assert_engagement_not_finalized
 
 
 MAX_FOLDER_DEPTH = 20
@@ -65,6 +66,8 @@ def create_folder(
                 detail=f"Folder nesting cannot exceed {MAX_FOLDER_DEPTH} levels deep",
             )
 
+    assert_engagement_not_finalized(db, engagement_id)
+
     return crud_folder.create_document_folder(
         db=db,
         firm_id=firm_id,
@@ -94,6 +97,8 @@ def delete_folder_with_cascade(
 
     Returns count of documents soft-deleted.
     """
+    assert_engagement_not_finalized(db, folder.engagement_id)
+
     now = datetime.now(timezone.utc)
 
     # Cascade soft-delete to direct documents.
@@ -113,3 +118,15 @@ def delete_folder_with_cascade(
     crud_folder.soft_delete_document_folder(db, folder=folder, deleted_by_id=current_user_id)
 
     return len(docs_in_folder)
+
+
+def rename_folder(
+    *,
+    db: Session,
+    folder: DocumentFolder,
+    firm_id: UUID,
+    name: str,
+) -> DocumentFolder:
+    """Rename a folder. Gated by the engagement finalize check."""
+    assert_engagement_not_finalized(db, folder.engagement_id)
+    return crud_folder.rename_document_folder(db, folder=folder, name=name)

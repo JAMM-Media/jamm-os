@@ -1,11 +1,11 @@
 # app/api/engagements.py
 
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime, timezone
 from typing import Optional
 from uuid import UUID
 from sqlalchemy import select, func
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status, Query
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
@@ -469,3 +469,120 @@ def bulk_send_letter(
             continue
 
     return BulkSendLetterResult(sent=sent, failed=failed, errors=errors)
+
+# ---------------------------------------------------------------------------
+# POST /engagements/{engagement_id}/finalize -- Lock the filesystem
+# POST /engagements/{engagement_id}/unfinalize -- Unlock the filesystem
+# ---------------------------------------------------------------------------
+
+@router.post("/{engagement_id}/finalize", response_model=EngagementOut)
+def finalize_engagement(
+    engagement_id: UUID,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    current_user: User = Depends(get_current_user),
+    _: object = Depends(require_staff_or_above),
+):
+    """Lock the engagement filesystem. All document and folder mutations are
+    refused with 422 until unfinalizeEngagement is called. Trio-gated.
+    Idempotent: finalizing an already-finalized engagement returns 200.
+    """
+    from app.services.document_access import assert_can_finalize_engagement
+    from app.services.audit_service import write_audit_log
+    from app.services.behavioral_log import log_event
+
+    engagement = db.query(Engagement).filter(
+        Engagement.id == engagement_id,
+        Engagement.firm_id == current_firm.id,
+    ).first()
+    if not engagement:
+        raise HTTPException(status_code=404, detail="Engagement not found")
+
+    assert_can_finalize_engagement(
+        db=db, user=current_user,
+        engagement_id=engagement_id,
+        firm_id=current_firm.id,
+    )
+
+    was_already_finalized = engagement.finalized_at is not None
+    if not was_already_finalized:
+        engagement.finalized_at = datetime.now(timezone.utc)
+        engagement.finalized_by = current_user.id
+        db.commit()
+        db.refresh(engagement)
+
+    write_audit_log(
+        db=db, firm_id=current_firm.id, action="engagement.finalized",
+        actor_id=current_user.id, actor_type="staff",
+        entity_type="engagement", entity_id=engagement_id,
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+        metadata={"was_already_finalized": was_already_finalized},
+    )
+    log_event(
+        firm_id=current_firm.id,
+        event_type="engagement.finalized",
+        entity_type="engagement",
+        entity_id=engagement_id,
+        actor_type="staff",
+        actor_id=current_user.id,
+        metadata={"was_already_finalized": was_already_finalized},
+    )
+    return EngagementOut.model_validate(engagement)
+
+
+@router.post("/{engagement_id}/unfinalize", response_model=EngagementOut)
+def unfinalize_engagement(
+    engagement_id: UUID,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    current_user: User = Depends(get_current_user),
+    _: object = Depends(require_staff_or_above),
+):
+    """Unlock the engagement filesystem. Trio-gated.
+    Idempotent: unfinalizing an already-open engagement returns 200.
+    """
+    from app.services.document_access import assert_can_finalize_engagement
+    from app.services.audit_service import write_audit_log
+    from app.services.behavioral_log import log_event
+
+    engagement = db.query(Engagement).filter(
+        Engagement.id == engagement_id,
+        Engagement.firm_id == current_firm.id,
+    ).first()
+    if not engagement:
+        raise HTTPException(status_code=404, detail="Engagement not found")
+
+    assert_can_finalize_engagement(
+        db=db, user=current_user,
+        engagement_id=engagement_id,
+        firm_id=current_firm.id,
+    )
+
+    was_already_open = engagement.finalized_at is None
+    if not was_already_open:
+        engagement.finalized_at = None
+        engagement.finalized_by = None
+        db.commit()
+        db.refresh(engagement)
+
+    write_audit_log(
+        db=db, firm_id=current_firm.id, action="engagement.unfinalized",
+        actor_id=current_user.id, actor_type="staff",
+        entity_type="engagement", entity_id=engagement_id,
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+        metadata={"was_already_open": was_already_open},
+    )
+    log_event(
+        firm_id=current_firm.id,
+        event_type="engagement.unfinalized",
+        entity_type="engagement",
+        entity_id=engagement_id,
+        actor_type="staff",
+        actor_id=current_user.id,
+        metadata={"was_already_open": was_already_open},
+    )
+    return EngagementOut.model_validate(engagement)
