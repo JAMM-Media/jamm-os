@@ -35,10 +35,11 @@ class AutomationRuleCreate(AutomationRuleBase):
     pass
 
 
+# No is_enabled here: enabled state changes only through the toggle endpoint,
+# so every change carries a toggle event (Sep 12, 2026).
 class AutomationRuleUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
-    is_enabled: Optional[bool] = None
     trigger_event: Optional[TriggerEvent] = None
     trigger_conditions: Optional[List[ConditionSchema]] = None
     actions: Optional[List[ActionSchema]] = None

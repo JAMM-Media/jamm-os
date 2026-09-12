@@ -489,12 +489,33 @@ def _build_portal_utilization_invoices(db: Session, firm_id: uuid.UUID, current_
 # Metric 6 -- automation_utilization (rolling_snapshot)
 # ---------------------------------------------------------------------------
 
-def _is_enabled_as_of(toggles: list[tuple[datetime, bool]], as_of: datetime) -> bool:
-    # AutomationRule.is_enabled defaults False at row creation, and no
-    # automation.created event exists, so the pre-toggle state is exactly
-    # False -- not an approximation.
+def _enabled_as_of_from_evidence(
+    evidence: list[tuple[datetime, bool]], as_of: datetime
+) -> bool:
+    # Reconstructs whether a rule was enabled at as_of from the event stream
+    # alone: replay every piece of evidence in time order, stop at the first
+    # entry after as_of. Ruled Sep 12, 2026.
+    #
+    # Three kinds of evidence, all carrying equal weight in time order:
+    #   automation.fired          -> enabled at that instant. The dispatcher
+    #                                selects on AutomationRule.is_enabled ==
+    #                                True before executing any rule (see
+    #                                automation_dispatcher._dispatch_with_db),
+    #                                so a rule cannot fire while disabled and
+    #                                a fire is proof it was enabled then.
+    #   firm.automation_enabled   -> enabled.
+    #   firm.automation_disabled  -> disabled.
+    #
+    # Toggles alone are not enough. seed_firm_presets creates 8 of the 17
+    # presets with is_enabled True at firm creation and emits no behavioral
+    # event at all, so a seeded preset that fires carries no toggle event
+    # anywhere in its history. Replaying only toggles scored every one of
+    # them 0.0 forever, which is the defect this replaced.
+    #
+    # With no evidence before as_of the state is False. That is the floor of
+    # what the event stream can show, not a claim about the row's column.
     state = False
-    for occurred_at, enabled in toggles:
+    for occurred_at, enabled in evidence:
         if occurred_at > as_of:
             break
         state = enabled
@@ -527,13 +548,20 @@ def _compute_automation_utilization(
             if ev.entity_id not in rules_by_preset[preset_key]:
                 rules_by_preset[preset_key].append(ev.entity_id)
 
-        toggles_by_rule: dict[uuid.UUID, list[tuple[datetime, bool]]] = {}
+        # Enabled-state evidence per rule: fires and toggles on one timeline,
+        # sorted by occurred_at. See _enabled_as_of_from_evidence for why a
+        # fire counts as evidence of enabled.
+        evidence_by_rule: dict[uuid.UUID, list[tuple[datetime, bool]]] = {}
+        for ev in fired_events:
+            if ev.entity_id is None:
+                continue
+            evidence_by_rule.setdefault(ev.entity_id, []).append((ev.occurred_at, True))
         for ev in toggle_events:
             if ev.entity_id is None:
                 continue
             enabled = ev.event_type == "firm.automation_enabled"
-            toggles_by_rule.setdefault(ev.entity_id, []).append((ev.occurred_at, enabled))
-        for lst in toggles_by_rule.values():
+            evidence_by_rule.setdefault(ev.entity_id, []).append((ev.occurred_at, enabled))
+        for lst in evidence_by_rule.values():
             lst.sort(key=lambda t: t[0])
 
         week = first_week
@@ -556,7 +584,7 @@ def _compute_automation_utilization(
                     fired_at = rule_first_fired_at.get(rule_id)
                     if fired_at is None or fired_at > week_end_ts:
                         continue
-                    if _is_enabled_as_of(toggles_by_rule.get(rule_id, []), week_end_ts):
+                    if _enabled_as_of_from_evidence(evidence_by_rule.get(rule_id, []), week_end_ts):
                         numerator += 1
                         break
 

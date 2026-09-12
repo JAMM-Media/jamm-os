@@ -383,3 +383,59 @@ def test_delete_automation_rule(client, firm_a_owner):
 
     r = client.get(f"/automation-rules/{rule_id}", headers=headers)
     assert r.status_code == 404, r.text
+
+
+# ===========================================================================
+# GROUP 4c -- the toggle endpoint is the only enabled-state door
+# ===========================================================================
+
+def test_patch_is_enabled_is_ignored_toggle_is_the_only_door_t4(client, firm_a_owner):
+    """
+    T4 -- R2, ruled Sep 12, 2026. A rule's enabled state changes only through
+    POST /{rule_id}/toggle, so every change carries a firm.automation_enabled
+    or firm.automation_disabled event. PATCH must not be a second, silent
+    door: automation_utilization reconstructs enabled state from that event
+    stream and is blind to any change that emitted nothing.
+
+    The load-bearing assertion is the flip, not the event count. Nothing in
+    the PATCH path has ever emitted a toggle event, so the event assertion
+    cannot go red on its own; it is here to say why the flip matters.
+    """
+    from app.models.behavioral_event import BehavioralEvent
+
+    headers = firm_a_owner["headers"]
+    # Created enabled, mirroring seed_firm_presets: no toggle event exists.
+    rule_id = _create_rule(client, headers, is_enabled=True)["id"]
+
+    r = client.patch(
+        f"/automation-rules/{rule_id}",
+        json={"is_enabled": False},
+        headers=headers,
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["is_enabled"] is True, (
+        "PATCH changed is_enabled; the toggle endpoint is the only door"
+    )
+
+    r = client.get(f"/automation-rules/{rule_id}", headers=headers)
+    assert r.status_code == 200, r.text
+    assert r.json()["is_enabled"] is True, "PATCH persisted a change to is_enabled"
+
+    db = TestingSessionLocal()
+    try:
+        toggle_events = (
+            db.query(BehavioralEvent)
+            .filter(
+                BehavioralEvent.entity_id == uuid.UUID(rule_id),
+                BehavioralEvent.event_type.in_(
+                    ["firm.automation_enabled", "firm.automation_disabled"]
+                ),
+            )
+            .all()
+        )
+        assert toggle_events == [], (
+            "a state change that emits no toggle event is exactly the blind "
+            "spot automation_utilization has"
+        )
+    finally:
+        db.close()

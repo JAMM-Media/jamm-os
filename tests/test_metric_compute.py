@@ -12,7 +12,12 @@ from app.models.behavioral_event import BehavioralEvent
 from app.models.firm import Firm
 from app.models.metric_registry import MetricRegistry
 from app.models.metric_value import MetricValue
-from app.services.metric_compute import compute_metric, _week_start, _current_week_start
+from app.services.metric_compute import (
+    compute_metric,
+    _week_start,
+    _current_week_start,
+    _compute_automation_utilization,
+)
 
 _SEED_BY_KEY = {row[0]: row for row in SEED_METRICS}
 
@@ -662,5 +667,136 @@ def test_upsert_running_twice_produces_no_duplicates():
 
         assert first_count == second_count
         assert first_count > 0
+    finally:
+        db.close()
+
+
+# ---------------------------------------------------------------------------
+# automation_utilization -- enabled-state evidence (ruled Sep 12, 2026)
+#
+# A rule can only fire if it is enabled: the dispatcher selects on
+# AutomationRule.is_enabled == True before executing. An automation.fired
+# event is therefore proof the rule was enabled at that instant.
+#
+# This matters because seed_firm_presets creates 8 of the 17 presets with
+# is_enabled True and emits no behavioral event at all, so a seeded preset
+# that fires has no toggle event anywhere in its history. Reconstructing
+# enabled state from toggles alone scores every such rule 0.0 forever.
+#
+# T1 to T3 pin the evidence timeline: fires and toggles replayed together in
+# time order, with disabled as the state when no evidence precedes the
+# as-of instant.
+# ---------------------------------------------------------------------------
+
+_EVIDENCE_FIRM_CREATED = _at(2026, 5, 18)   # Monday
+_EVIDENCE_FIRED_AT = _at(2026, 5, 20)
+_EVIDENCE_ASSERT_WEEK = date(2026, 5, 25)   # Mon 2026-05-25 through Sun 2026-05-31
+# 15 of the 17 catalog entries were introduced 2026-05-03; budget_variance_alert
+# (2026-06-05) and morning_briefing (2026-06-06) are not yet eligible in the
+# assert week, so the denominator there is 15.
+_EVIDENCE_DENOMINATOR = 15
+
+
+def _run_automation_utilization(db, metric):
+    _compute_automation_utilization(
+        db, metric, datetime.now(timezone.utc), _current_week_start()
+    )
+    db.commit()
+
+
+def _evidence_row(db, firm, metric):
+    rows = {r.week_start: r for r in _values(db, firm.id, metric.id)}
+    assert _EVIDENCE_ASSERT_WEEK in rows, "no MetricValue row for the assert week"
+    return rows[_EVIDENCE_ASSERT_WEEK]
+
+
+def test_automation_utilization_fire_alone_counts_seeded_preset_t1():
+    """
+    T1 -- the bug. A seeded preset that fired, with no toggle event anywhere.
+    seed_firm_presets ships it enabled and emits nothing, so the fire is the
+    only evidence the rule was ever enabled. It must count.
+    """
+    db = TestingSessionLocal()
+    try:
+        firm = _make_firm(db, created_at=_EVIDENCE_FIRM_CREATED)
+        metric = _make_metric(db, "automation_utilization")
+        rule_id = uuid.uuid4()
+
+        _event(
+            db, firm.id, "automation.fired", entity_id=rule_id,
+            occurred_at=_EVIDENCE_FIRED_AT,
+            metadata={"preset_key": "doc_request_reminder_3day", "is_customized": False},
+        )
+
+        _run_automation_utilization(db, metric)
+
+        row = _evidence_row(db, firm, metric)
+        assert row.sample_size == _EVIDENCE_DENOMINATOR
+        assert float(row.value) == pytest.approx(100 / _EVIDENCE_DENOMINATOR, abs=0.01)
+    finally:
+        db.close()
+
+
+def test_automation_utilization_disabled_after_fire_not_counted_t2():
+    """
+    T2 -- a fire is evidence of enabled at that instant, not forever. A later
+    firm.automation_disabled wins for any week ending after it.
+    """
+    db = TestingSessionLocal()
+    try:
+        firm = _make_firm(db, created_at=_EVIDENCE_FIRM_CREATED)
+        metric = _make_metric(db, "automation_utilization")
+        rule_id = uuid.uuid4()
+
+        _event(
+            db, firm.id, "automation.fired", entity_id=rule_id,
+            occurred_at=_EVIDENCE_FIRED_AT,
+            metadata={"preset_key": "doc_request_reminder_3day", "is_customized": False},
+        )
+        _event(
+            db, firm.id, "firm.automation_disabled", entity_id=rule_id,
+            occurred_at=_at(2026, 5, 27),
+        )
+
+        _run_automation_utilization(db, metric)
+
+        row = _evidence_row(db, firm, metric)
+        assert row.sample_size == _EVIDENCE_DENOMINATOR
+        assert float(row.value) == pytest.approx(0.0, abs=0.01)
+    finally:
+        db.close()
+
+
+def test_automation_utilization_reenabled_after_fire_counted_t3():
+    """
+    T3 -- the locked definition is enabled now and fired at least once, ever.
+    A rule re-enabled after a disable still carries its earlier fire, so it
+    counts again without needing a second fire.
+    """
+    db = TestingSessionLocal()
+    try:
+        firm = _make_firm(db, created_at=_EVIDENCE_FIRM_CREATED)
+        metric = _make_metric(db, "automation_utilization")
+        rule_id = uuid.uuid4()
+
+        _event(
+            db, firm.id, "automation.fired", entity_id=rule_id,
+            occurred_at=_EVIDENCE_FIRED_AT,
+            metadata={"preset_key": "doc_request_reminder_3day", "is_customized": False},
+        )
+        _event(
+            db, firm.id, "firm.automation_disabled", entity_id=rule_id,
+            occurred_at=_at(2026, 5, 27),
+        )
+        _event(
+            db, firm.id, "firm.automation_enabled", entity_id=rule_id,
+            occurred_at=_at(2026, 5, 29),
+        )
+
+        _run_automation_utilization(db, metric)
+
+        row = _evidence_row(db, firm, metric)
+        assert row.sample_size == _EVIDENCE_DENOMINATOR
+        assert float(row.value) == pytest.approx(100 / _EVIDENCE_DENOMINATOR, abs=0.01)
     finally:
         db.close()
