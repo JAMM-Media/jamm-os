@@ -18,7 +18,8 @@ import { TaskTable } from '@/components/tasks/TaskTable'
 import { NotesTab, NotesPanel, useNotes } from '@/components/notes'
 import { cn, formatEngagementType } from '@/lib/utils'
 import api from '@/lib/api'
-import { FileText } from 'lucide-react'
+import type { PendingDocument } from '@/lib/api'
+import { FileText, FileSpreadsheet, File as FileGeneric, FileImage } from 'lucide-react'
 import { QcChecklistTab } from '@/components/engagements/QcChecklistTab'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { settingsApi, type FirmDetails } from '@/lib/api/settingsApi'
@@ -39,6 +40,43 @@ function formatDate(dateStr: string | null | undefined): string {
   if (!dateStr) return '—'
   const d = new Date(dateStr)
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
+function relativeTime(isoStr: string): string {
+  if (!isoStr) return ''
+  const d = new Date(isoStr)
+  const now = Date.now()
+  const diffMs = now - d.getTime()
+  const minutes = Math.floor(diffMs / 60000)
+  const hours = Math.floor(diffMs / 3600000)
+  const days = Math.floor(diffMs / 86400000)
+  if (minutes < 1) return 'just now'
+  if (minutes < 60) return `${minutes}m ago`
+  if (hours < 24) return `${hours}h ago`
+  if (days === 1) return 'yesterday'
+  if (days < 30) return `${days} days ago`
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+}
+
+function fileIconFromContentType(contentType: string): JSX.Element {
+  if (contentType === 'application/pdf') {
+    return <FileText size={15} style={{ color: '#EF4444' }} className="flex-shrink-0" />
+  }
+  if (
+    contentType.includes('spreadsheet') ||
+    contentType === 'text/csv' ||
+    contentType === 'application/vnd.ms-excel' ||
+    contentType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+  ) {
+    return <FileSpreadsheet size={15} style={{ color: '#10B981' }} className="flex-shrink-0" />
+  }
+  if (contentType.startsWith('image/')) {
+    return <FileImage size={15} style={{ color: '#8B5CF6' }} className="flex-shrink-0" />
+  }
+  if (contentType.includes('word') || contentType.includes('document')) {
+    return <FileGeneric size={15} style={{ color: '#3B82F6' }} className="flex-shrink-0" />
+  }
+  return <FileGeneric size={15} style={{ color: '#9CA3AF' }} className="flex-shrink-0" />
 }
 
 function EngagementDetailBodySkeleton() {
@@ -72,6 +110,10 @@ export default function EngagementDetailPage() {
   const [uncheckedQcCount, setUncheckedQcCount] = useState(0)
   const [showReviewModal, setShowReviewModal] = useState(false)
   const [sendingReview, setSendingReview] = useState(false)
+  const [approvingId, setApprovingId] = useState<string | null>(null)
+  const [reassignDoc, setReassignDoc] = useState<PendingDocument | null>(null)
+  const [reassignTargetId, setReassignTargetId] = useState('')
+  const [reassignLoading, setReassignLoading] = useState(false)
 
   const { unreadCount } = useNotes({ entityType: 'engagement', entityId: id })
 
@@ -97,6 +139,22 @@ export default function EngagementDetailPage() {
   )
   const documents = docsData?.items ?? []
 
+  const { data: pendingDocsData, refetch: refetchPending } = useFetch(
+    () => documentsApi.listPending(id),
+    [id]
+  )
+  const pendingDocs = pendingDocsData?.items ?? []
+  const pendingCount = pendingDocsData?.total ?? pendingDocs.length
+
+  const { data: clientEngagementsData } = useFetch(
+    () =>
+      engagement?.clientId
+        ? engagementsApi.list(0, 100, engagement.clientId)
+        : Promise.resolve({ items: [], total: 0 }),
+    [engagement?.clientId]
+  )
+  const clientEngagements = (clientEngagementsData?.items ?? []).filter((e) => e.id !== id)
+
   // Fetch client name for the taskTable clientMap
   const { data: clientData } = useFetch(
     () =>
@@ -112,6 +170,35 @@ export default function EngagementDetailPage() {
   const engagementMap: Record<string, string> = engagement
     ? { [engagement.id]: engagement.name }
     : {}
+
+  async function handleApprove(docId: string) {
+    setApprovingId(docId)
+    try {
+      await documentsApi.approvePending(docId)
+      toast.success('Document approved')
+      refetchPending()
+    } catch {
+      toast.error('Failed to approve document')
+    } finally {
+      setApprovingId(null)
+    }
+  }
+
+  async function handleReassign() {
+    if (!reassignDoc || !reassignTargetId) return
+    setReassignLoading(true)
+    try {
+      await documentsApi.reassignPending(reassignDoc.id, reassignTargetId)
+      toast.success('Document reassigned')
+      setReassignDoc(null)
+      setReassignTargetId('')
+      refetchPending()
+    } catch {
+      toast.error('Failed to reassign document')
+    } finally {
+      setReassignLoading(false)
+    }
+  }
 
   if (isLoading) {
     return (
@@ -186,7 +273,14 @@ export default function EngagementDetailPage() {
                   : 'text-[#6B7280] hover:text-brand dark:hover:text-[#EDEEF0] font-normal',
               )}
             >
-              {tab.label}
+              <span className="flex items-center gap-1.5">
+                {tab.label}
+                {tab.key === 'documents' && pendingCount > 0 && (
+                  <span className="px-2 py-0.5 rounded-full bg-[#E5E7EB] dark:bg-[#333] text-[11px] font-medium text-[#6B7280]">
+                    {pendingCount}
+                  </span>
+                )}
+              </span>
               {activeTab === tab.key && (
                 <span className="absolute bottom-0 left-0 right-0 h-[2px] bg-[#1F3148] dark:bg-[#4A7FA5]" />
               )}
@@ -335,6 +429,74 @@ export default function EngagementDetailPage() {
               }
             />
 
+            {/* Pending Documents section -- client-uploaded items awaiting triage */}
+            {pendingDocs.length > 0 && (
+              <div className="mt-6">
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="text-[13px] font-medium text-[#1F3148] dark:text-[#EDEEF0]">
+                    Pending Documents
+                  </span>
+                </div>
+                <p className="text-[12px] text-[#6B7280] mb-3">
+                  Review these documents your client uploaded to this engagement.
+                </p>
+                <div className="rounded-[10px] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] overflow-hidden">
+                  {pendingDocs.map((doc, i) => (
+                    <div
+                      key={doc.id}
+                      className={cn(
+                        'flex items-start gap-3 px-4 py-3 bg-[#E4E6EA] dark:bg-[#2D2D2D]',
+                        i !== pendingDocs.length - 1
+                          ? 'border-b border-[0.5px] border-[#D5D8DE] dark:border-[#383838]'
+                          : '',
+                      )}
+                    >
+                      {/* File icon */}
+                      <div className="mt-0.5 flex-shrink-0">
+                        {fileIconFromContentType(doc.contentType)}
+                      </div>
+
+                      {/* Doc info */}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[13px] font-medium text-[#1F3148] dark:text-[#EDEEF0] truncate">
+                          {doc.filename}
+                        </p>
+                        {doc.clientNote && (
+                          <p className="text-[12px] text-[#6B7280] mt-0.5">{doc.clientNote}</p>
+                        )}
+                        <p className="text-[11px] text-[#9CA3AF] mt-0.5">
+                          {relativeTime(doc.createdAt)}
+                        </p>
+                      </div>
+
+                      {/* Actions */}
+                      <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
+                        <button
+                          disabled={approvingId === doc.id}
+                          onClick={() => handleApprove(doc.id)}
+                          className="h-8 px-3 rounded-[6px] bg-[#1F3148] dark:bg-[#3A6A94] text-white text-[12px] font-medium hover:opacity-90 transition-opacity disabled:opacity-50 whitespace-nowrap"
+                        >
+                          {approvingId === doc.id ? 'Approving...' : 'Approve'}
+                        </button>
+                        <button
+                          onClick={() => {
+                            setReassignDoc(doc)
+                            setReassignTargetId('')
+                          }}
+                          className="text-[12px] text-[#6B7280] hover:text-[#1F3148] dark:hover:text-[#EDEEF0] transition-colors"
+                        >
+                          Reassign
+                        </button>
+                        <p className="text-[11px] text-[#9CA3AF]">
+                          Move to another {clientName || 'client'} engagement
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Uploaded Documents section */}
             <div className="flex items-center justify-between mt-6">
               <span className="text-[13px] font-medium text-[#1F3148] dark:text-[#EDEEF0]">
@@ -457,6 +619,64 @@ export default function EngagementDetailPage() {
         filingDeadline={engagement.filingDeadline ?? null}
         endDate={engagement.endDate ?? null}
       />
+
+      {/* Reassign document modal */}
+      {reassignDoc && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-[#EDEEF0] dark:bg-dark-card rounded-[10px] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] p-6 w-full max-w-sm shadow-lg">
+            <p className="text-[13px] font-medium text-brand dark:text-[#EDEEF0] mb-4">
+              Reassign document
+            </p>
+
+            {/* File name preview */}
+            <div className="flex items-center gap-2 mb-4 p-3 rounded-[8px] bg-white dark:bg-[#252525] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848]">
+              {fileIconFromContentType(reassignDoc.contentType)}
+              <span className="text-[12px] text-[#1F3148] dark:text-[#EDEEF0] truncate">{reassignDoc.filename}</span>
+            </div>
+
+            {/* Same-client constraint banner */}
+            <div className="mb-4 px-3 py-2 rounded-[8px] bg-[#FEF9C3] dark:bg-[#3D3A1A] border border-[0.5px] border-[#FDE047] dark:border-[#6B6020]">
+              <p className="text-[12px] text-[#713F12] dark:text-[#FDE68A]">
+                Only {clientName || 'this client'} engagements are shown. Reassigning will move this document to the selected engagement.
+              </p>
+            </div>
+
+            {/* Engagement picker */}
+            <label className="block text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em] mb-1.5">
+              Select an engagement
+            </label>
+            <select
+              value={reassignTargetId}
+              onChange={(e) => setReassignTargetId(e.target.value)}
+              className="w-full h-9 px-3 rounded-[6px] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] bg-white dark:bg-[#2D2D2D] text-[13px] text-[#1F3148] dark:text-[#EDEEF0] mb-5"
+            >
+              <option value="">Choose engagement...</option>
+              {clientEngagements.map((eng) => (
+                <option key={eng.id} value={eng.id}>
+                  {eng.name}
+                  {eng.endDate ? ` (due ${eng.endDate})` : ''}
+                </option>
+              ))}
+            </select>
+
+            <div className="flex items-center justify-end gap-2">
+              <button
+                onClick={() => { setReassignDoc(null); setReassignTargetId('') }}
+                className="h-9 px-3 rounded-[6px] border border-[0.5px] border-[#1F3148] dark:border-[#4A7FA5] text-[#1F3148] dark:text-[#EDEEF0] bg-transparent text-[13px] font-medium hover:bg-surface-page dark:hover:bg-dark-page transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                disabled={!reassignTargetId || reassignLoading}
+                onClick={handleReassign}
+                className="h-9 px-3 rounded-[6px] bg-[#1F3148] dark:bg-brand-btn text-white text-[13px] font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
+              >
+                {reassignLoading ? 'Moving...' : 'Move Document'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Review request modal */}
       {showReviewModal && (

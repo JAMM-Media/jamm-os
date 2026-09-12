@@ -1,6 +1,17 @@
 // path: frontend/src/lib/api/documents.ts
 import api from '@/lib/api'
 
+export interface PendingDocument {
+  id: string
+  filename: string
+  contentType: string
+  clientNote: string | null
+  createdAt: string
+  clientName: string | null
+  clientId: string
+  engagementId: string
+}
+
 export interface Document {
   id: string
   name: string
@@ -74,5 +85,28 @@ export const documentsApi = {
 
   patchSuperseded: async (id: string, is_superseded: boolean): Promise<void> => {
     await api.patch(`/documents/${id}/superseded`, { is_superseded })
+  },
+
+  listPending: async (engagementId: string): Promise<{ items: PendingDocument[]; total: number }> => {
+    const { data } = await api.get('/documents/pending', { params: { engagement_id: engagementId } })
+    const items: PendingDocument[] = (data.items ?? []).map((raw: Record<string, unknown>) => ({
+      id: String(raw.id),
+      filename: String(raw.filename ?? ''),
+      contentType: String(raw.content_type ?? ''),
+      clientNote: raw.client_note ? String(raw.client_note) : null,
+      createdAt: String(raw.created_at ?? ''),
+      clientName: raw.client_name ? String(raw.client_name) : null,
+      clientId: String(raw.client_id ?? ''),
+      engagementId: String(raw.engagement_id ?? ''),
+    }))
+    return { items, total: Number(data.total ?? items.length) }
+  },
+
+  approvePending: async (documentId: string): Promise<void> => {
+    await api.post(`/documents/${documentId}/approve`)
+  },
+
+  reassignPending: async (documentId: string, destEngagementId: string): Promise<void> => {
+    await api.post(`/documents/${documentId}/reassign`, { dest_engagement_id: destEngagementId })
   },
 }
