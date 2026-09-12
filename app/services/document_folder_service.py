@@ -1,5 +1,6 @@
 # app/services/document_folder_service.py
 
+from collections import deque
 from datetime import datetime, timezone
 from typing import Optional
 from uuid import UUID
@@ -10,6 +11,7 @@ from sqlalchemy.orm import Session
 from app.crud import document_folder as crud_folder
 from app.crud import document as crud_document
 from app.models.document_folder import DocumentFolder
+from app.models.engagement import Engagement
 from app.services.document_access import assert_engagement_not_finalized
 
 
@@ -130,3 +132,102 @@ def rename_folder(
     """Rename a folder. Gated by the engagement finalize check."""
     assert_engagement_not_finalized(db, folder.engagement_id)
     return crud_folder.rename_document_folder(db, folder=folder, name=name)
+
+
+def copy_folder_structure(
+    *,
+    db: Session,
+    source_engagement_id: UUID,
+    dest_engagement_id: UUID,
+    firm_id: UUID,
+    current_user_id: UUID,
+) -> dict:
+    """Copy the folder skeleton from source into dest engagement (skeleton only, no documents).
+
+    Both engagements must belong to the same firm and the same client. The
+    destination must not be finalized.
+
+    Returns {"folders_created": int, "id_map": {str(old_id): str(new_id)}}.
+    The id_map lets the caller place cherry-picked document copies into the
+    correct destination folders without a separate lookup.
+    """
+    if source_engagement_id == dest_engagement_id:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Source and destination engagements must be different",
+        )
+
+    src_eng = db.query(Engagement).filter(
+        Engagement.id == source_engagement_id,
+        Engagement.firm_id == firm_id,
+    ).first()
+    if not src_eng:
+        raise HTTPException(status_code=404, detail="Source engagement not found")
+
+    dest_eng = db.query(Engagement).filter(
+        Engagement.id == dest_engagement_id,
+        Engagement.firm_id == firm_id,
+    ).first()
+    if not dest_eng:
+        raise HTTPException(status_code=404, detail="Destination engagement not found")
+
+    if src_eng.client_id != dest_eng.client_id:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Source and destination engagements must belong to the same client",
+        )
+
+    assert_engagement_not_finalized(db, dest_engagement_id)
+
+    # Load all non-deleted folders in the source engagement.
+    source_folders = db.query(DocumentFolder).filter(
+        DocumentFolder.firm_id == firm_id,
+        DocumentFolder.engagement_id == source_engagement_id,
+        DocumentFolder.deleted_at.is_(None),
+    ).order_by(DocumentFolder.name).all()
+
+    if not source_folders:
+        return {"folders_created": 0, "id_map": {}}
+
+    # Build a children map for BFS traversal (None key = root folders).
+    children_of: dict = {}
+    for folder in source_folders:
+        key = folder.parent_folder_id
+        if key not in children_of:
+            children_of[key] = []
+        children_of[key].append(folder)
+
+    # BFS from root folders outward so parents are always created before children.
+    id_map: dict = {}
+    folders_created = 0
+    queue: deque = deque(children_of.get(None, []))
+
+    while queue:
+        src_folder = queue.popleft()
+
+        # Remap parent_folder_id: None for roots, new id for children.
+        new_parent_id = None
+        if src_folder.parent_folder_id is not None:
+            new_parent_id = id_map.get(src_folder.parent_folder_id)
+
+        new_folder = crud_folder.create_document_folder(
+            db=db,
+            firm_id=firm_id,
+            scope="engagement",
+            name=src_folder.name,
+            client_id=dest_eng.client_id,
+            engagement_id=dest_engagement_id,
+            parent_folder_id=new_parent_id,
+        )
+
+        id_map[src_folder.id] = new_folder.id
+        folders_created += 1
+
+        # Enqueue children of this source folder.
+        for child in children_of.get(src_folder.id, []):
+            queue.append(child)
+
+    return {
+        "folders_created": folders_created,
+        "id_map": {str(old): str(new) for old, new in id_map.items()},
+    }

@@ -561,7 +561,7 @@ def assert_can_finalize_engagement(
     engagement_id,
     firm_id,
 ) -> None:
-    """Trio check for finalize and unfinalize.
+    """Trio check for engagement-level write actions (finalize, unfinalize, roll-forward-folders).
 
     Permitted: engagement administrator, manager, or firm owner.
     Raises 422 on denial since the engagement existence is not secret here.

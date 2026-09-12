@@ -24,6 +24,8 @@ from app.schemas.engagement import (
     BulkEngagementCreateResult,
     BulkSendLetterRequest,
     BulkSendLetterResult,
+    RollForwardFoldersRequest,
+    RollForwardFoldersResponse,
 )
 from app.models.task import Task
 from app.models.client import Client as ClientModel
@@ -586,3 +588,44 @@ def unfinalize_engagement(
         metadata={"was_already_open": was_already_open},
     )
     return EngagementOut.model_validate(engagement)
+
+
+# ---------------------------------------------------------------------------
+# POST /engagements/{engagement_id}/roll-forward-folders
+# ---------------------------------------------------------------------------
+
+@router.post("/{engagement_id}/roll-forward-folders", response_model=RollForwardFoldersResponse)
+def roll_forward_folders(
+    engagement_id: UUID,
+    body: RollForwardFoldersRequest,
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    current_user: User = Depends(get_current_user),
+    _: object = Depends(require_staff_or_above),
+):
+    """Copy the folder skeleton from a prior engagement into this one.
+
+    Trio-gated (engagement administrator, manager, or firm owner).
+    Both engagements must belong to the same client.
+    The destination (this engagement) must not be finalized.
+    Returns the count of folders created and an old-id to new-id mapping
+    to support cherry-picking documents into the correct destination folders.
+    """
+    from app.services.document_access import assert_can_finalize_engagement
+    from app.services.document_folder_service import copy_folder_structure
+
+    assert_can_finalize_engagement(
+        db=db,
+        user=current_user,
+        engagement_id=engagement_id,
+        firm_id=current_firm.id,
+    )
+
+    result = copy_folder_structure(
+        db=db,
+        source_engagement_id=body.source_engagement_id,
+        dest_engagement_id=engagement_id,
+        firm_id=current_firm.id,
+        current_user_id=current_user.id,
+    )
+    return result

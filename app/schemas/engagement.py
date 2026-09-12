@@ -163,3 +163,12 @@ class BulkSendLetterResult(BaseModel):
     sent: int
     failed: int
     errors: list[str]
+
+
+class RollForwardFoldersRequest(BaseModel):
+    source_engagement_id: UUID
+
+
+class RollForwardFoldersResponse(BaseModel):
+    folders_created: int
+    id_map: dict[str, str]
