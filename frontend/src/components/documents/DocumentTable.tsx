@@ -23,9 +23,36 @@ export function DocumentTable({ documents }: DocumentTableProps) {
   // Local optimistic overrides: doc.id -> is_superseded
   const [supersededOverrides, setSupersededOverrides] = useState<Record<string, boolean>>({})
 
+  // Local optimistic overrides: doc.id -> visibility string
+  const [visibilityOverrides, setVisibilityOverrides] = useState<Record<string, string>>({})
+
   function getIsSuperseded(doc: Document): boolean {
     if (doc.id in supersededOverrides) return supersededOverrides[doc.id]
     return doc.is_superseded ?? false
+  }
+
+  function getIsShared(doc: Document): boolean {
+    const vis = doc.id in visibilityOverrides ? visibilityOverrides[doc.id] : doc.visibility
+    return vis === 'client_visible'
+  }
+
+  async function handleToggleShare(e: React.MouseEvent, doc: Document) {
+    e.stopPropagation()
+    const currentlyShared = getIsShared(doc)
+    const nextVisibility = currentlyShared ? 'internal' : 'client_visible'
+    setVisibilityOverrides((prev) => ({ ...prev, [doc.id]: nextVisibility }))
+    try {
+      if (currentlyShared) {
+        await documentsApi.unshareFromPortal(doc.id)
+        toast.success('Removed from client portal')
+      } else {
+        await documentsApi.shareToPortal(doc.id)
+        toast.success('Shared to client portal')
+      }
+    } catch {
+      setVisibilityOverrides((prev) => ({ ...prev, [doc.id]: currentlyShared ? 'client_visible' : 'internal' }))
+      toast.error('Could not update document — please try again')
+    }
   }
 
   async function handleToggleSuperseded(e: React.MouseEvent, doc: Document) {
@@ -59,6 +86,7 @@ export function DocumentTable({ documents }: DocumentTableProps) {
         <tbody>
           {documents.map((doc, i) => {
             const superseded = getIsSuperseded(doc)
+            const shared = getIsShared(doc)
             return (
               <tr
                 key={doc.id}
@@ -98,6 +126,22 @@ export function DocumentTable({ documents }: DocumentTableProps) {
                         className="opacity-0 group-hover:opacity-100 transition-opacity text-[11px] text-[#6B7280] bg-transparent border-none cursor-pointer ml-1"
                       >
                         {superseded ? 'Mark as current' : 'Mark as superseded'}
+                      </button>
+                    )}
+                    {shared && (
+                      <span
+                        className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[11px] font-medium"
+                        style={{ backgroundColor: '#DBEAFE', color: '#1E40AF' }}
+                      >
+                        Shared
+                      </span>
+                    )}
+                    {isStaff && doc.scope === 'client' && (
+                      <button
+                        onClick={(e) => handleToggleShare(e, doc)}
+                        className="opacity-0 group-hover:opacity-100 transition-opacity text-[11px] text-[#6B7280] bg-transparent border-none cursor-pointer ml-1"
+                      >
+                        {shared ? 'Remove from portal' : 'Share to portal'}
                       </button>
                     )}
                   </div>

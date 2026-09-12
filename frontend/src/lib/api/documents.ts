@@ -25,6 +25,8 @@ export interface Document {
   fileType: string
   fileSizeKb: number
   is_superseded: boolean
+  scope: string
+  visibility: string
 }
 
 function mapDocument(raw: Record<string, unknown>): Document {
@@ -47,6 +49,8 @@ function mapDocument(raw: Record<string, unknown>): Document {
       ? Math.round(Number(raw.size_bytes) / 1024 * 10) / 10
       : Number(raw.file_size_kb ?? raw.fileSizeKb ?? 0),
     is_superseded: Boolean(raw.is_superseded ?? false),
+    scope: String(raw.scope ?? 'client'),
+    visibility: String(raw.visibility ?? 'internal'),
   }
 }
 
@@ -85,6 +89,14 @@ export const documentsApi = {
 
   patchSuperseded: async (id: string, is_superseded: boolean): Promise<void> => {
     await api.patch(`/documents/${id}/superseded`, { is_superseded })
+  },
+
+  shareToPortal: async (id: string): Promise<void> => {
+    await api.post(`/documents/${id}/share-to-portal`)
+  },
+
+  unshareFromPortal: async (id: string): Promise<void> => {
+    await api.post(`/documents/${id}/unshare-from-portal`)
   },
 
   listPending: async (engagementId: string): Promise<{ items: PendingDocument[]; total: number }> => {
