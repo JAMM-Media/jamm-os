@@ -807,7 +807,7 @@ function FileSkeleton() {
 // ---------------------------------------------------------------------------
 
 export default function FirmLibraryPage() {
-  const { user } = useAuth()
+  const { user, isLoading: authLoading } = useAuth()
   const isElevated = user?.role === 'firm_owner' || user?.role === 'manager' || user?.role === 'system_admin'
 
   const [rootFolders, setRootFolders] = useState<FirmFolder[]>([])
@@ -901,6 +901,14 @@ export default function FirmLibraryPage() {
     { label: 'Firm Library', href: undefined, onClick: handleRootSelect },
     ...folderPath.map((f) => ({ label: f.name, href: undefined })),
   ]
+
+  if (authLoading) {
+    return (
+      <div className="flex items-center justify-center h-full p-6">
+        <p className="text-[13px] text-muted-foreground text-center py-6">Loading...</p>
+      </div>
+    )
+  }
 
   return (
     <div className="flex h-full">

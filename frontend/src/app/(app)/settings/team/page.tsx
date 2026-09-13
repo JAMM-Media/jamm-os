@@ -54,7 +54,7 @@ function StatusBadge({ active }: { active: boolean }) {
 }
 
 export default function SettingsTeamPage() {
-  const { user } = useAuth()
+  const { user, isLoading: authLoading } = useAuth()
   const inviteRef = useRef<HTMLDivElement>(null)
 
   // Invite form state
@@ -70,7 +70,7 @@ export default function SettingsTeamPage() {
   const [editingMember, setEditingMember] = useState<StaffMember | null>(null)
   const [deletingMember, setDeletingMember] = useState<StaffMember | null>(null)
 
-  const { data, isLoading, refetch } = useFetch(() => staffApi.listStaff(), [])
+  const { data, isLoading: staffLoading, refetch } = useFetch(() => staffApi.listStaff(), [])
   const members: StaffMember[] = data ?? []
 
   // Concierge scroll-to-invite
@@ -99,6 +99,14 @@ export default function SettingsTeamPage() {
       }
     })
   }, [])
+
+  if (authLoading) {
+    return (
+      <div className="flex items-center justify-center h-full p-6">
+        <p className="text-[13px] text-muted-foreground text-center py-6">Loading...</p>
+      </div>
+    )
+  }
 
   if (user?.role !== 'firm_owner') {
     return (
@@ -258,7 +266,7 @@ export default function SettingsTeamPage() {
             <span className="text-[14px] font-medium text-brand dark:text-[#EDEEF0]">
               Team Members
             </span>
-            {!isLoading && (
+            {!staffLoading && (
               <span className="text-[13px] text-[#6B7280] dark:text-[#9CA3AF]">
                 {members.length} {members.length === 1 ? 'member' : 'members'}
               </span>
@@ -275,7 +283,7 @@ export default function SettingsTeamPage() {
               ))}
             </div>
 
-            {isLoading ? (
+            {staffLoading ? (
               Array.from({ length: 4 }).map((_, i) => (
                 <div
                   key={i}
