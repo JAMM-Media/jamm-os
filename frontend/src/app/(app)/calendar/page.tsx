@@ -313,7 +313,7 @@ function CalendarGridSkeleton() {
 }
 
 export default function CalendarPage() {
-  const { user } = useAuth()
+  const { user, isLoading: authLoading } = useAuth()
   const qc = useQueryClient()
   const isFirmOwner = user?.role === 'firm_owner'
 
@@ -773,6 +773,14 @@ export default function CalendarPage() {
     setAddCatOpen(false)
   }, [newCatName, newCatColor, mySettings, patchSettings])
 
+  if (authLoading) {
+    return (
+      <div className="flex items-center justify-center h-full p-6">
+        <p className="text-[13px] text-muted-foreground text-center py-6">Loading...</p>
+      </div>
+    )
+  }
+
   // ---------------------------------------------------------------------------
   // Staff filter
   // ---------------------------------------------------------------------------
@@ -942,7 +950,7 @@ export default function CalendarPage() {
         </div>
 
         {/* RIGHT SIDEBAR */}
-        <aside className="w-60 flex-shrink-0 flex flex-col bg-surface-card border-l border-surface-border overflow-hidden">
+        <aside className="w-60 flex-shrink-0 flex flex-col border-l border-surface-border overflow-hidden">
           {/* Upcoming events */}
           <div className="flex-1 overflow-y-auto p-3">
             <div className="text-[13px] font-medium mb-2">Upcoming</div>
@@ -958,10 +966,10 @@ export default function CalendarPage() {
                   }
                   className={`text-[11px] px-2 py-0.5 rounded-full border transition-colors ${
                     sidebarFilter.includes(t)
-                      ? 'border-transparent text-white'
+                      ? ''
                       : 'border-surface-border text-muted-foreground'
                   }`}
-                  style={sidebarFilter.includes(t) ? { backgroundColor: eventColors[t] } : undefined}
+                  style={sidebarFilter.includes(t) ? { backgroundColor: `${eventColors[t]}20`, color: eventColors[t], borderColor: eventColors[t] } : undefined}
                 >
                   {TYPE_LABELS[t]}
                 </button>
