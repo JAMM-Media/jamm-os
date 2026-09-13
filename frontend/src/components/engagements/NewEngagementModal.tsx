@@ -10,6 +10,7 @@ import { type Engagement, clientsApi, engagementsApi } from '@/lib/api'
 import { toast } from 'sonner'
 import { setFormDirty } from '@/lib/events/conciergeEvents'
 import { useFetch } from '@/lib/hooks/useFetch'
+import { RollForwardModal } from './RollForwardModal'
 
 interface NewEngagementModalProps {
   open: boolean
@@ -43,6 +44,11 @@ export function NewEngagementModal({
   })
   const [errors, setErrors] = useState<FormErrors>({})
   const [submitting, setSubmitting] = useState(false)
+  const [rollForwardState, setRollForwardState] = useState<{
+    newEngagement: Engagement
+    priorEngagement: Engagement
+    clientName: string
+  } | null>(null)
 
   useEffect(() => {
     if (!initialEngagementType) return
@@ -109,13 +115,52 @@ export function NewEngagementModal({
         engagement_type: finalType,
         end_date: form.endDate || undefined,
       })
-      onAdd(created)
-      handleClose()
+
+      // Check whether this client has any prior engagements for roll-forward.
+      // Use the same engagementsApi.list call already used elsewhere in this codebase.
+      let priorEngagement: Engagement | null = null
+      try {
+        const existing = await engagementsApi.list(0, 100, form.clientId)
+        const others = existing.items
+          .filter((e) => e.id !== created.id)
+          .sort((a, b) => {
+            // Most recently created first
+            return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+          })
+        if (others.length > 0) priorEngagement = others[0]
+      } catch {
+        // If the prior-engagement check fails, fall through to normal close
+      }
+
+      if (priorEngagement) {
+        const clientName =
+          clientsData?.items.find((c) => c.id === form.clientId)?.name ?? 'this client'
+        handleClose()
+        setRollForwardState({ newEngagement: created, priorEngagement, clientName })
+      } else {
+        onAdd(created)
+        handleClose()
+      }
     } catch {
       toast.error('Failed to create engagement. Please try again.')
     } finally {
       setSubmitting(false)
     }
+  }
+
+  if (rollForwardState) {
+    return (
+      <RollForwardModal
+        newEngagement={rollForwardState.newEngagement}
+        priorEngagement={rollForwardState.priorEngagement}
+        clientName={rollForwardState.clientName}
+        onDone={(eng) => {
+          setRollForwardState(null)
+          onAdd(eng)
+        }}
+        onClose={() => setRollForwardState(null)}
+      />
+    )
   }
 
   return (

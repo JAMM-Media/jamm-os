@@ -94,6 +94,16 @@ export const engagementsApi = {
     return data
   },
 
+  rollForwardFolders: async (
+    engagementId: string,
+    sourceEngagementId: string,
+  ): Promise<{ folders_created: number; id_map: Record<string, string> }> => {
+    const { data } = await api.post(`/engagements/${engagementId}/roll-forward-folders`, {
+      source_engagement_id: sourceEngagementId,
+    })
+    return { folders_created: Number(data.folders_created), id_map: data.id_map ?? {} }
+  },
+
   bulkSendLetter: async (payload: {
     engagement_ids: string[]
     template_id: string
