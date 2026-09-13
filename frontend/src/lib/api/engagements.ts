@@ -16,6 +16,7 @@ export interface Engagement {
   notes: string | null
   createdAt: string
   updatedAt: string
+  finalizedAt: string | null
 }
 
 function mapEngagement(raw: Record<string, unknown>): Engagement {
@@ -34,6 +35,7 @@ function mapEngagement(raw: Record<string, unknown>): Engagement {
     notes: raw.notes ? String(raw.notes) : null,
     createdAt: String(raw.created_at ?? ''),
     updatedAt: String(raw.updated_at ?? ''),
+    finalizedAt: raw.finalized_at ? String(raw.finalized_at) : null,
   }
 }
 

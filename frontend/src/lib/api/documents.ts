@@ -55,10 +55,11 @@ function mapDocument(raw: Record<string, unknown>): Document {
 }
 
 export const documentsApi = {
-  list: async (offset = 0, limit = 50, clientId?: string, engagementId?: string): Promise<{ items: Document[]; total: number }> => {
+  list: async (offset = 0, limit = 50, clientId?: string, engagementId?: string, scope?: string): Promise<{ items: Document[]; total: number }> => {
     const params: Record<string, unknown> = { offset, limit }
     if (clientId) params.client_id = clientId
     if (engagementId) params.engagement_id = engagementId
+    if (scope) params.scope = scope
     const { data } = await api.get('/documents', { params })
     return {
       items: (data.items ?? data).map(mapDocument) as Document[],

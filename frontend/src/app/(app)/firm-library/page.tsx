@@ -58,6 +58,37 @@ interface ClientOption {
   name: string
 }
 
+// Remembered copy destination (stored per-user in localStorage)
+interface LastCopyDest {
+  clientId: string
+  clientName: string
+  engagementId: string
+  engagementName: string
+  folderId: string | null
+  folderName: string | null
+}
+
+const LAST_COPY_KEY = (userId: string) => `jamm_last_copy_dest_${userId}`
+
+function getLastCopyDest(userId: string): LastCopyDest | null {
+  if (!userId || typeof window === 'undefined') return null
+  try {
+    const raw = localStorage.getItem(LAST_COPY_KEY(userId))
+    return raw ? (JSON.parse(raw) as LastCopyDest) : null
+  } catch {
+    return null
+  }
+}
+
+function saveLastCopyDest(userId: string, dest: LastCopyDest): void {
+  if (!userId || typeof window === 'undefined') return
+  try {
+    localStorage.setItem(LAST_COPY_KEY(userId), JSON.stringify(dest))
+  } catch {
+    // localStorage unavailable -- silent no-op
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -198,40 +229,47 @@ function FolderNode({
 }
 
 // ---------------------------------------------------------------------------
-// Copy To modal
+// Copy To modal -- two-screen flow with remembered last destination
 // ---------------------------------------------------------------------------
 
 function CopyToModal({
   doc,
   firmLibraryFolders,
+  userId,
   onClose,
   onCopied,
 }: {
   doc: FirmDoc
   firmLibraryFolders: FirmFolder[]
+  userId: string
   onClose: () => void
   onCopied: () => void
 }) {
+  const lastDest = getLastCopyDest(userId)
+  const [screen, setScreen] = useState<'default' | 'picker'>(lastDest ? 'default' : 'picker')
+
   const [destType, setDestType] = useState<'firm_library' | 'engagement'>('firm_library')
   const [selectedFolderId, setSelectedFolderId] = useState<string>('')
   const [clients, setClients] = useState<ClientOption[]>([])
   const [selectedClientId, setSelectedClientId] = useState('')
+  const [selectedClientName, setSelectedClientName] = useState('')
   const [engagements, setEngagements] = useState<EngagementOption[]>([])
   const [selectedEngagementId, setSelectedEngagementId] = useState('')
+  const [selectedEngagementName, setSelectedEngagementName] = useState('')
   const [engagementFolders, setEngagementFolders] = useState<{ id: string; name: string }[]>([])
   const [engagementFoldersLoading, setEngagementFoldersLoading] = useState(false)
-  // undefined = no folder decision made yet; '' = engagement root; UUID string = specific folder
   const [selectedEngFolderDecision, setSelectedEngFolderDecision] = useState<string | undefined>(undefined)
+  const [selectedFolderName, setSelectedFolderName] = useState<string | null>(null)
   const [copying, setCopying] = useState(false)
   const [conflict, setConflict] = useState<{ existing_id: string; filename: string } | null>(null)
 
   useEffect(() => {
-    if (destType === 'engagement') {
+    if (screen === 'picker' && destType === 'engagement') {
       api.get('/clients/', { params: { limit: 200 } })
         .then((r) => setClients(r.data.items ?? r.data ?? []))
         .catch(() => {})
     }
-  }, [destType])
+  }, [screen, destType])
 
   useEffect(() => {
     if (selectedClientId) {
@@ -241,57 +279,52 @@ function CopyToModal({
     } else {
       setEngagements([])
       setSelectedEngagementId('')
+      setSelectedEngagementName('')
     }
   }, [selectedClientId])
 
-  // Fetch the chosen engagement's folders so the user can pick a real destination.
   useEffect(() => {
     if (!selectedEngagementId) {
       setEngagementFolders([])
       setSelectedEngFolderDecision(undefined)
+      setSelectedFolderName(null)
       return
     }
     setEngagementFoldersLoading(true)
     setSelectedEngFolderDecision(undefined)
+    setSelectedFolderName(null)
     api.get('/document-folders/', { params: { scope: 'engagement', engagement_id: selectedEngagementId } })
       .then((r) => setEngagementFolders(Array.isArray(r.data) ? r.data : []))
       .catch(() => setEngagementFolders([]))
       .finally(() => setEngagementFoldersLoading(false))
   }, [selectedEngagementId])
 
-  async function handleCopy(duplicateAction?: 'replace' | 'keep_both') {
+  // Live breadcrumb for the picker screen
+  const breadcrumbParts: string[] = []
+  if (destType === 'firm_library') {
+    breadcrumbParts.push('Firm Library')
+    if (selectedFolderId) {
+      const f = firmLibraryFolders.find((fl) => fl.id === selectedFolderId)
+      if (f) breadcrumbParts.push(f.name)
+    }
+  } else {
+    breadcrumbParts.push(selectedClientName || '1. Select a client')
+    if (selectedClientId) breadcrumbParts.push(selectedEngagementName || '2. Select an engagement')
+    if (selectedEngagementId) {
+      if (selectedEngFolderDecision === '') breadcrumbParts.push('Engagement root')
+      else if (selectedEngFolderDecision) breadcrumbParts.push(selectedFolderName || '3. Select a destination folder')
+      else breadcrumbParts.push('3. Select a destination folder')
+    }
+  }
+  const breadcrumb = breadcrumbParts.join(' > ')
+
+  async function executeCopy(body: Record<string, unknown>, dest: LastCopyDest, duplicateAction?: 'replace' | 'keep_both') {
     setCopying(true)
     try {
-      const body: Record<string, unknown> = {}
-
-      if (destType === 'firm_library') {
-        // Firm Library root: no folder_id. A specific subfolder sends folder_id.
-        if (selectedFolderId) body.folder_id = selectedFolderId
-      } else {
-        // Engagement destination.
-        if (selectedEngFolderDecision) {
-          // Specific folder within the engagement: folder_id fully determines scope.
-          body.folder_id = selectedEngFolderDecision
-        } else {
-          // Engagement root: dest_engagement_id + dest_client_id, no folder_id.
-          body.dest_engagement_id = selectedEngagementId
-          body.dest_client_id = selectedClientId
-        }
-      }
-
-      // duplicate_action is omitted on the first attempt so the backend can return
-      // a real conflict object if a filename collision exists, instead of silently
-      // overriding the user's intent.
       if (duplicateAction) body.duplicate_action = duplicateAction
-
       const { data } = await api.post(`/documents/${doc.id}/copy`, body)
-
-      if (data.conflict) {
-        // Backend returned a real conflict -- show the inline resolution prompt.
-        setConflict(data.conflict)
-        return
-      }
-
+      if (data.conflict) { setConflict(data.conflict); return }
+      saveLastCopyDest(userId, dest)
       toast.success(`"${doc.filename}" copied successfully`)
       onCopied()
       onClose()
@@ -302,185 +335,181 @@ function CopyToModal({
     }
   }
 
-  const canSubmit =
+  async function handleOneClickCopy(duplicateAction?: 'replace' | 'keep_both') {
+    if (!lastDest) return
+    const body: Record<string, unknown> = {}
+    if (lastDest.folderId) {
+      body.folder_id = lastDest.folderId
+    } else {
+      body.dest_engagement_id = lastDest.engagementId
+      body.dest_client_id = lastDest.clientId
+    }
+    await executeCopy(body, lastDest, duplicateAction)
+  }
+
+  async function handlePickerCopy(duplicateAction?: 'replace' | 'keep_both') {
+    const body: Record<string, unknown> = {}
+    const dest: LastCopyDest = {
+      clientId: selectedClientId,
+      clientName: selectedClientName,
+      engagementId: selectedEngagementId,
+      engagementName: selectedEngagementName,
+      folderId: selectedEngFolderDecision || null,
+      folderName: selectedEngFolderDecision ? (selectedFolderName ?? null) : null,
+    }
+    if (destType === 'firm_library') {
+      if (selectedFolderId) body.folder_id = selectedFolderId
+    } else {
+      if (selectedEngFolderDecision) body.folder_id = selectedEngFolderDecision
+      else { body.dest_engagement_id = selectedEngagementId; body.dest_client_id = selectedClientId }
+    }
+    await executeCopy(body, dest, duplicateAction)
+  }
+
+  const canSubmitPicker =
     !copying && (
       destType === 'firm_library' ||
       (destType === 'engagement' && !!selectedEngagementId && selectedEngFolderDecision !== undefined)
     )
 
-  return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={onClose}>
-      <div
-        className="bg-surface-page dark:bg-dark-page rounded-[10px] border border-[0.5px] border-surface-border dark:border-dark-border w-[480px] max-w-[92vw] shadow-lg"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between px-5 py-4 border-b border-[0.5px] border-surface-border dark:border-dark-border">
-          <h2 className="text-[14px] font-semibold text-brand dark:text-[#EDEEF0]">Copy to...</h2>
-          <button onClick={onClose} className="text-[#6B7280] hover:text-brand transition-colors">
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-
-        {conflict ? (
+  // Conflict resolution screen (shared between default and picker paths)
+  if (conflict) {
+    return (
+      <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={onClose}>
+        <div className="bg-surface-page dark:bg-dark-page rounded-[10px] border border-[0.5px] border-surface-border dark:border-dark-border w-[480px] max-w-[92vw] shadow-lg" onClick={(e) => e.stopPropagation()}>
+          <div className="flex items-center justify-between px-5 py-4 border-b border-[0.5px] border-surface-border dark:border-dark-border">
+            <h2 className="text-[14px] font-semibold text-brand dark:text-[#EDEEF0]">Copy to...</h2>
+            <button onClick={onClose} className="text-[#6B7280] hover:text-brand transition-colors"><X className="h-4 w-4" /></button>
+          </div>
           <div className="p-5 flex flex-col gap-4">
             <p className="text-[13px] text-brand dark:text-[#EDEEF0]">
               A file named <strong>&ldquo;{conflict.filename}&rdquo;</strong> already exists at this destination.
             </p>
             <p className="text-[12px] text-[#6B7280]">How would you like to handle this?</p>
             <div className="flex gap-2">
-              <button
-                onClick={() => handleCopy('replace')}
-                disabled={copying}
-                className="flex-1 h-9 rounded-[6px] border border-[0.5px] border-surface-border dark:border-dark-border text-[12px] font-medium text-[#374151] dark:text-[#9CA3AF] hover:border-brand hover:text-brand transition-colors disabled:opacity-50"
-              >
+              <button onClick={() => screen === 'default' ? handleOneClickCopy('replace') : handlePickerCopy('replace')} disabled={copying} className="flex-1 h-9 rounded-[6px] border border-[0.5px] border-surface-border dark:border-dark-border text-[12px] font-medium text-[#374151] dark:text-[#9CA3AF] hover:border-brand hover:text-brand transition-colors disabled:opacity-50">
                 {copying ? 'Working...' : 'Replace existing'}
               </button>
-              <button
-                onClick={() => handleCopy('keep_both')}
-                disabled={copying}
-                className="flex-1 h-9 rounded-[6px] bg-brand dark:bg-brand-btn text-white text-[12px] font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
-              >
+              <button onClick={() => screen === 'default' ? handleOneClickCopy('keep_both') : handlePickerCopy('keep_both')} disabled={copying} className="flex-1 h-9 rounded-[6px] bg-brand dark:bg-brand-btn text-white text-[12px] font-medium hover:opacity-90 transition-opacity disabled:opacity-50">
                 {copying ? 'Working...' : 'Keep both'}
               </button>
             </div>
-            <button
-              onClick={() => setConflict(null)}
-              className="text-[11px] text-[#6B7280] hover:text-brand underline self-start"
-            >
-              Go back
+            <button onClick={() => setConflict(null)} className="text-[11px] text-[#6B7280] hover:text-brand underline self-start">Go back</button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // Screen 1: one-click default
+  if (screen === 'default' && lastDest) {
+    const destLabel = [lastDest.clientName, lastDest.engagementName, lastDest.folderName].filter(Boolean).join(' > ')
+    return (
+      <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={onClose}>
+        <div className="bg-surface-page dark:bg-dark-page rounded-[10px] border border-[0.5px] border-surface-border dark:border-dark-border w-[400px] max-w-[92vw] shadow-lg" onClick={(e) => e.stopPropagation()}>
+          <div className="flex items-center justify-between px-5 py-4 border-b border-[0.5px] border-surface-border dark:border-dark-border">
+            <h2 className="text-[14px] font-semibold text-brand dark:text-[#EDEEF0]">Copy to...</h2>
+            <button onClick={onClose} className="text-[#6B7280] hover:text-brand transition-colors"><X className="h-4 w-4" /></button>
+          </div>
+          <div className="p-5 flex flex-col gap-4">
+            <div className="flex items-center gap-3 p-3 rounded-[8px] bg-surface-input dark:bg-dark-card border border-[0.5px] border-surface-border dark:border-dark-border">
+              <FileTypeIcon contentType={doc.content_type} />
+              <div className="flex-1 min-w-0">
+                <p className="text-[13px] font-medium text-brand dark:text-[#EDEEF0] truncate">{doc.filename}</p>
+                <p className="text-[11px] text-[#9CA3AF]">{formatBytes(doc.size_bytes)}</p>
+              </div>
+            </div>
+            <button onClick={() => handleOneClickCopy()} disabled={copying} className="w-full flex items-center justify-between px-4 py-3 rounded-[8px] bg-surface-input dark:bg-dark-card border border-[0.5px] border-surface-border dark:border-dark-border hover:border-brand dark:hover:border-[#4A7FA5] transition-colors disabled:opacity-50 text-left group">
+              <div className="flex flex-col gap-0.5">
+                <span className="text-[13px] font-medium text-brand dark:text-[#EDEEF0]">
+                  Copy to {lastDest.clientName}
+                </span>
+                <span className="text-[11px] text-[#6B7280]">
+                  {destLabel} <span className="text-[#9CA3AF]">(Most recent)</span>
+                </span>
+              </div>
+              <ChevronRight className="h-4 w-4 text-[#9CA3AF] flex-shrink-0" />
+            </button>
+            <button onClick={() => { setScreen('picker'); setDestType('engagement') }} className="text-[12px] text-[#6B7280] hover:text-brand transition-colors text-center">
+              Choose a different destination...
             </button>
           </div>
-        ) : (
-          <>
-            <div className="p-5 flex flex-col gap-4">
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setDestType('firm_library')}
-                  className={[
-                    'flex-1 py-2 rounded-[6px] text-[12px] font-medium border border-[0.5px] transition-colors',
-                    destType === 'firm_library'
-                      ? 'bg-brand text-white border-brand'
-                      : 'border-surface-border dark:border-dark-border text-[#6B7280] hover:text-brand',
-                  ].join(' ')}
-                >
-                  Firm Library
-                </button>
-                <button
-                  onClick={() => setDestType('engagement')}
-                  className={[
-                    'flex-1 py-2 rounded-[6px] text-[12px] font-medium border border-[0.5px] transition-colors',
-                    destType === 'engagement'
-                      ? 'bg-brand text-white border-brand'
-                      : 'border-surface-border dark:border-dark-border text-[#6B7280] hover:text-brand',
-                  ].join(' ')}
-                >
-                  Engagement
-                </button>
-              </div>
+        </div>
+      </div>
+    )
+  }
 
-              {destType === 'firm_library' && (
+  // Screen 2: full picker with sequential reveal and live breadcrumb
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={onClose}>
+      <div className="bg-surface-page dark:bg-dark-page rounded-[10px] border border-[0.5px] border-surface-border dark:border-dark-border w-[480px] max-w-[92vw] shadow-lg" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-[0.5px] border-surface-border dark:border-dark-border">
+          <h2 className="text-[14px] font-semibold text-brand dark:text-[#EDEEF0]">Copy to...</h2>
+          <button onClick={onClose} className="text-[#6B7280] hover:text-brand transition-colors"><X className="h-4 w-4" /></button>
+        </div>
+        <div className="p-5 flex flex-col gap-4">
+          <div className="flex items-center gap-3 p-3 rounded-[8px] bg-surface-input dark:bg-dark-card border border-[0.5px] border-surface-border dark:border-dark-border">
+            <FileTypeIcon contentType={doc.content_type} />
+            <div className="flex-1 min-w-0">
+              <p className="text-[13px] font-medium text-brand dark:text-[#EDEEF0] truncate">{doc.filename}</p>
+              <p className="text-[11px] text-[#9CA3AF]">{formatBytes(doc.size_bytes)}</p>
+            </div>
+          </div>
+          <p className="text-[12px] text-[#6B7280] truncate">{breadcrumb}</p>
+          <div className="flex gap-2">
+            <button onClick={() => setDestType('firm_library')} className={['flex-1 py-2 rounded-[6px] text-[12px] font-medium border border-[0.5px] transition-colors', destType === 'firm_library' ? 'bg-brand text-white border-brand' : 'border-surface-border dark:border-dark-border text-[#6B7280] hover:text-brand'].join(' ')}>Firm Library</button>
+            <button onClick={() => setDestType('engagement')} className={['flex-1 py-2 rounded-[6px] text-[12px] font-medium border border-[0.5px] transition-colors', destType === 'engagement' ? 'bg-brand text-white border-brand' : 'border-surface-border dark:border-dark-border text-[#6B7280] hover:text-brand'].join(' ')}>Engagement</button>
+          </div>
+          {destType === 'firm_library' && (
+            <div>
+              <label className="text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em] block mb-1.5">Destination folder</label>
+              <select value={selectedFolderId} onChange={(e) => setSelectedFolderId(e.target.value)} className="w-full h-9 px-2.5 rounded-[6px] border border-[0.5px] border-surface-border dark:border-dark-border bg-surface-input dark:bg-dark-card text-[13px] text-brand dark:text-[#EDEEF0]">
+                <option value="">Firm Library root</option>
+                {firmLibraryFolders.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
+              </select>
+            </div>
+          )}
+          {destType === 'engagement' && (
+            <>
+              <div>
+                <label className="text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em] block mb-1.5">1. Select a client</label>
+                <select value={selectedClientId} onChange={(e) => { const id = e.target.value; const name = clients.find((c) => c.id === id)?.name ?? ''; setSelectedClientId(id); setSelectedClientName(name); setSelectedEngagementId(''); setSelectedEngagementName(''); setSelectedEngFolderDecision(undefined); setSelectedFolderName(null) }} className="w-full h-9 px-2.5 rounded-[6px] border border-[0.5px] border-surface-border dark:border-dark-border bg-surface-input dark:bg-dark-card text-[13px] text-brand dark:text-[#EDEEF0]">
+                  <option value="">Select client...</option>
+                  {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </div>
+              {selectedClientId && (
                 <div>
-                  <label className="text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em] block mb-1.5">
-                    Destination folder
-                  </label>
-                  <select
-                    value={selectedFolderId}
-                    onChange={(e) => setSelectedFolderId(e.target.value)}
-                    className="w-full h-9 px-2.5 rounded-[6px] border border-[0.5px] border-surface-border dark:border-dark-border bg-surface-input dark:bg-dark-card text-[13px] text-brand dark:text-[#EDEEF0]"
-                  >
-                    <option value="">Firm Library root</option>
-                    {firmLibraryFolders.map((f) => (
-                      <option key={f.id} value={f.id}>{f.name}</option>
-                    ))}
+                  <label className="text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em] block mb-1.5">2. Select an engagement</label>
+                  <select value={selectedEngagementId} onChange={(e) => { const id = e.target.value; const name = engagements.find((eng) => eng.id === id)?.name ?? ''; setSelectedEngagementId(id); setSelectedEngagementName(name); setSelectedEngFolderDecision(undefined); setSelectedFolderName(null) }} className="w-full h-9 px-2.5 rounded-[6px] border border-[0.5px] border-surface-border dark:border-dark-border bg-surface-input dark:bg-dark-card text-[13px] text-brand dark:text-[#EDEEF0]">
+                    <option value="">Select engagement...</option>
+                    {engagements.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
                   </select>
                 </div>
               )}
-
-              {destType === 'engagement' && (
-                <>
-                  <div>
-                    <label className="text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em] block mb-1.5">
-                      Client
-                    </label>
-                    <select
-                      value={selectedClientId}
-                      onChange={(e) => {
-                        setSelectedClientId(e.target.value)
-                        setSelectedEngagementId('')
-                        setSelectedEngFolderDecision(undefined)
-                      }}
-                      className="w-full h-9 px-2.5 rounded-[6px] border border-[0.5px] border-surface-border dark:border-dark-border bg-surface-input dark:bg-dark-card text-[13px] text-brand dark:text-[#EDEEF0]"
-                    >
-                      <option value="">Select client...</option>
-                      {clients.map((c) => (
-                        <option key={c.id} value={c.id}>{c.name}</option>
-                      ))}
+              {selectedEngagementId && (
+                <div>
+                  <label className="text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em] block mb-1.5">3. Select a destination folder</label>
+                  {engagementFoldersLoading ? (
+                    <div className="h-9 rounded-[6px] border border-[0.5px] border-surface-border dark:border-dark-border bg-surface-input dark:bg-dark-card flex items-center px-2.5"><Loader2 className="h-3.5 w-3.5 animate-spin text-[#6B7280]" /></div>
+                  ) : (
+                    <select value={selectedEngFolderDecision === undefined ? '__unset__' : selectedEngFolderDecision} onChange={(e) => { const v = e.target.value; if (v === '__unset__') { setSelectedEngFolderDecision(undefined); setSelectedFolderName(null) } else { setSelectedEngFolderDecision(v); setSelectedFolderName(v === '' ? null : (engagementFolders.find((f) => f.id === v)?.name ?? null)) } }} className="w-full h-9 px-2.5 rounded-[6px] border border-[0.5px] border-surface-border dark:border-dark-border bg-surface-input dark:bg-dark-card text-[13px] text-brand dark:text-[#EDEEF0]">
+                      <option value="__unset__" disabled>Choose a destination...</option>
+                      <option value="">Engagement root</option>
+                      {engagementFolders.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
                     </select>
-                  </div>
-                  {selectedClientId && (
-                    <div>
-                      <label className="text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em] block mb-1.5">
-                        Engagement
-                      </label>
-                      <select
-                        value={selectedEngagementId}
-                        onChange={(e) => setSelectedEngagementId(e.target.value)}
-                        className="w-full h-9 px-2.5 rounded-[6px] border border-[0.5px] border-surface-border dark:border-dark-border bg-surface-input dark:bg-dark-card text-[13px] text-brand dark:text-[#EDEEF0]"
-                      >
-                        <option value="">Select engagement...</option>
-                        {engagements.map((e) => (
-                          <option key={e.id} value={e.id}>{e.name}</option>
-                        ))}
-                      </select>
-                    </div>
                   )}
-                  {selectedEngagementId && (
-                    <div>
-                      <label className="text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em] block mb-1.5">
-                        Destination folder
-                      </label>
-                      {engagementFoldersLoading ? (
-                        <div className="h-9 rounded-[6px] border border-[0.5px] border-surface-border dark:border-dark-border bg-surface-input dark:bg-dark-card flex items-center px-2.5">
-                          <Loader2 className="h-3.5 w-3.5 animate-spin text-[#6B7280]" />
-                        </div>
-                      ) : (
-                        <select
-                          value={selectedEngFolderDecision === undefined ? '__unset__' : selectedEngFolderDecision}
-                          onChange={(e) => {
-                            const v = e.target.value
-                            setSelectedEngFolderDecision(v === '__unset__' ? undefined : v)
-                          }}
-                          className="w-full h-9 px-2.5 rounded-[6px] border border-[0.5px] border-surface-border dark:border-dark-border bg-surface-input dark:bg-dark-card text-[13px] text-brand dark:text-[#EDEEF0]"
-                        >
-                          <option value="__unset__" disabled>Choose a destination...</option>
-                          <option value="">Engagement root</option>
-                          {engagementFolders.map((f) => (
-                            <option key={f.id} value={f.id}>{f.name}</option>
-                          ))}
-                        </select>
-                      )}
-                    </div>
-                  )}
-                </>
+                </div>
               )}
-            </div>
-            <div className="flex items-center justify-end gap-2 px-5 py-3.5 border-t border-[0.5px] border-surface-border dark:border-dark-border">
-              <button
-                onClick={onClose}
-                className="h-8 px-3.5 rounded-[6px] border border-[0.5px] border-surface-border dark:border-dark-border text-[12px] text-[#6B7280] hover:text-brand transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => handleCopy()}
-                disabled={!canSubmit}
-                className="h-8 px-3.5 rounded-[6px] bg-brand dark:bg-brand-btn text-white text-[12px] font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
-              >
-                {copying ? 'Copying...' : 'Copy here'}
-              </button>
-            </div>
-          </>
-        )}
+            </>
+          )}
+        </div>
+        <div className="flex items-center justify-end gap-2 px-5 py-3.5 border-t border-[0.5px] border-surface-border dark:border-dark-border">
+          <button onClick={onClose} className="h-8 px-3.5 rounded-[6px] border border-[0.5px] border-surface-border dark:border-dark-border text-[12px] text-[#6B7280] hover:text-brand transition-colors">Cancel</button>
+          <button onClick={() => handlePickerCopy()} disabled={!canSubmitPicker} className="h-8 px-3.5 rounded-[6px] bg-brand dark:bg-brand-btn text-white text-[12px] font-medium hover:opacity-90 transition-opacity disabled:opacity-50">
+            {copying ? 'Copying...' : 'Copy here'}
+          </button>
+        </div>
       </div>
     </div>
   )
@@ -736,13 +765,6 @@ function OverflowMenu({
       </button>
       {open && (
         <div className="absolute right-0 top-full mt-1 w-44 bg-surface-page dark:bg-dark-page border border-[0.5px] border-surface-border dark:border-dark-border rounded-[6px] shadow-lg z-20 py-1">
-          <button
-            onClick={(e) => { e.stopPropagation(); setOpen(false); onCopyTo() }}
-            className="w-full flex items-center gap-2.5 px-3 py-2 text-[12px] text-[#374151] dark:text-[#9CA3AF] hover:bg-surface-input dark:hover:bg-dark-card hover:text-brand transition-colors"
-          >
-            <Copy className="h-3.5 w-3.5" />
-            Copy to...
-          </button>
           <button
             onClick={(e) => { e.stopPropagation(); setOpen(false); onDownload() }}
             className="w-full flex items-center gap-2.5 px-3 py-2 text-[12px] text-[#374151] dark:text-[#9CA3AF] hover:bg-surface-input dark:hover:bg-dark-card hover:text-brand transition-colors"
@@ -1110,6 +1132,7 @@ export default function FirmLibraryPage() {
         <CopyToModal
           doc={copyTarget}
           firmLibraryFolders={allFirmFolders}
+          userId={user?.id ?? ''}
           onClose={() => setCopyTarget(null)}
           onCopied={loadDocs}
         />

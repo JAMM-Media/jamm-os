@@ -1,0 +1,539 @@
+// frontend/src/components/documents/FolderBrowser.tsx
+'use client'
+
+import { useState, useCallback, useEffect } from 'react'
+import { ChevronRight, ChevronDown, ChevronUp, Folder, FolderOpen, FolderPlus, X, FileText } from 'lucide-react'
+import { toast } from 'sonner'
+import api from '@/lib/api'
+import { cn } from '@/lib/utils'
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+interface BrowserFolder {
+  id: string
+  name: string
+  parent_folder_id: string | null
+}
+
+interface BrowserDoc {
+  id: string
+  filename: string
+  content_type: string
+  size_bytes: number
+  folder_id: string | null
+  created_at: string
+  is_superseded: boolean
+}
+
+export interface FolderBrowserProps {
+  scope: 'engagement' | 'client'
+  engagementId?: string
+  clientId?: string
+  /** When true (engagement is finalized), the New Folder action is absent from the DOM. */
+  isFinalized?: boolean
+  /**
+   * When true, a collapsible "Archived (N)" toggle appears at the bottom of the
+   * file list showing is_superseded documents in the current folder. Matches
+   * the client page's existing archived-docs toggle behavior.
+   */
+  showArchivedToggle?: boolean
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function formatDate(iso: string): string {
+  if (!iso) return ''
+  try {
+    return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+  } catch {
+    return ''
+  }
+}
+
+// ---------------------------------------------------------------------------
+// FolderNode: renders one folder row and its children from a pre-built map.
+// Built from scratch to match Firm Library's visual design but parameterised
+// for any scope (no hardcoded 'firm_library').
+// ---------------------------------------------------------------------------
+
+function FolderNode({
+  folder,
+  depth,
+  selectedId,
+  onSelect,
+  childrenOf,
+}: {
+  folder: BrowserFolder
+  depth: number
+  selectedId: string | null
+  onSelect: (f: BrowserFolder) => void
+  childrenOf: Record<string, BrowserFolder[]>
+}) {
+  const children = childrenOf[folder.id] ?? []
+  const hasChildren = children.length > 0
+  const [expanded, setExpanded] = useState(depth === 0)
+  const isSelected = selectedId === folder.id
+
+  return (
+    <div>
+      <div
+        className={cn(
+          'flex items-center gap-1.5 px-2 py-1.5 rounded cursor-pointer text-[13px] transition-colors select-none',
+          isSelected
+            ? 'bg-surface-input dark:bg-dark-card text-brand dark:text-[#EDEEF0] font-medium'
+            : 'text-[#374151] dark:text-[#9CA3AF] hover:bg-surface-input dark:hover:bg-dark-card hover:text-brand dark:hover:text-[#EDEEF0]',
+        )}
+        style={{ paddingLeft: `${8 + depth * 16}px` }}
+        onClick={() => onSelect(folder)}
+      >
+        {hasChildren ? (
+          <button
+            className="p-0 m-0 border-0 bg-transparent flex-shrink-0"
+            onClick={(e) => { e.stopPropagation(); setExpanded((v) => !v) }}
+          >
+            {expanded
+              ? <ChevronDown className="h-3 w-3 text-[#6B7280]" />
+              : <ChevronRight className="h-3 w-3 text-[#6B7280]" />
+            }
+          </button>
+        ) : (
+          <span className="w-3 flex-shrink-0" />
+        )}
+        {expanded && hasChildren
+          ? <FolderOpen className="h-3.5 w-3.5 text-[#6B7280] flex-shrink-0" />
+          : <Folder className="h-3.5 w-3.5 text-[#6B7280] flex-shrink-0" />
+        }
+        <span className="truncate">{folder.name}</span>
+      </div>
+      {expanded && children.map((child) => (
+        <FolderNode
+          key={child.id}
+          folder={child}
+          depth={depth + 1}
+          selectedId={selectedId}
+          onSelect={onSelect}
+          childrenOf={childrenOf}
+        />
+      ))}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// New Folder modal: visual design matches Firm Library's NewFolderModal
+// exactly, but parameterised for any scope.
+// ---------------------------------------------------------------------------
+
+function NewFolderModal({
+  scope,
+  engagementId,
+  clientId,
+  parentFolderId,
+  onClose,
+  onCreated,
+}: {
+  scope: 'engagement' | 'client'
+  engagementId?: string
+  clientId?: string
+  parentFolderId: string | null
+  onClose: () => void
+  onCreated: () => void
+}) {
+  const [name, setName] = useState('')
+  const [creating, setCreating] = useState(false)
+
+  async function handleCreate() {
+    const trimmed = name.trim()
+    if (!trimmed) return
+    setCreating(true)
+    try {
+      const body: Record<string, unknown> = { scope, name: trimmed }
+      if (engagementId) body.engagement_id = engagementId
+      if (clientId) body.client_id = clientId
+      if (parentFolderId) body.parent_folder_id = parentFolderId
+      await api.post('/document-folders/', body)
+      toast.success(`Folder "${trimmed}" created`)
+      onCreated()
+      onClose()
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      toast.error(detail ?? 'Could not create folder -- please try again')
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/40 flex items-center justify-center z-50"
+      onClick={onClose}
+    >
+      <div
+        className="bg-surface-page dark:bg-dark-page rounded-[10px] border border-[0.5px] border-surface-border dark:border-dark-border w-[400px] max-w-[92vw] shadow-lg"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-5 py-4 border-b border-[0.5px] border-surface-border dark:border-dark-border">
+          <h2 className="text-[14px] font-semibold text-brand dark:text-[#EDEEF0]">New Folder</h2>
+          <button onClick={onClose} className="text-[#6B7280] hover:text-brand transition-colors">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="p-5">
+          <label className="text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em] block mb-1.5">
+            Folder name
+          </label>
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') handleCreate() }}
+            placeholder="e.g. Workpapers"
+            autoFocus
+            className="w-full h-9 px-2.5 rounded-[6px] border border-[0.5px] border-surface-border dark:border-dark-border bg-surface-input dark:bg-dark-card text-[13px] text-brand dark:text-[#EDEEF0] placeholder:text-[#9CA3AF] focus:outline-none"
+          />
+        </div>
+        <div className="flex items-center justify-end gap-2 px-5 py-3.5 border-t border-[0.5px] border-surface-border dark:border-dark-border">
+          <button
+            onClick={onClose}
+            className="h-8 px-3.5 rounded-[6px] border border-[0.5px] border-surface-border dark:border-dark-border text-[12px] text-[#6B7280] hover:text-brand transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleCreate}
+            disabled={!name.trim() || creating}
+            className="h-8 px-3.5 rounded-[6px] bg-brand dark:bg-brand-btn text-white text-[12px] font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
+          >
+            {creating ? 'Creating...' : 'Create'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// DocRow: single file row, shared between active and archived lists
+// ---------------------------------------------------------------------------
+
+function DocRow({ doc, borderBottom }: { doc: BrowserDoc; borderBottom: boolean }) {
+  return (
+    <div
+      className={cn(
+        'flex items-center gap-3 px-3 py-2.5',
+        borderBottom ? 'border-b border-[0.5px] border-[#E5E7EB] dark:border-[#333]' : '',
+      )}
+    >
+      <FileText className="h-4 w-4 text-[#6B7280] flex-shrink-0" />
+      <div className="flex-1 min-w-0">
+        <p className="text-[12px] font-medium text-[#1F3148] dark:text-[#EDEEF0] truncate">{doc.filename}</p>
+        <p className="text-[11px] text-[#9CA3AF]">
+          {formatBytes(doc.size_bytes)}{doc.created_at ? ` · ${formatDate(doc.created_at)}` : ''}
+        </p>
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Main FolderBrowser component
+// ---------------------------------------------------------------------------
+
+export function FolderBrowser({
+  scope,
+  engagementId,
+  clientId,
+  isFinalized,
+  showArchivedToggle,
+}: FolderBrowserProps) {
+  const [folders, setFolders] = useState<BrowserFolder[]>([])
+  const [foldersLoading, setFoldersLoading] = useState(true)
+  const [docs, setDocs] = useState<BrowserDoc[]>([])
+  const [docsLoading, setDocsLoading] = useState(true)
+  const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null)
+  const [folderPath, setFolderPath] = useState<{ id: string; name: string }[]>([])
+  const [showNewFolder, setShowNewFolder] = useState(false)
+  const [showArchived, setShowArchived] = useState(false)
+
+  // Build a folder lookup map for path resolution
+  const folderById: Record<string, BrowserFolder> = {}
+  for (const f of folders) folderById[f.id] = f
+
+  // Build children map for tree rendering
+  const childrenOf: Record<string, BrowserFolder[]> = {}
+  for (const f of folders) {
+    const key = f.parent_folder_id ?? '__root__'
+    if (!childrenOf[key]) childrenOf[key] = []
+    childrenOf[key].push(f)
+  }
+  const rootFolders = childrenOf['__root__'] ?? []
+
+  const fetchFolders = useCallback(async () => {
+    setFoldersLoading(true)
+    try {
+      const params: Record<string, string> = { scope }
+      if (engagementId) params.engagement_id = engagementId
+      if (clientId) params.client_id = clientId
+      const { data } = await api.get('/document-folders/', { params })
+      setFolders(Array.isArray(data) ? data : [])
+    } catch {
+      setFolders([])
+    } finally {
+      setFoldersLoading(false)
+    }
+  }, [scope, engagementId, clientId])
+
+  const fetchDocs = useCallback(async () => {
+    setDocsLoading(true)
+    try {
+      const params: Record<string, unknown> = { scope, limit: 200 }
+      if (engagementId) params.engagement_id = engagementId
+      if (clientId) params.client_id = clientId
+      const { data } = await api.get('/documents/', { params })
+      const items = data.items ?? data ?? []
+      setDocs(
+        items
+          .filter((d: Record<string, unknown>) => !d.deleted_at)
+          .map((d: Record<string, unknown>) => ({
+            id: String(d.id),
+            filename: String(d.filename ?? d.name ?? ''),
+            content_type: String(d.content_type ?? ''),
+            size_bytes: Number(d.size_bytes ?? 0),
+            folder_id: d.folder_id ? String(d.folder_id) : null,
+            created_at: String(d.created_at ?? ''),
+            is_superseded: Boolean(d.is_superseded ?? false),
+          })),
+      )
+    } catch {
+      setDocs([])
+    } finally {
+      setDocsLoading(false)
+    }
+  }, [scope, engagementId, clientId])
+
+  useEffect(() => {
+    fetchFolders()
+    fetchDocs()
+  }, [fetchFolders, fetchDocs])
+
+  function handleSelectFolder(f: BrowserFolder) {
+    setSelectedFolderId(f.id)
+    setShowArchived(false)
+    // Build breadcrumb path by walking parent chain
+    const path: { id: string; name: string }[] = []
+    let current: BrowserFolder | undefined = f
+    while (current) {
+      path.unshift({ id: current.id, name: current.name })
+      current = current.parent_folder_id ? folderById[current.parent_folder_id] : undefined
+    }
+    setFolderPath(path)
+  }
+
+  function handleSelectRoot() {
+    setSelectedFolderId(null)
+    setFolderPath([])
+    setShowArchived(false)
+  }
+
+  function handleFolderCreated() {
+    fetchFolders()
+  }
+
+  // Files in the currently selected folder (or root files when null)
+  const docsInCurrentFolder = docs.filter((d) => d.folder_id === selectedFolderId)
+  const activeDocs = docsInCurrentFolder.filter((d) => !d.is_superseded)
+  const archivedDocs = docsInCurrentFolder.filter((d) => d.is_superseded)
+
+  if (foldersLoading) {
+    return (
+      <div className="mt-4">
+        <div className="flex items-center justify-between mb-3">
+          <span className="text-[13px] font-medium text-[#1F3148] dark:text-[#EDEEF0]">Folders</span>
+        </div>
+        <div className="rounded-[10px] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] p-3 space-y-1.5">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="h-7 bg-[#E4E6EA] dark:bg-[#2D2D2D] animate-pulse rounded" />
+          ))}
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="mt-4">
+      {/* Section header with New Folder button */}
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-[13px] font-medium text-[#1F3148] dark:text-[#EDEEF0]">Folders</span>
+        {/* New Folder button is absent (not disabled) when the engagement is finalized */}
+        {!isFinalized && (
+          <button
+            onClick={() => setShowNewFolder(true)}
+            className="flex items-center gap-1.5 h-7 px-2.5 rounded-[6px] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] text-[12px] text-[#6B7280] hover:text-brand dark:hover:text-[#EDEEF0] hover:border-brand dark:hover:border-[#4A7FA5] transition-colors"
+          >
+            <FolderPlus className="h-3.5 w-3.5" />
+            New Folder
+          </button>
+        )}
+      </div>
+
+      {rootFolders.length === 0 ? (
+        /* No folders exist: show a minimal empty state with just the file list */
+        <div className="rounded-[10px] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] overflow-hidden">
+          <div className="bg-[#E4E6EA] dark:bg-[#2D2D2D] px-3 py-2">
+            <p className="text-[12px] text-[#9CA3AF]">
+              {isFinalized
+                ? 'This engagement is finalized -- no new folders can be created.'
+                : 'No folders yet. Click "New Folder" to create one.'}
+            </p>
+          </div>
+          {renderFilePanel(activeDocs, archivedDocs, docsLoading)}
+        </div>
+      ) : (
+        <div className="rounded-[10px] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] overflow-hidden">
+          {/* Folder tree */}
+          <div className="bg-[#E4E6EA] dark:bg-[#2D2D2D] p-2">
+            <div
+              className={cn(
+                'flex items-center gap-1.5 px-2 py-1.5 rounded cursor-pointer text-[13px] transition-colors select-none',
+                selectedFolderId === null
+                  ? 'bg-surface-input dark:bg-dark-card text-brand dark:text-[#EDEEF0] font-medium'
+                  : 'text-[#6B7280] hover:bg-surface-input dark:hover:bg-dark-card hover:text-brand dark:hover:text-[#EDEEF0]',
+              )}
+              onClick={handleSelectRoot}
+            >
+              <Folder className="h-3.5 w-3.5 flex-shrink-0" />
+              <span>All folders</span>
+            </div>
+            {rootFolders.map((f) => (
+              <FolderNode
+                key={f.id}
+                folder={f}
+                depth={1}
+                selectedId={selectedFolderId}
+                onSelect={handleSelectFolder}
+                childrenOf={childrenOf}
+              />
+            ))}
+          </div>
+
+          {/* Breadcrumb path for selected folder */}
+          {folderPath.length > 0 && (
+            <div className="flex items-center gap-1 px-3 py-2 border-t border-[0.5px] border-[#D5D8DE] dark:border-[#383838] bg-white dark:bg-[#252525] flex-wrap">
+              <button
+                onClick={handleSelectRoot}
+                className="text-[11px] text-[#9CA3AF] hover:text-brand transition-colors"
+              >
+                All
+              </button>
+              {folderPath.map((seg, i) => (
+                <span key={seg.id} className="flex items-center gap-1">
+                  <ChevronRight className="h-3 w-3 text-[#9CA3AF]" />
+                  {i < folderPath.length - 1 ? (
+                    <button
+                      onClick={() => {
+                        const f = folderById[seg.id]
+                        if (f) handleSelectFolder(f)
+                      }}
+                      className="text-[11px] text-[#9CA3AF] hover:text-brand transition-colors"
+                    >
+                      {seg.name}
+                    </button>
+                  ) : (
+                    <span className="text-[11px] font-medium text-brand dark:text-[#EDEEF0]">{seg.name}</span>
+                  )}
+                </span>
+              ))}
+            </div>
+          )}
+
+          {renderFilePanel(activeDocs, archivedDocs, docsLoading)}
+        </div>
+      )}
+
+      {showNewFolder && (
+        <NewFolderModal
+          scope={scope}
+          engagementId={engagementId}
+          clientId={clientId}
+          parentFolderId={selectedFolderId}
+          onClose={() => setShowNewFolder(false)}
+          onCreated={handleFolderCreated}
+        />
+      )}
+    </div>
+  )
+
+  // Render the file list panel (active docs + optional archived toggle)
+  function renderFilePanel(
+    active: BrowserDoc[],
+    archived: BrowserDoc[],
+    loading: boolean,
+  ) {
+    return (
+      <div className="bg-white dark:bg-[#252525] border-t border-[0.5px] border-[#D5D8DE] dark:border-[#383838]">
+        {loading ? (
+          <div className="p-3 space-y-2">
+            {[1, 2].map((i) => (
+              <div key={i} className="h-8 bg-[#E4E6EA] dark:bg-[#2D2D2D] animate-pulse rounded" />
+            ))}
+          </div>
+        ) : active.length === 0 && archived.length === 0 ? (
+          <p className="px-3 py-3 text-[12px] text-[#9CA3AF]">
+            {selectedFolderId ? 'No files in this folder.' : 'No files at the root level.'}
+          </p>
+        ) : (
+          <>
+            {active.map((doc, i) => (
+              <DocRow
+                key={doc.id}
+                doc={doc}
+                borderBottom={i < active.length - 1 || (showArchivedToggle ? archived.length > 0 : false)}
+              />
+            ))}
+
+            {/* Archived docs toggle -- only rendered when showArchivedToggle prop is true */}
+            {showArchivedToggle && archived.length > 0 && (
+              <>
+                <div className="flex items-center gap-2 px-3 py-2 border-t border-[0.5px] border-[#E5E7EB] dark:border-[#333]">
+                  <span className="text-[11px] font-medium text-[#9CA3AF] uppercase tracking-[0.05em]">
+                    Archived ({archived.length})
+                  </span>
+                  <button
+                    onClick={() => setShowArchived((v) => !v)}
+                    className="p-0.5 rounded text-[#9CA3AF] hover:text-brand transition-colors"
+                  >
+                    {showArchived
+                      ? <ChevronUp className="h-3.5 w-3.5" />
+                      : <ChevronDown className="h-3.5 w-3.5" />
+                    }
+                  </button>
+                </div>
+                {showArchived && (
+                  <div style={{ opacity: 0.6 }}>
+                    {archived.map((doc, i) => (
+                      <DocRow
+                        key={doc.id}
+                        doc={doc}
+                        borderBottom={i < archived.length - 1}
+                      />
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+          </>
+        )}
+      </div>
+    )
+  }
+}

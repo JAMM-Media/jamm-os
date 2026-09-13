@@ -20,6 +20,7 @@ import { cn, formatEngagementType } from '@/lib/utils'
 import api from '@/lib/api'
 import type { PendingDocument } from '@/lib/api'
 import { FileText, FileSpreadsheet, File as FileGeneric, FileImage } from 'lucide-react'
+import { FolderBrowser } from '@/components/documents/FolderBrowser'
 import { QcChecklistTab } from '@/components/engagements/QcChecklistTab'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { settingsApi, type FirmDetails } from '@/lib/api/settingsApi'
@@ -132,12 +133,6 @@ export default function EngagementDetailPage() {
     [id]
   )
   const tasks = tasksData?.items ?? []
-
-  const { data: docsData, isLoading: docsLoading } = useFetch(
-    () => documentsApi.list(0, 50, undefined, id),
-    [id]
-  )
-  const documents = docsData?.items ?? []
 
   const { data: pendingDocsData, refetch: refetchPending } = useFetch(
     () => documentsApi.listPending(id),
@@ -497,79 +492,13 @@ export default function EngagementDetailPage() {
               </div>
             )}
 
-            {/* Uploaded Documents section */}
-            <div className="flex items-center justify-between mt-6">
-              <span className="text-[13px] font-medium text-[#1F3148] dark:text-[#EDEEF0]">
-                Uploaded Documents
-              </span>
-            </div>
-
-            {docsLoading ? (
-              <div className="mt-3 rounded-[10px] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] overflow-hidden">
-                {Array.from({ length: 3 }).map((_, i) => (
-                  <div key={i} className="px-4 py-3 bg-[#E4E6EA] dark:bg-[#2D2D2D]">
-                    <div className="h-4 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
-                  </div>
-                ))}
-              </div>
-            ) : documents.length === 0 ? (
-              <p className="mt-3 text-[12px] text-[#6B7280] text-center">
-                No documents uploaded yet.
-              </p>
-            ) : (
-              <div className="mt-3 rounded-[10px] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] overflow-hidden">
-                <table className="w-full border-collapse">
-                  <thead>
-                    <tr className="bg-[#EDEEF0] dark:bg-[#252525]">
-                      {['Name', 'Type', 'Uploaded', 'Status'].map((col) => (
-                        <th
-                          key={col}
-                          className="px-4 py-2.5 text-left text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em] whitespace-nowrap"
-                        >
-                          {col}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {documents.map((doc, i) => (
-                      <tr
-                        key={doc.id}
-                        onClick={() => router.push(`/documents/${doc.id}`)}
-                        className={cn(
-                          'cursor-pointer transition-colors bg-[#E4E6EA] dark:bg-[#2D2D2D] hover:bg-[#DDDFE3] dark:hover:bg-[#323232]',
-                          i !== documents.length - 1
-                            ? 'border-b border-[0.5px] border-[#D5D8DE] dark:border-[#383838]'
-                            : '',
-                        )}
-                      >
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-2">
-                            <FileText className="h-[14px] w-[14px] text-[#6B7280] flex-shrink-0" />
-                            <span className="text-[12px] font-medium text-[#1F3148] dark:text-[#EDEEF0]">
-                              {doc.name}
-                            </span>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className="text-[12px] text-[#374151] dark:text-[#9CA3AF]">
-                            {doc.fileType ?? '—'}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className="text-[12px] text-[#374151] dark:text-[#9CA3AF]">
-                            {doc.uploadedAt ?? '—'}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3">
-                          <StatusBadge variant={doc.status as BadgeVariant} />
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
+            {/* Folder browser -- engagement-scoped folders with finalize-lock awareness */}
+            <FolderBrowser
+              scope="engagement"
+              engagementId={id}
+              clientId={engagement.clientId ?? undefined}
+              isFinalized={!!engagement.finalizedAt}
+            />
           </>
         )}
       </div>
