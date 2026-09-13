@@ -824,7 +824,7 @@ const SUB_TABS: { key: SubTab; label: string }[] = [
 // ---- Main Page ----
 
 export default function TemplatesPage() {
-  const { user } = useAuth()
+  const { user, isLoading: authLoading } = useAuth()
   const isManager = user?.role === 'firm_owner' || user?.role === 'manager'
 
   const [activeTab, setActiveTab] = useState<SubTab>('engagement')
@@ -876,6 +876,14 @@ export default function TemplatesPage() {
   }
 
   const activeTabLabel = SUB_TABS.find((t) => t.key === activeTab)?.label ?? ''
+
+  if (authLoading) {
+    return (
+      <div className="flex items-center justify-center h-full p-6">
+        <p className="text-[13px] text-muted-foreground text-center py-6">Loading...</p>
+      </div>
+    )
+  }
 
   return (<>
       <div className="flex flex-col p-6 gap-0">

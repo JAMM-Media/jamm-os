@@ -65,7 +65,7 @@ function ClientDetailContent() {
   const [notesOpen, setNotesOpen] = useState(false)
   const [sendingPortalLink, setSendingPortalLink] = useState(false)
   const [viewingPortal, setViewingPortal] = useState(false)
-  const { user } = useAuth()
+  const { user, isLoading: authLoading } = useAuth()
 
   const clientId = params.id as string
 
@@ -267,6 +267,14 @@ function ClientDetailContent() {
       setEmailsNoIntegration(true)
     }).finally(() => setEmailsLoading(false))
   }, [activeTab, clientId, client?.email])
+
+  if (authLoading) {
+    return (
+      <div className="flex items-center justify-center h-full p-6">
+        <p className="text-[13px] text-muted-foreground text-center py-6">Loading...</p>
+      </div>
+    )
+  }
 
   const handleSendMessage = async () => {
     if (!messageCompose.trim() || messageSending) return

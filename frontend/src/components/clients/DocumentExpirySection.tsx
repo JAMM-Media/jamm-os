@@ -204,7 +204,7 @@ interface DocumentExpirySectionProps {
 }
 
 export function DocumentExpirySection({ clientId }: DocumentExpirySectionProps) {
-  const { user } = useAuth()
+  const { user, isLoading: authLoading } = useAuth()
   const canManage = user?.role === 'manager' || user?.role === 'firm_owner'
   const [showModal, setShowModal] = useState(false)
 
@@ -225,6 +225,14 @@ export function DocumentExpirySection({ clientId }: DocumentExpirySectionProps) 
   function handleModalSuccess() {
     setShowModal(false)
     refetch()
+  }
+
+  if (authLoading) {
+    return (
+      <div className="flex items-center justify-center h-full p-6">
+        <p className="text-[13px] text-muted-foreground text-center py-6">Loading...</p>
+      </div>
+    )
   }
 
   return (

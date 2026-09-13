@@ -277,7 +277,7 @@ const sectionLabelClass =
 const emptyStateClass = 'text-[12px] text-[#6B7280] text-center py-6'
 
 export default function AutomationsTab() {
-  const { user } = useAuth()
+  const { user, isLoading: authLoading } = useAuth()
   const canEdit = user?.role === 'firm_owner' || user?.role === 'manager'
 
   const [rules, setRules] = useState<AutomationRule[]>([])
@@ -336,6 +336,14 @@ export default function AutomationsTab() {
     },
     [],
   )
+
+  if (authLoading) {
+    return (
+      <div className="flex items-center justify-center h-full p-6">
+        <p className="text-[13px] text-muted-foreground text-center py-6">Loading...</p>
+      </div>
+    )
+  }
 
   if (loading) {
     return (

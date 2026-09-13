@@ -23,7 +23,7 @@ interface Props {
 }
 
 export function QcChecklistTab({ engagementId, engagementStatus: _engagementStatus, onUncheckedCountChange }: Props) {
-  const { user } = useAuth()
+  const { user, isLoading: authLoading } = useAuth()
   const isManager = user?.role === 'firm_owner' || user?.role === 'manager'
 
   const [items, setItems] = useState<QcItem[]>([])
@@ -152,6 +152,14 @@ export function QcChecklistTab({ engagementId, engagementStatus: _engagementStat
 
   const checkedCount = items.filter((i) => i.is_checked).length
   const totalCount = items.length
+
+  if (authLoading) {
+    return (
+      <div className="flex items-center justify-center h-full p-6">
+        <p className="text-[13px] text-muted-foreground text-center py-6">Loading...</p>
+      </div>
+    )
+  }
 
   if (loading) {
     return (

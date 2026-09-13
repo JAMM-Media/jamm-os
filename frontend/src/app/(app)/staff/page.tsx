@@ -17,7 +17,7 @@ const TABS = [
 ]
 
 export default function StaffPage() {
-  const { user } = useAuth()
+  const { user, isLoading: authLoading } = useAuth()
   const [activeTab, setActiveTab] = useState<'roster' | 'credentials'>('roster')
   const isManagerOrAbove = user?.role === 'firm_owner' || user?.role === 'manager'
   const { data: capacityData } = useFetch(
@@ -26,6 +26,14 @@ export default function StaffPage() {
       : Promise.resolve(null),
     [isManagerOrAbove]
   )
+
+  if (authLoading) {
+    return (
+      <div className="flex items-center justify-center h-full p-6">
+        <p className="text-[13px] text-muted-foreground text-center py-6">Loading...</p>
+      </div>
+    )
+  }
 
   if (user?.role === 'staff') {
     return (

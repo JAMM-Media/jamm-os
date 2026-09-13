@@ -194,7 +194,7 @@ function QcTemplateModal({ editTemplate, onClose, onSaved }: ModalProps) {
 }
 
 export default function QcChecklistTemplatesTab() {
-  const { user } = useAuth()
+  const { user, isLoading: authLoading } = useAuth()
   const isManager = user?.role === 'firm_owner' || user?.role === 'manager'
 
   const [templates, setTemplates] = useState<QcTemplate[]>([])
@@ -246,6 +246,14 @@ export default function QcChecklistTemplatesTab() {
   const filtered = templates.filter((t) =>
     t.name.toLowerCase().includes(search.toLowerCase())
   )
+
+  if (authLoading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <p className="text-[13px] text-muted-foreground text-center py-6">Loading...</p>
+      </div>
+    )
+  }
 
   return (
     <div className="flex flex-col gap-4">

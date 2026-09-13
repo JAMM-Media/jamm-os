@@ -195,7 +195,7 @@ interface IrsAuthTabProps {
 }
 
 export function IrsAuthTab({ clientId }: IrsAuthTabProps) {
-  const { user } = useAuth()
+  const { user, isLoading: authLoading } = useAuth()
   const canSend =
     user?.role === 'manager' || user?.role === 'firm_owner'
 
@@ -218,6 +218,14 @@ export function IrsAuthTab({ clientId }: IrsAuthTabProps) {
   function handleModalSuccess() {
     setShowModal(false)
     refetch()
+  }
+
+  if (authLoading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <p className="text-[13px] text-muted-foreground text-center py-6">Loading...</p>
+      </div>
+    )
   }
 
   return (

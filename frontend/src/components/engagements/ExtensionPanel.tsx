@@ -69,7 +69,7 @@ function humanStatus(status: ExtensionRecord['status']): string {
 }
 
 export function ExtensionPanel({ engagementId, clientId }: ExtensionPanelProps) {
-  const { user } = useAuth()
+  const { user, isLoading: authLoading } = useAuth()
   const isManager = user?.role === 'manager' || user?.role === 'firm_owner'
 
   const { data: listData, isLoading, refetch } = useFetch<ExtensionRecord[]>(
@@ -150,6 +150,14 @@ export function ExtensionPanel({ engagementId, clientId }: ExtensionPanelProps) 
     } finally {
       setUpdating(false)
     }
+  }
+
+  if (authLoading) {
+    return (
+      <div className="flex items-center justify-center h-full p-6">
+        <p className="text-[13px] text-muted-foreground text-center py-6">Loading...</p>
+      </div>
+    )
   }
 
   return (

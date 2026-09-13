@@ -201,7 +201,7 @@ export default function FirmChatPage() {
   const { messages, isLoading: messagesLoading, sendMessage } = useMessages(activeChannelId)
 
   // User role
-  const { user } = useAuth()
+  const { user, isLoading: authLoading } = useAuth()
   const isFirmOwner = user?.role === 'firm_owner' || user?.role === 'manager'
 
   // Active channel object
@@ -316,6 +316,14 @@ export default function FirmChatPage() {
     staffList.forEach((s) => map.set(s.id, s.name))
     return map
   }, [staffList])
+
+  if (authLoading) {
+    return (
+      <div className="flex items-center justify-center h-full p-6">
+        <p className="text-[13px] text-muted-foreground text-center py-6">Loading...</p>
+      </div>
+    )
+  }
 
   // ─── Handlers ────────────────────────────────────────────────────────────
 

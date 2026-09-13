@@ -391,7 +391,7 @@ function formatPhoneNumber(value: string): string {
 
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState('profile')
-  const { user, refreshUser } = useAuth()
+  const { user, refreshUser, isLoading: authLoading } = useAuth()
   const [approvalRequired, setApprovalRequired] = useState<boolean | null>(null)
   const [savingApproval, setSavingApproval] = useState(false)
 
@@ -633,6 +633,14 @@ export default function SettingsPage() {
   const canSeeMigration = isFirmOwner
 
   const router = useRouter()
+
+  if (authLoading) {
+    return (
+      <div className="flex items-center justify-center h-full p-6">
+        <p className="text-[13px] text-muted-foreground text-center py-6">Loading...</p>
+      </div>
+    )
+  }
 
   function isTabVisible(key: string): boolean {
     if (key === 'my_integrations') return true

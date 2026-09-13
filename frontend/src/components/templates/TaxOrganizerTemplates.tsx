@@ -535,7 +535,7 @@ function EditorModal({ template, onClose, onSaved }: EditorModalProps) {
 // ── Main Component ────────────────────────────────────────────────────────────
 
 export default function TaxOrganizerTemplates() {
-  const { user } = useAuth()
+  const { user, isLoading: authLoading } = useAuth()
   const isManager = user?.role === 'firm_owner' || user?.role === 'manager'
 
   const [allTemplates, setAllTemplates] = useState<TaxOrganizerTemplate[]>([])
@@ -573,6 +573,14 @@ export default function TaxOrganizerTemplates() {
 
   function totalQuestions(t: TaxOrganizerTemplate): number {
     return t.sections.reduce((sum, s) => sum + (s.questions?.length ?? 0), 0)
+  }
+
+  if (authLoading) {
+    return (
+      <div className="flex items-center justify-center h-full p-6">
+        <p className="text-[13px] text-muted-foreground text-center py-6">Loading...</p>
+      </div>
+    )
   }
 
   return (
