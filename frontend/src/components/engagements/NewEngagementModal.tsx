@@ -1,7 +1,7 @@
 // frontend/src/components/engagements/NewEngagementModal.tsx
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Modal } from '@/components/ui/Modal'
 import { FormField } from '@/components/ui/FormField'
 import { TextInput } from '@/components/ui/TextInput'
@@ -11,6 +11,61 @@ import { toast } from 'sonner'
 import { setFormDirty } from '@/lib/events/conciergeEvents'
 import { useFetch } from '@/lib/hooks/useFetch'
 import { RollForwardModal } from './RollForwardModal'
+
+// ---------------------------------------------------------------------------
+// Engagement title suggestion helpers
+// ---------------------------------------------------------------------------
+
+// Maps each engagementType (or category for no-subtype types) to a clean
+// human-readable display name used to build the suggested engagement title.
+const TYPE_DISPLAY_NAMES: Record<string, string> = {
+  // Tax Return subtypes: extract the description after the form number
+  tax_return_1040:    'Individual Tax Return',
+  tax_return_1120:    'C-Corporation Tax Return',
+  tax_return_1120s:   'S-Corporation Tax Return',
+  tax_return_1065:    'Partnership Tax Return',
+  tax_return_1041:    'Trust / Estate Income Tax Return',
+  tax_return_706:     'Estate Tax Return',
+  amended_return_1040x: 'Amended Return',
+  extension_4868:     'Individual Extension',
+  extension_7004:     'Business Extension',
+  extension_8868:     'Exempt Org Extension',
+  // Bookkeeping subtypes: labels are already readable
+  bookkeeping_monthly:   'Monthly Bookkeeping',
+  bookkeeping_quarterly: 'Quarterly Bookkeeping',
+  // Payroll subtypes
+  payroll_tax_941: 'Quarterly Payroll Tax',
+  // No-subtype categories use the category label directly
+  advisory: 'Advisory',
+  audit:    'Audit',
+  other:    'Other',
+}
+
+// Returns the display name for the current type selection, or null when the
+// selection is incomplete (category chosen but required subtype not yet chosen).
+function getTypeDisplayName(category: string, subtype: string): string | null {
+  if (!category) return null
+  const needsSubtype = ['tax_return', 'bookkeeping', 'payroll'].includes(category)
+  if (needsSubtype && !subtype) return null
+  return TYPE_DISPLAY_NAMES[subtype || category] ?? null
+}
+
+// Returns the year to embed in the suggestion: the endDate year when set,
+// otherwise the current calendar year.
+function getSuggestionYear(endDate: string): number {
+  if (endDate) {
+    const y = parseInt(endDate.split('-')[0], 10)
+    if (!isNaN(y) && y > 2000) return y
+  }
+  return new Date().getFullYear()
+}
+
+// Builds the full suggestion string, or null when type selection is incomplete.
+function buildSuggestion(category: string, subtype: string, endDate: string): string | null {
+  const typeName = getTypeDisplayName(category, subtype)
+  if (!typeName) return null
+  return `${getSuggestionYear(endDate)} ${typeName}`
+}
 
 interface NewEngagementModalProps {
   open: boolean
@@ -49,6 +104,26 @@ export function NewEngagementModal({
     priorEngagement: Engagement
     clientName: string
   } | null>(null)
+
+  // Tracks the last auto-generated suggestion so we can tell whether the
+  // current name value was typed by the user or is still the auto-suggestion.
+  const lastSuggestionRef = useRef('')
+
+  // Auto-suggest engagement title from type selection and year.
+  // Overwrites name only when it is empty or still matches the last suggestion.
+  useEffect(() => {
+    const suggestion = buildSuggestion(form.engagementCategory, form.engagementType, form.endDate)
+    if (!suggestion) return
+    const prev = lastSuggestionRef.current
+    setForm((f) => {
+      if (f.name === '' || f.name === prev) {
+        return { ...f, name: suggestion }
+      }
+      return f
+    })
+    lastSuggestionRef.current = suggestion
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.engagementCategory, form.engagementType, form.endDate])
 
   useEffect(() => {
     if (!initialEngagementType) return
@@ -95,6 +170,7 @@ export function NewEngagementModal({
     })
     setErrors({})
     setSubmitting(false)
+    lastSuggestionRef.current = ''
     onClose()
   }
 
