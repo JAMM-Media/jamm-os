@@ -178,6 +178,10 @@ export default function TasksPage() {
     }
   }
 
+  function handleStatusChange(id: string, status: string) {
+    setStatusOverrides((prev) => ({ ...prev, [id]: status }))
+  }
+
   const selCount = selectedIds.size
 
   if (error) {
@@ -317,6 +321,7 @@ export default function TasksPage() {
             selectedIds={selectedIds}
             onSelect={handleSelect}
             onSelectAll={handleSelectAll}
+            onStatusChange={handleStatusChange}
           />
         ) : (
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">

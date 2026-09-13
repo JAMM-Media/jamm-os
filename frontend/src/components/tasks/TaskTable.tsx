@@ -1,8 +1,10 @@
 // frontend/src/components/tasks/TaskTable.tsx
 'use client'
 
+import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { type Task } from '@/lib/api'
+import { toast } from 'sonner'
+import { type Task, tasksApi } from '@/lib/api'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 
 type BadgeVariant = Parameters<typeof StatusBadge>[0]['variant']
@@ -16,6 +18,7 @@ interface TaskTableProps {
   selectedIds?: Set<string>
   onSelect?: (id: string, checked: boolean) => void
   onSelectAll?: (checked: boolean) => void
+  onStatusChange?: (id: string, status: string) => void
 }
 
 export function TaskTable({
@@ -27,9 +30,24 @@ export function TaskTable({
   selectedIds,
   onSelect,
   onSelectAll,
+  onStatusChange,
 }: TaskTableProps) {
   const router = useRouter()
   const hasSelection = selectedIds !== undefined
+  const [loadingId, setLoadingId] = useState<string | null>(null)
+
+  async function handleComplete(e: React.MouseEvent, taskId: string) {
+    e.stopPropagation()
+    setLoadingId(taskId)
+    try {
+      await tasksApi.update(taskId, { status: 'done' })
+      onStatusChange?.(taskId, 'done')
+    } catch {
+      toast.error('Could not update task -- please try again')
+    } finally {
+      setLoadingId(null)
+    }
+  }
 
   const allSelected = hasSelection && tasks.length > 0 && tasks.every((t) => selectedIds.has(t.id))
   const someSelected = hasSelection && tasks.some((t) => selectedIds.has(t.id))
@@ -50,7 +68,7 @@ export function TaskTable({
                 />
               </th>
             )}
-            {['Task', 'Client', 'Engagement', 'Assigned To', 'Due Date', 'Status'].map((col) => (
+            {['Task', 'Client', 'Engagement', 'Assigned To', 'Due Date', 'Status', ''].map((col) => (
               <th
                 key={col}
                 className="px-4 py-2.5 text-left text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em] whitespace-nowrap"
@@ -127,6 +145,17 @@ export function TaskTable({
                 </td>
                 <td className="px-4 py-3">
                   <StatusBadge variant={task.status as BadgeVariant} />
+                </td>
+                <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                  {task.status !== 'done' && (
+                    <button
+                      disabled={loadingId === task.id}
+                      onClick={(e) => handleComplete(e, task.id)}
+                      className="opacity-0 group-hover:opacity-100 transition-opacity h-7 px-2.5 rounded-[6px] border border-[0.5px] border-surface-border dark:border-dark-border text-[11px] text-[#374151] dark:text-[#9CA3AF] hover:border-brand hover:text-brand whitespace-nowrap disabled:opacity-50"
+                    >
+                      {loadingId === task.id ? 'Saving...' : 'Mark Complete'}
+                    </button>
+                  )}
                 </td>
               </tr>
             )

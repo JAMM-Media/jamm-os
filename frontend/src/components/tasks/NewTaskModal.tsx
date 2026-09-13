@@ -6,6 +6,7 @@ import { Modal } from '@/components/ui/Modal'
 import { FormField } from '@/components/ui/FormField'
 import { TextInput } from '@/components/ui/TextInput'
 import { SelectInput } from '@/components/ui/SelectInput'
+import { useAuth } from '@/lib/hooks/useAuth'
 import api, { tasksApi, clientsApi, engagementsApi, type Task } from '@/lib/api'
 
 interface NewTaskModalProps {
@@ -34,11 +35,11 @@ function validate(form: FormState): FormErrors {
   if (!form.title.trim()) errors.title = 'Title is required.'
   if (!form.clientId) errors.clientId = 'Please select a client.'
   if (!form.engagementId) errors.engagementId = 'Please select an engagement.'
-  if (!form.dueDate) errors.dueDate = 'Due date is required.'
   return errors
 }
 
 export function NewTaskModal({ open, onClose, onAdd }: NewTaskModalProps) {
+  const { user } = useAuth()
   const [form, setForm] = useState<FormState>({
     title: '',
     clientId: '',
@@ -55,6 +56,13 @@ export function NewTaskModal({ open, onClose, onAdd }: NewTaskModalProps) {
   const [engagementsLoading, setEngagementsLoading] = useState(false)
   const [staff, setStaff] = useState<Array<{ value: string; label: string }>>([])
   const [staffLoading, setStaffLoading] = useState(false)
+
+  // Default assignedTo to the current user when modal opens
+  useEffect(() => {
+    if (open && user?.id) {
+      setForm((prev) => ({ ...prev, assignedTo: prev.assignedTo || user.id }))
+    }
+  }, [open, user?.id])
 
   useEffect(() => {
     if (!open) return
@@ -87,7 +95,12 @@ export function NewTaskModal({ open, onClose, onAdd }: NewTaskModalProps) {
     setEngagementsLoading(true)
     engagementsApi
       .list(0, 100, form.clientId)
-      .then(({ items }) => setEngagements(items.map((e) => ({ value: e.id, label: e.name }))))
+      .then(({ items }) => {
+        setEngagements(items.map((e) => ({ value: e.id, label: e.name })))
+        if (items.length === 1) {
+          setForm((prev) => ({ ...prev, engagementId: items[0].id }))
+        }
+      })
       .catch(() => setEngagements([]))
       .finally(() => setEngagementsLoading(false))
   }, [form.clientId])
@@ -193,7 +206,7 @@ export function NewTaskModal({ open, onClose, onAdd }: NewTaskModalProps) {
         </div>
 
         {/* Due Date */}
-        <FormField label="Due Date" required error={errors.dueDate}>
+        <FormField label="Due Date" error={errors.dueDate}>
           <TextInput
             type="date"
             value={form.dueDate}
