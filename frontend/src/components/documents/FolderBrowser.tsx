@@ -1,8 +1,9 @@
 // frontend/src/components/documents/FolderBrowser.tsx
 'use client'
 
-import { useState, useCallback, useEffect, useRef } from 'react'
-import { ChevronRight, ChevronDown, ChevronUp, Folder, FolderOpen, FolderPlus, Upload, X, FileText } from 'lucide-react'
+import { useState, useCallback, useEffect, useLayoutEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
+import { ChevronRight, ChevronDown, ChevronUp, Folder, FolderOpen, FolderPlus, Upload, X, FileText, MoreVertical } from 'lucide-react'
 import { toast } from 'sonner'
 import api from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -72,17 +73,20 @@ function FolderNode({
   selectedId,
   onSelect,
   childrenOf,
+  onDropDoc,
 }: {
   folder: BrowserFolder
   depth: number
   selectedId: string | null
   onSelect: (f: BrowserFolder) => void
   childrenOf: Record<string, BrowserFolder[]>
+  onDropDoc: (docId: string) => void
 }) {
   const children = childrenOf[folder.id] ?? []
   const hasChildren = children.length > 0
   const [expanded, setExpanded] = useState(depth === 0)
   const isSelected = selectedId === folder.id
+  const [isDragOver, setIsDragOver] = useState(false)
 
   return (
     <div>
@@ -92,9 +96,18 @@ function FolderNode({
           isSelected
             ? 'bg-surface-input dark:bg-dark-card text-brand dark:text-[#EDEEF0] font-medium'
             : 'text-[#374151] dark:text-[#9CA3AF] hover:bg-surface-input dark:hover:bg-dark-card hover:text-brand dark:hover:text-[#EDEEF0]',
+          isDragOver && 'ring-2 ring-inset ring-brand',
         )}
         style={{ paddingLeft: `${8 + depth * 16}px` }}
         onClick={() => onSelect(folder)}
+        onDragOver={(e) => { e.preventDefault(); setIsDragOver(true) }}
+        onDragLeave={() => setIsDragOver(false)}
+        onDrop={(e) => {
+          e.preventDefault()
+          setIsDragOver(false)
+          const docId = e.dataTransfer.getData('text/plain')
+          if (docId) onDropDoc(docId)
+        }}
       >
         {hasChildren ? (
           <button
@@ -123,6 +136,7 @@ function FolderNode({
           selectedId={selectedId}
           onSelect={onSelect}
           childrenOf={childrenOf}
+          onDropDoc={onDropDoc}
         />
       ))}
     </div>
@@ -367,15 +381,153 @@ function UploadModal({
 }
 
 // ---------------------------------------------------------------------------
-// DocRow: single file row, shared between active and archived lists
+// DocRow: single file row, shared between active and archived lists.
+// Accepts folders and fetchDocs from the parent FolderBrowser so the
+// three-dot move menu can list real folders and refresh after a move.
 // ---------------------------------------------------------------------------
 
-function DocRow({ doc, borderBottom }: { doc: BrowserDoc; borderBottom: boolean }) {
+function DocRow({
+  doc,
+  borderBottom,
+  folders,
+  fetchDocs,
+}: {
+  doc: BrowserDoc
+  borderBottom: boolean
+  folders: BrowserFolder[]
+  fetchDocs: () => void
+}) {
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [showMoveList, setShowMoveList] = useState(false)
+  // triggerRef: the three-dot button itself, used for position measurement.
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  // menuDropdownRef: the portaled dropdown rendered in document.body.
+  const menuDropdownRef = useRef<HTMLDivElement>(null)
+  // Pixel coordinates for position:fixed placement. null until measured.
+  const [coords, setCoords] = useState<{ top: number; left: number } | null>(null)
+  // Local drag state: only this row dims while it is being dragged.
+  const [isDragging, setIsDragging] = useState(false)
+
+  // Measure the trigger button's real screen position and compute where to
+  // open the dropdown, mirroring the ColorPicker portal pattern. Menu width
+  // is w-44 = 176px. Default: open below and right-aligned to the button.
+  // Flip upward if the bottom edge would overflow the viewport.
+  // Flip rightward if the left edge would go off-screen.
+  useLayoutEffect(() => {
+    if (!menuOpen || !triggerRef.current || !menuDropdownRef.current) return
+    const triggerRect = triggerRef.current.getBoundingClientRect()
+    const menuHeight = menuDropdownRef.current.getBoundingClientRect().height
+    const menuWidth = 176
+
+    let top = triggerRect.bottom + 4
+    let left = triggerRect.right - menuWidth
+
+    if (top + menuHeight > window.innerHeight) {
+      top = triggerRect.top - menuHeight - 4
+    }
+    if (left < 0) {
+      left = triggerRect.left
+    }
+
+    setCoords({ top, left })
+  }, [menuOpen])
+
+  // Outside-click-to-close. Both refs must be checked: menuDropdownRef covers
+  // clicks inside the portaled menu content, and triggerRef covers the button
+  // itself so that clicking the button while the menu is open does not
+  // double-fire (outside-click close + button toggle reopen).
+  useEffect(() => {
+    if (!menuOpen) return
+    function handler(e: MouseEvent) {
+      const inDropdown = menuDropdownRef.current?.contains(e.target as Node)
+      const inTrigger = triggerRef.current?.contains(e.target as Node)
+      if (!inDropdown && !inTrigger) {
+        setMenuOpen(false)
+        setShowMoveList(false)
+        setCoords(null)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [menuOpen])
+
+  async function handleMove(targetFolderId: string | null) {
+    setMenuOpen(false)
+    setShowMoveList(false)
+    setCoords(null)
+    try {
+      await api.patch(`/documents/${doc.id}/move`, { folder_id: targetFolderId })
+      const name = targetFolderId
+        ? (folders.find((f) => f.id === targetFolderId)?.name ?? 'folder')
+        : 'root level'
+      toast.success(`Moved to ${targetFolderId ? `"${name}"` : name}`)
+      fetchDocs()
+    } catch {
+      toast.error('Could not move file -- please try again')
+    }
+  }
+
+  const dropdown = (
+    <div
+      ref={menuDropdownRef}
+      className="bg-white dark:bg-[#252525] border border-[0.5px] border-surface-border dark:border-dark-border rounded-[8px] shadow-lg overflow-hidden w-44"
+      style={{
+        position: 'fixed',
+        zIndex: 9999,
+        top: coords?.top ?? 0,
+        left: coords?.left ?? 0,
+        visibility: coords ? 'visible' : 'hidden',
+      }}
+    >
+      {/* Primary action */}
+      <button
+        onClick={() => setShowMoveList((v) => !v)}
+        className="w-full text-left flex items-center gap-2 px-3 py-2 text-[12px] text-[#374151] dark:text-[#EDEEF0] hover:bg-surface-input dark:hover:bg-dark-card transition-colors"
+      >
+        <Folder className="h-3.5 w-3.5 text-[#6B7280] flex-shrink-0" />
+        Move to Folder
+      </button>
+
+      {/* Folder list -- shown when "Move to Folder" is clicked */}
+      {showMoveList && (
+        <div className="border-t border-[0.5px] border-surface-border dark:border-dark-border max-h-48 overflow-y-auto">
+          {/* Root option: disabled when doc is already at root */}
+          <button
+            onClick={() => handleMove(null)}
+            disabled={doc.folder_id === null}
+            className="w-full text-left flex items-center gap-2 px-3 py-1.5 text-[12px] text-[#374151] dark:text-[#EDEEF0] hover:bg-surface-input dark:hover:bg-dark-card transition-colors disabled:opacity-40 disabled:cursor-default"
+          >
+            <Folder className="h-3.5 w-3.5 text-[#6B7280] flex-shrink-0" />
+            Root level
+          </button>
+          {folders.map((f) => (
+            /* Each folder option: disabled when doc is already in this folder */
+            <button
+              key={f.id}
+              onClick={() => handleMove(f.id)}
+              disabled={doc.folder_id === f.id}
+              className="w-full text-left px-3 py-1.5 text-[12px] text-[#374151] dark:text-[#EDEEF0] hover:bg-surface-input dark:hover:bg-dark-card transition-colors disabled:opacity-40 disabled:cursor-default truncate"
+            >
+              {f.name}
+            </button>
+          ))}
+          {folders.length === 0 && (
+            <p className="px-3 py-2 text-[11px] text-[#9CA3AF]">No folders yet.</p>
+          )}
+        </div>
+      )}
+    </div>
+  )
+
   return (
     <div
+      draggable="true"
+      onDragStart={(e) => { e.dataTransfer.setData('text/plain', doc.id); setIsDragging(true) }}
+      onDragEnd={() => setIsDragging(false)}
       className={cn(
-        'flex items-center gap-3 px-3 py-2.5',
+        'group flex items-center gap-3 px-3 py-2.5',
         borderBottom ? 'border-b border-[0.5px] border-[#E5E7EB] dark:border-[#333]' : '',
+        isDragging && 'opacity-50',
       )}
     >
       <FileText className="h-4 w-4 text-[#6B7280] flex-shrink-0" />
@@ -385,6 +537,17 @@ function DocRow({ doc, borderBottom }: { doc: BrowserDoc; borderBottom: boolean 
           {formatBytes(doc.size_bytes)}{doc.created_at ? ` · ${formatDate(doc.created_at)}` : ''}
         </p>
       </div>
+
+      {/* Three-dot trigger button -- hover-reveal, matching this file's hover-action pattern */}
+      <button
+        ref={triggerRef}
+        onClick={() => { setMenuOpen((v) => !v); setShowMoveList(false); setCoords(null) }}
+        className="p-1 rounded text-[#9CA3AF] hover:text-[#6B7280] dark:hover:text-[#EDEEF0] hover:bg-[#F3F4F6] dark:hover:bg-[#333] transition-colors opacity-0 group-hover:opacity-100 flex-shrink-0"
+      >
+        <MoreVertical className="h-3.5 w-3.5" />
+      </button>
+
+      {menuOpen && createPortal(dropdown, document.body)}
     </div>
   )
 }
@@ -409,6 +572,7 @@ export function FolderBrowser({
   const [showNewFolder, setShowNewFolder] = useState(false)
   const [showUpload, setShowUpload] = useState(false)
   const [showArchived, setShowArchived] = useState(false)
+  const [rootDragOver, setRootDragOver] = useState(false)
 
   // Build a folder lookup map for path resolution
   const folderById: Record<string, BrowserFolder> = {}
@@ -490,6 +654,22 @@ export function FolderBrowser({
     setShowArchived(false)
   }
 
+  // Shared move logic for drag-and-drop. DocRow's three-dot menu uses its own
+  // handleMove (has all context locally); drag targets use this lifted version
+  // so the API call, toasts, and refresh are not duplicated across drop sites.
+  async function moveDoc(docId: string, targetFolderId: string | null, targetFolderName: string | null) {
+    const doc = docs.find((d) => d.id === docId)
+    if (!doc) return
+    if (doc.folder_id === targetFolderId) return
+    try {
+      await api.patch(`/documents/${docId}/move`, { folder_id: targetFolderId })
+      toast.success(`Moved to ${targetFolderName ? `"${targetFolderName}"` : 'root level'}`)
+      fetchDocs()
+    } catch {
+      toast.error('Could not move file -- please try again')
+    }
+  }
+
   function handleFolderCreated() {
     fetchFolders()
   }
@@ -562,8 +742,17 @@ export function FolderBrowser({
                 selectedFolderId === null
                   ? 'bg-surface-input dark:bg-dark-card text-brand dark:text-[#EDEEF0] font-medium'
                   : 'text-[#6B7280] hover:bg-surface-input dark:hover:bg-dark-card hover:text-brand dark:hover:text-[#EDEEF0]',
+                rootDragOver && 'ring-2 ring-inset ring-brand',
               )}
               onClick={handleSelectRoot}
+              onDragOver={(e) => { e.preventDefault(); setRootDragOver(true) }}
+              onDragLeave={() => setRootDragOver(false)}
+              onDrop={(e) => {
+                e.preventDefault()
+                setRootDragOver(false)
+                const docId = e.dataTransfer.getData('text/plain')
+                if (docId) moveDoc(docId, null, null)
+              }}
             >
               <Folder className="h-3.5 w-3.5 flex-shrink-0" />
               <span>All folders</span>
@@ -576,6 +765,7 @@ export function FolderBrowser({
                 selectedId={selectedFolderId}
                 onSelect={handleSelectFolder}
                 childrenOf={childrenOf}
+                onDropDoc={(docId) => moveDoc(docId, f.id, f.name)}
               />
             ))}
           </div>
@@ -663,6 +853,8 @@ export function FolderBrowser({
                 key={doc.id}
                 doc={doc}
                 borderBottom={i < active.length - 1 || (showArchivedToggle ? archived.length > 0 : false)}
+                folders={folders}
+                fetchDocs={fetchDocs}
               />
             ))}
 
@@ -690,6 +882,8 @@ export function FolderBrowser({
                         key={doc.id}
                         doc={doc}
                         borderBottom={i < archived.length - 1}
+                        folders={folders}
+                        fetchDocs={fetchDocs}
                       />
                     ))}
                   </div>
