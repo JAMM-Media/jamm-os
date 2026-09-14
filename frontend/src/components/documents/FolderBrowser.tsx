@@ -1,8 +1,8 @@
 // frontend/src/components/documents/FolderBrowser.tsx
 'use client'
 
-import { useState, useCallback, useEffect } from 'react'
-import { ChevronRight, ChevronDown, ChevronUp, Folder, FolderOpen, FolderPlus, X, FileText } from 'lucide-react'
+import { useState, useCallback, useEffect, useRef } from 'react'
+import { ChevronRight, ChevronDown, ChevronUp, Folder, FolderOpen, FolderPlus, Upload, X, FileText } from 'lucide-react'
 import { toast } from 'sonner'
 import api from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -223,6 +223,150 @@ function NewFolderModal({
 }
 
 // ---------------------------------------------------------------------------
+// Upload modal: mirrors firm-library/page.tsx's UploadModal exactly, with
+// the addition of client_id and engagement_id in both payloads so uploads
+// are scoped to the correct client or engagement record.
+// ---------------------------------------------------------------------------
+
+function UploadModal({
+  scope,
+  engagementId,
+  clientId,
+  currentFolderId,
+  onClose,
+  onUploaded,
+}: {
+  scope: 'engagement' | 'client'
+  engagementId?: string
+  clientId?: string
+  currentFolderId: string | null
+  onClose: () => void
+  onUploaded: () => void
+}) {
+  const [file, setFile] = useState<File | null>(null)
+  const [description, setDescription] = useState('')
+  const [uploading, setUploading] = useState(false)
+  const [progress, setProgress] = useState('')
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  async function handleUpload() {
+    if (!file) return
+    setUploading(true)
+    setProgress('Uploading...')
+    try {
+      const urlPayload: Record<string, unknown> = {
+        filename: file.name,
+        content_type: file.type || 'application/octet-stream',
+      }
+      if (currentFolderId) urlPayload.folder_id = currentFolderId
+      if (clientId) urlPayload.client_id = clientId
+      if (engagementId) urlPayload.engagement_id = engagementId
+
+      const { data: urlData } = await api.post('/documents/upload-url', urlPayload)
+      const { document_id, upload_url } = urlData
+
+      await fetch(upload_url, {
+        method: 'PUT',
+        body: file,
+        headers: { 'Content-Type': file.type || 'application/octet-stream' },
+      })
+
+      const completePayload: Record<string, unknown> = {
+        filename: file.name,
+        content_type: file.type || 'application/octet-stream',
+      }
+      if (currentFolderId) completePayload.folder_id = currentFolderId
+      if (clientId) completePayload.client_id = clientId
+      if (engagementId) completePayload.engagement_id = engagementId
+      if (description.trim()) completePayload.description = description.trim()
+
+      await api.post(`/documents/${document_id}/upload-complete`, completePayload)
+      toast.success(`"${file.name}" uploaded`)
+      onUploaded()
+      onClose()
+    } catch {
+      toast.error('Upload failed -- please try again')
+    } finally {
+      setUploading(false)
+      setProgress('')
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={onClose}>
+      <div
+        className="bg-surface-page dark:bg-dark-page rounded-[10px] border border-[0.5px] border-surface-border dark:border-dark-border w-[480px] max-w-[92vw] shadow-lg"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-5 py-4 border-b border-[0.5px] border-surface-border dark:border-dark-border">
+          <h2 className="text-[14px] font-semibold text-brand dark:text-[#EDEEF0]">Upload Document</h2>
+          <button onClick={onClose} disabled={uploading} className="text-[#6B7280] hover:text-brand transition-colors">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="p-5 flex flex-col gap-4">
+          <div>
+            <label className="text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em] block mb-1.5">
+              File
+            </label>
+            <div
+              className="border border-dashed border-surface-border dark:border-dark-border rounded-[6px] p-6 text-center cursor-pointer hover:bg-surface-input dark:hover:bg-dark-card transition-colors"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              {file ? (
+                <p className="text-[13px] text-brand dark:text-[#EDEEF0]">{file.name}</p>
+              ) : (
+                <>
+                  <Upload className="h-6 w-6 text-[#6B7280] mx-auto mb-2" />
+                  <p className="text-[13px] text-[#6B7280]">Click to select a file</p>
+                </>
+              )}
+              <input
+                ref={fileInputRef}
+                type="file"
+                className="hidden"
+                onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+              />
+            </div>
+          </div>
+          <div>
+            <label className="text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em] block mb-1.5">
+              Description (optional)
+            </label>
+            <input
+              type="text"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="e.g. Q3 financial statements"
+              className="w-full h-9 px-2.5 rounded-[6px] border border-[0.5px] border-surface-border dark:border-dark-border bg-surface-input dark:bg-dark-card text-[13px] text-brand dark:text-[#EDEEF0] placeholder:text-[#9CA3AF] focus:outline-none"
+            />
+          </div>
+          {progress && (
+            <p className="text-[12px] text-[#6B7280]">{progress}</p>
+          )}
+        </div>
+        <div className="flex items-center justify-end gap-2 px-5 py-3.5 border-t border-[0.5px] border-surface-border dark:border-dark-border">
+          <button
+            onClick={onClose}
+            disabled={uploading}
+            className="h-8 px-3.5 rounded-[6px] border border-[0.5px] border-surface-border dark:border-dark-border text-[12px] text-[#6B7280] hover:text-brand transition-colors disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleUpload}
+            disabled={!file || uploading}
+            className="h-8 px-3.5 rounded-[6px] bg-brand dark:bg-brand-btn text-white text-[12px] font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
+          >
+            {uploading ? progress || 'Uploading...' : 'Upload'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // DocRow: single file row, shared between active and archived lists
 // ---------------------------------------------------------------------------
 
@@ -263,6 +407,7 @@ export function FolderBrowser({
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null)
   const [folderPath, setFolderPath] = useState<{ id: string; name: string }[]>([])
   const [showNewFolder, setShowNewFolder] = useState(false)
+  const [showUpload, setShowUpload] = useState(false)
   const [showArchived, setShowArchived] = useState(false)
 
   // Build a folder lookup map for path resolution
@@ -374,15 +519,24 @@ export function FolderBrowser({
       {/* Section header with New Folder button */}
       <div className="flex items-center justify-between mb-3">
         <span className="text-[13px] font-medium text-[#1F3148] dark:text-[#EDEEF0]">Folders</span>
-        {/* New Folder button is absent (not disabled) when the engagement is finalized */}
+        {/* Upload and New Folder buttons are absent (not disabled) when the engagement is finalized */}
         {!isFinalized && (
-          <button
-            onClick={() => setShowNewFolder(true)}
-            className="flex items-center gap-1.5 h-7 px-2.5 rounded-[6px] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] text-[12px] text-[#6B7280] hover:text-brand dark:hover:text-[#EDEEF0] hover:border-brand dark:hover:border-[#4A7FA5] transition-colors"
-          >
-            <FolderPlus className="h-3.5 w-3.5" />
-            New Folder
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowUpload(true)}
+              className="flex items-center gap-1.5 h-7 px-2.5 rounded-[6px] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] text-[12px] text-[#6B7280] hover:text-brand dark:hover:text-[#EDEEF0] hover:border-brand dark:hover:border-[#4A7FA5] transition-colors"
+            >
+              <Upload className="h-3.5 w-3.5" />
+              Upload
+            </button>
+            <button
+              onClick={() => setShowNewFolder(true)}
+              className="flex items-center gap-1.5 h-7 px-2.5 rounded-[6px] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] text-[12px] text-[#6B7280] hover:text-brand dark:hover:text-[#EDEEF0] hover:border-brand dark:hover:border-[#4A7FA5] transition-colors"
+            >
+              <FolderPlus className="h-3.5 w-3.5" />
+              New Folder
+            </button>
+          </div>
         )}
       </div>
 
@@ -468,6 +622,17 @@ export function FolderBrowser({
           parentFolderId={selectedFolderId}
           onClose={() => setShowNewFolder(false)}
           onCreated={handleFolderCreated}
+        />
+      )}
+
+      {showUpload && (
+        <UploadModal
+          scope={scope}
+          engagementId={engagementId}
+          clientId={clientId}
+          currentFolderId={selectedFolderId}
+          onClose={() => setShowUpload(false)}
+          onUploaded={fetchDocs}
         />
       )}
     </div>

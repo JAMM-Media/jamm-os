@@ -535,7 +535,7 @@ function UploadModal({
   async function handleUpload() {
     if (!file) return
     setUploading(true)
-    setProgress('Requesting upload URL...')
+    setProgress('Uploading...')
     try {
       const urlPayload: Record<string, unknown> = {
         filename: file.name,
@@ -546,14 +546,12 @@ function UploadModal({
       const { data: urlData } = await api.post('/documents/upload-url', urlPayload)
       const { document_id, upload_url } = urlData
 
-      setProgress('Uploading to S3...')
       await fetch(upload_url, {
         method: 'PUT',
         body: file,
         headers: { 'Content-Type': file.type || 'application/octet-stream' },
       })
 
-      setProgress('Finalizing...')
       const completePayload: Record<string, unknown> = {
         filename: file.name,
         content_type: file.type || 'application/octet-stream',
