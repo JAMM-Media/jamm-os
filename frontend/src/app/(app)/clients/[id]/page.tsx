@@ -690,6 +690,14 @@ function ClientDetailContent() {
 
         {activeTab === 'engagements' && (
           <div className="rounded-modal border border-[0.5px] border-surface-border dark:border-dark-border overflow-hidden">
+            <div className="flex items-center justify-end px-3 py-2 border-b border-[0.5px] border-surface-border dark:border-dark-border bg-surface-card dark:bg-dark-page">
+              <button
+                onClick={() => setNewEngagementOpen(true)}
+                className="h-8 px-3 rounded-[6px] bg-brand dark:bg-brand-btn text-white text-[12px] font-medium hover:opacity-90 transition-opacity"
+              >
+                + New Engagement
+              </button>
+            </div>
             <table className="w-full border-collapse">
               <thead>
                 <tr className="bg-surface-card dark:bg-dark-page">
@@ -1035,7 +1043,7 @@ function ClientDetailContent() {
         onAdd={(eng: Engagement) => {
           setNewEngagementOpen(false)
           setInitialEngagementType(undefined)
-          void eng
+          router.push(`/engagements/${eng.id}`)
         }}
         preselectedClientId={clientId}
         initialEngagementType={initialEngagementType}
