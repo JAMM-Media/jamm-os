@@ -1,7 +1,8 @@
 // path: frontend/src/app/calendar/page.tsx
 'use client'
 
-import { useState, useCallback, useRef, useEffect } from 'react'
+import { useState, useCallback, useRef, useEffect, useLayoutEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { engagementsApi } from '@/lib/api/engagements'
 import { tasksApi } from '@/lib/api/tasks'
@@ -149,6 +150,59 @@ function formatDate(s: string): string {
 // Color picker popover
 // ---------------------------------------------------------------------------
 
+const PALETTE = [
+  '#6B7280', '#D14343', '#E66A5A', '#D97706', '#B7791F', '#C79219',
+  '#7A9A24', '#3C8C5A', '#167C5A', '#16847B', '#1487A6', '#2E7DBA',
+  '#356FD6', '#4F61C7', '#6E62C6', '#8C55B5', '#B44B8B', '#C84C62',
+]
+
+function getCheckColor(hex: string): string {
+  const r = parseInt(hex.slice(1, 3), 16)
+  const g = parseInt(hex.slice(3, 5), 16)
+  const b = parseInt(hex.slice(5, 7), 16)
+  const brightness = (0.299 * r + 0.587 * g + 0.114 * b) / 255
+  return brightness > 0.44 ? '#1a1a1a' : '#ffffff'
+}
+
+function isValidHex(s: string): boolean {
+  return /^#?[0-9a-fA-F]{6}$/.test(s.trim())
+}
+
+function normalizeHex(s: string): string {
+  return '#' + s.trim().replace(/^#/, '').toUpperCase()
+}
+
+function hexToHsv(hex: string): { h: number; s: number; v: number } {
+  const c = hex.replace(/^#/, '')
+  const r = parseInt(c.slice(0, 2), 16) / 255
+  const g = parseInt(c.slice(2, 4), 16) / 255
+  const b = parseInt(c.slice(4, 6), 16) / 255
+  const max = Math.max(r, g, b)
+  const min = Math.min(r, g, b)
+  const d = max - min
+  const v = max
+  const s = max === 0 ? 0 : d / max
+  let h = 0
+  if (d !== 0) {
+    if (max === r) h = ((g - b) / d + 6) % 6
+    else if (max === g) h = (b - r) / d + 2
+    else h = (r - g) / d + 4
+    h = h * 60
+  }
+  return { h, s, v }
+}
+
+function hsvToHex(h: number, s: number, v: number): string {
+  const c = v * s
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1))
+  const m = v - c
+  const hi = Math.floor(h / 60) % 6
+  const segments = [[c,x,0],[x,c,0],[0,c,x],[0,x,c],[x,0,c],[c,0,x]]
+  const [r, g, b] = segments[hi] ?? [0, 0, 0]
+  const toHex = (n: number) => Math.round((n + m) * 255).toString(16).padStart(2, '0')
+  return '#' + toHex(r) + toHex(g) + toHex(b)
+}
+
 interface ColorPickerProps {
   value: string
   onChange: (c: string) => void
@@ -156,26 +210,326 @@ interface ColorPickerProps {
 }
 
 function ColorPicker({ value, onChange, onClose }: ColorPickerProps) {
-  const ref = useRef<HTMLDivElement>(null)
+  // triggerRef: attached to an invisible anchor span rendered in the normal DOM
+  // tree (inside the trigger's relative-positioned wrapper). This gives us the
+  // trigger's real viewport coordinates without the portal being in that subtree.
+  const triggerRef = useRef<HTMLSpanElement>(null)
+  // popoverRef: attached to the portaled popover div (rendered in document.body).
+  // Used for outside-click detection and measuring popover height.
+  const popoverRef = useRef<HTMLDivElement>(null)
+  const [showCustomInput, setShowCustomInput] = useState(false)
+  // Raw text the user is typing in the custom hex field.
+  const [hexInput, setHexInput] = useState('')
+  // HSV state driving the visual SL field and hue slider.
+  const [hue, setHue] = useState(0)
+  const [sv, setSv] = useState<{ s: number; v: number }>({ s: 1, v: 1 })
+  // Refs for the visual picker elements and drag tracking.
+  const slRef = useRef<HTMLDivElement>(null)
+  const hueSliderRef = useRef<HTMLDivElement>(null)
+  const isDraggingSlRef = useRef(false)
+  const isDraggingHueRef = useRef(false)
+  // Stable refs to current hue/sv so drag handlers never have stale closures.
+  const hueForDrag = useRef(0)
+  const svForDrag = useRef<{ s: number; v: number }>({ s: 1, v: 1 })
+  hueForDrag.current = hue
+  svForDrag.current = sv
+  // Pixel coordinates for position:fixed placement. null until measured.
+  const [coords, setCoords] = useState<{ top: number; left: number } | null>(null)
 
+  useLayoutEffect(() => {
+    if (!triggerRef.current || !popoverRef.current) return
+    // Measure the trigger wrapper (parentElement of the anchor span), which is
+    // the relative-positioned div containing the swatch + this ColorPicker.
+    const triggerRect = triggerRef.current.parentElement?.getBoundingClientRect()
+    if (!triggerRect) return
+    const popoverHeight = popoverRef.current.getBoundingClientRect().height
+
+    // Default: open below the trigger, left-aligned to trigger's left edge.
+    let top = triggerRect.bottom
+    let left = triggerRect.left
+
+    // Flip horizontally: if right edge of popover would overflow viewport.
+    if (left + 260 > window.innerWidth) {
+      left = triggerRect.right - 260
+    }
+
+    // Flip vertically: if bottom edge of popover would overflow viewport.
+    if (top + popoverHeight > window.innerHeight) {
+      top = triggerRect.top - popoverHeight
+    }
+
+    setCoords({ top, left })
+  }, [])
+
+  // Outside-click-to-close. popoverRef.current is the real portaled DOM node;
+  // Node.contains() checks the real DOM tree regardless of where React placed it,
+  // so this works identically to a non-portaled component.
   useEffect(() => {
     function onClick(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose()
+      if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) onClose()
     }
     document.addEventListener('mousedown', onClick)
     return () => document.removeEventListener('mousedown', onClick)
   }, [onClose])
 
-  return (
-    <div ref={ref} className="absolute z-50 bg-surface-card border border-surface-border rounded shadow-lg p-2" style={{ top: '100%', left: 0 }}>
-      <input
-        type="color"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="w-10 h-10 cursor-pointer border-0 p-0 bg-transparent"
-        autoFocus
-      />
+  // Drag handlers for the SL field and hue slider.
+  useEffect(() => {
+    if (!showCustomInput) return
+    function onMouseMove(e: MouseEvent) {
+      if (isDraggingSlRef.current && slRef.current) {
+        const rect = slRef.current.getBoundingClientRect()
+        const s = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
+        const v = Math.max(0, Math.min(1, 1 - (e.clientY - rect.top) / rect.height))
+        setSv({ s, v })
+        const hex = hsvToHex(hueForDrag.current, s, v).toUpperCase()
+        setHexInput(hex)
+        onChange(hex)
+      }
+      if (isDraggingHueRef.current && hueSliderRef.current) {
+        const rect = hueSliderRef.current.getBoundingClientRect()
+        const h = Math.max(0, Math.min(360, ((e.clientX - rect.left) / rect.width) * 360))
+        setHue(h)
+        const hex = hsvToHex(h, svForDrag.current.s, svForDrag.current.v).toUpperCase()
+        setHexInput(hex)
+        onChange(hex)
+      }
+    }
+    function onMouseUp() {
+      isDraggingSlRef.current = false
+      isDraggingHueRef.current = false
+    }
+    document.addEventListener('mousemove', onMouseMove)
+    document.addEventListener('mouseup', onMouseUp)
+    return () => {
+      document.removeEventListener('mousemove', onMouseMove)
+      document.removeEventListener('mouseup', onMouseUp)
+    }
+  }, [showCustomInput, onChange])
+
+  const normalizedValue = value.toLowerCase()
+  const isPreset = PALETTE.some((h) => h.toLowerCase() === normalizedValue)
+  const showCustomHex = !isPreset && value.startsWith('#') && value.length === 7
+
+  const popover = (
+    <div
+      ref={popoverRef}
+      className="bg-surface-card border border-surface-border rounded-xl shadow-xl"
+      style={{
+        position: 'fixed',
+        zIndex: 9999,
+        width: 260,
+        padding: 16,
+        top: coords?.top ?? 0,
+        left: coords?.left ?? 0,
+        visibility: coords ? 'visible' : 'hidden',
+      }}
+    >
+      {/* Title */}
+      <p className="text-[12px] font-semibold text-[#374151] dark:text-[#EDEEF0] mb-3">Color</p>
+
+      {/* 6x3 swatch grid: 20px dots in 28px hit areas, 12px gap */}
+      {!showCustomInput && <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 28px)', gap: 12 }}>
+        {PALETTE.map((hex) => {
+          const selected = hex.toLowerCase() === normalizedValue
+          return (
+            <button
+              key={hex}
+              onClick={() => onChange(hex)}
+              style={{
+                width: 28,
+                height: 28,
+                padding: 0,
+                background: 'transparent',
+                border: 'none',
+                borderRadius: '50%',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <span
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  width: 20,
+                  height: 20,
+                  borderRadius: '50%',
+                  backgroundColor: hex,
+                  outline: selected ? '2px solid #9CA3AF' : 'none',
+                  outlineOffset: '2.5px',
+                }}
+              >
+                {selected && (
+                  <svg width="10" height="8" viewBox="0 0 10 8" fill="none">
+                    <path
+                      d="M1.5 4L3.5 6L8.5 1.5"
+                      stroke={getCheckColor(hex)}
+                      strokeWidth="1.75"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                )}
+              </span>
+            </button>
+          )
+        })}
+      </div>}
+
+      {/* Divider */}
+      <div className="border-t border-surface-border my-3" />
+
+      {/* Custom color row */}
+      <div className="flex items-center gap-2">
+        <button
+          onClick={() => {
+            setShowCustomInput((prev) => {
+              const next = !prev
+              if (next) {
+                if (showCustomHex && isValidHex(value)) {
+                  const { h, s, v } = hexToHsv(normalizeHex(value))
+                  setHue(h)
+                  setSv({ s, v })
+                  setHexInput(value.toUpperCase())
+                } else {
+                  setHue(0)
+                  setSv({ s: 1, v: 1 })
+                  setHexInput('')
+                }
+              }
+              return next
+            })
+          }}
+          className="flex items-center gap-1.5 text-[12px] text-[#6B7280] dark:text-[#9CA3AF] hover:text-[#374151] dark:hover:text-[#EDEEF0] transition-colors flex-1 text-left"
+        >
+          <Plus size={12} />
+          <span>Custom color</span>
+        </button>
+        {showCustomHex && (
+          <span className="text-[11px] text-[#9CA3AF] font-mono">{value.toUpperCase()}</span>
+        )}
+      </div>
+
+      {/* Custom visual picker panel */}
+      {showCustomInput && (
+        <div className="mt-2 flex flex-col gap-2">
+          {/* Saturation/lightness gradient field */}
+          <div
+            ref={slRef}
+            onMouseDown={(e) => { isDraggingSlRef.current = true; e.preventDefault() }}
+            style={{
+              width: '100%',
+              height: 120,
+              borderRadius: 6,
+              position: 'relative',
+              cursor: 'crosshair',
+              userSelect: 'none',
+              background: [
+                'linear-gradient(to bottom, transparent, #000)',
+                `linear-gradient(to right, #fff, hsl(${Math.round(hue)}, 100%, 50%))`,
+              ].join(', '),
+            }}
+          >
+            <div
+              style={{
+                position: 'absolute',
+                left: `${sv.s * 100}%`,
+                top: `${(1 - sv.v) * 100}%`,
+                transform: 'translate(-50%, -50%)',
+                width: 12,
+                height: 12,
+                borderRadius: '50%',
+                border: '2px solid #fff',
+                boxShadow: '0 0 0 1px rgba(0,0,0,0.35)',
+                pointerEvents: 'none',
+              }}
+            />
+          </div>
+
+          {/* Hue slider */}
+          <div
+            ref={hueSliderRef}
+            onMouseDown={(e) => { isDraggingHueRef.current = true; e.preventDefault() }}
+            style={{
+              width: '100%',
+              height: 12,
+              borderRadius: 6,
+              position: 'relative',
+              cursor: 'pointer',
+              userSelect: 'none',
+              background: 'linear-gradient(to right, #f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00)',
+            }}
+          >
+            <div
+              style={{
+                position: 'absolute',
+                left: `${(hue / 360) * 100}%`,
+                top: '50%',
+                transform: 'translate(-50%, -50%)',
+                width: 14,
+                height: 14,
+                borderRadius: '50%',
+                border: '2px solid #fff',
+                boxShadow: '0 0 0 1px rgba(0,0,0,0.35)',
+                backgroundColor: `hsl(${Math.round(hue)}, 100%, 50%)`,
+                pointerEvents: 'none',
+              }}
+            />
+          </div>
+
+          {/* Preview swatch + hex input row */}
+          <div className="flex items-center gap-2">
+            <span
+              style={{
+                display: 'inline-block',
+                width: 24,
+                height: 24,
+                borderRadius: '50%',
+                backgroundColor: isValidHex(hexInput) ? normalizeHex(hexInput) : (showCustomHex ? value : '#9CA3AF'),
+                flexShrink: 0,
+                border: '1px solid rgba(0,0,0,0.12)',
+              }}
+            />
+            <div className="flex flex-col flex-1">
+              <label className="text-[10px] text-[#9CA3AF] mb-0.5">Hex</label>
+              <input
+                type="text"
+                value={hexInput}
+                onChange={(e) => {
+                  const raw = e.target.value
+                  setHexInput(raw)
+                  if (isValidHex(raw)) {
+                    const hex = normalizeHex(raw)
+                    onChange(hex)
+                    const { h, s, v } = hexToHsv(hex)
+                    setHue(h)
+                    setSv({ s, v })
+                  }
+                }}
+                placeholder="e.g. 1F6FEB"
+                maxLength={7}
+                autoFocus
+                className={`h-7 px-2 rounded-md border text-[12px] font-mono bg-white dark:bg-[#252525] text-[#374151] dark:text-[#EDEEF0] focus:outline-none ${
+                  hexInput.length > 0 && !isValidHex(hexInput)
+                    ? 'border-red-400 dark:border-red-500'
+                    : 'border-[#D1D5DB] dark:border-[#444]'
+                }`}
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
+  )
+
+  return (
+    <>
+      {/* Invisible anchor in the normal DOM tree for trigger position measurement */}
+      <span ref={triggerRef} style={{ display: 'none' }} />
+      {createPortal(popover, document.body)}
+    </>
   )
 }
 
@@ -322,7 +676,7 @@ export default function CalendarPage() {
   const [cursor, setCursor] = useState(new Date(today.getFullYear(), today.getMonth(), 1))
   const [selectedStaff, setSelectedStaff] = useState<string[]>([])
   const [justMe, setJustMe] = useState(true)
-  const [sidebarFilter, setSidebarFilter] = useState<EventType[]>(['deadline'])
+  const [sidebarFilter, setSidebarFilter] = useState<EventType[]>(['deadline', 'extension', 'task', 'meeting', 'holiday'])
   const [editingColor, setEditingColor] = useState<string | null>(null)
   const [addCatOpen, setAddCatOpen] = useState(false)
   const [newCatName, setNewCatName] = useState('')
@@ -614,24 +968,28 @@ export default function CalendarPage() {
       cells.push(`${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`)
     }
     while (cells.length % 7 !== 0) cells.push(null)
+    const numWeeks = cells.length / 7
 
     return (
-      <div className="flex-1 overflow-auto">
-        <div className="grid grid-cols-7 border-b border-surface-border">
+      <div className="flex-1 overflow-hidden flex flex-col">
+        <div className="grid grid-cols-7 border-b border-surface-border flex-shrink-0">
           {DAY_NAMES.map((d) => (
             <div key={d} className="text-center text-xs font-medium py-1 text-muted-foreground">{d}</div>
           ))}
         </div>
-        <div className="grid grid-cols-7">
+        <div
+          className="grid grid-cols-7 flex-1"
+          style={{ gridTemplateRows: `repeat(${numWeeks}, 1fr)` }}
+        >
           {cells.map((ds, i) => {
-            if (!ds) return <div key={i} className="min-h-[80px] border-b border-r border-surface-border/50 bg-surface-card/30" />
+            if (!ds) return <div key={i} className="border-b border-r border-surface-border/70 bg-surface-card/30" />
             const dayEvents = byDate[ds] ?? []
             const isToday = ds === todayStr
             const isExpanded = expandedDay === ds
             return (
               <div
                 key={ds}
-                className="min-h-[80px] border-b border-r border-surface-border/50 p-1 relative"
+                className="border-b border-r border-surface-border/70 p-1 relative"
               >
                 <div
                   className={`text-xs font-medium mb-1 w-5 h-5 flex items-center justify-center rounded-full ${isToday ? 'bg-primary text-primary-foreground' : 'text-foreground'}`}
