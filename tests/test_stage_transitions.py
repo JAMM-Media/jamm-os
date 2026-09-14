@@ -24,13 +24,34 @@ from tests.conftest import TestingSessionLocal
 from app.models.firm import Firm
 from app.models.lead import Lead
 from app.models.client import Client as ClientModel
+from app.models.user import User
+from app.models.engagement import Engagement
+from app.models.engagement_member import EngagementMember
 from app.crud.lead import transition_lead_stage
-from app.core.enums import LeadProvenance, LeadStage, LeadLostReason
+from app.core.enums import LeadProvenance, LeadStage, LeadLostReason, UserRole
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def _make_user(firm_id) -> User:
+    """Create a staff-role User in the test DB. Modeled on test_bookings.py's _make_user."""
+    db = TestingSessionLocal()
+    try:
+        user = User(
+            firm_id=firm_id,
+            email=f"staff-{uuid.uuid4().hex[:8]}@example.com",
+            hashed_password="not-a-real-hash",
+            role=UserRole.staff,
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        _ = user.id, user.firm_id
+        return user
+    finally:
+        db.close()
 
 def _make_firm(slug: str) -> Firm:
     db = TestingSessionLocal()
@@ -237,6 +258,59 @@ class TestEnforcedTransitionRules:
             )
             assert event.extra_metadata["prior_lost_reason"] == LeadLostReason.timing.value, (
                 f"Revival event prior_lost_reason wrong: {event.extra_metadata!r}"
+            )
+        finally:
+            db.close()
+
+
+# ---------------------------------------------------------------------------
+# Engagement membership created on won transition
+# ---------------------------------------------------------------------------
+
+class TestWonTransitionEngagementMembership:
+    def test_won_creates_engagement_with_administrator_membership(self):
+        """Transitioning to won creates an Engagement and grants the initiating
+        staff member administrator access to it.
+
+        Guards the fix that wires ensure_creator_is_administrator into the won
+        branch, preventing won-created engagements from being invisible to
+        normal staff accounts. The _make_user helper is modeled on
+        test_bookings.py's _make_user.
+        """
+        firm = _make_firm("won-membership-firm")
+        user = _make_user(firm.id)
+        lead = _make_lead(firm.id, LeadStage.proposal)
+
+        db = TestingSessionLocal()
+        try:
+            fresh_lead = db.query(Lead).filter(Lead.id == lead.id).first()
+            result = transition_lead_stage(
+                db, fresh_lead, LeadStage.won,
+                current_user_id=user.id,
+            )
+
+            assert result.converted_client_id is not None, (
+                "converted_client_id must be set after won transition"
+            )
+
+            engagement = db.query(Engagement).filter(
+                Engagement.client_id == result.converted_client_id,
+            ).first()
+            assert engagement is not None, (
+                "No Engagement found for converted client after won transition"
+            )
+
+            member = db.query(EngagementMember).filter(
+                EngagementMember.engagement_id == engagement.id,
+                EngagementMember.user_id == user.id,
+            ).first()
+            assert member is not None, (
+                f"No EngagementMember row found for user {user.id} on engagement {engagement.id}. "
+                "Staff who mark a lead won must receive administrator access to the created engagement."
+            )
+            assert member.is_administrator, (
+                f"Membership exists but is_administrator is False for user {user.id}. "
+                "The won transition must grant administrator access, not plain membership."
             )
         finally:
             db.close()

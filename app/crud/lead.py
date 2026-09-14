@@ -1,5 +1,6 @@
 # app/crud/lead.py
 
+from typing import Optional
 from uuid import UUID
 from sqlalchemy.orm import Session
 
@@ -158,6 +159,7 @@ def transition_lead_stage(
     lead: Lead,
     new_stage: LeadStage,
     lost_reason=None,
+    current_user_id: Optional[UUID] = None,
 ) -> Lead:
     """The only correct way to change a lead's stage.
 
@@ -192,6 +194,45 @@ def transition_lead_stage(
         lead.converted_client_id = client.id
         db.commit()
         db.refresh(lead)
+        from app.crud import engagement as crud_engagement
+        from app.schemas.engagement import EngagementCreate
+        from app.crud.qc_checklist import populate_from_template
+        from app.services import engagement_member_service
+        from app.services.event_bus import emit_event_sync
+        from app.core.enums import TriggerEvent
+        engagement = crud_engagement.create_engagement(
+            db,
+            EngagementCreate(
+                name=client.name,
+                client_id=client.id,
+                engagement_type=lead.service_interest,
+            ),
+            firm_id=lead.firm_id,
+        )
+        if current_user_id is not None:
+            engagement_member_service.ensure_creator_is_administrator(
+                db=db,
+                firm_id=lead.firm_id,
+                engagement_id=engagement.id,
+                current_user_id=current_user_id,
+            )
+        if engagement.engagement_type:
+            populate_from_template(
+                db=db,
+                firm_id=lead.firm_id,
+                engagement_id=engagement.id,
+                engagement_type=engagement.engagement_type,
+            )
+        emit_event_sync(
+            event=TriggerEvent.engagement_created,
+            payload={
+                "firm_id": str(engagement.firm_id),
+                "engagement_id": str(engagement.id),
+                "client_id": str(engagement.client_id),
+                "engagement_type": str(engagement.engagement_type) if engagement.engagement_type else None,
+                "status": str(engagement.status),
+            },
+        )
         log_event(
             event_type="lead.converted",
             firm_id=lead.firm_id,

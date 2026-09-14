@@ -168,6 +168,7 @@ def transition_lead(
             lead=lead,
             new_stage=payload.new_stage,
             lost_reason=payload.lost_reason,
+            current_user_id=current_user.id,
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
