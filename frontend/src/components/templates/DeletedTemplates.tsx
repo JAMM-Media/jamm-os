@@ -39,6 +39,14 @@ interface DeletedQcTemplate {
   is_active: boolean
 }
 
+interface DeletedDRTemplate {
+  id: string
+  name: string
+  engagement_type: string
+  items: { label: string; is_required: boolean }[]
+  is_active: boolean
+}
+
 const ORGANIZER_TYPE_LABELS: Record<string, string> = {
   individual: 'Individual',
   business: 'Business',
@@ -46,13 +54,14 @@ const ORGANIZER_TYPE_LABELS: Record<string, string> = {
   custom: 'Custom',
 }
 
-type InternalTab = 'engagement' | 'tax_organizers' | 'letters' | 'qc_checklists'
+type InternalTab = 'engagement' | 'tax_organizers' | 'letters' | 'qc_checklists' | 'document_requests'
 
 const INTERNAL_TABS: { key: InternalTab; label: string }[] = [
   { key: 'engagement', label: 'Engagement Templates' },
   { key: 'tax_organizers', label: 'Tax Organizers' },
   { key: 'letters', label: 'Engagement Letters' },
   { key: 'qc_checklists', label: 'QC Checklists' },
+  { key: 'document_requests', label: 'Document Requests' },
 ]
 
 // ── Engagement Templates deleted sub-tab ──────────────────────────────────────
@@ -464,6 +473,111 @@ function DeletedQcTemplates() {
   )
 }
 
+// ── Document Request Templates deleted sub-tab ────────────────────────────────
+
+function DeletedDocumentRequestTemplates() {
+  const [templates, setTemplates] = useState<DeletedDRTemplate[]>([])
+  const [loading, setLoading] = useState(true)
+  const [restoring, setRestoring] = useState<string | null>(null)
+
+  const fetchTemplates = useCallback(async () => {
+    setLoading(true)
+    try {
+      const { data } = await api.get('/api/v1/document-request-templates/?active_only=false')
+      const all = Array.isArray(data) ? data : []
+      setTemplates(
+        all
+          .filter((t: Record<string, unknown>) => t.is_active === false)
+          .map((t: Record<string, unknown>) => ({
+            id: String(t.id),
+            name: String(t.name ?? ''),
+            engagement_type: String(t.engagement_type ?? ''),
+            items: Array.isArray(t.items)
+              ? (t.items as { label: string; is_required: boolean }[])
+              : [],
+            is_active: Boolean(t.is_active),
+          }))
+      )
+    } catch {
+      toast.error('Failed to load deleted document request templates')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => { fetchTemplates() }, [fetchTemplates])
+
+  async function handleRestore(id: string) {
+    setRestoring(id)
+    try {
+      await api.patch(`/api/v1/document-request-templates/${id}`, { is_active: true })
+      toast.success('Template restored')
+      setTemplates((prev) => prev.filter((t) => t.id !== id))
+    } catch {
+      toast.error('Failed to restore template')
+    } finally {
+      setRestoring(null)
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="flex flex-col gap-2">
+        {[1, 2, 3].map((i) => (
+          <div key={i} className="bg-surface-card dark:bg-dark-card rounded-[8px] p-3 flex items-center justify-between">
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="h-3 w-36 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded" />
+              <div className="h-4 w-20 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded-full" />
+              <div className="h-4 w-12 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded-full" />
+              <div className="h-4 w-14 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded-full" />
+            </div>
+            <div className="h-6 w-16 bg-[#D5D8DE] dark:bg-[#444444] animate-pulse rounded-[6px]" />
+          </div>
+        ))}
+      </div>
+    )
+  }
+
+  if (templates.length === 0) {
+    return (
+      <p className="text-[13px] text-[#9CA3AF] py-8 text-center">
+        No deleted document request templates
+      </p>
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      {templates.map((t) => (
+        <div
+          key={t.id}
+          className="bg-surface-card dark:bg-dark-card rounded-[8px] p-3 flex items-center justify-between"
+        >
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-[13px] font-medium text-[#9CA3AF]">{t.name}</span>
+            <span className="px-2 py-0.5 rounded-full bg-blue-100/50 dark:bg-blue-900/20 text-[10px] font-medium text-blue-500/70 dark:text-blue-400/60">
+              {formatEngagementType(t.engagement_type)}
+            </span>
+            <span className="px-2 py-0.5 rounded-full bg-[#E5E7EB]/60 dark:bg-[#333]/60 text-[10px] font-medium text-[#9CA3AF]">
+              {t.items.length} item{t.items.length !== 1 ? 's' : ''}
+            </span>
+            <span className="px-2 py-0.5 rounded-full bg-red-100 dark:bg-red-900/20 text-[10px] font-medium text-red-500 dark:text-red-400">
+              Deleted
+            </span>
+          </div>
+          <button
+            onClick={() => handleRestore(t.id)}
+            disabled={restoring === t.id}
+            className="text-brand dark:text-[#4A7FA5] border border-surface-border dark:border-dark-border rounded-[6px] px-3 py-1.5 text-[12px] hover:bg-surface-card dark:hover:bg-dark-card disabled:opacity-50 transition-colors flex-shrink-0"
+          >
+            {restoring === t.id ? 'Restoring...' : 'Restore'}
+          </button>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 // ── Main Component ────────────────────────────────────────────────────────────
 
 export default function DeletedTemplates() {
@@ -471,25 +585,18 @@ export default function DeletedTemplates() {
 
   return (
     <div className="flex flex-col gap-4">
-      {/* Internal sub-tab bar */}
-      <div className="flex items-end gap-0 border-b border-surface-border dark:border-dark-border">
-        {INTERNAL_TABS.map((tab) => (
-          <button
-            key={tab.key}
-            onClick={() => setActiveTab(tab.key)}
-            className={cn(
-              'px-4 py-2.5 text-[13px] transition-colors relative',
-              activeTab === tab.key
-                ? 'text-brand dark:text-[#4A7FA5] font-medium'
-                : 'text-[#6B7280] hover:text-brand dark:hover:text-[#EDEEF0] font-normal',
-            )}
-          >
-            {tab.label}
-            {activeTab === tab.key && (
-              <span className="absolute bottom-0 left-0 right-0 h-[2px] bg-brand dark:bg-[#4A7FA5]" />
-            )}
-          </button>
-        ))}
+      {/* Internal sub-tab dropdown */}
+      <div className="flex items-center gap-2">
+        <span className="text-[12px] text-[#6B7280]">Show deleted:</span>
+        <select
+          value={activeTab}
+          onChange={(e) => setActiveTab(e.target.value as InternalTab)}
+          className="h-8 px-2 rounded-md border border-[#D1D5DB] dark:border-[#444] bg-white dark:bg-[#252525] text-[13px] text-[#374151] dark:text-[#EDEEF0] focus:outline-none focus:border-brand-light"
+        >
+          {INTERNAL_TABS.map((tab) => (
+            <option key={tab.key} value={tab.key}>{tab.label}</option>
+          ))}
+        </select>
       </div>
 
       {/* Sub-tab content */}
@@ -498,6 +605,7 @@ export default function DeletedTemplates() {
         {activeTab === 'tax_organizers' && <DeletedTaxOrganizerTemplates />}
         {activeTab === 'letters' && <DeletedLetterTemplates />}
         {activeTab === 'qc_checklists' && <DeletedQcTemplates />}
+        {activeTab === 'document_requests' && <DeletedDocumentRequestTemplates />}
       </div>
     </div>
   )

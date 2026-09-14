@@ -304,6 +304,12 @@ class Firm(Base):
         cascade="all, delete-orphan",
     )
 
+    document_request_templates: Mapped[list["DocumentRequestTemplate"]] = relationship(
+        "DocumentRequestTemplate",
+        back_populates="firm",
+        cascade="all, delete-orphan",
+    )
+
     staff_credentials: Mapped[list["StaffCredential"]] = relationship(
         "StaffCredential",
         back_populates="firm",
