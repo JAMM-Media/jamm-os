@@ -161,7 +161,7 @@ function StaffUtilizationPanel({ items }: { items: StaffUtilizationItem[] }) {
           <p className="text-[12px] text-muted-foreground">No time logged this week.</p>
         </div>
       ) : (
-        <div className="px-4 py-3 flex flex-col gap-3 overflow-y-auto flex-1">
+        <div className="px-4 py-3 flex flex-col gap-3 flex-1">
           {items.map((item) => (
             <div key={item.user_id}>
               <div className="flex justify-between mb-1">

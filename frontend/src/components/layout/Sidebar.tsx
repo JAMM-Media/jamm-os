@@ -157,7 +157,7 @@ export function Sidebar({ collapsed, onToggle, onConciergeOpen, locked }: Sideba
       )}
 
       {/* Main nav */}
-      <nav ref={navRef} className="flex-1 py-3 overflow-y-auto">
+      <nav ref={navRef} className="flex-1 py-3 overflow-y-hidden">
         <ul className="space-y-0.5 px-1.5">
           {visibleNavItems.map((item) => {
             const isActive = pathname.startsWith(item.href)
