@@ -39,6 +39,28 @@ def create_engagement(db: Session, engagement_in: EngagementCreate, firm_id: UUI
     db.add(engagement)
     db.commit()
     db.refresh(engagement)
+    # Create the "Provided by Client (PBC)" starter folder required by filesystem
+    # spec Section 5. Wrapped in try/except so a folder-creation failure never
+    # rolls back or prevents the engagement itself from being returned. An
+    # engagement without a PBC folder is a recoverable state: the approval
+    # fallback in document_service.py already handles it gracefully.
+    try:
+        from app.services.document_folder_service import create_folder
+        create_folder(
+            db=db,
+            firm_id=firm_id,
+            scope="engagement",
+            name="Provided by Client (PBC)",
+            client_id=engagement.client_id,
+            engagement_id=engagement.id,
+        )
+    except Exception as _exc:
+        import logging as _log
+        _log.getLogger(__name__).warning(
+            "PBC folder creation failed for engagement %s: %s -- engagement creation succeeds",
+            engagement.id,
+            _exc,
+        )
     return engagement
 
 

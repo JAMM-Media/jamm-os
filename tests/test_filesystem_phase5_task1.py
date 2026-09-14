@@ -673,10 +673,30 @@ class TestApprovePBCFolderFallback:
         """Approving a pending document when no 'Provided by Client (PBC)' folder
         exists in that engagement leaves folder_id as None (engagement root).
         No new PBC folder must be created.
+
+        The PBC folder is hard-deleted after engagement creation to simulate an
+        engagement that predates the automatic-creation fix, or one where folder
+        creation failed silently. This is the exact scenario the fallback in
+        document_service.py is designed to handle.
         """
         firm_id = firm_a_owner["firm_id"]
         headers = firm_a_owner["headers"]
         client_id, eng_id = _setup_client_and_engagement(client, headers)
+
+        # Remove the auto-created PBC folder to simulate absence (old engagement
+        # or failed creation). Hard-delete so approve cannot find it.
+        from app.models.document_folder import DocumentFolder as _DF
+        db_pre = TestingSessionLocal()
+        try:
+            pbc = db_pre.query(_DF).filter(
+                _DF.engagement_id == eng_id,
+                _DF.name == "Provided by Client (PBC)",
+            ).first()
+            if pbc:
+                db_pre.delete(pbc)
+                db_pre.commit()
+        finally:
+            db_pre.close()
 
         db = TestingSessionLocal()
         try:
@@ -820,4 +840,126 @@ class TestStaffUploadNoNotification:
         count = _count_notifications_for_doc(uuid.UUID(doc_id))
         assert count == 0, (
             f"Staff upload must fire zero triage arrival notifications; got {count}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# PBC starter folder created on engagement creation
+# ---------------------------------------------------------------------------
+
+class TestPBCFolderCreatedOnEngagement:
+
+    def test_api_engagement_creation_creates_pbc_folder(self, client, firm_a_owner):
+        """A new engagement created via POST /engagements/ immediately has exactly
+        one 'Provided by Client (PBC)' folder with the correct engagement_id and
+        scope='engagement'.
+
+        Guards filesystem spec Section 5: every new engagement must have a PBC
+        starter folder.
+        """
+        from app.models.document_folder import DocumentFolder
+
+        headers = firm_a_owner["headers"]
+        client_id, eng_id = _setup_client_and_engagement(client, headers)
+
+        db = TestingSessionLocal()
+        try:
+            folders = db.query(DocumentFolder).filter(
+                DocumentFolder.engagement_id == eng_id,
+                DocumentFolder.name == "Provided by Client (PBC)",
+                DocumentFolder.deleted_at.is_(None),
+            ).all()
+        finally:
+            db.close()
+
+        assert len(folders) == 1, (
+            f"Expected exactly 1 PBC folder on new engagement {eng_id}; found {len(folders)}"
+        )
+        assert str(folders[0].engagement_id) == eng_id, (
+            f"PBC folder engagement_id mismatch: {folders[0].engagement_id} != {eng_id}"
+        )
+        assert folders[0].scope == "engagement", (
+            f"PBC folder scope must be 'engagement'; got '{folders[0].scope}'"
+        )
+
+    def test_won_transition_engagement_has_pbc_folder(self):
+        """An engagement created automatically by the won-transition path also
+        has a 'Provided by Client (PBC)' folder.
+
+        The won-transition calls crud_engagement.create_engagement directly
+        (bypassing engagement_service.create_engagement), so this test confirms
+        PBC creation fires via the shared crud layer rather than the service layer.
+        """
+        from app.models.document_folder import DocumentFolder
+        from app.models.lead import Lead
+        from app.models.engagement import Engagement as EngagementModel
+        from app.core.enums import LeadProvenance, LeadStage, UserRole
+        from app.models.user import User
+        from app.models.firm import Firm
+        from app.crud.lead import transition_lead_stage
+
+        db_setup = TestingSessionLocal()
+        try:
+            firm = Firm(name="PBC Won Firm", slug=f"pbc-won-{uuid.uuid4().hex[:8]}")
+            db_setup.add(firm)
+            db_setup.flush()
+
+            user = User(
+                firm_id=firm.id,
+                email=f"staff-pbc-{uuid.uuid4().hex[:8]}@example.com",
+                hashed_password="not-a-real-hash",
+                role=UserRole.staff,
+            )
+            db_setup.add(user)
+            db_setup.flush()
+
+            lead = Lead(
+                firm_id=firm.id,
+                name="PBC Won Prospect",
+                email=f"pbc-won-{uuid.uuid4().hex[:8]}@example.com",
+                provenance=LeadProvenance.firm_entered.value,
+                stage=LeadStage.proposal.value,
+            )
+            db_setup.add(lead)
+            db_setup.commit()
+
+            firm_id = firm.id
+            user_id = user.id
+            lead_id = lead.id
+        finally:
+            db_setup.close()
+
+        db = TestingSessionLocal()
+        try:
+            fresh_lead = db.query(Lead).filter(Lead.id == lead_id).first()
+            result = transition_lead_stage(
+                db, fresh_lead, LeadStage.won,
+                current_user_id=user_id,
+            )
+
+            assert result.converted_client_id is not None, (
+                "converted_client_id must be set after won transition"
+            )
+
+            engagement = db.query(EngagementModel).filter(
+                EngagementModel.client_id == result.converted_client_id,
+            ).first()
+            assert engagement is not None, (
+                "No engagement found for converted client after won transition"
+            )
+
+            folders = db.query(DocumentFolder).filter(
+                DocumentFolder.engagement_id == engagement.id,
+                DocumentFolder.name == "Provided by Client (PBC)",
+                DocumentFolder.deleted_at.is_(None),
+            ).all()
+        finally:
+            db.close()
+
+        assert len(folders) == 1, (
+            f"Expected exactly 1 PBC folder on won-transition engagement {engagement.id}; "
+            f"found {len(folders)}"
+        )
+        assert folders[0].scope == "engagement", (
+            f"PBC folder scope must be 'engagement'; got '{folders[0].scope}'"
         )
