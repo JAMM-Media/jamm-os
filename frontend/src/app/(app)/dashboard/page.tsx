@@ -150,7 +150,34 @@ function utilizationBarColor(pct: number) {
   return 'bg-green-500'
 }
 
+// Number of staff rows shown in the card preview before the "View all" affordance.
+// Based on the medium widget height (400px): header ~46px + 5 rows ~188px + affordance
+// ~30px = ~264px total, well within the grid cell.
+const STAFF_PREVIEW_ROWS = 5
+
+function StaffUtilizationRow({ item, large = false }: { item: StaffUtilizationItem; large?: boolean }) {
+  const textSize = large ? 'text-[13px]' : 'text-[12px]'
+  return (
+    <div>
+      <div className="flex justify-between mb-1">
+        <span className={`${textSize} text-foreground`}>{item.full_name}</span>
+        <span className={`${textSize} text-muted-foreground`}>{Math.round(item.utilization_pct)}%</span>
+      </div>
+      <div className="h-2 w-full bg-surface-border dark:bg-dark-border rounded-full overflow-hidden">
+        <div
+          className={`h-full rounded-full transition-all ${utilizationBarColor(item.utilization_pct)}`}
+          style={{ width: `${Math.min(item.utilization_pct, 100)}%` }}
+        />
+      </div>
+    </div>
+  )
+}
+
 function StaffUtilizationPanel({ items }: { items: StaffUtilizationItem[] }) {
+  const [modalOpen, setModalOpen] = useState(false)
+  const preview = items.slice(0, STAFF_PREVIEW_ROWS)
+  const hasMore = items.length > STAFF_PREVIEW_ROWS
+
   return (
     <div className="bg-surface-card dark:bg-dark-card rounded-[8px] border border-surface-border dark:border-dark-border shadow-sm overflow-hidden h-full flex flex-col">
       <div className="px-4 py-3 border-b border-surface-border dark:border-dark-border flex-shrink-0">
@@ -161,23 +188,37 @@ function StaffUtilizationPanel({ items }: { items: StaffUtilizationItem[] }) {
           <p className="text-[12px] text-muted-foreground">No time logged this week.</p>
         </div>
       ) : (
-        <div className="px-4 py-3 flex flex-col gap-3 flex-1">
-          {items.map((item) => (
-            <div key={item.user_id}>
-              <div className="flex justify-between mb-1">
-                <span className="text-[12px] text-foreground">{item.full_name}</span>
-                <span className="text-[12px] text-muted-foreground">{Math.round(item.utilization_pct)}%</span>
-              </div>
-              <div className="h-2 w-full bg-surface-border dark:bg-dark-border rounded-full overflow-hidden">
-                <div
-                  className={`h-full rounded-full transition-all ${utilizationBarColor(item.utilization_pct)}`}
-                  style={{ width: `${Math.min(item.utilization_pct, 100)}%` }}
-                />
-              </div>
+        <>
+          <div className="px-4 py-3 flex flex-col gap-3">
+            {preview.map((item) => (
+              <StaffUtilizationRow key={item.user_id} item={item} />
+            ))}
+          </div>
+          {hasMore && (
+            <div className="px-4 pb-3">
+              <button
+                onClick={() => setModalOpen(true)}
+                className="text-[12px] text-brand dark:text-[#4A9ED6] hover:underline"
+              >
+                View all {items.length} staff
+              </button>
             </div>
+          )}
+        </>
+      )}
+
+      <Modal
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        title="Staff Utilization"
+        size="md"
+      >
+        <div className="flex flex-col gap-4">
+          {items.map((item) => (
+            <StaffUtilizationRow key={item.user_id} item={item} large />
           ))}
         </div>
-      )}
+      </Modal>
     </div>
   )
 }
