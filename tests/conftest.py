@@ -36,6 +36,12 @@ os.environ["JAMM_TESTING"] = "1"
 # Not a secret, never used outside this test suite. Set unconditionally (before
 # any app import) so Settings picks it up regardless of the developer's local .env.
 os.environ["ENCRYPTION_KEY"] = "j8iv6pxYd3itXw7qMCwKAxzvl_0xjTZD1w2tGFHbXho="
+os.environ.setdefault("NURTURE_SENDS_ENABLED", "true")
+os.environ.setdefault("STRIPE_SECRET_KEY", "sk_test_placeholder_not_real")
+os.environ.setdefault("STRIPE_WEBHOOK_SECRET", "whsec_placeholder_not_real")
+
+from app.core.config import get_settings  # get_settings is lru_cached
+get_settings.cache_clear()
 
 DATABASE_URL = os.environ["DATABASE_URL"]
 

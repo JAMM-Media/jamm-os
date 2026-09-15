@@ -206,6 +206,16 @@ class TestToggleOffFirmSendsNothing:
             next_action_time=now - timedelta(minutes=5),
         )
 
+        # Env kill switch must be explicitly on so only the firm toggle is under test.
+        class _YesSends:
+            NURTURE_SENDS_ENABLED = True
+            FRONTEND_URL = "http://localhost:3000"
+
+        monkeypatch.setattr(
+            "app.services.nurture_execution_service.get_settings",
+            lambda: _YesSends(),
+        )
+
         send_calls = []
         monkeypatch.setattr(
             "app.services.nurture_execution_service.EmailService.send_nurture_email",
@@ -285,6 +295,58 @@ class TestEnvKillSwitchOff:
             )
         finally:
             db.close()
+
+
+# ---------------------------------------------------------------------------
+# Guard test: both switches off -- env kill switch stops tick before firm filter
+#
+# BREAK: In nurture_execution_service.py line 181, change
+#   if not get_settings().NURTURE_SENDS_ENABLED:
+# to
+#   if False:
+# EXPECTED RED: caplog assertion for the skip message fails.
+# RESTORE: revert to the original check.
+# CONFIRM GREEN: checked == 0, skip log message present.
+# ---------------------------------------------------------------------------
+
+class TestBothSwitchesOff:
+
+    def test_both_switches_off_env_stops_tick(self, monkeypatch, caplog):
+        """When both env kill switch and firm toggle are off, env stops the tick first."""
+        import logging
+        firm = _make_firm(nurture_enabled=False)
+        lead = _make_lead(firm.id)
+        seq_id, ver_id, step_id = _make_sequence_with_email_step(firm.id)
+        enr = _make_enrollment(
+            firm.id, lead.id, seq_id, ver_id, step_id,
+            next_action_time=datetime.now(timezone.utc) - timedelta(minutes=5),
+        )
+
+        class _NoSends:
+            NURTURE_SENDS_ENABLED = False
+            FRONTEND_URL = "http://localhost:3000"
+
+        monkeypatch.setattr(
+            "app.services.nurture_execution_service.get_settings",
+            lambda: _NoSends(),
+        )
+
+        send_calls = []
+        monkeypatch.setattr(
+            "app.services.nurture_execution_service.EmailService.send_nurture_email",
+            lambda **kw: send_calls.append(kw),
+        )
+
+        with caplog.at_level(logging.INFO):
+            result = run_nurture_tick()
+
+        assert result["checked"] == 0, f"Expected 0 checked, got {result['checked']}"
+        assert result["sent"] == 0, f"Expected 0 sent, got {result['sent']}"
+        assert len(send_calls) == 0, "send_nurture_email must not be called when env switch is off"
+        assert any(
+            "nurture_tick: skipped -- sends are disabled at the environment level" in r.message
+            for r in caplog.records
+        ), "Expected env kill switch log message not found in caplog"
 
 
 # ---------------------------------------------------------------------------
