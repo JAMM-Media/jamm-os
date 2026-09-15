@@ -381,15 +381,13 @@ class TestClientScopeDocumentRow:
 
 class TestFirmLibraryS3Key:
 
-    def test_firm_library_s3_key_contains_none_segments(self, client, firm_a_owner):
-        """The s3_key for a firm_library upload contains the literal string 'None' in
-        the client_id and engagement_id positions.
+    def test_firm_library_s3_key_uses_firm_library_segment(self, client, firm_a_owner):
+        """The s3_key for a firm_library upload uses a firm_library segment derived
+        from scope: {firm_id}/firm_library/{doc_id}/{filename}.
 
-        This is expected, accepted behavior per the Section 18 preserve list:
-        _build_s3_key is not changed, and this key shape already exists in production
-        for firm_library copies (copy_document uses the same function). A future task
-        may migrate to a cleaner key scheme, but this is explicitly out of scope here.
-        Do NOT treat this as a bug or attempt to fix it in this task.
+        _build_s3_key now branches on scope (engagement_id set, client_id set, neither)
+        matching the same three-way FK check used by crud.document.create_document.
+        Pre-existing rows already in S3 keep their original keys unchanged.
         """
         owner_headers = firm_a_owner["headers"]
 
@@ -401,9 +399,12 @@ class TestFirmLibraryS3Key:
         doc_id = url_r.json()["document_id"]
         s3_key_from_url = url_r.json()["s3_key"]
 
-        # The key should contain 'None' where client_id and engagement_id would be.
-        assert "None" in s3_key_from_url, (
-            f"Expected 'None' in firm_library s3_key (accepted behavior per Section 18); got {s3_key_from_url}"
+        # The key should use the firm_library segment, not None placeholders.
+        assert "firm_library" in s3_key_from_url, (
+            f"Expected 'firm_library' segment in s3_key; got {s3_key_from_url}"
+        )
+        assert "None" not in s3_key_from_url, (
+            f"Expected no literal 'None' in s3_key after scope-based key fix; got {s3_key_from_url}"
         )
 
         complete_r = _complete_upload(client, owner_headers, doc_id, {
@@ -414,8 +415,11 @@ class TestFirmLibraryS3Key:
 
         row = _get_doc_from_db(doc_id)
         assert row is not None
-        assert "None" in row["s3_key"], (
-            f"Expected 'None' in stored s3_key (accepted behavior per Section 18); got {row['s3_key']}"
+        assert "firm_library" in row["s3_key"], (
+            f"Expected 'firm_library' segment in stored s3_key; got {row['s3_key']}"
+        )
+        assert "None" not in row["s3_key"], (
+            f"Expected no literal 'None' in stored s3_key after scope-based key fix; got {row['s3_key']}"
         )
 
 

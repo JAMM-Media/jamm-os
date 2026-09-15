@@ -35,7 +35,22 @@ MAX_DIRECT_UPLOAD_BYTES = 250 * 1024 * 1024
 
 
 def _build_s3_key(firm_id, client_id, engagement_id, doc_id, filename) -> str:
-    return f"{firm_id}/{client_id}/{engagement_id}/{doc_id}/{filename}"
+    """Build the S3 key for a document from its scope-defining FKs.
+
+    Layouts (mirrors the three-way FK check in crud.document.create_document):
+      engagement scope:  {firm_id}/{client_id}/{engagement_id}/{doc_id}/{filename}
+      client scope:      {firm_id}/{client_id}/permanent/{doc_id}/{filename}
+      firm_library scope: {firm_id}/firm_library/{doc_id}/{filename}
+
+    Keys are permanent once written. Never alter this function in a way that
+    changes the output for rows already in the database.
+    """
+    if engagement_id is not None:
+        return f"{firm_id}/{client_id}/{engagement_id}/{doc_id}/{filename}"
+    elif client_id is not None:
+        return f"{firm_id}/{client_id}/permanent/{doc_id}/{filename}"
+    else:
+        return f"{firm_id}/firm_library/{doc_id}/{filename}"
 
 
 def upload_document(

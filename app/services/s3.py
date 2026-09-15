@@ -105,6 +105,22 @@ def copy_object_within_bucket(source_key: str, dest_key: str) -> None:
     )
 
 
+def list_object_keys(prefix: str = "") -> list[str]:
+    """Return all object keys in the configured bucket matching the given prefix.
+
+    Uses a paginator to handle buckets with more than 1000 objects.
+    Returns an empty list when the bucket is empty or no keys match prefix.
+    """
+    settings = get_settings()
+    paginator = _get_client().get_paginator("list_objects_v2")
+    pages = paginator.paginate(Bucket=settings.S3_BUCKET_NAME, Prefix=prefix)
+    keys = []
+    for page in pages:
+        for obj in page.get("Contents", []):
+            keys.append(obj["Key"])
+    return keys
+
+
 def get_object_bytes_range(s3_key: str, num_bytes: int) -> bytes:
     """Fetch the first num_bytes of an S3 object for magic-byte validation.
     Uses a ranged GET to avoid downloading the full object."""
