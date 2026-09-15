@@ -19,7 +19,7 @@ import { NotesTab, NotesPanel, useNotes } from '@/components/notes'
 import { cn, formatEngagementType } from '@/lib/utils'
 import api from '@/lib/api'
 import type { PendingDocument } from '@/lib/api'
-import { FileText, FileSpreadsheet, File as FileGeneric, FileImage } from 'lucide-react'
+import { FileText, FileSpreadsheet, File as FileGeneric, FileImage, Lock } from 'lucide-react'
 import { FolderBrowser } from '@/components/documents/FolderBrowser'
 import { QcChecklistTab } from '@/components/engagements/QcChecklistTab'
 import { useAuth } from '@/lib/hooks/useAuth'
@@ -115,6 +115,9 @@ export default function EngagementDetailPage() {
   const [reassignDoc, setReassignDoc] = useState<PendingDocument | null>(null)
   const [reassignTargetId, setReassignTargetId] = useState('')
   const [reassignLoading, setReassignLoading] = useState(false)
+  const [finalizing, setFinalizing] = useState(false)
+
+  const canFinalize = user?.role === 'firm_owner' || user?.role === 'manager'
 
   const { unreadCount } = useNotes({ entityType: 'engagement', entityId: id })
 
@@ -195,6 +198,36 @@ export default function EngagementDetailPage() {
     }
   }
 
+  async function handleFinalize() {
+    setFinalizing(true)
+    try {
+      await engagementsApi.finalize(id)
+      await refetch()
+    } catch (err: unknown) {
+      const detail =
+        (err as { response?: { data?: { detail?: string } } })?.response?.data
+          ?.detail
+      toast.error(detail ?? 'Failed to finalize engagement. Please try again.')
+    } finally {
+      setFinalizing(false)
+    }
+  }
+
+  async function handleUnfinalize() {
+    setFinalizing(true)
+    try {
+      await engagementsApi.unfinalize(id)
+      await refetch()
+    } catch (err: unknown) {
+      const detail =
+        (err as { response?: { data?: { detail?: string } } })?.response?.data
+          ?.detail
+      toast.error(detail ?? 'Failed to unfinalize engagement. Please try again.')
+    } finally {
+      setFinalizing(false)
+    }
+  }
+
   if (isLoading) {
     return (
       <>
@@ -233,6 +266,12 @@ export default function EngagementDetailPage() {
             </h1>
             <div className="flex items-center gap-2">
               <StatusBadge variant={engagement.status as BadgeVariant} />
+              {engagement.finalizedAt && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/30 border border-amber-300 dark:border-amber-700 text-[11px] font-medium text-amber-700 dark:text-amber-400">
+                  <Lock size={10} />
+                  Finalized
+                </span>
+              )}
               <span className="text-[12px] text-[#6B7280]">
                 {formatEngagementType(engagement.engagementType)}
                 {engagement.endDate ? ` · Due ${engagement.endDate}` : ''}
@@ -246,6 +285,25 @@ export default function EngagementDetailPage() {
             >
               Send Engagement Letter
             </button>
+            {canFinalize && (
+              engagement.finalizedAt ? (
+                <button
+                  onClick={handleUnfinalize}
+                  disabled={finalizing}
+                  className="h-9 px-3 rounded-[6px] border border-amber-400 dark:border-amber-600 text-amber-700 dark:text-amber-400 text-[13px] font-medium hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-colors disabled:opacity-50"
+                >
+                  {finalizing ? 'Unfinalizing...' : 'Unfinalize'}
+                </button>
+              ) : (
+                <button
+                  onClick={handleFinalize}
+                  disabled={finalizing}
+                  className="h-9 px-3 rounded-[6px] border border-[#C8CDD6] dark:border-[#484848] text-[#6B7280] dark:text-[#9CA3AF] text-[13px] font-medium hover:bg-surface-card dark:hover:bg-dark-card transition-colors disabled:opacity-50"
+                >
+                  {finalizing ? 'Finalizing...' : 'Finalize'}
+                </button>
+              )
+            )}
             <button
               onClick={() => setIsEditOpen(true)}
               className="h-9 px-3 rounded-[6px] bg-brand dark:bg-brand-btn text-white text-[13px] font-medium hover:opacity-90 transition-opacity"
@@ -395,8 +453,16 @@ export default function EngagementDetailPage() {
         {/* DOCUMENTS TAB */}
         {activeTab === 'documents' && (
           <>
+            {/* Folder browser -- engagement-scoped folders with finalize-lock awareness */}
+            <FolderBrowser
+              scope="engagement"
+              engagementId={id}
+              clientId={engagement.clientId ?? undefined}
+              isFinalized={!!engagement.finalizedAt}
+            />
+
             {/* Toolbar */}
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center justify-between mb-1 mt-6">
               <span className="text-[13px] font-medium text-[#1F3148] dark:text-[#EDEEF0]">
                 Document Requests
               </span>
@@ -407,6 +473,7 @@ export default function EngagementDetailPage() {
                 + New Request
               </button>
             </div>
+            <p className="text-[12px] text-[#6B7280] mb-4">Checklists you send to the client requesting specific files.</p>
 
             <DocumentRequestList
               engagementId={id}
@@ -492,13 +559,6 @@ export default function EngagementDetailPage() {
               </div>
             )}
 
-            {/* Folder browser -- engagement-scoped folders with finalize-lock awareness */}
-            <FolderBrowser
-              scope="engagement"
-              engagementId={id}
-              clientId={engagement.clientId ?? undefined}
-              isFinalized={!!engagement.finalizedAt}
-            />
           </>
         )}
       </div>

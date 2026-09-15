@@ -682,9 +682,10 @@ export function FolderBrowser({
   if (foldersLoading) {
     return (
       <div className="mt-4">
-        <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center justify-between mb-1">
           <span className="text-[13px] font-medium text-[#1F3148] dark:text-[#EDEEF0]">Folders</span>
         </div>
+        <p className="text-[12px] text-[#6B7280] mb-3">{scope === 'engagement' ? 'Where all engagement files live, including files approved from client uploads.' : 'Permanent files for this client, kept separate from any single engagement.'}</p>
         <div className="rounded-[10px] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] p-3 space-y-1.5">
           {[1, 2, 3].map((i) => (
             <div key={i} className="h-7 bg-[#E4E6EA] dark:bg-[#2D2D2D] animate-pulse rounded" />
@@ -697,7 +698,7 @@ export function FolderBrowser({
   return (
     <div className="mt-4">
       {/* Section header with New Folder button */}
-      <div className="flex items-center justify-between mb-3">
+      <div className="flex items-center justify-between mb-1">
         <span className="text-[13px] font-medium text-[#1F3148] dark:text-[#EDEEF0]">Folders</span>
         {/* Upload and New Folder buttons are absent (not disabled) when the engagement is finalized */}
         {!isFinalized && (
@@ -719,12 +720,23 @@ export function FolderBrowser({
           </div>
         )}
       </div>
+      <p className="text-[12px] text-[#6B7280] mb-3">{scope === 'engagement' ? 'Where all engagement files live, including files approved from client uploads.' : 'Permanent files for this client, kept separate from any single engagement.'}</p>
 
       {rootFolders.length === 0 ? (
         /* No folders exist: show a minimal empty state with just the file list */
         <div className="rounded-[10px] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] overflow-hidden">
-          <div className="bg-[#E4E6EA] dark:bg-[#2D2D2D] px-3 py-2">
-            <p className="text-[12px] text-[#9CA3AF]">
+          <div className={cn(
+            'px-3 py-2',
+            isFinalized
+              ? 'bg-amber-100 dark:bg-amber-900/30'
+              : 'bg-[#E4E6EA] dark:bg-[#2D2D2D]',
+          )}>
+            <p className={cn(
+              'text-[12px]',
+              isFinalized
+                ? 'font-medium text-amber-700 dark:text-amber-400'
+                : 'text-[#9CA3AF]',
+            )}>
               {isFinalized
                 ? 'This engagement is finalized -- no new folders can be created.'
                 : 'No folders yet. Click "New Folder" to create one.'}

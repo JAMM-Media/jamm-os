@@ -62,6 +62,16 @@ export const engagementsApi = {
     return mapEngagement(data)
   },
 
+  finalize: async (id: string): Promise<Engagement> => {
+    const { data } = await api.post(`/engagements/${id}/finalize`)
+    return mapEngagement(data)
+  },
+
+  unfinalize: async (id: string): Promise<Engagement> => {
+    const { data } = await api.post(`/engagements/${id}/unfinalize`)
+    return mapEngagement(data)
+  },
+
   create: async (payload: {
     name: string
     client_id: string
