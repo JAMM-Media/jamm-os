@@ -179,11 +179,20 @@ def copy_folder_structure(
 
     assert_engagement_not_finalized(db, dest_engagement_id)
 
-    # Load all non-deleted folders in the source engagement.
+    # Load all non-deleted folders in the source engagement, excluding the
+    # auto-created PBC starter folder. The destination engagement already has
+    # its own PBC folder created at engagement-creation time; copying the
+    # source's PBC folder would produce a duplicate.
+    #
+    # Name-matching is unavoidable here: no system flag distinguishes the PBC
+    # folder in the current schema. This is a known limitation, tracked
+    # alongside the existing name-matching lookups in document_service.py.
+    _PBC_FOLDER_NAME = "Provided by Client (PBC)"
     source_folders = db.query(DocumentFolder).filter(
         DocumentFolder.firm_id == firm_id,
         DocumentFolder.engagement_id == source_engagement_id,
         DocumentFolder.deleted_at.is_(None),
+        DocumentFolder.name != _PBC_FOLDER_NAME,
     ).order_by(DocumentFolder.name).all()
 
     if not source_folders:

@@ -321,3 +321,58 @@ def test_delete_engagement_fires_no_event_when_refused(client, firm_a_owner):
         assert rows == [], "a refused deletion still logged engagement.deleted"
     finally:
         db.close()
+
+
+# ---------------------------------------------------------------------------
+# delete_engagement finalize-lock guard
+#
+# A finalized engagement must be refused with 422 before the attachment
+# check even runs. Guard test: watched RED (succeeds without the guard)
+# then GREEN (returns 422 with the guard).
+# ---------------------------------------------------------------------------
+
+def test_delete_finalized_engagement_returns_422(client, firm_a_owner):
+    """Deleting a finalized engagement is refused with 422 regardless of attachments.
+
+    The check runs before the attachment-count guard so the user receives a
+    clear refusal rather than a list of things to remove on an engagement
+    they cannot act on.
+
+    GUARD TEST: run once without the finalize-lock check in delete_engagement
+    to confirm the test goes RED (delete succeeds, wrong), then re-enable
+    the guard to confirm it goes GREEN (422 returned).
+    """
+    headers = firm_a_owner["headers"]
+    _client_id, engagement_id = _make_client_and_engagement(client, headers)
+
+    # Finalize the engagement via the real API endpoint.
+    r = client.post(f"/engagements/{engagement_id}/finalize", headers=headers)
+    assert r.status_code == 200, f"finalize failed: {r.text}"
+
+    # Attempt delete -- must be refused with 422 now that it is finalized.
+    r = client.delete(f"/engagements/{engagement_id}", headers=headers)
+    assert r.status_code == 422, (
+        f"Expected 422 for finalized engagement delete; got {r.status_code}: {r.text}"
+    )
+    assert "finalized" in r.json()["detail"].lower(), (
+        f"Detail must mention finalization; got: {r.json()['detail']}"
+    )
+
+    # Sanity: the engagement row must still exist.
+    assert _engagement_row_exists(engagement_id), "finalized engagement was deleted despite the guard"
+
+
+def test_delete_unfinalized_engagement_still_works(client, firm_a_owner):
+    """An unfinalized engagement with no attachments can still be deleted normally.
+
+    Confirms the finalize-lock guard does not affect engagements that were
+    never finalized or were unfinalzied before the delete attempt.
+    """
+    headers = firm_a_owner["headers"]
+    _client_id, engagement_id = _make_client_and_engagement(client, headers)
+
+    r = client.delete(f"/engagements/{engagement_id}", headers=headers)
+    assert r.status_code == 204, (
+        f"Unfinalized engagement with no attachments must delete; got {r.status_code}: {r.text}"
+    )
+    assert not _engagement_row_exists(engagement_id), "engagement row survived a successful delete"

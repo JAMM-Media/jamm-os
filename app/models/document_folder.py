@@ -65,8 +65,11 @@ class DocumentFolder(Base):
     )
 
     # Nullable; only set for engagement scope.
+    # CASCADE so folders delete with their engagement. Folders are structure;
+    # documents (content) are guarded separately by delete_engagement's
+    # attachment check. SET NULL would violate the scope CHECK constraint.
     engagement_id: Mapped[Optional[uuid.UUID]] = mapped_column(
-        ForeignKey("engagements.id", ondelete="SET NULL"),
+        ForeignKey("engagements.id", ondelete="CASCADE"),
         nullable=True,
         index=True,
     )

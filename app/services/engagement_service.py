@@ -314,6 +314,15 @@ def delete_engagement(
     if not engagement:
         return None
 
+    # Finalized engagements are locked against deletion per Andrew's ruling.
+    # This check runs before the attachment count so the user gets a clear
+    # refusal rather than a list of things to remove that they cannot act on.
+    if engagement.finalized_at is not None:
+        raise HTTPException(
+            status_code=422,
+            detail="Cannot delete a finalized engagement. Unfinalize it first.",
+        )
+
     # This is a hard delete. Documents cascade away with the engagement and
     # time entries cannot survive it at all (their engagement_id is NOT NULL),
     # so anything still attached has to be dealt with before the row goes.
