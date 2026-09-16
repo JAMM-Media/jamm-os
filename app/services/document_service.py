@@ -998,8 +998,8 @@ def approve_pending_document(
     assert_engagement_not_finalized(db, doc.engagement_id)
     assert_can_approve_document(db=db, user=user, document=doc, firm_id=firm_id)
 
-    pbc_folder = crud_document_folder.get_document_folder_by_name(
-        db=db, firm_id=firm_id, engagement_id=doc.engagement_id, name="Provided by Client (PBC)",
+    pbc_folder = crud_document_folder.get_system_folder(
+        db=db, firm_id=firm_id, engagement_id=doc.engagement_id, system_key="pbc",
     ) if doc.engagement_id else None
     if pbc_folder:
         doc.folder_id = pbc_folder.id
@@ -1072,8 +1072,8 @@ def reassign_pending_document(
             detail="Cannot reassign to an engagement belonging to a different client",
         )
 
-    pbc_folder = crud_document_folder.get_document_folder_by_name(
-        db=db, firm_id=firm_id, engagement_id=dest_engagement_id, name="Provided by Client (PBC)",
+    pbc_folder = crud_document_folder.get_system_folder(
+        db=db, firm_id=firm_id, engagement_id=dest_engagement_id, system_key="pbc",
     )
     if pbc_folder:
         doc.folder_id = pbc_folder.id

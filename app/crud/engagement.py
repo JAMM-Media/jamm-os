@@ -53,6 +53,7 @@ def create_engagement(db: Session, engagement_in: EngagementCreate, firm_id: UUI
             name="Provided by Client (PBC)",
             client_id=engagement.client_id,
             engagement_id=engagement.id,
+            system_key="pbc",
         )
     except Exception as _exc:
         import logging as _log

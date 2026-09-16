@@ -27,6 +27,7 @@ class DocumentFolderOut(BaseModel):
     client_id: Optional[uuid.UUID] = None
     engagement_id: Optional[uuid.UUID] = None
     parent_folder_id: Optional[uuid.UUID] = None
+    system_key: Optional[str] = None
     deleted_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime

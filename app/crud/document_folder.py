@@ -17,6 +17,7 @@ def create_document_folder(
     client_id: Optional[uuid.UUID] = None,
     engagement_id: Optional[uuid.UUID] = None,
     parent_folder_id: Optional[uuid.UUID] = None,
+    system_key: Optional[str] = None,
 ) -> DocumentFolder:
     folder = DocumentFolder(
         firm_id=firm_id,
@@ -25,6 +26,7 @@ def create_document_folder(
         client_id=client_id,
         engagement_id=engagement_id,
         parent_folder_id=parent_folder_id,
+        system_key=system_key,
     )
     db.add(folder)
     db.commit()
@@ -103,17 +105,17 @@ def soft_delete_document_folder(
     db.commit()
 
 
-def get_document_folder_by_name(
+def get_system_folder(
     db: Session,
     firm_id: uuid.UUID,
     engagement_id: uuid.UUID,
-    name: str,
+    system_key: str,
 ) -> Optional[DocumentFolder]:
-    """Return the first live folder matching exactly this name within an engagement."""
+    """Return the first live folder with the given system_key within an engagement."""
     return db.query(DocumentFolder).filter(
         DocumentFolder.firm_id == firm_id,
         DocumentFolder.engagement_id == engagement_id,
-        DocumentFolder.name == name,
+        DocumentFolder.system_key == system_key,
         DocumentFolder.deleted_at.is_(None),
     ).first()
 

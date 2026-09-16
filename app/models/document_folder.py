@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import CheckConstraint, String, DateTime, ForeignKey
+from sqlalchemy import CheckConstraint, Index, String, DateTime, ForeignKey, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base_class import Base
@@ -43,6 +43,13 @@ class DocumentFolder(Base):
             " OR (scope = 'client' AND client_id IS NOT NULL AND engagement_id IS NULL)"
             " OR (scope = 'firm_library' AND client_id IS NULL AND engagement_id IS NULL)",
             name="ck_document_folders_scope_fk_consistency",
+        ),
+        Index(
+            "ux_document_folders_engagement_system_key",
+            "engagement_id",
+            "system_key",
+            postgresql_where=text("system_key IS NOT NULL AND deleted_at IS NULL"),
+            unique=True,
         ),
     )
 
@@ -83,6 +90,10 @@ class DocumentFolder(Base):
     )
 
     name: Mapped[str] = mapped_column(String(255), nullable=False)
+
+    # Machine identifier for system-created folders (e.g. 'pbc' for the starter
+    # folder). Null for all firm-created folders. Survives renames.
+    system_key: Mapped[Optional[str]] = mapped_column(String(50), nullable=True, index=True)
 
     deleted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     deleted_by: Mapped[Optional[uuid.UUID]] = mapped_column(
