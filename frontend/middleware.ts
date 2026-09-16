@@ -14,16 +14,20 @@ const PUBLIC_PATHS = [
   '/portal',
   '/review',
   '/_next',
-  '/favicon.ico',
-  '/favicon.svg',
-  '/logo.svg',
 ]
+
+// Static image files are served without auth regardless of filename.
+// Matches only a real file extension at the end of the path, so a route
+// like /clients.svg-shaped (no dot-separated extension suffix) is not excluded.
+const STATIC_EXTENSIONS = /\.(?:svg|png|ico|jpg|jpeg|webp)$/
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
 
-  // Allow all public paths
-  const isPublic = PUBLIC_PATHS.some((path) => pathname.startsWith(path))
+  // Allow static image files and all public paths
+  const isPublic =
+    STATIC_EXTENSIONS.test(pathname) ||
+    PUBLIC_PATHS.some((path) => pathname.startsWith(path))
   if (isPublic) {
     return NextResponse.next()
   }
@@ -46,8 +50,10 @@ export const config = {
      * Match all request paths EXCEPT:
      * - _next/static (static files)
      * - _next/image (image optimization)
-     * - favicon.ico
+     * - any path whose final segment is a static image file (.svg, .png, .ico,
+     *   .jpg, .jpeg, .webp). The extension must be at the very end of the path
+     *   so that routes like /clients.svg-shaped are not excluded.
      */
-    '/((?!_next/static|_next/image|favicon\\.ico|favicon\\.svg|logo\\.svg).*)',
+    '/((?!_next/static|_next/image)(?!.*\\.(?:svg|png|ico|jpg|jpeg|webp)$).*)',
   ],
 }
