@@ -1,7 +1,7 @@
-# migrations/versions/a2b3c4d5e6f7_add_engagement_finalized.py
+# migrations/versions/f7e6d5c4b3a2_add_engagement_finalized.py
 """add finalized_at and finalized_by to engagements
 
-Revision ID: a2b3c4d5e6f7
+Revision ID: f7e6d5c4b3a2
 Revises: 664cbed6bbd2
 Create Date: 2026-09-12 00:00:00.000000
 

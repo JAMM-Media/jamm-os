@@ -18,10 +18,7 @@ exclusion:
   not a standalone script. It has no __main__ block and no SessionLocal usage,
   so the guard does not apply to it and it is excluded from this scan.
 
-Note: seed_complexity_catalog.py does not yet have the guard installed. This
-is a known, intentional state: Andrew owns adding it on his side, and this
-test surfaces its absence as a real CI failure until he does. That failure
-is the intended outcome, not a bug in this task.
+The guard was added to seed_complexity_catalog.py in 478feac; the script is now covered by this scan like every other seed_*.py file.
 """
 
 import ast

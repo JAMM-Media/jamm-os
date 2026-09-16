@@ -328,7 +328,7 @@ class TestPortalUploadTriage:
     intended pending behavior so a future regression is caught.
     """
 
-    def test_portal_upload_creates_document_with_triage_status_filed(self):
+    def test_portal_upload_creates_document_with_triage_status_pending(self):
         from app.models.client import Client
         from app.models.document import Document
         from app.services import portal_service
