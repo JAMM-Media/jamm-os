@@ -1,7 +1,7 @@
 // frontend/src/components/engagements/RollForwardModal.tsx
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, type ReactElement } from 'react'
 import { toast } from 'sonner'
 import { CheckCircle, FileText, ChevronRight, FolderOpen } from 'lucide-react'
 import { type Engagement, engagementsApi } from '@/lib/api'
@@ -51,7 +51,7 @@ function resolveFolderPath(folderId: string | null, folderMap: Record<string, So
   let current: string | null = folderId
   let guard = 0
   while (current && guard < 25) {
-    const f = folderMap[current]
+    const f: SourceFolder | undefined = folderMap[current]
     if (!f) break
     parts.unshift(f.name)
     current = f.parentFolderId
@@ -72,7 +72,7 @@ function FolderTree({ folders }: { folders: SourceFolder[] }) {
     childrenOf[key].push(f)
   }
 
-  function renderLevel(parentKey: string, depth: number): JSX.Element[] {
+  function renderLevel(parentKey: string, depth: number): ReactElement[] {
     const children = childrenOf[parentKey] ?? []
     return children.map((f) => (
       <div key={f.id}>

@@ -1,7 +1,7 @@
 // path: frontend/src/app/engagements/[id]/page.tsx
 'use client'
 
-import { useState } from 'react'
+import { useState, type ReactElement } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { useQueryClient } from '@tanstack/react-query'
@@ -59,7 +59,7 @@ function relativeTime(isoStr: string): string {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
-function fileIconFromContentType(contentType: string): JSX.Element {
+function fileIconFromContentType(contentType: string): ReactElement {
   if (contentType === 'application/pdf') {
     return <FileText size={15} style={{ color: '#EF4444' }} className="flex-shrink-0" />
   }
