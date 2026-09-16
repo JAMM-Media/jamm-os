@@ -50,6 +50,7 @@
   /* Fonts */
   --font-sans: var(--font-plus-jakarta-sans), -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --font-display: var(--font-lora), Georgia, "Times New Roman", serif;
+  --font-playfair-stack: var(--font-playfair), Georgia, "Times New Roman", serif;
 }
 
 /* shadcn token mappings */

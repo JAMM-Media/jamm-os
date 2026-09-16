@@ -1,6 +1,6 @@
 // frontend/src/app/layout.tsx
 import type { Metadata } from 'next'
-import { Lora, Plus_Jakarta_Sans } from 'next/font/google'
+import { Lora, Plus_Jakarta_Sans, Playfair_Display } from 'next/font/google'
 import './globals.css'
 import 'react-grid-layout/css/styles.css'
 import 'react-resizable/css/styles.css'
@@ -22,6 +22,13 @@ const plusJakartaSans = Plus_Jakarta_Sans({
   variable: '--font-plus-jakarta-sans',
 })
 
+const playfairDisplay = Playfair_Display({
+  subsets: ['latin'],
+  weight: ['500'],
+  style: ['normal'],
+  variable: '--font-playfair',
+})
+
 export const metadata: Metadata = {
   title: 'JAMM PX',
   description: 'Practice experience for accounting firms',
@@ -38,7 +45,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={`${lora.variable} ${plusJakartaSans.variable} font-sans`} suppressHydrationWarning>
+      <body className={`${lora.variable} ${plusJakartaSans.variable} ${playfairDisplay.variable} font-sans`} suppressHydrationWarning>
         <QueryProvider>
           <AuthProvider>
             <ThemeProvider

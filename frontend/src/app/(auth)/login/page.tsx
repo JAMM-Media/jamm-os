@@ -18,6 +18,7 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
 
+  const [showMagicLink, setShowMagicLink] = useState(false)
   const [magicEmail, setMagicEmail] = useState('')
   const [magicLoading, setMagicLoading] = useState(false)
   const [magicSent, setMagicSent] = useState(false)
@@ -86,6 +87,19 @@ export default function LoginPage() {
     setBackupCode('')
   }
 
+  function handleShowMagicLink() {
+    setShowMagicLink(true)
+    setError('')
+    setMagicSent(false)
+    setMagicError('')
+  }
+
+  function handleHideMagicLink() {
+    setShowMagicLink(false)
+    setMagicSent(false)
+    setMagicError('')
+  }
+
   async function handleMagicLink(e: React.FormEvent) {
     e.preventDefault()
     setMagicError('')
@@ -113,238 +127,247 @@ export default function LoginPage() {
 
   const effectiveMagicEmail = magicEmail || email
 
+  const inputClass =
+    'w-full h-11 px-3 rounded-lg text-[15px] bg-surface-input dark:bg-dark-card border border-surface-border dark:border-dark-border hover:border-brand-light focus:border-brand-light focus:outline-none focus:ring-2 focus:ring-brand-light focus:ring-offset-0 text-brand dark:text-[#EDEEF0] placeholder:text-[#9CA3AF]'
+
+  const btnPrimary =
+    'w-full h-11 rounded-lg text-[15px] font-medium text-white bg-brand dark:bg-brand-btn disabled:opacity-60 flex items-center justify-center gap-2 transition-opacity hover:opacity-90'
+
   return (
-    <div className="min-h-screen bg-surface-page dark:bg-dark-page">
-      {/* Page header -- logo + wordmark, top-left */}
-      <div className="px-16 pt-10">
-        <div className="flex items-center gap-2.5">
-          <img src="/jamm-logo-mark.svg" alt="" className="flex-shrink-0 h-8 w-auto" />
-          <span className="text-brand dark:text-[#EDEEF0] text-2xl font-medium">
-            JAMM <span style={{ color: '#B07D3A' }}>PX</span>
+    <div className="min-h-screen bg-[#1F3148] flex flex-col items-center justify-center px-4 py-12">
+
+      {/* Logo block */}
+      <div className="flex flex-col items-center mb-8">
+        <div className="inline-flex flex-col items-stretch">
+          <div className="flex items-center gap-3">
+            <img src="/jamm-logo-mark-light.svg" alt="" className="w-auto flex-shrink-0" style={{ height: 52 }} />
+            <span
+              className="text-white leading-none tracking-tight"
+              style={{ fontSize: 72, fontWeight: 500, fontStyle: 'normal', fontFamily: 'var(--font-playfair)' }}
+            >
+              JAMM
+            </span>
+          </div>
+          <span
+            className="mt-2 uppercase font-medium text-[16px] tracking-[0.28em] text-center whitespace-nowrap"
+            style={{ color: '#B07D3A' }}
+          >
+            Practice Experience
           </span>
         </div>
       </div>
 
-      {/* Centered content column */}
-      <div className="flex flex-col items-center px-4 pt-14 pb-16">
-        <div className="w-full max-w-[460px]">
-          {/* Headline block */}
-          <div className="mb-8">
-            <h1 className="text-4xl font-extrabold leading-tight text-center dark:text-[#EDEEF0]" style={{ color: '#16233A' }}>Sign in to JAMM <span style={{ color: '#B07D3A' }}>PX</span></h1>
-          </div>
+      {/* Card */}
+      <div className="w-full max-w-[400px] bg-white rounded-lg px-10 py-10">
 
+        <h1 className="text-[28px] font-medium text-brand dark:text-[#EDEEF0] text-center mb-1 leading-tight">
+          Sign in
+        </h1>
+        <p className="text-[14px] text-[#6B7280] text-center mb-7">
+          Welcome back to JAMM PX.
+        </p>
+
+        {/* Two-factor step */}
+        {step === 'code' && (
           <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
-            {step === 'password' ? (
-              <>
-                {/* Email */}
-                <div className="flex flex-col gap-1">
-                  <label className="text-[11px] font-medium text-[#6B7280]">Email</label>
-                  <input
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="Enter your email"
-                    className="w-full h-12 px-3 rounded-xl text-base bg-surface-input dark:bg-dark-card border border-surface-border hover:border-brand-light focus:border-brand-light focus:outline-none focus:ring-2 focus:ring-brand-light focus:ring-offset-0 text-brand dark:text-[#EDEEF0] placeholder:text-[#9CA3AF]"
-                  />
-                </div>
+            <p className="text-[14px] font-medium text-brand dark:text-[#EDEEF0]">
+              Enter your authentication code
+            </p>
 
-                {/* Password */}
-                <div className="flex flex-col gap-1">
-                  <div className="flex items-center justify-between">
-                    <label className="text-[11px] font-medium text-[#6B7280]">Password</label>
-                    <Link href="/login/forgot-password" className="text-[11px] text-brand dark:text-[#4A7FA5] hover:underline">Forgot password?</Link>
-                  </div>
-                  <div className="relative">
-                    <input
-                      type={showPassword ? 'text' : 'password'}
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      placeholder="Enter your password"
-                      className="w-full h-12 px-3 rounded-xl text-base bg-surface-input dark:bg-dark-card border border-surface-border hover:border-brand-light focus:border-brand-light focus:outline-none focus:ring-2 focus:ring-brand-light focus:ring-offset-0 text-brand dark:text-[#EDEEF0] placeholder:text-[#9CA3AF]"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-2 top-1/2 -translate-y-1/2"
-                    >
-                      {showPassword ? (
-                        <EyeOff className="text-[#6B7280]" style={{ width: 14, height: 14 }} />
-                      ) : (
-                        <Eye className="text-[#6B7280]" style={{ width: 14, height: 14 }} />
-                      )}
-                    </button>
-                  </div>
-                </div>
-
-                {/* Error */}
-                {error && (
-                  <p className="text-[11px] text-[#991B1B] mt-1">{error}</p>
-                )}
-
-                {/* Submit */}
-                <button
-                  type="submit"
-                  disabled={isLoading}
-                  className="w-full h-12 mt-2 rounded-xl text-sm font-medium text-white bg-brand dark:bg-brand-btn disabled:opacity-60 flex items-center justify-center gap-2"
-                >
-                  {isLoading ? (
-                    <>
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      Signing in...
-                    </>
-                  ) : (
-                    'Sign in'
-                  )}
-                </button>
-              </>
-            ) : (
-              <>
-                <p className="text-sm font-medium text-brand dark:text-[#EDEEF0]">
-                  Enter your authentication code
+            {!showBackupCode && (
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[12px] font-medium text-[#6B7280]">Authenticator Code</label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={6}
+                  value={totpCode}
+                  onChange={(e) => setTotpCode(e.target.value)}
+                  autoFocus
+                  placeholder="6-digit code"
+                  className={inputClass}
+                />
+                <p className="text-[11px] text-[#9CA3AF]">
+                  Enter the 6-digit code from your authenticator app.
                 </p>
-
-                {/* Authenticator input */}
-                {!showBackupCode && (
-                  <div className="flex flex-col gap-1">
-                    <label className="text-[11px] font-medium text-[#6B7280]">
-                      Authenticator Code
-                    </label>
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      maxLength={6}
-                      value={totpCode}
-                      onChange={(e) => setTotpCode(e.target.value)}
-                      autoFocus
-                      className="w-full h-12 px-3 rounded-xl text-base bg-surface-input dark:bg-dark-card border border-surface-border hover:border-brand-light focus:border-brand-light focus:outline-none focus:ring-2 focus:ring-brand-light focus:ring-offset-0 text-brand dark:text-[#EDEEF0] placeholder:text-[#9CA3AF]"
-                    />
-                    <p className="text-[11px] text-[#6B7280] mt-1">
-                      Enter the 6-digit code from your authenticator app.
-                    </p>
-                  </div>
-                )}
-
-                {/* Backup code input */}
-                {showBackupCode && (
-                  <div className="flex flex-col gap-1">
-                    <label className="text-[11px] font-medium text-[#6B7280]">
-                      Backup Code
-                    </label>
-                    <input
-                      type="text"
-                      value={backupCode}
-                      onChange={(e) => setBackupCode(e.target.value)}
-                      autoFocus
-                      className="w-full h-12 px-3 rounded-xl text-base bg-surface-input dark:bg-dark-card border border-surface-border hover:border-brand-light focus:border-brand-light focus:outline-none focus:ring-2 focus:ring-brand-light focus:ring-offset-0 text-brand dark:text-[#EDEEF0] placeholder:text-[#9CA3AF]"
-                    />
-                    <p className="text-[11px] text-[#6B7280] mt-1">
-                      Enter one of your saved backup codes.
-                    </p>
-                  </div>
-                )}
-
-                {/* Error */}
-                {error && (
-                  <p className="text-[11px] text-[#991B1B] mt-1">{error}</p>
-                )}
-
-                {/* Submit */}
-                <button
-                  type="submit"
-                  disabled={isLoading}
-                  className="w-full h-12 mt-2 rounded-xl text-sm font-medium text-white bg-brand dark:bg-brand-btn disabled:opacity-60 flex items-center justify-center gap-2"
-                >
-                  {isLoading ? (
-                    <>
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      Verifying...
-                    </>
-                  ) : (
-                    'Verify'
-                  )}
-                </button>
-
-                {/* Toggle backup code */}
-                <p className="text-[11px] text-[#6B7280] mt-1 text-center">
-                  <button
-                    type="button"
-                    onClick={handleToggleBackupCode}
-                    className="underline text-[#6B7280] hover:text-brand"
-                  >
-                    {showBackupCode
-                      ? 'Use authenticator app instead'
-                      : "Can't use your authenticator? Enter a backup code"}
-                  </button>
-                </p>
-
-                {/* Back */}
-                <p className="text-[11px] text-[#6B7280] text-center">
-                  <button
-                    type="button"
-                    onClick={handleBack}
-                    className="underline text-[#6B7280] hover:text-brand"
-                  >
-                    Back
-                  </button>
-                </p>
-              </>
+              </div>
             )}
+
+            {showBackupCode && (
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[12px] font-medium text-[#6B7280]">Backup Code</label>
+                <input
+                  type="text"
+                  value={backupCode}
+                  onChange={(e) => setBackupCode(e.target.value)}
+                  autoFocus
+                  placeholder="Backup code"
+                  className={inputClass}
+                />
+                <p className="text-[11px] text-[#9CA3AF]">
+                  Enter one of your saved backup codes.
+                </p>
+              </div>
+            )}
+
+            {error && <p className="text-[12px] text-status-red-text">{error}</p>}
+
+            <button type="submit" disabled={isLoading} className={btnPrimary}>
+              {isLoading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Verifying...
+                </>
+              ) : (
+                'Verify'
+              )}
+            </button>
+
+            <div className="flex flex-col items-center gap-2 mt-1">
+              <button
+                type="button"
+                onClick={handleToggleBackupCode}
+                className="text-[12px] text-[#6B7280] hover:text-brand dark:hover:text-[#EDEEF0] underline"
+              >
+                {showBackupCode ? 'Use authenticator app instead' : "Can't use your authenticator? Enter a backup code"}
+              </button>
+              <button
+                type="button"
+                onClick={handleBack}
+                className="text-[12px] text-[#6B7280] hover:text-brand dark:hover:text-[#EDEEF0] underline"
+              >
+                Back
+              </button>
+            </div>
           </form>
+        )}
 
-          {/* Divider */}
-          <div className="flex items-center gap-3 my-5">
-            <div className="flex-1 h-px bg-surface-border dark:bg-dark-border" />
-            <span className="text-[11px] text-[#9CA3AF]">or</span>
-            <div className="flex-1 h-px bg-surface-border dark:bg-dark-border" />
-          </div>
-
-          {/* Magic link section */}
-          <div className="flex flex-col gap-2">
-            <p className="text-[13px] font-[500] text-[#1F3148] dark:text-[#EDEEF0]">
-              Sign in with a magic link
-            </p>
-            <p className="text-[11px] text-[#6B7280]">
-              We&apos;ll email you a one-time link valid for 15 minutes.
-            </p>
-
-            <form onSubmit={handleMagicLink} noValidate className="flex flex-col gap-2 mt-1">
+        {/* Magic link form */}
+        {step === 'password' && showMagicLink && (
+          <form onSubmit={handleMagicLink} noValidate className="flex flex-col gap-4">
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[12px] font-medium text-[#6B7280]">Email address</label>
               <input
                 type="email"
                 value={effectiveMagicEmail}
                 onChange={(e) => setMagicEmail(e.target.value)}
-                placeholder="Enter your email"
-                className="w-full h-12 px-3 rounded-xl text-base bg-surface-input dark:bg-dark-card border border-surface-border hover:border-brand-light focus:border-brand-light focus:outline-none focus:ring-2 focus:ring-brand-light focus:ring-offset-0 text-brand dark:text-[#EDEEF0] placeholder:text-[#9CA3AF]"
+                placeholder="Enter your email address"
+                autoFocus
+                className={inputClass}
               />
+            </div>
 
-              {magicSent ? (
-                <p className="text-[12px] text-[#10B981] text-center py-1">
-                  Link sent — check your email. It expires in 30 minutes.
-                </p>
-              ) : (
+            <p className="text-[12px] text-[#9CA3AF]">
+              We will email you a one-time link valid for 30 minutes.
+            </p>
+
+            {magicSent ? (
+              <p className="text-[13px] text-status-green-text text-center py-1">
+                Link sent. Check your email. It expires in 30 minutes.
+              </p>
+            ) : (
+              <button type="submit" disabled={magicLoading} className={btnPrimary}>
+                {magicLoading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Sending...
+                  </>
+                ) : (
+                  'Send link'
+                )}
+              </button>
+            )}
+
+            {magicError && <p className="text-[12px] text-status-red-text">{magicError}</p>}
+
+            <button
+              type="button"
+              onClick={handleHideMagicLink}
+              className="text-[12px] text-[#6B7280] hover:text-brand dark:hover:text-[#EDEEF0] underline text-center"
+            >
+              Back to password sign in
+            </button>
+          </form>
+        )}
+
+        {/* Password form */}
+        {step === 'password' && !showMagicLink && (
+          <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[12px] font-medium text-[#6B7280]">Email address</label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="Enter your email address"
+                className={inputClass}
+              />
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[12px] font-medium text-[#6B7280]">Password</label>
+              <div className="relative">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Enter your password"
+                  className={inputClass + ' pr-9'}
+                />
                 <button
-                  type="submit"
-                  disabled={magicLoading}
-                  className="w-full h-12 rounded-xl text-sm font-[500] text-[#1F3148] dark:text-[#EDEEF0] flex items-center justify-center gap-2 disabled:opacity-60 transition-colors hover:bg-[#E4E6EA] dark:hover:bg-[#333333]"
-                  style={{ border: '0.5px solid #1F3148' }}
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-[#9CA3AF] hover:text-[#6B7280]"
                 >
-                  {magicLoading ? (
-                    <>
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      Sending...
-                    </>
-                  ) : (
-                    'Send link'
-                  )}
+                  {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
                 </button>
-              )}
+              </div>
+              <div className="flex items-center justify-between mt-0.5">
+                <Link
+                  href="/login/forgot-password"
+                  className="text-[12px] text-brand-light dark:text-brand-light hover:underline"
+                >
+                  Forgot password?
+                </Link>
+                <button
+                  type="button"
+                  onClick={handleShowMagicLink}
+                  className="text-[12px] text-brand-light dark:text-brand-light hover:underline"
+                >
+                  Use a magic link instead
+                </button>
+              </div>
+            </div>
 
-              {magicError && (
-                <p className="text-[11px] text-[#991B1B]">{magicError}</p>
+            {error && <p className="text-[12px] text-status-red-text">{error}</p>}
+
+            <button type="submit" disabled={isLoading} className={btnPrimary + ' mt-1'}>
+              {isLoading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Signing in...
+                </>
+              ) : (
+                'Sign in'
               )}
-            </form>
-          </div>
-        </div>
+            </button>
+          </form>
+        )}
+
       </div>
+
+      {/* Footer below card */}
+      <div className="mt-8 flex flex-col items-center gap-3 w-full max-w-[400px]">
+        <p className="text-[12px] text-[#7DA3C4] text-center">
+          Need help signing in?{' '}
+          <span className="text-[#7DA3C4]">Contact support</span>
+        </p>
+        <div className="w-full h-px bg-[#2D4463]" />
+        <p className="text-[11px] text-[#7DA3C4] text-center">
+          &copy; 2026 JAMM PX. All rights reserved.
+        </p>
+      </div>
+
     </div>
   )
 }

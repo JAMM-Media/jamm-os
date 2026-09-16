@@ -6,6 +6,58 @@ import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { Loader2, Eye, EyeOff } from 'lucide-react'
 
+const inputClass =
+  'w-full h-11 px-3 rounded-lg text-[15px] bg-surface-input dark:bg-dark-card border border-surface-border dark:border-dark-border hover:border-brand-light focus:border-brand-light focus:outline-none focus:ring-2 focus:ring-brand-light focus:ring-offset-0 text-brand dark:text-[#EDEEF0] placeholder:text-[#9CA3AF]'
+
+const btnPrimary =
+  'w-full h-11 rounded-lg text-[15px] font-medium text-white bg-brand dark:bg-brand-btn disabled:opacity-60 flex items-center justify-center gap-2 transition-opacity hover:opacity-90'
+
+function Shell({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="min-h-screen bg-[#1F3148] flex flex-col items-center justify-center px-4 py-12">
+
+      {/* Logo block */}
+      <div className="flex flex-col items-center mb-8">
+        <div className="inline-flex flex-col items-stretch">
+          <div className="flex items-center gap-3">
+            <img src="/jamm-logo-mark-light.svg" alt="" className="w-auto flex-shrink-0" style={{ height: 52 }} />
+            <span
+              className="text-white leading-none tracking-tight"
+              style={{ fontSize: 72, fontWeight: 500, fontStyle: 'normal', fontFamily: 'var(--font-playfair)' }}
+            >
+              JAMM
+            </span>
+          </div>
+          <span
+            className="mt-2 uppercase font-medium text-[16px] tracking-[0.28em] text-center whitespace-nowrap"
+            style={{ color: '#B07D3A' }}
+          >
+            Practice Experience
+          </span>
+        </div>
+      </div>
+
+      {/* Card */}
+      <div className="w-full max-w-[400px] bg-white rounded-lg px-10 py-10">
+        {children}
+      </div>
+
+      {/* Footer below card */}
+      <div className="mt-8 flex flex-col items-center gap-3 w-full max-w-[400px]">
+        <p className="text-[12px] text-[#7DA3C4] text-center">
+          Need help signing in?{' '}
+          <span className="text-[#7DA3C4]">Contact support</span>
+        </p>
+        <div className="w-full h-px bg-[#2D4463]" />
+        <p className="text-[11px] text-[#7DA3C4] text-center">
+          &copy; 2026 JAMM PX. All rights reserved.
+        </p>
+      </div>
+
+    </div>
+  )
+}
+
 function ResetPasswordContent() {
   const searchParams = useSearchParams()
   const token = searchParams.get('token')
@@ -19,71 +71,43 @@ function ResetPasswordContent() {
   const [submitError, setSubmitError] = useState('')
   const [success, setSuccess] = useState(false)
 
-  const leftPanel = (
-    <div className="hidden md:flex w-1/2 bg-brand flex-col p-10">
-      <div className="flex items-center gap-2.5">
-        <img src="/jamm-logo-mark-light.svg" alt="" className="flex-shrink-0 h-8 w-auto" />
-        <span className="text-white text-3xl font-medium">
-          JAMM <span style={{ color: '#B07D3A' }}>PX</span>
-        </span>
-      </div>
-      <div className="flex flex-1 items-center">
-        <div className="flex flex-col">
-          <div className="h-[2px] mb-3" style={{ backgroundColor: '#B07D3A', width: '48px' }} />
-          <h2 className="text-white text-7xl font-bold leading-tight">
-            Trusted guidance.<br /><span style={{ color: '#B07D3A' }}>Real partnership.</span>
-          </h2>
-          <p className="mt-4 text-[15px] leading-relaxed" style={{ color: 'rgba(255,255,255,0.65)' }}>
-            We're here to help you succeed every step of the way.
-          </p>
-        </div>
-      </div>
-    </div>
-  )
-
   // No token in URL — invalid link state
   if (!token) {
     return (
-      <div className="min-h-screen flex">
-        {leftPanel}
-        <div className="flex flex-1 items-center justify-center bg-surface-page dark:bg-dark-page">
-          <div className="w-[460px] bg-surface-card dark:bg-dark-card rounded-[10px] border border-surface-border p-10 flex flex-col gap-4">
-            <h1 className="text-4xl font-bold text-brand dark:text-[#EDEEF0]">Invalid link</h1>
-            <p className="text-[14px] text-[#6B7280] leading-relaxed">
-              This password reset link is missing a token and cannot be used.
-            </p>
-            <Link
-              href="/login/forgot-password"
-              className="text-[13px] text-brand dark:text-[#4A7FA5] underline hover:opacity-80"
-            >
-              Request a new reset link
-            </Link>
-          </div>
-        </div>
-      </div>
+      <Shell>
+        <h1 className="text-[28px] font-medium text-brand dark:text-[#EDEEF0] text-center mb-1 leading-tight">
+          Invalid link
+        </h1>
+        <p className="text-[14px] text-[#6B7280] text-center mb-7">
+          This password reset link is missing a token and cannot be used.
+        </p>
+        <Link
+          href="/login/forgot-password"
+          className="text-[12px] text-brand-light dark:text-brand-light hover:underline block text-center"
+        >
+          Request a new reset link
+        </Link>
+      </Shell>
     )
   }
 
   // Success state
   if (success) {
     return (
-      <div className="min-h-screen flex">
-        {leftPanel}
-        <div className="flex flex-1 items-center justify-center bg-surface-page dark:bg-dark-page">
-          <div className="w-[460px] bg-surface-card dark:bg-dark-card rounded-[10px] border border-surface-border p-10 flex flex-col gap-4">
-            <h1 className="text-4xl font-bold text-brand dark:text-[#EDEEF0]">Password updated</h1>
-            <p className="text-[14px] text-[#6B7280] leading-relaxed">
-              Your password has been changed. You can now sign in with your new password.
-            </p>
-            <Link
-              href="/login"
-              className="text-[13px] text-brand dark:text-[#4A7FA5] underline hover:opacity-80"
-            >
-              Go to sign in
-            </Link>
-          </div>
-        </div>
-      </div>
+      <Shell>
+        <h1 className="text-[28px] font-medium text-brand dark:text-[#EDEEF0] text-center mb-1 leading-tight">
+          Password updated
+        </h1>
+        <p className="text-[14px] text-[#6B7280] text-center mb-7">
+          Your password has been changed. You can now sign in with your new password.
+        </p>
+        <Link
+          href="/login"
+          className="text-[12px] text-brand-light dark:text-brand-light hover:underline block text-center"
+        >
+          Go to sign in
+        </Link>
+      </Shell>
     )
   }
 
@@ -118,108 +142,91 @@ function ResetPasswordContent() {
   }
 
   return (
-    <div className="min-h-screen flex">
-      {leftPanel}
-      <div className="flex flex-1 items-center justify-center bg-surface-page dark:bg-dark-page">
-        <div className="w-[460px] bg-surface-card dark:bg-dark-card rounded-[10px] border border-surface-border p-10">
-          <div className="mb-6">
-            <h1 className="text-4xl font-bold text-brand dark:text-[#EDEEF0]">Set a new password</h1>
-            <p className="text-[14px] text-[#6B7280] mt-2">
-              Choose a strong password for your account.
-            </p>
-          </div>
+    <Shell>
+      <h1 className="text-[28px] font-medium text-brand dark:text-[#EDEEF0] text-center mb-1 leading-tight">
+        Set a new password
+      </h1>
+      <p className="text-[14px] text-[#6B7280] text-center mb-7">
+        Choose a strong password for your account.
+      </p>
 
-          <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-            {/* New password */}
-            <div className="flex flex-col gap-1">
-              <label className="text-[11px] font-medium text-[#6B7280]">New password</label>
-              <div className="relative">
-                <input
-                  type={showNew ? 'text' : 'password'}
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  required
-                  className="w-full h-11 px-3 rounded-md text-base bg-surface-input dark:bg-dark-card border border-surface-border focus:border-brand-light focus:outline-none focus:ring-1 focus:ring-brand-light text-brand dark:text-[#EDEEF0] placeholder:text-[#9CA3AF]"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowNew(!showNew)}
-                  className="absolute right-2 top-1/2 -translate-y-1/2"
-                >
-                  {showNew ? (
-                    <EyeOff className="text-[#6B7280]" style={{ width: 14, height: 14 }} />
-                  ) : (
-                    <Eye className="text-[#6B7280]" style={{ width: 14, height: 14 }} />
-                  )}
-                </button>
-              </div>
-            </div>
-
-            {/* Confirm password */}
-            <div className="flex flex-col gap-1">
-              <label className="text-[11px] font-medium text-[#6B7280]">Confirm new password</label>
-              <div className="relative">
-                <input
-                  type={showConfirm ? 'text' : 'password'}
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  required
-                  className="w-full h-11 px-3 rounded-md text-base bg-surface-input dark:bg-dark-card border border-surface-border focus:border-brand-light focus:outline-none focus:ring-1 focus:ring-brand-light text-brand dark:text-[#EDEEF0] placeholder:text-[#9CA3AF]"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowConfirm(!showConfirm)}
-                  className="absolute right-2 top-1/2 -translate-y-1/2"
-                >
-                  {showConfirm ? (
-                    <EyeOff className="text-[#6B7280]" style={{ width: 14, height: 14 }} />
-                  ) : (
-                    <Eye className="text-[#6B7280]" style={{ width: 14, height: 14 }} />
-                  )}
-                </button>
-              </div>
-            </div>
-
-            {matchError && <p className="text-[11px] text-[#991B1B]">{matchError}</p>}
-
-            {submitError && (
-              <div className="flex flex-col gap-1">
-                <p className="text-[11px] text-[#991B1B]">{submitError}</p>
-                <Link
-                  href="/login/forgot-password"
-                  className="text-[11px] text-brand dark:text-[#4A7FA5] underline hover:opacity-80"
-                >
-                  Request a new reset link
-                </Link>
-              </div>
-            )}
-
+      <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
+        {/* New password */}
+        <div className="flex flex-col gap-1.5">
+          <label className="text-[12px] font-medium text-[#6B7280]">New password</label>
+          <div className="relative">
+            <input
+              type={showNew ? 'text' : 'password'}
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              required
+              className={inputClass + ' pr-9'}
+            />
             <button
-              type="submit"
-              disabled={loading}
-              className="w-full h-11 mt-2 rounded-md text-sm font-medium text-white bg-brand dark:bg-brand-btn disabled:opacity-60 flex items-center justify-center gap-2"
+              type="button"
+              onClick={() => setShowNew(!showNew)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-[#9CA3AF] hover:text-[#6B7280]"
             >
-              {loading ? (
-                <>
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  Updating...
-                </>
-              ) : (
-                'Update password'
-              )}
+              {showNew ? <EyeOff size={15} /> : <Eye size={15} />}
             </button>
-          </form>
+          </div>
         </div>
-      </div>
-    </div>
+
+        {/* Confirm password */}
+        <div className="flex flex-col gap-1.5">
+          <label className="text-[12px] font-medium text-[#6B7280]">Confirm new password</label>
+          <div className="relative">
+            <input
+              type={showConfirm ? 'text' : 'password'}
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              required
+              className={inputClass + ' pr-9'}
+            />
+            <button
+              type="button"
+              onClick={() => setShowConfirm(!showConfirm)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-[#9CA3AF] hover:text-[#6B7280]"
+            >
+              {showConfirm ? <EyeOff size={15} /> : <Eye size={15} />}
+            </button>
+          </div>
+        </div>
+
+        {matchError && <p className="text-[12px] text-status-red-text">{matchError}</p>}
+
+        {submitError && (
+          <div className="flex flex-col gap-1.5">
+            <p className="text-[12px] text-status-red-text">{submitError}</p>
+            <Link
+              href="/login/forgot-password"
+              className="text-[12px] text-brand-light dark:text-brand-light hover:underline"
+            >
+              Request a new reset link
+            </Link>
+          </div>
+        )}
+
+        <button type="submit" disabled={loading} className={btnPrimary}>
+          {loading ? (
+            <>
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Updating...
+            </>
+          ) : (
+            'Update password'
+          )}
+        </button>
+      </form>
+    </Shell>
   )
 }
 
 export default function ResetPasswordPage() {
   return (
     <Suspense fallback={
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="h-6 w-6 animate-spin text-brand" />
+      <div className="min-h-screen bg-[#1F3148] flex items-center justify-center">
+        <Loader2 className="h-6 w-6 animate-spin text-white" />
       </div>
     }>
       <ResetPasswordContent />
