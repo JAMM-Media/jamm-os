@@ -1,11 +1,13 @@
 // path: frontend/src/app/tasks/[id]/page.tsx
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useParams } from 'next/navigation'
 import { Breadcrumb } from '@/components/layout/Breadcrumb'
 import { StatusBadge } from '@/components/ui/StatusBadge'
-import { tasksApi } from '@/lib/api'
+import { tasksApi, documentsApi } from '@/lib/api'
+import type { TaskFileLink } from '@/lib/api'
+import type { Document } from '@/lib/api'
 import { useFetch } from '@/lib/hooks/useFetch'
 import { NotesTab, NotesPanel, useNotes } from '@/components/notes'
 import { EditTaskModal } from '@/components/tasks/EditTaskModal'
@@ -36,6 +38,62 @@ export default function TaskDetailPage() {
   const [notesOpen, setNotesOpen] = useState(false)
   const [isEditOpen, setIsEditOpen] = useState(false)
   const { unreadCount } = useNotes({ entityType: 'task', entityId: id })
+
+  // Linked files state
+  const [linkedFiles, setLinkedFiles] = useState<TaskFileLink[]>([])
+  const [linkedFilesLoading, setLinkedFilesLoading] = useState(false)
+  const [isPickerOpen, setIsPickerOpen] = useState(false)
+  const [pickerDocs, setPickerDocs] = useState<Document[]>([])
+  const [pickerLoading, setPickerLoading] = useState(false)
+  const [linkingDocId, setLinkingDocId] = useState<string | null>(null)
+  const [unlinkingId, setUnlinkingId] = useState<string | null>(null)
+
+  const fetchLinkedFiles = useCallback(async () => {
+    if (!task || task.taskType !== 'client') return
+    setLinkedFilesLoading(true)
+    try {
+      const result = await tasksApi.listFiles(id)
+      setLinkedFiles(result.items)
+    } finally {
+      setLinkedFilesLoading(false)
+    }
+  }, [id, task?.taskType])
+
+  useEffect(() => {
+    fetchLinkedFiles()
+  }, [fetchLinkedFiles])
+
+  const openPicker = async () => {
+    if (!task) return
+    setIsPickerOpen(true)
+    setPickerLoading(true)
+    try {
+      const result = await documentsApi.list(0, 200, undefined, task.engagementId)
+      setPickerDocs(result.items)
+    } finally {
+      setPickerLoading(false)
+    }
+  }
+
+  const handleLinkFile = async (documentId: string) => {
+    setLinkingDocId(documentId)
+    try {
+      await tasksApi.linkFile(id, documentId)
+      await fetchLinkedFiles()
+    } finally {
+      setLinkingDocId(null)
+    }
+  }
+
+  const handleUnlink = async (documentId: string) => {
+    setUnlinkingId(documentId)
+    try {
+      await tasksApi.unlinkFile(id, documentId)
+      setLinkedFiles((prev) => prev.filter((f) => f.id !== documentId))
+    } finally {
+      setUnlinkingId(null)
+    }
+  }
 
   useEffect(() => {
     if (!task || !user) return
@@ -122,9 +180,51 @@ export default function TaskDetailPage() {
         </div>
 
         {task.notes && (
-          <div className="bg-surface-card dark:bg-dark-card rounded-card p-4">
+          <div className="bg-surface-card dark:bg-dark-card rounded-card p-4 mb-4">
             <p className="text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em] mb-2">Notes</p>
             <p className="text-[13px] text-[#374151] dark:text-[#9CA3AF]">{task.notes}</p>
+          </div>
+        )}
+
+        {/* Linked Files -- CLIENT tasks only */}
+        {task.taskType === 'client' && (
+          <div className="bg-surface-card dark:bg-dark-card rounded-card p-4">
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em]">Linked Files</p>
+              <button
+                onClick={openPicker}
+                className="text-[12px] text-brand-light dark:text-brand-light hover:underline"
+              >
+                Link a file
+              </button>
+            </div>
+            {linkedFilesLoading ? (
+              <p className="text-[12px] text-[#9CA3AF]">Loading...</p>
+            ) : linkedFiles.length === 0 ? (
+              <p className="text-[12px] text-[#9CA3AF]">No files linked to this task.</p>
+            ) : (
+              <ul className="flex flex-col gap-2">
+                {linkedFiles.map((f) => (
+                  <li key={f.linkId} className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="text-[13px] text-brand dark:text-[#EDEEF0] truncate">{f.filename}</span>
+                      {f.deletedAt && (
+                        <span className="flex-shrink-0 text-[11px] text-[#9CA3AF] bg-[#F3F4F6] dark:bg-[#333333] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] px-1.5 py-0.5 rounded">
+                          In trash
+                        </span>
+                      )}
+                    </div>
+                    <button
+                      disabled={unlinkingId === f.id}
+                      onClick={() => handleUnlink(f.id)}
+                      className="flex-shrink-0 text-[12px] text-[#9CA3AF] hover:text-status-red-text transition-colors disabled:opacity-50"
+                    >
+                      {unlinkingId === f.id ? 'Removing...' : 'Remove'}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         )}
       </div>
@@ -148,6 +248,51 @@ export default function TaskDetailPage() {
           }}
           onSuccess={() => { refetch(); setIsEditOpen(false) }}
         />
+      )}
+
+      {/* File picker modal -- reuses the fixed-overlay modal pattern from engagements/[id]/page.tsx */}
+      {isPickerOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-[#EDEEF0] dark:bg-dark-card rounded-[10px] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] p-6 w-full max-w-sm shadow-lg">
+            <p className="text-[13px] font-medium text-brand dark:text-[#EDEEF0] mb-4">
+              Link a file from this engagement
+            </p>
+            {pickerLoading ? (
+              <p className="text-[12px] text-[#9CA3AF] mb-4">Loading files...</p>
+            ) : pickerDocs.length === 0 ? (
+              <p className="text-[12px] text-[#9CA3AF] mb-4">No files available in this engagement.</p>
+            ) : (
+              <ul className="max-h-60 overflow-y-auto flex flex-col gap-0.5 mb-4 rounded-[6px] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] bg-white dark:bg-[#252525]">
+                {pickerDocs.map((doc) => {
+                  const alreadyLinked = linkedFiles.some((f) => f.id === doc.id)
+                  const isLinking = linkingDocId === doc.id
+                  return (
+                    <li key={doc.id}>
+                      <button
+                        disabled={alreadyLinked || isLinking}
+                        onClick={() => handleLinkFile(doc.id)}
+                        className="w-full text-left px-3 py-2 text-[13px] text-[#1F3148] dark:text-[#EDEEF0] hover:bg-[#F3F4F6] dark:hover:bg-[#333333] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      >
+                        {isLinking ? 'Linking...' : doc.name}
+                        {alreadyLinked && (
+                          <span className="text-[#9CA3AF] text-[11px] ml-2">already linked</span>
+                        )}
+                      </button>
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+            <div className="flex justify-end">
+              <button
+                onClick={() => setIsPickerOpen(false)}
+                className="h-9 px-3 rounded-[6px] border border-[0.5px] border-[#1F3148] dark:border-[#4A7FA5] text-[#1F3148] dark:text-[#EDEEF0] bg-transparent text-[13px] font-medium hover:bg-surface-page dark:hover:bg-dark-page transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
       )}
   </>)
 }

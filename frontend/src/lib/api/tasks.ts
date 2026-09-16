@@ -5,6 +5,7 @@ export interface Task {
   id: string
   title: string
   status: string
+  taskType: string
   dueDate: string | null
   assignedTo: string | null
   assignedToName: string | null
@@ -14,6 +15,14 @@ export interface Task {
   engagementId: string
   createdAt: string
   updatedAt: string
+}
+
+export interface TaskFileLink {
+  linkId: string
+  linkCreatedAt: string
+  id: string
+  filename: string
+  deletedAt: string | null
 }
 
 export interface BulkMemberAdded {
@@ -31,6 +40,7 @@ function mapTask(raw: Record<string, unknown>): Task {
     id: String(raw.id),
     title: String(raw.title ?? ''),
     status: String(raw.status ?? 'todo'),
+    taskType: String(raw.task_type ?? 'client'),
     dueDate: raw.due_date ? String(raw.due_date) : null,
     assignedTo: raw.assigned_to ? String(raw.assigned_to) : null,
     assignedToName: raw.assigned_to_name ? String(raw.assigned_to_name) : null,
@@ -40,6 +50,16 @@ function mapTask(raw: Record<string, unknown>): Task {
     engagementId: String(raw.engagement_id ?? ''),
     createdAt: String(raw.created_at ?? ''),
     updatedAt: String(raw.updated_at ?? ''),
+  }
+}
+
+function mapTaskFileLink(raw: Record<string, unknown>): TaskFileLink {
+  return {
+    linkId: String(raw.link_id),
+    linkCreatedAt: String(raw.link_created_at),
+    id: String(raw.id),
+    filename: String(raw.filename ?? ''),
+    deletedAt: raw.deleted_at ? String(raw.deleted_at) : null,
   }
 }
 
@@ -91,5 +111,20 @@ export const tasksApi = {
 
   delete: async (id: string): Promise<void> => {
     await api.delete(`/tasks/${id}`)
+  },
+
+  listFiles: async (taskId: string): Promise<{ items: TaskFileLink[]; total: number }> => {
+    const { data } = await api.get(`/tasks/${taskId}/files`)
+    const items = (data.items ?? []).map((r: Record<string, unknown>) => mapTaskFileLink(r))
+    return { items, total: Number(data.total ?? items.length) }
+  },
+
+  linkFile: async (taskId: string, documentId: string): Promise<TaskFileLink> => {
+    const { data } = await api.post(`/tasks/${taskId}/files`, { document_id: documentId })
+    return mapTaskFileLink(data as Record<string, unknown>)
+  },
+
+  unlinkFile: async (taskId: string, documentId: string): Promise<void> => {
+    await api.delete(`/tasks/${taskId}/files/${documentId}`)
   },
 }

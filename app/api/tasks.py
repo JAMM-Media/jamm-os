@@ -12,13 +12,16 @@ from app.schemas.task import (
     BulkTaskUpdateResponse,
 )
 from app.schemas.pagination import PaginatedResponse
+from app.schemas.task_file_link import TaskFileLinkCreate, TaskFileLinkOut
 from app.utils.pagination import paginate
 from app.crud import task as crud_task
 from app.dependencies.auth import get_current_user
 from app.dependencies.tenant import get_current_firm
 from app.dependencies.roles import require_staff_or_above, require_manager_or_above
+from app.models.document import Document
 from app.models.user import User
 import app.services.task_service as task_service
+import app.services.task_file_link_service as task_file_link_service
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
 
@@ -170,3 +173,54 @@ def delete_task(
     )
     if result is None:
         raise HTTPException(status_code=404, detail="Task not found")
+
+
+# ---------------------------------------------------------
+# TASK FILE LINKS
+# ---------------------------------------------------------
+
+@router.get("/{task_id}/files", response_model=PaginatedResponse[TaskFileLinkOut])
+def list_task_files(
+    task_id: UUID,
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    current_user: User = Depends(get_current_user),
+    _: object = Depends(require_staff_or_above),
+):
+    items = task_file_link_service.list_task_file_links(
+        db=db, firm_id=current_firm.id, task_id=task_id,
+        current_user_id=current_user.id,
+    )
+    return {"total": len(items), "limit": len(items), "offset": 0, "items": items}
+
+
+@router.post("/{task_id}/files", response_model=TaskFileLinkOut, status_code=status.HTTP_201_CREATED)
+def link_file_to_task(
+    task_id: UUID,
+    payload: TaskFileLinkCreate,
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    current_user: User = Depends(get_current_user),
+    _: object = Depends(require_staff_or_above),
+):
+    link = task_file_link_service.link_file_to_task(
+        db=db, firm_id=current_firm.id, task_id=task_id,
+        document_id=payload.document_id, current_user_id=current_user.id,
+    )
+    document = db.get(Document, link.document_id)
+    return task_file_link_service._doc_to_link_out(document, link.id, link.created_at)
+
+
+@router.delete("/{task_id}/files/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
+def unlink_file_from_task(
+    task_id: UUID,
+    document_id: UUID,
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    current_user: User = Depends(get_current_user),
+    _: object = Depends(require_staff_or_above),
+):
+    task_file_link_service.unlink_file_from_task(
+        db=db, firm_id=current_firm.id, task_id=task_id,
+        document_id=document_id, current_user_id=current_user.id,
+    )
