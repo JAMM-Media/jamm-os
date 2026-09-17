@@ -36,23 +36,59 @@ import { useChannels } from '@/components/firm-chat/useChannels'
 import { useAuth } from '@/lib/hooks/useAuth'
 import api from '@/lib/api'
 
-const navItems = [
-  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/clients', label: 'Clients', icon: Users },
-  { href: '/leads', label: 'Pipeline', icon: TrendingUp },
-  { href: '/staff', label: 'Staff', icon: UserCog },
-  { href: '/engagements', label: 'Engagements', icon: Briefcase },
-  { href: '/templates', label: 'Templates', icon: LayoutTemplate },
-  { href: '/tasks', label: 'Tasks', icon: CheckSquare },
-  { href: '/timesheets', label: 'Timesheets', icon: Clock },
-  { href: '/archive', label: 'Archive', icon: Archive },
-  { href: '/calendar', label: 'Calendar', icon: CalendarDays },
-  { href: '/firm-library', label: 'Firm Library', icon: Library },
-  { href: '/billing', label: 'Billing', icon: CreditCard },
-  { href: '/inbox', label: 'Inbox', icon: Mail },
-  { href: '/firm-chat', label: 'Firm Chat', icon: MessageSquare },
-  { href: '/peer-network', label: 'Peer Network', icon: Sprout },
-  { href: '/notifications', label: 'Notifications', icon: Bell },
+interface NavItem {
+  href: string
+  label: string
+  icon: React.ElementType
+}
+
+interface NavSection {
+  label: string | null
+  items: NavItem[]
+}
+
+const navSections: NavSection[] = [
+  {
+    label: null,
+    items: [
+      { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    ],
+  },
+  {
+    label: 'Client Work',
+    items: [
+      { href: '/clients', label: 'Clients', icon: Users },
+      { href: '/leads', label: 'Pipeline', icon: TrendingUp },
+      { href: '/engagements', label: 'Engagements', icon: Briefcase },
+      { href: '/tasks', label: 'Tasks', icon: CheckSquare },
+      { href: '/templates', label: 'Templates', icon: LayoutTemplate },
+    ],
+  },
+  {
+    label: 'Time & Billing',
+    items: [
+      { href: '/timesheets', label: 'Timesheets', icon: Clock },
+      { href: '/billing', label: 'Billing', icon: CreditCard },
+    ],
+  },
+  {
+    label: 'Firm',
+    items: [
+      { href: '/staff', label: 'Staff', icon: UserCog },
+      { href: '/firm-library', label: 'Firm Library', icon: Library },
+      { href: '/calendar', label: 'Calendar', icon: CalendarDays },
+      { href: '/archive', label: 'Archive', icon: Archive },
+    ],
+  },
+  {
+    label: 'Communication',
+    items: [
+      { href: '/inbox', label: 'Inbox', icon: Mail },
+      { href: '/firm-chat', label: 'Firm Chat', icon: MessageSquare },
+      { href: '/notifications', label: 'Notifications', icon: Bell },
+      { href: '/peer-network', label: 'Peer Network', icon: Sprout },
+    ],
+  },
 ]
 
 const settingsItem = { href: '/settings', label: 'Settings', icon: Settings }
@@ -115,12 +151,12 @@ export function Sidebar({ collapsed, onToggle, onConciergeOpen, locked }: Sideba
       (i.provider === 'gmail' || i.provider === 'outlook') && i.firm_disabled
   )
 
-  const visibleNavItems = navItems.filter((item) => {
+  function isItemVisible(item: NavItem): boolean {
     if (item.href === '/dashboard' && user?.role === 'staff') return false
     if (item.href === '/staff' && user?.role === 'staff') return false
     if (item.href === '/inbox') return emailSyncEnabled && !myEmailDisabledByFirm
     return true
-  })
+  }
 
   return (
     <aside
@@ -156,57 +192,80 @@ export function Sidebar({ collapsed, onToggle, onConciergeOpen, locked }: Sideba
         </div>
       )}
 
-      {/* Main nav */}
-      <nav ref={navRef} className="flex-1 py-3 overflow-y-hidden">
-        <ul className="space-y-0.5 px-1.5">
-          {visibleNavItems.map((item) => {
-            const isActive = pathname.startsWith(item.href)
-            const Icon = item.icon
-            const isFirmChat = item.href === '/firm-chat'
-            const isNotifications = item.href === '/notifications'
-            const showNotifBadge = isNotifications && notifUnread > 0
-            const badgeCount = isNotifications ? notifUnread : totalUnread
-            const showBadge = (isFirmChat && totalUnread > 0) || showNotifBadge
+      {/* Main nav -- overflow-y-auto with thin scrollbar so items at the bottom are
+          reachable on short screens. survey-scroll is defined in globals.css and
+          applies scrollbar-width:thin plus a matching scrollbar-color for the navy
+          background. The bottom cluster sits outside this element and never scrolls. */}
+      <nav ref={navRef} className="flex-1 py-3 overflow-y-auto survey-scroll">
+        {navSections.map((section) => {
+          const visibleItems = section.items.filter(isItemVisible)
+          if (visibleItems.length === 0) return null
 
-            return (
-              <li key={item.href}>
-                <Link
-                  href={item.href}
-                  scroll={false}
-                  className={cn(
-                    'flex items-center gap-3 px-2 py-2 rounded text-[13px] transition-colors',
-                    isActive
-                      ? 'bg-white/15 text-white'
-                      : 'text-white/60 hover:text-white hover:bg-white/10',
-                    collapsed && 'justify-center px-2'
-                  )}
-                  title={collapsed ? item.label : undefined}
-                >
-                  {/* Icon — wrap in relative container for collapsed badge */}
-                  <div className="relative flex-shrink-0">
-                    <Icon className="h-4 w-4" />
-                    {showBadge && collapsed && (
-                      <span className="absolute -top-1 -right-1 flex items-center justify-center bg-brand dark:bg-brand-btn text-white text-[11px] font-medium w-[18px] h-[18px] rounded-full">
-                        {badgeCount > 99 ? '99+' : badgeCount}
-                      </span>
-                    )}
-                  </div>
-                  {/* Label + expanded badge */}
-                  {!collapsed && (
-                    <>
-                      <span className="truncate flex-1">{item.label}</span>
-                      {showBadge && (
-                        <span className="flex items-center justify-center bg-brand dark:bg-brand-btn text-white text-[11px] font-medium h-[18px] min-w-[18px] px-1.5 rounded-full flex-shrink-0">
-                          {badgeCount > 99 ? '99+' : badgeCount}
-                        </span>
-                      )}
-                    </>
-                  )}
-                </Link>
-              </li>
-            )
-          })}
-        </ul>
+          return (
+            <div key={section.label ?? '__root__'}>
+              {/* Expanded: section label header. Collapsed: thin divider between sections.
+                  The null-label Dashboard section gets neither. */}
+              {section.label !== null && (
+                collapsed ? (
+                  <div className="mx-1.5 mt-3 mb-1 border-t border-white/10" />
+                ) : (
+                  <p className="px-3.5 pt-4 pb-1 text-[11px] font-medium text-white/40 uppercase tracking-[0.05em]">
+                    {section.label}
+                  </p>
+                )
+              )}
+              <ul className="space-y-0.5 px-1.5">
+                {visibleItems.map((item) => {
+                  const isActive = pathname.startsWith(item.href)
+                  const Icon = item.icon
+                  const isFirmChat = item.href === '/firm-chat'
+                  const isNotifications = item.href === '/notifications'
+                  const showNotifBadge = isNotifications && notifUnread > 0
+                  const badgeCount = isNotifications ? notifUnread : totalUnread
+                  const showBadge = (isFirmChat && totalUnread > 0) || showNotifBadge
+
+                  return (
+                    <li key={item.href}>
+                      <Link
+                        href={item.href}
+                        scroll={false}
+                        className={cn(
+                          'flex items-center gap-3 px-2 py-2 rounded text-[13px] transition-colors',
+                          isActive
+                            ? 'bg-white/15 text-white'
+                            : 'text-white/60 hover:text-white hover:bg-white/10',
+                          collapsed && 'justify-center px-2'
+                        )}
+                        title={collapsed ? item.label : undefined}
+                      >
+                        {/* Icon: wrap in relative container for collapsed badge */}
+                        <div className="relative flex-shrink-0">
+                          <Icon className="h-4 w-4" />
+                          {showBadge && collapsed && (
+                            <span className="absolute -top-1 -right-1 flex items-center justify-center bg-brand dark:bg-brand-btn text-white text-[11px] font-medium w-[18px] h-[18px] rounded-full">
+                              {badgeCount > 99 ? '99+' : badgeCount}
+                            </span>
+                          )}
+                        </div>
+                        {/* Label + expanded badge */}
+                        {!collapsed && (
+                          <>
+                            <span className="truncate flex-1">{item.label}</span>
+                            {showBadge && (
+                              <span className="flex items-center justify-center bg-brand dark:bg-brand-btn text-white text-[11px] font-medium h-[18px] min-w-[18px] px-1.5 rounded-full flex-shrink-0">
+                                {badgeCount > 99 ? '99+' : badgeCount}
+                              </span>
+                            )}
+                          </>
+                        )}
+                      </Link>
+                    </li>
+                  )
+                })}
+              </ul>
+            </div>
+          )
+        })}
       </nav>
 
       {/* Bottom section: theme toggle + settings */}
