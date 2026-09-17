@@ -629,3 +629,59 @@ def roll_forward_folders(
         current_user_id=current_user.id,
     )
     return result
+
+
+# ---------------------------------------------------------------------------
+# POST /engagements/{engagement_id}/export
+# ---------------------------------------------------------------------------
+
+@router.post("/{engagement_id}/export")
+def request_engagement_export(
+    engagement_id: UUID,
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    current_user: User = Depends(get_current_user),
+    _: object = Depends(require_manager_or_above),
+):
+    """Launch a background zip job for all documents in this engagement.
+
+    Gated require_manager_or_above, matching the finalize endpoint's real gate.
+    No per-engagement trio check exists in this backend today; this task uses
+    the same plain role dependency used by every comparable endpoint here rather
+    than inventing a check that has no implementation. That gap is a separate
+    open question for Andrew, not resolved here.
+    """
+    from app.crud.engagement import get_engagement_for_firm
+    from app.services.audit_service import write_audit_log
+
+    engagement = get_engagement_for_firm(db, engagement_id=engagement_id, firm_id=current_firm.id)
+    if not engagement:
+        raise HTTPException(status_code=404, detail="Engagement not found")
+
+    import threading
+    from app.services.document_archive_service import generate_and_deliver_engagement_archive
+
+    threading.Thread(
+        target=generate_and_deliver_engagement_archive,
+        kwargs={
+            "firm_id": current_firm.id,
+            "engagement_id": engagement_id,
+            "requested_by_user_id": current_user.id,
+        },
+        daemon=True,
+    ).start()
+
+    write_audit_log(
+        db=db,
+        firm_id=current_firm.id,
+        actor_id=current_user.id,
+        actor_type="staff",
+        action="engagement.export_requested",
+        entity_type="engagement",
+        entity_id=engagement_id,
+    )
+
+    return {
+        "status": "processing",
+        "message": "The archive for this engagement is being prepared. You will receive an email with a download link shortly.",
+    }
