@@ -30,8 +30,11 @@ export function AppShell({ children }: AppShellProps) {
   // standard SSR-safe pattern for state that depends on browser-only storage.
   const [conciergeOpen, setConciergeOpen] = useState(false)
   const [conciergeEntryMode, setConciergeEntryMode] = useState<'sidebar' | 'floating'>('floating')
+  const [hoverExpanded, setHoverExpanded] = useState(false)
   const { notifications } = useConciergeNotifications()
   const { user } = useAuth()
+
+  const isHoverMode = user?.sidebar_expand_mode === 'hover'
 
   // Draggable floating button: null = use default bottom-right position
   const [btnPos, setBtnPos] = useState<{ x: number; y: number } | null>(null)
@@ -175,16 +178,37 @@ export function AppShell({ children }: AppShellProps) {
 
   return (
     <div className="flex h-screen overflow-hidden bg-surface-page dark:bg-dark-page">
-      <Sidebar
-        collapsed={isSettingsRoute ? true : collapsed}
-        onToggle={isSettingsRoute ? () => {} : () => setCollapsed((c) => {
-          const next = !c
-          localStorage.setItem('jamm_sidebar_collapsed', String(next))
-          return next
-        })}
-        onConciergeOpen={conciergeEntryMode === 'sidebar' ? handleConciergeOpen : undefined}
-        locked={isSettingsRoute}
-      />
+      {/* Hover mode: the sidebar is absolutely positioned within a fixed-width spacer
+          so expanding it overlays the page content rather than pushing it over. The
+          w-12 spacer preserves the collapsed rail's visual footprint in the flex layout.
+          Settings route lock overrides hover mode and forces the sidebar fully collapsed. */}
+      {isHoverMode && !isSettingsRoute ? (
+        <div
+          className="relative w-12 flex-shrink-0"
+          onMouseEnter={() => setHoverExpanded(true)}
+          onMouseLeave={() => setHoverExpanded(false)}
+        >
+          <div className="absolute top-0 left-0 h-full z-50">
+            <Sidebar
+              collapsed={!hoverExpanded}
+              onToggle={() => {}}
+              onConciergeOpen={conciergeEntryMode === 'sidebar' ? handleConciergeOpen : undefined}
+              locked={false}
+            />
+          </div>
+        </div>
+      ) : (
+        <Sidebar
+          collapsed={isSettingsRoute ? true : collapsed}
+          onToggle={isSettingsRoute ? () => {} : () => setCollapsed((c) => {
+            const next = !c
+            localStorage.setItem('jamm_sidebar_collapsed', String(next))
+            return next
+          })}
+          onConciergeOpen={conciergeEntryMode === 'sidebar' ? handleConciergeOpen : undefined}
+          locked={isSettingsRoute}
+        />
+      )}
       <main ref={mainRef} className={`flex-1 overflow-y-auto transition-[padding] duration-200 ${conciergeOpen ? 'pr-[400px]' : ''}`}>
         {children}
       </main>

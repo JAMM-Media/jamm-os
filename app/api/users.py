@@ -9,7 +9,7 @@ from uuid import UUID
 from app.db.session import get_db
 from app.models.user import User
 from app.models.firm import Firm
-from app.schemas.user import UserCreate, UserOut, UserUpdate, BookableStaffOut
+from app.schemas.user import UserCreate, UserOut, UserUpdate, UserPreferencesUpdate, BookableStaffOut
 from app.schemas.task import TaskOut, TaskStatus
 from app.schemas.pagination import PaginatedResponse
 from app.utils.pagination import paginate
@@ -74,6 +74,36 @@ def read_users_me(
     current_user: User = Depends(get_current_user),
     current_firm: Firm = Depends(get_current_firm),
 ):
+    user_out = UserOut.model_validate(current_user)
+    user_out.firm_type = current_firm.firm_type
+    user_out.concierge_active = current_firm.concierge_active
+    user_out.concierge_entry_mode = (current_firm.settings or {}).get('concierge_entry_mode', 'floating')
+    user_out.concierge_suggestions_enabled = (current_firm.settings or {}).get('concierge_suggestions_enabled', True)
+    return user_out
+
+
+# -------------------------------------------------------------------
+# PATCH /users/me/preferences - Self-service personal preference update.
+# Gated on get_current_user only (no additional role requirement) because
+# every authenticated user should be able to change their own UI preferences.
+# This is the first self-service PATCH endpoint in this codebase; it
+# establishes the pattern: current_user.id determines the target row,
+# the path never accepts a user_id, and the schema only exposes fields
+# that are safe for a user to write on their own record.
+# -------------------------------------------------------------------
+@router.patch("/me/preferences", response_model=UserOut)
+def update_my_preferences(
+    payload: UserPreferencesUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    current_firm: Firm = Depends(get_current_firm),
+):
+    if payload.sidebar_expand_mode is not None:
+        current_user.sidebar_expand_mode = payload.sidebar_expand_mode
+    else:
+        current_user.sidebar_expand_mode = None
+    db.commit()
+    db.refresh(current_user)
     user_out = UserOut.model_validate(current_user)
     user_out.firm_type = current_firm.firm_type
     user_out.concierge_active = current_firm.concierge_active

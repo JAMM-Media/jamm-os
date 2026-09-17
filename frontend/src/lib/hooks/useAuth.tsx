@@ -15,6 +15,7 @@ export interface AuthUser {
   concierge_active?: boolean
   concierge_entry_mode?: string | null
   concierge_suggestions_enabled?: boolean | null
+  sidebar_expand_mode?: string | null
 }
 
 interface AuthContextType {

@@ -1,7 +1,7 @@
 # app/schemas/user.py
 
 from datetime import datetime
-from typing import Optional
+from typing import Literal, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, EmailStr, ConfigDict
@@ -43,9 +43,17 @@ class UserOut(UserBase):
     concierge_suggestions_enabled: Optional[bool] = None
     meeting_location_type: Optional[MeetingLocationType] = None
     meeting_location_value: Optional[str] = None
+    sidebar_expand_mode: Optional[Literal["hover"]] = None
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class UserPreferencesUpdate(BaseModel):
+    """Schema for the self-service PATCH /users/me/preferences endpoint.
+    Accepts only the personal preference fields a user can set for themselves.
+    """
+    sidebar_expand_mode: Optional[Literal["hover"]] = None
 
 
 class BookableStaffOut(BaseModel):

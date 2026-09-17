@@ -161,6 +161,15 @@ class User(Base):
         nullable=True,
     )
 
+    # Personal sidebar preference. Null means click-to-pin (default). "hover" means
+    # the rail expands on mouseover and collapses on mouseleave. Stored as a plain
+    # nullable String rather than a PostgreSQL enum because the value set is small and
+    # adding values later should not require a DDL migration on the enum type.
+    sidebar_expand_mode: Mapped[Optional[str]] = mapped_column(
+        String(20),
+        nullable=True,
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),

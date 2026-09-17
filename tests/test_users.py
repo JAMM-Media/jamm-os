@@ -137,3 +137,43 @@ def test_workload_nonexistent_user(client, firm_a_owner):
     headers = firm_a_owner["headers"]
     r = client.get(f"/users/{uuid.uuid4()}/workload", headers=headers)
     assert r.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Guard test: PATCH /users/me/preferences writes to the acting user's own row
+# and GET /users/me reflects the new value.
+#
+# Watch red: temporarily change the endpoint to write to a hardcoded wrong
+# user id. The acting user's GET /users/me will still return None for
+# sidebar_expand_mode, proving the write hit the wrong row (or no row).
+# Restore; confirm green. Confirm git diff on the restored file is empty.
+# ---------------------------------------------------------------------------
+def test_sidebar_expand_mode_preference_persists(client, firm_a_owner):
+    headers = firm_a_owner["headers"]
+
+    # Before: default is null (click-to-pin)
+    r = client.get("/users/me", headers=headers)
+    assert r.status_code == 200, r.text
+    assert r.json().get("sidebar_expand_mode") is None
+
+    # PATCH to hover
+    r = client.patch("/users/me/preferences", json={"sidebar_expand_mode": "hover"}, headers=headers)
+    assert r.status_code == 200, r.text
+    assert r.json()["sidebar_expand_mode"] == "hover"
+
+    # GET /users/me confirms the write landed on this user's row
+    r = client.get("/users/me", headers=headers)
+    assert r.status_code == 200, r.text
+    assert r.json()["sidebar_expand_mode"] == "hover", (
+        "GET /users/me did not reflect the PATCH; the write may have hit the wrong row"
+    )
+
+    # PATCH back to null (click-to-pin)
+    r = client.patch("/users/me/preferences", json={"sidebar_expand_mode": None}, headers=headers)
+    assert r.status_code == 200, r.text
+    assert r.json()["sidebar_expand_mode"] is None
+
+    # GET /users/me confirms the null write also landed correctly
+    r = client.get("/users/me", headers=headers)
+    assert r.status_code == 200, r.text
+    assert r.json().get("sidebar_expand_mode") is None

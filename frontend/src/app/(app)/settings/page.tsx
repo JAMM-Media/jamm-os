@@ -409,6 +409,7 @@ export default function SettingsPage() {
   const [savingContact, setSavingContact] = useState(false)
   const [conciergeEntryMode, setConciergeEntryMode] = useState<'sidebar' | 'floating'>('floating')
   const [conciergeSuggestionsEnabled, setConciergeSuggestionsEnabled] = useState<boolean>(true)
+  const [sidebarExpandMode, setSidebarExpandMode] = useState<'click' | 'hover'>('click')
 
   const [googleReviewUrl, setGoogleReviewUrl] = useState('')
   const [reviewEnabled, setReviewEnabled] = useState(false)
@@ -526,6 +527,10 @@ export default function SettingsPage() {
     if (firmData?.timezone) setFirmTimezone(firmData.timezone)
   }, [firmData])
 
+  useEffect(() => {
+    setSidebarExpandMode(user?.sidebar_expand_mode === 'hover' ? 'hover' : 'click')
+  }, [user])
+
   async function handleSaveEmailSettings() {
     setSavingEmail(true)
     try {
@@ -556,6 +561,18 @@ export default function SettingsPage() {
     } finally {
       setSavingContact(false)
     }
+  }
+
+  async function handleSidebarExpandModeChange(mode: 'click' | 'hover') {
+    setSidebarExpandMode(mode)
+    try {
+      await api.patch('/users/me/preferences', {
+        sidebar_expand_mode: mode === 'hover' ? 'hover' : null,
+      })
+    } catch {
+      toast.error('Failed to save sidebar preference. Please try again.')
+    }
+    await refreshUser()
   }
 
   async function handleConciergeEntryModeChange(mode: 'sidebar' | 'floating') {
@@ -977,6 +994,43 @@ export default function SettingsPage() {
                 </div>
               </div>
             )}
+
+            {/* Sidebar Behavior section -- personal preference, visible to all users */}
+            <div className="bg-surface-card dark:bg-dark-card rounded-[10px] p-4 flex flex-col gap-3 max-w-lg" style={{ marginTop: '12px' }}>
+              <p className="text-[13px] font-medium text-brand dark:text-[#EDEEF0]">Sidebar Behavior</p>
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex-1">
+                  <p className="text-[13px] text-brand dark:text-[#EDEEF0]">Expand mode</p>
+                  <p className="text-[11px] text-[#6B7280] mt-0.5">
+                    Click to expand keeps the rail open until you click again. Hover to expand expands when your cursor is over it and collapses when it leaves.
+                  </p>
+                </div>
+                <div className="flex gap-4">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="sidebar_expand_mode"
+                      value="click"
+                      checked={sidebarExpandMode === 'click'}
+                      onChange={() => handleSidebarExpandModeChange('click')}
+                      className="w-4 h-4 accent-brand cursor-pointer"
+                    />
+                    <span className="text-[13px] text-foreground">Click to expand</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="sidebar_expand_mode"
+                      value="hover"
+                      checked={sidebarExpandMode === 'hover'}
+                      onChange={() => handleSidebarExpandModeChange('hover')}
+                      className="w-4 h-4 accent-brand cursor-pointer"
+                    />
+                    <span className="text-[13px] text-foreground">Hover to expand</span>
+                  </label>
+                </div>
+              </div>
+            </div>
 
             {/* Concierge Entry Point section */}
             {isFirmOwner && (
