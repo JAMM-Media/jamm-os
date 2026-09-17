@@ -175,6 +175,35 @@ def acknowledge_dead_end_takeover(
     return enrollment
 
 
+def get_actionable_enrollments_for_lead(
+    db: Session,
+    lead_id: UUID,
+    firm_id: UUID,
+) -> list[Enrollment]:
+    """Return enrollments for this lead that require a manager action.
+
+    Covers two states defined in Contract section 6.7:
+      held_for_approval  -- R1 hold waiting for Approve or Override
+      completed_dead_end -- dead-end reached, waiting for Take Over
+
+    Ordered newest first (enrolled_at desc) so the most recent pause
+    surfaces at the top of the frontend card.
+    """
+    return (
+        db.query(Enrollment)
+        .filter(
+            Enrollment.lead_id == lead_id,
+            Enrollment.firm_id == firm_id,
+            Enrollment.status.in_([
+                EnrollmentStatus.held_for_approval.value,
+                EnrollmentStatus.completed_dead_end.value,
+            ]),
+        )
+        .order_by(Enrollment.enrolled_at.desc())
+        .all()
+    )
+
+
 def reactivate_enrollment(
     db: Session,
     enrollment_id: UUID,

@@ -8,7 +8,8 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.models.firm import Firm
-from app.schemas.lead import LeadCreate, LeadUpdate, LeadOut
+from app.schemas.lead import LeadCreate, LeadUpdate, LeadOut, LeadDetail
+from app.schemas.enrollment import EnrollmentOut
 from app.schemas.pagination import PaginatedResponse
 from app.utils.pagination import paginate
 from app.crud import lead as crud_lead
@@ -83,7 +84,7 @@ def list_leads(
 # ---------------------------------------------------------
 # GET SINGLE LEAD
 # ---------------------------------------------------------
-@router.get("/{lead_id}", response_model=LeadOut)
+@router.get("/{lead_id}", response_model=LeadDetail)
 def get_lead(
     lead_id: UUID,
     db: Session = Depends(get_db),
@@ -93,7 +94,12 @@ def get_lead(
     lead = crud_lead.get_lead_for_firm(db, lead_id, current_firm.id)
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
-    return lead
+    actionable = crud_enrollment.get_actionable_enrollments_for_lead(
+        db, lead_id=lead.id, firm_id=current_firm.id
+    )
+    out = LeadDetail.model_validate(lead)
+    out.actionable_enrollments = [EnrollmentOut.model_validate(e) for e in actionable]
+    return out
 
 
 # ---------------------------------------------------------

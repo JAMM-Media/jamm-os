@@ -19,6 +19,22 @@ function mapActivity(raw: Record<string, unknown>): LeadActivityItem {
   }
 }
 
+export interface ActionableEnrollment {
+  id: string
+  sequenceId: string
+  status: string
+  enrolledAt: string
+}
+
+function mapActionableEnrollment(raw: Record<string, unknown>): ActionableEnrollment {
+  return {
+    id: String(raw.id),
+    sequenceId: String(raw.sequence_id ?? ''),
+    status: String(raw.status ?? ''),
+    enrolledAt: String(raw.enrolled_at ?? ''),
+  }
+}
+
 export interface Lead {
   id: string
   firmId: string
@@ -37,9 +53,13 @@ export interface Lead {
   convertedClientId: string | null
   createdAt: string
   updatedAt: string
+  actionableEnrollments: ActionableEnrollment[]
 }
 
 function mapLead(raw: Record<string, unknown>): Lead {
+  const rawEnrollments = Array.isArray(raw.actionable_enrollments)
+    ? raw.actionable_enrollments
+    : []
   return {
     id: String(raw.id),
     firmId: String(raw.firm_id ?? ''),
@@ -58,6 +78,9 @@ function mapLead(raw: Record<string, unknown>): Lead {
     convertedClientId: raw.converted_client_id ? String(raw.converted_client_id) : null,
     createdAt: String(raw.created_at ?? ''),
     updatedAt: String(raw.updated_at ?? ''),
+    actionableEnrollments: rawEnrollments.map((e) =>
+      mapActionableEnrollment(e as Record<string, unknown>)
+    ),
   }
 }
 
@@ -117,5 +140,17 @@ export const leadsApi = {
   getActivity: async (id: string, limit = 50): Promise<LeadActivityItem[]> => {
     const { data } = await api.get(`/api/v1/leads/${id}/activity`, { params: { limit } })
     return Array.isArray(data) ? data.map(mapActivity) : []
+  },
+
+  approveEnrollmentHold: async (leadId: string, enrollmentId: string): Promise<void> => {
+    await api.post(`/api/v1/leads/${leadId}/enrollments/${enrollmentId}/approve-hold`)
+  },
+
+  overrideEnrollmentHold: async (leadId: string, enrollmentId: string): Promise<void> => {
+    await api.post(`/api/v1/leads/${leadId}/enrollments/${enrollmentId}/override-hold`)
+  },
+
+  takeOverEnrollment: async (leadId: string, enrollmentId: string): Promise<void> => {
+    await api.post(`/api/v1/leads/${leadId}/enrollments/${enrollmentId}/take-over`)
   },
 }

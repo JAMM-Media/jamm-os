@@ -240,6 +240,7 @@ export default function LeadDetailPage() {
   const [lostReason, setLostReason] = useState('')
   const [transitioning, setTransitioning] = useState(false)
   const [bookCallOpen, setBookCallOpen] = useState(false)
+  const [enrollmentActing, setEnrollmentActing] = useState<string | null>(null)
 
   const { data: lead, isLoading, refetch } = useFetch(
     () => leadsApi.get(leadId),
@@ -498,6 +499,84 @@ export default function LeadDetailPage() {
             )}
           </div>
         </div>
+
+        {/* Actionable enrollments -- held_for_approval and completed_dead_end */}
+        {lead.actionableEnrollments.length > 0 && (
+          <div className="bg-white dark:bg-dark-card rounded-[10px] shadow-sm border-l-4 border-l-[#F59E0B] p-6 mb-5">
+            <p className={sectionHeadClass}>Nurture Sequences Requiring Action</p>
+            <div className="flex flex-col gap-4 mt-3">
+              {lead.actionableEnrollments.map((enr) => (
+                <div key={enr.id} className="flex items-center justify-between gap-4 py-3 border-t border-[#E8EDF3] dark:border-dark-border first:border-t-0 first:pt-0">
+                  <p className="text-[13px] text-[#374151] dark:text-[#9CA3AF] leading-snug">
+                    {enr.status === 'held_for_approval'
+                      ? 'Nurture sequence paused, awaiting approval'
+                      : 'This lead reached a dead end in its nurture sequence'}
+                  </p>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    {enr.status === 'held_for_approval' && (<>
+                      <button
+                        disabled={enrollmentActing === enr.id}
+                        onClick={async () => {
+                          setEnrollmentActing(enr.id)
+                          try {
+                            await leadsApi.approveEnrollmentHold(leadId, enr.id)
+                            toast.success('Enrollment approved')
+                            refetch()
+                          } catch {
+                            toast.error('Failed to approve')
+                          } finally {
+                            setEnrollmentActing(null)
+                          }
+                        }}
+                        className="h-9 px-5 rounded-[6px] text-[12px] font-semibold bg-brand dark:bg-brand-btn text-white hover:opacity-90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        {enrollmentActing === enr.id ? '...' : 'Approve'}
+                      </button>
+                      <button
+                        disabled={enrollmentActing === enr.id}
+                        onClick={async () => {
+                          setEnrollmentActing(enr.id)
+                          try {
+                            await leadsApi.overrideEnrollmentHold(leadId, enr.id)
+                            toast.success('Enrollment overridden')
+                            refetch()
+                          } catch {
+                            toast.error('Failed to override')
+                          } finally {
+                            setEnrollmentActing(null)
+                          }
+                        }}
+                        className="h-9 px-4 rounded-[6px] text-[12px] font-semibold border border-[0.5px] border-[#1F3148] dark:border-[#4A7FA5] text-[#1F3148] dark:text-[#EDEEF0] hover:bg-surface-page dark:hover:bg-dark-page transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        {enrollmentActing === enr.id ? '...' : 'Override'}
+                      </button>
+                    </>)}
+                    {enr.status === 'completed_dead_end' && (
+                      <button
+                        disabled={enrollmentActing === enr.id}
+                        onClick={async () => {
+                          setEnrollmentActing(enr.id)
+                          try {
+                            await leadsApi.takeOverEnrollment(leadId, enr.id)
+                            toast.success('Lead taken over for manual follow-up')
+                            refetch()
+                          } catch {
+                            toast.error('Failed to take over')
+                          } finally {
+                            setEnrollmentActing(null)
+                          }
+                        }}
+                        className="h-9 px-5 rounded-[6px] text-[12px] font-semibold bg-brand dark:bg-brand-btn text-white hover:opacity-90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        {enrollmentActing === enr.id ? '...' : 'Take Over'}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Contact */}
         <div className="bg-white dark:bg-dark-card rounded-[10px] shadow-sm p-6 mb-4">

@@ -14,6 +14,7 @@ from app.core.enums import (
     SourcePlatform,
     LeadProvenance,
 )
+from app.schemas.enrollment import EnrollmentOut
 
 
 class LeadBase(BaseModel):
@@ -102,3 +103,10 @@ class LeadOut(LeadBase):
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class LeadDetail(LeadOut):
+    """Single-lead GET response. Extends LeadOut with data not needed
+    in the list endpoint. actionable_enrollments carries enrollments
+    that require a manager action (held_for_approval or completed_dead_end)."""
+    actionable_enrollments: list[EnrollmentOut] = []
