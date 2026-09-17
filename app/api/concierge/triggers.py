@@ -155,7 +155,6 @@ def evaluate_triggers(firm_id: UUID, db: Session) -> list[dict]:
                 "urgency_rank": 14,
                 "message": (
                     "Your automation rules are all off. "
-                    "Firms that enable presets in the first week save an average of 3 hours on follow-up per month. "
                     "Want me to walk you through the recommended ones?"
                 ),
             })
