@@ -13,7 +13,6 @@ import {
   CreditCard,
   Settings,
   ChevronLeft,
-  ChevronRight,
   Sun,
   Moon,
   MessageSquare,
@@ -170,25 +169,45 @@ export function Sidebar({ collapsed, onToggle, onConciergeOpen, locked }: Sideba
         <div className="h-14 border-b border-white/10 flex-shrink-0" />
       ) : (
         <div className="flex items-center h-14 px-3 border-b border-white/10 flex-shrink-0">
-          {!collapsed && (
-            <span className="text-white font-medium text-sm tracking-wide truncate">
-              JAMM <span style={{ color: '#B07D3A' }}>PX</span>
-            </span>
+          {collapsed ? (
+            /* Collapsed: mark doubles as the expand button */
+            <button
+              onClick={onToggle}
+              className="mx-auto flex items-center justify-center p-1 rounded hover:bg-white/10 transition-colors"
+              aria-label="Expand sidebar"
+              title="Expand sidebar"
+            >
+              <img
+                src="/jamm-logo-mark-light.svg"
+                alt=""
+                style={{ height: 20, width: 20, objectFit: 'contain' }}
+              />
+            </button>
+          ) : (
+            <>
+              <div className="flex items-center gap-2 min-w-0 overflow-hidden">
+                <img
+                  src="/jamm-logo-mark-light.svg"
+                  alt=""
+                  className="flex-shrink-0"
+                  style={{ height: 20 }}
+                />
+                <span
+                  className="text-white text-[15px] tracking-wide truncate"
+                  style={{ fontFamily: 'var(--font-playfair)' }}
+                >
+                  JAMM <span style={{ color: '#B07D3A' }}>PX</span>
+                </span>
+              </div>
+              <button
+                onClick={onToggle}
+                className="ml-auto p-1 rounded text-white/60 hover:text-white hover:bg-white/10 transition-colors"
+                aria-label="Collapse sidebar"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+            </>
           )}
-          <button
-            onClick={onToggle}
-            className={cn(
-              'ml-auto p-1 rounded text-white/60 hover:text-white hover:bg-white/10 transition-colors',
-              collapsed && 'mx-auto'
-            )}
-            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          >
-            {collapsed ? (
-              <ChevronRight className="h-4 w-4" />
-            ) : (
-              <ChevronLeft className="h-4 w-4" />
-            )}
-          </button>
         </div>
       )}
 
@@ -234,15 +253,25 @@ export function Sidebar({ collapsed, onToggle, onConciergeOpen, locked }: Sideba
                           isActive
                             ? 'bg-white/15 text-white'
                             : 'text-white/60 hover:text-white hover:bg-white/10',
+                          /* Gold left-edge indicator on the active item in expanded state.
+                             In collapsed state the icon itself turns gold instead (see Icon below),
+                             since a 3px bar is too narrow to read at 48px width. */
+                          isActive && !collapsed && 'border-l-[3px] border-[#B07D3A]',
                           collapsed && 'justify-center px-2'
                         )}
                         title={collapsed ? item.label : undefined}
                       >
-                        {/* Icon: wrap in relative container for collapsed badge */}
+                        {/* Icon: wrap in relative container for collapsed badge.
+                            Active + collapsed: icon turns gold to signal "you are here" at 48px width. */}
                         <div className="relative flex-shrink-0">
-                          <Icon className="h-4 w-4" />
+                          <Icon
+                            className={cn(
+                              'h-4 w-4',
+                              isActive && collapsed && 'text-[#B07D3A]'
+                            )}
+                          />
                           {showBadge && collapsed && (
-                            <span className="absolute -top-1 -right-1 flex items-center justify-center bg-brand dark:bg-brand-btn text-white text-[11px] font-medium w-[18px] h-[18px] rounded-full">
+                            <span className="absolute -top-1 -right-1 flex items-center justify-center bg-[#B07D3A] dark:bg-brand-btn text-white text-[11px] font-medium w-[18px] h-[18px] rounded-full">
                               {badgeCount > 99 ? '99+' : badgeCount}
                             </span>
                           )}
@@ -252,7 +281,7 @@ export function Sidebar({ collapsed, onToggle, onConciergeOpen, locked }: Sideba
                           <>
                             <span className="truncate flex-1">{item.label}</span>
                             {showBadge && (
-                              <span className="flex items-center justify-center bg-brand dark:bg-brand-btn text-white text-[11px] font-medium h-[18px] min-w-[18px] px-1.5 rounded-full flex-shrink-0">
+                              <span className="flex items-center justify-center bg-[#B07D3A] dark:bg-brand-btn text-white text-[11px] font-medium h-[18px] min-w-[18px] px-1.5 rounded-full flex-shrink-0">
                                 {badgeCount > 99 ? '99+' : badgeCount}
                               </span>
                             )}
