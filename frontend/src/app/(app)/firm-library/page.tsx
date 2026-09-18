@@ -1,13 +1,14 @@
 // frontend/src/app/(app)/firm-library/page.tsx
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, type ChangeEvent, type InputHTMLAttributes } from 'react'
 import {
   ChevronRight,
   ChevronDown,
   Folder,
   FolderOpen,
   FileText,
+  FolderInput,
   MoreHorizontal,
   Search,
   Upload,
@@ -18,8 +19,11 @@ import {
   Loader2,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { useRouter } from 'next/navigation'
 import api from '@/lib/api'
 import { useAuth } from '@/lib/hooks/useAuth'
+import { importBatchesApi, type CreateImportBatchPayload } from '@/lib/api/importBatches'
+import { enumerateFolder } from '@/lib/importEnumeration'
 import { Breadcrumb } from '@/components/layout/Breadcrumb'
 
 // ---------------------------------------------------------------------------
@@ -806,6 +810,7 @@ function FileSkeleton() {
 
 export default function FirmLibraryPage() {
   const { user, isLoading: authLoading } = useAuth()
+  const router = useRouter()
   const isElevated = user?.role === 'firm_owner' || user?.role === 'manager' || user?.role === 'system_admin'
 
   const [rootFolders, setRootFolders] = useState<FirmFolder[]>([])
@@ -825,6 +830,9 @@ export default function FirmLibraryPage() {
   const [copyTarget, setCopyTarget] = useState<FirmDoc | null>(null)
   const [showUpload, setShowUpload] = useState(false)
   const [showNewFolder, setShowNewFolder] = useState(false)
+
+  const [bulkImporting, setBulkImporting] = useState(false)
+  const bulkImportRef = useRef<HTMLInputElement>(null)
 
   // Load root-level folders
   const loadRootFolders = useCallback(async () => {
@@ -884,6 +892,29 @@ export default function FirmLibraryPage() {
       if (url) window.open(url, '_blank')
     } catch {
       toast.error('Could not generate download link')
+    }
+  }
+
+  async function handleBulkImportChange(e: ChangeEvent<HTMLInputElement>) {
+    const files = e.target.files
+    if (!files || files.length === 0) return
+    setBulkImporting(true)
+    try {
+      const items = enumerateFolder(files)
+      const payload: CreateImportBatchPayload = {
+        scope: 'firm_library',
+        conflict_policy: 'skip',
+        items,
+        ...(currentFolderId ? { destination_folder_id: currentFolderId } : {}),
+      }
+      const batch = await importBatchesApi.create(payload)
+      router.push(`/firm-library/import-review?batch=${batch.id}`)
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      toast.error(detail ?? 'Bulk import failed -- please try again')
+    } finally {
+      setBulkImporting(false)
+      e.target.value = ''
     }
   }
 
@@ -1002,6 +1033,14 @@ export default function FirmLibraryPage() {
                 >
                   <FolderPlus className="h-4 w-4" />
                   New Folder
+                </button>
+                <button
+                  onClick={() => bulkImportRef.current?.click()}
+                  disabled={bulkImporting}
+                  className="h-9 px-3 rounded-[6px] border border-[0.5px] border-surface-border dark:border-dark-border text-[13px] text-[#374151] dark:text-[#9CA3AF] hover:text-brand hover:border-brand transition-colors flex items-center gap-1.5 whitespace-nowrap flex-shrink-0 disabled:opacity-50"
+                >
+                  <FolderInput className="h-4 w-4" />
+                  {bulkImporting ? 'Importing...' : 'Bulk Import'}
                 </button>
                 <button
                   onClick={() => setShowUpload(true)}
@@ -1143,6 +1182,16 @@ export default function FirmLibraryPage() {
           onCopied={loadDocs}
         />
       )}
+
+      <input
+        ref={bulkImportRef}
+        type="file"
+        style={{ display: 'none' }}
+        multiple
+        {...({ webkitdirectory: '' } as unknown as InputHTMLAttributes<HTMLInputElement>)}
+        onChange={handleBulkImportChange}
+      />
+
       {showUpload && (
         <UploadModal
           currentFolderId={currentFolderId}

@@ -1,12 +1,15 @@
 // frontend/src/components/documents/FolderBrowser.tsx
 'use client'
 
-import { useState, useCallback, useEffect, useLayoutEffect, useRef } from 'react'
+import { useState, useCallback, useEffect, useLayoutEffect, useRef, type ChangeEvent, type InputHTMLAttributes } from 'react'
 import { createPortal } from 'react-dom'
-import { ChevronRight, ChevronDown, ChevronUp, Folder, FolderOpen, FolderPlus, Upload, X, FileText, MoreVertical } from 'lucide-react'
+import { ChevronRight, ChevronDown, ChevronUp, Folder, FolderOpen, FolderPlus, FolderInput, Upload, X, FileText, MoreVertical } from 'lucide-react'
 import { toast } from 'sonner'
+import { useRouter } from 'next/navigation'
 import api from '@/lib/api'
 import { cn } from '@/lib/utils'
+import { importBatchesApi, type CreateImportBatchPayload } from '@/lib/api/importBatches'
+import { enumerateFolder } from '@/lib/importEnumeration'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -570,6 +573,7 @@ export function FolderBrowser({
   isFinalized,
   showArchivedToggle,
 }: FolderBrowserProps) {
+  const router = useRouter()
   const [folders, setFolders] = useState<BrowserFolder[]>([])
   const [foldersLoading, setFoldersLoading] = useState(true)
   const [docs, setDocs] = useState<BrowserDoc[]>([])
@@ -578,6 +582,8 @@ export function FolderBrowser({
   const [folderPath, setFolderPath] = useState<{ id: string; name: string }[]>([])
   const [showNewFolder, setShowNewFolder] = useState(false)
   const [showUpload, setShowUpload] = useState(false)
+  const [bulkImporting, setBulkImporting] = useState(false)
+  const bulkImportRef = useRef<HTMLInputElement>(null)
   const [showArchived, setShowArchived] = useState(false)
   const [rootDragOver, setRootDragOver] = useState(false)
 
@@ -685,6 +691,34 @@ export function FolderBrowser({
     fetchFolders()
   }
 
+  async function handleBulkImportChange(e: ChangeEvent<HTMLInputElement>) {
+    const files = e.target.files
+    if (!files || files.length === 0) return
+    setBulkImporting(true)
+    try {
+      const items = enumerateFolder(files)
+      const payload: CreateImportBatchPayload = {
+        scope,
+        conflict_policy: 'skip',
+        items,
+      }
+      if (engagementId) payload.engagement_id = engagementId
+      if (clientId) payload.client_id = clientId
+      if (selectedFolderId) payload.destination_folder_id = selectedFolderId
+      const batch = await importBatchesApi.create(payload)
+      const reviewPath = scope === 'engagement'
+        ? `/engagements/${engagementId}/import-review?batch=${batch.id}`
+        : `/clients/${clientId}/import-review?batch=${batch.id}`
+      router.push(reviewPath)
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      toast.error(detail ?? 'Bulk import failed -- please try again')
+    } finally {
+      setBulkImporting(false)
+      e.target.value = ''
+    }
+  }
+
   // Files in the currently selected folder (or root files when null)
   const docsInCurrentFolder = docs.filter((d) => d.folder_id === selectedFolderId)
   const activeDocs = docsInCurrentFolder.filter((d) => !d.is_superseded)
@@ -727,6 +761,14 @@ export function FolderBrowser({
             >
               <FolderPlus className="h-3.5 w-3.5" />
               New Folder
+            </button>
+            <button
+              onClick={() => bulkImportRef.current?.click()}
+              disabled={bulkImporting}
+              className="flex items-center gap-1.5 h-7 px-2.5 rounded-[6px] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] text-[12px] text-[#6B7280] hover:text-brand dark:hover:text-[#EDEEF0] hover:border-brand dark:hover:border-[#4A7FA5] transition-colors disabled:opacity-50"
+            >
+              <FolderInput className="h-3.5 w-3.5" />
+              {bulkImporting ? 'Importing...' : 'Bulk Import'}
             </button>
           </div>
         )}
@@ -838,6 +880,15 @@ export function FolderBrowser({
           onCreated={handleFolderCreated}
         />
       )}
+
+      <input
+        ref={bulkImportRef}
+        type="file"
+        style={{ display: 'none' }}
+        multiple
+        {...({ webkitdirectory: '' } as unknown as InputHTMLAttributes<HTMLInputElement>)}
+        onChange={handleBulkImportChange}
+      />
 
       {showUpload && (
         <UploadModal
