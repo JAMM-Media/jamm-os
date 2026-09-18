@@ -134,3 +134,24 @@ def get_depth(db: Session, parent_folder_id: Optional[uuid.UUID], firm_id: uuid.
         if depth > 20:
             break
     return depth
+
+
+def get_document_folder_by_name(
+    db: Session,
+    firm_id: uuid.UUID,
+    scope: str,
+    parent_folder_id: Optional[uuid.UUID],
+    name: str,
+) -> Optional[DocumentFolder]:
+    """Return the first live (not soft-deleted) folder matching firm, scope,
+    parent, and name exactly. Used by import finalization to locate an already-
+    created folder before deciding whether to create a new one, so a batch
+    importing multiple files under the same path creates the shared folder only
+    once. No precedent for this query exists elsewhere in this file."""
+    return db.query(DocumentFolder).filter(
+        DocumentFolder.firm_id == firm_id,
+        DocumentFolder.scope == scope,
+        DocumentFolder.parent_folder_id == parent_folder_id,
+        DocumentFolder.name == name,
+        DocumentFolder.deleted_at.is_(None),
+    ).first()

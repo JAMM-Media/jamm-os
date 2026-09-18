@@ -22,6 +22,10 @@ from app.services.findings_recheck import recheck_failed_findings
 from app.services.surface_daily_job import run_surface_hourly_tick
 from app.services.deadline_scheduler import check_approaching_deadlines
 from app.services.nurture_execution_service import run_nurture_tick
+from app.services.import_finalization_service import (
+    process_import_tick,
+    recover_expired_leases,
+)
 from app.services.post_call_detection_service import detect_past_end_bookings
 from app.services.metric_pipeline import run_nightly_metric_recompute
 from app.services.irs_auth_service import check_expiring_authorizations
@@ -286,6 +290,27 @@ async def lifespan(app: FastAPI):
             trigger="cron",
             minute="*/15",
             id="post_call_detection_tick",
+            replace_existing=True,
+        )
+        # Import finalization: the first interval-triggered jobs in this codebase.
+        # process_import_tick runs every 5 seconds with batch_size=5 so a single
+        # slow tick (S3 + DB) cannot block the next one (max_instances=1 is required
+        # for all interval jobs; without it APScheduler will queue a second execution
+        # while the first is still running).
+        scheduler.add_job(
+            process_import_tick,
+            trigger="interval",
+            seconds=5,
+            id="import_finalization_tick",
+            max_instances=1,
+            replace_existing=True,
+        )
+        scheduler.add_job(
+            recover_expired_leases,
+            trigger="interval",
+            seconds=60,
+            id="import_lease_recovery",
+            max_instances=1,
             replace_existing=True,
         )
         scheduler.start()
