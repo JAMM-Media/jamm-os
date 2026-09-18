@@ -391,11 +391,13 @@ function DocRow({
   borderBottom,
   folders,
   fetchDocs,
+  isFinalized,
 }: {
   doc: BrowserDoc
   borderBottom: boolean
   folders: BrowserFolder[]
   fetchDocs: () => void
+  isFinalized?: boolean
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const [showMoveList, setShowMoveList] = useState(false)
@@ -455,6 +457,10 @@ function DocRow({
     setMenuOpen(false)
     setShowMoveList(false)
     setCoords(null)
+    if (isFinalized) {
+      toast.error('This engagement is finalized -- files cannot be moved')
+      return
+    }
     try {
       await api.patch(`/documents/${doc.id}/move`, { folder_id: targetFolderId })
       const name = targetFolderId
@@ -482,7 +488,8 @@ function DocRow({
       {/* Primary action */}
       <button
         onClick={() => setShowMoveList((v) => !v)}
-        className="w-full text-left flex items-center gap-2 px-3 py-2 text-[12px] text-[#374151] dark:text-[#EDEEF0] hover:bg-surface-input dark:hover:bg-dark-card transition-colors"
+        disabled={isFinalized}
+        className="w-full text-left flex items-center gap-2 px-3 py-2 text-[12px] text-[#374151] dark:text-[#EDEEF0] hover:bg-surface-input dark:hover:bg-dark-card transition-colors disabled:opacity-40 disabled:cursor-default"
       >
         <Folder className="h-3.5 w-3.5 text-[#6B7280] flex-shrink-0" />
         Move to Folder
@@ -658,6 +665,10 @@ export function FolderBrowser({
   // handleMove (has all context locally); drag targets use this lifted version
   // so the API call, toasts, and refresh are not duplicated across drop sites.
   async function moveDoc(docId: string, targetFolderId: string | null, targetFolderName: string | null) {
+    if (isFinalized) {
+      toast.error('This engagement is finalized -- files cannot be moved')
+      return
+    }
     const doc = docs.find((d) => d.id === docId)
     if (!doc) return
     if (doc.folder_id === targetFolderId) return
@@ -762,6 +773,7 @@ export function FolderBrowser({
               onDrop={(e) => {
                 e.preventDefault()
                 setRootDragOver(false)
+                if (isFinalized) return
                 const docId = e.dataTransfer.getData('text/plain')
                 if (docId) moveDoc(docId, null, null)
               }}
@@ -867,6 +879,7 @@ export function FolderBrowser({
                 borderBottom={i < active.length - 1 || (showArchivedToggle ? archived.length > 0 : false)}
                 folders={folders}
                 fetchDocs={fetchDocs}
+                isFinalized={isFinalized}
               />
             ))}
 
@@ -896,6 +909,7 @@ export function FolderBrowser({
                         borderBottom={i < archived.length - 1}
                         folders={folders}
                         fetchDocs={fetchDocs}
+                        isFinalized={isFinalized}
                       />
                     ))}
                   </div>
