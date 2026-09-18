@@ -582,3 +582,39 @@ def assert_can_finalize_engagement(
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
         detail="Engagement administrator, manager, or firm owner required",
     )
+
+
+def assert_can_bulk_import(
+    db: Session,
+    user: User,
+    scope: str,
+    engagement_id: Optional[UUID],
+    firm_id: UUID,
+) -> None:
+    """Trio check for bulk import batch creation, confirmation, and read.
+
+    Permitted: engagement administrator (engagement scope only), manager, or firm owner.
+    For client-scoped and firm_library-scoped batches: elevated role only.
+    No per-scope administrator concept exists for client or firm_library,
+    matching the documented behavior on assert_can_delete_document.
+
+    Raises HTTPException(422) on denial -- a policy refusal, not a not-found
+    response, since no document exists to conceal at batch creation time.
+    """
+    if user.role in _ELEVATED:
+        return
+
+    if scope == "engagement" and engagement_id is not None:
+        admin_member = db.query(EngagementMember).filter(
+            EngagementMember.firm_id == firm_id,
+            EngagementMember.engagement_id == engagement_id,
+            EngagementMember.user_id == user.id,
+            EngagementMember.is_administrator == True,
+        ).first()
+        if admin_member:
+            return
+
+    raise HTTPException(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        detail="Engagement administrator, manager, or firm owner required for bulk import",
+    )

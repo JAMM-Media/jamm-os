@@ -43,6 +43,7 @@ from app.api.firms import router as firms_router
 from app.api.documents import router as documents_router
 from app.api.document_folders import router as document_folders_router
 from app.api.document_requests import router as document_requests_router
+from app.api.import_batches import router as import_batches_router
 from app.api.checklist_templates import router as checklist_templates_router
 from app.api.esign import router as esign_router
 from app.api.portal import router as portal_router
@@ -342,6 +343,7 @@ app.include_router(contacts_router)
 app.include_router(documents_router)
 app.include_router(document_folders_router)
 app.include_router(document_requests_router)
+app.include_router(import_batches_router)
 app.include_router(checklist_templates_router)
 app.include_router(esign_router)
 app.include_router(portal_router)

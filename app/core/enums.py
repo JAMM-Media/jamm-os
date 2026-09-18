@@ -808,3 +808,49 @@ class DismissalReason(str, Enum):
     not_relevant = "not_relevant"
     already_handling = "already_handling"
     was_wrong = "was_wrong"
+
+
+class ImportBatchStatus(str, Enum):
+    """Status of a bulk import batch. draft is the initial state when the browser
+    has submitted a file tree but the firm owner has not yet confirmed. confirmed
+    transitions to uploading once the batch processor begins staging files to S3.
+    finalizing is the database-write phase after all staging uploads complete.
+    completed and completed_with_errors are terminal success states.
+    canceled is a terminal failure state set by either the user or the processor."""
+    draft = "draft"
+    confirmed = "confirmed"
+    uploading = "uploading"
+    finalizing = "finalizing"
+    completed = "completed"
+    completed_with_errors = "completed_with_errors"
+    canceled = "canceled"
+
+
+class ImportItemStatus(str, Enum):
+    """Status of a single file within an import batch.
+    planned: queued, not yet staged to S3.
+    uploaded: staged to S3 staging key, awaiting finalization.
+    processing: claimed by a worker for finalization.
+    completed: Document row created successfully.
+    failed: permanently failed after max attempts.
+    skipped: conflict resolution chose to skip this file.
+    retryable: failed transiently and eligible for another attempt."""
+    planned = "planned"
+    uploaded = "uploaded"
+    processing = "processing"
+    completed = "completed"
+    failed = "failed"
+    skipped = "skipped"
+    retryable = "retryable"
+
+
+class ImportConflictPolicy(str, Enum):
+    """How to handle a filename collision during import.
+    Used as both the batch-level default (import_batches.conflict_policy) and
+    the optional per-item override (import_items.conflict_override).
+    skip: leave the existing file in place and mark this item skipped.
+    replace: replace the existing file with the incoming one.
+    keep_both: write the new file alongside the existing one, appending a suffix."""
+    skip = "skip"
+    replace = "replace"
+    keep_both = "keep_both"

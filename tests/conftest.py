@@ -317,3 +317,93 @@ def portal_client_headers(client, firm_a_owner):
     token = login_r.json()["access_token"]
 
     return client_id, {"Authorization": f"Bearer {token}"}
+
+# ---------------------------------------------------------------------------
+# Migration-built scratch database fixture (Section 17)
+#
+# Provisions an empty Postgres database, runs the full Alembic migration chain
+# into it, yields a session, then drops the database. Use this fixture when
+# testing that a migration file's raw DDL (CHECK constraints, indexes, etc.)
+# matches what the model declares.
+#
+# alembic env.py reads settings.DATABASE_URL (lru_cached) and calls
+# config.set_main_option("sqlalchemy.url", ...) which would override any URL
+# we set on the config object. We temporarily redirect DATABASE_URL in the
+# environment and clear the settings cache around each alembic call so env.py
+# connects to the scratch DB instead of the main test DB.
+#
+# Scoped to function: each requesting test gets a fresh DB, guaranteeing
+# isolation with no cross-test pollution risk.
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def migration_db_session():
+    """
+    Yield a SQLAlchemy Session connected to a scratch Postgres database built
+    by running the complete Alembic migration chain from an empty database.
+    Every table in the schema -- including CHECK constraints, indexes, and FK
+    constraints -- comes from the migration files, not from Base.metadata.
+    Drops the scratch database on teardown even if the test fails.
+    """
+    import uuid as _uuid
+    import os as _os
+    from sqlalchemy import create_engine as _create_engine, text as _text
+    from sqlalchemy.orm import sessionmaker as _sessionmaker
+    from alembic.config import Config as _AlembicConfig
+    from alembic import command as _alembic_command
+    from app.core.config import get_settings as _get_settings
+
+    scratch_name = f"jammpx_migration_scratch_{_uuid.uuid4().hex[:12]}"
+
+    base_url = DATABASE_URL.rsplit("/", 1)[0]
+    admin_url = f"{base_url}/postgres"
+    scratch_url = f"{base_url}/{scratch_name}"
+
+    # Create an empty scratch database.
+    admin_engine = _create_engine(admin_url, isolation_level="AUTOCOMMIT")
+    try:
+        with admin_engine.connect() as conn:
+            conn.execute(_text(f'CREATE DATABASE "{scratch_name}"'))
+    finally:
+        admin_engine.dispose()
+
+    scratch_engine = None
+    scratch_session = None
+    try:
+        # alembic env.py reads settings.DATABASE_URL (lru_cached) and calls
+        # config.set_main_option("sqlalchemy.url", ...), overriding any URL we
+        # set directly on the config object. Temporarily redirect DATABASE_URL
+        # in the environment and clear the settings cache so env.py connects to
+        # the scratch DB, then restore both in the finally block.
+        original_db_url = _os.environ.get("DATABASE_URL", DATABASE_URL)
+        _os.environ["DATABASE_URL"] = scratch_url
+        _get_settings.cache_clear()
+        try:
+            project_root = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+            alembic_cfg = _AlembicConfig(_os.path.join(project_root, "alembic.ini"))
+            # Run the full migration chain from scratch into the empty database.
+            _alembic_command.upgrade(alembic_cfg, "head")
+        finally:
+            _os.environ["DATABASE_URL"] = original_db_url
+            _get_settings.cache_clear()
+
+        scratch_engine = _create_engine(scratch_url, pool_pre_ping=True)
+        ScratchSession = _sessionmaker(autocommit=False, autoflush=False, bind=scratch_engine)
+        scratch_session = ScratchSession()
+        yield scratch_session
+    finally:
+        if scratch_session is not None:
+            scratch_session.close()
+        if scratch_engine is not None:
+            scratch_engine.dispose()
+
+        admin_engine2 = _create_engine(admin_url, isolation_level="AUTOCOMMIT")
+        try:
+            with admin_engine2.connect() as conn:
+                conn.execute(_text(
+                    "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                    f"WHERE datname = '{scratch_name}' AND pid <> pg_backend_pid()"
+                ))
+                conn.execute(_text(f'DROP DATABASE IF EXISTS "{scratch_name}"'))
+        finally:
+            admin_engine2.dispose()
