@@ -294,12 +294,31 @@ def get_engagement(
     engagement_id: UUID,
     db: Session = Depends(get_db),
     current_firm: Firm = Depends(get_current_firm),
+    current_user: User = Depends(get_current_user),
     _: object = Depends(require_staff_or_above),
 ):
+    from app.models.engagement_member import EngagementMember
+    from app.core.enums import UserRole
+
     engagement = crud_engagement.get_engagement_for_firm(db, engagement_id, current_firm.id)
     if not engagement:
         raise HTTPException(status_code=404, detail="Engagement not found")
-    return engagement
+
+    elevated = {UserRole.firm_owner.value, UserRole.manager.value, UserRole.system_admin.value}
+    if current_user.role in elevated:
+        is_admin = True
+    else:
+        admin_row = db.query(EngagementMember).filter(
+            EngagementMember.firm_id == current_firm.id,
+            EngagementMember.engagement_id == engagement_id,
+            EngagementMember.user_id == current_user.id,
+            EngagementMember.is_administrator == True,
+        ).first()
+        is_admin = admin_row is not None
+
+    return EngagementOut.model_validate(engagement).model_copy(
+        update={"current_user_is_administrator": is_admin}
+    )
 
 
 # ---------------------------------------------------------

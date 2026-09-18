@@ -117,7 +117,6 @@ export default function EngagementDetailPage() {
   const [reassignLoading, setReassignLoading] = useState(false)
   const [finalizing, setFinalizing] = useState(false)
 
-  const canFinalize = user?.role === 'firm_owner' || user?.role === 'manager'
 
   const { unreadCount } = useNotes({ entityType: 'engagement', entityId: id })
 
@@ -130,6 +129,8 @@ export default function EngagementDetailPage() {
     () => engagementsApi.get(id),
     [id]
   )
+
+  const canFinalize = user?.role === 'firm_owner' || user?.role === 'manager' || engagement?.currentUserIsAdministrator === true
 
   const { data: tasksData, isLoading: tasksLoading } = useFetch(
     () => tasksApi.list(0, 50, id),

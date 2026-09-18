@@ -74,6 +74,10 @@ class EngagementOut(EngagementBase):
     finalized_at: Optional[datetime] = None
     finalized_by: Optional[UUID] = None
 
+    # True when the requesting user is an engagement administrator on this engagement,
+    # or holds an elevated firm role (firm_owner, manager). Computed per-request, never stored.
+    current_user_is_administrator: bool = False
+
     model_config = ConfigDict(from_attributes=True)
 
 

@@ -17,6 +17,7 @@ export interface Engagement {
   createdAt: string
   updatedAt: string
   finalizedAt: string | null
+  currentUserIsAdministrator: boolean
 }
 
 function mapEngagement(raw: Record<string, unknown>): Engagement {
@@ -36,6 +37,7 @@ function mapEngagement(raw: Record<string, unknown>): Engagement {
     createdAt: String(raw.created_at ?? ''),
     updatedAt: String(raw.updated_at ?? ''),
     finalizedAt: raw.finalized_at ? String(raw.finalized_at) : null,
+    currentUserIsAdministrator: Boolean(raw.current_user_is_administrator ?? false),
   }
 }
 
