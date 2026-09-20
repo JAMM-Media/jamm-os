@@ -11,7 +11,7 @@ from app.dependencies.roles import require_staff_or_above
 from app.dependencies.tenant import get_current_firm
 from app.models.firm import Firm
 from app.models.user import User
-from app.schemas.import_batch import ImportBatchCreate, ImportBatchOut, ImportItemOut, ItemUploadUrlOut, ImportBatchPreview
+from app.schemas.import_batch import ImportBatchCreate, ImportBatchOut, ImportBatchUpdate, ImportItemOut, ItemUploadUrlOut, ImportBatchPreview
 import app.services.import_batch_service as import_batch_service
 
 router = APIRouter(prefix="/import-batches", tags=["Import Batches"])
@@ -83,6 +83,30 @@ def get_batch(
         firm_id=current_firm.id,
         batch_id=batch_id,
         user=current_user,
+    )
+    return _build_out(batch, items)
+
+
+@router.patch("/{batch_id}", response_model=ImportBatchOut)
+def update_batch(
+    batch_id: UUID,
+    payload: ImportBatchUpdate,
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    current_user: User = Depends(get_current_user),
+    _: object = Depends(require_staff_or_above),
+):
+    """Change the conflict_policy on a draft batch.
+
+    The policy may only be changed while the batch is in draft status --
+    once confirmed, all batch fields including conflict_policy are immutable.
+    """
+    batch, items = import_batch_service.update_batch_conflict_policy(
+        db=db,
+        firm_id=current_firm.id,
+        batch_id=batch_id,
+        user=current_user,
+        conflict_policy=payload.conflict_policy.value,
     )
     return _build_out(batch, items)
 

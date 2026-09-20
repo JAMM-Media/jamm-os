@@ -267,6 +267,60 @@ def get_batch(
 
 
 # ---------------------------------------------------------------------------
+# Conflict policy update (draft-only mutation)
+# ---------------------------------------------------------------------------
+
+def update_batch_conflict_policy(
+    *,
+    db: Session,
+    firm_id: UUID,
+    batch_id: UUID,
+    user: User,
+    conflict_policy: str,
+) -> tuple[ImportBatch, list[ImportItem]]:
+    """Change conflict_policy on a draft batch.
+
+    Follows confirm_batch's exact three-step ordering: existence-only fetch,
+    auth check, then status validation. A batch that has already been confirmed
+    or is further along must never have its conflict policy changed.
+    """
+    # 1. Existence check only -- no status validation yet.
+    batch = db.query(ImportBatch).filter(
+        ImportBatch.id == batch_id,
+        ImportBatch.firm_id == firm_id,
+    ).first()
+    if not batch:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Import batch not found")
+
+    # 2. Auth check before revealing any batch state to the caller.
+    assert_can_bulk_import(
+        db=db,
+        user=user,
+        scope=batch.scope,
+        engagement_id=batch.engagement_id,
+        firm_id=firm_id,
+    )
+
+    # 3. Status check -- only reached by authorized callers.
+    if batch.status != "draft":
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Conflict policy can only be changed while the batch is in draft status; current status is '{batch.status}'",
+        )
+
+    batch.conflict_policy = conflict_policy
+    db.commit()
+    db.refresh(batch)
+
+    items = db.query(ImportItem).filter(
+        ImportItem.import_batch_id == batch_id,
+        ImportItem.firm_id == firm_id,
+    ).order_by(ImportItem.ordinal).all()
+
+    return batch, items
+
+
+# ---------------------------------------------------------------------------
 # Phase 3: staging upload URL issuance and upload-complete verification
 # ---------------------------------------------------------------------------
 
@@ -495,6 +549,8 @@ def preview_batch(
         _resolve_destination_folder_readonly,
         _find_duplicate,
     )
+    from app.services.document_folder_service import MAX_FOLDER_DEPTH
+    from app.crud.document_folder import get_depth
 
     # 1. Existence check only -- no status validation yet.
     batch = _get_batch_for_firm(db, firm_id, batch_id)
@@ -520,8 +576,23 @@ def preview_batch(
         ImportItem.firm_id == firm_id,
     ).order_by(ImportItem.ordinal).all()
 
+    # Compute the depth of the batch's destination folder once -- same for every item.
+    # get_depth(None) returns 0 (root level).  get_depth(folder_id) returns that
+    # folder's own depth (root-level folders return 1, etc.).
+    destination_depth = get_depth(db, parent_folder_id=batch.destination_folder_id, firm_id=batch.firm_id)
+
     results = []
     for item in items:
+        parts = item.normalized_relative_path.split("/")
+        dir_parts = [p for p in parts[:-1] if p]
+
+        # A path exceeds the depth limit when the deepest folder it would need to create
+        # (or already exist at) has depth >= MAX_FOLDER_DEPTH.  Using create_folder's own
+        # formula: it raises when get_depth(parent) + 1 >= MAX_FOLDER_DEPTH, which means
+        # the new folder's depth would be >= MAX_FOLDER_DEPTH.  The deepest folder in
+        # this item's path has depth = destination_depth + len(dir_parts).
+        path_would_exceed_depth = (destination_depth + len(dir_parts)) >= MAX_FOLDER_DEPTH
+
         dest_folder_id, resolved = _resolve_destination_folder_readonly(
             db, batch, item.normalized_relative_path
         )
@@ -542,6 +613,7 @@ def preview_batch(
             "has_conflict": has_conflict,
             "existing_document_id": existing_document_id,
             "existing_document_filename": existing_document_filename,
+            "path_would_exceed_depth": path_would_exceed_depth,
         })
 
     return results

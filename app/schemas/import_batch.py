@@ -67,8 +67,10 @@ class ImportBatchCreate(ImportBatchBase):
 
 
 class ImportBatchUpdate(BaseModel):
-    """Currently unused in Phase 2. Reserved for future cancel action."""
-    pass
+    """Payload for PATCH /{batch_id} -- change conflict_policy on a draft batch.
+    Only conflict_policy may be changed after creation; scope, destination, and
+    items are immutable from the moment the batch is created."""
+    conflict_policy: ImportConflictPolicy
 
 
 class ImportBatchOut(ImportBatchBase):
@@ -109,6 +111,7 @@ class ImportItemPreview(BaseModel):
     has_conflict: bool
     existing_document_id: Optional[uuid.UUID] = None
     existing_document_filename: Optional[str] = None
+    path_would_exceed_depth: bool = False
 
 
 class ImportBatchPreview(BaseModel):
