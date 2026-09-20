@@ -11,7 +11,7 @@ from app.dependencies.roles import require_staff_or_above
 from app.dependencies.tenant import get_current_firm
 from app.models.firm import Firm
 from app.models.user import User
-from app.schemas.import_batch import ImportBatchCreate, ImportBatchOut, ImportItemOut, ItemUploadUrlOut
+from app.schemas.import_batch import ImportBatchCreate, ImportBatchOut, ImportItemOut, ItemUploadUrlOut, ImportBatchPreview
 import app.services.import_batch_service as import_batch_service
 
 router = APIRouter(prefix="/import-batches", tags=["Import Batches"])
@@ -85,6 +85,30 @@ def get_batch(
         user=current_user,
     )
     return _build_out(batch, items)
+
+
+@router.get("/{batch_id}/preview", response_model=ImportBatchPreview)
+def preview_batch(
+    batch_id: UUID,
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    current_user: User = Depends(get_current_user),
+    _: object = Depends(require_staff_or_above),
+):
+    """Read-only conflict preview for a batch in draft or confirmed status.
+
+    Returns per-item information about whether the destination path fully
+    resolves and whether a live document collision exists at that location.
+    Zero side effects: no folder is created, no S3 call happens, and no
+    database row is written.
+    """
+    item_previews = import_batch_service.preview_batch(
+        db=db,
+        firm_id=current_firm.id,
+        batch_id=batch_id,
+        user=current_user,
+    )
+    return {"batch_id": batch_id, "items": item_previews}
 
 
 @router.post("/{batch_id}/items/{item_id}/upload-url", response_model=ItemUploadUrlOut)

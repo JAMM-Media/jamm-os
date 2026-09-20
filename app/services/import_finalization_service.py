@@ -82,6 +82,50 @@ def _resolve_destination_folder(
     return parent_folder_id
 
 
+def _resolve_destination_folder_readonly(
+    db,
+    batch,
+    normalized_relative_path: str,
+) -> tuple[Optional[UUID], bool]:
+    """Read-only mirror of _resolve_destination_folder for conflict preview.
+
+    Walks directory components using get_document_folder_by_name only.
+    Never calls create_folder. If any directory component does not yet exist,
+    stops immediately and returns the deepest known folder id reached so far
+    along with False, because a path underneath a not-yet-created folder
+    cannot itself be checked for conflicts.
+
+    Returns (folder_id, fully_resolved) where fully_resolved is True only
+    when every directory component in the path already exists in the database.
+    A file that sits at destination root (no subdirectory components) is
+    always fully resolved since there is nothing to look up.
+    """
+    from app.crud.document_folder import get_document_folder_by_name
+
+    parts = normalized_relative_path.split("/")
+    dir_parts = parts[:-1]   # everything before the filename
+
+    parent_folder_id = batch.destination_folder_id
+
+    for folder_name in dir_parts:
+        if not folder_name:
+            continue
+        existing = get_document_folder_by_name(
+            db,
+            firm_id=batch.firm_id,
+            scope=batch.scope,
+            parent_folder_id=parent_folder_id,
+            name=folder_name,
+        )
+        if existing:
+            parent_folder_id = existing.id
+        else:
+            # Folder does not yet exist -- path cannot be fully resolved.
+            return parent_folder_id, False
+
+    return parent_folder_id, True
+
+
 def _build_final_s3_key(batch, doc_id: UUID, filename: str) -> str:
     """Build the permanent S3 key for a finalized document.
 

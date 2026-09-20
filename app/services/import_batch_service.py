@@ -471,3 +471,77 @@ def complete_item_upload(
     db.commit()
     db.refresh(item)
     return item
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 read path: conflict preview
+# ---------------------------------------------------------------------------
+
+def preview_batch(
+    *,
+    db: Session,
+    firm_id: UUID,
+    batch_id: UUID,
+    user: User,
+) -> list[dict]:
+    """Read-only conflict preview for a batch in draft or confirmed status.
+
+    For each item, resolves the destination path (read-only folder lookup only)
+    and checks whether a live document with the same filename already exists
+    at that location. No folder is created, no S3 call is made, and no
+    database row is written.
+    """
+    from app.services.import_finalization_service import (
+        _resolve_destination_folder_readonly,
+        _find_duplicate,
+    )
+
+    # 1. Existence check only -- no status validation yet.
+    batch = _get_batch_for_firm(db, firm_id, batch_id)
+
+    # 2. Auth check before revealing any batch state to the caller.
+    assert_can_bulk_import(
+        db=db,
+        user=user,
+        scope=batch.scope,
+        engagement_id=batch.engagement_id,
+        firm_id=firm_id,
+    )
+
+    # 3. Status validation -- only reached by authorized callers.
+    if batch.status not in ("draft", "confirmed"):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Preview is only available for batches in draft or confirmed status; current status is '{batch.status}'",
+        )
+
+    items = db.query(ImportItem).filter(
+        ImportItem.import_batch_id == batch_id,
+        ImportItem.firm_id == firm_id,
+    ).order_by(ImportItem.ordinal).all()
+
+    results = []
+    for item in items:
+        dest_folder_id, resolved = _resolve_destination_folder_readonly(
+            db, batch, item.normalized_relative_path
+        )
+        has_conflict = False
+        existing_document_id = None
+        existing_document_filename = None
+
+        if resolved:
+            duplicate = _find_duplicate(db, batch, dest_folder_id, item.filename)
+            if duplicate:
+                has_conflict = True
+                existing_document_id = duplicate.id
+                existing_document_filename = duplicate.filename
+
+        results.append({
+            "item_id": item.id,
+            "resolved": resolved,
+            "has_conflict": has_conflict,
+            "existing_document_id": existing_document_id,
+            "existing_document_filename": existing_document_filename,
+        })
+
+    return results

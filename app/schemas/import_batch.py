@@ -96,3 +96,22 @@ class ItemUploadUrlOut(BaseModel):
     upload_url: str
     staging_s3_key: str
     expires_in_seconds: int
+
+
+# ---------------------------------------------------------------------------
+# Preview schemas
+# ---------------------------------------------------------------------------
+
+class ImportItemPreview(BaseModel):
+    """Per-item result from the read-only conflict preview endpoint."""
+    item_id: uuid.UUID
+    resolved: bool
+    has_conflict: bool
+    existing_document_id: Optional[uuid.UUID] = None
+    existing_document_filename: Optional[str] = None
+
+
+class ImportBatchPreview(BaseModel):
+    """Response from GET /import-batches/{batch_id}/preview."""
+    batch_id: uuid.UUID
+    items: List[ImportItemPreview]
