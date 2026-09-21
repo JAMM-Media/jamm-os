@@ -1,7 +1,7 @@
 // path: frontend/src/app/engagements/[id]/page.tsx
 'use client'
 
-import { useState, type ReactElement } from 'react'
+import { useState, useEffect, useCallback, useRef, type ReactElement } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { useQueryClient } from '@tanstack/react-query'
@@ -19,11 +19,13 @@ import { NotesTab, NotesPanel, useNotes } from '@/components/notes'
 import { cn, formatEngagementType } from '@/lib/utils'
 import api from '@/lib/api'
 import type { PendingDocument } from '@/lib/api'
-import { FileText, FileSpreadsheet, File as FileGeneric, FileImage, Lock } from 'lucide-react'
+import { FileText, FileSpreadsheet, File as FileGeneric, FileImage, Lock, UserPlus, X } from 'lucide-react'
 import { FolderBrowser } from '@/components/documents/FolderBrowser'
 import { QcChecklistTab } from '@/components/engagements/QcChecklistTab'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { settingsApi, type FirmDetails } from '@/lib/api/settingsApi'
+import { staffApi } from '@/lib/api/staffApi'
+import type { EngagementMember } from '@/lib/api/engagements'
 
 type BadgeVariant = Parameters<typeof StatusBadge>[0]['variant']
 
@@ -116,6 +118,14 @@ export default function EngagementDetailPage() {
   const [reassignTargetId, setReassignTargetId] = useState('')
   const [reassignLoading, setReassignLoading] = useState(false)
   const [finalizing, setFinalizing] = useState(false)
+  const [members, setMembers] = useState<EngagementMember[]>([])
+  const [membersLoading, setMembersLoading] = useState(false)
+  const [addPickerOpen, setAddPickerOpen] = useState(false)
+  const [roster, setRoster] = useState<{ id: string; full_name: string | null }[]>([])
+  const [membersError, setMembersError] = useState(false)
+  const [rosterError, setRosterError] = useState(false)
+  const [rosterSearch, setRosterSearch] = useState('')
+  const addPickerRef = useRef<HTMLDivElement>(null)
 
 
   const { unreadCount } = useNotes({ entityType: 'engagement', entityId: id })
@@ -131,6 +141,36 @@ export default function EngagementDetailPage() {
   )
 
   const canFinalize = user?.role === 'firm_owner' || user?.role === 'manager' || engagement?.currentUserIsAdministrator === true
+
+  const fetchMembers = useCallback(async () => {
+    setMembersLoading(true)
+    setMembersError(false)
+    try {
+      const data = await engagementsApi.listMembers(id)
+      setMembers(data)
+    } catch {
+      setMembersError(true)
+    } finally {
+      setMembersLoading(false)
+    }
+  }, [id])
+
+  useEffect(() => {
+    staffApi.listFirmRoster().then(setRoster).catch(() => setRosterError(true))
+  }, [])
+
+  useEffect(() => {
+    if (engagement) fetchMembers()
+  }, [engagement, fetchMembers])
+
+  useEffect(() => {
+    if (!addPickerOpen) return
+    function handleOutsideClick(e: MouseEvent) {
+      if (!addPickerRef.current?.contains(e.target as Node)) { setAddPickerOpen(false); setRosterSearch('') }
+    }
+    document.addEventListener('mousedown', handleOutsideClick)
+    return () => document.removeEventListener('mousedown', handleOutsideClick)
+  }, [addPickerOpen])
 
   const { data: tasksData, isLoading: tasksLoading } = useFetch(
     () => tasksApi.list(0, 50, id),
@@ -226,6 +266,30 @@ export default function EngagementDetailPage() {
       toast.error(detail ?? 'Failed to unfinalize engagement. Please try again.')
     } finally {
       setFinalizing(false)
+    }
+  }
+
+  async function handleAddMember(userId: string) {
+    setAddPickerOpen(false)
+    setRosterSearch('')
+    try {
+      await engagementsApi.addMember(id, userId)
+      toast.success('Staff added')
+      fetchMembers()
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      toast.error(detail ?? 'Failed to add staff')
+    }
+  }
+
+  async function handleRemoveMember(memberId: string) {
+    try {
+      await engagementsApi.removeMember(id, memberId)
+      toast.success('Staff removed')
+      fetchMembers()
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      toast.error(detail ?? 'Failed to remove staff')
     }
   }
 
@@ -375,9 +439,96 @@ export default function EngagementDetailPage() {
                   <span className={labelClass}>Due date</span>
                   <span className={valueClass}>{formatDate(engagement.endDate)}</span>
                 </div>
-                <div className="flex flex-col gap-1">
-                  <span className={labelClass}>Assigned to</span>
-                  <span className={valueClass}>Unassigned</span>
+                <div className="col-span-2 flex flex-col gap-1">
+                  <span className={labelClass + ' mb-1.5'}>Staff</span>
+                  <div className="flex flex-wrap items-center gap-1.5 relative" ref={addPickerRef}>
+                    {membersLoading ? (
+                      [1, 2].map((i) => (
+                        <div key={i} className="h-[26px] w-20 bg-[#E5E7EB] dark:bg-[#2D2D2D] animate-pulse rounded-full" />
+                      ))
+                    ) : membersError ? (
+                      <div className="flex items-center gap-2">
+                        <span className="text-[12px] text-[#9CA3AF]">Couldn\'t load staff.</span>
+                        <button onClick={fetchMembers} className="text-[12px] text-brand-light hover:underline">Retry</button>
+                      </div>
+                    ) : (
+                      <>
+                        {members.length === 0 && (
+                          <span className="text-[12px] text-[#9CA3AF]">No staff yet.</span>
+                        )}
+                        {members.map((m) => {
+                          const initials = (m.userName ?? '').split(' ').map((p: string) => p[0]).join('').slice(0, 2).toUpperCase() || '?'
+                          return (
+                            <div key={m.id} className="flex items-center gap-[5px] bg-[#E5E7EB] dark:bg-[#2D2D2D] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] rounded-full py-0.5 pl-1 pr-2">
+                              <div className="w-[18px] h-[18px] rounded-full bg-[#C8CDD6] dark:bg-[#484848] flex items-center justify-center text-[9px] font-medium text-[#1F3148] dark:text-[#EDEEF0] flex-shrink-0">
+                                {initials}
+                              </div>
+                              <span className="text-[12px] text-[#1F3148] dark:text-[#EDEEF0]">{m.userName ?? '(unnamed)'}</span>
+                              {canFinalize && (
+                                <button
+                                  onClick={() => handleRemoveMember(m.id)}
+                                  className="text-[12px] text-[#6B7280] hover:text-[#EF4444] ml-0.5 transition-colors leading-none"
+                                >
+                                  &times;
+                                </button>
+                              )}
+                            </div>
+                          )
+                        })}
+                        {canFinalize && (
+                          <button
+                            onClick={() => setAddPickerOpen((v) => !v)}
+                            className="flex items-center gap-1 border border-[0.5px] border-dashed border-[#9CA3AF] rounded-full text-[12px] font-medium text-[#6B7280] hover:text-brand hover:border-brand dark:hover:text-[#EDEEF0] dark:hover:border-[#4A7FA5] transition-colors py-0.5 pl-2 pr-2.5 bg-transparent"
+                          >
+                            + Add
+                          </button>
+                        )}
+                      </>
+                    )}
+                    {addPickerOpen && canFinalize && (
+                      <div className="absolute top-full left-0 mt-1 w-[220px] z-10 bg-white dark:bg-[#252525] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] rounded-[8px] shadow-lg overflow-hidden">
+                        <div className="p-2 border-b border-[0.5px] border-[#C8CDD6] dark:border-[#484848]">
+                          <input
+                            type="text"
+                            value={rosterSearch}
+                            onChange={(e) => setRosterSearch(e.target.value)}
+                            placeholder="Search staff"
+                            autoFocus
+                            className="w-full h-7 px-2 rounded-[6px] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] bg-white dark:bg-[#2D2D2D] text-[12px] text-[#1F3148] dark:text-[#EDEEF0] placeholder:text-[#9CA3AF] focus:outline-none"
+                          />
+                        </div>
+                        <div className="max-h-[180px] overflow-y-auto">
+                          {rosterError ? (
+                            <p className="px-3 py-2 text-[11px] text-[#9CA3AF]">Couldn\'t load roster.</p>
+                          ) : (() => {
+                            const memberIds = new Set(members.map((m) => m.userId))
+                            const options = roster
+                              .filter((u) => !memberIds.has(u.id))
+                              .filter((u) => !rosterSearch || (u.full_name ?? '').toLowerCase().includes(rosterSearch.toLowerCase()))
+                            return options.length === 0 ? (
+                              <p className="px-3 py-2 text-[11px] text-[#9CA3AF]">No users to add</p>
+                            ) : (
+                              options.map((u) => {
+                                const di = (u.full_name ?? '').split(' ').map((p: string) => p[0]).join('').slice(0, 2).toUpperCase() || '?'
+                                return (
+                                  <button
+                                    key={u.id}
+                                    onClick={() => handleAddMember(u.id)}
+                                    className="w-full flex items-center gap-2 px-2.5 py-2 text-left hover:bg-[#F3F4F6] dark:hover:bg-[#333] transition-colors"
+                                  >
+                                    <div className="w-[22px] h-[22px] rounded-full bg-[#E5E7EB] dark:bg-[#444] flex items-center justify-center text-[10px] font-medium text-[#1F3148] dark:text-[#EDEEF0] flex-shrink-0">
+                                      {di}
+                                    </div>
+                                    <span className="text-[12px] text-[#1F3148] dark:text-[#EDEEF0]">{u.full_name ?? u.id}</span>
+                                  </button>
+                                )
+                              })
+                            )
+                          })()}
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
                 <div className="flex flex-col gap-1">
                   <span className={labelClass}>Created</span>

@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  body { margin: 0; background: #E4E6EA; font-family: Inter, -apple-system, sans-serif; padding: 24px; box-sizing: border-box; }
+  .card { background: #EDEEF0; border-radius: 8px; padding: 16px; max-width: 560px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px 24px; }
+  .label { font-size: 11px; font-weight: 500; letter-spacing: 0.05em; color: #6B7280; text-transform: uppercase; }
+  .value { font-size: 13px; color: #1F3148; margin-top: 4px; }
+  .badge-active { background: #DBEAFE; color: #1E40AF; font-size: 11px; font-weight: 500; padding: 3px 10px; border-radius: 9999px; display: inline-block; margin-top: 4px; }
+  .staff-row { grid-column: 1 / -1; }
+  .staff-chips { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; position: relative; }
+  .chip { display: flex; align-items: center; gap: 5px; background: #E5E7EB; border: 0.5px solid #C8CDD6; border-radius: 9999px; padding: 3px 8px 3px 4px; }
+  .avatar { width: 18px; height: 18px; border-radius: 50%; background: #C8CDD6; display: flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 500; color: #1F3148; }
+  .chip-name { font-size: 12px; color: #1F3148; }
+  .chip-x { font-size: 12px; color: #6B7280; margin-left: 2px; cursor: pointer; }
+  .add-btn { display: flex; align-items: center; gap: 4px; background: none; border: 0.5px dashed #9CA3AF; border-radius: 9999px; color: #6B7280; font-size: 12px; font-weight: 500; cursor: pointer; padding: 3px 10px 3px 8px; }
+  .dropdown { position: absolute; top: 32px; left: 0; width: 220px; background: #FFFFFF; border: 0.5px solid #C8CDD6; border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.12); overflow: hidden; z-index: 10; }
+  .dropdown-search { padding: 8px; border-bottom: 0.5px solid #C8CDD6; }
+  .dropdown-search input { width: 100%; height: 28px; border: 0.5px solid #C8CDD6; border-radius: 6px; padding: 0 8px; font-size: 12px; box-sizing: border-box; }
+  .dropdown-list { max-height: 180px; overflow-y: auto; }
+  .dropdown-item { display: flex; align-items: center; gap: 8px; padding: 8px 10px; }
+  .dropdown-item:hover { background: #F7F7F8; }
+  .dropdown-avatar { width: 22px; height: 22px; border-radius: 50%; background: #E5E7EB; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 500; color: #1F3148; }
+  .dropdown-item-name { font-size: 12px; color: #1F3148; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="grid">
+      <div>
+        <div class="label">Engagement type</div>
+        <div class="value">Tax Return 1040</div>
+      </div>
+      <div>
+        <div class="label">Status</div>
+        <div><span class="badge-active">Active</span></div>
+      </div>
+      <div>
+        <div class="label">Client</div>
+        <div class="value" style="color:#4A7FA5;">Test Client 20</div>
+      </div>
+      <div>
+        <div class="label">Due date</div>
+        <div class="value">Jun 8, 2026</div>
+      </div>
+
+      <div class="staff-row">
+        <div class="label" style="margin-bottom:6px;">Staff</div>
+        <div class="staff-chips">
+          <div class="chip">
+            <div class="avatar">BC</div>
+            <span class="chip-name">Ben Corbin</span>
+            <span class="chip-x">&times;</span>
+          </div>
+          <div class="chip">
+            <div class="avatar">JO</div>
+            <span class="chip-name">James Okafor</span>
+            <span class="chip-x">&times;</span>
+          </div>
+
+          <button class="add-btn">+ Add</button>
+
+          <div class="dropdown">
+            <div class="dropdown-search">
+              <input placeholder="Search staff" />
+            </div>
+            <div class="dropdown-list">
+              <div class="dropdown-item">
+                <div class="dropdown-avatar">MT</div>
+                <div class="dropdown-item-name">Mention Test Third Party</div>
+              </div>
+              <div class="dropdown-item">
+                <div class="dropdown-avatar">PM</div>
+                <div class="dropdown-item-name">Priya Mehta</div>
+              </div>
+              <div class="dropdown-item">
+                <div class="dropdown-avatar">SC</div>
+                <div class="dropdown-item-name">Sarah Chen</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="label">Created</div>
+        <div class="value">May 30, 2026</div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
