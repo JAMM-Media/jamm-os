@@ -9,7 +9,7 @@ from uuid import UUID
 from app.db.session import get_db
 from app.models.user import User
 from app.models.firm import Firm
-from app.schemas.user import UserCreate, UserOut, UserUpdate, UserPreferencesUpdate, BookableStaffOut
+from app.schemas.user import UserCreate, UserOut, UserUpdate, UserPreferencesUpdate, BookableStaffOut, FirmRosterUserOut
 from app.schemas.task import TaskOut, TaskStatus
 from app.schemas.pagination import PaginatedResponse
 from app.utils.pagination import paginate
@@ -20,6 +20,7 @@ from app.schemas.firm import FirmOut
 from app.dependencies.auth import get_current_user
 from app.dependencies.tenant import get_current_firm
 from app.dependencies.roles import require_firm_owner, require_manager_or_above, require_staff_or_above
+from app.core.enums import UserRole
 import app.services.user_service as user_service
 
 router = APIRouter(prefix="/users", tags=["users"])
@@ -229,6 +230,47 @@ def list_bookable_staff(
     users = (
         db.query(User)
         .filter(User.id.in_(db.query(user_ids)), User.firm_id == current_firm.id)
+        .all()
+    )
+    return users
+
+
+# -------------------------------------------------------------------
+# GET /firm-roster
+# Must be registered BEFORE /{user_id} or FastAPI will try to parse
+# firm-roster as a UUID and return 422.
+# -------------------------------------------------------------------
+@router.get("/firm-roster", response_model=list[FirmRosterUserOut])
+def list_firm_roster(
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    _: User = Depends(require_staff_or_above),
+):
+    """Staff-accessible list of every internal user in the firm, for the
+    engagement-member picker. Returns only id and full_name -- no email,
+    role, or other HR data. Ordered alphabetically by full_name.
+
+    Who may call this and why: require_staff_or_above (firm_owner, manager,
+    staff, system_admin). client_portal_user is excluded both by the
+    dependency gate and by the explicit role filter in the query, since
+    portal users are on the other side of the tenant boundary and should
+    never appear in an internal membership picker.
+
+    Sourced from every internal user in the firm, unlike list_bookable_staff
+    which is restricted to users with a configured AvailabilityWindow.
+    """
+    users = (
+        db.query(User)
+        .filter(
+            User.firm_id == current_firm.id,
+            User.role.in_([
+                UserRole.firm_owner,
+                UserRole.manager,
+                UserRole.staff,
+                UserRole.system_admin,
+            ]),
+        )
+        .order_by(User.full_name)
         .all()
     )
     return users
