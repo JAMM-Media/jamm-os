@@ -12,7 +12,7 @@ from app.crud import document_folder as crud_folder
 from app.crud import document as crud_document
 from app.models.document_folder import DocumentFolder
 from app.models.engagement import Engagement
-from app.services.document_access import assert_engagement_not_finalized
+from app.services.document_access import assert_can_delete_folder, assert_engagement_not_finalized
 
 
 MAX_FOLDER_DEPTH = 20
@@ -134,6 +134,91 @@ def rename_folder(
     """Rename a folder. Gated by the engagement finalize check."""
     assert_engagement_not_finalized(db, folder.engagement_id)
     return crud_folder.rename_document_folder(db, folder=folder, name=name)
+
+
+def move_folder(
+    *,
+    db: Session,
+    folder: DocumentFolder,
+    firm_id: UUID,
+    new_parent_folder_id: Optional[UUID],
+    current_user,
+) -> DocumentFolder:
+    """Re-parent a folder to new_parent_folder_id (None = move to root).
+
+    Validates, in order:
+    1. Engagement is not finalized (matches rename_folder).
+    2. Trio gate via assert_can_delete_folder (same gate as delete -- move is a
+       structural mutation with cascading depth consequences, closer in risk
+       profile to delete than to a simple rename).
+    3. New parent is not the folder itself.
+    4. New parent is not in the folder's descendant set (cycle prevention).
+    5. Destination exists, is live, belongs to the same firm, scope, and
+       engagement/client as the folder being moved.
+    6. Depth check: get_depth(new_parent_folder_id) + get_subtree_height(folder.id)
+       + 1 >= MAX_FOLDER_DEPTH is the refusal condition, mirroring create_folder's
+       get_depth(parent_folder_id) + 1 >= MAX_FOLDER_DEPTH style. The +1 accounts
+       for the folder itself occupying one level below the destination; subtree_height
+       adds the levels already occupied by existing descendants below it.
+
+    Auth is checked before any tree traversal so an unauthorized caller never
+    learns the folder's depth, descendants, or cycle structure.
+    """
+    assert_engagement_not_finalized(db, folder.engagement_id)
+    assert_can_delete_folder(db, current_user, folder, firm_id)
+
+    if new_parent_folder_id is not None:
+        if new_parent_folder_id == folder.id:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Cannot move a folder into itself",
+            )
+        descendant_ids = crud_folder.get_descendant_folder_ids(
+            db, folder_id=folder.id, firm_id=firm_id
+        )
+        if new_parent_folder_id in descendant_ids:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Cannot move a folder into one of its own descendants -- this would create a cycle",
+            )
+
+        dest = crud_folder.get_document_folder(
+            db, folder_id=new_parent_folder_id, firm_id=firm_id
+        )
+        if not dest:
+            raise HTTPException(status_code=404, detail="Destination folder not found")
+        if dest.scope != folder.scope:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Destination folder must have the same scope as the folder being moved",
+            )
+        if folder.scope == "engagement" and dest.engagement_id != folder.engagement_id:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Destination folder must belong to the same engagement",
+            )
+        if folder.scope == "client" and dest.client_id != folder.client_id:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Destination folder must belong to the same client",
+            )
+
+    dest_depth = crud_folder.get_depth(
+        db, parent_folder_id=new_parent_folder_id, firm_id=firm_id
+    )
+    subtree_height = crud_folder.get_subtree_height(
+        db, folder_id=folder.id, firm_id=firm_id
+    )
+    if dest_depth + subtree_height + 1 >= MAX_FOLDER_DEPTH:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Moving this folder here would push its contents past the {MAX_FOLDER_DEPTH}-level depth limit",
+        )
+
+    folder.parent_folder_id = new_parent_folder_id
+    db.commit()
+    db.refresh(folder)
+    return folder
 
 
 def copy_folder_structure(

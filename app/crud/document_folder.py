@@ -1,6 +1,7 @@
 # app/crud/document_folder.py
 
 import uuid
+from collections import deque
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -155,3 +156,54 @@ def get_document_folder_by_name(
         DocumentFolder.name == name,
         DocumentFolder.deleted_at.is_(None),
     ).first()
+
+
+def get_subtree_height(db: Session, folder_id: uuid.UUID, firm_id: uuid.UUID) -> int:
+    """Walk downward through live children and return the number of additional levels
+    below folder_id. Returns 0 if the folder has no children (leaf). Returns 1 if
+    the deepest live child has no children of its own, etc.
+
+    Used by move_folder to compute the full depth footprint of the folder's
+    existing subtree before applying the MAX_FOLDER_DEPTH constraint.
+
+    Child lookup uses the same filter as get_document_folder: live folders
+    belonging to firm_id with the given parent_folder_id.
+    """
+    max_height = 0
+    queue: deque = deque([(folder_id, 0)])
+    while queue:
+        current_id, level = queue.popleft()
+        children = db.query(DocumentFolder).filter(
+            DocumentFolder.firm_id == firm_id,
+            DocumentFolder.parent_folder_id == current_id,
+            DocumentFolder.deleted_at.is_(None),
+        ).all()
+        for child in children:
+            child_level = level + 1
+            if child_level > max_height:
+                max_height = child_level
+            queue.append((child.id, child_level))
+    return max_height
+
+
+def get_descendant_folder_ids(db: Session, folder_id: uuid.UUID, firm_id: uuid.UUID) -> set:
+    """Return the set of UUIDs of all live folders that are descendants of folder_id
+    at any depth. Used by move_folder to build the cycle-prevention exclusion set.
+
+    Traversal uses the same BFS child-lookup pattern as get_subtree_height. The two
+    functions are kept separate rather than combined: their return types differ and
+    neither is a specialisation of the other.
+    """
+    result: set = set()
+    queue: deque = deque([folder_id])
+    while queue:
+        current_id = queue.popleft()
+        children = db.query(DocumentFolder).filter(
+            DocumentFolder.firm_id == firm_id,
+            DocumentFolder.parent_folder_id == current_id,
+            DocumentFolder.deleted_at.is_(None),
+        ).all()
+        for child in children:
+            result.add(child.id)
+            queue.append(child.id)
+    return result

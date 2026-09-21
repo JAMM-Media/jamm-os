@@ -66,6 +66,19 @@ function formatDate(iso: string): string {
   }
 }
 
+function getDescendantFolderIds(folderId: string, childrenOf: Record<string, BrowserFolder[]>): Set<string> {
+  const result = new Set<string>()
+  const queue: string[] = [folderId]
+  while (queue.length > 0) {
+    const current = queue.pop()!
+    for (const child of (childrenOf[current] ?? [])) {
+      result.add(child.id)
+      queue.push(child.id)
+    }
+  }
+  return result
+}
+
 // ---------------------------------------------------------------------------
 // FolderNode: renders one folder row and its children from a pre-built map.
 // Built from scratch to match Firm Library's visual design but parameterised
@@ -81,6 +94,7 @@ function FolderNode({
   onDropDoc,
   isFinalized,
   onFolderDeleted,
+  folders,
 }: {
   folder: BrowserFolder
   depth: number
@@ -90,6 +104,7 @@ function FolderNode({
   onDropDoc: (docId: string) => void
   isFinalized?: boolean
   onFolderDeleted: () => void
+  folders: BrowserFolder[]
 }) {
   const children = childrenOf[folder.id] ?? []
   const hasChildren = children.length > 0
@@ -98,6 +113,7 @@ function FolderNode({
   const [isDragOver, setIsDragOver] = useState(false)
   const { confirm, ConfirmDialog } = useConfirm()
   const [menuOpen, setMenuOpen] = useState(false)
+  const [showMoveList, setShowMoveList] = useState(false)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const menuDropdownRef = useRef<HTMLDivElement>(null)
   const [coords, setCoords] = useState<{ top: number; left: number } | null>(null)
@@ -128,6 +144,7 @@ function FolderNode({
       const inTrigger = triggerRef.current?.contains(e.target as Node)
       if (!inDropdown && !inTrigger) {
         setMenuOpen(false)
+        setShowMoveList(false)
         setCoords(null)
       }
     }
@@ -135,8 +152,30 @@ function FolderNode({
     return () => document.removeEventListener('mousedown', handler)
   }, [menuOpen])
 
+  async function handleMove(targetFolderId: string | null) {
+    setMenuOpen(false)
+    setShowMoveList(false)
+    setCoords(null)
+    if (isFinalized) {
+      toast.error('This engagement is finalized -- folders cannot be moved')
+      return
+    }
+    try {
+      await documentFoldersApi.moveFolder(folder.id, targetFolderId)
+      const name = targetFolderId
+        ? (folders.find((f) => f.id === targetFolderId)?.name ?? 'folder')
+        : 'root level'
+      toast.success(`Moved to ${targetFolderId ? `"${name}"` : name}`)
+      onFolderDeleted()
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      toast.error(detail ?? 'Could not move folder -- please try again')
+    }
+  }
+
   async function handleDelete() {
     setMenuOpen(false)
+    setShowMoveList(false)
     setCoords(null)
     if (isFinalized) {
       toast.error('This engagement is finalized -- folders cannot be deleted')
@@ -158,6 +197,9 @@ function FolderNode({
     }
   }
 
+  const descendantIds = getDescendantFolderIds(folder.id, childrenOf)
+  const validDestinations = folders.filter((f) => f.id !== folder.id && !descendantIds.has(f.id))
+
   const dropdown = (
     <div
       ref={menuDropdownRef}
@@ -170,14 +212,56 @@ function FolderNode({
         visibility: coords ? 'visible' : 'hidden',
       }}
     >
+      {/* Primary action */}
       <button
-        onClick={handleDelete}
+        onClick={() => setShowMoveList((v) => !v)}
         disabled={isFinalized}
-        className="w-full text-left flex items-center gap-2 px-3 py-2 text-[12px] text-[#991B1B] hover:bg-surface-input dark:hover:bg-dark-card transition-colors disabled:opacity-40 disabled:cursor-default"
+        className="w-full text-left flex items-center gap-2 px-3 py-2 text-[12px] text-[#374151] dark:text-[#EDEEF0] hover:bg-surface-input dark:hover:bg-dark-card transition-colors disabled:opacity-40 disabled:cursor-default"
       >
-        <Trash2 className="h-3.5 w-3.5 flex-shrink-0" />
-        Delete
+        <Folder className="h-3.5 w-3.5 text-[#6B7280] flex-shrink-0" />
+        Move to Folder
       </button>
+
+      {/* Folder list -- shown when "Move to Folder" is clicked */}
+      {showMoveList && (
+        <div className="border-t border-[0.5px] border-surface-border dark:border-dark-border max-h-48 overflow-y-auto">
+          {/* Root option: disabled when folder is already at root */}
+          <button
+            onClick={() => handleMove(null)}
+            disabled={folder.parent_folder_id === null}
+            className="w-full text-left flex items-center gap-2 px-3 py-1.5 text-[12px] text-[#374151] dark:text-[#EDEEF0] hover:bg-surface-input dark:hover:bg-dark-card transition-colors disabled:opacity-40 disabled:cursor-default"
+          >
+            <Folder className="h-3.5 w-3.5 text-[#6B7280] flex-shrink-0" />
+            Root level
+          </button>
+          {validDestinations.map((f) => (
+            /* Each destination: disabled when folder is already there */
+            <button
+              key={f.id}
+              onClick={() => handleMove(f.id)}
+              disabled={folder.parent_folder_id === f.id}
+              className="w-full text-left px-3 py-1.5 text-[12px] text-[#374151] dark:text-[#EDEEF0] hover:bg-surface-input dark:hover:bg-dark-card transition-colors disabled:opacity-40 disabled:cursor-default truncate"
+            >
+              {f.name}
+            </button>
+          ))}
+          {validDestinations.length === 0 && (
+            <p className="px-3 py-2 text-[11px] text-[#9CA3AF]">No other folders available.</p>
+          )}
+        </div>
+      )}
+
+      {/* Delete -- destructive action, separated from the move section */}
+      <div className="border-t border-[0.5px] border-surface-border dark:border-dark-border">
+        <button
+          onClick={handleDelete}
+          disabled={isFinalized}
+          className="w-full text-left flex items-center gap-2 px-3 py-2 text-[12px] text-[#991B1B] hover:bg-surface-input dark:hover:bg-dark-card transition-colors disabled:opacity-40 disabled:cursor-default"
+        >
+          <Trash2 className="h-3.5 w-3.5 flex-shrink-0" />
+          Delete
+        </button>
+      </div>
     </div>
   )
 
@@ -223,7 +307,7 @@ function FolderNode({
           <span className="truncate">{folder.name}</span>
           <button
             ref={triggerRef}
-            onClick={(e) => { e.stopPropagation(); setMenuOpen((v) => !v); setCoords(null) }}
+            onClick={(e) => { e.stopPropagation(); setMenuOpen((v) => !v); setShowMoveList(false); setCoords(null) }}
             className="ml-auto p-1 rounded text-[#9CA3AF] hover:text-[#6B7280] dark:hover:text-[#EDEEF0] hover:bg-[#F3F4F6] dark:hover:bg-[#333] transition-colors opacity-0 group-hover:opacity-100 flex-shrink-0"
           >
             <MoreVertical className="h-3.5 w-3.5" />
@@ -241,6 +325,7 @@ function FolderNode({
             onDropDoc={onDropDoc}
             isFinalized={isFinalized}
             onFolderDeleted={onFolderDeleted}
+            folders={folders}
           />
         ))}
       </div>
@@ -977,6 +1062,7 @@ export function FolderBrowser({
                 onDropDoc={(docId) => moveDoc(docId, f.id, f.name)}
                 isFinalized={isFinalized}
                 onFolderDeleted={fetchFolders}
+                folders={folders}
               />
             ))}
           </div>

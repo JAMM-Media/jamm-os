@@ -132,4 +132,8 @@ export const documentFoldersApi = {
   deleteFolder: async (folderId: string): Promise<void> => {
     await api.delete(`/document-folders/${folderId}`)
   },
+
+  moveFolder: async (folderId: string, newParentFolderId: string | null): Promise<void> => {
+    await api.patch(`/document-folders/${folderId}/move`, { new_parent_folder_id: newParentFolderId })
+  },
 }

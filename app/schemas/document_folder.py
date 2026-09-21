@@ -19,6 +19,10 @@ class DocumentFolderUpdate(BaseModel):
     name: str
 
 
+class DocumentFolderMove(BaseModel):
+    new_parent_folder_id: Optional[uuid.UUID] = None
+
+
 class DocumentFolderOut(BaseModel):
     id: uuid.UUID
     firm_id: uuid.UUID

@@ -12,9 +12,9 @@ from app.dependencies.roles import require_staff_or_above
 from app.dependencies.tenant import get_current_firm
 from app.models.firm import Firm
 from app.models.user import User
-from app.schemas.document_folder import DocumentFolderCreate, DocumentFolderOut, DocumentFolderUpdate
+from app.schemas.document_folder import DocumentFolderCreate, DocumentFolderMove, DocumentFolderOut, DocumentFolderUpdate
 from app.crud import document_folder as crud_folder
-from app.services.document_folder_service import create_folder, delete_folder_with_cascade, rename_folder
+from app.services.document_folder_service import create_folder, delete_folder_with_cascade, move_folder, rename_folder
 from app.services.document_access import assert_can_access_folder, assert_can_delete_folder
 
 router = APIRouter(prefix="/document-folders", tags=["document-folders"])
@@ -113,6 +113,30 @@ def rename_document_folder(
         raise HTTPException(status_code=404, detail="Folder not found")
     assert_can_access_folder(db, current_user, folder, current_firm.id)
     updated = rename_folder(db=db, folder=folder, firm_id=current_firm.id, name=payload.name)
+    return DocumentFolderOut.model_validate(updated)
+
+
+@router.patch("/{folder_id}/move", response_model=DocumentFolderOut)
+def move_document_folder(
+    folder_id: uuid.UUID,
+    payload: DocumentFolderMove,
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    current_user: User = Depends(get_current_user),
+    _: object = Depends(require_staff_or_above),
+):
+    """Move a folder to a new parent (null = root level). Trio-gated.
+    Prevents cycles and enforces the MAX_FOLDER_DEPTH subtree constraint."""
+    folder = crud_folder.get_document_folder(db, folder_id=folder_id, firm_id=current_firm.id)
+    if not folder:
+        raise HTTPException(status_code=404, detail="Folder not found")
+    updated = move_folder(
+        db=db,
+        folder=folder,
+        firm_id=current_firm.id,
+        new_parent_folder_id=payload.new_parent_folder_id,
+        current_user=current_user,
+    )
     return DocumentFolderOut.model_validate(updated)
 
 
