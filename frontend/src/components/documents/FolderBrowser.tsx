@@ -3,7 +3,7 @@
 
 import { useState, useCallback, useEffect, useLayoutEffect, useRef, type ChangeEvent, type InputHTMLAttributes } from 'react'
 import { createPortal } from 'react-dom'
-import { ChevronRight, ChevronDown, ChevronUp, Folder, FolderOpen, FolderPlus, FolderInput, Upload, X, FileText, MoreVertical, Trash2 } from 'lucide-react'
+import { ChevronRight, ChevronDown, ChevronUp, Folder, FolderOpen, FolderPlus, FolderInput, Upload, X, FileText, MoreVertical, Trash2, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useRouter } from 'next/navigation'
 import api from '@/lib/api'
@@ -455,6 +455,8 @@ function NewFolderModal({
 // are scoped to the correct client or engagement record.
 // ---------------------------------------------------------------------------
 
+type FileEntry = { file: File; status: 'pending' | 'uploading' | 'done' | 'failed' }
+
 function UploadModal({
   scope,
   engagementId,
@@ -470,54 +472,88 @@ function UploadModal({
   onClose: () => void
   onUploaded: () => void
 }) {
-  const [file, setFile] = useState<File | null>(null)
+  const [fileList, setFileList] = useState<FileEntry[]>([])
   const [description, setDescription] = useState('')
   const [uploading, setUploading] = useState(false)
-  const [progress, setProgress] = useState('')
+  const [uploadSummary, setUploadSummary] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  function handleFilesChange(incoming: File[]) {
+    setFileList(incoming.map((f) => ({ file: f, status: 'pending' })))
+    setUploadSummary('')
+  }
+
   async function handleUpload() {
-    if (!file) return
+    if (fileList.length === 0) return
     setUploading(true)
-    setProgress('Uploading...')
-    try {
-      const urlPayload: Record<string, unknown> = {
-        filename: file.name,
-        content_type: file.type || 'application/octet-stream',
+    setUploadSummary('')
+
+    const entries = fileList.map((e) => ({ ...e }))
+    // Seed from already-succeeded files so the final summary covers the full batch.
+    let doneCount = entries.filter((e) => e.status === 'done').length
+
+    for (let i = 0; i < entries.length; i++) {
+      if (entries[i].status === 'done') continue
+      entries[i].status = 'uploading'
+      setFileList([...entries])
+
+      const { file } = entries[i]
+      try {
+        const urlPayload: Record<string, unknown> = {
+          filename: file.name,
+          content_type: file.type || 'application/octet-stream',
+        }
+        if (currentFolderId) urlPayload.folder_id = currentFolderId
+        if (clientId) urlPayload.client_id = clientId
+        if (engagementId) urlPayload.engagement_id = engagementId
+
+        const { data: urlData } = await api.post('/documents/upload-url', urlPayload)
+        const { document_id, upload_url } = urlData
+
+        await fetch(upload_url, {
+          method: 'PUT',
+          body: file,
+          headers: { 'Content-Type': file.type || 'application/octet-stream' },
+        })
+
+        const completePayload: Record<string, unknown> = {
+          filename: file.name,
+          content_type: file.type || 'application/octet-stream',
+        }
+        if (currentFolderId) completePayload.folder_id = currentFolderId
+        if (clientId) completePayload.client_id = clientId
+        if (engagementId) completePayload.engagement_id = engagementId
+        if (fileList.length === 1 && description.trim()) completePayload.description = description.trim()
+
+        await api.post(`/documents/${document_id}/upload-complete`, completePayload)
+        entries[i].status = 'done'
+        doneCount++
+      } catch {
+        entries[i].status = 'failed'
       }
-      if (currentFolderId) urlPayload.folder_id = currentFolderId
-      if (clientId) urlPayload.client_id = clientId
-      if (engagementId) urlPayload.engagement_id = engagementId
+      setFileList([...entries])
+    }
 
-      const { data: urlData } = await api.post('/documents/upload-url', urlPayload)
-      const { document_id, upload_url } = urlData
+    setUploading(false)
+    const total = entries.length
+    const failed = total - doneCount
 
-      await fetch(upload_url, {
-        method: 'PUT',
-        body: file,
-        headers: { 'Content-Type': file.type || 'application/octet-stream' },
-      })
-
-      const completePayload: Record<string, unknown> = {
-        filename: file.name,
-        content_type: file.type || 'application/octet-stream',
-      }
-      if (currentFolderId) completePayload.folder_id = currentFolderId
-      if (clientId) completePayload.client_id = clientId
-      if (engagementId) completePayload.engagement_id = engagementId
-      if (description.trim()) completePayload.description = description.trim()
-
-      await api.post(`/documents/${document_id}/upload-complete`, completePayload)
-      toast.success(`"${file.name}" uploaded`)
+    if (failed === 0) {
+      toast.success(total === 1 ? `"${entries[0].file.name}" uploaded` : `${total} files uploaded`)
       onUploaded()
       onClose()
-    } catch {
-      toast.error('Upload failed -- please try again')
-    } finally {
-      setUploading(false)
-      setProgress('')
+    } else {
+      setUploadSummary(`${doneCount} of ${total} uploaded, ${failed} failed`)
+      if (doneCount > 0) {
+        toast.success(`${doneCount} of ${total} files uploaded`)
+        onUploaded()
+      }
     }
   }
+
+  const uploadedCount = fileList.filter((e) => e.status === 'done' || e.status === 'failed').length
+  const retryCount = fileList.filter((e) => e.status === 'failed' || e.status === 'pending').length
+  const isRetry = fileList.some((e) => e.status === 'done')
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={onClose}>
@@ -534,42 +570,66 @@ function UploadModal({
         <div className="p-5 flex flex-col gap-4">
           <div>
             <label className="text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em] block mb-1.5">
-              File
+              Files
             </label>
             <div
               className="border border-dashed border-surface-border dark:border-dark-border rounded-[6px] p-6 text-center cursor-pointer hover:bg-surface-input dark:hover:bg-dark-card transition-colors"
               onClick={() => fileInputRef.current?.click()}
             >
-              {file ? (
-                <p className="text-[13px] text-brand dark:text-[#EDEEF0]">{file.name}</p>
-              ) : (
+              {fileList.length === 0 ? (
                 <>
                   <Upload className="h-6 w-6 text-[#6B7280] mx-auto mb-2" />
-                  <p className="text-[13px] text-[#6B7280]">Click to select a file</p>
+                  <p className="text-[13px] text-[#6B7280]">Click to select files</p>
                 </>
+              ) : (
+                <p className="text-[13px] text-brand dark:text-[#EDEEF0]">
+                  {fileList.length} {fileList.length === 1 ? 'file' : 'files'} selected -- click to change
+                </p>
               )}
               <input
                 ref={fileInputRef}
                 type="file"
+                multiple
                 className="hidden"
-                onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                onChange={(e) => handleFilesChange(Array.from(e.target.files ?? []))}
               />
             </div>
           </div>
-          <div>
-            <label className="text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em] block mb-1.5">
-              Description (optional)
-            </label>
-            <input
-              type="text"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="e.g. Q3 financial statements"
-              className="w-full h-9 px-2.5 rounded-[6px] border border-[0.5px] border-surface-border dark:border-dark-border bg-surface-input dark:bg-dark-card text-[13px] text-brand dark:text-[#EDEEF0] placeholder:text-[#9CA3AF] focus:outline-none"
-            />
-          </div>
-          {progress && (
-            <p className="text-[12px] text-[#6B7280]">{progress}</p>
+          {fileList.length > 0 && (
+            <div className="flex flex-col gap-0.5">
+              {fileList.map((entry, idx) => (
+                <div key={idx} className="flex items-center gap-3 px-3 py-2 rounded-[6px] bg-surface-input dark:bg-dark-card">
+                  <FileText className="h-3.5 w-3.5 text-[#6B7280] shrink-0" />
+                  <p className="text-[12px] font-medium text-[#1F3148] dark:text-[#EDEEF0] truncate flex-1">{entry.file.name}</p>
+                  {entry.status === 'uploading' && (
+                    <Loader2 className="h-3.5 w-3.5 text-[#6B7280] animate-spin shrink-0" />
+                  )}
+                  {entry.status === 'done' && (
+                    <span className="text-[11px] text-green-600 dark:text-green-400 shrink-0">Done</span>
+                  )}
+                  {entry.status === 'failed' && (
+                    <span className="text-[11px] text-[#991B1B] shrink-0">Failed</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+          {fileList.length === 1 && (
+            <div>
+              <label className="text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em] block mb-1.5">
+                Description (optional)
+              </label>
+              <input
+                type="text"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="e.g. Q3 financial statements"
+                className="w-full h-9 px-2.5 rounded-[6px] border border-[0.5px] border-surface-border dark:border-dark-border bg-surface-input dark:bg-dark-card text-[13px] text-brand dark:text-[#EDEEF0] placeholder:text-[#9CA3AF] focus:outline-none"
+              />
+            </div>
+          )}
+          {uploadSummary && (
+            <p className="text-[12px] text-[#991B1B]">{uploadSummary}</p>
           )}
         </div>
         <div className="flex items-center justify-end gap-2 px-5 py-3.5 border-t border-[0.5px] border-surface-border dark:border-dark-border">
@@ -582,10 +642,16 @@ function UploadModal({
           </button>
           <button
             onClick={handleUpload}
-            disabled={!file || uploading}
+            disabled={fileList.length === 0 || uploading}
             className="h-8 px-3.5 rounded-[6px] bg-brand dark:bg-brand-btn text-white text-[12px] font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
           >
-            {uploading ? progress || 'Uploading...' : 'Upload'}
+            {uploading
+              ? `${uploadedCount} / ${fileList.length}`
+              : isRetry
+              ? `Retry ${retryCount} failed`
+              : fileList.length > 1
+              ? `Upload ${fileList.length} files`
+              : 'Upload'}
           </button>
         </div>
       </div>
