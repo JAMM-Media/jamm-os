@@ -3,13 +3,15 @@
 
 import { useState, useCallback, useEffect, useLayoutEffect, useRef, type ChangeEvent, type InputHTMLAttributes } from 'react'
 import { createPortal } from 'react-dom'
-import { ChevronRight, ChevronDown, ChevronUp, Folder, FolderOpen, FolderPlus, FolderInput, Upload, X, FileText, MoreVertical } from 'lucide-react'
+import { ChevronRight, ChevronDown, ChevronUp, Folder, FolderOpen, FolderPlus, FolderInput, Upload, X, FileText, MoreVertical, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useRouter } from 'next/navigation'
 import api from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { importBatchesApi, type CreateImportBatchPayload } from '@/lib/api/importBatches'
 import { enumerateFolder } from '@/lib/importEnumeration'
+import { documentsApi } from '@/lib/api/documents'
+import { useConfirm } from '@/lib/hooks/useConfirm'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -402,6 +404,7 @@ function DocRow({
   fetchDocs: () => void
   isFinalized?: boolean
 }) {
+  const { confirm, ConfirmDialog } = useConfirm()
   const [menuOpen, setMenuOpen] = useState(false)
   const [showMoveList, setShowMoveList] = useState(false)
   // triggerRef: the three-dot button itself, used for position measurement.
@@ -455,6 +458,30 @@ function DocRow({
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
   }, [menuOpen])
+
+  async function handleDelete() {
+    setMenuOpen(false)
+    setShowMoveList(false)
+    setCoords(null)
+    if (isFinalized) {
+      toast.error('This engagement is finalized -- files cannot be deleted')
+      return
+    }
+    const confirmed = await confirm({
+      message: `Delete "${doc.filename}"? This will move the file to trash.`,
+      confirmLabel: 'Delete',
+      destructive: true,
+    })
+    if (!confirmed) return
+    try {
+      await documentsApi.deleteDocument(doc.id)
+      toast.success('File deleted')
+      fetchDocs()
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      toast.error(detail ?? 'Could not delete file -- please try again')
+    }
+  }
 
   async function handleMove(targetFolderId: string | null) {
     setMenuOpen(false)
@@ -526,10 +553,23 @@ function DocRow({
           )}
         </div>
       )}
+
+      {/* Delete -- destructive action, separated from the move section */}
+      <div className="border-t border-[0.5px] border-surface-border dark:border-dark-border">
+        <button
+          onClick={handleDelete}
+          disabled={isFinalized}
+          className="w-full text-left flex items-center gap-2 px-3 py-2 text-[12px] text-[#991B1B] hover:bg-surface-input dark:hover:bg-dark-card transition-colors disabled:opacity-40 disabled:cursor-default"
+        >
+          <Trash2 className="h-3.5 w-3.5 flex-shrink-0" />
+          Delete
+        </button>
+      </div>
     </div>
   )
 
   return (
+  <>
     <div
       draggable="true"
       onDragStart={(e) => { e.dataTransfer.setData('text/plain', doc.id); setIsDragging(true) }}
@@ -559,6 +599,8 @@ function DocRow({
 
       {menuOpen && createPortal(dropdown, document.body)}
     </div>
+    {ConfirmDialog}
+  </>
   )
 }
 

@@ -122,4 +122,8 @@ export const documentsApi = {
   reassignPending: async (documentId: string, destEngagementId: string): Promise<void> => {
     await api.post(`/documents/${documentId}/reassign`, { dest_engagement_id: destEngagementId })
   },
+
+  deleteDocument: async (id: string): Promise<void> => {
+    await api.delete(`/documents/${id}`)
+  },
 }
