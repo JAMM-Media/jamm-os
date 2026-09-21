@@ -150,9 +150,18 @@ export default function TasksPage() {
     setBulkLoading(true)
     const ids = Array.from(selectedIds)
     try {
-      await tasksApi.bulkUpdate(ids, { assigned_to: userId })
+      const response = await tasksApi.bulkUpdate(ids, { assigned_to: userId })
       setSelectedIds(new Set())
-      toast.success(`Reassigned ${ids.length} task${ids.length !== 1 ? 's' : ''}`)
+      const totalEngagementsAdded = (response.members_added ?? []).reduce(
+        (sum, m) => sum + m.engagement_ids.length, 0
+      )
+      if (totalEngagementsAdded > 0) {
+        toast.success(
+          `Reassigned ${ids.length} task${ids.length !== 1 ? 's' : ''}. Also added this person to ${totalEngagementsAdded} new engagement${totalEngagementsAdded !== 1 ? 's' : ''}.`
+        )
+      } else {
+        toast.success(`Reassigned ${ids.length} task${ids.length !== 1 ? 's' : ''}`)
+      }
       refetch()
     } catch (err: unknown) {
       const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
