@@ -47,6 +47,7 @@ from app.dependencies.roles import require_firm_owner, require_staff_or_above
 from app.models.signature_envelope import SignatureEnvelope
 from app.services import s3 as s3_service
 from app.services.audit_service import write_audit_log
+from app.services.recent_documents_service import record_document_view
 import app.services.document_service as document_service
 from app.services.document_access import (
     assert_can_access_document,
@@ -612,6 +613,17 @@ def download_document(
         raise HTTPException(status_code=404, detail=_NOT_FOUND)
     assert_can_access_document(db, current_user, _prefetch, current_firm.id)
 
+    try:
+        record_document_view(
+            db,
+            firm_id=current_firm.id,
+            user_id=current_user.id,
+            engagement_id=_prefetch.engagement_id,
+            document_id=_prefetch.id,
+        )
+    except Exception:
+        pass  # record_document_view is fire-and-forget; never block the response
+
     doc, url = document_service.download_document(
         db=db, document_id=document_id, firm_id=current_firm.id,
         current_user_id=current_user.id,
@@ -642,6 +654,17 @@ def preview_document(
     if not doc:
         raise HTTPException(status_code=404, detail=_NOT_FOUND)
     assert_can_access_document(db, current_user, doc, current_firm.id)
+
+    try:
+        record_document_view(
+            db,
+            firm_id=current_firm.id,
+            user_id=current_user.id,
+            engagement_id=doc.engagement_id,
+            document_id=doc.id,
+        )
+    except Exception:
+        pass  # record_document_view is fire-and-forget; never block the response
 
     # Magic-byte check against actual S3 bytes, not stored content_type alone.
     eligible = check_preview_eligible(doc.content_type, doc.s3_key)

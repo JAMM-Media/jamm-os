@@ -176,3 +176,10 @@ class RollForwardFoldersRequest(BaseModel):
 class RollForwardFoldersResponse(BaseModel):
     folders_created: int
     id_map: dict[str, str]
+
+
+class RecentDocumentItem(BaseModel):
+    document_id: str
+    filename: str
+    engagement_id: str
+    last_viewed_at: datetime

@@ -26,6 +26,7 @@ from app.schemas.engagement import (
     BulkSendLetterResult,
     RollForwardFoldersRequest,
     RollForwardFoldersResponse,
+    RecentDocumentItem,
 )
 from app.models.task import Task
 from app.models.client import Client as ClientModel
@@ -704,3 +705,39 @@ def request_engagement_export(
         "status": "processing",
         "message": "The archive for this engagement is being prepared. You will receive an email with a download link shortly.",
     }
+
+
+# ---------------------------------------------------------------------------
+# GET /engagements/{engagement_id}/recent-documents
+# ---------------------------------------------------------------------------
+
+@router.get("/{engagement_id}/recent-documents", response_model=list[RecentDocumentItem])
+def list_recent_documents_endpoint(
+    engagement_id: UUID,
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    current_user: User = Depends(get_current_user),
+    _: object = Depends(require_staff_or_above),
+):
+    """Return the current user's most recently viewed documents in this engagement."""
+    from app.services.recent_documents_service import get_recent_documents
+
+    engagement = crud_engagement.get_engagement_for_firm(db, engagement_id, current_firm.id)
+    if not engagement:
+        raise HTTPException(status_code=404, detail="Engagement not found")
+
+    rows = get_recent_documents(
+        db,
+        firm_id=current_firm.id,
+        engagement_id=engagement_id,
+        user=current_user,
+    )
+    return [
+        RecentDocumentItem(
+            document_id=str(doc.id),
+            filename=doc.filename,
+            engagement_id=str(doc.engagement_id),
+            last_viewed_at=last_viewed_at,
+        )
+        for doc, last_viewed_at in rows
+    ]
