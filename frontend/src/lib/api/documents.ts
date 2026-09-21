@@ -127,3 +127,9 @@ export const documentsApi = {
     await api.delete(`/documents/${id}`)
   },
 }
+
+export const documentFoldersApi = {
+  deleteFolder: async (folderId: string): Promise<void> => {
+    await api.delete(`/document-folders/${folderId}`)
+  },
+}

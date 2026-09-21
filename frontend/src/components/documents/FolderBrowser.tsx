@@ -10,7 +10,7 @@ import api from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { importBatchesApi, type CreateImportBatchPayload } from '@/lib/api/importBatches'
 import { enumerateFolder } from '@/lib/importEnumeration'
-import { documentsApi } from '@/lib/api/documents'
+import { documentsApi, documentFoldersApi } from '@/lib/api/documents'
 import { useConfirm } from '@/lib/hooks/useConfirm'
 
 // ---------------------------------------------------------------------------
@@ -79,6 +79,8 @@ function FolderNode({
   onSelect,
   childrenOf,
   onDropDoc,
+  isFinalized,
+  onFolderDeleted,
 }: {
   folder: BrowserFolder
   depth: number
@@ -86,65 +88,164 @@ function FolderNode({
   onSelect: (f: BrowserFolder) => void
   childrenOf: Record<string, BrowserFolder[]>
   onDropDoc: (docId: string) => void
+  isFinalized?: boolean
+  onFolderDeleted: () => void
 }) {
   const children = childrenOf[folder.id] ?? []
   const hasChildren = children.length > 0
   const [expanded, setExpanded] = useState(depth === 0)
   const isSelected = selectedId === folder.id
   const [isDragOver, setIsDragOver] = useState(false)
+  const { confirm, ConfirmDialog } = useConfirm()
+  const [menuOpen, setMenuOpen] = useState(false)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const menuDropdownRef = useRef<HTMLDivElement>(null)
+  const [coords, setCoords] = useState<{ top: number; left: number } | null>(null)
+
+  useLayoutEffect(() => {
+    if (!menuOpen || !triggerRef.current || !menuDropdownRef.current) return
+    const triggerRect = triggerRef.current.getBoundingClientRect()
+    const menuHeight = menuDropdownRef.current.getBoundingClientRect().height
+    const menuWidth = 176
+
+    let top = triggerRect.bottom + 4
+    let left = triggerRect.right - menuWidth
+
+    if (top + menuHeight > window.innerHeight) {
+      top = triggerRect.top - menuHeight - 4
+    }
+    if (left < 0) {
+      left = triggerRect.left
+    }
+
+    setCoords({ top, left })
+  }, [menuOpen])
+
+  useEffect(() => {
+    if (!menuOpen) return
+    function handler(e: MouseEvent) {
+      const inDropdown = menuDropdownRef.current?.contains(e.target as Node)
+      const inTrigger = triggerRef.current?.contains(e.target as Node)
+      if (!inDropdown && !inTrigger) {
+        setMenuOpen(false)
+        setCoords(null)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [menuOpen])
+
+  async function handleDelete() {
+    setMenuOpen(false)
+    setCoords(null)
+    if (isFinalized) {
+      toast.error('This engagement is finalized -- folders cannot be deleted')
+      return
+    }
+    const confirmed = await confirm({
+      message: `Delete folder "${folder.name}"? Files directly inside it will also be moved to trash. Subfolders and their contents will not be affected.`,
+      confirmLabel: 'Delete',
+      destructive: true,
+    })
+    if (!confirmed) return
+    try {
+      await documentFoldersApi.deleteFolder(folder.id)
+      toast.success('Folder deleted')
+      onFolderDeleted()
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      toast.error(detail ?? 'Could not delete folder -- please try again')
+    }
+  }
+
+  const dropdown = (
+    <div
+      ref={menuDropdownRef}
+      className="bg-white dark:bg-[#252525] border border-[0.5px] border-surface-border dark:border-dark-border rounded-[8px] shadow-lg overflow-hidden w-44"
+      style={{
+        position: 'fixed',
+        zIndex: 9999,
+        top: coords?.top ?? 0,
+        left: coords?.left ?? 0,
+        visibility: coords ? 'visible' : 'hidden',
+      }}
+    >
+      <button
+        onClick={handleDelete}
+        disabled={isFinalized}
+        className="w-full text-left flex items-center gap-2 px-3 py-2 text-[12px] text-[#991B1B] hover:bg-surface-input dark:hover:bg-dark-card transition-colors disabled:opacity-40 disabled:cursor-default"
+      >
+        <Trash2 className="h-3.5 w-3.5 flex-shrink-0" />
+        Delete
+      </button>
+    </div>
+  )
 
   return (
-    <div>
-      <div
-        className={cn(
-          'flex items-center gap-1.5 px-2 py-1.5 rounded cursor-pointer text-[13px] transition-colors select-none',
-          isSelected
-            ? 'bg-surface-input dark:bg-dark-card text-brand dark:text-[#EDEEF0] font-medium'
-            : 'text-[#374151] dark:text-[#9CA3AF] hover:bg-surface-input dark:hover:bg-dark-card hover:text-brand dark:hover:text-[#EDEEF0]',
-          isDragOver && 'ring-2 ring-inset ring-brand',
-        )}
-        style={{ paddingLeft: `${8 + depth * 16}px` }}
-        onClick={() => onSelect(folder)}
-        onDragOver={(e) => { e.preventDefault(); setIsDragOver(true) }}
-        onDragLeave={() => setIsDragOver(false)}
-        onDrop={(e) => {
-          e.preventDefault()
-          setIsDragOver(false)
-          const docId = e.dataTransfer.getData('text/plain')
-          if (docId) onDropDoc(docId)
-        }}
-      >
-        {hasChildren ? (
+    <>
+      <div>
+        <div
+          className={cn(
+            'group flex items-center gap-1.5 px-2 py-1.5 rounded cursor-pointer text-[13px] transition-colors select-none',
+            isSelected
+              ? 'bg-surface-input dark:bg-dark-card text-brand dark:text-[#EDEEF0] font-medium'
+              : 'text-[#374151] dark:text-[#9CA3AF] hover:bg-surface-input dark:hover:bg-dark-card hover:text-brand dark:hover:text-[#EDEEF0]',
+            isDragOver && 'ring-2 ring-inset ring-brand',
+          )}
+          style={{ paddingLeft: `${8 + depth * 16}px` }}
+          onClick={() => onSelect(folder)}
+          onDragOver={(e) => { e.preventDefault(); setIsDragOver(true) }}
+          onDragLeave={() => setIsDragOver(false)}
+          onDrop={(e) => {
+            e.preventDefault()
+            setIsDragOver(false)
+            const docId = e.dataTransfer.getData('text/plain')
+            if (docId) onDropDoc(docId)
+          }}
+        >
+          {hasChildren ? (
+            <button
+              className="p-0 m-0 border-0 bg-transparent flex-shrink-0"
+              onClick={(e) => { e.stopPropagation(); setExpanded((v) => !v) }}
+            >
+              {expanded
+                ? <ChevronDown className="h-3 w-3 text-[#6B7280]" />
+                : <ChevronRight className="h-3 w-3 text-[#6B7280]" />
+              }
+            </button>
+          ) : (
+            <span className="w-3 flex-shrink-0" />
+          )}
+          {expanded && hasChildren
+            ? <FolderOpen className="h-3.5 w-3.5 text-[#6B7280] flex-shrink-0" />
+            : <Folder className="h-3.5 w-3.5 text-[#6B7280] flex-shrink-0" />
+          }
+          <span className="truncate">{folder.name}</span>
           <button
-            className="p-0 m-0 border-0 bg-transparent flex-shrink-0"
-            onClick={(e) => { e.stopPropagation(); setExpanded((v) => !v) }}
+            ref={triggerRef}
+            onClick={(e) => { e.stopPropagation(); setMenuOpen((v) => !v); setCoords(null) }}
+            className="ml-auto p-1 rounded text-[#9CA3AF] hover:text-[#6B7280] dark:hover:text-[#EDEEF0] hover:bg-[#F3F4F6] dark:hover:bg-[#333] transition-colors opacity-0 group-hover:opacity-100 flex-shrink-0"
           >
-            {expanded
-              ? <ChevronDown className="h-3 w-3 text-[#6B7280]" />
-              : <ChevronRight className="h-3 w-3 text-[#6B7280]" />
-            }
+            <MoreVertical className="h-3.5 w-3.5" />
           </button>
-        ) : (
-          <span className="w-3 flex-shrink-0" />
-        )}
-        {expanded && hasChildren
-          ? <FolderOpen className="h-3.5 w-3.5 text-[#6B7280] flex-shrink-0" />
-          : <Folder className="h-3.5 w-3.5 text-[#6B7280] flex-shrink-0" />
-        }
-        <span className="truncate">{folder.name}</span>
+          {menuOpen && createPortal(dropdown, document.body)}
+        </div>
+        {expanded && children.map((child) => (
+          <FolderNode
+            key={child.id}
+            folder={child}
+            depth={depth + 1}
+            selectedId={selectedId}
+            onSelect={onSelect}
+            childrenOf={childrenOf}
+            onDropDoc={onDropDoc}
+            isFinalized={isFinalized}
+            onFolderDeleted={onFolderDeleted}
+          />
+        ))}
       </div>
-      {expanded && children.map((child) => (
-        <FolderNode
-          key={child.id}
-          folder={child}
-          depth={depth + 1}
-          selectedId={selectedId}
-          onSelect={onSelect}
-          childrenOf={childrenOf}
-          onDropDoc={onDropDoc}
-        />
-      ))}
-    </div>
+      {ConfirmDialog}
+    </>
   )
 }
 
@@ -874,6 +975,8 @@ export function FolderBrowser({
                 onSelect={handleSelectFolder}
                 childrenOf={childrenOf}
                 onDropDoc={(docId) => moveDoc(docId, f.id, f.name)}
+                isFinalized={isFinalized}
+                onFolderDeleted={fetchFolders}
               />
             ))}
           </div>
