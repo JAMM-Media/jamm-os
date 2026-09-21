@@ -79,6 +79,28 @@ function getDescendantFolderIds(folderId: string, childrenOf: Record<string, Bro
   return result
 }
 
+async function moveDocument(
+  docId: string,
+  targetFolderId: string | null,
+  targetFolderName: string | null,
+  currentFolderId: string | null,
+  isFinalized: boolean | undefined,
+  fetchDocs: () => void,
+) {
+  if (isFinalized) {
+    toast.error('This engagement is finalized -- files cannot be moved')
+    return
+  }
+  if (currentFolderId === targetFolderId) return
+  try {
+    await api.patch(`/documents/${docId}/move`, { folder_id: targetFolderId })
+    toast.success(`Moved to ${targetFolderName ? `"${targetFolderName}"` : 'root level'}`)
+    fetchDocs()
+  } catch {
+    toast.error('Could not move file -- please try again')
+  }
+}
+
 // ---------------------------------------------------------------------------
 // FolderNode: renders one folder row and its children from a pre-built map.
 // Built from scratch to match Firm Library's visual design but parameterised
@@ -101,7 +123,7 @@ function FolderNode({
   selectedId: string | null
   onSelect: (f: BrowserFolder) => void
   childrenOf: Record<string, BrowserFolder[]>
-  onDropDoc: (docId: string) => void
+  onDropDoc: (docId: string, targetFolderId: string, targetFolderName: string) => void
   isFinalized?: boolean
   onFolderDeleted: () => void
   folders: BrowserFolder[]
@@ -284,7 +306,7 @@ function FolderNode({
             e.preventDefault()
             setIsDragOver(false)
             const docId = e.dataTransfer.getData('text/plain')
-            if (docId) onDropDoc(docId)
+            if (docId) onDropDoc(docId, folder.id, folder.name)
           }}
         >
           {hasChildren ? (
@@ -673,20 +695,10 @@ function DocRow({
     setMenuOpen(false)
     setShowMoveList(false)
     setCoords(null)
-    if (isFinalized) {
-      toast.error('This engagement is finalized -- files cannot be moved')
-      return
-    }
-    try {
-      await api.patch(`/documents/${doc.id}/move`, { folder_id: targetFolderId })
-      const name = targetFolderId
-        ? (folders.find((f) => f.id === targetFolderId)?.name ?? 'folder')
-        : 'root level'
-      toast.success(`Moved to ${targetFolderId ? `"${name}"` : name}`)
-      fetchDocs()
-    } catch {
-      toast.error('Could not move file -- please try again')
-    }
+    const targetName = targetFolderId
+      ? (folders.find((f) => f.id === targetFolderId)?.name ?? 'folder')
+      : null
+    await moveDocument(doc.id, targetFolderId, targetName, doc.folder_id, isFinalized, fetchDocs)
   }
 
   const dropdown = (
@@ -899,20 +911,9 @@ export function FolderBrowser({
   // handleMove (has all context locally); drag targets use this lifted version
   // so the API call, toasts, and refresh are not duplicated across drop sites.
   async function moveDoc(docId: string, targetFolderId: string | null, targetFolderName: string | null) {
-    if (isFinalized) {
-      toast.error('This engagement is finalized -- files cannot be moved')
-      return
-    }
     const doc = docs.find((d) => d.id === docId)
     if (!doc) return
-    if (doc.folder_id === targetFolderId) return
-    try {
-      await api.patch(`/documents/${docId}/move`, { folder_id: targetFolderId })
-      toast.success(`Moved to ${targetFolderName ? `"${targetFolderName}"` : 'root level'}`)
-      fetchDocs()
-    } catch {
-      toast.error('Could not move file -- please try again')
-    }
+    await moveDocument(docId, targetFolderId, targetFolderName, doc.folder_id, isFinalized, fetchDocs)
   }
 
   function handleFolderCreated() {
@@ -1059,7 +1060,7 @@ export function FolderBrowser({
                 selectedId={selectedFolderId}
                 onSelect={handleSelectFolder}
                 childrenOf={childrenOf}
-                onDropDoc={(docId) => moveDoc(docId, f.id, f.name)}
+                onDropDoc={moveDoc}
                 isFinalized={isFinalized}
                 onFolderDeleted={fetchFolders}
                 folders={folders}
