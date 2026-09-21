@@ -40,6 +40,12 @@ class StripeConnection(Base):
     payouts_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     details_submitted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
     connected_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
