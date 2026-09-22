@@ -574,11 +574,13 @@ class MetricEntityType(str, Enum):
 
 
 class MetricAxisKind(str, Enum):
-    """Which source of truth a sliceable axis key resolves against; exactly four, with no engagement_type kind because breakdowns are category-only (ruled Sep 10, 2026)."""
+    """Which source of truth a sliceable axis key resolves against; exactly six, with no engagement_type kind because breakdowns are category-only (ruled Sep 10, 2026). source_platform and source_placement added Sep 17, 2026 (Metric Clock Definitions v2 Section 5)."""
     engagement_category = "engagement_category"
     complexity_flag = "complexity_flag"
     complexity_dimension = "complexity_dimension"
     referral_source = "referral_source"
+    source_platform = "source_platform"
+    source_placement = "source_placement"
 
 
 class SubjectType(str, Enum):
@@ -664,6 +666,22 @@ class SourcePlatform(str, Enum):
     dm = "dm"
     direct_mail = "direct_mail"
     other = "other"
+
+
+class SourcePlacement(str, Enum):
+    """Layer 2 attribution: the where-within-the-platform. Derived from utm_content, utm_term, or utm_medium when a lead arrives through a tracked link (ruled Sep 17, 2026; Metric Clock Definitions v2 Section 5). Deliberately has no other and no unknown member: a placement that does not resolve is None, because an unrecognizable placement is an absence of information, not a category to report on."""
+    reels = "reels"
+    feed = "feed"
+    story = "story"
+    shorts = "shorts"
+    search = "search"
+    display = "display"
+    video = "video"
+    explore = "explore"
+    marketplace = "marketplace"
+    in_stream = "in_stream"
+    shopping = "shopping"
+    messaging = "messaging"
 
 
 class LeadProvenance(str, Enum):

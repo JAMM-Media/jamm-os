@@ -29,6 +29,8 @@ from app.core.enums import (
     MetricEntityType,
     MetricPillar,
     MetricWindowType,
+    SourcePlacement,
+    SourcePlatform,
 )
 from app.core.metric_seed_data import SEED_METRICS
 from app.crud import metric_registry as crud
@@ -334,6 +336,57 @@ def test_referral_source_accepts_client_referral_and_refuses_billboard(db):
         service.resolve_axis_key(db, MetricAxisKind.referral_source, "billboard")
     assert exc.value.status_code == 422
     assert exc.value.detail == "Unknown referral source 'billboard'."
+
+
+@pytest.mark.parametrize("platform", list(SourcePlatform))
+def test_source_platform_resolves_for_every_platform_value(db, platform):
+    """source_platform resolves against SourcePlatform, every value (R1).
+
+    Parametrized over the enum rather than a hand-written list, so a new
+    platform value is covered the day it is added.
+    """
+    service.resolve_axis_key(db, MetricAxisKind.source_platform, platform.value)
+
+
+def test_source_platform_refuses_unknown_key(db):
+    """The refusal is in the same voice as the other kinds."""
+    with pytest.raises(HTTPException) as exc:
+        service.resolve_axis_key(db, MetricAxisKind.source_platform, "myspace")
+    assert exc.value.status_code == 422
+    assert exc.value.detail == "Unknown source platform 'myspace'."
+
+
+@pytest.mark.parametrize("placement", list(SourcePlacement))
+def test_source_placement_resolves_for_every_placement_value(db, placement):
+    """source_placement resolves against SourcePlacement, every value (R1)."""
+    service.resolve_axis_key(db, MetricAxisKind.source_placement, placement.value)
+
+
+def test_source_placement_refuses_unknown_key(db):
+    """The refusal is in the same voice as the other kinds."""
+    with pytest.raises(HTTPException) as exc:
+        service.resolve_axis_key(db, MetricAxisKind.source_placement, "billboard")
+    assert exc.value.status_code == 422
+    assert exc.value.detail == "Unknown source placement 'billboard'."
+
+
+def test_every_axis_kind_has_a_resolution_rule(db):
+    """No MetricAxisKind reaches the unreachable-kind refusal.
+
+    resolve_axis_key ends with a catch-all that refuses any kind with no
+    branch above it. That line is meant to be unreachable; this walks every
+    member of the enum and fails if any one of them lands on it, so a
+    seventh kind added without a rule is caught here rather than by a
+    confusing refusal in production. Each kind is probed with a key that
+    does not resolve, so the expected outcome is its OWN refusal message,
+    never the catch-all.
+    """
+    for kind in MetricAxisKind:
+        with pytest.raises(HTTPException) as exc:
+            service.resolve_axis_key(db, kind, "definitely_not_a_real_key")
+        assert "No resolution rule exists for axis kind" not in exc.value.detail, (
+            f"{kind} fell through to the unreachable-kind refusal, which means it has no resolution branch"
+        )
 
 
 # ---------------------------------------------------------------------------

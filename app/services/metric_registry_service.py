@@ -11,9 +11,9 @@ platform-global with no firm_id and are never edited by a firm, so there is
 no firm to attribute an event to. This module does not call log_event and
 must not start.
 
-Axis key resolution (Sep 10, 2026 ruling R3). A database foreign key is
-impossible across four sources, two of which are code constants, so the
-rule lives here and is pinned by tests (ruling R7):
+Axis key resolution (Sep 10, 2026 ruling R3, extended Sep 17, 2026 R1). A
+database foreign key is impossible across six sources, four of which are
+code constants, so the rule lives here and is pinned by tests (ruling R7):
 
   engagement_category  -> ServiceCategory (code constant)
   complexity_flag      -> complexity_flags.key
@@ -21,6 +21,8 @@ rule lives here and is pinned by tests (ruling R7):
                           complexity_dimensions.key), written
                           "flag_key.dimension_key", split on the first dot
   referral_source      -> ReferralSource (code constant)
+  source_platform      -> SourcePlatform (code constant)
+  source_placement     -> SourcePlacement (code constant)
 
 Resolution is by key existence only; an inactive catalog flag still
 resolves, because the registry is describing what a metric CAN be sliced
@@ -41,7 +43,13 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.enums import MetricAxisKind, ReferralSource, ServiceCategory
+from app.core.enums import (
+    MetricAxisKind,
+    ReferralSource,
+    ServiceCategory,
+    SourcePlacement,
+    SourcePlatform,
+)
 from app.crud import metric_registry as crud
 from app.models.complexity_dimension import ComplexityDimension
 from app.models.complexity_flag import ComplexityFlag
@@ -127,8 +135,18 @@ def resolve_axis_key(db: Session, axis_kind: MetricAxisKind, axis_key: str) -> N
             raise _refuse(f"Unknown referral source '{axis_key}'.")
         return
 
-    # Unreachable while MetricAxisKind has exactly four values; kept so a
-    # fifth value added without a resolution rule refuses instead of passing.
+    if axis_kind == MetricAxisKind.source_platform:
+        if axis_key not in {platform.value for platform in SourcePlatform}:
+            raise _refuse(f"Unknown source platform '{axis_key}'.")
+        return
+
+    if axis_kind == MetricAxisKind.source_placement:
+        if axis_key not in {placement.value for placement in SourcePlacement}:
+            raise _refuse(f"Unknown source placement '{axis_key}'.")
+        return
+
+    # Unreachable while MetricAxisKind has exactly six values; kept so a
+    # seventh value added without a resolution rule refuses instead of passing.
     raise _refuse(f"No resolution rule exists for axis kind '{axis_kind}'.")
 
 
