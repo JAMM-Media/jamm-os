@@ -39,6 +39,7 @@ from slowapi.middleware import SlowAPIMiddleware
 from app.api.clients import router as clients_router
 from app.api.engagements import router as engagements_router
 from app.api.engagement_members import router as engagement_members_router
+from app.api.engagement_pins import router as engagement_pins_router
 from app.api.tasks import router as tasks_router
 from app.api.auth import router as auth_router
 from app.api.users import router as users_router
@@ -364,6 +365,7 @@ app.include_router(users_router)
 app.include_router(clients_router)
 app.include_router(engagements_router)
 app.include_router(engagement_members_router)
+app.include_router(engagement_pins_router)
 app.include_router(tasks_router)
 app.include_router(contacts_router)
 app.include_router(documents_router)
