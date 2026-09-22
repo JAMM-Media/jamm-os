@@ -19,7 +19,8 @@ import { NotesTab, NotesPanel, useNotes } from '@/components/notes'
 import { cn, formatEngagementType } from '@/lib/utils'
 import api from '@/lib/api'
 import type { PendingDocument } from '@/lib/api'
-import { FileText, FileSpreadsheet, File as FileGeneric, FileImage, Lock, UserPlus, X } from 'lucide-react'
+import { Lock, UserPlus, X } from 'lucide-react'
+import { fileIconFromContentType } from '@/lib/fileIcons'
 import { FolderBrowser } from '@/components/documents/FolderBrowser'
 import { QcChecklistTab } from '@/components/engagements/QcChecklistTab'
 import { useAuth } from '@/lib/hooks/useAuth'
@@ -61,25 +62,14 @@ function relativeTime(isoStr: string): string {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
-function fileIconFromContentType(contentType: string): ReactElement {
-  if (contentType === 'application/pdf') {
-    return <FileText size={15} style={{ color: '#EF4444' }} className="flex-shrink-0" />
-  }
-  if (
-    contentType.includes('spreadsheet') ||
-    contentType === 'text/csv' ||
-    contentType === 'application/vnd.ms-excel' ||
-    contentType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-  ) {
-    return <FileSpreadsheet size={15} style={{ color: '#10B981' }} className="flex-shrink-0" />
-  }
-  if (contentType.startsWith('image/')) {
-    return <FileImage size={15} style={{ color: '#8B5CF6' }} className="flex-shrink-0" />
-  }
-  if (contentType.includes('word') || contentType.includes('document')) {
-    return <FileGeneric size={15} style={{ color: '#3B82F6' }} className="flex-shrink-0" />
-  }
-  return <FileGeneric size={15} style={{ color: '#9CA3AF' }} className="flex-shrink-0" />
+function contentTypeFromFilename(filename: string): string {
+  const ext = filename.split('.').pop()?.toLowerCase() ?? ''
+  if (ext === 'pdf') return 'application/pdf'
+  if (['xlsx', 'xls'].includes(ext)) return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+  if (ext === 'csv') return 'text/csv'
+  if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'].includes(ext)) return 'image/png'
+  if (['doc', 'docx'].includes(ext)) return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+  return 'application/octet-stream'
 }
 
 function EngagementDetailBodySkeleton() {
@@ -184,6 +174,12 @@ export default function EngagementDetailPage() {
   )
   const pendingDocs = pendingDocsData?.items ?? []
   const pendingCount = pendingDocsData?.total ?? pendingDocs.length
+
+  const { data: recentDocsData } = useFetch(
+    () => engagementsApi.listRecentDocuments(id),
+    [id]
+  )
+  const recentDocs = recentDocsData ?? []
 
   const { data: clientEngagementsData } = useFetch(
     () =>
@@ -605,6 +601,35 @@ export default function EngagementDetailPage() {
         {/* DOCUMENTS TAB */}
         {activeTab === 'documents' && (
           <>
+            {/* Recently viewed -- hidden entirely when empty */}
+            {recentDocs.length > 0 && (
+              <div className="mb-4">
+                <p className={`${labelClass} mb-2`}>Recently viewed</p>
+                <div className="flex gap-2">
+                  {recentDocs.slice(0, 5).map((doc) => (
+                    <button
+                      key={doc.documentId}
+                      onClick={async () => {
+                        try {
+                          const url = await documentsApi.getSignedUrl(doc.documentId)
+                          window.open(url, '_blank')
+                        } catch {
+                          toast.error('Could not open file -- please try again')
+                        }
+                      }}
+                      className="flex-1 min-w-0 bg-[#EDEEF0] dark:bg-dark-card border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] rounded-[8px] px-2.5 py-2 text-left hover:border-brand dark:hover:border-[#4A7FA5] transition-colors"
+                    >
+                      <div className="flex items-center gap-[5px] mb-1">
+                        {fileIconFromContentType(contentTypeFromFilename(doc.filename))}
+                        <span className="text-[11.5px] font-medium text-[#1F3148] dark:text-[#EDEEF0] truncate">{doc.filename}</span>
+                      </div>
+                      <p className="text-[10px] text-[#9CA3AF]">{relativeTime(doc.lastViewedAt)}</p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Folder browser -- engagement-scoped folders with finalize-lock awareness */}
             <FolderBrowser
               scope="engagement"

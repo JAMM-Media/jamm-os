@@ -1,9 +1,10 @@
 // frontend/src/components/documents/FolderBrowser.tsx
 'use client'
 
-import { useState, useCallback, useEffect, useLayoutEffect, useRef, type ChangeEvent, type InputHTMLAttributes } from 'react'
+import { useState, useCallback, useEffect, useLayoutEffect, useRef, useMemo, type ChangeEvent, type InputHTMLAttributes } from 'react'
 import { createPortal } from 'react-dom'
-import { ChevronRight, ChevronDown, ChevronUp, Folder, FolderOpen, FolderPlus, FolderInput, Upload, X, FileText, MoreVertical, Trash2, Loader2 } from 'lucide-react'
+import { ChevronRight, ChevronDown, ChevronUp, Folder, FolderPlus, FolderInput, Upload, X, FileText, MoreVertical, Trash2, Loader2 } from 'lucide-react'
+import { fileIconFromContentType } from '@/lib/fileIcons'
 import { toast } from 'sonner'
 import { useRouter } from 'next/navigation'
 import api from '@/lib/api'
@@ -21,6 +22,8 @@ interface BrowserFolder {
   id: string
   name: string
   parent_folder_id: string | null
+  updated_at?: string
+  created_at?: string
 }
 
 interface BrowserDoc {
@@ -102,36 +105,48 @@ async function moveDocument(
 }
 
 // ---------------------------------------------------------------------------
-// FolderNode: renders one folder row and its children from a pre-built map.
-// Built from scratch to match Firm Library's visual design but parameterised
-// for any scope (no hardcoded 'firm_library').
+// FlatRow: discriminated union for rows in the unified flat table.
 // ---------------------------------------------------------------------------
 
-function FolderNode({
+type FlatRow =
+  | { kind: 'folder'; folder: BrowserFolder; depth: number; hasChildren: boolean }
+  | { kind: 'doc'; doc: BrowserDoc; depth: number }
+
+// ---------------------------------------------------------------------------
+// FlatFolderRow: one folder row in the unified flat table. Depth-based left
+// indent. All business logic (move, delete, drag-drop) preserved from the
+// old FolderNode exactly; only the render shape changes.
+// ---------------------------------------------------------------------------
+
+function FlatFolderRow({
   folder,
   depth,
-  selectedId,
-  onSelect,
+  hasChildren,
+  isExpanded,
+  onToggle,
+  isTargeted,
+  onTarget,
+  onNavigate,
+  folders,
   childrenOf,
   onDropDoc,
+  onFolderChanged,
   isFinalized,
-  onFolderDeleted,
-  folders,
 }: {
   folder: BrowserFolder
   depth: number
-  selectedId: string | null
-  onSelect: (f: BrowserFolder) => void
+  hasChildren: boolean
+  isExpanded: boolean
+  onToggle: (id: string) => void
+  isTargeted: boolean
+  onTarget: () => void
+  onNavigate: () => void
+  folders: BrowserFolder[]
   childrenOf: Record<string, BrowserFolder[]>
   onDropDoc: (docId: string, targetFolderId: string, targetFolderName: string) => void
+  onFolderChanged: () => void
   isFinalized?: boolean
-  onFolderDeleted: () => void
-  folders: BrowserFolder[]
 }) {
-  const children = childrenOf[folder.id] ?? []
-  const hasChildren = children.length > 0
-  const [expanded, setExpanded] = useState(depth === 0)
-  const isSelected = selectedId === folder.id
   const [isDragOver, setIsDragOver] = useState(false)
   const { confirm, ConfirmDialog } = useConfirm()
   const [menuOpen, setMenuOpen] = useState(false)
@@ -145,17 +160,10 @@ function FolderNode({
     const triggerRect = triggerRef.current.getBoundingClientRect()
     const menuHeight = menuDropdownRef.current.getBoundingClientRect().height
     const menuWidth = 176
-
     let top = triggerRect.bottom + 4
     let left = triggerRect.right - menuWidth
-
-    if (top + menuHeight > window.innerHeight) {
-      top = triggerRect.top - menuHeight - 4
-    }
-    if (left < 0) {
-      left = triggerRect.left
-    }
-
+    if (top + menuHeight > window.innerHeight) top = triggerRect.top - menuHeight - 4
+    if (left < 0) left = triggerRect.left
     setCoords({ top, left })
   }, [menuOpen])
 
@@ -188,7 +196,7 @@ function FolderNode({
         ? (folders.find((f) => f.id === targetFolderId)?.name ?? 'folder')
         : 'root level'
       toast.success(`Moved to ${targetFolderId ? `"${name}"` : name}`)
-      onFolderDeleted()
+      onFolderChanged()
     } catch (err: unknown) {
       const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
       toast.error(detail ?? 'Could not move folder -- please try again')
@@ -212,7 +220,7 @@ function FolderNode({
     try {
       await documentFoldersApi.deleteFolder(folder.id)
       toast.success('Folder deleted')
-      onFolderDeleted()
+      onFolderChanged()
     } catch (err: unknown) {
       const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
       toast.error(detail ?? 'Could not delete folder -- please try again')
@@ -226,15 +234,8 @@ function FolderNode({
     <div
       ref={menuDropdownRef}
       className="bg-white dark:bg-[#252525] border border-[0.5px] border-surface-border dark:border-dark-border rounded-[8px] shadow-lg overflow-hidden w-44"
-      style={{
-        position: 'fixed',
-        zIndex: 9999,
-        top: coords?.top ?? 0,
-        left: coords?.left ?? 0,
-        visibility: coords ? 'visible' : 'hidden',
-      }}
+      style={{ position: 'fixed', zIndex: 9999, top: coords?.top ?? 0, left: coords?.left ?? 0, visibility: coords ? 'visible' : 'hidden' }}
     >
-      {/* Primary action */}
       <button
         onClick={() => setShowMoveList((v) => !v)}
         disabled={isFinalized}
@@ -243,11 +244,8 @@ function FolderNode({
         <Folder className="h-3.5 w-3.5 text-[#6B7280] flex-shrink-0" />
         Move to Folder
       </button>
-
-      {/* Folder list -- shown when "Move to Folder" is clicked */}
       {showMoveList && (
         <div className="border-t border-[0.5px] border-surface-border dark:border-dark-border max-h-48 overflow-y-auto">
-          {/* Root option: disabled when folder is already at root */}
           <button
             onClick={() => handleMove(null)}
             disabled={folder.parent_folder_id === null}
@@ -257,7 +255,6 @@ function FolderNode({
             Root level
           </button>
           {validDestinations.map((f) => (
-            /* Each destination: disabled when folder is already there */
             <button
               key={f.id}
               onClick={() => handleMove(f.id)}
@@ -272,8 +269,6 @@ function FolderNode({
           )}
         </div>
       )}
-
-      {/* Delete -- destructive action, separated from the move section */}
       <div className="border-t border-[0.5px] border-surface-border dark:border-dark-border">
         <button
           onClick={handleDelete}
@@ -289,67 +284,54 @@ function FolderNode({
 
   return (
     <>
-      <div>
-        <div
-          className={cn(
-            'group flex items-center gap-1.5 px-2 py-1.5 rounded cursor-pointer text-[13px] transition-colors select-none',
-            isSelected
-              ? 'bg-surface-input dark:bg-dark-card text-brand dark:text-[#EDEEF0] font-medium'
-              : 'text-[#374151] dark:text-[#9CA3AF] hover:bg-surface-input dark:hover:bg-dark-card hover:text-brand dark:hover:text-[#EDEEF0]',
-            isDragOver && 'ring-2 ring-inset ring-brand',
-          )}
-          style={{ paddingLeft: `${8 + depth * 16}px` }}
-          onClick={() => onSelect(folder)}
-          onDragOver={(e) => { e.preventDefault(); setIsDragOver(true) }}
-          onDragLeave={() => setIsDragOver(false)}
-          onDrop={(e) => {
-            e.preventDefault()
-            setIsDragOver(false)
-            const docId = e.dataTransfer.getData('text/plain')
-            if (docId) onDropDoc(docId, folder.id, folder.name)
-          }}
-        >
+      <div
+        className={cn(
+          'group flex items-center',
+          isDragOver ? 'bg-blue-50 dark:bg-blue-900/10' : isTargeted ? 'bg-surface-input dark:bg-dark-card' : '',
+        )}
+        style={{ paddingTop: '11px', paddingBottom: '11px', paddingLeft: `${18 + depth * 22}px`, paddingRight: '18px' }}
+        onDragOver={(e) => { e.preventDefault(); setIsDragOver(true) }}
+        onDragLeave={() => setIsDragOver(false)}
+        onDrop={(e) => {
+          e.preventDefault()
+          setIsDragOver(false)
+          if (isFinalized) return
+          const docId = e.dataTransfer.getData('text/plain')
+          if (docId) onDropDoc(docId, folder.id, folder.name)
+        }}
+      >
+        <div className="flex-1 flex items-center gap-[9px] min-w-0 cursor-pointer" onClick={onTarget} onDoubleClick={onNavigate}>
           {hasChildren ? (
             <button
               className="p-0 m-0 border-0 bg-transparent flex-shrink-0"
-              onClick={(e) => { e.stopPropagation(); setExpanded((v) => !v) }}
+              onClick={(e) => { e.stopPropagation(); onToggle(folder.id) }}
             >
-              {expanded
-                ? <ChevronDown className="h-3 w-3 text-[#6B7280]" />
-                : <ChevronRight className="h-3 w-3 text-[#6B7280]" />
+              {isExpanded
+                ? <ChevronDown className="h-[13px] w-[13px] text-[#9CA3AF]" />
+                : <ChevronRight className="h-[13px] w-[13px] text-[#9CA3AF]" />
               }
             </button>
           ) : (
-            <span className="w-3 flex-shrink-0" />
+            <span className="inline-block w-[13px] flex-shrink-0" />
           )}
-          {expanded && hasChildren
-            ? <FolderOpen className="h-3.5 w-3.5 text-[#6B7280] flex-shrink-0" />
-            : <Folder className="h-3.5 w-3.5 text-[#6B7280] flex-shrink-0" />
-          }
-          <span className="truncate">{folder.name}</span>
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="#F5B942" className="flex-shrink-0" aria-hidden="true">
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+          </svg>
+          <span className="text-[13.5px] font-medium text-[#111827] dark:text-[#EDEEF0] truncate">{folder.name}</span>
+        </div>
+        <div className="w-[130px] flex-shrink-0 text-[12.5px] text-[#9CA3AF]">
+          {formatDate(folder.updated_at ?? folder.created_at ?? '')}
+        </div>
+        <div className="w-6 flex-shrink-0 flex items-center justify-center">
           <button
             ref={triggerRef}
             onClick={(e) => { e.stopPropagation(); setMenuOpen((v) => !v); setShowMoveList(false); setCoords(null) }}
-            className="ml-auto p-1 rounded text-[#9CA3AF] hover:text-[#6B7280] dark:hover:text-[#EDEEF0] hover:bg-[#F3F4F6] dark:hover:bg-[#333] transition-colors opacity-0 group-hover:opacity-100 flex-shrink-0"
+            className="text-[#D1D5DB] hover:text-[#6B7280] dark:hover:text-[#EDEEF0] transition-colors opacity-0 group-hover:opacity-100"
           >
-            <MoreVertical className="h-3.5 w-3.5" />
+            <MoreVertical className="h-4 w-4" />
           </button>
-          {menuOpen && createPortal(dropdown, document.body)}
         </div>
-        {expanded && children.map((child) => (
-          <FolderNode
-            key={child.id}
-            folder={child}
-            depth={depth + 1}
-            selectedId={selectedId}
-            onSelect={onSelect}
-            childrenOf={childrenOf}
-            onDropDoc={onDropDoc}
-            isFinalized={isFinalized}
-            onFolderDeleted={onFolderDeleted}
-            folders={folders}
-          />
-        ))}
+        {menuOpen && createPortal(dropdown, document.body)}
       </div>
       {ConfirmDialog}
     </>
@@ -660,20 +642,20 @@ function UploadModal({
 }
 
 // ---------------------------------------------------------------------------
-// DocRow: single file row, shared between active and archived lists.
-// Accepts folders and fetchDocs from the parent FolderBrowser so the
-// three-dot move menu can list real folders and refresh after a move.
+// FlatDocRow: one document row in the unified flat table. Depth-based left
+// indent. All business logic (move, delete, drag) preserved from the old
+// DocRow exactly; only the render shape changes.
 // ---------------------------------------------------------------------------
 
-function DocRow({
+function FlatDocRow({
   doc,
-  borderBottom,
+  depth,
   folders,
   fetchDocs,
   isFinalized,
 }: {
   doc: BrowserDoc
-  borderBottom: boolean
+  depth: number
   folders: BrowserFolder[]
   fetchDocs: () => void
   isFinalized?: boolean
@@ -681,43 +663,23 @@ function DocRow({
   const { confirm, ConfirmDialog } = useConfirm()
   const [menuOpen, setMenuOpen] = useState(false)
   const [showMoveList, setShowMoveList] = useState(false)
-  // triggerRef: the three-dot button itself, used for position measurement.
   const triggerRef = useRef<HTMLButtonElement>(null)
-  // menuDropdownRef: the portaled dropdown rendered in document.body.
   const menuDropdownRef = useRef<HTMLDivElement>(null)
-  // Pixel coordinates for position:fixed placement. null until measured.
   const [coords, setCoords] = useState<{ top: number; left: number } | null>(null)
-  // Local drag state: only this row dims while it is being dragged.
   const [isDragging, setIsDragging] = useState(false)
 
-  // Measure the trigger button's real screen position and compute where to
-  // open the dropdown, mirroring the ColorPicker portal pattern. Menu width
-  // is w-44 = 176px. Default: open below and right-aligned to the button.
-  // Flip upward if the bottom edge would overflow the viewport.
-  // Flip rightward if the left edge would go off-screen.
   useLayoutEffect(() => {
     if (!menuOpen || !triggerRef.current || !menuDropdownRef.current) return
     const triggerRect = triggerRef.current.getBoundingClientRect()
     const menuHeight = menuDropdownRef.current.getBoundingClientRect().height
     const menuWidth = 176
-
     let top = triggerRect.bottom + 4
     let left = triggerRect.right - menuWidth
-
-    if (top + menuHeight > window.innerHeight) {
-      top = triggerRect.top - menuHeight - 4
-    }
-    if (left < 0) {
-      left = triggerRect.left
-    }
-
+    if (top + menuHeight > window.innerHeight) top = triggerRect.top - menuHeight - 4
+    if (left < 0) left = triggerRect.left
     setCoords({ top, left })
   }, [menuOpen])
 
-  // Outside-click-to-close. Both refs must be checked: menuDropdownRef covers
-  // clicks inside the portaled menu content, and triggerRef covers the button
-  // itself so that clicking the button while the menu is open does not
-  // double-fire (outside-click close + button toggle reopen).
   useEffect(() => {
     if (!menuOpen) return
     function handler(e: MouseEvent) {
@@ -771,15 +733,8 @@ function DocRow({
     <div
       ref={menuDropdownRef}
       className="bg-white dark:bg-[#252525] border border-[0.5px] border-surface-border dark:border-dark-border rounded-[8px] shadow-lg overflow-hidden w-44"
-      style={{
-        position: 'fixed',
-        zIndex: 9999,
-        top: coords?.top ?? 0,
-        left: coords?.left ?? 0,
-        visibility: coords ? 'visible' : 'hidden',
-      }}
+      style={{ position: 'fixed', zIndex: 9999, top: coords?.top ?? 0, left: coords?.left ?? 0, visibility: coords ? 'visible' : 'hidden' }}
     >
-      {/* Primary action */}
       <button
         onClick={() => setShowMoveList((v) => !v)}
         disabled={isFinalized}
@@ -788,11 +743,8 @@ function DocRow({
         <Folder className="h-3.5 w-3.5 text-[#6B7280] flex-shrink-0" />
         Move to Folder
       </button>
-
-      {/* Folder list -- shown when "Move to Folder" is clicked */}
       {showMoveList && (
         <div className="border-t border-[0.5px] border-surface-border dark:border-dark-border max-h-48 overflow-y-auto">
-          {/* Root option: disabled when doc is already at root */}
           <button
             onClick={() => handleMove(null)}
             disabled={doc.folder_id === null}
@@ -802,7 +754,6 @@ function DocRow({
             Root level
           </button>
           {folders.map((f) => (
-            /* Each folder option: disabled when doc is already in this folder */
             <button
               key={f.id}
               onClick={() => handleMove(f.id)}
@@ -817,8 +768,6 @@ function DocRow({
           )}
         </div>
       )}
-
-      {/* Delete -- destructive action, separated from the move section */}
       <div className="border-t border-[0.5px] border-surface-border dark:border-dark-border">
         <button
           onClick={handleDelete}
@@ -833,38 +782,34 @@ function DocRow({
   )
 
   return (
-  <>
-    <div
-      draggable="true"
-      onDragStart={(e) => { e.dataTransfer.setData('text/plain', doc.id); setIsDragging(true) }}
-      onDragEnd={() => setIsDragging(false)}
-      className={cn(
-        'group flex items-center gap-3 px-3 py-2.5',
-        borderBottom ? 'border-b border-[0.5px] border-[#E5E7EB] dark:border-[#333]' : '',
-        isDragging && 'opacity-50',
-      )}
-    >
-      <FileText className="h-4 w-4 text-[#6B7280] flex-shrink-0" />
-      <div className="flex-1 min-w-0">
-        <p className="text-[12px] font-medium text-[#1F3148] dark:text-[#EDEEF0] truncate">{doc.filename}</p>
-        <p className="text-[11px] text-[#9CA3AF]">
-          {formatBytes(doc.size_bytes)}{doc.created_at ? ` · ${formatDate(doc.created_at)}` : ''}
-        </p>
-      </div>
-
-      {/* Three-dot trigger button -- hover-reveal, matching this file's hover-action pattern */}
-      <button
-        ref={triggerRef}
-        onClick={() => { setMenuOpen((v) => !v); setShowMoveList(false); setCoords(null) }}
-        className="p-1 rounded text-[#9CA3AF] hover:text-[#6B7280] dark:hover:text-[#EDEEF0] hover:bg-[#F3F4F6] dark:hover:bg-[#333] transition-colors opacity-0 group-hover:opacity-100 flex-shrink-0"
+    <>
+      <div
+        draggable="true"
+        onDragStart={(e) => { e.dataTransfer.setData('text/plain', doc.id); setIsDragging(true) }}
+        onDragEnd={() => setIsDragging(false)}
+        className={cn('group flex items-center', isDragging && 'opacity-50', doc.is_superseded && 'opacity-60')}
+        style={{ paddingTop: '11px', paddingBottom: '11px', paddingLeft: `${18 + depth * 22}px`, paddingRight: '18px' }}
       >
-        <MoreVertical className="h-3.5 w-3.5" />
-      </button>
-
-      {menuOpen && createPortal(dropdown, document.body)}
-    </div>
-    {ConfirmDialog}
-  </>
+        <div className="flex-1 flex items-center gap-[9px] min-w-0">
+          {fileIconFromContentType(doc.content_type)}
+          <span className="text-[13.5px] font-medium text-[#111827] dark:text-[#EDEEF0] truncate">{doc.filename}</span>
+        </div>
+        <div className="w-[130px] flex-shrink-0 text-[12.5px] text-[#9CA3AF]">
+          {doc.created_at ? formatDate(doc.created_at) : ''}
+        </div>
+        <div className="w-6 flex-shrink-0 flex items-center justify-center">
+          <button
+            ref={triggerRef}
+            onClick={() => { setMenuOpen((v) => !v); setShowMoveList(false); setCoords(null) }}
+            className="text-[#D1D5DB] hover:text-[#6B7280] dark:hover:text-[#EDEEF0] transition-colors opacity-0 group-hover:opacity-100"
+          >
+            <MoreVertical className="h-4 w-4" />
+          </button>
+        </div>
+        {menuOpen && createPortal(dropdown, document.body)}
+      </div>
+      {ConfirmDialog}
+    </>
   )
 }
 
@@ -883,28 +828,75 @@ export function FolderBrowser({
   const [folders, setFolders] = useState<BrowserFolder[]>([])
   const [foldersLoading, setFoldersLoading] = useState(true)
   const [docs, setDocs] = useState<BrowserDoc[]>([])
-  const [docsLoading, setDocsLoading] = useState(true)
-  const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null)
-  const [folderPath, setFolderPath] = useState<{ id: string; name: string }[]>([])
+  const [expandedFolderIds, setExpandedFolderIds] = useState<Set<string>>(new Set())
+  const [targetFolderId, setTargetFolderId] = useState<string | null>(null)
+  const [navigationRootId, setNavigationRootId] = useState<string | null>(null)
   const [showNewFolder, setShowNewFolder] = useState(false)
   const [showUpload, setShowUpload] = useState(false)
   const [bulkImporting, setBulkImporting] = useState(false)
   const bulkImportRef = useRef<HTMLInputElement>(null)
   const [showArchived, setShowArchived] = useState(false)
-  const [rootDragOver, setRootDragOver] = useState(false)
 
-  // Build a folder lookup map for path resolution
-  const folderById: Record<string, BrowserFolder> = {}
-  for (const f of folders) folderById[f.id] = f
-
-  // Build children map for tree rendering
+  // childrenOf map: used both for visibleRows and passed to FlatFolderRow for
+  // the cycle-exclusion check in the destination picker.
   const childrenOf: Record<string, BrowserFolder[]> = {}
   for (const f of folders) {
     const key = f.parent_folder_id ?? '__root__'
     if (!childrenOf[key]) childrenOf[key] = []
     childrenOf[key].push(f)
   }
-  const rootFolders = childrenOf['__root__'] ?? []
+
+  // Breadcrumb path from true root to the currently navigated folder.
+  const navigationPath: BrowserFolder[] = []
+  if (navigationRootId) {
+    const folderById: Record<string, BrowserFolder> = {}
+    for (const f of folders) folderById[f.id] = f
+    let current: BrowserFolder | undefined = folderById[navigationRootId]
+    while (current) {
+      navigationPath.unshift(current)
+      current = current.parent_folder_id ? folderById[current.parent_folder_id] : undefined
+    }
+  }
+
+  // Effective folder for Upload/New Folder/bulk import:
+  // (1) a row was single-clicked (targetFolderId), else
+  // (2) the folder being viewed (navigationRootId), else
+  // (3) true root (null).
+  const effectiveFolderId = targetFolderId ?? navigationRootId
+
+  // Flat ordered row array for the table. Scoped to navigationRootId when set,
+  // otherwise walks from true root.
+  const visibleRows = useMemo<FlatRow[]>(() => {
+    const localChildrenOf: Record<string, BrowserFolder[]> = {}
+    for (const f of folders) {
+      const key = f.parent_folder_id ?? '__root__'
+      if (!localChildrenOf[key]) localChildrenOf[key] = []
+      localChildrenOf[key].push(f)
+    }
+    const localRootFolders = localChildrenOf['__root__'] ?? []
+
+    const shown = showArchived ? docs : docs.filter((d) => !d.is_superseded)
+    const rows: FlatRow[] = []
+
+    function addFolder(folder: BrowserFolder, depth: number) {
+      const children = localChildrenOf[folder.id] ?? []
+      const docsHere = shown.filter((d) => d.folder_id === folder.id)
+      const hasChildren = children.length > 0 || docsHere.length > 0
+      rows.push({ kind: 'folder', folder, depth, hasChildren })
+      if (expandedFolderIds.has(folder.id)) {
+        for (const child of children) addFolder(child, depth + 1)
+        for (const doc of docsHere) rows.push({ kind: 'doc', doc, depth: depth + 1 })
+      }
+    }
+
+    const startFolders = navigationRootId
+      ? (localChildrenOf[navigationRootId] ?? [])
+      : localRootFolders
+    for (const f of startFolders) addFolder(f, 0)
+    const rootDocs = shown.filter((d) => d.folder_id === navigationRootId)
+    for (const doc of rootDocs) rows.push({ kind: 'doc', doc, depth: 0 })
+    return rows
+  }, [folders, docs, expandedFolderIds, showArchived, navigationRootId])
 
   const fetchFolders = useCallback(async () => {
     setFoldersLoading(true)
@@ -922,7 +914,6 @@ export function FolderBrowser({
   }, [scope, engagementId, clientId])
 
   const fetchDocs = useCallback(async () => {
-    setDocsLoading(true)
     try {
       const params: Record<string, unknown> = { scope, limit: 200 }
       if (engagementId) params.engagement_id = engagementId
@@ -944,8 +935,6 @@ export function FolderBrowser({
       )
     } catch {
       setDocs([])
-    } finally {
-      setDocsLoading(false)
     }
   }, [scope, engagementId, clientId])
 
@@ -954,28 +943,15 @@ export function FolderBrowser({
     fetchDocs()
   }, [fetchFolders, fetchDocs])
 
-  function handleSelectFolder(f: BrowserFolder) {
-    setSelectedFolderId(f.id)
-    setShowArchived(false)
-    // Build breadcrumb path by walking parent chain
-    const path: { id: string; name: string }[] = []
-    let current: BrowserFolder | undefined = f
-    while (current) {
-      path.unshift({ id: current.id, name: current.name })
-      current = current.parent_folder_id ? folderById[current.parent_folder_id] : undefined
-    }
-    setFolderPath(path)
+  function toggleFolder(id: string) {
+    setExpandedFolderIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
   }
 
-  function handleSelectRoot() {
-    setSelectedFolderId(null)
-    setFolderPath([])
-    setShowArchived(false)
-  }
-
-  // Shared move logic for drag-and-drop. DocRow's three-dot menu uses its own
-  // handleMove (has all context locally); drag targets use this lifted version
-  // so the API call, toasts, and refresh are not duplicated across drop sites.
   async function moveDoc(docId: string, targetFolderId: string | null, targetFolderName: string | null) {
     const doc = docs.find((d) => d.id === docId)
     if (!doc) return
@@ -999,7 +975,7 @@ export function FolderBrowser({
       }
       if (engagementId) payload.engagement_id = engagementId
       if (clientId) payload.client_id = clientId
-      if (selectedFolderId) payload.destination_folder_id = selectedFolderId
+      if (effectiveFolderId) payload.destination_folder_id = effectiveFolderId
       const batch = await importBatchesApi.create(payload)
       const reviewPath = scope === 'engagement'
         ? `/engagements/${engagementId}/import-review?batch=${batch.id}`
@@ -1014,22 +990,18 @@ export function FolderBrowser({
     }
   }
 
-  // Files in the currently selected folder (or root files when null)
-  const docsInCurrentFolder = docs.filter((d) => d.folder_id === selectedFolderId)
-  const activeDocs = docsInCurrentFolder.filter((d) => !d.is_superseded)
-  const archivedDocs = docsInCurrentFolder.filter((d) => d.is_superseded)
-
   if (foldersLoading) {
     return (
       <div className="mt-4">
-        <div className="flex items-center justify-between mb-1">
-          <span className="text-[13px] font-medium text-[#1F3148] dark:text-[#EDEEF0]">Folders</span>
-        </div>
-        <p className="text-[12px] text-[#6B7280] mb-3">{scope === 'engagement' ? 'Where all engagement files live, including files approved from client uploads.' : 'Permanent files for this client, kept separate from any single engagement.'}</p>
-        <div className="rounded-[10px] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] p-3 space-y-1.5">
-          {[1, 2, 3].map((i) => (
-            <div key={i} className="h-7 bg-[#E4E6EA] dark:bg-[#2D2D2D] animate-pulse rounded" />
-          ))}
+        <div className="rounded-[12px] border border-[#E5E7EB] dark:border-[#484848] bg-white dark:bg-[#252525] overflow-hidden shadow-[0_1px_3px_rgba(0,0,0,0.05)]">
+          <div className="flex items-center px-[18px] py-[10px] border-b border-[#F3F4F6] dark:border-[#333]">
+            <div className="flex-1 h-3 bg-[#E4E6EA] dark:bg-[#2D2D2D] animate-pulse rounded" />
+          </div>
+          <div className="p-4 space-y-2">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="h-9 bg-[#E4E6EA] dark:bg-[#2D2D2D] animate-pulse rounded" />
+            ))}
+          </div>
         </div>
       </div>
     )
@@ -1037,22 +1009,28 @@ export function FolderBrowser({
 
   return (
     <div className="mt-4">
-      {/* Section header with New Folder button */}
-      <div className="flex items-center justify-between mb-1">
-        <span className="text-[13px] font-medium text-[#1F3148] dark:text-[#EDEEF0]">Folders</span>
-        {/* Upload and New Folder buttons are absent (not disabled) when the engagement is finalized */}
+      {/* Header: title, subtitle, action buttons */}
+      <div className="flex items-start justify-between mb-[18px]">
+        <div>
+          <h2 className="text-[17px] font-semibold text-[#111827] dark:text-[#EDEEF0] mb-[3px]">Documents</h2>
+          <p className="text-[12.5px] text-[#6B7280]">
+            {scope === 'engagement'
+              ? 'Where all engagement files live, including files approved from client uploads.'
+              : 'Permanent files for this client, kept separate from any single engagement.'}
+          </p>
+        </div>
         {!isFinalized && (
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-shrink-0 ml-4">
             <button
               onClick={() => setShowUpload(true)}
-              className="flex items-center gap-1.5 h-7 px-2.5 rounded-[6px] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] text-[12px] text-[#6B7280] hover:text-brand dark:hover:text-[#EDEEF0] hover:border-brand dark:hover:border-[#4A7FA5] transition-colors"
+              className="flex items-center gap-[5px] bg-white dark:bg-[#252525] border border-[#E5E7EB] dark:border-[#484848] rounded-[8px] text-[#374151] dark:text-[#EDEEF0] text-[12.5px] font-medium px-[14px] py-[7px] shadow-[0_1px_2px_rgba(0,0,0,0.04)] hover:bg-[#F9FAFB] dark:hover:bg-[#2D2D2D] transition-colors"
             >
               <Upload className="h-3.5 w-3.5" />
               Upload
             </button>
             <button
               onClick={() => setShowNewFolder(true)}
-              className="flex items-center gap-1.5 h-7 px-2.5 rounded-[6px] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] text-[12px] text-[#6B7280] hover:text-brand dark:hover:text-[#EDEEF0] hover:border-brand dark:hover:border-[#4A7FA5] transition-colors"
+              className="flex items-center gap-[5px] bg-white dark:bg-[#252525] border border-[#E5E7EB] dark:border-[#484848] rounded-[8px] text-[#374151] dark:text-[#EDEEF0] text-[12.5px] font-medium px-[14px] py-[7px] shadow-[0_1px_2px_rgba(0,0,0,0.04)] hover:bg-[#F9FAFB] dark:hover:bg-[#2D2D2D] transition-colors"
             >
               <FolderPlus className="h-3.5 w-3.5" />
               New Folder
@@ -1060,7 +1038,7 @@ export function FolderBrowser({
             <button
               onClick={() => bulkImportRef.current?.click()}
               disabled={bulkImporting}
-              className="flex items-center gap-1.5 h-7 px-2.5 rounded-[6px] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] text-[12px] text-[#6B7280] hover:text-brand dark:hover:text-[#EDEEF0] hover:border-brand dark:hover:border-[#4A7FA5] transition-colors disabled:opacity-50"
+              className="flex items-center gap-[5px] bg-[#1F3148] dark:bg-brand-btn rounded-[8px] text-white text-[12.5px] font-medium px-[14px] py-[7px] hover:opacity-90 transition-opacity disabled:opacity-50"
             >
               <FolderInput className="h-3.5 w-3.5" />
               {bulkImporting ? 'Importing...' : 'Bulk Import'}
@@ -1068,112 +1046,112 @@ export function FolderBrowser({
           </div>
         )}
       </div>
-      <p className="text-[12px] text-[#6B7280] mb-3">{scope === 'engagement' ? 'Where all engagement files live, including files approved from client uploads.' : 'Permanent files for this client, kept separate from any single engagement.'}</p>
 
-      {rootFolders.length === 0 ? (
-        /* No folders exist: show a minimal empty state with just the file list */
-        <div className="rounded-[10px] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] overflow-hidden">
-          <div className={cn(
-            'px-3 py-2',
-            isFinalized
-              ? 'bg-amber-100 dark:bg-amber-900/30'
-              : 'bg-[#E4E6EA] dark:bg-[#2D2D2D]',
-          )}>
-            <p className={cn(
-              'text-[12px]',
-              isFinalized
-                ? 'font-medium text-amber-700 dark:text-amber-400'
-                : 'text-[#9CA3AF]',
-            )}>
-              {isFinalized
-                ? 'This engagement is finalized -- no new folders can be created.'
-                : 'No folders yet. Click "New Folder" to create one.'}
-            </p>
-          </div>
-          {renderFilePanel(activeDocs, archivedDocs, docsLoading)}
-        </div>
-      ) : (
-        <div className="rounded-[10px] border border-[0.5px] border-[#C8CDD6] dark:border-[#484848] overflow-hidden">
-          {/* Folder tree */}
-          <div className="bg-[#E4E6EA] dark:bg-[#2D2D2D] p-2">
-            <div
-              className={cn(
-                'flex items-center gap-1.5 px-2 py-1.5 rounded cursor-pointer text-[13px] transition-colors select-none',
-                selectedFolderId === null
-                  ? 'bg-surface-input dark:bg-dark-card text-brand dark:text-[#EDEEF0] font-medium'
-                  : 'text-[#6B7280] hover:bg-surface-input dark:hover:bg-dark-card hover:text-brand dark:hover:text-[#EDEEF0]',
-                rootDragOver && 'ring-2 ring-inset ring-brand',
+      {/* Navigation breadcrumb -- visible when navigated into a subfolder */}
+      {navigationRootId && (
+        <nav className="flex items-center gap-1.5 text-[13px] mb-3">
+          <button
+            onClick={() => { setNavigationRootId(null); setTargetFolderId(null); setExpandedFolderIds(new Set()) }}
+            className="text-[#6B7280] hover:text-brand dark:hover:text-[#EDEEF0] transition-colors"
+          >
+            All
+          </button>
+          {navigationPath.map((folder, i) => (
+            <span key={folder.id} className="flex items-center gap-1.5">
+              <span className="text-[#9CA3AF]">/</span>
+              {i < navigationPath.length - 1 ? (
+                <button
+                  onClick={() => { setNavigationRootId(folder.id); setTargetFolderId(null); setExpandedFolderIds(new Set()) }}
+                  className="text-[#6B7280] hover:text-brand dark:hover:text-[#EDEEF0] transition-colors"
+                >
+                  {folder.name}
+                </button>
+              ) : (
+                <span className="text-brand dark:text-[#EDEEF0] font-medium">{folder.name}</span>
               )}
-              onClick={handleSelectRoot}
-              onDragOver={(e) => { e.preventDefault(); setRootDragOver(true) }}
-              onDragLeave={() => setRootDragOver(false)}
-              onDrop={(e) => {
-                e.preventDefault()
-                setRootDragOver(false)
-                if (isFinalized) return
-                const docId = e.dataTransfer.getData('text/plain')
-                if (docId) moveDoc(docId, null, null)
-              }}
-            >
-              <Folder className="h-3.5 w-3.5 flex-shrink-0" />
-              <span>All folders</span>
-            </div>
-            {rootFolders.map((f) => (
-              <FolderNode
-                key={f.id}
-                folder={f}
-                depth={1}
-                selectedId={selectedFolderId}
-                onSelect={handleSelectFolder}
-                childrenOf={childrenOf}
-                onDropDoc={moveDoc}
-                isFinalized={isFinalized}
-                onFolderDeleted={fetchFolders}
-                folders={folders}
-              />
-            ))}
-          </div>
-
-          {/* Breadcrumb path for selected folder */}
-          {folderPath.length > 0 && (
-            <div className="flex items-center gap-1 px-3 py-2 border-t border-[0.5px] border-[#D5D8DE] dark:border-[#383838] bg-white dark:bg-[#252525] flex-wrap">
-              <button
-                onClick={handleSelectRoot}
-                className="text-[11px] text-[#9CA3AF] hover:text-brand transition-colors"
-              >
-                All
-              </button>
-              {folderPath.map((seg, i) => (
-                <span key={seg.id} className="flex items-center gap-1">
-                  <ChevronRight className="h-3 w-3 text-[#9CA3AF]" />
-                  {i < folderPath.length - 1 ? (
-                    <button
-                      onClick={() => {
-                        const f = folderById[seg.id]
-                        if (f) handleSelectFolder(f)
-                      }}
-                      className="text-[11px] text-[#9CA3AF] hover:text-brand transition-colors"
-                    >
-                      {seg.name}
-                    </button>
-                  ) : (
-                    <span className="text-[11px] font-medium text-brand dark:text-[#EDEEF0]">{seg.name}</span>
-                  )}
-                </span>
-              ))}
-            </div>
-          )}
-
-          {renderFilePanel(activeDocs, archivedDocs, docsLoading)}
-        </div>
+            </span>
+          ))}
+        </nav>
       )}
+
+      {/* Flat table card */}
+      <div className="rounded-[12px] border border-[#E5E7EB] dark:border-[#484848] bg-white dark:bg-[#252525] overflow-hidden shadow-[0_1px_3px_rgba(0,0,0,0.05)]">
+        {/* Column headers */}
+        <div className="flex items-center px-[18px] py-[10px] border-b border-[#F3F4F6] dark:border-[#333]">
+          <div className="flex-1 text-[11px] font-semibold tracking-[0.04em] text-[#9CA3AF] uppercase">Name</div>
+          <div className="w-[130px] flex-shrink-0 text-[11px] font-semibold tracking-[0.04em] text-[#9CA3AF] uppercase">Updated</div>
+          <div className="w-6 flex-shrink-0" />
+        </div>
+
+        {/* Rows */}
+        {visibleRows.length === 0 ? (
+          <p className="px-[18px] py-3 text-[12px] text-[#9CA3AF]">
+            {isFinalized ? 'This engagement is finalized.' : navigationRootId ? 'This folder is empty.' : 'No files or folders yet.'}
+          </p>
+        ) : (
+          visibleRows.flatMap((row, i) => {
+            const key = row.kind === 'folder' ? `folder-${row.folder.id}` : `doc-${row.doc.id}`
+            const divider = i > 0
+              ? <div key={`div-${key}`} className="h-px bg-[#F9FAFB] dark:bg-[#333] mx-[18px]" />
+              : null
+            const rowEl = row.kind === 'folder'
+              ? (
+                <FlatFolderRow
+                  key={key}
+                  folder={row.folder}
+                  depth={row.depth}
+                  hasChildren={row.hasChildren}
+                  isExpanded={expandedFolderIds.has(row.folder.id)}
+                  onToggle={toggleFolder}
+                  isTargeted={targetFolderId === row.folder.id}
+                  onTarget={() => setTargetFolderId((prev) => (prev === row.folder.id ? null : row.folder.id))}
+                  onNavigate={() => { setNavigationRootId(row.folder.id); setTargetFolderId(null); setExpandedFolderIds(new Set()) }}
+                  folders={folders}
+                  childrenOf={childrenOf}
+                  onDropDoc={moveDoc}
+                  onFolderChanged={() => { fetchFolders(); fetchDocs() }}
+                  isFinalized={isFinalized}
+                />
+              )
+              : (
+                <FlatDocRow
+                  key={key}
+                  doc={row.doc}
+                  depth={row.depth}
+                  folders={folders}
+                  fetchDocs={fetchDocs}
+                  isFinalized={isFinalized}
+                />
+              )
+            return divider ? [divider, rowEl] : [rowEl]
+          })
+        )}
+
+        {/* Archived toggle */}
+        {showArchivedToggle && docs.some((d) => d.is_superseded) && (
+          <div className="flex items-center gap-2 px-[18px] py-[10px] border-t border-[#F3F4F6] dark:border-[#333]">
+            <span className="text-[11px] font-medium text-[#9CA3AF] uppercase tracking-[0.05em]">
+              Archived ({docs.filter((d) => d.is_superseded).length})
+            </span>
+            <button
+              onClick={() => setShowArchived((v) => !v)}
+              className="p-0.5 rounded text-[#9CA3AF] hover:text-brand transition-colors"
+            >
+              {showArchived
+                ? <ChevronUp className="h-3.5 w-3.5" />
+                : <ChevronDown className="h-3.5 w-3.5" />
+              }
+            </button>
+          </div>
+        )}
+      </div>
 
       {showNewFolder && (
         <NewFolderModal
           scope={scope}
           engagementId={engagementId}
           clientId={clientId}
-          parentFolderId={selectedFolderId}
+          parentFolderId={effectiveFolderId}
           onClose={() => setShowNewFolder(false)}
           onCreated={handleFolderCreated}
         />
@@ -1193,81 +1171,11 @@ export function FolderBrowser({
           scope={scope}
           engagementId={engagementId}
           clientId={clientId}
-          currentFolderId={selectedFolderId}
+          currentFolderId={effectiveFolderId}
           onClose={() => setShowUpload(false)}
           onUploaded={fetchDocs}
         />
       )}
     </div>
   )
-
-  // Render the file list panel (active docs + optional archived toggle)
-  function renderFilePanel(
-    active: BrowserDoc[],
-    archived: BrowserDoc[],
-    loading: boolean,
-  ) {
-    return (
-      <div className="bg-white dark:bg-[#252525] border-t border-[0.5px] border-[#D5D8DE] dark:border-[#383838]">
-        {loading ? (
-          <div className="p-3 space-y-2">
-            {[1, 2].map((i) => (
-              <div key={i} className="h-8 bg-[#E4E6EA] dark:bg-[#2D2D2D] animate-pulse rounded" />
-            ))}
-          </div>
-        ) : active.length === 0 && archived.length === 0 ? (
-          <p className="px-3 py-3 text-[12px] text-[#9CA3AF]">
-            {selectedFolderId ? 'No files in this folder.' : 'No files at the root level.'}
-          </p>
-        ) : (
-          <>
-            {active.map((doc, i) => (
-              <DocRow
-                key={doc.id}
-                doc={doc}
-                borderBottom={i < active.length - 1 || (showArchivedToggle ? archived.length > 0 : false)}
-                folders={folders}
-                fetchDocs={fetchDocs}
-                isFinalized={isFinalized}
-              />
-            ))}
-
-            {/* Archived docs toggle -- only rendered when showArchivedToggle prop is true */}
-            {showArchivedToggle && archived.length > 0 && (
-              <>
-                <div className="flex items-center gap-2 px-3 py-2 border-t border-[0.5px] border-[#E5E7EB] dark:border-[#333]">
-                  <span className="text-[11px] font-medium text-[#9CA3AF] uppercase tracking-[0.05em]">
-                    Archived ({archived.length})
-                  </span>
-                  <button
-                    onClick={() => setShowArchived((v) => !v)}
-                    className="p-0.5 rounded text-[#9CA3AF] hover:text-brand transition-colors"
-                  >
-                    {showArchived
-                      ? <ChevronUp className="h-3.5 w-3.5" />
-                      : <ChevronDown className="h-3.5 w-3.5" />
-                    }
-                  </button>
-                </div>
-                {showArchived && (
-                  <div style={{ opacity: 0.6 }}>
-                    {archived.map((doc, i) => (
-                      <DocRow
-                        key={doc.id}
-                        doc={doc}
-                        borderBottom={i < archived.length - 1}
-                        folders={folders}
-                        fetchDocs={fetchDocs}
-                        isFinalized={isFinalized}
-                      />
-                    ))}
-                  </div>
-                )}
-              </>
-            )}
-          </>
-        )}
-      </div>
-    )
-  }
 }
