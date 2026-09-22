@@ -11,6 +11,7 @@ from app.core.enums import (
     LeadStage,
     LeadLostReason,
     ReferralSource,
+    SourcePlacement,
     SourcePlatform,
     LeadProvenance,
 )
@@ -97,6 +98,10 @@ class LeadOut(LeadBase):
     id: uuid.UUID
     firm_id: uuid.UUID
     provenance: LeadProvenance
+    # Read-only. Derived at public intake from the UTM tags and never
+    # accepted from a client, which is why it appears here and not on
+    # LeadBase (R3, Sep 17, 2026).
+    source_placement: Optional[SourcePlacement] = None
     first_response_time: Optional[int] = None
     converted_client_id: Optional[uuid.UUID] = None
     created_at: datetime

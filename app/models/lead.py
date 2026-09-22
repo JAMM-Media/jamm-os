@@ -12,6 +12,7 @@ from app.core.enums import (
     LeadStage,
     LeadLostReason,
     ReferralSource,
+    SourcePlacement,
     SourcePlatform,
     LeadProvenance,
 )
@@ -60,6 +61,15 @@ class Lead(Base):
         nullable=True,
     )
 
+    # Derived from the UTM tags at public intake only, never asked of a
+    # human: absent from LeadBase, LeadCreate and LeadUpdate, present on
+    # LeadOut (R3, Sep 17, 2026). A staff POST or PATCH carrying a
+    # source_placement key is ignored rather than refused.
+    source_placement: Mapped[Optional[SourcePlacement]] = mapped_column(
+        sa.Enum(SourcePlacement, name="sourceplacement", native_enum=False),
+        nullable=True,
+    )
+
     # UTM parameters stored verbatim per CRM contract Section 8.
     utm_campaign: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     utm_source: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
@@ -85,10 +95,9 @@ class Lead(Base):
         nullable=True,
     )
 
-    # Freeform for now. Engagement.engagement_type is a plain String column
-    # with no enum class (EFILEABLE_ENGAGEMENT_TYPES is a set, not an Enum).
-    # A future alignment opportunity exists once firm service types stabilize
-    # into a shared enum.
+    # Not freeform: validated against the EngagementType vocabulary on both
+    # LeadCreate and LeadUpdate. See validate_service_interest in
+    # app/schemas/lead.py, which is the only door onto this column.
     service_interest: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
 
     # Mirrors Client.entity_type's exact convention.

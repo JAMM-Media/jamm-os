@@ -1,6 +1,6 @@
 # app/services/client_service.py
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from uuid import UUID
 from sqlalchemy import select, func
 from sqlalchemy.orm import Session
@@ -122,6 +122,7 @@ def import_clients_csv(
         country = row.get("country", "").strip() or None
         tags = row.get("tags", "").strip() or None
         notes = row.get("notes", "").strip() or None
+        client_since_raw = (row.get("client_since") or "").strip()
 
         # Validate entity_type if provided
         if entity_type and entity_type not in VALID_ENTITY_TYPES:
@@ -131,6 +132,21 @@ def import_clients_csv(
                           f"Must be one of: {', '.join(sorted(VALID_ENTITY_TYPES))}",
             })
             continue
+
+        # client_since is ISO YYYY-MM-DD. An unparseable value is a row
+        # error in the same shape entity_type uses, never an exception:
+        # one bad date must not take down the rest of the import.
+        client_since = None
+        if client_since_raw:
+            try:
+                client_since = date.fromisoformat(client_since_raw)
+            except ValueError:
+                errors.append({
+                    "row": i,
+                    "reason": f"Invalid client_since '{client_since_raw}'. "
+                              f"Use YYYY-MM-DD.",
+                })
+                continue
 
         # Deduplicate on email
         if email and email.lower() in existing_emails:
@@ -154,6 +170,7 @@ def import_clients_csv(
                 country=country,
                 tags=tags,
                 notes=notes,
+                client_since=client_since,
                 is_active=True,
             )
             db.add(new_client)

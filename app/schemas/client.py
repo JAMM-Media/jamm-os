@@ -33,6 +33,10 @@ class ClientBase(BaseModel):
     entity_type: Optional[str] = None
     entity_subtype: Optional[str] = None
     business_description: Optional[str] = None
+    # Firm-entered, optional, and read by nothing yet (R8, Sep 17, 2026).
+    # Distinct from created_at: this is when the client's relationship with
+    # the FIRM began, which predates their arrival in JAMM.
+    client_since: Optional[date] = None
     referral_source: Optional[ReferralSource] = None
     referring_client_id: Optional[UUID] = None
 
@@ -88,6 +92,10 @@ class ClientUpdate(BaseModel):
     entity_type: Optional[str] = None
     entity_subtype: Optional[str] = None
     business_description: Optional[str] = None
+    # Firm-entered, optional, and read by nothing yet (R8, Sep 17, 2026).
+    # Distinct from created_at: this is when the client's relationship with
+    # the FIRM began, which predates their arrival in JAMM.
+    client_since: Optional[date] = None
     referral_source: Optional[ReferralSource] = None
     referring_client_id: Optional[UUID] = None
 

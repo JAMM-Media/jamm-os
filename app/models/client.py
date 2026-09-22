@@ -1,10 +1,10 @@
 # app/models/client.py
 
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Optional
 import sqlalchemy as sa
-from sqlalchemy import String, Boolean, DateTime, ForeignKey
+from sqlalchemy import String, Boolean, Date, DateTime, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base_class import Base
@@ -77,6 +77,12 @@ class Client(Base):
     )
 
     business_description: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+    client_since: Mapped[Optional[date]] = mapped_column(
+        Date,
+        nullable=True,
+        comment="Firm-entered date this client has been with the firm; distinct from created_at, which records when the client entered JAMM. Read by nothing as of Sep 2026.",
+    )
 
     tags: Mapped[str | None] = mapped_column(String(500))
     notes: Mapped[str | None] = mapped_column(String(2000))

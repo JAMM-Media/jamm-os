@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.models.lead import Lead
 from app.schemas.lead import LeadCreate, LeadUpdate
-from app.core.enums import LeadProvenance, LeadStage
+from app.core.enums import LeadProvenance, LeadStage, SourcePlacement
 
 # Precedence order for provenance tiers. Higher number wins.
 # crm_lead is the most trusted (system-captured), client_reported is the least.
@@ -44,6 +44,7 @@ def create_lead(
     lead_in: LeadCreate,
     firm_id: UUID,
     provenance: LeadProvenance,
+    source_placement: Optional[SourcePlacement] = None,
 ) -> Lead:
     """Create a lead with an explicitly-supplied provenance.
 
@@ -51,6 +52,12 @@ def create_lead(
     makes it structurally impossible for a caller to claim a higher-trust
     provenance than the endpoint allows -- the service layer decides, the
     payload never does.
+
+    source_placement follows the same structural pattern for the same
+    reason (R3, Sep 17, 2026): it is derived from the UTM tags at public
+    intake and must never be settable from a payload. LeadCreate has no
+    such field, so a staff body carrying one is dropped by Pydantic long
+    before it reaches here, and this argument is the only way in.
     """
     data = lead_in.model_dump(exclude={"provenance"})
     # Unwrap enum members to their string values for the VARCHAR-backed columns.
@@ -58,7 +65,14 @@ def create_lead(
         v = data.get(field)
         if v is not None:
             data[field] = getattr(v, "value", v)
-    lead = Lead(**data, firm_id=firm_id, provenance=provenance.value)
+    # source_placement is unwrapped here rather than in the loop above,
+    # because it arrives as a kwarg and never passes through data.
+    lead = Lead(
+        **data,
+        firm_id=firm_id,
+        provenance=provenance.value,
+        source_placement=getattr(source_placement, "value", source_placement),
+    )
     db.add(lead)
     db.commit()
     db.refresh(lead)

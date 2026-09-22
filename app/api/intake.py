@@ -15,7 +15,11 @@ from app.core.enums import LeadProvenance
 from app.schemas.intake_pricing_config import IntakePricingConfigOut
 from app.schemas.lead import LeadCreate
 from app.services.behavioral_log import log_event
-from app.services.lead_attribution import derive_source_platform
+from app.services.lead_attribution import (
+    derive_referral_source,
+    derive_source_placement,
+    derive_source_platform,
+)
 from app.services.pricing_config_service import get_public_intake_config
 
 # _derive_source_platform moved to app/services/lead_attribution.py on
@@ -155,10 +159,28 @@ def intake_submit(
         )
 
     # d. Create lead with crm_lead provenance.
-    # referral_source is left null -- we do not attempt to map raw UTM strings
-    # to ReferralSource enum values in this task. That mapping is a deliberate
-    # design decision the CRM contract does not specify yet.
-    derived_platform = _derive_source_platform(body.utm_source)
+    #
+    # All three attribution derivations run HERE and only here (R7,
+    # Sep 17, 2026): derivation is a property of how the lead arrived, so
+    # it happens once, at public intake creation. A later staff edit to
+    # any UTM field does NOT re-derive any of the three -- the firm's own
+    # correction must not be overwritten by a machine reading of a tag.
+    derived_platform = derive_source_platform(body.utm_source)
+    derived_placement = derive_source_placement(
+        body.utm_content, body.utm_term, body.utm_medium
+    )
+    # Layer 1 from the derived platform plus utm_medium (R5). None means
+    # not knowable, and the null stands; the all-five-empty case is the
+    # one that answers website. This replaces the former comment claiming
+    # the CRM contract does not specify the mapping, which R5 now does.
+    derived_referral_source = derive_referral_source(
+        derived_platform,
+        body.utm_source,
+        body.utm_medium,
+        body.utm_campaign,
+        body.utm_content,
+        body.utm_term,
+    )
     lead_in = LeadCreate(
         name=body.name,
         email=body.email,
@@ -172,11 +194,17 @@ def intake_submit(
         utm_term=body.utm_term,
         provenance=LeadProvenance.crm_lead,
     )
+    # Fills an empty value only (R5). A new lead's referral_source is
+    # always empty here, so the guard is about intent rather than need:
+    # a derivation that answers None must leave the field alone.
+    if derived_referral_source is not None:
+        lead_in.referral_source = derived_referral_source
     lead = create_lead(
         db=db,
         lead_in=lead_in,
         firm_id=firm.id,
         provenance=LeadProvenance.crm_lead,
+        source_placement=derived_placement,
     )
 
     # e. Behavioral event.
