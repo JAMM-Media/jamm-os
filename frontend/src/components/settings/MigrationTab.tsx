@@ -219,7 +219,7 @@ function CsvImportSection() {
       <div>
         <p className="text-[13px] font-[500] text-brand dark:text-[#EDEEF0]">Import Clients from CSV</p>
         <p className="text-[12px] text-[#6B7280] mt-1">
-          Upload a CSV file with your client list. Required column: name. Optional columns: email, phone, entity_type (individual, business, trust, or estate), company_name, address_line1, address_line2, city, state, postal_code, country, tags, notes. Maximum 500 clients per import.
+          Upload a CSV file with your client list. Required column: name. Optional columns: email, phone, entity_type (individual, business, trust, estate, or non_profit), company_name, address_line1, address_line2, city, state, postal_code, country, tags, notes, client_since (YYYY-MM-DD). Maximum 500 clients per import.
         </p>
       </div>
 

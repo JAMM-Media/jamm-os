@@ -58,6 +58,7 @@ interface FormState {
   entity_type: string
   entity_subtype: string
   business_description: string
+  client_since: string
 }
 
 interface FormErrors {
@@ -83,6 +84,7 @@ export function NewClientModal({ open, onClose, onAdd, initialName, initialEmail
     entity_type: '',
     entity_subtype: '',
     business_description: '',
+    client_since: '',
   })
 
   useEffect(() => {
@@ -110,7 +112,7 @@ export function NewClientModal({ open, onClose, onAdd, initialName, initialEmail
 
   function handleClose() {
     setFormDirty(false)
-    setForm({ name: '', email: '', phone: '', entity_type: '', entity_subtype: '', business_description: '' })
+    setForm({ name: '', email: '', phone: '', entity_type: '', entity_subtype: '', business_description: '', client_since: '' })
     setErrors({})
     onClose()
   }
@@ -131,6 +133,7 @@ export function NewClientModal({ open, onClose, onAdd, initialName, initialEmail
         entity_type: form.entity_type || undefined,
         entity_subtype: form.entity_subtype || undefined,
         business_description: form.business_description.trim() || undefined,
+        client_since: form.client_since || undefined,
       })
       onAdd(newClient)
       handleClose()
@@ -200,6 +203,14 @@ export function NewClientModal({ open, onClose, onAdd, initialName, initialEmail
             />
           </FormField>
         )}
+
+        <FormField label="Client since">
+          <TextInput
+            type="date"
+            value={form.client_since}
+            onChange={(e) => handleChange('client_since', e.target.value)}
+          />
+        </FormField>
 
         <FormField label="What does this client's business do? (optional)">
           <TextInput

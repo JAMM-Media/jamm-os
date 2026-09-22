@@ -17,6 +17,9 @@ export interface Client {
   entityType: string | null
   entitySubtype: string | null
   businessDescription: string | null
+  // ISO date string (YYYY-MM-DD) or null. Distinct from createdAt:
+  // when the client joined the FIRM, not when they entered JAMM.
+  clientSince: string | null
   tags: string[]
   notes: string | null
   createdAt: string
@@ -67,6 +70,7 @@ function mapClient(raw: Record<string, unknown>): Client {
     entityType: raw.entity_type ? String(raw.entity_type) : null,
     entitySubtype: raw.entity_subtype ? String(raw.entity_subtype) : null,
     businessDescription: raw.business_description ? String(raw.business_description) : null,
+    clientSince: raw.client_since ? String(raw.client_since) : null,
     tags: Array.isArray(raw.tags) ? (raw.tags as string[]) : [],
     notes: raw.notes ? String(raw.notes) : null,
     createdAt: String(raw.created_at ?? ''),
@@ -98,6 +102,7 @@ export const clientsApi = {
     entity_type?: string
     entity_subtype?: string
     business_description?: string
+    client_since?: string | null
   }): Promise<Client> => {
     const { data } = await api.post('/clients/', payload)
     return mapClient(data)

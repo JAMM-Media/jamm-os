@@ -45,6 +45,9 @@ export interface Lead {
   lostReason: string | null
   referralSource: string | null
   sourcePlatform: string | null
+  // Derived server-side at public intake. Read-only; no UI renders
+  // it as of Sep 2026.
+  sourcePlacement: string | null
   hot: boolean
   provenance: string
   serviceInterest: string | null
@@ -70,6 +73,7 @@ function mapLead(raw: Record<string, unknown>): Lead {
     lostReason: raw.lost_reason ? String(raw.lost_reason) : null,
     referralSource: raw.referral_source ? String(raw.referral_source) : null,
     sourcePlatform: raw.source_platform ? String(raw.source_platform) : null,
+    sourcePlacement: raw.source_placement ? String(raw.source_placement) : null,
     hot: Boolean(raw.hot ?? false),
     provenance: String(raw.provenance ?? ''),
     serviceInterest: raw.service_interest ? String(raw.service_interest) : null,

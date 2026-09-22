@@ -58,6 +58,7 @@ interface FormState {
   company_name: string
   notes: string
   business_description: string
+  client_since: string
 }
 
 function toFormState(client: Client): FormState {
@@ -70,6 +71,7 @@ function toFormState(client: Client): FormState {
     company_name: client.companyName ?? '',
     notes: client.notes ?? '',
     business_description: client.businessDescription ?? '',
+    client_since: client.clientSince ?? '',
   }
 }
 
@@ -111,6 +113,7 @@ export function EditClientModal({ isOpen, onClose, client, onSuccess }: EditClie
     if (form.company_name !== original.company_name) patch.company_name = form.company_name || null
     if (form.notes !== original.notes) patch.notes = form.notes || null
     if (form.business_description !== original.business_description) patch.business_description = form.business_description || null
+    if (form.client_since !== original.client_since) patch.client_since = form.client_since || null
 
     if (Object.keys(patch).length === 0) {
       onClose()
@@ -203,6 +206,14 @@ export function EditClientModal({ isOpen, onClose, client, onSuccess }: EditClie
             />
           </FormField>
         )}
+
+        <FormField label="Client since">
+          <TextInput
+            type="date"
+            value={form.client_since}
+            onChange={(e) => handleChange('client_since', e.target.value)}
+          />
+        </FormField>
 
         <FormField label="What does this client's business do? (optional)">
           <TextInput
