@@ -133,7 +133,7 @@ type FlatRow =
 // old FolderNode exactly; only the render shape changes.
 // ---------------------------------------------------------------------------
 
-function FlatFolderRow({
+export function FlatFolderRow({
   folder,
   depth,
   hasChildren,
