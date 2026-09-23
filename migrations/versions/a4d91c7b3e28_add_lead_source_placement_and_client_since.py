@@ -2,7 +2,7 @@
 """add leads.source_placement and clients.client_since
 
 Revision ID: a4d91c7b3e28
-Revises: b2c3d4e5f6a7
+Revises: eb8d785ffb8c
 Create Date: 2026-09-17 00:00:00.000000
 
 Repointed Sep 22, 2026 from down_revision 27b043fa7aa2 to b2c3d4e5f6a7. Ben's
@@ -11,6 +11,10 @@ the same parent while this branch was in flight, so both claimed 27b043fa7aa2
 and alembic reported two heads. This revision only adds two nullable
 columns to leads and clients and touches nothing in that chain, so it
 rebases onto the end of it rather than merging.
+
+Repointed again Sep 22, 2026, from b2c3d4e5f6a7 to eb8d785ffb8c, after
+Ben branched eb8d785ffb8c (document_template_status) from b2c3d4e5f6a7 as
+well, forking this revision off a second time within the same afternoon.
 
 Hand-written. Autogenerate was run first (revision 6263d8474d92) and
 discarded: it proposed 56 operations, of which only these 4 were this
@@ -38,7 +42,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = "a4d91c7b3e28"
-down_revision: Union[str, Sequence[str], None] = 'b2c3d4e5f6a7'
+down_revision: Union[str, Sequence[str], None] = 'eb8d785ffb8c'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
