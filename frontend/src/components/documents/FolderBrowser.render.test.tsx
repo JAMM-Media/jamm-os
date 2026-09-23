@@ -316,3 +316,104 @@ describe('FolderBrowser breadcrumb navigation', () => {
     expect(screen.getByText('Child Folder')).toBeInTheDocument()
   })
 })
+
+
+describe('FolderBrowser Archived toggle', () => {
+  // Fixture docs: one active (is_superseded:false), one archived (is_superseded:true).
+  const activeDocRaw = {
+    id: 'doc-active-1',
+    filename: 'Current.pdf',
+    content_type: 'application/pdf',
+    size_bytes: 1024,
+    folder_id: null,
+    created_at: '2026-09-01T10:00:00Z',
+    is_superseded: false,
+    deleted_at: null,
+  }
+  const archivedDocRaw = {
+    id: 'doc-archived-1',
+    filename: 'Archived.pdf',
+    content_type: 'application/pdf',
+    size_bytes: 512,
+    folder_id: null,
+    created_at: '2026-09-01T09:00:00Z',
+    is_superseded: true,
+    deleted_at: null,
+  }
+
+  function setupArchivedMocks(items: typeof activeDocRaw[]) {
+    vi.mocked(api.get)
+      .mockResolvedValueOnce({ data: [] })
+      .mockResolvedValueOnce({ data: { items } })
+    vi.mocked(documentFavoritesApi.list).mockResolvedValue([])
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  // (a) showArchivedToggle:false -- toggle absent even when superseded doc exists.
+  // Tests the prop half of the gate independently.
+  it('does not render the Archived toggle when showArchivedToggle is false', async () => {
+    setupArchivedMocks([activeDocRaw, archivedDocRaw])
+    render(<FolderBrowser {...browserProps} showArchivedToggle={false} />)
+    await screen.findByText('Current.pdf')
+    expect(screen.queryByText('Archived (1)')).toBeNull()
+  })
+
+  // (b) showArchivedToggle:true but zero superseded docs -- toggle absent.
+  // Tests the data half of the gate independently; distinct from (a)'s reason.
+  it('does not render the Archived toggle when no superseded documents exist', async () => {
+    setupArchivedMocks([activeDocRaw])
+    render(<FolderBrowser {...browserProps} showArchivedToggle={true} />)
+    await screen.findByText('Current.pdf')
+    expect(screen.queryByText('Archived (1)')).toBeNull()
+  })
+
+  // (c) Both conditions met: toggle appears with correct count. Active doc visible,
+  // superseded doc hidden (real default showArchived:false state).
+  it('shows "Archived (1)" toggle and hides the superseded doc by default', async () => {
+    setupArchivedMocks([activeDocRaw, archivedDocRaw])
+    render(<FolderBrowser {...browserProps} showArchivedToggle={true} />)
+    await screen.findByText('Current.pdf')
+    // Toggle present with real count.
+    expect(screen.getByText('Archived (1)')).toBeInTheDocument()
+    // Active doc visible, archived doc hidden.
+    expect(screen.queryByText('Archived.pdf')).toBeNull()
+  })
+
+  // (d) Click toggle: archived doc becomes visible AND active doc remains visible.
+  // This proves the real inclusive behavior (reveals archived alongside active),
+  // distinct from the Favorites-only switch's exclusive (narrowing) behavior.
+  it('reveals the superseded doc alongside the active doc after clicking the toggle', async () => {
+    const user = userEvent.setup()
+    setupArchivedMocks([activeDocRaw, archivedDocRaw])
+    render(<FolderBrowser {...browserProps} showArchivedToggle={true} />)
+    await screen.findByText('Current.pdf')
+    // Click the toggle button (sibling of the "Archived (1)" span).
+    const toggleBtn = screen.getByText('Archived (1)').parentElement!.querySelector('button')!
+    await user.click(toggleBtn)
+    // Both active and archived are now visible.
+    await waitFor(() => {
+      expect(screen.getByText('Archived.pdf')).toBeInTheDocument()
+    })
+    expect(screen.getByText('Current.pdf')).toBeInTheDocument()
+  })
+
+  // (e) Click toggle again: archived doc hidden, active doc still visible.
+  // Proves the toggle is reversible.
+  it('hides the superseded doc again after clicking the toggle a second time', async () => {
+    const user = userEvent.setup()
+    setupArchivedMocks([activeDocRaw, archivedDocRaw])
+    render(<FolderBrowser {...browserProps} showArchivedToggle={true} />)
+    await screen.findByText('Current.pdf')
+    const toggleBtn = screen.getByText('Archived (1)').parentElement!.querySelector('button')!
+    // Toggle on.
+    await user.click(toggleBtn)
+    await waitFor(() => expect(screen.getByText('Archived.pdf')).toBeInTheDocument())
+    // Toggle off.
+    await user.click(toggleBtn)
+    await waitFor(() => expect(screen.queryByText('Archived.pdf')).toBeNull())
+    expect(screen.getByText('Current.pdf')).toBeInTheDocument()
+  })
+})
