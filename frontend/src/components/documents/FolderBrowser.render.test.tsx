@@ -171,3 +171,43 @@ describe('FolderBrowser Favorites-only switch', () => {
     expect(screen.getByText('Beta.pdf')).toBeInTheDocument()
   })
 })
+
+describe('FolderBrowser isFinalized gates', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  // Upload, New Folder, and Bulk Import are hidden entirely (not disabled) when
+  // isFinalized is true -- the real {!isFinalized && (...)} pattern.
+  it('Upload, New Folder, and Bulk Import buttons are absent when isFinalized is true', async () => {
+    vi.mocked(api.get)
+      .mockResolvedValueOnce({ data: [] })
+      .mockResolvedValueOnce({ data: { items: [doc1Raw, doc2Raw] } })
+    vi.mocked(documentFavoritesApi.list).mockResolvedValue([])
+    render(<FolderBrowser {...browserProps} isFinalized={true} />)
+    // Wait past loading state.
+    await screen.findByText('Alpha.pdf')
+    expect(screen.queryByText('Upload')).toBeNull()
+    expect(screen.queryByText('New Folder')).toBeNull()
+    expect(screen.queryByText('Bulk Import')).toBeNull()
+  })
+
+  // The empty-state message switches to 'This engagement is finalized.' when
+  // isFinalized is true, distinct from the normal 'No files or folders yet.' message.
+  it('shows "This engagement is finalized." as the empty-state message when finalized', async () => {
+    vi.mocked(api.get)
+      .mockResolvedValueOnce({ data: [] })
+      .mockResolvedValueOnce({ data: { items: [] } })
+    vi.mocked(documentFavoritesApi.list).mockResolvedValue([])
+    render(<FolderBrowser {...browserProps} isFinalized={true} />)
+    // findByText waits past the loading skeleton.
+    expect(await screen.findByText('This engagement is finalized.')).toBeInTheDocument()
+    expect(screen.queryByText('No files or folders yet.')).toBeNull()
+  })
+})
+
+// Step 4 (drop-blocking): DragEvent.dataTransfer is a read-only property in the
+// DOM spec. fireEvent.drop in happy-dom cannot inject getData-returning data into
+// the synthetic event, making it impossible to verify that the isFinalized early
+// return (not an empty docId) is what blocked onDropDoc. Skipped as a genuine
+// environment limitation rather than forced with a test that proves nothing.

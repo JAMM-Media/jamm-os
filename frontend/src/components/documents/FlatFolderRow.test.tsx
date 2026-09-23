@@ -392,3 +392,28 @@ describe('FlatFolderRow Move to Folder destination picker', () => {
     expect(rootBtn).not.toBeDisabled()
   })
 })
+
+
+describe('FlatFolderRow isFinalized gates', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.mocked(engagementsApi.addPin).mockResolvedValue(undefined)
+    vi.mocked(documentFavoritesApi.add).mockResolvedValue(undefined)
+  })
+
+  it('Move to Folder button is disabled when isFinalized is true', async () => {
+    const user = userEvent.setup()
+    const { container } = render(<FlatFolderRow {...baseProps} isFinalized={true} />)
+    await user.click(findMenuButton(container))
+    const btn = await screen.findByText('Move to Folder')
+    expect(btn).toBeDisabled()
+  })
+
+  it('Delete button is disabled when isFinalized is true', async () => {
+    const user = userEvent.setup()
+    const { container } = render(<FlatFolderRow {...baseProps} isFinalized={true} />)
+    await user.click(findMenuButton(container))
+    const btn = await screen.findByText('Delete')
+    expect(btn).toBeDisabled()
+  })
+})

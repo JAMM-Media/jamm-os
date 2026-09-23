@@ -271,3 +271,27 @@ describe('FlatDocRow double-click to open', () => {
     expect(mockWindowOpen).not.toHaveBeenCalled()
   })
 })
+
+
+describe('FlatDocRow isFinalized gates', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.mocked(documentFavoritesApi.add).mockResolvedValue(undefined)
+  })
+
+  it('Move to Folder button is disabled when isFinalized is true', async () => {
+    const user = userEvent.setup()
+    const { container } = render(<FlatDocRow {...baseProps} isFinalized={true} />)
+    await user.click(findMenuButton(container))
+    const btn = await screen.findByText('Move to Folder')
+    expect(btn).toBeDisabled()
+  })
+
+  it('Delete button is disabled when isFinalized is true', async () => {
+    const user = userEvent.setup()
+    const { container } = render(<FlatDocRow {...baseProps} isFinalized={true} />)
+    await user.click(findMenuButton(container))
+    const btn = await screen.findByText('Delete')
+    expect(btn).toBeDisabled()
+  })
+})
