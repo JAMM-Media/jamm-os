@@ -3,7 +3,7 @@
 // Colocated with FolderBrowser.tsx per this codebase's established convention.
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
 // Mock next/navigation -- useRouter is imported by FolderBrowser.tsx and
 // throws when called outside a Next.js context.
@@ -176,5 +176,98 @@ describe('FlatDocRow favorites', () => {
       expect(toast.error).toHaveBeenCalledTimes(1)
     })
     expect(onFavoritesChanged).not.toHaveBeenCalled()
+  })
+})
+
+describe('FlatDocRow double-click to open', () => {
+  let mockWindowOpen: ReturnType<typeof vi.fn>
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.mocked(documentFavoritesApi.add).mockResolvedValue(undefined)
+    vi.mocked(documentFavoritesApi.remove).mockResolvedValue(undefined)
+    // happy-dom provides window.open but it is not a spy by default.
+    // vi.stubGlobal replaces the global with a real vi.fn() for assertions.
+    mockWindowOpen = vi.fn()
+    vi.stubGlobal('open', mockWindowOpen)
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  // (a) Single click on the name-cell area does NOT call getSignedUrl or window.open.
+  // The name-cell div has onDoubleClick={handleOpen} but no onClick -- a single click
+  // fires no dblclick event and therefore never enters handleOpen.
+  it('single click does not call getSignedUrl or window.open', async () => {
+    const user = userEvent.setup()
+    render(<FlatDocRow {...baseProps} />)
+    await user.click(screen.getByText('test-document.pdf'))
+    expect(documentFavoritesApi.add).not.toHaveBeenCalled()  // star not clicked
+    // documentsApi.getSignedUrl is mocked via vi.mock above
+    // Access the mock directly through the mocked module
+    const { documentsApi: mockDocsApi } = await import('@/lib/api/documents') as any
+    expect(mockDocsApi.getSignedUrl).not.toHaveBeenCalled()
+    expect(mockWindowOpen).not.toHaveBeenCalled()
+  })
+
+  // (b) Double-click calls getSignedUrl with the real doc id, then window.open with
+  // the resolved URL and '_blank'. Uses waitFor to confirm the real async chain
+  // completes -- getSignedUrl resolves first, then window.open is called.
+  it('double-click calls getSignedUrl with the doc id and window.open with the resolved URL', async () => {
+    const user = userEvent.setup()
+    render(<FlatDocRow {...baseProps} />)
+    await user.dblClick(screen.getByText('test-document.pdf'))
+    const { documentsApi: mockDocsApi } = await import('@/lib/api/documents') as any
+    await waitFor(() => {
+      expect(mockDocsApi.getSignedUrl).toHaveBeenCalledTimes(1)
+      expect(mockDocsApi.getSignedUrl).toHaveBeenCalledWith('doc-abc-123')
+      expect(mockWindowOpen).toHaveBeenCalledTimes(1)
+      expect(mockWindowOpen).toHaveBeenCalledWith('https://example.com/file.pdf', '_blank')
+    })
+  })
+
+  // (c) getSignedUrl rejection -> toast.error called, window.open NOT called.
+  // A failed open should not partially succeed.
+  it('calls toast.error and does not call window.open when getSignedUrl rejects', async () => {
+    const user = userEvent.setup()
+    const { documentsApi: mockDocsApi } = await import('@/lib/api/documents') as any
+    mockDocsApi.getSignedUrl.mockRejectedValueOnce(new Error('Network error'))
+    render(<FlatDocRow {...baseProps} />)
+    await user.dblClick(screen.getByText('test-document.pdf'))
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledTimes(1)
+    })
+    expect(mockWindowOpen).not.toHaveBeenCalled()
+  })
+
+  // (d) Clicking the star does not call getSignedUrl or window.open.
+  // The star is a sibling of the name-cell div, not a child, so its click
+  // cannot reach the name-cell's onDoubleClick handler regardless of propagation.
+  it('clicking the star does not call getSignedUrl or window.open', async () => {
+    const user = userEvent.setup()
+    const { container } = render(<FlatDocRow {...baseProps} isFavorited={false} />)
+    await user.click(findStarButton(container))
+    const { documentsApi: mockDocsApi } = await import('@/lib/api/documents') as any
+    await waitFor(() => {
+      expect(documentFavoritesApi.add).toHaveBeenCalledTimes(1)
+    })
+    expect(mockDocsApi.getSignedUrl).not.toHaveBeenCalled()
+    expect(mockWindowOpen).not.toHaveBeenCalled()
+  })
+
+  // (e) Opening the three-dot menu and clicking "Add to Favorites" does not call
+  // getSignedUrl or window.open -- menu interactions are isolated from the open handler.
+  it('clicking "Add to Favorites" in the menu does not call getSignedUrl or window.open', async () => {
+    const user = userEvent.setup()
+    const { container } = render(<FlatDocRow {...baseProps} isFavorited={false} />)
+    await user.click(findMenuButton(container))
+    await user.click(await screen.findByText('Add to Favorites'))
+    const { documentsApi: mockDocsApi } = await import('@/lib/api/documents') as any
+    await waitFor(() => {
+      expect(documentFavoritesApi.add).toHaveBeenCalledTimes(1)
+    })
+    expect(mockDocsApi.getSignedUrl).not.toHaveBeenCalled()
+    expect(mockWindowOpen).not.toHaveBeenCalled()
   })
 })
