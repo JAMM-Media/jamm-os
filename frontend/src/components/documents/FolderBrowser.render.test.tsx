@@ -211,3 +211,108 @@ describe('FolderBrowser isFinalized gates', () => {
 // the synthetic event, making it impossible to verify that the isFinalized early
 // return (not an empty docId) is what blocked onDropDoc. Skipped as a genuine
 // environment limitation rather than forced with a test that proves nothing.
+
+
+describe('FolderBrowser breadcrumb navigation', () => {
+  // Fixture: root -> Parent Folder -> Child Folder (two-level tree)
+  const parentFolder = { id: 'parent-id', name: 'Parent Folder', parent_folder_id: null }
+  const childFolder = { id: 'child-id', name: 'Child Folder', parent_folder_id: 'parent-id' }
+
+  function setupNavMocks() {
+    // First api.get: folders endpoint returns both folders.
+    // Second api.get: docs endpoint returns no documents.
+    vi.mocked(api.get)
+      .mockResolvedValueOnce({ data: [parentFolder, childFolder] })
+      .mockResolvedValueOnce({ data: { items: [] } })
+    vi.mocked(documentFavoritesApi.list).mockResolvedValue([])
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  // (a) At root, no breadcrumb exists -- navigationRootId is null.
+  // 'All' is the reliable signal since it only renders inside the breadcrumb nav.
+  it('shows no breadcrumb at root level', async () => {
+    setupNavMocks()
+    render(<FolderBrowser {...browserProps} />)
+    await screen.findByText('Parent Folder')
+    expect(screen.queryByText('All')).toBeNull()
+  })
+
+  // (b) Double-click Parent: breadcrumb appears with 'All' and 'Parent Folder'.
+  // Parent Folder is the final segment, so it is a span, not a button.
+  it('shows breadcrumb with Parent Folder as the current non-clickable segment after navigating in', async () => {
+    const user = userEvent.setup()
+    setupNavMocks()
+    render(<FolderBrowser {...browserProps} />)
+    await user.dblClick(await screen.findByText('Parent Folder'))
+    expect(await screen.findByText('All')).toBeInTheDocument()
+    // Final breadcrumb segment is a span, not a button.
+    const segment = await screen.findByText('Parent Folder')
+    expect(segment.tagName.toLowerCase()).toBe('span')
+    expect(screen.queryByRole('button', { name: 'Parent Folder' })).toBeNull()
+  })
+
+  // (c) Double-click Child from inside Parent: breadcrumb shows All / Parent / Child.
+  // Parent is now a button (no longer final); Child is the new non-clickable span.
+  it('shows three-segment breadcrumb with Parent as button and Child as span after two-level navigation', async () => {
+    const user = userEvent.setup()
+    setupNavMocks()
+    render(<FolderBrowser {...browserProps} />)
+    // Navigate to Parent.
+    await user.dblClick(await screen.findByText('Parent Folder'))
+    // Child Folder is now visible as a row inside Parent.
+    await user.dblClick(await screen.findByText('Child Folder'))
+    // All still present.
+    expect(await screen.findByText('All')).toBeInTheDocument()
+    // Parent Folder is now a button (intermediate segment).
+    expect(screen.getByRole('button', { name: 'Parent Folder' })).toBeInTheDocument()
+    // Child Folder is the final span (non-clickable).
+    await waitFor(() => {
+      const childSegment = screen.getByText('Child Folder')
+      expect(childSegment.tagName.toLowerCase()).toBe('span')
+    })
+    expect(screen.queryByRole('button', { name: 'Child Folder' })).toBeNull()
+  })
+
+  // (d) Click 'All' from Child level: breadcrumb disappears, root view restored.
+  it('returns to root and removes breadcrumb when "All" is clicked', async () => {
+    const user = userEvent.setup()
+    setupNavMocks()
+    render(<FolderBrowser {...browserProps} />)
+    await user.dblClick(await screen.findByText('Parent Folder'))
+    await user.dblClick(await screen.findByText('Child Folder'))
+    await screen.findByText('All')
+    await user.click(screen.getByText('All'))
+    // Breadcrumb gone.
+    await waitFor(() => {
+      expect(screen.queryByText('All')).toBeNull()
+    })
+    // Root view: Parent Folder row is visible again.
+    expect(await screen.findByText('Parent Folder')).toBeInTheDocument()
+  })
+
+  // (e) Click the intermediate 'Parent Folder' button from Child level: lands at
+  // Parent level, not root. Breadcrumb shows 'All / Parent Folder' (Parent as span
+  // now -- the new final segment), and Child Folder row is visible in the table.
+  it('clicking an intermediate breadcrumb segment navigates to that level, not root', async () => {
+    const user = userEvent.setup()
+    setupNavMocks()
+    render(<FolderBrowser {...browserProps} />)
+    // Navigate to Child level.
+    await user.dblClick(await screen.findByText('Parent Folder'))
+    await user.dblClick(await screen.findByText('Child Folder'))
+    // Click the intermediate 'Parent Folder' button in the breadcrumb.
+    await user.click(screen.getByRole('button', { name: 'Parent Folder' }))
+    // Breadcrumb shows All / Parent Folder with Parent as the non-clickable span.
+    expect(await screen.findByText('All')).toBeInTheDocument()
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: 'Parent Folder' })).toBeNull()
+    })
+    const parentSegment = screen.getByText('Parent Folder')
+    expect(parentSegment.tagName.toLowerCase()).toBe('span')
+    // Child Folder is visible as a row -- confirming we landed at Parent, not root.
+    expect(screen.getByText('Child Folder')).toBeInTheDocument()
+  })
+})
