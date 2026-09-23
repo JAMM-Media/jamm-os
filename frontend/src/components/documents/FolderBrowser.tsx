@@ -745,7 +745,7 @@ function UploadModal({
 // DocRow exactly; only the render shape changes.
 // ---------------------------------------------------------------------------
 
-function FlatDocRow({
+export function FlatDocRow({
   doc,
   depth,
   folders,
