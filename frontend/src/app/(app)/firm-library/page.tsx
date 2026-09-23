@@ -707,6 +707,55 @@ function NewFolderModal({
 }
 
 // ---------------------------------------------------------------------------
+// Draft guidance modal
+// ---------------------------------------------------------------------------
+
+function DraftGuidanceModal({
+  doc,
+  onCancel,
+  onContinue,
+}: {
+  doc: FirmDoc
+  onCancel: () => void
+  onContinue: (doc: FirmDoc) => void
+}) {
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={onCancel}>
+      <div
+        className="bg-surface-page dark:bg-dark-page rounded-[10px] border border-[0.5px] border-surface-border dark:border-dark-border w-[400px] max-w-[92vw] shadow-lg"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-5 py-4 border-b border-[0.5px] border-surface-border dark:border-dark-border">
+          <h2 className="text-[14px] font-semibold text-brand dark:text-[#EDEEF0]">Before you download</h2>
+          <button onClick={onCancel} className="text-[#6B7280] hover:text-brand transition-colors">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="p-5">
+          <p className="text-[13px] text-[#374151] dark:text-[#9CA3AF]">
+            The file downloads to your computer. Edit it locally, then use the Upload button to bring it back -- choose Replace existing, not Keep both.
+          </p>
+        </div>
+        <div className="flex items-center justify-end gap-2 px-5 py-3.5 border-t border-[0.5px] border-surface-border dark:border-dark-border">
+          <button
+            onClick={onCancel}
+            className="h-8 px-3.5 rounded-[6px] border border-[0.5px] border-surface-border dark:border-dark-border text-[12px] text-[#6B7280] hover:text-brand transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => onContinue(doc)}
+            className="h-8 px-3.5 rounded-[6px] bg-brand dark:bg-brand-btn text-white text-[12px] font-medium hover:opacity-90 transition-opacity"
+          >
+            Continue
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Row overflow menu
 // ---------------------------------------------------------------------------
 
@@ -794,6 +843,7 @@ interface StarterTemplatesPanelProps {
   onAckCheck: (v: boolean) => void
   onAckAccept: () => void
   onSeed: () => void
+  onDownload: (doc: FirmDoc) => void
 }
 
 function StarterTemplatesPanel({
@@ -806,6 +856,7 @@ function StarterTemplatesPanel({
   onAckCheck,
   onAckAccept,
   onSeed,
+  onDownload,
 }: StarterTemplatesPanelProps) {
   function formatBytes(bytes: number) {
     if (bytes < 1024) return `${bytes} B`
@@ -952,9 +1003,8 @@ function StarterTemplatesPanel({
                   </td>
                   <td className="px-4 py-3">
                     <button
-                      disabled
-                      title="Create a draft from this -- coming soon"
-                      className="text-[12px] text-[#9CA3AF] cursor-not-allowed"
+                      onClick={() => onDownload(doc)}
+                      className="text-[12px] text-brand dark:text-[#EDEEF0] hover:underline"
                     >
                       Create a draft
                     </button>
@@ -997,11 +1047,13 @@ export default function FirmLibraryPage() {
   const [seeding, setSeeding] = useState(false)
   const [ackAccepted, setAckAccepted] = useState(false)
   const [ackChecked, setAckChecked] = useState(false)
+  const [draftGuidanceShown, setDraftGuidanceShown] = useState(false)
 
   // Read firm-specific acknowledgment from localStorage once user is available.
   useEffect(() => {
     if (user?.firm_id) {
       setAckAccepted(localStorage.getItem(`jamm_starter_ack_${user.firm_id}`) === '1')
+      setDraftGuidanceShown(localStorage.getItem(`jamm_draft_guidance_${user.firm_id}`) === '1')
     }
   }, [user?.firm_id])
 
@@ -1009,6 +1061,7 @@ export default function FirmLibraryPage() {
   const [copyTarget, setCopyTarget] = useState<FirmDoc | null>(null)
   const [showUpload, setShowUpload] = useState(false)
   const [showNewFolder, setShowNewFolder] = useState(false)
+  const [draftGuidanceDoc, setDraftGuidanceDoc] = useState<FirmDoc | null>(null)
 
   const [bulkImporting, setBulkImporting] = useState(false)
   const bulkImportRef = useRef<HTMLInputElement>(null)
@@ -1112,6 +1165,14 @@ export default function FirmLibraryPage() {
     } catch {
       toast.error('Could not generate download link')
     }
+  }
+
+  function handleCreateDraft(doc: FirmDoc) {
+    if (!draftGuidanceShown) {
+      setDraftGuidanceDoc(doc)
+      return
+    }
+    handleDownload(doc)
   }
 
   async function handleBulkImportChange(e: ChangeEvent<HTMLInputElement>) {
@@ -1235,6 +1296,7 @@ export default function FirmLibraryPage() {
               if (typeof window !== 'undefined' && user?.firm_id) localStorage.setItem(`jamm_starter_ack_${user.firm_id}`, '1')
             }}
             onSeed={handleSeedStarters}
+            onDownload={handleCreateDraft}
           />
         ) : (
         <div className="p-6 flex flex-col gap-4 flex-1 overflow-y-auto">
@@ -1457,6 +1519,18 @@ export default function FirmLibraryPage() {
           parentFolderId={currentFolderId}
           onClose={() => setShowNewFolder(false)}
           onCreated={loadRootFolders}
+        />
+      )}
+      {draftGuidanceDoc && (
+        <DraftGuidanceModal
+          doc={draftGuidanceDoc}
+          onCancel={() => setDraftGuidanceDoc(null)}
+          onContinue={async (doc) => {
+            setDraftGuidanceDoc(null)
+            setDraftGuidanceShown(true)
+            if (user?.firm_id) localStorage.setItem(`jamm_draft_guidance_${user.firm_id}`, '1')
+            await handleDownload(doc)
+          }}
         />
       )}
     </div>
