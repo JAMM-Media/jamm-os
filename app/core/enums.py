@@ -854,3 +854,13 @@ class ImportConflictPolicy(str, Enum):
     skip = "skip"
     replace = "replace"
     keep_both = "keep_both"
+
+
+class TemplateStatus(str, Enum):
+    """Lifecycle state for a firm library template item.
+    vendor_sample: as shipped by JAMM PX, read-only to everyone.
+    firm_draft: the firm's own edited copy, not yet published.
+    firm_approved: published and active, owner/manager can still replace or retire."""
+    vendor_sample = "vendor_sample"
+    firm_draft = "firm_draft"
+    firm_approved = "firm_approved"
