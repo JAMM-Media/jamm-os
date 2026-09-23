@@ -813,6 +813,13 @@ function StarterTemplatesPanel({
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
   }
 
+  function cleanTemplateName(filename: string): string {
+    return filename
+      .replace(/^\d+_/, '')
+      .replace(/\.docx$/i, '')
+      .replace(/_/g, ' ')
+  }
+
   if (loading) {
     return (
       <div className="p-6 flex flex-col gap-4 flex-1 overflow-y-auto">
@@ -929,7 +936,7 @@ function StarterTemplatesPanel({
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2.5">
                       <FileTypeIcon contentType={doc.content_type} />
-                      <span className="text-[12px] font-medium text-brand dark:text-[#EDEEF0] truncate">{doc.filename}</span>
+                      <span className="text-[12px] font-medium text-brand dark:text-[#EDEEF0] truncate">{cleanTemplateName(doc.filename)}</span>
                     </div>
                   </td>
                   <td className="px-4 py-3">
