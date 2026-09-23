@@ -85,6 +85,18 @@ export function getDescendantFolderIds(folderId: string, childrenOf: Record<stri
   return result
 }
 
+export type SiblingItem =
+  | { kind: 'folder'; folder: BrowserFolder }
+  | { kind: 'doc'; doc: BrowserDoc }
+
+export function sortedSiblings(items: SiblingItem[], pinnedItemIds: Set<string>): SiblingItem[] {
+  return [...items].sort((a, b) => {
+    const aId = a.kind === 'folder' ? a.folder.id : a.doc.id
+    const bId = b.kind === 'folder' ? b.folder.id : b.doc.id
+    return (pinnedItemIds.has(aId) ? 0 : 1) - (pinnedItemIds.has(bId) ? 0 : 1)
+  })
+}
+
 async function moveDocument(
   docId: string,
   targetFolderId: string | null,
@@ -1064,17 +1076,6 @@ export function FolderBrowser({
     const rows: FlatRow[] = []
 
     // Produce a sorted sibling list (pinned first) merging folders and docs.
-    type SiblingItem =
-      | { kind: 'folder'; folder: BrowserFolder }
-      | { kind: 'doc'; doc: BrowserDoc }
-    function sortedSiblings(items: SiblingItem[]): SiblingItem[] {
-      return [...items].sort((a, b) => {
-        const aId = a.kind === 'folder' ? a.folder.id : a.doc.id
-        const bId = b.kind === 'folder' ? b.folder.id : b.doc.id
-        return (pinnedItemIds.has(aId) ? 0 : 1) - (pinnedItemIds.has(bId) ? 0 : 1)
-      })
-    }
-
     function addFolder(folder: BrowserFolder, depth: number) {
       const children = localChildrenOf[folder.id] ?? []
       const docsHere = shown.filter((d) => d.folder_id === folder.id)
@@ -1085,7 +1086,7 @@ export function FolderBrowser({
           ...children.map((f) => ({ kind: 'folder' as const, folder: f })),
           ...docsHere.map((d) => ({ kind: 'doc' as const, doc: d })),
         ]
-        for (const item of sortedSiblings(siblings)) {
+        for (const item of sortedSiblings(siblings, pinnedItemIds)) {
           if (item.kind === 'folder') addFolder(item.folder, depth + 1)
           else rows.push({ kind: 'doc', doc: item.doc, depth: depth + 1 })
         }
@@ -1100,7 +1101,7 @@ export function FolderBrowser({
       ...startFolders.map((f) => ({ kind: 'folder' as const, folder: f })),
       ...rootDocs.map((d) => ({ kind: 'doc' as const, doc: d })),
     ]
-    for (const item of sortedSiblings(rootSiblings)) {
+    for (const item of sortedSiblings(rootSiblings, pinnedItemIds)) {
       if (item.kind === 'folder') addFolder(item.folder, 0)
       else rows.push({ kind: 'doc', doc: item.doc, depth: 0 })
     }

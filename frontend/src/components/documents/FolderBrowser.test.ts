@@ -93,3 +93,69 @@ describe('getDescendantFolderIds', () => {
     expect(result.size).toBe(0)
   })
 })
+
+import { sortedSiblings } from './FolderBrowser'
+import type { SiblingItem } from './FolderBrowser'
+
+// Helpers for building SiblingItem fixtures without repeating required fields.
+function folder(id: string): SiblingItem {
+  return { kind: 'folder', folder: { id, name: `F-${id}`, parent_folder_id: null } }
+}
+function doc(id: string): SiblingItem {
+  return { kind: 'doc', doc: { id, filename: `d-${id}.pdf`, folder_id: null, content_type: 'application/pdf', size_bytes: 0, created_at: '', is_superseded: false } }
+}
+
+describe('sortedSiblings', () => {
+  // (a) No pinned items: original relative order is preserved exactly.
+  it('preserves original order when nothing is pinned', () => {
+    const items: SiblingItem[] = [folder('A'), doc('B'), folder('C'), doc('D')]
+    const result = sortedSiblings(items, new Set())
+    expect(result.map(i => i.kind === 'folder' ? i.folder.id : i.doc.id)).toEqual(['A', 'B', 'C', 'D'])
+  })
+
+  // (b) A single pinned item moves to the front; unpinned items keep relative order.
+  it('moves a single pinned item to the front', () => {
+    const items: SiblingItem[] = [folder('A'), doc('B'), folder('C')]
+    const result = sortedSiblings(items, new Set(['B']))
+    const ids = result.map(i => i.kind === 'folder' ? i.folder.id : i.doc.id)
+    expect(ids[0]).toBe('B')
+    expect(ids.slice(1)).toEqual(['A', 'C'])
+  })
+
+  // (c) Multiple pinned items move to the front and keep their original relative
+  //     order among themselves -- this would fail if the sort were unstable.
+  it('moves multiple pinned items to the front preserving their mutual order', () => {
+    // C and E are pinned. Original order: A B C D E F.
+    // Expected: C E A B D F (pinned in original order, then unpinned in original order).
+    const items: SiblingItem[] = [folder('A'), doc('B'), folder('C'), doc('D'), folder('E'), doc('F')]
+    const result = sortedSiblings(items, new Set(['C', 'E']))
+    const ids = result.map(i => i.kind === 'folder' ? i.folder.id : i.doc.id)
+    expect(ids[0]).toBe('C')
+    expect(ids[1]).toBe('E')
+    expect(ids.slice(2)).toEqual(['A', 'B', 'D', 'F'])
+  })
+
+  // (d) Folders and docs are sorted as one list: a pinned doc can precede an
+  //     unpinned folder, and vice versa -- no kind-based separation.
+  it('treats folders and docs as one list: pinned doc precedes unpinned folder', () => {
+    const items: SiblingItem[] = [folder('F1'), folder('F2'), doc('D1')]
+    const result = sortedSiblings(items, new Set(['D1']))
+    const ids = result.map(i => i.kind === 'folder' ? i.folder.id : i.doc.id)
+    expect(ids[0]).toBe('D1')
+    expect(ids.slice(1)).toEqual(['F1', 'F2'])
+  })
+
+  it('treats folders and docs as one list: pinned folder precedes unpinned docs', () => {
+    const items: SiblingItem[] = [doc('D1'), doc('D2'), folder('F1')]
+    const result = sortedSiblings(items, new Set(['F1']))
+    const ids = result.map(i => i.kind === 'folder' ? i.folder.id : i.doc.id)
+    expect(ids[0]).toBe('F1')
+    expect(ids.slice(1)).toEqual(['D1', 'D2'])
+  })
+
+  // (e) Empty array returns empty array without throwing.
+  it('returns an empty array for empty input', () => {
+    const result = sortedSiblings([], new Set(['anything']))
+    expect(result).toEqual([])
+  })
+})
