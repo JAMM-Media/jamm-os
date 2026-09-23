@@ -246,3 +246,88 @@ def test_tenant_isolation():
         assert exc.value.status_code == 404
     finally:
         db.close()
+
+# ---------------------------------------------------------------------------
+# source_item_id tests
+# ---------------------------------------------------------------------------
+
+def test_source_item_id_stored_on_new_draft():
+    """(a) set_draft with a source_item_id records it correctly."""
+    firm_id = _make_firm(f"si-{uuid.uuid4().hex[:6]}")
+    owner = _make_detached_user(firm_id, UserRole.firm_owner)
+    item_id = uuid.uuid4()
+    source_id = uuid.uuid4()
+
+    db = TestingSessionLocal()
+    try:
+        row = svc.set_draft(
+            db,
+            firm_id=firm_id,
+            item_type="document",
+            item_id=item_id,
+            user=owner,
+            source_item_id=source_id,
+        )
+        assert row.source_item_id == source_id
+
+        fetched = svc.get_status(db, firm_id=firm_id, item_type="document", item_id=item_id)
+        assert fetched is not None
+        assert fetched.source_item_id == source_id
+    finally:
+        db.close()
+
+
+def test_source_item_id_null_when_not_provided():
+    """(b) set_draft without source_item_id still works; column remains null."""
+    firm_id = _make_firm(f"si2-{uuid.uuid4().hex[:6]}")
+    owner = _make_detached_user(firm_id, UserRole.firm_owner)
+    item_id = uuid.uuid4()
+
+    db = TestingSessionLocal()
+    try:
+        row = svc.set_draft(
+            db,
+            firm_id=firm_id,
+            item_type="document",
+            item_id=item_id,
+            user=owner,
+        )
+        assert row.source_item_id is None
+    finally:
+        db.close()
+
+
+def test_source_item_id_immutable_on_repeat_set_draft():
+    """(c) Repeat set_draft calls do not overwrite source_item_id.
+
+    The real set_draft is called twice on the same item. The second call
+    passes a different source_item_id. The assertion confirms the returned
+    row still holds the original value, proving lineage is immutable once set.
+    """
+    firm_id = _make_firm(f"si3-{uuid.uuid4().hex[:6]}")
+    owner = _make_detached_user(firm_id, UserRole.firm_owner)
+    item_id = uuid.uuid4()
+    original_source = uuid.uuid4()
+    different_source = uuid.uuid4()
+
+    db = TestingSessionLocal()
+    try:
+        svc.set_draft(
+            db,
+            firm_id=firm_id,
+            item_type="document",
+            item_id=item_id,
+            user=owner,
+            source_item_id=original_source,
+        )
+        row = svc.set_draft(
+            db,
+            firm_id=firm_id,
+            item_type="document",
+            item_id=item_id,
+            user=owner,
+            source_item_id=different_source,
+        )
+        assert row.source_item_id == original_source
+    finally:
+        db.close()

@@ -55,6 +55,12 @@ class DocumentTemplateStatus(Base):
         default=TemplateStatus.vendor_sample,
     )
 
+    # No FK constraint -- references either documents.id or document_folders.id
+    # depending on item_type (same polymorphic pattern as item_id).
+    # Null for vendor_sample rows and for rows predating this column.
+    # Set once on creation of a firm_draft derived from a vendor original.
+    source_item_id: Mapped[Optional[uuid.UUID]] = mapped_column(nullable=True)
+
     # Set when moved to firm_approved; preserved on revert_to_draft for audit.
     published_by: Mapped[Optional[uuid.UUID]] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"),

@@ -73,8 +73,14 @@ def set_draft(
     item_type: str,
     item_id: uuid.UUID,
     user: User,
+    source_item_id: Optional[uuid.UUID] = None,
 ) -> DocumentTemplateStatus:
-    """Create or update the row to firm_draft. Gated to firm managers."""
+    """Create or update the row to firm_draft. Gated to firm managers.
+
+    source_item_id is recorded only on creation. A repeat call on an existing
+    row updates the status but leaves source_item_id unchanged -- lineage is
+    immutable once set.
+    """
     _validate_item_type(item_type)
     _require_template_manager(user)
 
@@ -85,10 +91,12 @@ def set_draft(
             item_type=item_type,
             item_id=item_id,
             status=TemplateStatus.firm_draft,
+            source_item_id=source_item_id,
         )
         db.add(row)
     else:
         row.status = TemplateStatus.firm_draft
+        # source_item_id intentionally not updated -- lineage is immutable once set.
     db.commit()
     db.refresh(row)
     return row
