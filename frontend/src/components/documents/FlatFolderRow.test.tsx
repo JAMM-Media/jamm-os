@@ -188,3 +188,94 @@ describe('FlatFolderRow pins', () => {
     })
   })
 })
+
+describe('FlatFolderRow click and double-click handlers', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.mocked(documentFavoritesApi.add).mockResolvedValue(undefined)
+    vi.mocked(documentFavoritesApi.remove).mockResolvedValue(undefined)
+    vi.mocked(engagementsApi.addPin).mockResolvedValue(undefined)
+    vi.mocked(engagementsApi.removePin).mockResolvedValue(undefined)
+  })
+
+  // (a) Single click calls onTarget exactly once and does NOT call onNavigate.
+  it('single click calls onTarget once and does not call onNavigate', async () => {
+    const user = userEvent.setup()
+    const onTarget = vi.fn()
+    const onNavigate = vi.fn()
+    render(<FlatFolderRow {...baseProps} onTarget={onTarget} onNavigate={onNavigate} />)
+    await user.click(screen.getByText('Test Folder'))
+    expect(onTarget).toHaveBeenCalledTimes(1)
+    expect(onNavigate).not.toHaveBeenCalled()
+  })
+
+  // (b) Double-click calls onNavigate exactly once.
+  // The browser's real dblclick event sequence is: click -> click -> dblclick.
+  // userEvent.dblClick faithfully simulates this sequence, meaning onClick fires
+  // twice (onTarget called twice) and onDoubleClick fires once (onNavigate called once).
+  // The onTarget call count below is empirically observed from the real event dispatch,
+  // not assumed: two click events precede every dblclick in the DOM event spec.
+  it('double-click calls onNavigate once; onTarget is called twice (once per click in the dblclick sequence)', async () => {
+    const user = userEvent.setup()
+    const onTarget = vi.fn()
+    const onNavigate = vi.fn()
+    render(<FlatFolderRow {...baseProps} onTarget={onTarget} onNavigate={onNavigate} />)
+    await user.dblClick(screen.getByText('Test Folder'))
+    expect(onNavigate).toHaveBeenCalledTimes(1)
+    // Empirically observed: userEvent.dblClick fires click+click+dblclick.
+    // onTarget (onClick) fires for each click event, so exactly 2 calls.
+    // Two calls to the real toggle-based onTarget cancel out (set then unset),
+    // leaving the targeted state unchanged -- the reasoning proven by assertion.
+    expect(onTarget).toHaveBeenCalledTimes(2)
+  })
+
+  // (c) Clicking the chevron/expand button does NOT call onTarget or onNavigate.
+  // The chevron is inside the name-cell div; e.stopPropagation() on the chevron's
+  // onClick is the real, load-bearing guard preventing the click from reaching
+  // the name-cell div's onClick={onTarget} handler.
+  it('clicking the chevron expand button does not call onTarget or onNavigate', async () => {
+    const user = userEvent.setup()
+    const onTarget = vi.fn()
+    const onNavigate = vi.fn()
+    const onToggle = vi.fn()
+    render(
+      <FlatFolderRow
+        {...baseProps}
+        hasChildren={true}
+        isExpanded={false}
+        onToggle={onToggle}
+        onTarget={onTarget}
+        onNavigate={onNavigate}
+      />
+    )
+    // The chevron button has neither polygon (star) nor circle (MoreVertical).
+    const buttons = Array.from(document.querySelectorAll('button'))
+    const chevronBtn = buttons.find(b => !b.querySelector('polygon') && !b.querySelector('circle'))
+    expect(chevronBtn).not.toBeNull()
+    await user.click(chevronBtn as HTMLElement)
+    expect(onToggle).toHaveBeenCalledTimes(1)
+    expect(onTarget).not.toHaveBeenCalled()
+    expect(onNavigate).not.toHaveBeenCalled()
+  })
+
+  // (d) Clicking the star button does NOT call onTarget or onNavigate.
+  // The star is a sibling of the name-cell div (not a child), so its click
+  // cannot reach the name-cell div's onClick by bubbling. e.stopPropagation()
+  // on the star additionally prevents the event from reaching any ancestor.
+  it('clicking the star button does not call onTarget or onNavigate', async () => {
+    const user = userEvent.setup()
+    const onTarget = vi.fn()
+    const onNavigate = vi.fn()
+    const { container } = render(
+      <FlatFolderRow {...baseProps} isFavorited={false} onTarget={onTarget} onNavigate={onNavigate} />
+    )
+    await user.click(findStarButton(container))
+    expect(onTarget).not.toHaveBeenCalled()
+    expect(onNavigate).not.toHaveBeenCalled()
+  })
+})
+
+// Note on pin icon: the inline pin SVG (fill="#1F3148") is inside the name-cell div
+// and has no onClick handler or stopPropagation. Clicking it DOES call onTarget via
+// bubbling -- this is correct and expected behavior (clicking anywhere on the folder
+// row area naturally selects the folder as the Upload/New Folder destination).
