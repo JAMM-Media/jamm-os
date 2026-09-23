@@ -70,23 +70,34 @@ def record_document_view(
     *,
     firm_id: uuid.UUID,
     user_id: uuid.UUID,
-    engagement_id: uuid.UUID,
+    engagement_id: uuid.UUID | None,
     document_id: uuid.UUID,
 ) -> None:
     """Upsert a recent-view row for this user+document pair.
+
+    Only tracks engagement-scoped documents. Firm-library documents have no
+    engagement_id (None), and Recent Documents was designed as an
+    engagement-scoped feature. Attempting an insert with engagement_id=None
+    violates the NOT NULL constraint on that column. Guard exits early so
+    firm_library and Starter Templates downloads are silently skipped rather
+    than turned into a constraint error.
 
     One row per (user_id, document_id). On conflict, only last_viewed_at
     and updated_at are refreshed -- created_at is never changed after the
     first insert, preserving the true first-view timestamp.
 
-    Fire-and-forget safe: never raises. Errors are logged and swallowed so
-    the caller (preview/download endpoint) is never disrupted by a recording
-    failure.
+    Fire-and-forget safe: never raises. The except block always calls
+    db.rollback() before logging so a failed insert can never leave the
+    caller's session in a poisoned state.
 
     Uses the passed-in request session and commits inline, matching the
     audit_service pattern. A separate session is not needed because this is
     a synchronous fast-write within the same request, not a background task.
     """
+    # Firm-library documents have no engagement_id; Recent Documents only
+    # tracks engagement-scoped views.
+    if engagement_id is None:
+        return
     try:
         now = datetime.now(timezone.utc)
         stmt = pg_insert(RecentDocumentView).values(
@@ -109,6 +120,7 @@ def record_document_view(
         db.execute(stmt)
         db.commit()
     except Exception:
+        db.rollback()
         logger.exception(
             "Failed to record document view for user=%s document=%s",
             user_id,
