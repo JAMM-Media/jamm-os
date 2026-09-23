@@ -62,7 +62,7 @@ function relativeTime(isoStr: string): string {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
-function contentTypeFromFilename(filename: string): string {
+export function contentTypeFromFilename(filename: string): string {
   const ext = filename.split('.').pop()?.toLowerCase() ?? ''
   if (ext === 'pdf') return 'application/pdf'
   if (['xlsx', 'xls'].includes(ext)) return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
