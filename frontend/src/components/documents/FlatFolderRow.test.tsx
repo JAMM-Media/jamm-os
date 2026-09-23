@@ -17,6 +17,7 @@ vi.mock('@/lib/api/documents', () => ({
   documentFoldersApi: {
     moveDocument: vi.fn().mockResolvedValue(undefined),
     deleteFolder: vi.fn().mockResolvedValue(undefined),
+    moveFolder: vi.fn().mockResolvedValue(undefined),
   },
   documentFavoritesApi: {
     add: vi.fn().mockResolvedValue(undefined),
@@ -41,7 +42,7 @@ vi.mock('sonner', () => ({
 }))
 
 import { FlatFolderRow } from './FolderBrowser'
-import { documentFavoritesApi } from '@/lib/api/documents'
+import { documentFavoritesApi, documentFoldersApi } from '@/lib/api/documents'
 import { engagementsApi } from '@/lib/api/engagements'
 
 // useConfirm runs for real: it uses only React state, ConfirmDialog is null
@@ -279,3 +280,115 @@ describe('FlatFolderRow click and double-click handlers', () => {
 // and has no onClick handler or stopPropagation. Clicking it DOES call onTarget via
 // bubbling -- this is correct and expected behavior (clicking anywhere on the folder
 // row area naturally selects the folder as the Upload/New Folder destination).
+
+
+describe('FlatFolderRow Move to Folder destination picker', () => {
+  // Multi-level tree fixture:
+  //   root
+  //     target-id  (the folder being moved)
+  //       child-id  (direct child -- must be excluded)
+  //         grandchild-id  (grandchild -- must be excluded recursively)
+  //     sibling-id  (unrelated sibling -- valid destination)
+  const targetFolder = { id: 'target-id', name: 'Target Folder', parent_folder_id: null }
+  const childFolder = { id: 'child-id', name: 'Child Folder', parent_folder_id: 'target-id' }
+  const grandchildFolder = { id: 'grandchild-id', name: 'Grandchild Folder', parent_folder_id: 'child-id' }
+  const siblingFolder = { id: 'sibling-id', name: 'Sibling Folder', parent_folder_id: null }
+
+  const treeProps = {
+    folder: targetFolder,
+    folders: [targetFolder, childFolder, grandchildFolder, siblingFolder],
+    childrenOf: {
+      'target-id': [childFolder],
+      'child-id': [grandchildFolder],
+    },
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.mocked(documentFoldersApi.moveFolder).mockResolvedValue(undefined)
+    vi.mocked(documentFavoritesApi.add).mockResolvedValue(undefined)
+    vi.mocked(engagementsApi.addPin).mockResolvedValue(undefined)
+  })
+
+  // Helper: open menu then open the move list.
+  async function openMoveList(container: HTMLElement) {
+    const user = userEvent.setup()
+    const menuBtn = Array.from(container.querySelectorAll('button')).find(b => b.querySelector('circle'))
+    if (!menuBtn) throw new Error('Three-dot button not found')
+    await user.click(menuBtn as HTMLElement)
+    const moveBtn = await screen.findByText('Move to Folder')
+    await user.click(moveBtn)
+    return user
+  }
+
+  // (a) The unrelated sibling folder appears as a valid destination.
+  it('includes the unrelated sibling folder in the destination list', async () => {
+    const { container } = render(<FlatFolderRow {...baseProps} {...treeProps} />)
+    await openMoveList(container)
+    expect(await screen.findByText('Sibling Folder')).toBeInTheDocument()
+  })
+
+  // (b) The direct child of the target folder does NOT appear in the destination list.
+  // This confirms getDescendantFolderIds is wired correctly into the rendered picker.
+  it('excludes the direct child folder from the destination list', async () => {
+    const { container } = render(<FlatFolderRow {...baseProps} {...treeProps} />)
+    await openMoveList(container)
+    // Wait for the list to render (sibling present confirms list is open).
+    await screen.findByText('Sibling Folder')
+    expect(screen.queryByText('Child Folder')).toBeNull()
+  })
+
+  // (c) The grandchild (two levels down) also does NOT appear, proving the exclusion
+  // is recursive in the real rendered output, not just correct in the isolated function.
+  it('excludes the grandchild folder from the destination list (recursive exclusion)', async () => {
+    const { container } = render(<FlatFolderRow {...baseProps} {...treeProps} />)
+    await openMoveList(container)
+    await screen.findByText('Sibling Folder')
+    expect(screen.queryByText('Grandchild Folder')).toBeNull()
+  })
+
+  // (d) Clicking the sibling as destination calls documentFoldersApi.moveFolder
+  // with the correct arguments: (target folder id, sibling id).
+  // documentFoldersApi.moveFolder was NOT in the existing mock -- it was added
+  // to the vi.mock factory above as part of this task.
+  it('calls documentFoldersApi.moveFolder with correct args when a valid destination is clicked', async () => {
+    const user = userEvent.setup()
+    const onFolderChanged = vi.fn()
+    const { container } = render(
+      <FlatFolderRow {...baseProps} {...treeProps} onFolderChanged={onFolderChanged} />
+    )
+    await openMoveList(container)
+    await user.click(await screen.findByText('Sibling Folder'))
+    await waitFor(() => {
+      expect(documentFoldersApi.moveFolder).toHaveBeenCalledTimes(1)
+      expect(documentFoldersApi.moveFolder).toHaveBeenCalledWith('target-id', 'sibling-id')
+      expect(onFolderChanged).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  // (e-i) "Root level" is disabled when the folder's parent_folder_id is null
+  // (the folder is already at root -- moving it there is a no-op).
+  it('"Root level" button is disabled when the folder is already at root level', async () => {
+    const { container } = render(
+      <FlatFolderRow {...baseProps} {...treeProps} folder={targetFolder} />
+    )
+    await openMoveList(container)
+    await screen.findByText('Sibling Folder')
+    const rootBtn = screen.getAllByRole('button').find(b => b.textContent?.includes('Root level'))
+    expect(rootBtn).not.toBeUndefined()
+    expect(rootBtn).toBeDisabled()
+  })
+
+  // (e-ii) "Root level" is enabled when the folder has a real non-null parent.
+  it('"Root level" button is enabled when the folder has a non-null parent', async () => {
+    const folderWithParent = { id: 'target-id', name: 'Target Folder', parent_folder_id: 'sibling-id' }
+    const { container } = render(
+      <FlatFolderRow {...baseProps} {...treeProps} folder={folderWithParent} />
+    )
+    await openMoveList(container)
+    await screen.findByText('Sibling Folder')
+    const rootBtn = screen.getAllByRole('button').find(b => b.textContent?.includes('Root level'))
+    expect(rootBtn).not.toBeUndefined()
+    expect(rootBtn).not.toBeDisabled()
+  })
+})
