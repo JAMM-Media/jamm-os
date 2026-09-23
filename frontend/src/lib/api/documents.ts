@@ -137,3 +137,18 @@ export const documentFoldersApi = {
     await api.patch(`/document-folders/${folderId}/move`, { new_parent_folder_id: newParentFolderId })
   },
 }
+
+export const documentFavoritesApi = {
+  list: async (): Promise<Array<{ id: string; item_type: string; item_id: string; name: string }>> => {
+    const { data } = await api.get('/document-favorites/')
+    return data ?? []
+  },
+
+  add: async (itemType: string, itemId: string): Promise<void> => {
+    await api.post('/document-favorites/', { item_type: itemType, item_id: itemId })
+  },
+
+  remove: async (itemType: string, itemId: string): Promise<void> => {
+    await api.delete(`/document-favorites/${itemType}/${itemId}`)
+  },
+}

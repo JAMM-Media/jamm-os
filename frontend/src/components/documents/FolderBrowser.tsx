@@ -11,7 +11,8 @@ import api from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { importBatchesApi, type CreateImportBatchPayload } from '@/lib/api/importBatches'
 import { enumerateFolder } from '@/lib/importEnumeration'
-import { documentsApi, documentFoldersApi } from '@/lib/api/documents'
+import { documentsApi, documentFoldersApi, documentFavoritesApi } from '@/lib/api/documents'
+import { engagementsApi } from '@/lib/api/engagements'
 import { useConfirm } from '@/lib/hooks/useConfirm'
 
 // ---------------------------------------------------------------------------
@@ -42,6 +43,8 @@ export interface FolderBrowserProps {
   clientId?: string
   /** When true (engagement is finalized), the New Folder action is absent from the DOM. */
   isFinalized?: boolean
+  /** When true, the Pin to engagement / Remove pin menu item is visible. Pass canFinalize from the parent page. */
+  canPin?: boolean
   /**
    * When true, a collapsible "Archived (N)" toggle appears at the bottom of the
    * file list showing is_superseded documents in the current folder. Matches
@@ -132,6 +135,12 @@ function FlatFolderRow({
   onDropDoc,
   onFolderChanged,
   isFinalized,
+  isPinned,
+  isFavorited,
+  canPin,
+  engagementId,
+  onPinsChanged,
+  onFavoritesChanged,
 }: {
   folder: BrowserFolder
   depth: number
@@ -146,6 +155,12 @@ function FlatFolderRow({
   onDropDoc: (docId: string, targetFolderId: string, targetFolderName: string) => void
   onFolderChanged: () => void
   isFinalized?: boolean
+  isPinned: boolean
+  isFavorited: boolean
+  canPin: boolean
+  engagementId?: string
+  onPinsChanged: () => void
+  onFavoritesChanged: () => void
 }) {
   const [isDragOver, setIsDragOver] = useState(false)
   const { confirm, ConfirmDialog } = useConfirm()
@@ -230,20 +245,74 @@ function FlatFolderRow({
   const descendantIds = getDescendantFolderIds(folder.id, childrenOf)
   const validDestinations = folders.filter((f) => f.id !== folder.id && !descendantIds.has(f.id))
 
+  async function handlePinToggle() {
+    if (!engagementId) return
+    setMenuOpen(false)
+    setCoords(null)
+    try {
+      if (isPinned) {
+        await engagementsApi.removePin(engagementId, 'folder', folder.id)
+      } else {
+        await engagementsApi.addPin(engagementId, 'folder', folder.id)
+      }
+      onPinsChanged()
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      toast.error(detail ?? 'Could not update pin -- please try again')
+    }
+  }
+
+  async function handleFavoriteToggle() {
+    setMenuOpen(false)
+    setCoords(null)
+    try {
+      if (isFavorited) {
+        await documentFavoritesApi.remove('folder', folder.id)
+      } else {
+        await documentFavoritesApi.add('folder', folder.id)
+      }
+      onFavoritesChanged()
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      toast.error(detail ?? 'Could not update favorite -- please try again')
+    }
+  }
+
   const dropdown = (
     <div
       ref={menuDropdownRef}
       className="bg-white dark:bg-[#252525] border border-[0.5px] border-surface-border dark:border-dark-border rounded-[8px] shadow-lg overflow-hidden w-44"
       style={{ position: 'fixed', zIndex: 9999, top: coords?.top ?? 0, left: coords?.left ?? 0, visibility: coords ? 'visible' : 'hidden' }}
     >
+      {canPin && engagementId && (
+        <button
+          onClick={handlePinToggle}
+          className="w-full text-left flex items-center gap-2 px-3 py-2 text-[12px] text-[#374151] dark:text-[#EDEEF0] hover:bg-surface-input dark:hover:bg-dark-card transition-colors"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" className="flex-shrink-0 text-[#1F3148]" aria-hidden="true">
+            <path d="M16 3l5 5-1.5 1.5L18 8l-5.5 5.5L14 16l-1.5 1.5L9 14l-5 5-1-1 5-5-3.5-3.5L6 8l2.5 2.5L14 5l-.5-1.5L15 2z"/>
+          </svg>
+          {isPinned ? 'Remove pin' : 'Pin to engagement'}
+        </button>
+      )}
       <button
-        onClick={() => setShowMoveList((v) => !v)}
-        disabled={isFinalized}
-        className="w-full text-left flex items-center gap-2 px-3 py-2 text-[12px] text-[#374151] dark:text-[#EDEEF0] hover:bg-surface-input dark:hover:bg-dark-card transition-colors disabled:opacity-40 disabled:cursor-default"
+        onClick={handleFavoriteToggle}
+        className="w-full text-left flex items-center gap-2 px-3 py-2 text-[12px] text-[#374151] dark:text-[#EDEEF0] hover:bg-surface-input dark:hover:bg-dark-card transition-colors"
       >
-        <Folder className="h-3.5 w-3.5 text-[#6B7280] flex-shrink-0" />
-        Move to Folder
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="flex-shrink-0 text-[#6B7280]" aria-hidden="true">
+          <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+        </svg>
+        {isFavorited ? 'Remove from Favorites' : 'Add to Favorites'}
       </button>
+      <div className="border-t border-[0.5px] border-surface-border dark:border-dark-border">
+        <button
+          onClick={() => setShowMoveList((v) => !v)}
+          disabled={isFinalized}
+          className="w-full text-left flex items-center gap-2 px-3 py-2 text-[12px] text-[#374151] dark:text-[#EDEEF0] hover:bg-surface-input dark:hover:bg-dark-card transition-colors disabled:opacity-40 disabled:cursor-default"
+        >
+          <Folder className="h-3.5 w-3.5 text-[#6B7280] flex-shrink-0" />
+          Move to Folder
+        </button>
       {showMoveList && (
         <div className="border-t border-[0.5px] border-surface-border dark:border-dark-border max-h-48 overflow-y-auto">
           <button
@@ -269,6 +338,7 @@ function FlatFolderRow({
           )}
         </div>
       )}
+      </div>
       <div className="border-t border-[0.5px] border-surface-border dark:border-dark-border">
         <button
           onClick={handleDelete}
@@ -287,7 +357,7 @@ function FlatFolderRow({
       <div
         className={cn(
           'group flex items-center',
-          isDragOver ? 'bg-blue-50 dark:bg-blue-900/10' : isTargeted ? 'bg-surface-input dark:bg-dark-card' : '',
+          isDragOver ? 'bg-blue-50 dark:bg-blue-900/10' : isTargeted ? 'bg-surface-input dark:bg-dark-card' : isPinned ? 'bg-[#FEFCF5]' : '',
         )}
         style={{ paddingTop: '11px', paddingBottom: '11px', paddingLeft: `${18 + depth * 22}px`, paddingRight: '18px' }}
         onDragOver={(e) => { e.preventDefault(); setIsDragOver(true) }}
@@ -314,6 +384,11 @@ function FlatFolderRow({
           ) : (
             <span className="inline-block w-[13px] flex-shrink-0" />
           )}
+          {isPinned && (
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="#1F3148" className="flex-shrink-0" aria-hidden="true">
+              <path d="M16 3l5 5-1.5 1.5L18 8l-5.5 5.5L14 16l-1.5 1.5L9 14l-5 5-1-1 5-5-3.5-3.5L6 8l2.5 2.5L14 5l-.5-1.5L15 2z"/>
+            </svg>
+          )}
           <svg width="17" height="17" viewBox="0 0 24 24" fill="#F5B942" className="flex-shrink-0" aria-hidden="true">
             <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
           </svg>
@@ -324,9 +399,20 @@ function FlatFolderRow({
         </div>
         <div className="w-6 flex-shrink-0 flex items-center justify-center">
           <button
+            onClick={(e) => { e.stopPropagation(); handleFavoriteToggle() }}
+            className="text-[#9CA3AF] transition-colors hover:opacity-80"
+          >
+            {isFavorited
+              ? <svg width="14" height="14" viewBox="0 0 24 24" fill="#F5B942" aria-hidden="true"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+              : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" strokeWidth="2" aria-hidden="true"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+            }
+          </button>
+        </div>
+        <div className="w-6 flex-shrink-0 flex items-center justify-center">
+          <button
             ref={triggerRef}
             onClick={(e) => { e.stopPropagation(); setMenuOpen((v) => !v); setShowMoveList(false); setCoords(null) }}
-            className="text-[#D1D5DB] hover:text-[#6B7280] dark:hover:text-[#EDEEF0] transition-colors opacity-0 group-hover:opacity-100"
+            className="text-[#9CA3AF] hover:text-[#374151] dark:hover:text-[#EDEEF0] transition-colors opacity-40 group-hover:opacity-100"
           >
             <MoreVertical className="h-4 w-4" />
           </button>
@@ -653,12 +739,24 @@ function FlatDocRow({
   folders,
   fetchDocs,
   isFinalized,
+  isPinned,
+  isFavorited,
+  canPin,
+  engagementId,
+  onPinsChanged,
+  onFavoritesChanged,
 }: {
   doc: BrowserDoc
   depth: number
   folders: BrowserFolder[]
   fetchDocs: () => void
   isFinalized?: boolean
+  isPinned: boolean
+  isFavorited: boolean
+  canPin: boolean
+  engagementId?: string
+  onPinsChanged: () => void
+  onFavoritesChanged: () => void
 }) {
   const { confirm, ConfirmDialog } = useConfirm()
   const [menuOpen, setMenuOpen] = useState(false)
@@ -695,6 +793,15 @@ function FlatDocRow({
     return () => document.removeEventListener('mousedown', handler)
   }, [menuOpen])
 
+  async function handleOpen() {
+    try {
+      const url = await documentsApi.getSignedUrl(doc.id)
+      window.open(url, '_blank')
+    } catch {
+      toast.error('Could not open file -- please try again')
+    }
+  }
+
   async function handleDelete() {
     setMenuOpen(false)
     setShowMoveList(false)
@@ -729,20 +836,74 @@ function FlatDocRow({
     await moveDocument(doc.id, targetFolderId, targetName, doc.folder_id, isFinalized, fetchDocs)
   }
 
+  async function handlePinToggle() {
+    if (!engagementId) return
+    setMenuOpen(false)
+    setCoords(null)
+    try {
+      if (isPinned) {
+        await engagementsApi.removePin(engagementId, 'document', doc.id)
+      } else {
+        await engagementsApi.addPin(engagementId, 'document', doc.id)
+      }
+      onPinsChanged()
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      toast.error(detail ?? 'Could not update pin -- please try again')
+    }
+  }
+
+  async function handleFavoriteToggle() {
+    setMenuOpen(false)
+    setCoords(null)
+    try {
+      if (isFavorited) {
+        await documentFavoritesApi.remove('document', doc.id)
+      } else {
+        await documentFavoritesApi.add('document', doc.id)
+      }
+      onFavoritesChanged()
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      toast.error(detail ?? 'Could not update favorite -- please try again')
+    }
+  }
+
   const dropdown = (
     <div
       ref={menuDropdownRef}
       className="bg-white dark:bg-[#252525] border border-[0.5px] border-surface-border dark:border-dark-border rounded-[8px] shadow-lg overflow-hidden w-44"
       style={{ position: 'fixed', zIndex: 9999, top: coords?.top ?? 0, left: coords?.left ?? 0, visibility: coords ? 'visible' : 'hidden' }}
     >
+      {canPin && engagementId && (
+        <button
+          onClick={handlePinToggle}
+          className="w-full text-left flex items-center gap-2 px-3 py-2 text-[12px] text-[#374151] dark:text-[#EDEEF0] hover:bg-surface-input dark:hover:bg-dark-card transition-colors"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" className="flex-shrink-0 text-[#1F3148]" aria-hidden="true">
+            <path d="M16 3l5 5-1.5 1.5L18 8l-5.5 5.5L14 16l-1.5 1.5L9 14l-5 5-1-1 5-5-3.5-3.5L6 8l2.5 2.5L14 5l-.5-1.5L15 2z"/>
+          </svg>
+          {isPinned ? 'Remove pin' : 'Pin to engagement'}
+        </button>
+      )}
       <button
-        onClick={() => setShowMoveList((v) => !v)}
-        disabled={isFinalized}
-        className="w-full text-left flex items-center gap-2 px-3 py-2 text-[12px] text-[#374151] dark:text-[#EDEEF0] hover:bg-surface-input dark:hover:bg-dark-card transition-colors disabled:opacity-40 disabled:cursor-default"
+        onClick={handleFavoriteToggle}
+        className="w-full text-left flex items-center gap-2 px-3 py-2 text-[12px] text-[#374151] dark:text-[#EDEEF0] hover:bg-surface-input dark:hover:bg-dark-card transition-colors"
       >
-        <Folder className="h-3.5 w-3.5 text-[#6B7280] flex-shrink-0" />
-        Move to Folder
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="flex-shrink-0 text-[#6B7280]" aria-hidden="true">
+          <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+        </svg>
+        {isFavorited ? 'Remove from Favorites' : 'Add to Favorites'}
       </button>
+      <div className="border-t border-[0.5px] border-surface-border dark:border-dark-border">
+        <button
+          onClick={() => setShowMoveList((v) => !v)}
+          disabled={isFinalized}
+          className="w-full text-left flex items-center gap-2 px-3 py-2 text-[12px] text-[#374151] dark:text-[#EDEEF0] hover:bg-surface-input dark:hover:bg-dark-card transition-colors disabled:opacity-40 disabled:cursor-default"
+        >
+          <Folder className="h-3.5 w-3.5 text-[#6B7280] flex-shrink-0" />
+          Move to Folder
+        </button>
       {showMoveList && (
         <div className="border-t border-[0.5px] border-surface-border dark:border-dark-border max-h-48 overflow-y-auto">
           <button
@@ -768,6 +929,7 @@ function FlatDocRow({
           )}
         </div>
       )}
+      </div>
       <div className="border-t border-[0.5px] border-surface-border dark:border-dark-border">
         <button
           onClick={handleDelete}
@@ -787,10 +949,15 @@ function FlatDocRow({
         draggable="true"
         onDragStart={(e) => { e.dataTransfer.setData('text/plain', doc.id); setIsDragging(true) }}
         onDragEnd={() => setIsDragging(false)}
-        className={cn('group flex items-center', isDragging && 'opacity-50', doc.is_superseded && 'opacity-60')}
+        className={cn('group flex items-center', isDragging && 'opacity-50', doc.is_superseded && 'opacity-60', isPinned && 'bg-[#FEFCF5]')}
         style={{ paddingTop: '11px', paddingBottom: '11px', paddingLeft: `${18 + depth * 22}px`, paddingRight: '18px' }}
       >
-        <div className="flex-1 flex items-center gap-[9px] min-w-0">
+        <div className="flex-1 flex items-center gap-[9px] min-w-0 cursor-pointer" onDoubleClick={handleOpen}>
+          {isPinned && (
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="#1F3148" className="flex-shrink-0" aria-hidden="true">
+              <path d="M16 3l5 5-1.5 1.5L18 8l-5.5 5.5L14 16l-1.5 1.5L9 14l-5 5-1-1 5-5-3.5-3.5L6 8l2.5 2.5L14 5l-.5-1.5L15 2z"/>
+            </svg>
+          )}
           {fileIconFromContentType(doc.content_type)}
           <span className="text-[13.5px] font-medium text-[#111827] dark:text-[#EDEEF0] truncate">{doc.filename}</span>
         </div>
@@ -799,9 +966,20 @@ function FlatDocRow({
         </div>
         <div className="w-6 flex-shrink-0 flex items-center justify-center">
           <button
+            onClick={(e) => { e.stopPropagation(); handleFavoriteToggle() }}
+            className="text-[#9CA3AF] transition-colors hover:opacity-80"
+          >
+            {isFavorited
+              ? <svg width="14" height="14" viewBox="0 0 24 24" fill="#F5B942" aria-hidden="true"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+              : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" strokeWidth="2" aria-hidden="true"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+            }
+          </button>
+        </div>
+        <div className="w-6 flex-shrink-0 flex items-center justify-center">
+          <button
             ref={triggerRef}
             onClick={() => { setMenuOpen((v) => !v); setShowMoveList(false); setCoords(null) }}
-            className="text-[#D1D5DB] hover:text-[#6B7280] dark:hover:text-[#EDEEF0] transition-colors opacity-0 group-hover:opacity-100"
+            className="text-[#9CA3AF] hover:text-[#374151] dark:hover:text-[#EDEEF0] transition-colors opacity-40 group-hover:opacity-100"
           >
             <MoreVertical className="h-4 w-4" />
           </button>
@@ -823,6 +1001,7 @@ export function FolderBrowser({
   clientId,
   isFinalized,
   showArchivedToggle,
+  canPin,
 }: FolderBrowserProps) {
   const router = useRouter()
   const [folders, setFolders] = useState<BrowserFolder[]>([])
@@ -836,6 +1015,12 @@ export function FolderBrowser({
   const [bulkImporting, setBulkImporting] = useState(false)
   const bulkImportRef = useRef<HTMLInputElement>(null)
   const [showArchived, setShowArchived] = useState(false)
+  const [showFavoritesOnly, setShowFavoritesOnly] = useState(false)
+  const [rawPins, setRawPins] = useState<Array<{ item_id: string; item_type: string }>>([])
+  const [rawFavorites, setRawFavorites] = useState<Array<{ item_id: string; item_type: string }>>([])
+
+  const pinnedItemIds = useMemo(() => new Set(rawPins.map((p) => p.item_id)), [rawPins])
+  const favoritedItemIds = useMemo(() => new Set(rawFavorites.map((f) => f.item_id)), [rawFavorites])
 
   // childrenOf map: used both for visibleRows and passed to FlatFolderRow for
   // the cycle-exclusion check in the destination picker.
@@ -878,25 +1063,52 @@ export function FolderBrowser({
     const shown = showArchived ? docs : docs.filter((d) => !d.is_superseded)
     const rows: FlatRow[] = []
 
+    // Produce a sorted sibling list (pinned first) merging folders and docs.
+    type SiblingItem =
+      | { kind: 'folder'; folder: BrowserFolder }
+      | { kind: 'doc'; doc: BrowserDoc }
+    function sortedSiblings(items: SiblingItem[]): SiblingItem[] {
+      return [...items].sort((a, b) => {
+        const aId = a.kind === 'folder' ? a.folder.id : a.doc.id
+        const bId = b.kind === 'folder' ? b.folder.id : b.doc.id
+        return (pinnedItemIds.has(aId) ? 0 : 1) - (pinnedItemIds.has(bId) ? 0 : 1)
+      })
+    }
+
     function addFolder(folder: BrowserFolder, depth: number) {
       const children = localChildrenOf[folder.id] ?? []
       const docsHere = shown.filter((d) => d.folder_id === folder.id)
       const hasChildren = children.length > 0 || docsHere.length > 0
       rows.push({ kind: 'folder', folder, depth, hasChildren })
       if (expandedFolderIds.has(folder.id)) {
-        for (const child of children) addFolder(child, depth + 1)
-        for (const doc of docsHere) rows.push({ kind: 'doc', doc, depth: depth + 1 })
+        const siblings: SiblingItem[] = [
+          ...children.map((f) => ({ kind: 'folder' as const, folder: f })),
+          ...docsHere.map((d) => ({ kind: 'doc' as const, doc: d })),
+        ]
+        for (const item of sortedSiblings(siblings)) {
+          if (item.kind === 'folder') addFolder(item.folder, depth + 1)
+          else rows.push({ kind: 'doc', doc: item.doc, depth: depth + 1 })
+        }
       }
     }
 
     const startFolders = navigationRootId
       ? (localChildrenOf[navigationRootId] ?? [])
       : localRootFolders
-    for (const f of startFolders) addFolder(f, 0)
     const rootDocs = shown.filter((d) => d.folder_id === navigationRootId)
-    for (const doc of rootDocs) rows.push({ kind: 'doc', doc, depth: 0 })
+    const rootSiblings: SiblingItem[] = [
+      ...startFolders.map((f) => ({ kind: 'folder' as const, folder: f })),
+      ...rootDocs.map((d) => ({ kind: 'doc' as const, doc: d })),
+    ]
+    for (const item of sortedSiblings(rootSiblings)) {
+      if (item.kind === 'folder') addFolder(item.folder, 0)
+      else rows.push({ kind: 'doc', doc: item.doc, depth: 0 })
+    }
+    if (showFavoritesOnly) {
+      return rows.filter((r) => favoritedItemIds.has(r.kind === 'folder' ? r.folder.id : r.doc.id))
+    }
     return rows
-  }, [folders, docs, expandedFolderIds, showArchived, navigationRootId])
+  }, [folders, docs, expandedFolderIds, showArchived, navigationRootId, pinnedItemIds, favoritedItemIds, showFavoritesOnly])
 
   const fetchFolders = useCallback(async () => {
     setFoldersLoading(true)
@@ -938,10 +1150,31 @@ export function FolderBrowser({
     }
   }, [scope, engagementId, clientId])
 
+  const fetchPins = useCallback(async () => {
+    if (scope !== 'engagement' || !engagementId) return
+    try {
+      const data = await engagementsApi.listPins(engagementId)
+      setRawPins(data)
+    } catch {
+      setRawPins([])
+    }
+  }, [scope, engagementId])
+
+  const fetchFavorites = useCallback(async () => {
+    try {
+      const data = await documentFavoritesApi.list()
+      setRawFavorites(data)
+    } catch {
+      setRawFavorites([])
+    }
+  }, [])
+
   useEffect(() => {
     fetchFolders()
     fetchDocs()
-  }, [fetchFolders, fetchDocs])
+    fetchPins()
+    fetchFavorites()
+  }, [fetchFolders, fetchDocs, fetchPins, fetchFavorites])
 
   function toggleFolder(id: string) {
     setExpandedFolderIds((prev) => {
@@ -1047,6 +1280,32 @@ export function FolderBrowser({
         )}
       </div>
 
+      {/* Favorites-only filter */}
+      {favoritedItemIds.size > 0 && (
+        <div className="flex items-center gap-2 mb-3">
+          <span className="text-[11px] font-medium text-[#9CA3AF] uppercase tracking-[0.05em]">
+            Favorites only
+          </span>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={showFavoritesOnly}
+            onClick={() => setShowFavoritesOnly((v) => !v)}
+            className={cn(
+              'relative w-9 h-5 rounded-full transition-colors flex-shrink-0 overflow-hidden',
+              showFavoritesOnly ? 'bg-[#1F3148]' : 'bg-[#C8CDD6]',
+            )}
+          >
+            <span
+              className={cn(
+                'absolute top-[3px] left-[3px] w-3.5 h-3.5 rounded-full bg-white shadow transition-transform',
+                showFavoritesOnly ? 'translate-x-[16px]' : 'translate-x-0',
+              )}
+            />
+          </button>
+        </div>
+      )}
+
       {/* Navigation breadcrumb -- visible when navigated into a subfolder */}
       {navigationRootId && (
         <nav className="flex items-center gap-1.5 text-[13px] mb-3">
@@ -1081,6 +1340,7 @@ export function FolderBrowser({
           <div className="flex-1 text-[11px] font-semibold tracking-[0.04em] text-[#9CA3AF] uppercase">Name</div>
           <div className="w-[130px] flex-shrink-0 text-[11px] font-semibold tracking-[0.04em] text-[#9CA3AF] uppercase">Updated</div>
           <div className="w-6 flex-shrink-0" />
+          <div className="w-6 flex-shrink-0" />
         </div>
 
         {/* Rows */}
@@ -1111,6 +1371,12 @@ export function FolderBrowser({
                   onDropDoc={moveDoc}
                   onFolderChanged={() => { fetchFolders(); fetchDocs() }}
                   isFinalized={isFinalized}
+                  isPinned={pinnedItemIds.has(row.folder.id)}
+                  isFavorited={favoritedItemIds.has(row.folder.id)}
+                  canPin={!!canPin && scope === 'engagement'}
+                  engagementId={engagementId}
+                  onPinsChanged={fetchPins}
+                  onFavoritesChanged={fetchFavorites}
                 />
               )
               : (
@@ -1121,6 +1387,12 @@ export function FolderBrowser({
                   folders={folders}
                   fetchDocs={fetchDocs}
                   isFinalized={isFinalized}
+                  isPinned={pinnedItemIds.has(row.doc.id)}
+                  isFavorited={favoritedItemIds.has(row.doc.id)}
+                  canPin={!!canPin && scope === 'engagement'}
+                  engagementId={engagementId}
+                  onPinsChanged={fetchPins}
+                  onFavoritesChanged={fetchFavorites}
                 />
               )
             return divider ? [divider, rowEl] : [rowEl]

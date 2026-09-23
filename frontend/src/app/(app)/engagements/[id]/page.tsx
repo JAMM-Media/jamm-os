@@ -636,6 +636,7 @@ export default function EngagementDetailPage() {
               engagementId={id}
               clientId={engagement.clientId ?? undefined}
               isFinalized={!!engagement.finalizedAt}
+              canPin={canFinalize}
             />
 
             {/* Toolbar */}

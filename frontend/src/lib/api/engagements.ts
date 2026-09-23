@@ -41,6 +41,26 @@ function mapEngagement(raw: Record<string, unknown>): Engagement {
   }
 }
 
+export interface EngagementMember {
+  id: string
+  userId: string
+  userName: string | null
+  userEmail: string | null
+  userRole: string | null
+  isAdministrator: boolean
+}
+
+function mapMember(raw: Record<string, unknown>): EngagementMember {
+  return {
+    id: String(raw.id),
+    userId: String(raw.user_id),
+    userName: raw.user_name ? String(raw.user_name) : null,
+    userEmail: raw.user_email ? String(raw.user_email) : null,
+    userRole: raw.user_role ? String(raw.user_role) : null,
+    isAdministrator: Boolean(raw.is_administrator ?? false),
+  }
+}
+
 export const engagementsApi = {
   list: async (
     offset = 0,
@@ -141,6 +161,49 @@ export const engagementsApi = {
       status: String(item.status ?? ''),
       assignedTo: item.assigned_to ? String(item.assigned_to) : null,
     }))
+  },
+
+  listMembers: async (engagementId: string): Promise<EngagementMember[]> => {
+    const { data } = await api.get(`/engagements/${engagementId}/members`)
+    const items = Array.isArray(data) ? data : (data.items ?? [])
+    return items.map((r: Record<string, unknown>) => mapMember(r))
+  },
+
+  addMember: async (engagementId: string, userId: string): Promise<EngagementMember> => {
+    const { data } = await api.post(`/engagements/${engagementId}/members`, { user_id: userId })
+    return mapMember(data)
+  },
+
+  removeMember: async (engagementId: string, memberId: string): Promise<void> => {
+    await api.delete(`/engagements/${engagementId}/members/${memberId}`)
+  },
+
+  listRecentDocuments: async (engagementId: string): Promise<{
+    documentId: string
+    filename: string
+    engagementId: string
+    lastViewedAt: string
+  }[]> => {
+    const { data } = await api.get(`/engagements/${engagementId}/recent-documents`)
+    return (data ?? []).map((item: Record<string, unknown>) => ({
+      documentId: String(item.document_id),
+      filename: String(item.filename),
+      engagementId: String(item.engagement_id),
+      lastViewedAt: String(item.last_viewed_at),
+    }))
+  },
+
+  listPins: async (engagementId: string): Promise<Array<{ id: string; item_type: string; item_id: string; name: string }>> => {
+    const { data } = await api.get(`/engagements/${engagementId}/pins`)
+    return data ?? []
+  },
+
+  addPin: async (engagementId: string, itemType: string, itemId: string): Promise<void> => {
+    await api.post(`/engagements/${engagementId}/pins`, { item_type: itemType, item_id: itemId })
+  },
+
+  removePin: async (engagementId: string, itemType: string, itemId: string): Promise<void> => {
+    await api.delete(`/engagements/${engagementId}/pins/${itemType}/${itemId}`)
   },
 }
 

@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  body { margin: 0; background: #F4F5F7; font-family: Inter, -apple-system, sans-serif; padding: 24px; box-sizing: border-box; }
+  .page { max-width: 700px; }
+  .header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 18px; }
+  .title { font-size: 17px; font-weight: 600; color: #111827; margin-bottom: 3px; }
+  .subtitle { font-size: 12.5px; color: #6B7280; }
+  .actions { display: flex; gap: 8px; flex-shrink: 0; }
+  .btn { display: flex; align-items: center; gap: 5px; background: #FFFFFF; border: 1px solid #E5E7EB; border-radius: 8px; color: #374151; font-size: 12.5px; font-weight: 500; padding: 7px 14px; }
+  .btn-primary { background: #1F3148; border: none; color: #FFFFFF; }
+
+  .recent-label { font-size: 11px; font-weight: 600; letter-spacing: 0.04em; color: #6B7280; text-transform: uppercase; margin-bottom: 8px; }
+  .recent-row { display: flex; gap: 8px; margin-bottom: 16px; }
+  .recent-card { flex: 1; min-width: 0; background: #EDEEF0; border: 1px solid #E5E7EB; border-radius: 8px; padding: 8px 10px; }
+  .recent-card-top { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+  .recent-name { font-size: 11.5px; font-weight: 500; color: #111827; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .recent-time { font-size: 10px; color: #9CA3AF; }
+
+  .table-card { background: #FFFFFF; border: 1px solid #E5E7EB; border-radius: 12px; overflow: hidden; }
+  .table-header { display: flex; align-items: center; padding: 10px 18px; border-bottom: 1px solid #F3F4F6; }
+  .col-name { flex: 1; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; color: #9CA3AF; text-transform: uppercase; }
+  .col-updated { width: 130px; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; color: #9CA3AF; text-transform: uppercase; }
+  .col-menu { width: 24px; }
+  .row { display: flex; align-items: center; padding: 11px 18px; }
+  .row-pinned { background: #FEFCF5; }
+  .row-name { flex: 1; display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .row-updated { width: 130px; font-size: 12.5px; color: #9CA3AF; }
+  .row-menu { width: 24px; text-align: center; color: #D1D5DB; }
+  .row-divider { height: 1px; background: #F9FAFB; margin: 0 18px; }
+  .item-name { font-size: 13.5px; color: #111827; font-weight: 500; }
+</style>
+</head>
+<body>
+  <div class="page">
+
+    <!--
+      Real decisions confirmed with Ben for this iteration:
+
+      - Two distinct concepts: Favorite (private, per-user, star, no
+        permission gate) and Pin (shared, visible to everyone on the
+        engagement, navy pin icon, mutation restricted to engagement
+        administrator/manager/firm owner -- same trio gate already used
+        for Staff and finalize).
+
+      - No separate "Pinned" strip. Considered and rejected: with
+        Recently Viewed already occupying that slot, a second near-
+        identical strip felt redundant, since pinned items are already
+        visible and marked directly in the table below (pins are capped
+        at 5, so the table itself is a sufficient way to find them).
+
+      - The pin indicator sits directly to the left of the folder/file
+        icon in the Name column, not in a separate reserved icon column.
+        An unpinned, unfavorited row (see "Workpapers" below) has no
+        extra icon and no reserved empty space at all.
+
+      - Pinned rows sort to the top of the table and get a faint warm
+        background tint (#FEFCF5) to separate them from ordinary rows
+        without being loud about it.
+
+      - The inline pin icon is a READ-ONLY indicator of current state,
+        not the control used to toggle it. The action to pin/unpin or
+        favorite/unfavorite an item lives in the row's three-dot menu
+        (e.g. "Pin to engagement" / "Remove pin", "Add to Favorites" /
+        "Remove from Favorites"), alongside the existing Move to Folder
+        and Delete actions. This mock does not depict the menu itself,
+        only the resting-state row indicator.
+
+      - Favorites (the star) is a separate, later concern for the same
+        row; this mock focuses on the pin. When both apply to the same
+        row, the star would sit alongside the pin in the same position,
+        order TBD.
+    -->
+
+    <div class="header">
+      <div>
+        <div class="title">Documents</div>
+        <div class="subtitle">Where all engagement files live, including files approved from client uploads.</div>
+      </div>
+      <div class="actions">
+        <button class="btn">Upload</button>
+        <button class="btn">New Folder</button>
+        <button class="btn btn-primary">Bulk Import</button>
+      </div>
+    </div>
+
+    <div class="recent-label">Recently viewed</div>
+    <div class="recent-row">
+      <div class="recent-card">
+        <div class="recent-card-top">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#EF4444" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+          <span class="recent-name">Signed_W9.pdf</span>
+        </div>
+        <div class="recent-time">4m ago</div>
+      </div>
+      <div class="recent-card">
+        <div class="recent-card-top">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#10B981" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+          <span class="recent-name">Calc_Workbook.xlsx</span>
+        </div>
+        <div class="recent-time">1h ago</div>
+      </div>
+    </div>
+
+    <div class="table-card">
+      <div class="table-header">
+        <div class="col-name">Name</div>
+        <div class="col-updated">Updated</div>
+        <div class="col-menu"></div>
+      </div>
+
+      <div class="row row-pinned">
+        <div class="row-name">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="#1F3148"><path d="M16 3l5 5-1.5 1.5L18 8l-5.5 5.5L14 16l-1.5 1.5L9 14l-5 5-1-1 5-5-3.5-3.5L6 8l2.5 2.5L14 5l-.5-1.5L15 2z"/></svg>
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="#F5B942"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+          <span class="item-name">Tax Returns</span>
+        </div>
+        <div class="row-updated">Sep 15, 2026</div>
+        <div class="row-menu">&#8942;</div>
+      </div>
+      <div class="row-divider"></div>
+
+      <div class="row row-pinned">
+        <div class="row-name">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="#1F3148"><path d="M16 3l5 5-1.5 1.5L18 8l-5.5 5.5L14 16l-1.5 1.5L9 14l-5 5-1-1 5-5-3.5-3.5L6 8l2.5 2.5L14 5l-.5-1.5L15 2z"/></svg>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#EF4444" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><line x1="10" y1="9" x2="8" y2="9"/></svg>
+          <span class="item-name">Engagement_Letter.pdf</span>
+        </div>
+        <div class="row-updated">Sep 14, 2026</div>
+        <div class="row-menu">&#8942;</div>
+      </div>
+      <div class="row-divider"></div>
+
+      <div class="row">
+        <div class="row-name">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="#F5B942"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+          <span class="item-name">Workpapers</span>
+        </div>
+        <div class="row-updated">Sep 18, 2026</div>
+        <div class="row-menu">&#8942;</div>
+      </div>
+
+    </div>
+  </div>
+</body>
+</html>
