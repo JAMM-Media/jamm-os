@@ -33,6 +33,7 @@ class DocumentOut(BaseModel):
     uploaded_by_name: Optional[str] = None
     copied_from_document_id: Optional[uuid.UUID] = None
     triage_status: str = "filed"
+    source: str = "staff"
     client_note: Optional[str] = None
     description: Optional[str] = None
 

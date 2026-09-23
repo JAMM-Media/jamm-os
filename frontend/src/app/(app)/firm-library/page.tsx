@@ -17,14 +17,17 @@ import {
   Download,
   X,
   Loader2,
+  Sparkles,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useRouter } from 'next/navigation'
 import api from '@/lib/api'
 import { useAuth } from '@/lib/hooks/useAuth'
+import { FileTypeIcon, fileTypeLabel } from '@/components/documents/FileTypeIcon'
 import { importBatchesApi, type CreateImportBatchPayload } from '@/lib/api/importBatches'
 import { enumerateFolder } from '@/lib/importEnumeration'
 import { Breadcrumb } from '@/components/layout/Breadcrumb'
+import { firmLibraryApi } from '@/lib/api/firmLibrary'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -49,6 +52,7 @@ interface FirmDoc {
   created_at: string
   folder_id: string | null
   scope: string
+  source?: string
 }
 
 interface EngagementOption {
@@ -110,35 +114,6 @@ function formatDate(iso: string): string {
   } catch {
     return iso
   }
-}
-
-function fileTypeLabel(contentType: string): string {
-  if (contentType.includes('pdf')) return 'PDF'
-  if (contentType.includes('word') || contentType.includes('docx') || contentType.includes('document')) return 'Word'
-  if (contentType.includes('excel') || contentType.includes('xlsx') || contentType.includes('spreadsheet')) return 'Excel'
-  if (contentType.includes('powerpoint') || contentType.includes('pptx') || contentType.includes('presentation')) return 'PPT'
-  if (contentType.includes('image')) return 'Image'
-  if (contentType.includes('text')) return 'Text'
-  if (contentType.includes('csv')) return 'CSV'
-  return 'File'
-}
-
-function FileTypeIcon({ contentType }: { contentType: string }) {
-  let bgColor = '#6B7280'
-  const label = fileTypeLabel(contentType)
-  if (label === 'PDF') bgColor = '#DC2626'
-  else if (label === 'Word') bgColor = '#2563EB'
-  else if (label === 'Excel') bgColor = '#16A34A'
-  else if (label === 'PPT') bgColor = '#D97706'
-  else if (label === 'Image') bgColor = '#7C3AED'
-  return (
-    <div
-      className="flex items-center justify-center w-8 h-8 rounded flex-shrink-0"
-      style={{ backgroundColor: bgColor }}
-    >
-      <FileText className="h-4 w-4 text-white" />
-    </div>
-  )
 }
 
 // ---------------------------------------------------------------------------
@@ -805,6 +780,187 @@ function FileSkeleton() {
 }
 
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// StarterTemplatesPanel
+// ---------------------------------------------------------------------------
+
+interface StarterTemplatesPanelProps {
+  seeded: boolean | null
+  docs: FirmDoc[]
+  loading: boolean
+  seeding: boolean
+  ackAccepted: boolean
+  ackChecked: boolean
+  onAckCheck: (v: boolean) => void
+  onAckAccept: () => void
+  onSeed: () => void
+}
+
+function StarterTemplatesPanel({
+  seeded,
+  docs,
+  loading,
+  seeding,
+  ackAccepted,
+  ackChecked,
+  onAckCheck,
+  onAckAccept,
+  onSeed,
+}: StarterTemplatesPanelProps) {
+  function formatBytes(bytes: number) {
+    if (bytes < 1024) return `${bytes} B`
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+  }
+
+  if (loading) {
+    return (
+      <div className="p-6 flex flex-col gap-4 flex-1 overflow-y-auto">
+        <h1 className="text-2xl font-medium text-brand dark:text-[#EDEEF0]">Starter Templates</h1>
+        <div className="space-y-2">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <div key={i} className="h-10 rounded bg-[#D5D8DE] dark:bg-[#444444] animate-pulse" />
+          ))}
+        </div>
+      </div>
+    )
+  }
+
+  // Acknowledgment gate -- shown once before the user can access this section.
+  if (!ackAccepted) {
+    return (
+      <div className="p-6 flex flex-col gap-6 flex-1 overflow-y-auto">
+        <div>
+          <h1 className="text-2xl font-medium text-brand dark:text-[#EDEEF0] mb-1">Starter Templates</h1>
+          <p className="text-[12px] text-[#6B7280]">Ready-to-customize documents for your team.</p>
+        </div>
+        <div className="max-w-lg rounded-[12px] border border-[0.5px] border-surface-border dark:border-dark-border bg-surface-card dark:bg-dark-card p-6 flex flex-col gap-4">
+          <p className="text-[13px] text-[#374151] dark:text-[#9CA3AF] leading-relaxed">
+            I understand that these are editable starter templates, not legal or professional advice. My firm is responsible for reviewing, customizing, and approving any document before it's used with a client.
+          </p>
+          <label className="flex items-start gap-2.5 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={ackChecked}
+              onChange={(e) => onAckCheck(e.target.checked)}
+              className="mt-0.5 h-4 w-4 rounded accent-brand flex-shrink-0"
+            />
+            <span className="text-[13px] text-brand dark:text-[#EDEEF0] select-none">
+              I understand and agree
+            </span>
+          </label>
+          <button
+            onClick={onAckAccept}
+            disabled={!ackChecked}
+            className="self-start h-9 px-4 rounded-[6px] bg-brand text-white text-[13px] font-medium hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-default"
+          >
+            Continue
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  // Not yet seeded -- show prompt.
+  if (seeded === false) {
+    return (
+      <div className="p-6 flex flex-col gap-6 flex-1 overflow-y-auto">
+        <div>
+          <h1 className="text-2xl font-medium text-brand dark:text-[#EDEEF0] mb-1">Starter Templates</h1>
+          <p className="text-[12px] text-[#6B7280]">Ready-to-customize documents for your team.</p>
+        </div>
+        <div className="flex flex-col items-center justify-center py-24 gap-[10px]">
+          <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-surface-card dark:bg-dark-card border border-[0.5px] border-surface-border dark:border-dark-border">
+            <Sparkles className="h-5 w-5 text-[#6B7280]" />
+          </div>
+          <p className="text-[13px] font-medium text-brand dark:text-[#EDEEF0]">No starter templates yet</p>
+          <p className="text-[12px] text-[#6B7280]">Add 8 ready-to-customize documents to get your firm started.</p>
+          <button
+            onClick={onSeed}
+            disabled={seeding}
+            className="mt-2 h-9 px-4 rounded-[6px] bg-brand text-white text-[13px] font-medium hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center gap-2"
+          >
+            {seeding && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+            {seeding ? 'Adding...' : 'Add starter templates'}
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  // Seeded -- show the 8 vendor_sample documents.
+  return (
+    <div className="p-6 flex flex-col gap-4 flex-1 overflow-y-auto">
+      <div>
+        <h1 className="text-2xl font-medium text-brand dark:text-[#EDEEF0] mb-1">Starter Templates</h1>
+        <p className="text-[12px] text-[#6B7280]">Ready-to-customize documents. Create a draft to make your own version.</p>
+      </div>
+      {docs.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-24 gap-[10px]">
+          <p className="text-[13px] text-[#9CA3AF]">No starter templates found.</p>
+        </div>
+      ) : (
+        <div className="rounded-modal border border-[0.5px] border-surface-border dark:border-dark-border overflow-hidden">
+          <table className="w-full border-collapse">
+            <thead>
+              <tr className="bg-surface-card dark:bg-[#252525]">
+                {['Name', 'Type', 'Size', '', 'Action'].map((col, i) => (
+                  <th
+                    key={i}
+                    className="px-4 py-2.5 text-left text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em] whitespace-nowrap"
+                  >
+                    {col}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {docs.map((doc, i) => (
+                <tr
+                  key={doc.id}
+                  className={[
+                    'group transition-colors bg-surface-page dark:bg-dark-page',
+                    'hover:bg-[#DDDFE3] dark:hover:bg-[#323232]',
+                    i !== docs.length - 1
+                      ? 'border-b border-[0.5px] border-[#D5D8DE] dark:border-dark-card'
+                      : '',
+                  ].join(' ')}
+                >
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-2.5">
+                      <FileTypeIcon contentType={doc.content_type} />
+                      <span className="text-[12px] font-medium text-brand dark:text-[#EDEEF0] truncate">{doc.filename}</span>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className="text-[12px] text-[#374151] dark:text-[#9CA3AF]">{fileTypeLabel(doc.content_type)}</span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className="text-[12px] text-[#374151] dark:text-[#9CA3AF]">{formatBytes(doc.size_bytes)}</span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className="inline-flex items-center h-[18px] px-2 rounded text-[10px] font-medium bg-[#E5E7EB] dark:bg-[#2D2D2D] text-[#6B7280] dark:text-[#9CA3AF] whitespace-nowrap">
+                      Sample
+                    </span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <button
+                      disabled
+                      title="Create a draft from this -- coming soon"
+                      className="text-[12px] text-[#9CA3AF] cursor-not-allowed"
+                    >
+                      Create a draft
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
 // Main page
 // ---------------------------------------------------------------------------
 
@@ -825,6 +981,22 @@ export default function FirmLibraryPage() {
   const [search, setSearch] = useState('')
 
   const [allFirmFolders, setAllFirmFolders] = useState<FirmFolder[]>([])
+
+  // Starter Templates view state
+  const [view, setView] = useState<'all-files' | 'starter-templates'>('all-files')
+  const [starterSeeded, setStarterSeeded] = useState<boolean | null>(null)
+  const [starterDocs, setStarterDocs] = useState<FirmDoc[]>([])
+  const [starterLoading, setStarterLoading] = useState(false)
+  const [seeding, setSeeding] = useState(false)
+  const [ackAccepted, setAckAccepted] = useState(false)
+  const [ackChecked, setAckChecked] = useState(false)
+
+  // Read firm-specific acknowledgment from localStorage once user is available.
+  useEffect(() => {
+    if (user?.firm_id) {
+      setAckAccepted(localStorage.getItem(`jamm_starter_ack_${user.firm_id}`) === '1')
+    }
+  }, [user?.firm_id])
 
   // Modals
   const [copyTarget, setCopyTarget] = useState<FirmDoc | null>(null)
@@ -860,7 +1032,7 @@ export default function FirmLibraryPage() {
       const params: Record<string, unknown> = { scope: 'firm_library', limit: 200 }
       if (currentFolderId) params.folder_id = currentFolderId
       const { data } = await api.get('/documents/', { params })
-      setDocs(data.items ?? data ?? [])
+      setDocs((data.items ?? data ?? []).filter((d: Record<string, unknown>) => d.source !== 'system'))
     } catch {
       setDocs([])
     } finally {
@@ -880,9 +1052,49 @@ export default function FirmLibraryPage() {
   }
 
   function handleRootSelect() {
+    setView('all-files')
     setCurrentFolderId(null)
     setFolderPath([])
     setSearch('')
+  }
+
+  async function handleStarterSelect() {
+    setView('starter-templates')
+    if (starterSeeded !== null) return
+    setStarterLoading(true)
+    try {
+      const s = await firmLibraryApi.getStarterTemplatesStatus()
+      setStarterSeeded(s.has_starter_templates)
+      if (s.has_starter_templates) {
+        const { data } = await api.get('/documents/', {
+          params: { scope: 'firm_library', limit: 200 },
+        })
+        const all: FirmDoc[] = (data.items ?? data ?? []) as FirmDoc[]
+        setStarterDocs(all.filter((d) => d.source === 'system'))
+      }
+    } catch {
+      toast.error('Could not load starter templates status')
+    } finally {
+      setStarterLoading(false)
+    }
+  }
+
+  async function handleSeedStarters() {
+    setSeeding(true)
+    try {
+      await firmLibraryApi.seedStarterTemplates()
+      toast.success('Starter templates added')
+      setStarterSeeded(true)
+      const { data } = await api.get('/documents/', {
+        params: { scope: 'firm_library', limit: 200 },
+      })
+      const all: FirmDoc[] = (data.items ?? data ?? []) as FirmDoc[]
+      setStarterDocs(all.filter((d) => d.source === 'system'))
+    } catch {
+      toast.error('Could not add starter templates')
+    } finally {
+      setSeeding(false)
+    }
   }
 
   async function handleDownload(doc: FirmDoc) {
@@ -951,7 +1163,7 @@ export default function FirmLibraryPage() {
           <div
             className={[
               'flex items-center gap-2 px-3 py-1.5 rounded cursor-pointer text-[13px] transition-colors mx-1',
-              currentFolderId === null
+              view === 'all-files'
                 ? 'bg-surface-input dark:bg-dark-card text-brand dark:text-[#EDEEF0] font-medium'
                 : 'text-[#374151] dark:text-[#9CA3AF] hover:bg-surface-input dark:hover:bg-dark-card hover:text-brand dark:hover:text-[#EDEEF0]',
             ].join(' ')}
@@ -960,6 +1172,21 @@ export default function FirmLibraryPage() {
             <FolderOpen className="h-3.5 w-3.5 text-[#6B7280] flex-shrink-0" />
             <span>All Files</span>
           </div>
+
+          {isElevated && (
+            <div
+              className={[
+                'flex items-center gap-2 px-3 py-1.5 rounded cursor-pointer text-[13px] transition-colors mx-1',
+                view === 'starter-templates'
+                  ? 'bg-surface-input dark:bg-dark-card text-brand dark:text-[#EDEEF0] font-medium'
+                  : 'text-[#374151] dark:text-[#9CA3AF] hover:bg-surface-input dark:hover:bg-dark-card hover:text-brand dark:hover:text-[#EDEEF0]',
+              ].join(' ')}
+              onClick={handleStarterSelect}
+            >
+              <Sparkles className="h-3.5 w-3.5 text-[#6B7280] flex-shrink-0" />
+              <span>Starter Templates</span>
+            </div>
+          )}
 
           {foldersLoading ? (
             <div className="px-3 py-2 space-y-2">
@@ -986,6 +1213,23 @@ export default function FirmLibraryPage() {
 
       {/* Right panel: main content */}
       <div className="flex-1 flex flex-col overflow-hidden">
+        {view === 'starter-templates' ? (
+          <StarterTemplatesPanel
+            seeded={starterSeeded}
+            docs={starterDocs}
+            loading={starterLoading}
+            seeding={seeding}
+            ackAccepted={ackAccepted}
+            ackChecked={ackChecked}
+            onAckCheck={setAckChecked}
+            onAckAccept={() => {
+              setAckAccepted(true)
+              setAckChecked(false)
+              if (typeof window !== 'undefined' && user?.firm_id) localStorage.setItem(`jamm_starter_ack_${user.firm_id}`, '1')
+            }}
+            onSeed={handleSeedStarters}
+          />
+        ) : (
         <div className="p-6 flex flex-col gap-4 flex-1 overflow-y-auto">
           {/* Page title + breadcrumb */}
           <div>
@@ -1170,6 +1414,7 @@ export default function FirmLibraryPage() {
             </div>
           )}
         </div>
+        )}
       </div>
 
       {/* Modals */}
