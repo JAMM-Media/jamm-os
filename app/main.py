@@ -48,6 +48,7 @@ from app.api.firms import router as firms_router
 from app.api.documents import router as documents_router
 from app.api.document_folders import router as document_folders_router
 from app.api.document_favorites import router as document_favorites_router
+from app.api.firm_library import router as firm_library_router
 from app.api.document_requests import router as document_requests_router
 from app.api.import_batches import router as import_batches_router
 from app.api.checklist_templates import router as checklist_templates_router
@@ -371,6 +372,7 @@ app.include_router(contacts_router)
 app.include_router(documents_router)
 app.include_router(document_folders_router)
 app.include_router(document_favorites_router)
+app.include_router(firm_library_router)
 app.include_router(document_requests_router)
 app.include_router(import_batches_router)
 app.include_router(checklist_templates_router)
