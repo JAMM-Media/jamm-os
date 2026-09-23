@@ -72,7 +72,7 @@ function formatDate(iso: string): string {
   }
 }
 
-function getDescendantFolderIds(folderId: string, childrenOf: Record<string, BrowserFolder[]>): Set<string> {
+export function getDescendantFolderIds(folderId: string, childrenOf: Record<string, BrowserFolder[]>): Set<string> {
   const result = new Set<string>()
   const queue: string[] = [folderId]
   while (queue.length > 0) {
