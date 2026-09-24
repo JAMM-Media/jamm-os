@@ -733,7 +733,7 @@ function DraftGuidanceModal({
         </div>
         <div className="p-5">
           <p className="text-[13px] text-[#374151] dark:text-[#9CA3AF]">
-            The file downloads to your computer. Edit it locally, then use the Upload button to bring it back -- choose Replace existing, not Keep both.
+            The file downloads to your computer. Edit it locally, then use the Upload button to add your finished version to Firm Library.
           </p>
         </div>
         <div className="flex items-center justify-end gap-2 px-5 py-3.5 border-t border-[0.5px] border-surface-border dark:border-dark-border">
@@ -1049,11 +1049,20 @@ export default function FirmLibraryPage() {
   const [ackChecked, setAckChecked] = useState(false)
   const [draftGuidanceShown, setDraftGuidanceShown] = useState(false)
 
+  // TEMP DIAGNOSTIC -- remove after bug is traced
+  console.log('[FirmLibrary render] user?.firm_id=', user?.firm_id, 'ackAccepted=', ackAccepted)
+
   // Read firm-specific acknowledgment from localStorage once user is available.
   useEffect(() => {
+    console.log('[FirmLibrary ack effect] fired -- user?.firm_id=', user?.firm_id)
     if (user?.firm_id) {
-      setAckAccepted(localStorage.getItem(`jamm_starter_ack_${user.firm_id}`) === '1')
+      const key = `jamm_starter_ack_${user.firm_id}`
+      const raw = localStorage.getItem(key)
+      console.log('[FirmLibrary ack effect] key=', key, 'raw=', raw, 'result=', raw === '1')
+      setAckAccepted(raw === '1')
       setDraftGuidanceShown(localStorage.getItem(`jamm_draft_guidance_${user.firm_id}`) === '1')
+    } else {
+      console.log('[FirmLibrary ack effect] user?.firm_id is falsy -- skipping localStorage read')
     }
   }, [user?.firm_id])
 
@@ -1167,12 +1176,41 @@ export default function FirmLibraryPage() {
     }
   }
 
+  async function handleDraftDownload(doc: FirmDoc) {
+    // window.open on a cross-origin S3 URL ignores any download attribute and
+    // saves under the stored filename. Fetch as a blob first so we can give the
+    // file a "Draft - ..." name that can never collide with the vendor sample on
+    // re-upload.
+    try {
+      const { data } = await api.get(`/documents/${doc.id}/download`)
+      const url = data.url ?? data.signed_url
+      if (!url) return
+      const response = await fetch(url)
+      const blob = await response.blob()
+      const blobUrl = URL.createObjectURL(blob)
+      const ext = doc.filename.match(/\.[^.]+$/)?.[0] ?? ''
+      const base = doc.filename
+        .replace(/^\d+_/, '')
+        .replace(/\.[^.]+$/, '')
+        .replace(/_/g, ' ')
+      const a = document.createElement('a')
+      a.href = blobUrl
+      a.download = `Draft - ${base}${ext}`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(blobUrl)
+    } catch {
+      toast.error('Could not generate download link')
+    }
+  }
+
   function handleCreateDraft(doc: FirmDoc) {
     if (!draftGuidanceShown) {
       setDraftGuidanceDoc(doc)
       return
     }
-    handleDownload(doc)
+    handleDraftDownload(doc)
   }
 
   async function handleBulkImportChange(e: ChangeEvent<HTMLInputElement>) {
@@ -1529,7 +1567,7 @@ export default function FirmLibraryPage() {
             setDraftGuidanceDoc(null)
             setDraftGuidanceShown(true)
             if (user?.firm_id) localStorage.setItem(`jamm_draft_guidance_${user.firm_id}`, '1')
-            await handleDownload(doc)
+            await handleDraftDownload(doc)
           }}
         />
       )}
