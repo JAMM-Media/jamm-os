@@ -140,4 +140,9 @@ export const staffApi = {
     const { data } = await api.get('/users/bookable-staff')
     return data
   },
+
+  listFirmRoster: async (): Promise<{ id: string; full_name: string | null }[]> => {
+    const { data } = await api.get('/users/firm-roster')
+    return data
+  },
 }
