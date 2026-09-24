@@ -192,6 +192,7 @@ def run_nurture_tick() -> dict:
             "held_for_business_hours": 0,
             "held_for_approval": 0,
             "dead_ends_reached": 0,
+            "stopped_reason": "env_disabled",
         }
 
     db = SessionLocal()

@@ -311,9 +311,8 @@ class TestEnvKillSwitchOff:
 
 class TestBothSwitchesOff:
 
-    def test_both_switches_off_env_stops_tick(self, monkeypatch, caplog):
+    def test_both_switches_off_env_stops_tick(self, monkeypatch):
         """When both env kill switch and firm toggle are off, env stops the tick first."""
-        import logging
         firm = _make_firm(nurture_enabled=False)
         lead = _make_lead(firm.id)
         seq_id, ver_id, step_id = _make_sequence_with_email_step(firm.id)
@@ -337,16 +336,12 @@ class TestBothSwitchesOff:
             lambda **kw: send_calls.append(kw),
         )
 
-        with caplog.at_level(logging.INFO):
-            result = run_nurture_tick()
+        result = run_nurture_tick()
 
         assert result["checked"] == 0, f"Expected 0 checked, got {result['checked']}"
         assert result["sent"] == 0, f"Expected 0 sent, got {result['sent']}"
         assert len(send_calls) == 0, "send_nurture_email must not be called when env switch is off"
-        assert any(
-            "nurture_tick: skipped -- sends are disabled at the environment level" in r.message
-            for r in caplog.records
-        ), "Expected env kill switch log message not found in caplog"
+        assert result["stopped_reason"] == "env_disabled", "Expected tick to report env_disabled stop reason"
 
 
 # ---------------------------------------------------------------------------
