@@ -51,3 +51,5 @@ frontend_snapshot.txt
 .playwright-mcp/
 *.png
 assets/
+!frontend/public/jamm-signin-background.png
+!frontend/public/jamm-brain-logo.png
