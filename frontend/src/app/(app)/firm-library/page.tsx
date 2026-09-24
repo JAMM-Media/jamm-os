@@ -1049,20 +1049,13 @@ export default function FirmLibraryPage() {
   const [ackChecked, setAckChecked] = useState(false)
   const [draftGuidanceShown, setDraftGuidanceShown] = useState(false)
 
-  // TEMP DIAGNOSTIC -- remove after bug is traced
-  console.log('[FirmLibrary render] user?.firm_id=', user?.firm_id, 'ackAccepted=', ackAccepted)
-
   // Read firm-specific acknowledgment from localStorage once user is available.
   useEffect(() => {
-    console.log('[FirmLibrary ack effect] fired -- user?.firm_id=', user?.firm_id)
     if (user?.firm_id) {
       const key = `jamm_starter_ack_${user.firm_id}`
       const raw = localStorage.getItem(key)
-      console.log('[FirmLibrary ack effect] key=', key, 'raw=', raw, 'result=', raw === '1')
       setAckAccepted(raw === '1')
       setDraftGuidanceShown(localStorage.getItem(`jamm_draft_guidance_${user.firm_id}`) === '1')
-    } else {
-      console.log('[FirmLibrary ack effect] user?.firm_id is falsy -- skipping localStorage read')
     }
   }, [user?.firm_id])
 
