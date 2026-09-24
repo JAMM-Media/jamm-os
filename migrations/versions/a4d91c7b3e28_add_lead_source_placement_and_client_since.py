@@ -2,7 +2,7 @@
 """add leads.source_placement and clients.client_since
 
 Revision ID: a4d91c7b3e28
-Revises: eb8d785ffb8c
+Revises: cb70823479d3
 Create Date: 2026-09-17 00:00:00.000000
 
 Repointed Sep 22, 2026 from down_revision 27b043fa7aa2 to b2c3d4e5f6a7. Ben's
@@ -15,6 +15,11 @@ rebases onto the end of it rather than merging.
 Repointed again Sep 22, 2026, from b2c3d4e5f6a7 to eb8d785ffb8c, after
 Ben branched eb8d785ffb8c (document_template_status) from b2c3d4e5f6a7 as
 well, forking this revision off a second time within the same afternoon.
+
+Repointed a third time Sep 24, 2026, from eb8d785ffb8c to cb70823479d3.
+This one is not a fork: cb70823479d3 (source_item_id on
+document_template_statuses) descends from eb8d785ffb8c, so main simply
+grew past this revision's parent while it waited to be pushed.
 
 Hand-written. Autogenerate was run first (revision 6263d8474d92) and
 discarded: it proposed 56 operations, of which only these 4 were this
@@ -42,7 +47,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = "a4d91c7b3e28"
-down_revision: Union[str, Sequence[str], None] = 'eb8d785ffb8c'
+down_revision: Union[str, Sequence[str], None] = 'cb70823479d3'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
