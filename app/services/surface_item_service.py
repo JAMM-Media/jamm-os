@@ -26,6 +26,7 @@ from app.core.surface_constants import (
     BRIEFING_SUPPRESSION_DAYS,
     OBSERVATORY_SUPPRESSION_DAYS,
 )
+from app.models.client import Client
 from app.models.surface_item import SurfaceItem
 from app.services.behavioral_log import log_event
 from app.services.surface_daily_job import (
@@ -40,6 +41,44 @@ logger = logging.getLogger(__name__)
 # Reasons that start a suppression window rather than ending the item.
 SUPPRESSING_REASONS = (DismissalReason.already_handling,)
 
+
+
+def _attach_client_names(db: Session, firm_id: UUID, rows: list) -> None:
+    """
+    Batch-resolves client names and sets row.client_name in place.
+
+    Collects distinct, valid client_id UUIDs from each row's payload, runs
+    one query scoped to firm_id, and attaches the name directly to the row
+    object. Rows with no client_id key or an unparseable value are silently
+    skipped and receive client_name = None.
+    """
+    client_ids: set = set()
+    for row in rows:
+        raw = (row.payload or {}).get("client_id")
+        if not raw:
+            continue
+        try:
+            client_ids.add(UUID(raw))
+        except (ValueError, AttributeError):
+            continue
+
+    name_map: dict = {}
+    if client_ids:
+        clients = db.execute(
+            select(Client).where(
+                Client.id.in_(client_ids),
+                Client.firm_id == firm_id,
+            )
+        ).scalars().all()
+        name_map = {c.id: c.name for c in clients}
+
+    for row in rows:
+        raw = (row.payload or {}).get("client_id")
+        try:
+            cid = UUID(raw) if raw else None
+        except (ValueError, AttributeError):
+            cid = None
+        row.client_name = name_map.get(cid)
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
@@ -146,6 +185,8 @@ def get_briefing(db: Session, firm_id: UUID, actor_id=None) -> dict:
     for row in rows:
         db.refresh(row)
 
+    _attach_client_names(db, firm_id, rows)
+
     # Recorder, after every row write has committed. The entity is the firm,
     # because a view is about the surface rather than any one item on it.
     try:
@@ -195,6 +236,8 @@ def get_observatory(db: Session, firm_id: UUID) -> dict:
         ).scalars().all()
         if is_active(row, now)
     ]
+
+    _attach_client_names(db, firm_id, rows)
 
     return {
         "items": rows,

@@ -84,6 +84,10 @@ class SurfaceItemOut(SurfaceItemBase):
     value_at_action: Optional[dict] = None
     flagged_for_review: bool
 
+    # Computed at read time from payload["client_id"]; never persisted. None for
+    # any row with no parseable client_id.
+    client_name: Optional[str] = None
+
     created_at: datetime
     updated_at: datetime
 
