@@ -10,7 +10,7 @@ type PageState = 'loading' | 'valid' | 'invalid' | 'error' | 'missing'
 const leftPanel = (
   <div className="relative hidden md:flex w-1/2 bg-brand flex-col p-10 overflow-hidden">
     <div className="flex items-center gap-2.5">
-      <img src="/jamm-logo-mark-light.svg" alt="" className="flex-shrink-0 h-8 w-auto" />
+      <img src="/jamm-brain-logo.png" alt="" className="flex-shrink-0 h-8 w-auto" />
       <span className="text-white text-3xl font-medium">
         JAMM <span style={{ color: '#B07D3A' }}>PX</span>
       </span>

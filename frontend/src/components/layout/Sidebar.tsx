@@ -178,7 +178,7 @@ export function Sidebar({ collapsed, onToggle, onConciergeOpen, locked }: Sideba
               title="Expand sidebar"
             >
               <img
-                src="/jamm-logo-mark-light.svg"
+                src="/jamm-brain-logo.png"
                 alt=""
                 style={{ height: 20, width: 20, objectFit: 'contain' }}
               />
@@ -187,7 +187,7 @@ export function Sidebar({ collapsed, onToggle, onConciergeOpen, locked }: Sideba
             <>
               <div className="flex items-center gap-2 min-w-0 overflow-hidden">
                 <img
-                  src="/jamm-logo-mark-light.svg"
+                  src="/jamm-brain-logo.png"
                   alt=""
                   className="flex-shrink-0"
                   style={{ height: 20 }}

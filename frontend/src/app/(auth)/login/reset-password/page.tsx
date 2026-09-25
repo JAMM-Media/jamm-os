@@ -20,7 +20,7 @@ function Shell({ children }: { children: React.ReactNode }) {
       <div className="flex flex-col items-center mb-8">
         <div className="inline-flex flex-col items-stretch">
           <div className="flex items-center gap-3">
-            <img src="/jamm-logo-mark-light.svg" alt="" className="w-auto flex-shrink-0" style={{ height: 52 }} />
+            <img src="/jamm-brain-logo.png" alt="" className="w-auto flex-shrink-0" style={{ height: 52 }} />
             <span
               className="text-white leading-none tracking-tight"
               style={{ fontSize: 72, fontWeight: 500, fontStyle: 'normal', fontFamily: 'var(--font-playfair)' }}
