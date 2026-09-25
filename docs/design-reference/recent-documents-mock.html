@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  body { margin: 0; background: #E4E6EA; font-family: Inter, -apple-system, sans-serif; padding: 24px; box-sizing: border-box; }
+  .page { max-width: 680px; }
+  .tabs { display: flex; border-bottom: 0.5px solid #C8CDD6; margin-bottom: 16px; }
+  .tab { padding: 8px 16px; font-size: 13px; color: #6B7280; }
+  .tab.active { font-weight: 500; color: #1F3148; border-bottom: 2px solid #1F3148; }
+  .label { font-size: 11px; font-weight: 500; letter-spacing: 0.05em; color: #6B7280; text-transform: uppercase; margin-bottom: 8px; }
+  .recent-row { display: flex; gap: 8px; margin-bottom: 16px; }
+  .recent-card { flex: 1; min-width: 0; background: #EDEEF0; border: 0.5px solid #C8CDD6; border-radius: 8px; padding: 8px 10px; cursor: pointer; }
+  .recent-card-top { display: flex; align-items: center; gap: 5px; margin-bottom: 4px; }
+  .recent-icon { flex-shrink: 0; }
+  .recent-name { font-size: 11.5px; font-weight: 500; color: #1F3148; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .recent-time { font-size: 10px; color: #9CA3AF; }
+  .toolbar { display: flex; gap: 8px; margin-bottom: 10px; }
+  .btn-primary { background: #1F3148; color: white; font-size: 12px; font-weight: 500; padding: 6px 12px; border-radius: 6px; border: none; }
+  .btn-secondary { background: none; color: #1F3148; font-size: 12px; font-weight: 500; padding: 6px 12px; border-radius: 6px; border: 0.5px solid #1F3148; }
+  .folder-tree { background: #EDEEF0; border: 0.5px solid #C8CDD6; border-radius: 8px; padding: 12px; }
+  .folder-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; font-size: 13px; color: #1F3148; }
+</style>
+</head>
+<body>
+  <div class="page">
+
+    <div class="tabs">
+      <div class="tab">Overview</div>
+      <div class="tab active">Documents</div>
+    </div>
+
+    <!--
+      Icon color mapping below is copied exactly from the real
+      fileIconFromContentType helper already defined on the engagement
+      detail page (frontend/src/app/(app)/engagements/[id]/page.tsx),
+      used today for the Pending Documents section. This mock reuses the
+      same real colors so the Recently Viewed cards match established
+      icon conventions, not a new palette:
+
+        application/pdf                         -> FileText,       #EF4444 (red)
+        spreadsheet / csv / xls / xlsx            -> FileSpreadsheet, #10B981 (green)
+        image/*                                   -> FileImage,      #8B5CF6 (purple)
+        word / document                           -> FileGeneric,    #3B82F6 (blue)
+        anything else (fallback)                  -> FileGeneric,    #9CA3AF (gray)
+
+      The SVGs below are simple generic file-outline shapes standing in
+      for the real lucide-react icons (FileText, FileSpreadsheet,
+      FileImage, File) at the correct real color per type. Claude Code
+      should use the real lucide-react components and the real
+      fileIconFromContentType function directly, not recreate icon
+      paths from this mock.
+    -->
+    <div class="label">Recently viewed</div>
+    <div class="recent-row">
+
+      <div class="recent-card">
+        <div class="recent-card-top">
+          <svg class="recent-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#EF4444" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><line x1="10" y1="9" x2="8" y2="9"/></svg>
+          <span class="recent-name">2024_Return.pdf</span>
+        </div>
+        <div class="recent-time">4m ago</div>
+      </div>
+
+      <div class="recent-card">
+        <div class="recent-card-top">
+          <svg class="recent-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#10B981" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8"/><path d="M8 17h8"/><path d="M8 13v4"/><path d="M12 13v4"/><path d="M16 13v4"/></svg>
+          <span class="recent-name">Calc_Workbook.xlsx</span>
+        </div>
+        <div class="recent-time">1h ago</div>
+      </div>
+
+      <div class="recent-card">
+        <div class="recent-card-top">
+          <svg class="recent-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#EF4444" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><line x1="10" y1="9" x2="8" y2="9"/></svg>
+          <span class="recent-name">Engagement_Letter.pdf</span>
+        </div>
+        <div class="recent-time">Yesterday</div>
+      </div>
+
+      <div class="recent-card">
+        <div class="recent-card-top">
+          <svg class="recent-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+          <span class="recent-name">W9_signed.pdf</span>
+        </div>
+        <div class="recent-time">2 days ago</div>
+      </div>
+
+      <div class="recent-card">
+        <div class="recent-card-top">
+          <svg class="recent-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#EF4444" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><line x1="10" y1="9" x2="8" y2="9"/></svg>
+          <span class="recent-name">1099_Draft.pdf</span>
+        </div>
+        <div class="recent-time">3 days ago</div>
+      </div>
+
+    </div>
+
+    <div class="toolbar">
+      <button class="btn-primary">+ New Folder</button>
+      <button class="btn-secondary">Upload</button>
+    </div>
+    <div class="folder-tree">
+      <div class="folder-row">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+        Provided by Client (PBC)
+      </div>
+      <div class="folder-row">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+        Workpapers
+      </div>
+    </div>
+
+  </div>
+</body>
+</html>
