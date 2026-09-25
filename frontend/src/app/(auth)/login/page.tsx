@@ -128,55 +128,55 @@ export default function LoginPage() {
   const effectiveMagicEmail = magicEmail || email
 
   const inputClass =
-    'w-full h-11 px-3 rounded-lg text-[15px] bg-surface-input dark:bg-dark-card border border-surface-border dark:border-dark-border hover:border-brand-light focus:border-brand-light focus:outline-none focus:ring-2 focus:ring-brand-light focus:ring-offset-0 text-brand dark:text-[#EDEEF0] placeholder:text-[#9CA3AF]'
+    'w-full h-11 px-3 rounded-lg text-[15px] bg-[#0B1825] border border-[#2A3F56] hover:border-[#B07D3A]/60 focus:border-[#B07D3A] focus:outline-none focus:ring-2 focus:ring-[#B07D3A]/30 focus:ring-offset-0 text-[#EDEEF0] placeholder:text-[#3D5470] transition-colors'
 
   const btnPrimary =
-    'w-full h-11 rounded-lg text-[15px] font-medium text-white bg-brand dark:bg-brand-btn disabled:opacity-60 flex items-center justify-center gap-2 transition-opacity hover:opacity-90'
+    'w-full h-11 rounded-lg text-[15px] font-medium text-white bg-[#B07D3A] hover:bg-[#9A6B2D] disabled:opacity-50 flex items-center justify-center gap-2 transition-colors'
 
   return (
-    <div className="min-h-screen bg-[#1F3148] flex flex-col items-center justify-center px-4 py-12">
+    <div
+      className="min-h-screen flex flex-col items-center justify-center px-4 py-12"
+      style={{
+        backgroundColor: '#1F3148',
+        backgroundImage: 'url(/jamm-signin-background.png)',
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+        backgroundRepeat: 'no-repeat',
+      }}
+    >
 
       {/* Logo block */}
-      <div className="flex flex-col items-center mb-8">
-        <div className="inline-flex flex-col items-stretch">
-          <div className="flex items-center gap-3">
-            <img src="/jamm-logo-mark-light.svg" alt="" className="w-auto flex-shrink-0" style={{ height: 52 }} />
-            <span
-              className="text-white leading-none tracking-tight"
-              style={{ fontSize: 72, fontWeight: 500, fontStyle: 'normal', fontFamily: 'var(--font-playfair)' }}
-            >
-              JAMM
-            </span>
-          </div>
-          <span
-            className="mt-2 uppercase font-medium text-[16px] tracking-[0.28em] text-center whitespace-nowrap"
-            style={{ color: '#B07D3A' }}
-          >
-            Practice Experience
-          </span>
-        </div>
+      <div className="flex flex-col items-center mb-4">
+        <img src="/jamm-logo-lockup.png" alt="JAMM Practice Experience" style={{ width: 400, height: 'auto' }} />
       </div>
 
       {/* Card */}
-      <div className="w-full max-w-[400px] bg-white rounded-lg px-10 py-10">
+      <div
+        className="w-full max-w-[480px] rounded-xl px-10 py-14"
+        style={{
+          background: 'rgba(12, 24, 38, 0.90)',
+          border: '1px solid rgba(176, 125, 58, 0.22)',
+          backdropFilter: 'blur(2px)',
+        }}
+      >
 
-        <h1 className="text-[28px] font-medium text-brand dark:text-[#EDEEF0] text-center mb-1 leading-tight">
+        <h1 className="text-[28px] font-medium text-[#EDEEF0] text-center mb-1 leading-tight">
           Sign in
         </h1>
-        <p className="text-[14px] text-[#6B7280] text-center mb-7">
+        <p className="text-[14px] text-[#8FA8BE] text-center mb-7">
           Welcome back to JAMM PX.
         </p>
 
         {/* Two-factor step */}
         {step === 'code' && (
-          <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
-            <p className="text-[14px] font-medium text-brand dark:text-[#EDEEF0]">
+          <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-5">
+            <p className="text-[14px] font-medium text-[#EDEEF0]">
               Enter your authentication code
             </p>
 
             {!showBackupCode && (
               <div className="flex flex-col gap-1.5">
-                <label className="text-[12px] font-medium text-[#6B7280]">Authenticator Code</label>
+                <label className="text-[12px] font-medium text-[#8FA8BE]">Authenticator Code</label>
                 <input
                   type="text"
                   inputMode="numeric"
@@ -187,7 +187,7 @@ export default function LoginPage() {
                   placeholder="6-digit code"
                   className={inputClass}
                 />
-                <p className="text-[11px] text-[#9CA3AF]">
+                <p className="text-[11px] text-[#5A7A96]">
                   Enter the 6-digit code from your authenticator app.
                 </p>
               </div>
@@ -195,7 +195,7 @@ export default function LoginPage() {
 
             {showBackupCode && (
               <div className="flex flex-col gap-1.5">
-                <label className="text-[12px] font-medium text-[#6B7280]">Backup Code</label>
+                <label className="text-[12px] font-medium text-[#8FA8BE]">Backup Code</label>
                 <input
                   type="text"
                   value={backupCode}
@@ -204,7 +204,7 @@ export default function LoginPage() {
                   placeholder="Backup code"
                   className={inputClass}
                 />
-                <p className="text-[11px] text-[#9CA3AF]">
+                <p className="text-[11px] text-[#5A7A96]">
                   Enter one of your saved backup codes.
                 </p>
               </div>
@@ -227,14 +227,14 @@ export default function LoginPage() {
               <button
                 type="button"
                 onClick={handleToggleBackupCode}
-                className="text-[12px] text-[#6B7280] hover:text-brand dark:hover:text-[#EDEEF0] underline"
+                className="text-[12px] text-[#8FA8BE] hover:text-[#EDEEF0] underline"
               >
                 {showBackupCode ? 'Use authenticator app instead' : "Can't use your authenticator? Enter a backup code"}
               </button>
               <button
                 type="button"
                 onClick={handleBack}
-                className="text-[12px] text-[#6B7280] hover:text-brand dark:hover:text-[#EDEEF0] underline"
+                className="text-[12px] text-[#8FA8BE] hover:text-[#EDEEF0] underline"
               >
                 Back
               </button>
@@ -244,9 +244,9 @@ export default function LoginPage() {
 
         {/* Magic link form */}
         {step === 'password' && showMagicLink && (
-          <form onSubmit={handleMagicLink} noValidate className="flex flex-col gap-4">
+          <form onSubmit={handleMagicLink} noValidate className="flex flex-col gap-5">
             <div className="flex flex-col gap-1.5">
-              <label className="text-[12px] font-medium text-[#6B7280]">Email address</label>
+              <label className="text-[12px] font-medium text-[#8FA8BE]">Email address</label>
               <input
                 type="email"
                 value={effectiveMagicEmail}
@@ -257,7 +257,7 @@ export default function LoginPage() {
               />
             </div>
 
-            <p className="text-[12px] text-[#9CA3AF]">
+            <p className="text-[12px] text-[#5A7A96]">
               We will email you a one-time link valid for 30 minutes.
             </p>
 
@@ -283,7 +283,7 @@ export default function LoginPage() {
             <button
               type="button"
               onClick={handleHideMagicLink}
-              className="text-[12px] text-[#6B7280] hover:text-brand dark:hover:text-[#EDEEF0] underline text-center"
+              className="text-[12px] text-[#8FA8BE] hover:text-[#EDEEF0] underline text-center"
             >
               Back to password sign in
             </button>
@@ -292,9 +292,9 @@ export default function LoginPage() {
 
         {/* Password form */}
         {step === 'password' && !showMagicLink && (
-          <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
+          <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-5">
             <div className="flex flex-col gap-1.5">
-              <label className="text-[12px] font-medium text-[#6B7280]">Email address</label>
+              <label className="text-[12px] font-medium text-[#8FA8BE]">Email address</label>
               <input
                 type="email"
                 value={email}
@@ -305,7 +305,7 @@ export default function LoginPage() {
             </div>
 
             <div className="flex flex-col gap-1.5">
-              <label className="text-[12px] font-medium text-[#6B7280]">Password</label>
+              <label className="text-[12px] font-medium text-[#8FA8BE]">Password</label>
               <div className="relative">
                 <input
                   type={showPassword ? 'text' : 'password'}
@@ -317,7 +317,7 @@ export default function LoginPage() {
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-[#9CA3AF] hover:text-[#6B7280]"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-[#5A7A96] hover:text-[#8FA8BE]"
                 >
                   {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
                 </button>
@@ -325,14 +325,14 @@ export default function LoginPage() {
               <div className="flex items-center justify-between mt-0.5">
                 <Link
                   href="/login/forgot-password"
-                  className="text-[12px] text-brand-light dark:text-brand-light hover:underline"
+                  className="text-[12px] text-[#B07D3A] hover:text-[#C9953E] hover:underline transition-colors"
                 >
                   Forgot password?
                 </Link>
                 <button
                   type="button"
                   onClick={handleShowMagicLink}
-                  className="text-[12px] text-brand-light dark:text-brand-light hover:underline"
+                  className="text-[12px] text-[#B07D3A] hover:text-[#C9953E] hover:underline transition-colors"
                 >
                   Use a magic link instead
                 </button>
@@ -357,13 +357,13 @@ export default function LoginPage() {
       </div>
 
       {/* Footer below card */}
-      <div className="mt-8 flex flex-col items-center gap-3 w-full max-w-[400px]">
-        <p className="text-[12px] text-[#7DA3C4] text-center">
+      <div className="mt-8 flex flex-col items-center gap-3 w-full max-w-[480px]">
+        <p className="text-[12px] text-[#8FA8BE] text-center">
           Need help signing in?{' '}
-          <span className="text-[#7DA3C4]">Contact support</span>
+          <span className="text-[#8FA8BE]">Contact support</span>
         </p>
-        <div className="w-full h-px bg-[#2D4463]" />
-        <p className="text-[11px] text-[#7DA3C4] text-center">
+        <div className="w-full h-px bg-[#B07D3A]/25" />
+        <p className="text-[11px] text-[#8FA8BE] text-center">
           &copy; 2026 JAMM PX. All rights reserved.
         </p>
       </div>
