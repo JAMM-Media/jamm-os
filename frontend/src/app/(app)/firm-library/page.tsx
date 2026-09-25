@@ -17,7 +17,6 @@ import {
   Download,
   X,
   Loader2,
-  Sparkles,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useRouter } from 'next/navigation'
@@ -27,7 +26,6 @@ import { FileTypeIcon, fileTypeLabel } from '@/components/documents/FileTypeIcon
 import { importBatchesApi, type CreateImportBatchPayload } from '@/lib/api/importBatches'
 import { enumerateFolder } from '@/lib/importEnumeration'
 import { Breadcrumb } from '@/components/layout/Breadcrumb'
-import { firmLibraryApi } from '@/lib/api/firmLibrary'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -707,55 +705,6 @@ function NewFolderModal({
 }
 
 // ---------------------------------------------------------------------------
-// Draft guidance modal
-// ---------------------------------------------------------------------------
-
-function DraftGuidanceModal({
-  doc,
-  onCancel,
-  onContinue,
-}: {
-  doc: FirmDoc
-  onCancel: () => void
-  onContinue: (doc: FirmDoc) => void
-}) {
-  return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={onCancel}>
-      <div
-        className="bg-surface-page dark:bg-dark-page rounded-[10px] border border-[0.5px] border-surface-border dark:border-dark-border w-[400px] max-w-[92vw] shadow-lg"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between px-5 py-4 border-b border-[0.5px] border-surface-border dark:border-dark-border">
-          <h2 className="text-[14px] font-semibold text-brand dark:text-[#EDEEF0]">Before you download</h2>
-          <button onClick={onCancel} className="text-[#6B7280] hover:text-brand transition-colors">
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-        <div className="p-5">
-          <p className="text-[13px] text-[#374151] dark:text-[#9CA3AF]">
-            The file downloads to your computer. Edit it locally, then use the Upload button to add your finished version to Firm Library.
-          </p>
-        </div>
-        <div className="flex items-center justify-end gap-2 px-5 py-3.5 border-t border-[0.5px] border-surface-border dark:border-dark-border">
-          <button
-            onClick={onCancel}
-            className="h-8 px-3.5 rounded-[6px] border border-[0.5px] border-surface-border dark:border-dark-border text-[12px] text-[#6B7280] hover:text-brand transition-colors"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={() => onContinue(doc)}
-            className="h-8 px-3.5 rounded-[6px] bg-brand dark:bg-brand-btn text-white text-[12px] font-medium hover:opacity-90 transition-opacity"
-          >
-            Continue
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ---------------------------------------------------------------------------
 // Row overflow menu
 // ---------------------------------------------------------------------------
 
@@ -829,195 +778,6 @@ function FileSkeleton() {
 }
 
 // ---------------------------------------------------------------------------
-// ---------------------------------------------------------------------------
-// StarterTemplatesPanel
-// ---------------------------------------------------------------------------
-
-interface StarterTemplatesPanelProps {
-  seeded: boolean | null
-  docs: FirmDoc[]
-  loading: boolean
-  seeding: boolean
-  ackAccepted: boolean
-  ackChecked: boolean
-  onAckCheck: (v: boolean) => void
-  onAckAccept: () => void
-  onSeed: () => void
-  onDownload: (doc: FirmDoc) => void
-}
-
-function StarterTemplatesPanel({
-  seeded,
-  docs,
-  loading,
-  seeding,
-  ackAccepted,
-  ackChecked,
-  onAckCheck,
-  onAckAccept,
-  onSeed,
-  onDownload,
-}: StarterTemplatesPanelProps) {
-  function formatBytes(bytes: number) {
-    if (bytes < 1024) return `${bytes} B`
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
-  }
-
-  function cleanTemplateName(filename: string): string {
-    return filename
-      .replace(/^\d+_/, '')
-      .replace(/\.docx$/i, '')
-      .replace(/_/g, ' ')
-  }
-
-  if (loading) {
-    return (
-      <div className="p-6 flex flex-col gap-4 flex-1 overflow-y-auto">
-        <h1 className="text-2xl font-medium text-brand dark:text-[#EDEEF0]">Starter Templates</h1>
-        <div className="space-y-2">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <div key={i} className="h-10 rounded bg-[#D5D8DE] dark:bg-[#444444] animate-pulse" />
-          ))}
-        </div>
-      </div>
-    )
-  }
-
-  // Acknowledgment gate -- shown once before the user can access this section.
-  if (!ackAccepted) {
-    return (
-      <div className="p-6 flex flex-col gap-6 flex-1 overflow-y-auto">
-        <div>
-          <h1 className="text-2xl font-medium text-brand dark:text-[#EDEEF0] mb-1">Starter Templates</h1>
-          <p className="text-[12px] text-[#6B7280]">Ready-to-customize documents for your team.</p>
-        </div>
-        <div className="max-w-lg rounded-[12px] border border-[0.5px] border-surface-border dark:border-dark-border bg-surface-card dark:bg-dark-card p-6 flex flex-col gap-4">
-          <p className="text-[13px] text-[#374151] dark:text-[#9CA3AF] leading-relaxed">
-            I understand that these are editable starter templates, not legal or professional advice. My firm is responsible for reviewing, customizing, and approving any document before it's used with a client.
-          </p>
-          <label className="flex items-start gap-2.5 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={ackChecked}
-              onChange={(e) => onAckCheck(e.target.checked)}
-              className="mt-0.5 h-4 w-4 rounded accent-brand flex-shrink-0"
-            />
-            <span className="text-[13px] text-brand dark:text-[#EDEEF0] select-none">
-              I understand and agree
-            </span>
-          </label>
-          <button
-            onClick={onAckAccept}
-            disabled={!ackChecked}
-            className="self-start h-9 px-4 rounded-[6px] bg-brand text-white text-[13px] font-medium hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-default"
-          >
-            Continue
-          </button>
-        </div>
-      </div>
-    )
-  }
-
-  // Not yet seeded -- show prompt.
-  if (seeded === false) {
-    return (
-      <div className="p-6 flex flex-col gap-6 flex-1 overflow-y-auto">
-        <div>
-          <h1 className="text-2xl font-medium text-brand dark:text-[#EDEEF0] mb-1">Starter Templates</h1>
-          <p className="text-[12px] text-[#6B7280]">Ready-to-customize documents for your team.</p>
-        </div>
-        <div className="flex flex-col items-center justify-center py-24 gap-[10px]">
-          <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-surface-card dark:bg-dark-card border border-[0.5px] border-surface-border dark:border-dark-border">
-            <Sparkles className="h-5 w-5 text-[#6B7280]" />
-          </div>
-          <p className="text-[13px] font-medium text-brand dark:text-[#EDEEF0]">No starter templates yet</p>
-          <p className="text-[12px] text-[#6B7280]">Add 8 ready-to-customize documents to get your firm started.</p>
-          <button
-            onClick={onSeed}
-            disabled={seeding}
-            className="mt-2 h-9 px-4 rounded-[6px] bg-brand text-white text-[13px] font-medium hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center gap-2"
-          >
-            {seeding && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-            {seeding ? 'Adding...' : 'Add starter templates'}
-          </button>
-        </div>
-      </div>
-    )
-  }
-
-  // Seeded -- show the 8 vendor_sample documents.
-  return (
-    <div className="p-6 flex flex-col gap-4 flex-1 overflow-y-auto">
-      <div>
-        <h1 className="text-2xl font-medium text-brand dark:text-[#EDEEF0] mb-1">Starter Templates</h1>
-        <p className="text-[12px] text-[#6B7280]">Ready-to-customize documents. Create a draft to make your own version.</p>
-      </div>
-      {docs.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-24 gap-[10px]">
-          <p className="text-[13px] text-[#9CA3AF]">No starter templates found.</p>
-        </div>
-      ) : (
-        <div className="rounded-modal border border-[0.5px] border-surface-border dark:border-dark-border overflow-hidden">
-          <table className="w-full border-collapse">
-            <thead>
-              <tr className="bg-surface-card dark:bg-[#252525]">
-                {['Name', 'Type', 'Size', '', 'Action'].map((col, i) => (
-                  <th
-                    key={i}
-                    className="px-4 py-2.5 text-left text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em] whitespace-nowrap"
-                  >
-                    {col}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {docs.map((doc, i) => (
-                <tr
-                  key={doc.id}
-                  className={[
-                    'group transition-colors bg-surface-page dark:bg-dark-page',
-                    'hover:bg-[#DDDFE3] dark:hover:bg-[#323232]',
-                    i !== docs.length - 1
-                      ? 'border-b border-[0.5px] border-[#D5D8DE] dark:border-dark-card'
-                      : '',
-                  ].join(' ')}
-                >
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2.5">
-                      <FileTypeIcon contentType={doc.content_type} />
-                      <span className="text-[12px] font-medium text-brand dark:text-[#EDEEF0] truncate">{cleanTemplateName(doc.filename)}</span>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className="text-[12px] text-[#374151] dark:text-[#9CA3AF]">{fileTypeLabel(doc.content_type)}</span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className="text-[12px] text-[#374151] dark:text-[#9CA3AF]">{formatBytes(doc.size_bytes)}</span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className="inline-flex items-center h-[18px] px-2 rounded text-[10px] font-medium bg-[#E5E7EB] dark:bg-[#2D2D2D] text-[#6B7280] dark:text-[#9CA3AF] whitespace-nowrap">
-                      Sample
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <button
-                      onClick={() => onDownload(doc)}
-                      className="text-[12px] text-brand dark:text-[#EDEEF0] hover:underline"
-                    >
-                      Create a draft
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </div>
-  )
-}
 // Main page
 // ---------------------------------------------------------------------------
 
@@ -1039,31 +799,10 @@ export default function FirmLibraryPage() {
 
   const [allFirmFolders, setAllFirmFolders] = useState<FirmFolder[]>([])
 
-  // Starter Templates view state
-  const [view, setView] = useState<'all-files' | 'starter-templates'>('all-files')
-  const [starterSeeded, setStarterSeeded] = useState<boolean | null>(null)
-  const [starterDocs, setStarterDocs] = useState<FirmDoc[]>([])
-  const [starterLoading, setStarterLoading] = useState(false)
-  const [seeding, setSeeding] = useState(false)
-  const [ackAccepted, setAckAccepted] = useState(false)
-  const [ackChecked, setAckChecked] = useState(false)
-  const [draftGuidanceShown, setDraftGuidanceShown] = useState(false)
-
-  // Read firm-specific acknowledgment from localStorage once user is available.
-  useEffect(() => {
-    if (user?.firm_id) {
-      const key = `jamm_starter_ack_${user.firm_id}`
-      const raw = localStorage.getItem(key)
-      setAckAccepted(raw === '1')
-      setDraftGuidanceShown(localStorage.getItem(`jamm_draft_guidance_${user.firm_id}`) === '1')
-    }
-  }, [user?.firm_id])
-
   // Modals
   const [copyTarget, setCopyTarget] = useState<FirmDoc | null>(null)
   const [showUpload, setShowUpload] = useState(false)
   const [showNewFolder, setShowNewFolder] = useState(false)
-  const [draftGuidanceDoc, setDraftGuidanceDoc] = useState<FirmDoc | null>(null)
 
   const [bulkImporting, setBulkImporting] = useState(false)
   const bulkImportRef = useRef<HTMLInputElement>(null)
@@ -1114,49 +853,9 @@ export default function FirmLibraryPage() {
   }
 
   function handleRootSelect() {
-    setView('all-files')
     setCurrentFolderId(null)
     setFolderPath([])
     setSearch('')
-  }
-
-  async function handleStarterSelect() {
-    setView('starter-templates')
-    if (starterSeeded !== null) return
-    setStarterLoading(true)
-    try {
-      const s = await firmLibraryApi.getStarterTemplatesStatus()
-      setStarterSeeded(s.has_starter_templates)
-      if (s.has_starter_templates) {
-        const { data } = await api.get('/documents/', {
-          params: { scope: 'firm_library', limit: 200 },
-        })
-        const all: FirmDoc[] = (data.items ?? data ?? []) as FirmDoc[]
-        setStarterDocs(all.filter((d) => d.source === 'system'))
-      }
-    } catch {
-      toast.error('Could not load starter templates status')
-    } finally {
-      setStarterLoading(false)
-    }
-  }
-
-  async function handleSeedStarters() {
-    setSeeding(true)
-    try {
-      await firmLibraryApi.seedStarterTemplates()
-      toast.success('Starter templates added')
-      setStarterSeeded(true)
-      const { data } = await api.get('/documents/', {
-        params: { scope: 'firm_library', limit: 200 },
-      })
-      const all: FirmDoc[] = (data.items ?? data ?? []) as FirmDoc[]
-      setStarterDocs(all.filter((d) => d.source === 'system'))
-    } catch {
-      toast.error('Could not add starter templates')
-    } finally {
-      setSeeding(false)
-    }
   }
 
   async function handleDownload(doc: FirmDoc) {
@@ -1167,43 +866,6 @@ export default function FirmLibraryPage() {
     } catch {
       toast.error('Could not generate download link')
     }
-  }
-
-  async function handleDraftDownload(doc: FirmDoc) {
-    // window.open on a cross-origin S3 URL ignores any download attribute and
-    // saves under the stored filename. Fetch as a blob first so we can give the
-    // file a "Draft - ..." name that can never collide with the vendor sample on
-    // re-upload.
-    try {
-      const { data } = await api.get(`/documents/${doc.id}/download`)
-      const url = data.url ?? data.signed_url
-      if (!url) return
-      const response = await fetch(url)
-      const blob = await response.blob()
-      const blobUrl = URL.createObjectURL(blob)
-      const ext = doc.filename.match(/\.[^.]+$/)?.[0] ?? ''
-      const base = doc.filename
-        .replace(/^\d+_/, '')
-        .replace(/\.[^.]+$/, '')
-        .replace(/_/g, ' ')
-      const a = document.createElement('a')
-      a.href = blobUrl
-      a.download = `Draft - ${base}${ext}`
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      URL.revokeObjectURL(blobUrl)
-    } catch {
-      toast.error('Could not generate download link')
-    }
-  }
-
-  function handleCreateDraft(doc: FirmDoc) {
-    if (!draftGuidanceShown) {
-      setDraftGuidanceDoc(doc)
-      return
-    }
-    handleDraftDownload(doc)
   }
 
   async function handleBulkImportChange(e: ChangeEvent<HTMLInputElement>) {
@@ -1262,7 +924,7 @@ export default function FirmLibraryPage() {
           <div
             className={[
               'flex items-center gap-2 px-3 py-1.5 rounded cursor-pointer text-[13px] transition-colors mx-1',
-              view === 'all-files'
+              currentFolderId === null
                 ? 'bg-surface-input dark:bg-dark-card text-brand dark:text-[#EDEEF0] font-medium'
                 : 'text-[#374151] dark:text-[#9CA3AF] hover:bg-surface-input dark:hover:bg-dark-card hover:text-brand dark:hover:text-[#EDEEF0]',
             ].join(' ')}
@@ -1272,20 +934,6 @@ export default function FirmLibraryPage() {
             <span>All Files</span>
           </div>
 
-          {isElevated && (
-            <div
-              className={[
-                'flex items-center gap-2 px-3 py-1.5 rounded cursor-pointer text-[13px] transition-colors mx-1',
-                view === 'starter-templates'
-                  ? 'bg-surface-input dark:bg-dark-card text-brand dark:text-[#EDEEF0] font-medium'
-                  : 'text-[#374151] dark:text-[#9CA3AF] hover:bg-surface-input dark:hover:bg-dark-card hover:text-brand dark:hover:text-[#EDEEF0]',
-              ].join(' ')}
-              onClick={handleStarterSelect}
-            >
-              <Sparkles className="h-3.5 w-3.5 text-[#6B7280] flex-shrink-0" />
-              <span>Starter Templates</span>
-            </div>
-          )}
 
           {foldersLoading ? (
             <div className="px-3 py-2 space-y-2">
@@ -1312,24 +960,6 @@ export default function FirmLibraryPage() {
 
       {/* Right panel: main content */}
       <div className="flex-1 flex flex-col overflow-hidden">
-        {view === 'starter-templates' ? (
-          <StarterTemplatesPanel
-            seeded={starterSeeded}
-            docs={starterDocs}
-            loading={starterLoading}
-            seeding={seeding}
-            ackAccepted={ackAccepted}
-            ackChecked={ackChecked}
-            onAckCheck={setAckChecked}
-            onAckAccept={() => {
-              setAckAccepted(true)
-              setAckChecked(false)
-              if (typeof window !== 'undefined' && user?.firm_id) localStorage.setItem(`jamm_starter_ack_${user.firm_id}`, '1')
-            }}
-            onSeed={handleSeedStarters}
-            onDownload={handleCreateDraft}
-          />
-        ) : (
         <div className="p-6 flex flex-col gap-4 flex-1 overflow-y-auto">
           {/* Page title + breadcrumb */}
           <div>
@@ -1514,7 +1144,6 @@ export default function FirmLibraryPage() {
             </div>
           )}
         </div>
-        )}
       </div>
 
       {/* Modals */}
@@ -1550,18 +1179,6 @@ export default function FirmLibraryPage() {
           parentFolderId={currentFolderId}
           onClose={() => setShowNewFolder(false)}
           onCreated={loadRootFolders}
-        />
-      )}
-      {draftGuidanceDoc && (
-        <DraftGuidanceModal
-          doc={draftGuidanceDoc}
-          onCancel={() => setDraftGuidanceDoc(null)}
-          onContinue={async (doc) => {
-            setDraftGuidanceDoc(null)
-            setDraftGuidanceShown(true)
-            if (user?.firm_id) localStorage.setItem(`jamm_draft_guidance_${user.firm_id}`, '1')
-            await handleDraftDownload(doc)
-          }}
         />
       )}
     </div>
