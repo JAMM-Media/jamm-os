@@ -131,6 +131,39 @@ function mapBatch(raw: Record<string, unknown>): ImportBatchOut {
 // API client
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Preview interfaces
+// ---------------------------------------------------------------------------
+
+export interface ImportItemPreview {
+  itemId: string
+  resolved: boolean
+  hasConflict: boolean
+  existingDocumentId: string | null
+  existingDocumentFilename: string | null
+  pathWouldExceedDepth: boolean
+}
+
+export interface ImportBatchPreview {
+  batchId: string
+  items: ImportItemPreview[]
+}
+
+function mapItemPreview(raw: Record<string, unknown>): ImportItemPreview {
+  return {
+    itemId: String(raw.item_id),
+    resolved: Boolean(raw.resolved),
+    hasConflict: Boolean(raw.has_conflict),
+    existingDocumentId: raw.existing_document_id ? String(raw.existing_document_id) : null,
+    existingDocumentFilename: raw.existing_document_filename ? String(raw.existing_document_filename) : null,
+    pathWouldExceedDepth: Boolean(raw.path_would_exceed_depth),
+  }
+}
+
+// ---------------------------------------------------------------------------
+// API client
+// ---------------------------------------------------------------------------
+
 export const importBatchesApi = {
   create: async (payload: CreateImportBatchPayload): Promise<ImportBatchOut> => {
     const { data } = await api.post('/import-batches/', payload)
@@ -144,6 +177,22 @@ export const importBatchesApi = {
 
   confirm: async (batchId: string): Promise<ImportBatchOut> => {
     const { data } = await api.post(`/import-batches/${batchId}/confirm`)
+    return mapBatch(data as Record<string, unknown>)
+  },
+
+  preview: async (batchId: string): Promise<ImportBatchPreview> => {
+    const { data } = await api.get(`/import-batches/${batchId}/preview`)
+    const raw = data as Record<string, unknown>
+    return {
+      batchId: String(raw.batch_id),
+      items: Array.isArray(raw.items)
+        ? (raw.items as Record<string, unknown>[]).map(mapItemPreview)
+        : [],
+    }
+  },
+
+  updateConflictPolicy: async (batchId: string, conflictPolicy: string): Promise<ImportBatchOut> => {
+    const { data } = await api.patch(`/import-batches/${batchId}`, { conflict_policy: conflictPolicy })
     return mapBatch(data as Record<string, unknown>)
   },
 }
