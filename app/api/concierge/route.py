@@ -25,13 +25,11 @@ from app.models.firm import Firm
 from app.models.client import Client
 from app.models.engagement import Engagement
 from app.models.user import User
-from app.models.concierge_notification import ConciergeNotification
 from app.models.concierge_question_log import ConciergeQuestionLog
 from app.models.security_event import SecurityEvent
 from app.services import concierge_service
 from app.api.concierge.prompts import get_system_prompt, MORNING_BRIEFING_PROMPT, MORNING_BRIEFING_DETAIL_PROMPT
 from app.api.concierge.context import router as context_router, get_firm_context_detail
-from app.api.concierge.cron import run_trigger_check
 from app.api.concierge.functions import (
     get_daily_brief,
     get_stalled_engagements,
@@ -1465,84 +1463,6 @@ def concierge_entity_preview(
 
     else:
         raise HTTPException(status_code=400, detail=f"Unsupported entity_type: {entity_type}")
-
-
-@router.post("/trigger-check")
-def trigger_check(
-    current_firm: Firm = Depends(get_current_firm),
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    if current_user.role == UserRole.client_portal_user:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied.",
-        )
-    fired = run_trigger_check(firm_id=current_firm.id, db=db)
-    return {"triggers_fired": fired}
-
-
-@router.get("/notifications")
-def list_notifications(
-    current_firm: Firm = Depends(get_current_firm),
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    if current_user.role == UserRole.client_portal_user:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied.",
-        )
-    rows = db.execute(
-        select(ConciergeNotification)
-        .where(
-            ConciergeNotification.firm_id == current_firm.id,
-            ConciergeNotification.is_read == False,
-        )
-        .order_by(ConciergeNotification.created_at.desc())
-    ).scalars().all()
-
-    return {
-        "items": [
-            {
-                "id": str(n.id),
-                "trigger_type": n.trigger_type,
-                "message": n.message,
-                "created_at": n.created_at.isoformat(),
-                "metadata": n.notification_metadata,
-            }
-            for n in rows
-        ],
-        "total": len(rows),
-    }
-
-
-@router.patch("/notifications/{notification_id}/read")
-def mark_notification_read(
-    notification_id: UUID,
-    current_firm: Firm = Depends(get_current_firm),
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    if current_user.role == UserRole.client_portal_user:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied.",
-        )
-    notification = db.execute(
-        select(ConciergeNotification).where(
-            ConciergeNotification.id == notification_id,
-            ConciergeNotification.firm_id == current_firm.id,
-        )
-    ).scalar_one_or_none()
-
-    if notification is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Notification not found")
-
-    notification.is_read = True
-    notification.dismissed_at = datetime.now(timezone.utc)
-    db.commit()
-    return {"ok": True}
 
 
 @router.get("/question-log")

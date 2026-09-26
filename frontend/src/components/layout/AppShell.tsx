@@ -8,7 +8,6 @@ import { useAuth } from '@/lib/hooks/useAuth'
 import { Sidebar } from './Sidebar'
 import { ConciergePanel } from '@/components/concierge/ConciergePanel'
 import { PersistentEntryButton } from '@/components/concierge-inline/PersistentEntryButton'
-import { useConciergeNotifications } from '@/lib/hooks/useConciergeNotifications'
 
 interface AppShellProps {
   children: React.ReactNode
@@ -31,7 +30,6 @@ export function AppShell({ children }: AppShellProps) {
   const [conciergeOpen, setConciergeOpen] = useState(false)
   const [conciergeEntryMode, setConciergeEntryMode] = useState<'sidebar' | 'floating'>('floating')
   const [hoverExpanded, setHoverExpanded] = useState(false)
-  const { notifications } = useConciergeNotifications()
   const { user } = useAuth()
 
   const isHoverMode = user?.sidebar_expand_mode === 'hover'
@@ -224,7 +222,6 @@ export function AppShell({ children }: AppShellProps) {
         >
           <PersistentEntryButton
             onClick={() => {}}
-            hasSuggestion={notifications.length > 0}
           />
         </div>
       )}

@@ -9,7 +9,6 @@ export interface ConciergeAction {
   prefill?: Record<string, string>
   firm_type?: string
   prefillMessage?: string
-  expandNotifications?: boolean
 }
 
 export function emitConciergeAction(action: ConciergeAction) {

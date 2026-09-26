@@ -10,7 +10,6 @@ import { useAuth } from '@/lib/hooks/useAuth'
 import { useConfirm } from '@/lib/hooks/useConfirm'
 import { useAlert } from '@/lib/hooks/useAlert'
 import { useConciergeContext } from '@/lib/hooks/useConciergeContext'
-import { useConciergeNotifications, type ConciergeNotification } from '@/lib/hooks/useConciergeNotifications'
 import api from '@/lib/api'
 import {
   emitConciergeAction,
@@ -29,7 +28,6 @@ interface Message {
   options?: string[]
 }
 
-type Notification = ConciergeNotification
 
 interface ConciergePanelProps {
   isOpen: boolean
@@ -99,8 +97,6 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
     user?.full_name?.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase() ?? '?'
 
   const [messages, setMessages] = useState<Message[]>([])
-  const { notifications, dismissNotification: dismissNotificationFromHook, refetch: refetchNotifications } = useConciergeNotifications()
-  const [notificationsExpanded, setNotificationsExpanded] = useState(false)
   const [input, setInput] = useState('')
   const [streaming, setStreaming] = useState(false)
   const [revealedWordCount, setRevealedWordCount] = useState(0)
@@ -256,17 +252,12 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
 
   useEffect(() => {
     return onConciergeAction((action) => {
-      if (action.type === 'open-panel' && action.expandNotifications) {
-        setNotificationsExpanded(true)
-      }
       if (action.type === 'prefill-panel-input' && action.prefillMessage) {
         handleSend(action.prefillMessage)
       }
     })
   }, [])
 
-  const dismissNotification = dismissNotificationFromHook
-  const fetchNotifications = refetchNotifications
 
   function stripTrailingMarkers(text: string, partial = false): string {
     let result = text
@@ -516,12 +507,8 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
     }
     if (isOpen) {
       setTimeout(() => textareaRef.current?.focus(), 250)
-      api.post('/concierge/trigger-check').then(() => fetchNotifications()).catch(() => fetchNotifications())
     }
-  }, [isOpen, sendMessages, fetchNotifications, user])
-
-  // Polling is now handled by useConciergeNotifications (60s, always-on).
-  // Trigger-check on panel open is still called explicitly for immediate refresh.
+  }, [isOpen, sendMessages, user])
 
   async function handleClearConversation() {
     const confirmed = await confirm({ message: 'Clear this conversation? This cannot be undone.', confirmLabel: 'Clear', destructive: true })
@@ -981,113 +968,6 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
           </div>
         )}
 
-        {/* Notification cards */}
-        {notifications.length > 0 && (
-          <div className="flex flex-col gap-2 px-4 pt-3 flex-shrink-0">
-            <div className="flex items-center justify-between px-0.5">
-              <button
-                onClick={() => setNotificationsExpanded((prev) => !prev)}
-                className="flex items-center gap-1.5"
-              >
-                <span className="w-1.5 h-1.5 rounded-full bg-[#D97706]" />
-                <span className="text-[10px] font-semibold uppercase tracking-wide text-status-amber-text dark:text-[#D97706]">
-                  {notifications.length} {notifications.length === 1 ? 'Alert' : 'Alerts'}
-                </span>
-                <ChevronDown
-                  className={`h-3 w-3 text-status-amber-text dark:text-[#D97706] transition-transform ${notificationsExpanded ? 'rotate-180' : ''}`}
-                />
-              </button>
-              {notificationsExpanded && (
-                <button
-                  onClick={() => notifications.forEach((n) => dismissNotification(n.id))}
-                  className="text-[10px] font-medium text-muted-foreground hover:text-brand dark:hover:text-foreground transition-colors"
-                >
-                  Dismiss all
-                </button>
-              )}
-            </div>
-            {notificationsExpanded && (
-              <div className="flex flex-col gap-2 overflow-y-auto max-h-64">
-                {notifications.map((n) => {
-              const draft = n.metadata?.draft as string | undefined
-              return (
-                <div
-                  key={n.id}
-                  className="flex flex-col gap-2 bg-white dark:bg-dark-page border border-[0.5px] border-surface-border dark:border-dark-border border-l-[3px] border-l-[#D97706] rounded-[8px] px-3 py-2.5"
-                >
-                  <div className="flex items-start gap-2">
-                    <p
-                      className="flex-1 text-[12px] leading-[1.5] text-brand dark:text-foreground cursor-pointer"
-                      onClick={() => { dismissNotification(n.id); handleSend(n.message) }}
-                    >
-                      {n.message}
-                    </p>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); dismissNotification(n.id) }}
-                      aria-label="Dismiss notification"
-                      className="flex-shrink-0 text-muted-foreground hover:text-brand dark:hover:text-foreground transition-colors mt-0.5"
-                    >
-                      <X className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                  {draft && (
-                    <div className="mt-1 rounded-[6px] bg-surface-card dark:bg-dark-card border border-[0.5px] border-surface-border dark:border-dark-border px-2.5 py-2">
-                      <p className="text-[11px] text-muted-foreground mb-1.5 font-medium uppercase tracking-wide">Draft</p>
-                      <p className="text-[12px] leading-[1.5] text-foreground whitespace-pre-wrap">{draft}</p>
-                      <div className="flex gap-2 mt-2">
-                        <button
-                          onClick={() => {
-                            navigator.clipboard.writeText(draft).then(() => {
-                              setCopiedId(n.id)
-                              setTimeout(() => setCopiedId(null), 2000)
-                            }).catch(() => {})
-                          }}
-                          className="text-[11px] font-medium px-2.5 py-1 rounded-[4px] border border-[0.5px] border-surface-border dark:border-dark-border text-muted-foreground hover:border-brand-light hover:text-brand-light transition-colors"
-                        >
-                          {copiedId === n.id ? 'Copied' : 'Copy'}
-                        </button>
-                        <button
-                          onClick={async () => {
-                            const notifClientId = typeof n.metadata?.client_id === 'string' ? n.metadata.client_id : null
-                            const targetClientId = notifClientId ?? (uiContext.entity_type === 'client' ? uiContext.entity_id : null)
-                            if (!targetClientId) {
-                              alert('No client record could be identified for this draft. Open the client directly and use the Messages tab to send it.')
-                              return
-                            }
-                            const confirmed = await confirm(
-                              `Open ${uiContext.entity_name ?? 'this client'}'s Messages tab with this draft ready to send?\n\nMessage:\n${draft}\n\nYou will have a final chance to review before sending.`
-                            )
-                            if (!confirmed) return
-                            dismissNotification(n.id)
-                            const alreadyOnClientPage = pathname.startsWith(`/clients/${targetClientId}`)
-                            if (alreadyOnClientPage) {
-                              emitConciergeAction({ type: 'prefill-message', prefillMessage: draft })
-                            } else {
-                              sessionStorage.setItem(
-                                'jamm_concierge_pending',
-                                JSON.stringify({
-                                  clientId: targetClientId,
-                                  prefillMessage: draft,
-                                  _ts: Date.now(),
-                                }),
-                              )
-                            }
-                            router.push(`/clients/${targetClientId}?tab=messages`)
-                          }}
-                          className="text-[11px] font-medium px-2.5 py-1 rounded-[4px] bg-brand text-white hover:opacity-90 transition-colors"
-                        >
-                          Open to send
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )
-                })}
-              </div>
-            )}
-          </div>
-        )}
 
         {/* Message feed */}
         <div className="flex-1 min-h-0 overflow-y-auto p-4 flex flex-col gap-3">

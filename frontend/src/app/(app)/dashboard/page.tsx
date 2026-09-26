@@ -17,7 +17,6 @@ import type { WIPSummary } from '@/lib/api/reports'
 import api, { clientsApi } from '@/lib/api'
 import { SelectInput } from '@/components/ui/SelectInput'
 import { formatEngagementType } from '@/lib/utils'
-import { ConciergeSpotlight } from '@/components/dashboard/ConciergeSpotlight'
 import { BriefingCard } from '@/components/dashboard/BriefingCard'
 import { useConfirm } from '@/lib/hooks/useConfirm'
 import { useAuth } from '@/lib/hooks/useAuth'
@@ -1715,7 +1714,6 @@ export default function DashboardPage() {
 
         {/* Concierge Spotlight - only once layout is loaded */}
         {!layoutLoading && widgets && <BriefingCard />}
-        {!layoutLoading && widgets && <ConciergeSpotlight />}
 
         {/* Widget canvas - containerRef always in DOM so useContainerWidth measures on first render.
             Loading skeleton renders inside this div rather than as a separate early return. */}
