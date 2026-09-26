@@ -216,6 +216,7 @@ def generate_invoice_overdue(db: Session, firm_id: UUID) -> list[Candidate]:
                     "invoice_id": str(invoice.id),
                     "invoice_number": invoice.invoice_number,
                     "client_id": str(invoice.client_id),
+                    "engagement_id": str(invoice.engagement_id) if invoice.engagement_id else None,
                     "balance": float(balance),
                     "days_overdue": days_overdue,
                 },

@@ -104,6 +104,15 @@ class SurfaceItemDismissRequest(BaseModel):
     reason: DismissalReason
 
 
+class TierOneFact(BaseModel):
+    """One per-category entry in the Tier 1 structured fact list."""
+
+    category: str
+    text: str
+    count: int
+    amount: Optional[float] = None
+
+
 class BriefingResponse(BaseModel):
     """
     Today's Briefing.
@@ -118,6 +127,8 @@ class BriefingResponse(BaseModel):
     items: list[SurfaceItemOut]
     count: int
     resolved_in_place: int
+    summary: str
+    facts: list[TierOneFact]
     intelligence_pending: bool
 
 
@@ -149,3 +160,28 @@ class PromoteNextResponse(BaseModel):
     promoted: bool
     detail: str
     item: Optional[SurfaceItemOut] = None
+
+
+class SurfaceItemDetailOut(BaseModel):
+    """
+    Read-only computed view of the ten approved detail fields for one surface item.
+
+    All ten fields are always present. "Not recorded" is the honest fallback
+    for any field with no real source for that item type. This is a deliberate
+    deviation from the four-schema rule (no Create/Update counterpart exists)
+    for the same reason BriefingResponse already deviates from PaginatedResponse:
+    this is not a CRUD resource, it is a computed view.
+    """
+
+    client: str
+    engagement: str
+    assigned_staff: str
+    invoice_balance: str
+    days_overdue: str
+    current_workflow_status: str
+    issued_date: str
+    last_client_communication: str
+    related_documents_count: int
+    open_items: str
+
+    model_config = ConfigDict(from_attributes=False)

@@ -25,6 +25,7 @@ from app.schemas.surface_item import (
     BriefingResponse,
     ObservatoryResponse,
     PromoteNextResponse,
+    SurfaceItemDetailOut,
     SurfaceItemDismissRequest,
     SurfaceItemOut,
 )
@@ -99,3 +100,17 @@ def implement_item(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found")
 
     return surface_item_service.implement_item(db, item, actor_id=current_user.id)
+
+
+@router.get("/surface-items/{item_id}/detail", response_model=SurfaceItemDetailOut)
+def get_item_detail(
+    item_id: UUID,
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    _: User = Depends(require_manager_or_above),
+):
+    item = surface_item_service.get_item_for_firm(db, item_id, current_firm.id)
+    if item is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found")
+
+    return surface_item_service.get_item_detail(db, item, current_firm.id)
