@@ -96,7 +96,7 @@ function FactRow({ fact, isLast }: { fact: TierOneFact; isLast: boolean }) {
     <div
       data-category={fact.category}
       className={`flex items-center gap-2.5 py-2 ${
-        !isLast ? 'border-b border-[0.5px] border-surface-border dark:border-dark-border' : ''
+        !isLast ? 'border-b-[0.5px] border-surface-border dark:border-dark-border' : ''
       }`}
     >
       {Icon && (

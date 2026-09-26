@@ -209,7 +209,7 @@ function BriefingRow({ item, onDismiss, onImplement, actingId }: BriefingRowProp
             onClick={() => onImplement(item.id)}
             className="h-7 px-2.5 rounded bg-brand text-white text-[12px] font-medium hover:opacity-90 disabled:opacity-50 disabled:cursor-default transition-opacity"
           >
-            Implement
+            Resolved
           </button>
           <DismissDropdown
             disabled={busy}

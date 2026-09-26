@@ -1,6 +1,14 @@
 // path: frontend/src/lib/api/invoices.ts
 import api from '@/lib/api'
 
+export interface LineItem {
+  description: string
+  quantity: number
+  unitPrice: number
+  amount: number | null
+  total: number | null
+}
+
 export interface Invoice {
   id: string
   invoiceNumber: string
@@ -18,6 +26,7 @@ export interface Invoice {
   isDeleted: boolean
   createdAt: string
   updatedAt: string
+  lineItems: LineItem[]
 }
 
 function mapInvoice(raw: Record<string, unknown>): Invoice {
@@ -38,6 +47,15 @@ function mapInvoice(raw: Record<string, unknown>): Invoice {
     isDeleted: Boolean(raw.is_deleted ?? false),
     createdAt: String(raw.created_at ?? ''),
     updatedAt: String(raw.updated_at ?? ''),
+    lineItems: Array.isArray(raw.line_items)
+      ? (raw.line_items as Record<string, unknown>[]).map((li) => ({
+          description: String(li.description ?? ''),
+          quantity: parseFloat(String(li.quantity ?? '0')),
+          unitPrice: parseFloat(String(li.unit_price ?? '0')),
+          amount: li.amount != null ? parseFloat(String(li.amount)) : null,
+          total: li.total != null ? parseFloat(String(li.total)) : null,
+        }))
+      : [],
   }
 }
 
