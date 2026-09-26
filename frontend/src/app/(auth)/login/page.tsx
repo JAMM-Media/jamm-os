@@ -136,27 +136,26 @@ export default function LoginPage() {
   return (
     <div
       className="min-h-screen flex flex-col items-center justify-center px-4 py-12"
-      style={{
-        backgroundColor: '#1F3148',
-        backgroundImage: 'url(/jamm-signin-background.png)',
-        backgroundSize: 'cover',
-        backgroundPosition: 'center',
-        backgroundRepeat: 'no-repeat',
-      }}
+      style={{ backgroundColor: '#1F3148' }}
     >
 
       {/* Logo block */}
-      <div className="flex flex-col items-center mb-4">
-        <img src="/jamm-logo-lockup.png" alt="JAMM Practice Experience" style={{ width: 400, height: 'auto' }} />
+      <div className="flex flex-col items-center mb-4 gap-2">
+        <img src="/jamm-brain-logo.png" alt="JAMM" style={{ height: 100, width: 'auto' }} />
+        <span style={{ fontFamily: 'var(--font-playfair)', fontSize: 80, color: '#EDEEF0', lineHeight: 1 }}>
+          JAMM
+        </span>
+        <span className="text-[15px] font-semibold uppercase tracking-[0.2em]" style={{ color: '#B07D3A' }}>
+          PRACTICE EXPERIENCE
+        </span>
       </div>
 
       {/* Card */}
       <div
         className="w-full max-w-[480px] rounded-xl px-10 py-14"
         style={{
-          background: 'rgba(12, 24, 38, 0.90)',
-          border: '1px solid rgba(176, 125, 58, 0.22)',
-          backdropFilter: 'blur(2px)',
+          background: '#0F2035',
+          border: '1px solid #2A3F56',
         }}
       >
 
@@ -325,14 +324,14 @@ export default function LoginPage() {
               <div className="flex items-center justify-between mt-0.5">
                 <Link
                   href="/login/forgot-password"
-                  className="text-[12px] text-[#B07D3A] hover:text-[#C9953E] hover:underline transition-colors"
+                  className="text-[12px] text-[#8FA8BE] hover:text-[#EDEEF0] hover:underline transition-colors"
                 >
                   Forgot password?
                 </Link>
                 <button
                   type="button"
                   onClick={handleShowMagicLink}
-                  className="text-[12px] text-[#B07D3A] hover:text-[#C9953E] hover:underline transition-colors"
+                  className="text-[12px] text-[#8FA8BE] hover:text-[#EDEEF0] hover:underline transition-colors"
                 >
                   Use a magic link instead
                 </button>
