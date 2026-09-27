@@ -18,6 +18,7 @@ export type BadgeVariant =
   | 'draft'
   | 'sent'
   | 'paid'
+  | 'void'
   | 'planning'
   | 'in_progress'
   | 'awaiting_docs'
@@ -119,6 +120,12 @@ const variantConfig: Record<BadgeVariant, { bg: string; text: string; border?: s
     bg: 'bg-status-green',
     text: 'text-status-green-text',
     defaultLabel: 'Paid',
+  },
+  void: {
+    bg: 'bg-[#E5E7EB]',
+    text: 'text-[#6B7280]',
+    border: 'border border-[0.5px] border-[#C8CDD6]',
+    defaultLabel: 'Void',
   },
   planning: {
     bg: 'bg-[#E5E7EB]',

@@ -95,4 +95,14 @@ export const invoicesApi = {
     const { data } = await api.patch('/invoices/bulk', { ids, action })
     return data
   },
+
+  send: async (id: string): Promise<Invoice> => {
+    const { data } = await api.post(`/invoices/${id}/send`)
+    return mapInvoice(data)
+  },
+
+  void: async (id: string): Promise<{ updated: number }> => {
+    const { data } = await api.patch('/invoices/bulk', { ids: [id], action: 'void' })
+    return data
+  },
 }

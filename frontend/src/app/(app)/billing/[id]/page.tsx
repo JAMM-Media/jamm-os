@@ -1,11 +1,14 @@
 // path: frontend/src/app/billing/[id]/page.tsx
 'use client'
 
+import { useState } from 'react'
 import { useParams } from 'next/navigation'
 import { Breadcrumb } from '@/components/layout/Breadcrumb'
 import { StatusBadge } from '@/components/ui/StatusBadge'
-import { invoicesApi } from '@/lib/api'
+import { invoicesApi, clientsApi } from '@/lib/api'
 import { useFetch } from '@/lib/hooks/useFetch'
+import { useConfirm } from '@/lib/hooks/useConfirm'
+import { useAlert } from '@/lib/hooks/useAlert'
 import { formatCurrency } from '@/lib/utils'
 
 type BadgeVariant = Parameters<typeof StatusBadge>[0]['variant']
@@ -31,7 +34,41 @@ function BillingDetailBodySkeleton() {
 export default function InvoiceDetailPage() {
   const params = useParams()
   const id = params.id as string
-  const { data: invoice, isLoading } = useFetch(() => invoicesApi.get(id), [id])
+  const { data: invoice, isLoading, refetch } = useFetch(() => invoicesApi.get(id), [id])
+  const { data: client } = useFetch(
+    () => invoice ? clientsApi.get(invoice.clientId) : Promise.resolve(null),
+    [invoice?.clientId],
+  )
+  const { confirm, ConfirmDialog } = useConfirm()
+  const { alert, AlertDialog } = useAlert()
+  const [actionLoading, setActionLoading] = useState(false)
+
+  async function handleSend() {
+    setActionLoading(true)
+    try {
+      await invoicesApi.send(id)
+      refetch()
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Send failed.'
+      await alert(msg)
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  async function handleVoid() {
+    const ok = await confirm({ message: 'Void this invoice? This cannot be undone.', confirmLabel: 'Void', destructive: true })
+    if (!ok) return
+    setActionLoading(true)
+    try {
+      await invoicesApi.void(id)
+      refetch()
+    } catch {
+      await alert('Void failed. Please try again.')
+    } finally {
+      setActionLoading(false)
+    }
+  }
 
   if (isLoading) {
     return (
@@ -56,6 +93,8 @@ export default function InvoiceDetailPage() {
 
   return (
       <div className="p-6">
+        {ConfirmDialog}
+        {AlertDialog}
         <Breadcrumb
           items={[
             { label: 'Billing', href: '/billing' },
@@ -64,9 +103,12 @@ export default function InvoiceDetailPage() {
         />
         <div className="flex items-start justify-between mb-8">
           <div>
-            <h1 className="text-3xl font-bold text-brand dark:text-[#EDEEF0] mb-2">
+            <h1 className="text-3xl font-bold text-brand dark:text-[#EDEEF0] mb-1">
               {invoice.invoiceNumber}
             </h1>
+            {client && (
+              <p className="text-[13px] text-[#6B7280] mb-2">{client.name}</p>
+            )}
             <div className="flex items-center gap-3">
               <StatusBadge variant={invoice.status as BadgeVariant} />
               {invoice.dueDate && (
@@ -80,7 +122,25 @@ export default function InvoiceDetailPage() {
             <span className="text-3xl font-bold text-brand dark:text-[#EDEEF0]">
               {formatCurrency(invoice.totalAmount)}
             </span>
-            {invoice.status !== 'paid' && (
+            {!invoice.sentAt && !['paid', 'void'].includes(invoice.status) && (
+              <button
+                onClick={handleSend}
+                disabled={actionLoading}
+                className="h-9 px-3 rounded-[6px] border border-surface-border dark:border-dark-border text-[13px] font-medium text-brand dark:text-[#EDEEF0] hover:opacity-80 disabled:opacity-50 transition-opacity"
+              >
+                Send
+              </button>
+            )}
+            {!['paid', 'void'].includes(invoice.status) && (
+              <button
+                onClick={handleVoid}
+                disabled={actionLoading}
+                className="h-9 px-3 rounded-[6px] border border-surface-border dark:border-dark-border text-[13px] font-medium text-[#6B7280] hover:text-red-600 dark:hover:text-red-400 disabled:opacity-50 transition-colors"
+              >
+                Void
+              </button>
+            )}
+            {!['paid', 'void'].includes(invoice.status) && (
               <button className="h-9 px-3 rounded-[6px] bg-brand dark:bg-brand-btn text-white text-[13px] font-medium hover:opacity-90 transition-opacity">
                 Mark as Paid
               </button>
