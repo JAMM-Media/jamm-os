@@ -207,7 +207,7 @@ export function AppShell({ children }: AppShellProps) {
           locked={isSettingsRoute}
         />
       )}
-      <main ref={mainRef} className={`flex-1 overflow-y-auto transition-[padding] duration-200 ${conciergeOpen ? 'pr-[400px]' : ''}`}>
+      <main ref={mainRef} className={`flex-1 overflow-y-auto content-scroll transition-[padding] duration-200 ${conciergeOpen ? 'pr-[400px]' : ''}`}>
         {children}
       </main>
       <ConciergePanel isOpen={conciergeOpen} onClose={handleConciergeClose} />
