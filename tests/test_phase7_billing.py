@@ -287,6 +287,37 @@ def test_cannot_update_paid_invoice(client, firm_a_owner):
     assert r.status_code == 400, r.text
 
 
+def test_cannot_mark_void_invoice_as_paid(client, firm_a_owner):
+    """PATCH status=paid on a void invoice must be rejected with 400 and leave status unchanged."""
+    firm_id = uuid.UUID(firm_a_owner["firm_id"])
+    headers = firm_a_owner["headers"]
+    client_id = _create_client_in_db(firm_id)
+
+    invoice_id = client.post("/invoices/", json=_invoice_payload(client_id), headers=headers).json()["id"]
+
+    db = TestingSessionLocal()
+    try:
+        inv = db.get(Invoice, uuid.UUID(invoice_id))
+        inv.status = InvoiceStatus.void
+        db.commit()
+    finally:
+        db.close()
+
+    r = client.patch(
+        f"/invoices/{invoice_id}",
+        json={"status": "paid"},
+        headers=headers,
+    )
+    assert r.status_code == 400, r.text
+
+    db2 = TestingSessionLocal()
+    try:
+        inv2 = db2.get(Invoice, uuid.UUID(invoice_id))
+        assert inv2.status == InvoiceStatus.void, f"expected void, got {inv2.status}"
+    finally:
+        db2.close()
+
+
 def test_soft_delete_invoice(client, firm_a_owner):
     firm_id = uuid.UUID(firm_a_owner["firm_id"])
     headers = firm_a_owner["headers"]
