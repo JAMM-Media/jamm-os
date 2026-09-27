@@ -2,7 +2,6 @@
 import type { Metadata } from 'next'
 import { Lora, Plus_Jakarta_Sans, Playfair_Display } from 'next/font/google'
 import './globals.css'
-import 'react-grid-layout/css/styles.css'
 import 'react-resizable/css/styles.css'
 import { ThemeProvider } from '@/providers/theme-provider'
 import { AuthProvider } from '@/lib/hooks/useAuth'

@@ -44,90 +44,38 @@ export interface UnsignedDocumentItem {
 export interface DashboardMetrics {
   mrr: number
   mrr_invoice_count: number
+  mrr_trend_pct: number | null
+  mrr_trend_direction: 'up' | 'down' | null
   outstanding_ar: number
   outstanding_ar_count: number
   oldest_overdue_days: number | null
+  ar_trend_pct: number | null
+  ar_trend_direction: 'up' | 'down' | null
   wip_value: number
   wip_hours: number
+  wip_trend_pct: number | null
+  wip_trend_direction: 'up' | 'down' | null
   overdue_engagement_count: number
   overdue_engagements: OverdueEngagementItem[]
   upcoming_deadlines: UpcomingDeadlineItem[]
   staff_utilization: StaffUtilizationItem[]
   unsigned_document_count: number
   unsigned_documents: UnsignedDocumentItem[]
+  top_engagements: WIPEngagement[]
 }
 
-export interface DashboardItem {
-  id: string
-  type: 'task' | 'engagement'
-  title: string
-  clientName: string
-  clientId: string
-  status: string
-  dueDate: string
-  assignedTo: string
-  href: string
+export interface DashboardSectionItem {
+  key: string
+  visible: boolean
+  order: number
 }
 
-export interface DashboardStats {
-  totalClients: number
-  activeEngagements: number
-  overdue: number
-  awaitingDocs: number
-}
-
-export interface DashboardWidgetInstance {
-  instance_id: string
-  type_key: string
-  grid_x: number
-  grid_y: number
-  size: 'small' | 'medium' | 'large'
-  minimized: boolean
-  config: Record<string, unknown>
-}
-
-export interface DashboardTemplateItem {
-  id: string
-  name: string
-  widgets: DashboardWidgetInstance[]
-  created_at: string
-}
-
-export interface WidgetCatalogItem {
-  type_key: string
-  display_name: string
-  category: string
-  allowed_sizes: string[]
-  config_schema: { field: string; type: string; required: boolean }[]
-  role_requirement: string
-}
-
-function mapTaskItem(raw: Record<string, unknown>): DashboardItem {
-  return {
-    id: String(raw.id),
-    type: 'task',
-    title: String(raw.title ?? ''),
-    clientName: String(raw.client_name ?? raw.clientName ?? ''),
-    clientId: String(raw.client_id ?? raw.clientId ?? ''),
-    status: String(raw.status ?? ''),
-    dueDate: String(raw.due_date ?? raw.dueDate ?? ''),
-    assignedTo: String(raw.assigned_to ?? raw.assignedTo ?? ''),
-    href: `/tasks/${raw.id}`,
-  }
-}
-
-function mapEngagementItem(raw: Record<string, unknown>): DashboardItem {
-  return {
-    id: String(raw.id),
-    type: 'engagement',
-    title: String(raw.name ?? raw.title ?? ''),
-    clientName: String(raw.client_name ?? raw.clientName ?? ''),
-    clientId: String(raw.client_id ?? raw.clientId ?? ''),
-    status: String(raw.status ?? ''),
-    dueDate: String(raw.end_date ?? raw.due_date ?? raw.dueDate ?? ''),
-    assignedTo: String(raw.assigned_to ?? raw.assignedTo ?? ''),
-    href: `/engagements/${raw.id}`,
-  }
+export interface WIPEngagement {
+  engagement_id: string
+  engagement_name: string
+  client_name: string
+  total_hours: number
+  wip_value: number
 }
 
 export const dashboardApi = {
@@ -136,81 +84,13 @@ export const dashboardApi = {
     return data as DashboardMetrics
   },
 
-  getOverdue: async (): Promise<DashboardItem[]> => {
-    const [tasks, engagements] = await Promise.all([
-      api.get('/tasks', { params: { status_filter: 'overdue', limit: 20 } }),
-      api.get('/engagements/', { params: { status_filter: 'overdue', limit: 20 } }),
-    ])
-    const taskItems = (tasks.data.items ?? tasks.data).map(mapTaskItem)
-    const engItems = (engagements.data.items ?? engagements.data).map(mapEngagementItem)
-    return [...taskItems, ...engItems].sort(
-      (a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()
-    )
+  getSections: async (): Promise<DashboardSectionItem[]> => {
+    const { data } = await api.get('/dashboard/sections')
+    return (data as { sections: DashboardSectionItem[] }).sections
   },
 
-  getAwaitingDocs: async (): Promise<DashboardItem[]> => {
-    const { data } = await api.get('/engagements/', {
-      params: { status_filter: 'awaiting_docs', limit: 20 },
-    })
-    return (data.items ?? data).map(mapEngagementItem)
-  },
-
-  getStats: async (): Promise<DashboardStats> => {
-    const [clients, engagements, tasks, invoices] = await Promise.all([
-      api.get('/clients/', { params: { limit: 1, offset: 0 } }),
-      api.get('/engagements/', { params: { limit: 1, offset: 0, status_filter: 'in_progress' } }),
-      api.get('/tasks/', { params: { limit: 1, offset: 0 } }),
-      api.get('/invoices/', { params: { limit: 1, offset: 0, status: 'unpaid' } }).catch(() =>
-        api.get('/invoices/', { params: { limit: 1, offset: 0, status: 'pending' } }).catch(() => ({ data: {} }))
-      ),
-    ])
-    return {
-      totalClients: Number(clients.data.total_count ?? clients.data.total ?? 0),
-      activeEngagements: Number(engagements.data.total_count ?? engagements.data.total ?? 0),
-      overdue: Number(tasks.data.total_count ?? tasks.data.total ?? 0),
-      awaitingDocs: Number(invoices.data.total_count ?? invoices.data.total ?? 0),
-    }
-  },
-
-  getLayout: async (): Promise<DashboardWidgetInstance[]> => {
-    const { data } = await api.get('/dashboard/layout')
-    return (data as { widgets: DashboardWidgetInstance[] }).widgets
-  },
-
-  getWidgetData: async (typeKey: string, config?: Record<string, unknown>): Promise<Record<string, unknown>> => {
-    const { data } = await api.get(`/dashboard/widgets/${typeKey}/data`, { params: config })
-    return data as Record<string, unknown>
-  },
-
-  getWidgetCatalog: async (): Promise<WidgetCatalogItem[]> => {
-    const { data } = await api.get('/dashboard/widget-catalog')
-    return data as WidgetCatalogItem[]
-  },
-
-  updateLayout: async (widgets: DashboardWidgetInstance[]): Promise<void> => {
-    await api.put('/dashboard/layout', { widgets })
-  },
-
-  getDefaultLayout: async (): Promise<DashboardWidgetInstance[]> => {
-    const { data } = await api.post('/dashboard/reset')
-    return (data as { widgets: DashboardWidgetInstance[] }).widgets
-  },
-
-  putFirmDefaultLayout: async (widgets: DashboardWidgetInstance[]): Promise<void> => {
-    await api.put('/dashboard/firm-default-layout', { widgets })
-  },
-
-  getTemplates: async (): Promise<DashboardTemplateItem[]> => {
-    const { data } = await api.get('/dashboard/templates')
-    return data as DashboardTemplateItem[]
-  },
-
-  createTemplate: async (name: string, widgets: DashboardWidgetInstance[]): Promise<DashboardTemplateItem> => {
-    const { data } = await api.post('/dashboard/templates', { name, widgets })
-    return data as DashboardTemplateItem
-  },
-
-  deleteTemplate: async (templateId: string): Promise<void> => {
-    await api.delete(`/dashboard/templates/${templateId}`)
+  updateSections: async (sections: DashboardSectionItem[]): Promise<void> => {
+    await api.put('/dashboard/sections', { sections })
   },
 }
+

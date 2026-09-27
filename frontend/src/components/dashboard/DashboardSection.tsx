@@ -1,7 +1,7 @@
 // frontend/src/components/dashboard/DashboardSection.tsx
 
-import { DashboardItem } from '@/lib/api/dashboard'
 import { PriorityItem } from './PriorityItem'
+import type { DashboardItem } from './PriorityItem'
 
 interface DashboardSectionProps {
   title: string

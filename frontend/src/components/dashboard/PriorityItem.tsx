@@ -2,7 +2,17 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { DashboardItem } from '@/lib/api/dashboard'
+export interface DashboardItem {
+  id: string
+  type: 'task' | 'engagement'
+  title: string
+  clientName: string
+  clientId: string
+  status: string
+  dueDate: string
+  assignedTo: string
+  href: string
+}
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { CheckSquare, Briefcase } from 'lucide-react'
 import { cn } from '@/lib/utils'

@@ -47,17 +47,38 @@ class UnsignedDocumentItem(BaseModel):
     reminder_state: str
 
 
+class WIPEngagementItem(BaseModel):
+    engagement_id: UUID
+    engagement_name: str
+    client_name: str
+    total_hours: float
+    wip_value: float
+
+
 class DashboardMetricsOut(BaseModel):
     mrr: float
     mrr_invoice_count: int
+    mrr_trend_pct: Optional[float] = None
+    mrr_trend_direction: Optional[str] = None
     outstanding_ar: float
     outstanding_ar_count: int
     oldest_overdue_days: Optional[int]
+    ar_trend_pct: Optional[float] = None
+    ar_trend_direction: Optional[str] = None
     wip_value: float
     wip_hours: float
+    wip_trend_pct: Optional[float] = None
+    wip_trend_direction: Optional[str] = None
     overdue_engagement_count: int
     overdue_engagements: list[OverdueEngagementItem]
     upcoming_deadlines: list[UpcomingDeadlineItem]
     staff_utilization: list[StaffUtilizationItem]
     unsigned_document_count: int
     unsigned_documents: list[UnsignedDocumentItem]
+    top_engagements: list[WIPEngagementItem] = []
+
+
+class DashboardSectionItem(BaseModel):
+    key: str
+    visible: bool
+    order: int
