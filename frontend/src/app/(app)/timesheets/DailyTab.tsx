@@ -4,7 +4,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { toast } from 'sonner'
 import { Pencil, Trash2, AlertTriangle, Check, ChevronDown } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { cn, localDateStr } from '@/lib/utils'
 import api from '@/lib/api'
 import { TimeTextInput } from '@/components/ui/TimeTextInput'
 
@@ -47,7 +47,7 @@ function roundToNearest15(date: Date): string {
 }
 
 function toDateString(d: Date): string {
-  return d.toISOString().slice(0, 10)
+  return localDateStr(d)
 }
 
 function formatDateLabel(iso: string): string {

@@ -16,7 +16,7 @@ import { EditEngagementModal } from '@/components/engagements/EditEngagementModa
 import { SendEngagementLetterModal } from '@/components/engagements/SendEngagementLetterModal'
 import { TaskTable } from '@/components/tasks/TaskTable'
 import { NotesTab, NotesPanel, useNotes } from '@/components/notes'
-import { cn, formatEngagementType } from '@/lib/utils'
+import { cn, formatEngagementType, formatLocalDate, getEffectiveDueDate } from '@/lib/utils'
 import api from '@/lib/api'
 import type { PendingDocument } from '@/lib/api'
 import { Lock, UserPlus, X } from 'lucide-react'
@@ -335,7 +335,7 @@ export default function EngagementDetailPage() {
               )}
               <span className="text-[12px] text-[#6B7280]">
                 {formatEngagementType(engagement.engagementType)}
-                {engagement.endDate ? ` · Due ${engagement.endDate}` : ''}
+                {getEffectiveDueDate(engagement) ? ` · Due ${formatLocalDate(getEffectiveDueDate(engagement))}` : ''}
               </span>
             </div>
           </div>
@@ -433,7 +433,7 @@ export default function EngagementDetailPage() {
                 </div>
                 <div className="flex flex-col gap-1">
                   <span className={labelClass}>Due date</span>
-                  <span className={valueClass}>{formatDate(engagement.endDate)}</span>
+                  <span className={valueClass}>{formatLocalDate(getEffectiveDueDate(engagement))}</span>
                 </div>
                 <div className="col-span-2 flex flex-col gap-1">
                   <span className={labelClass + ' mb-1.5'}>Staff</span>

@@ -11,6 +11,7 @@ import api from '@/lib/api'
 import { ChevronDown, ChevronLeft, ChevronRight, Pencil, Plus, X } from 'lucide-react'
 import { ContextualBanner } from '@/components/concierge-inline/ContextualBanner'
 import { emitConciergeAction } from '@/lib/events/conciergeEvents'
+import { filterUpcomingByDate, startOfWeek } from '@/lib/utils'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -672,8 +673,9 @@ export default function CalendarPage() {
   const isFirmOwner = user?.role === 'firm_owner'
 
   const today = new Date()
+  const todayStr = toDateStr(today)
   const [view, setView] = useState<ViewMode>('month')
-  const [cursor, setCursor] = useState(new Date(today.getFullYear(), today.getMonth(), 1))
+  const [cursor, setCursor] = useState(new Date(today.getFullYear(), today.getMonth(), today.getDate()))
   const [selectedStaff, setSelectedStaff] = useState<string[]>([])
   const [justMe, setJustMe] = useState(true)
   const [sidebarFilter, setSidebarFilter] = useState<EventType[]>(['deadline', 'extension', 'task', 'meeting', 'holiday'])
@@ -893,8 +895,7 @@ export default function CalendarPage() {
   function cursorLabel(): string {
     if (view === 'month') return `${MONTH_NAMES[cursor.getMonth()]} ${cursor.getFullYear()}`
     if (view === 'week') {
-      const sun = new Date(cursor)
-      sun.setDate(sun.getDate() - sun.getDay())
+      const sun = startOfWeek(cursor)
       const sat = new Date(sun)
       sat.setDate(sat.getDate() + 6)
       return `${sun.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${sat.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
@@ -1029,8 +1030,7 @@ export default function CalendarPage() {
   // ---------------------------------------------------------------------------
 
   function WeekView() {
-    const sun = new Date(cursor)
-    sun.setDate(sun.getDate() - sun.getDay())
+    const sun = startOfWeek(cursor)
     const days: string[] = []
     for (let i = 0; i < 7; i++) {
       const d = new Date(sun)
@@ -1157,7 +1157,7 @@ export default function CalendarPage() {
   // Sidebar upcoming list
   // ---------------------------------------------------------------------------
 
-  const upcomingEvents = [...visibleEvents]
+  const upcomingEvents = filterUpcomingByDate([...visibleEvents], todayStr)
     .filter((ev) => sidebarFilter.includes(ev.type))
     .sort((a, b) => a.date.localeCompare(b.date))
     .slice(0, 50)
@@ -1179,7 +1179,7 @@ export default function CalendarPage() {
               <span className="text-sm font-medium min-w-[160px] text-center">{cursorLabel()}</span>
               <button onClick={next} className="p-1 rounded hover:bg-surface-card"><ChevronRight size={16} /></button>
               <button
-                onClick={() => { setCursor(new Date(today.getFullYear(), today.getMonth(), 1)) }}
+                onClick={() => { setCursor(new Date(today.getFullYear(), today.getMonth(), today.getDate())) }}
                 className="text-xs px-2 py-0.5 border border-surface-border rounded hover:bg-surface-card ml-1"
               >
                 Today

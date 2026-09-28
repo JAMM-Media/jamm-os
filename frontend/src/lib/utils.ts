@@ -54,6 +54,36 @@ export function formatLocalDate(
   return new Date(year, month, day).toLocaleDateString('en-US', options)
 }
 
+// Produce a YYYY-MM-DD string from a Date using local time, not UTC.
+// Use this wherever you need today's date as a string or want to compare
+// date strings in the user's local calendar day.
+export function localDateStr(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+// Resolve the most-specific due date for an engagement: extended deadline
+// beats filing deadline beats end_date. Returns null if all are null.
+export function getEffectiveDueDate(engagement: {
+  extendedDeadline: string | null
+  filingDeadline: string | null
+  endDate: string | null
+}): string | null {
+  return engagement.extendedDeadline ?? engagement.filingDeadline ?? engagement.endDate
+}
+
+// Keep events whose YYYY-MM-DD date string is on or after todayStr.
+// Used by the Calendar's Upcoming sidebar to suppress past events.
+export function filterUpcomingByDate<T extends { date: string }>(events: T[], todayStr: string): T[] {
+  return events.filter(ev => ev.date >= todayStr)
+}
+
+// Return the Sunday on or before d (local time). Used for Week view rendering.
+export function startOfWeek(d: Date): Date {
+  const sun = new Date(d)
+  sun.setDate(sun.getDate() - sun.getDay())
+  return sun
+}
+
 export function formatEntitySubtype(entitySubtype: string | null | undefined): string {
   if (!entitySubtype) return ''
   const labels: Record<string, string> = {

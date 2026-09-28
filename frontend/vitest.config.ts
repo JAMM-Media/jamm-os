@@ -9,6 +9,7 @@ export default defineConfig({
     environment: 'happy-dom',
     exclude: ['**/concierge/assembleSSEStream.test.ts', '**/node_modules/**'],
     setupFiles: ['./src/test/setup.ts'],
+    globalSetup: ['./vitest.globalSetup.ts'],
     globals: true,
   },
   resolve: {

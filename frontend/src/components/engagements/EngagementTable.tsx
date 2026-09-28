@@ -1,6 +1,6 @@
 // frontend/src/components/engagements/EngagementTable.tsx
 'use client'
-import { formatLocalDate } from '@/lib/utils'
+import { formatLocalDate, getEffectiveDueDate } from '@/lib/utils'
 
 import { useRouter } from 'next/navigation'
 import { type Engagement } from '@/lib/api'
@@ -32,7 +32,7 @@ function formatTypeDisplay(engagementType: string | null | undefined): string {
 }
 
 function formatDeadline(eng: Engagement): string {
-  const raw = eng.extendedDeadline ?? eng.filingDeadline ?? eng.endDate
+  const raw = getEffectiveDueDate(eng)
   if (!raw) return '—'
   return formatLocalDate(raw, { month: 'short', day: 'numeric', year: 'numeric' }, raw)
 }
