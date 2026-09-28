@@ -11,7 +11,7 @@ import api from '@/lib/api'
 import { ChevronDown, ChevronLeft, ChevronRight, Pencil, Plus, X } from 'lucide-react'
 import { ContextualBanner } from '@/components/concierge-inline/ContextualBanner'
 import { emitConciergeAction } from '@/lib/events/conciergeEvents'
-import { filterUpcomingByDate, startOfWeek, addDaysStr, filterByDateRange, formatLocalDate } from '@/lib/utils'
+import { filterUpcomingByDate, startOfWeek, addDaysStr, filterByDateRange, formatLocalDate, agendaWindowBounds } from '@/lib/utils'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -73,6 +73,14 @@ const TYPE_LABELS: Record<string, string> = {
   task: 'Tasks',
   meeting: 'Meetings',
   holiday: 'Holidays',
+}
+
+const AGENDA_TYPE_LABELS: Record<string, string> = {
+  deadline: 'Deadline',
+  extension: 'Extension',
+  task: 'Task',
+  meeting: 'Meeting',
+  holiday: 'Holiday',
 }
 
 // ---------------------------------------------------------------------------
@@ -677,6 +685,7 @@ export default function CalendarPage() {
   const todayStr = toDateStr(today)
   const [view, setView] = useState<ViewMode>('month')
   const [cursor, setCursor] = useState(new Date(today.getFullYear(), today.getMonth(), today.getDate()))
+  const [agendaMode, setAgendaMode] = useState<'past' | 'next'>('next')
   const [selectedStaff, setSelectedStaff] = useState<string[]>([])
   const [justMe, setJustMe] = useState(true)
   const [sidebarFilter, setSidebarFilter] = useState<EventType[]>(['deadline', 'extension', 'task', 'meeting', 'holiday'])
@@ -910,8 +919,7 @@ export default function CalendarPage() {
       return `${sun.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${sat.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
     }
     if (view === 'agenda') {
-      const startStr = toDateStr(cursor)
-      const endStr = addDaysStr(startStr, 13)
+      const { startStr, endStr } = agendaWindowBounds(toDateStr(cursor), agendaMode)
       return `${formatLocalDate(startStr, { month: 'short', day: 'numeric' })} - ${formatLocalDate(endStr, { month: 'short', day: 'numeric', year: 'numeric' })}`
     }
     return ''
@@ -1091,42 +1099,60 @@ export default function CalendarPage() {
   // ---------------------------------------------------------------------------
 
   function AgendaView() {
-    const startStr = toDateStr(cursor)
-    const endStr = addDaysStr(startStr, 13)
+    const anchorStr = toDateStr(cursor)
+    const { startStr, endStr } = agendaWindowBounds(anchorStr, agendaMode)
     const windowEvents = filterByDateRange([...visibleEvents], startStr, endStr)
-      .sort((a, b) => a.date.localeCompare(b.date))
+      .sort((a, b) => agendaMode === 'past'
+        ? b.date.localeCompare(a.date)
+        : a.date.localeCompare(b.date))
 
     const grouped: Record<string, CalEvent[]> = {}
     for (const ev of windowEvents) {
       if (!grouped[ev.date]) grouped[ev.date] = []
       grouped[ev.date].push(ev)
     }
-    const dates = Object.keys(grouped).sort()
+    const dates = Object.keys(grouped).sort((a, b) =>
+      agendaMode === 'past' ? b.localeCompare(a) : a.localeCompare(b))
 
     if (dates.length === 0) {
-      return <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">Nothing scheduled in the next 14 days.</div>
+      return (
+        <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">
+          {agendaMode === 'past' ? 'Nothing in the past 14 days.' : 'Nothing scheduled in the next 14 days.'}
+        </div>
+      )
     }
 
     return (
-      <div className="flex-1 overflow-auto px-4 py-2">
-        {dates.map((ds) => (
-          <div key={ds} className="mb-4">
-            <div className="text-xs font-semibold text-muted-foreground uppercase mb-1">
-              {formatLocalDate(ds, { weekday: 'short', month: 'short', day: 'numeric' })}
+      <div className="flex-1 overflow-auto">
+        <div className="mx-auto max-w-[880px] px-4 py-3">
+          {dates.map((ds) => (
+            <div key={ds} className="flex gap-6 mb-5">
+              {/* Date column */}
+              <div className="w-20 flex-shrink-0 pt-0.5 text-right">
+                <div className="text-[11px] text-muted-foreground">{formatLocalDate(ds, { weekday: 'short' })}</div>
+                <div className="text-sm font-medium text-brand dark:text-[#EDEEF0]">{formatLocalDate(ds, { month: 'short', day: 'numeric' })}</div>
+              </div>
+              {/* Events column */}
+              <div className="flex-1 flex flex-col gap-1.5 border-t border-cal-border dark:border-dark-cal-border pt-0.5">
+                {grouped[ds].map((ev) => {
+                  const color = eventColors[ev.type] ?? '#9CA3AF'
+                  return (
+                    <div key={ev.id} className="flex items-start gap-2 py-0.5">
+                      <div className="w-2 h-2 rounded-full mt-1.5 flex-shrink-0" style={{ backgroundColor: color }} />
+                      <span className="text-sm flex-1 text-brand dark:text-[#EDEEF0]">{ev.title}</span>
+                      {ev.type === 'meeting' && ev.location && (
+                        <span className="text-xs text-muted-foreground truncate max-w-[160px]">{ev.location}</span>
+                      )}
+                      <span className="text-xs text-muted-foreground ml-1 flex-shrink-0">
+                        {AGENDA_TYPE_LABELS[ev.type] ?? ev.type}
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
             </div>
-            <div className="flex flex-col gap-1">
-              {grouped[ds].map((ev) => {
-                const color = eventColors[ev.type] ?? '#9CA3AF'
-                return (
-                  <div key={ev.id} className="flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
-                    <span className="text-sm">{ev.title}</span>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        ))}
+          ))}
+        </div>
       </div>
     )
   }
@@ -1199,10 +1225,27 @@ export default function CalendarPage() {
           <div className="flex items-center justify-between px-4 py-2 border-b border-surface-border flex-shrink-0">
             <div className="flex items-center gap-2">
               <button onClick={prev} className="p-1 rounded hover:bg-surface-card"><ChevronLeft size={16} /></button>
-              <span className="text-sm font-medium min-w-[160px] text-center">{cursorLabel()}</span>
+              {view === 'agenda' ? (
+                <div className="flex items-center gap-2">
+                  <div className="flex rounded border border-surface-border overflow-hidden text-xs">
+                    {(['past', 'next'] as const).map((m) => (
+                      <button
+                        key={m}
+                        onClick={() => { setAgendaMode(m); setCursor(new Date(today.getFullYear(), today.getMonth(), today.getDate())) }}
+                        className={`px-3 py-1 transition-colors ${agendaMode === m ? 'bg-primary text-primary-foreground' : 'hover:bg-surface-card'}`}
+                      >
+                        {m === 'next' ? 'Next 14 days' : 'Past 14 days'}
+                      </button>
+                    ))}
+                  </div>
+                  <span className="text-xs text-muted-foreground">{cursorLabel()}</span>
+                </div>
+              ) : (
+                <span className="text-sm font-medium min-w-[160px] text-center">{cursorLabel()}</span>
+              )}
               <button onClick={next} className="p-1 rounded hover:bg-surface-card"><ChevronRight size={16} /></button>
               <button
-                onClick={() => { setCursor(new Date(today.getFullYear(), today.getMonth(), today.getDate())) }}
+                onClick={() => { setCursor(new Date(today.getFullYear(), today.getMonth(), today.getDate())); if (view === 'agenda') setAgendaMode('next') }}
                 className="text-xs px-2 py-0.5 border border-surface-border rounded hover:bg-surface-card ml-1"
               >
                 Today

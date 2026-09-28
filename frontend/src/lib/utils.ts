@@ -98,6 +98,17 @@ export function filterByDateRange<T extends { date: string }>(events: T[], start
   return events.filter(ev => ev.date >= startStr && ev.date <= endStr)
 }
 
+// Return the [startStr, endStr] for the Agenda view's 14-day window.
+// 'next': anchorStr through anchorStr+13 (today forward by default).
+// 'past': anchorStr-14 through anchorStr-1 (yesterday back 14 days by default).
+// The two modes share no date and leave no gap: past.endStr + 1 === next.startStr.
+export function agendaWindowBounds(anchorStr: string, mode: 'past' | 'next'): { startStr: string; endStr: string } {
+  if (mode === 'next') {
+    return { startStr: anchorStr, endStr: addDaysStr(anchorStr, 13) }
+  }
+  return { startStr: addDaysStr(anchorStr, -14), endStr: addDaysStr(anchorStr, -1) }
+}
+
 export function formatEntitySubtype(entitySubtype: string | null | undefined): string {
   if (!entitySubtype) return ''
   const labels: Record<string, string> = {

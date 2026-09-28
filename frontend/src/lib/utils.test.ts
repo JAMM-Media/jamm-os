@@ -1,6 +1,6 @@
 // frontend/src/lib/utils.test.ts
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { localDateStr, formatLocalDate, getEffectiveDueDate, filterUpcomingByDate, startOfWeek, addDaysStr, filterByDateRange } from './utils'
+import { localDateStr, formatLocalDate, getEffectiveDueDate, filterUpcomingByDate, startOfWeek, addDaysStr, filterByDateRange, agendaWindowBounds } from './utils'
 
 // ---------------------------------------------------------------------------
 // localDateStr
@@ -266,5 +266,47 @@ describe('filterByDateRange', () => {
   it('returns all events when range covers everything', () => {
     const result = filterByDateRange(events, '2026-09-27', '2026-10-12')
     expect(result).toHaveLength(5)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// agendaWindowBounds
+// ---------------------------------------------------------------------------
+
+describe('agendaWindowBounds', () => {
+  const anchor = '2026-09-28'
+
+  it('next mode: startStr is anchor, endStr is anchor+13', () => {
+    const { startStr, endStr } = agendaWindowBounds(anchor, 'next')
+    expect(startStr).toBe('2026-09-28')
+    expect(endStr).toBe('2026-10-11')
+  })
+
+  it('past mode: endStr is anchor-1, startStr is anchor-14', () => {
+    const { startStr, endStr } = agendaWindowBounds(anchor, 'past')
+    expect(startStr).toBe('2026-09-14')
+    expect(endStr).toBe('2026-09-27')
+  })
+
+  it('past and next share no date', () => {
+    const past = agendaWindowBounds(anchor, 'past')
+    const next = agendaWindowBounds(anchor, 'next')
+    expect(past.endStr < next.startStr).toBe(true)
+  })
+
+  it('past and next leave no gap: past.endStr + 1 day === next.startStr', () => {
+    const past = agendaWindowBounds(anchor, 'past')
+    const next = agendaWindowBounds(anchor, 'next')
+    expect(addDaysStr(past.endStr, 1)).toBe(next.startStr)
+  })
+
+  it('crosses a month boundary correctly', () => {
+    const { startStr, endStr } = agendaWindowBounds('2026-09-28', 'next')
+    expect(endStr).toBe('2026-10-11')
+  })
+
+  it('crosses a year boundary in past mode', () => {
+    const { startStr } = agendaWindowBounds('2027-01-05', 'past')
+    expect(startStr).toBe('2026-12-22')
   })
 })
