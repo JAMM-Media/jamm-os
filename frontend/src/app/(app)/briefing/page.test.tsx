@@ -261,14 +261,14 @@ describe('Per-row expand/collapse with real ten-field detail panel', () => {
     )
   })
 
-  it('Implement and Dismiss still function unchanged', async () => {
+  it('Resolved and Dismiss still function unchanged', async () => {
     const item = makeItem({ id: 'item-impl-dismiss' })
     vi.mocked(surfaceItemsApi.getBriefing).mockResolvedValue(makeBriefingResponse([item]))
 
     await renderBriefingPage()
     await waitFor(() => expect(screen.getByText('Invoice #1042 is 8 days overdue')).toBeInTheDocument())
 
-    fireEvent.click(screen.getByRole('button', { name: /implement/i }))
+    fireEvent.click(screen.getByRole('button', { name: /resolved/i }))
     await waitFor(() =>
       expect(surfaceItemsApi.implementItem).toHaveBeenCalledWith('item-impl-dismiss')
     )
