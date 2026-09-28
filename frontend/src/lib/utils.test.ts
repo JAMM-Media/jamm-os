@@ -1,6 +1,6 @@
 // frontend/src/lib/utils.test.ts
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { localDateStr, formatLocalDate, getEffectiveDueDate, filterUpcomingByDate, startOfWeek } from './utils'
+import { localDateStr, formatLocalDate, getEffectiveDueDate, filterUpcomingByDate, startOfWeek, addDaysStr, filterByDateRange } from './utils'
 
 // ---------------------------------------------------------------------------
 // localDateStr
@@ -202,5 +202,69 @@ describe('startOfWeek', () => {
     const original = localDateStr(d)
     startOfWeek(d)
     expect(localDateStr(d)).toBe(original)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// addDaysStr
+// ---------------------------------------------------------------------------
+
+describe('addDaysStr', () => {
+  it('adds positive days within the same month', () => {
+    expect(addDaysStr('2026-09-28', 3)).toBe('2026-10-01')
+  })
+
+  it('crosses a month end correctly', () => {
+    expect(addDaysStr('2026-01-29', 3)).toBe('2026-02-01')
+  })
+
+  it('crosses a year end correctly', () => {
+    expect(addDaysStr('2026-12-30', 3)).toBe('2027-01-02')
+  })
+
+  it('handles negative n (moves backward)', () => {
+    expect(addDaysStr('2026-10-01', -3)).toBe('2026-09-28')
+  })
+
+  it('zero n returns the same date', () => {
+    expect(addDaysStr('2026-09-28', 0)).toBe('2026-09-28')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// filterByDateRange
+// ---------------------------------------------------------------------------
+
+describe('filterByDateRange', () => {
+  const events = [
+    { id: '1', date: '2026-09-27' },
+    { id: '2', date: '2026-09-28' },
+    { id: '3', date: '2026-10-05' },
+    { id: '4', date: '2026-10-11' },
+    { id: '5', date: '2026-10-12' },
+  ]
+
+  it('includes both boundary dates', () => {
+    const result = filterByDateRange(events, '2026-09-28', '2026-10-11')
+    expect(result.map(e => e.date)).toEqual(['2026-09-28', '2026-10-05', '2026-10-11'])
+  })
+
+  it('excludes items before startStr', () => {
+    const result = filterByDateRange(events, '2026-09-28', '2026-10-11')
+    expect(result.some(e => e.date === '2026-09-27')).toBe(false)
+  })
+
+  it('excludes items after endStr', () => {
+    const result = filterByDateRange(events, '2026-09-28', '2026-10-11')
+    expect(result.some(e => e.date === '2026-10-12')).toBe(false)
+  })
+
+  it('returns empty array when no events fall in range', () => {
+    expect(filterByDateRange(events, '2026-11-01', '2026-11-14')).toEqual([])
+  })
+
+  it('returns all events when range covers everything', () => {
+    const result = filterByDateRange(events, '2026-09-27', '2026-10-12')
+    expect(result).toHaveLength(5)
   })
 })

@@ -84,6 +84,20 @@ export function startOfWeek(d: Date): Date {
   return sun
 }
 
+// Return the YYYY-MM-DD string that is n days after dateStr using local date math.
+// Negative n moves backward. Handles month and year boundaries correctly.
+export function addDaysStr(dateStr: string, n: number): string {
+  const parts = dateStr.split('-')
+  const d = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10) + n)
+  return localDateStr(d)
+}
+
+// Return events whose date falls within [startStr, endStr] (both inclusive).
+// Used by the Calendar's Agenda view to build a fixed-length window.
+export function filterByDateRange<T extends { date: string }>(events: T[], startStr: string, endStr: string): T[] {
+  return events.filter(ev => ev.date >= startStr && ev.date <= endStr)
+}
+
 export function formatEntitySubtype(entitySubtype: string | null | undefined): string {
   if (!entitySubtype) return ''
   const labels: Record<string, string> = {

@@ -11,7 +11,7 @@ import api from '@/lib/api'
 import { ChevronDown, ChevronLeft, ChevronRight, Pencil, Plus, X } from 'lucide-react'
 import { ContextualBanner } from '@/components/concierge-inline/ContextualBanner'
 import { emitConciergeAction } from '@/lib/events/conciergeEvents'
-import { filterUpcomingByDate, startOfWeek } from '@/lib/utils'
+import { filterUpcomingByDate, startOfWeek, addDaysStr, filterByDateRange, formatLocalDate } from '@/lib/utils'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -542,24 +542,29 @@ interface PillProps {
   event: CalEvent
   borderColor: string
   fillColor: string
+  staffName?: string
   isOwner: boolean
   isPersonalView: boolean
   onClick?: (e: React.MouseEvent) => void
 }
 
-function EventPill({ event, borderColor, fillColor, isOwner, isPersonalView, onClick }: PillProps) {
-  void fillColor; void isOwner; void isPersonalView
+function EventPill({ event, borderColor, fillColor, staffName, isOwner, isPersonalView, onClick }: PillProps) {
+  const showDot = isOwner && !isPersonalView && !!fillColor && fillColor !== 'transparent'
+  const tooltip = showDot && staffName ? `${event.title} - ${staffName}` : event.title
   return (
     <div
-      title={event.title}
-      className="rounded-sm truncate cursor-pointer overflow-hidden"
+      title={tooltip}
+      className="rounded-sm cursor-pointer overflow-hidden flex items-center"
       style={{
         maxWidth: '100%',
-        backgroundColor: borderColor + '33',
+        backgroundColor: `color-mix(in srgb, ${borderColor} 20%, transparent)`,
         borderLeft: `3px solid ${borderColor}`,
       }}
       onClick={onClick}
     >
+      {showDot && (
+        <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 ml-1" style={{ backgroundColor: fillColor }} />
+      )}
       <div
         className="text-xs px-1 py-0.5 truncate text-brand dark:text-[#EDEEF0]"
         style={{ lineHeight: '1.4' }}
@@ -876,6 +881,10 @@ export default function CalendarPage() {
       const d = new Date(cursor)
       d.setDate(d.getDate() - 7)
       setCursor(d)
+    } else if (view === 'agenda') {
+      const d = new Date(cursor)
+      d.setDate(d.getDate() - 14)
+      setCursor(d)
     }
   }
 
@@ -884,6 +893,10 @@ export default function CalendarPage() {
     else if (view === 'week') {
       const d = new Date(cursor)
       d.setDate(d.getDate() + 7)
+      setCursor(d)
+    } else if (view === 'agenda') {
+      const d = new Date(cursor)
+      d.setDate(d.getDate() + 14)
       setCursor(d)
     }
   }
@@ -896,7 +909,12 @@ export default function CalendarPage() {
       sat.setDate(sat.getDate() + 6)
       return `${sun.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${sat.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
     }
-    return 'Agenda'
+    if (view === 'agenda') {
+      const startStr = toDateStr(cursor)
+      const endStr = addDaysStr(startStr, 13)
+      return `${formatLocalDate(startStr, { month: 'short', day: 'numeric' })} - ${formatLocalDate(endStr, { month: 'short', day: 'numeric', year: 'numeric' })}`
+    }
+    return ''
   }
 
   // ---------------------------------------------------------------------------
@@ -935,12 +953,15 @@ export default function CalendarPage() {
       const borderColor = eventColors[ev.type] ?? '#9CA3AF'
       const staffIdx = ev.assignedTo ? (staffIndexMap[ev.assignedTo] ?? 0) : 0
       const fillColor = ev.assignedTo ? getStaffColor(ev.assignedTo, staffIdx) : 'transparent'
+      const staffMember = ev.assignedTo ? staffList.find(s => s.id === ev.assignedTo) : undefined
+      const staffName = staffMember?.full_name ?? staffMember?.email ?? undefined
       return (
         <EventPill
           key={ev.id}
           event={ev}
           borderColor={borderColor}
           fillColor={fillColor}
+          staffName={staffName}
           isOwner={isFirmOwner}
           isPersonalView={justMe}
           onClick={(e) => handleEventClick(ev, e)}
@@ -1070,23 +1091,29 @@ export default function CalendarPage() {
   // ---------------------------------------------------------------------------
 
   function AgendaView() {
-    const sorted = [...visibleEvents].sort((a, b) => a.date.localeCompare(b.date))
+    const startStr = toDateStr(cursor)
+    const endStr = addDaysStr(startStr, 13)
+    const windowEvents = filterByDateRange([...visibleEvents], startStr, endStr)
+      .sort((a, b) => a.date.localeCompare(b.date))
+
     const grouped: Record<string, CalEvent[]> = {}
-    for (const ev of sorted) {
+    for (const ev of windowEvents) {
       if (!grouped[ev.date]) grouped[ev.date] = []
       grouped[ev.date].push(ev)
     }
     const dates = Object.keys(grouped).sort()
 
     if (dates.length === 0) {
-      return <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">No upcoming events.</div>
+      return <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">Nothing scheduled in the next 14 days.</div>
     }
 
     return (
       <div className="flex-1 overflow-auto px-4 py-2">
         {dates.map((ds) => (
           <div key={ds} className="mb-4">
-            <div className="text-xs font-semibold text-muted-foreground uppercase mb-1">{formatDate(ds)}</div>
+            <div className="text-xs font-semibold text-muted-foreground uppercase mb-1">
+              {formatLocalDate(ds, { weekday: 'short', month: 'short', day: 'numeric' })}
+            </div>
             <div className="flex flex-col gap-1">
               {grouped[ds].map((ev) => {
                 const color = eventColors[ev.type] ?? '#9CA3AF'
