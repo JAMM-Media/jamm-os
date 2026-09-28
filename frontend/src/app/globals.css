@@ -24,6 +24,10 @@
   --color-surface-border: #C2CDD8;
   --color-surface-input: #EFF3F7;
 
+  /* Calendar grid dividers -- one step darker than surface-border for clear line visibility */
+  --color-cal-border: #A8B8C8;
+  --color-dark-cal-border: #505F72;
+
   /* Dark mode surfaces -- cool-toned dark, not warm charcoal */
   --color-dark-page: #1D232A;
   --color-dark-card: #272D35;

@@ -49,11 +49,11 @@ type ViewMode = 'month' | 'week' | 'agenda'
 // ---------------------------------------------------------------------------
 
 const DEFAULT_COLORS: Record<string, string> = {
-  deadline: '#EF4444',
-  extension: '#F97316',
-  task: '#3B82F6',
-  meeting: '#22C55E',
-  holiday: '#9CA3AF',
+  deadline: '#B4534B',
+  extension: '#B07D3A',
+  task: '#3F6E9A',
+  meeting: '#4E8A6B',
+  holiday: '#8A94A3',
 }
 
 const STAFF_PALETTE = [
@@ -548,25 +548,21 @@ interface PillProps {
 }
 
 function EventPill({ event, borderColor, fillColor, isOwner, isPersonalView, onClick }: PillProps) {
-  const useFill = isOwner && !isPersonalView ? fillColor : 'transparent'
+  void fillColor; void isOwner; void isPersonalView
   return (
     <div
       title={event.title}
-      className="rounded truncate cursor-pointer"
+      className="rounded-sm truncate cursor-pointer overflow-hidden"
       style={{
-        padding: '2px',
-        backgroundColor: borderColor,
         maxWidth: '100%',
+        backgroundColor: borderColor + '33',
+        borderLeft: `3px solid ${borderColor}`,
       }}
       onClick={onClick}
     >
       <div
-        className="text-xs px-1 rounded-sm truncate"
-        style={{
-          backgroundColor: useFill !== 'transparent' ? useFill : 'var(--background)',
-          color: 'inherit',
-          lineHeight: '1.4',
-        }}
+        className="text-xs px-1 py-0.5 truncate text-brand dark:text-[#EDEEF0]"
+        style={{ lineHeight: '1.4' }}
       >
         {event.title}
       </div>
@@ -972,8 +968,8 @@ export default function CalendarPage() {
     const numWeeks = cells.length / 7
 
     return (
-      <div className="flex-1 overflow-hidden flex flex-col">
-        <div className="grid grid-cols-7 border-b border-surface-border flex-shrink-0">
+      <div className="flex-1 overflow-hidden flex flex-col bg-surface-card dark:bg-dark-card">
+        <div className="grid grid-cols-7 border-b border-cal-border dark:border-dark-cal-border flex-shrink-0">
           {DAY_NAMES.map((d) => (
             <div key={d} className="text-center text-xs font-medium py-1 text-muted-foreground">{d}</div>
           ))}
@@ -983,14 +979,14 @@ export default function CalendarPage() {
           style={{ gridTemplateRows: `repeat(${numWeeks}, 1fr)` }}
         >
           {cells.map((ds, i) => {
-            if (!ds) return <div key={i} className="border-b border-r border-surface-border/70 bg-surface-card/30" />
+            if (!ds) return <div key={i} className="border-b border-r border-cal-border dark:border-dark-cal-border bg-surface-border/10 dark:bg-dark-border/10" />
             const dayEvents = byDate[ds] ?? []
             const isToday = ds === todayStr
             const isExpanded = expandedDay === ds
             return (
               <div
                 key={ds}
-                className="border-b border-r border-surface-border/70 p-1 relative"
+                className="border-b border-r border-cal-border dark:border-dark-cal-border p-1 relative"
               >
                 <div
                   className={`text-xs font-medium mb-1 w-5 h-5 flex items-center justify-center rounded-full ${isToday ? 'bg-primary text-primary-foreground' : 'text-foreground'}`}
@@ -1040,13 +1036,13 @@ export default function CalendarPage() {
     const todayStr = toDateStr(today)
 
     return (
-      <div className="flex-1 overflow-auto">
-        <div className="grid grid-cols-7 border-b border-surface-border">
+      <div className="flex-1 flex flex-col overflow-hidden bg-surface-card dark:bg-dark-card">
+        <div className="grid grid-cols-7 border-b border-cal-border dark:border-dark-cal-border flex-shrink-0">
           {days.map((ds) => {
             const d = parseDate(ds)
             const isToday = ds === todayStr
             return (
-              <div key={ds} className="text-center py-2 border-r border-surface-border/50 last:border-r-0">
+              <div key={ds} className="text-center py-2 border-r border-cal-border dark:border-dark-cal-border last:border-r-0">
                 <div className="text-xs text-muted-foreground">{DAY_NAMES[d.getDay()]}</div>
                 <div className={`text-sm font-medium mx-auto w-7 h-7 flex items-center justify-center rounded-full ${isToday ? 'bg-primary text-primary-foreground' : ''}`}>
                   {d.getDate()}
@@ -1055,11 +1051,11 @@ export default function CalendarPage() {
             )
           })}
         </div>
-        <div className="grid grid-cols-7 min-h-[400px]">
+        <div className="grid grid-cols-7 flex-1 min-h-0 overflow-y-auto">
           {days.map((ds) => {
             const dayEvents = byDate[ds] ?? []
             return (
-              <div key={ds} className="border-r border-surface-border/50 last:border-r-0 p-1 flex flex-col gap-0.5">
+              <div key={ds} className="border-r border-cal-border dark:border-dark-cal-border last:border-r-0 p-1 flex flex-col gap-0.5">
                 {renderPills(dayEvents)}
               </div>
             )
