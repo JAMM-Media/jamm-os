@@ -229,6 +229,13 @@ describe('addDaysStr', () => {
   it('zero n returns the same date', () => {
     expect(addDaysStr('2026-09-28', 0)).toBe('2026-09-28')
   })
+
+  it('crosses a daylight saving fallback without losing a day (Nov 1 2026 in New York)', () => {
+    // New York clocks fall back on Nov 1, 2026 (Oct 30 + 3 = Nov 2).
+    // A millisecond-based implementation treats that day as 25 hours and
+    // can land on Nov 1 instead. The local-date constructor is immune.
+    expect(addDaysStr('2026-10-30', 3)).toBe('2026-11-02')
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -300,9 +307,10 @@ describe('agendaWindowBounds', () => {
     expect(addDaysStr(past.endStr, 1)).toBe(next.startStr)
   })
 
-  it('crosses a month boundary correctly', () => {
-    const { startStr, endStr } = agendaWindowBounds('2026-09-28', 'next')
-    expect(endStr).toBe('2026-10-11')
+  it('next mode: both bounds are correct when window crosses a month end', () => {
+    const { startStr, endStr } = agendaWindowBounds('2026-01-25', 'next')
+    expect(startStr).toBe('2026-01-25')
+    expect(endStr).toBe('2026-02-07')
   })
 
   it('crosses a year boundary in past mode', () => {

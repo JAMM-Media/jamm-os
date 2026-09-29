@@ -686,6 +686,7 @@ export default function CalendarPage() {
   const [view, setView] = useState<ViewMode>('month')
   const [cursor, setCursor] = useState(new Date(today.getFullYear(), today.getMonth(), today.getDate()))
   const [agendaMode, setAgendaMode] = useState<'past' | 'next'>('next')
+  const [agendaAnchor, setAgendaAnchor] = useState<string>(todayStr)
   const [selectedStaff, setSelectedStaff] = useState<string[]>([])
   const [justMe, setJustMe] = useState(true)
   const [sidebarFilter, setSidebarFilter] = useState<EventType[]>(['deadline', 'extension', 'task', 'meeting', 'holiday'])
@@ -891,9 +892,7 @@ export default function CalendarPage() {
       d.setDate(d.getDate() - 7)
       setCursor(d)
     } else if (view === 'agenda') {
-      const d = new Date(cursor)
-      d.setDate(d.getDate() - 14)
-      setCursor(d)
+      setAgendaAnchor(addDaysStr(agendaAnchor, -14))
     }
   }
 
@@ -904,9 +903,7 @@ export default function CalendarPage() {
       d.setDate(d.getDate() + 7)
       setCursor(d)
     } else if (view === 'agenda') {
-      const d = new Date(cursor)
-      d.setDate(d.getDate() + 14)
-      setCursor(d)
+      setAgendaAnchor(addDaysStr(agendaAnchor, 14))
     }
   }
 
@@ -919,7 +916,7 @@ export default function CalendarPage() {
       return `${sun.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${sat.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
     }
     if (view === 'agenda') {
-      const { startStr, endStr } = agendaWindowBounds(toDateStr(cursor), agendaMode)
+      const { startStr, endStr } = agendaWindowBounds(agendaAnchor, agendaMode)
       return `${formatLocalDate(startStr, { month: 'short', day: 'numeric' })} - ${formatLocalDate(endStr, { month: 'short', day: 'numeric', year: 'numeric' })}`
     }
     return ''
@@ -1099,8 +1096,7 @@ export default function CalendarPage() {
   // ---------------------------------------------------------------------------
 
   function AgendaView() {
-    const anchorStr = toDateStr(cursor)
-    const { startStr, endStr } = agendaWindowBounds(anchorStr, agendaMode)
+    const { startStr, endStr } = agendaWindowBounds(agendaAnchor, agendaMode)
     const windowEvents = filterByDateRange([...visibleEvents], startStr, endStr)
       .sort((a, b) => agendaMode === 'past'
         ? b.date.localeCompare(a.date)
@@ -1231,7 +1227,7 @@ export default function CalendarPage() {
                     {(['past', 'next'] as const).map((m) => (
                       <button
                         key={m}
-                        onClick={() => { setAgendaMode(m); setCursor(new Date(today.getFullYear(), today.getMonth(), today.getDate())) }}
+                        onClick={() => { setAgendaMode(m); setAgendaAnchor(todayStr) }}
                         className={`px-3 py-1 transition-colors ${agendaMode === m ? 'bg-primary text-primary-foreground' : 'hover:bg-surface-card'}`}
                       >
                         {m === 'next' ? 'Next 14 days' : 'Past 14 days'}
@@ -1245,7 +1241,7 @@ export default function CalendarPage() {
               )}
               <button onClick={next} className="p-1 rounded hover:bg-surface-card"><ChevronRight size={16} /></button>
               <button
-                onClick={() => { setCursor(new Date(today.getFullYear(), today.getMonth(), today.getDate())); if (view === 'agenda') setAgendaMode('next') }}
+                onClick={() => { if (view === 'agenda') { setAgendaAnchor(todayStr); setAgendaMode('next') } else { setCursor(new Date(today.getFullYear(), today.getMonth(), today.getDate())) } }}
                 className="text-xs px-2 py-0.5 border border-surface-border rounded hover:bg-surface-card ml-1"
               >
                 Today
