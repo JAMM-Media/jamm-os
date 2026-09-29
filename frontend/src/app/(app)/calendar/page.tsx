@@ -1218,125 +1218,170 @@ export default function CalendarPage() {
         {/* MAIN AREA */}
         <div className="flex-1 flex flex-col overflow-hidden">
           {/* Toolbar */}
-          <div className="flex items-center justify-between px-4 py-2 border-b border-surface-border flex-shrink-0">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3 bg-surface-card dark:bg-dark-card border-b border-cal-border dark:border-dark-cal-border flex-shrink-0">
+            {/* LEFT CLUSTER */}
             <div className="flex items-center gap-2">
-              <button onClick={prev} className="p-1 rounded hover:bg-surface-card"><ChevronLeft size={16} /></button>
-              {view === 'agenda' ? (
-                <div className="flex items-center gap-2">
-                  <div className="flex rounded border border-surface-border overflow-hidden text-xs">
-                    {(['past', 'next'] as const).map((m) => (
-                      <button
-                        key={m}
-                        onClick={() => { setAgendaMode(m); setAgendaAnchor(todayStr) }}
-                        className={`px-3 py-1 transition-colors ${agendaMode === m ? 'bg-primary text-primary-foreground' : 'hover:bg-surface-card'}`}
-                      >
-                        {m === 'next' ? 'Next 14 days' : 'Past 14 days'}
-                      </button>
-                    ))}
-                  </div>
-                  <span className="text-xs text-muted-foreground">{cursorLabel()}</span>
-                </div>
-              ) : (
-                <span className="text-sm font-medium min-w-[160px] text-center">{cursorLabel()}</span>
-              )}
-              <button onClick={next} className="p-1 rounded hover:bg-surface-card"><ChevronRight size={16} /></button>
+              {/* Today */}
               <button
                 onClick={() => { if (view === 'agenda') { setAgendaAnchor(todayStr); setAgendaMode('next') } else { setCursor(new Date(today.getFullYear(), today.getMonth(), today.getDate())) } }}
-                className="text-xs px-2 py-0.5 border border-surface-border rounded hover:bg-surface-card ml-1"
+                className="h-8 px-3 text-[13px] font-medium rounded-[6px] border border-cal-border dark:border-dark-cal-border bg-surface-card dark:bg-dark-card text-brand dark:text-[#EDEEF0] hover:bg-surface-border/20 dark:hover:bg-dark-border/20 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
               >
                 Today
               </button>
-            </div>
-            {isFirmOwner && (
-              <div ref={dropdownRef} className="relative">
+              {/* Joined prev / next chevron pair */}
+              <div className="flex h-8 rounded-[6px] border border-cal-border dark:border-dark-cal-border overflow-hidden">
                 <button
-                  onClick={() => setIsDropdownOpen((o) => !o)}
-                  className="flex items-center gap-1 text-xs px-2 py-1 rounded border border-surface-border hover:bg-surface-card"
+                  onClick={prev}
+                  aria-label="Previous"
+                  className="flex items-center justify-center w-8 bg-surface-card dark:bg-dark-card text-[#6B7280] dark:text-[#9CA3AF] hover:bg-surface-border/20 dark:hover:bg-dark-border/20 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand"
                 >
-                  {justMe ? 'Just me' : `${selectedStaff.length} staff selected`}
-                  <ChevronDown size={12} />
+                  <ChevronLeft size={15} />
                 </button>
-                {isDropdownOpen && (
-                  <div
-                    className="absolute top-full mt-1 left-0 z-50 bg-surface-card border border-surface-border rounded shadow-lg overflow-y-auto"
-                    style={{ width: '220px', maxHeight: '300px' }}
-                  >
-                    <div className="p-2 border-b border-surface-border">
-                      <input
-                        type="text"
-                        placeholder="Search staff..."
-                        value={staffSearch}
-                        onChange={(e) => setStaffSearch(e.target.value)}
-                        className="w-full text-xs border border-surface-border rounded px-2 py-1 bg-transparent"
-                      />
-                    </div>
-                    <div className="py-1">
-                      <button
-                        onClick={() => { resetToJustMe(); setIsDropdownOpen(false) }}
-                        className="w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-surface-card/80 text-left"
-                      >
-                        <span className="w-4 text-primary">{justMe ? '✓' : ''}</span>
-                        Just me
-                      </button>
-                      <button
-                        onClick={() => { setJustMe(false); setSelectedStaff(filteredStaffList.map((s) => s.id)) }}
-                        className="w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-surface-card/80 text-left"
-                      >
-                        <span className="w-4" />
-                        Select all
-                      </button>
-                      <div className="border-t border-surface-border my-1" />
-                      {filteredStaffList
-                        .filter((s) => {
-                          const q = staffSearch.toLowerCase()
-                          return !q || (s.full_name ?? '').toLowerCase().includes(q) || s.email.toLowerCase().includes(q)
-                        })
-                        .map((s) => {
-                          const staffIdx = staffIndexMap[s.id] ?? 0
-                          const color = getStaffColor(s.id, staffIdx)
-                          const isSelected = selectedStaff.includes(s.id)
-                          const isEditingThis = editingStaffColor === s.id
-                          return (
-                            <div key={s.id} className="flex items-center gap-2 px-3 py-1.5 hover:bg-surface-card/80 relative">
-                              <div
-                                className="w-3 h-3 rounded-full cursor-pointer border border-white/30 flex-shrink-0"
-                                style={{ backgroundColor: color }}
-                                onClick={(e) => { e.stopPropagation(); setEditingStaffColor(isEditingThis ? null : s.id) }}
-                              />
-                              {isEditingThis && (
-                                <ColorPicker
-                                  value={color}
-                                  onChange={(c) => patchStaffColor.mutate({ user_id: s.id, color: c })}
-                                  onClose={() => setEditingStaffColor(null)}
-                                />
-                              )}
-                              <button
-                                onClick={() => { toggleStaff(s.id) }}
-                                className="flex-1 flex items-center justify-between text-xs text-left"
-                              >
-                                <span className="truncate">{s.full_name ?? s.email}</span>
-                                {isSelected && <span className="text-primary flex-shrink-0">✓</span>}
-                              </button>
-                            </div>
-                          )
-                        })}
-                    </div>
-                  </div>
-                )}
+                <div className="w-px bg-cal-border dark:bg-dark-cal-border" />
+                <button
+                  onClick={next}
+                  aria-label="Next"
+                  className="flex items-center justify-center w-8 bg-surface-card dark:bg-dark-card text-[#6B7280] dark:text-[#9CA3AF] hover:bg-surface-border/20 dark:hover:bg-dark-border/20 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand"
+                >
+                  <ChevronRight size={15} />
+                </button>
               </div>
-            )}
-            <div className="flex items-center gap-1">
-              {(['month', 'week', 'agenda'] as ViewMode[]).map((v) => (
-                <button
-                  key={v}
-                  onClick={() => setView(v)}
-                  className={`text-xs px-2 py-1 rounded capitalize transition-colors ${
-                    view === v ? 'bg-primary text-primary-foreground' : 'hover:bg-surface-card border border-surface-border'
-                  }`}
-                >
-                  {v}
-                </button>
-              ))}
+              {/* Date range title */}
+              <span className="text-[15px] font-semibold text-brand dark:text-[#EDEEF0] min-w-[200px] whitespace-nowrap">
+                {cursorLabel()}
+              </span>
+              {/* Agenda tabs -- visible only in Agenda view */}
+              {view === 'agenda' && (
+                <div role="tablist" className="flex items-center">
+                  {(['next', 'past'] as const).map((m) => (
+                    <button
+                      key={m}
+                      role="tab"
+                      aria-selected={agendaMode === m}
+                      onClick={() => { setAgendaMode(m); setAgendaAnchor(todayStr) }}
+                      className={`h-8 px-3 text-[13px] font-medium whitespace-nowrap transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand ${
+                        agendaMode === m
+                          ? 'text-brand dark:text-[#EDEEF0] border-b-2 border-brand dark:border-[#EDEEF0]'
+                          : 'text-[#6B7280] dark:text-[#9CA3AF] hover:text-brand dark:hover:text-[#EDEEF0]'
+                      }`}
+                    >
+                      {m === 'next' ? 'Next 14 days' : 'Past 14 days'}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* RIGHT CLUSTER */}
+            <div className="flex items-center gap-2 ml-auto">
+              {/* Just me person filter */}
+              {isFirmOwner && (
+                <div ref={dropdownRef} className="relative">
+                  <button
+                    onClick={() => setIsDropdownOpen((o) => !o)}
+                    aria-haspopup="menu"
+                    aria-expanded={isDropdownOpen}
+                    className="h-8 w-[140px] px-3 text-[13px] font-medium rounded-[6px] border border-cal-border dark:border-dark-cal-border bg-surface-card dark:bg-dark-card text-brand dark:text-[#EDEEF0] hover:bg-surface-border/20 dark:hover:bg-dark-border/20 flex items-center justify-between transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+                  >
+                    <span className="truncate">
+                      {justMe ? 'Just me' : `${selectedStaff.length} staff selected`}
+                    </span>
+                    <ChevronDown size={14} className="flex-shrink-0 ml-1 text-[#6B7280]" />
+                  </button>
+                  {isDropdownOpen && (
+                    <div
+                      role="menu"
+                      className="absolute top-full mt-1 right-0 z-50 bg-surface-card dark:bg-dark-card border border-cal-border dark:border-dark-cal-border rounded-[6px] shadow-sm overflow-y-auto content-scroll"
+                      style={{ width: '220px', maxHeight: '300px' }}
+                    >
+                      <div className="p-2 border-b border-cal-border dark:border-dark-cal-border">
+                        <input
+                          type="text"
+                          placeholder="Search staff..."
+                          value={staffSearch}
+                          onChange={(e) => setStaffSearch(e.target.value)}
+                          className="w-full h-8 text-[13px] border border-cal-border dark:border-dark-cal-border rounded-[6px] px-3 bg-surface-card dark:bg-dark-card text-brand dark:text-[#EDEEF0] placeholder:text-[#6B7280] focus:outline-none focus:ring-2 focus:ring-inset focus:ring-brand"
+                        />
+                      </div>
+                      <div className="py-1">
+                        <button
+                          role="menuitemcheckbox"
+                          aria-checked={justMe}
+                          onClick={() => { resetToJustMe(); setIsDropdownOpen(false) }}
+                          className="w-full flex items-center gap-2 px-3 h-8 text-[13px] font-medium text-brand dark:text-[#EDEEF0] hover:bg-surface-border/20 dark:hover:bg-dark-border/20 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand"
+                        >
+                          <span className="w-4 text-primary flex-shrink-0">{justMe ? '✓' : ''}</span>
+                          Just me
+                        </button>
+                        <button
+                          role="menuitem"
+                          onClick={() => { setJustMe(false); setSelectedStaff(filteredStaffList.map((s) => s.id)) }}
+                          className="w-full flex items-center gap-2 px-3 h-8 text-[13px] font-medium text-brand dark:text-[#EDEEF0] hover:bg-surface-border/20 dark:hover:bg-dark-border/20 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand"
+                        >
+                          <span className="w-4 flex-shrink-0" />
+                          Select all
+                        </button>
+                        <div className="border-t border-cal-border dark:border-dark-cal-border my-1" />
+                        {filteredStaffList
+                          .filter((s) => {
+                            const q = staffSearch.toLowerCase()
+                            return !q || (s.full_name ?? '').toLowerCase().includes(q) || s.email.toLowerCase().includes(q)
+                          })
+                          .map((s) => {
+                            const staffIdx = staffIndexMap[s.id] ?? 0
+                            const color = getStaffColor(s.id, staffIdx)
+                            const isSelected = selectedStaff.includes(s.id)
+                            const isEditingThis = editingStaffColor === s.id
+                            return (
+                              <div key={s.id} className="flex items-center gap-2 px-3 h-8 hover:bg-surface-border/20 dark:hover:bg-dark-border/20 relative">
+                                <div
+                                  className="w-2 h-2 rounded-full cursor-pointer flex-shrink-0"
+                                  style={{ backgroundColor: color }}
+                                  onClick={(e) => { e.stopPropagation(); setEditingStaffColor(isEditingThis ? null : s.id) }}
+                                />
+                                {isEditingThis && (
+                                  <ColorPicker
+                                    value={color}
+                                    onChange={(c) => patchStaffColor.mutate({ user_id: s.id, color: c })}
+                                    onClose={() => setEditingStaffColor(null)}
+                                  />
+                                )}
+                                <button
+                                  role="menuitemcheckbox"
+                                  aria-checked={isSelected}
+                                  onClick={() => { toggleStaff(s.id) }}
+                                  className="flex-1 flex items-center justify-between text-[13px] font-medium text-brand dark:text-[#EDEEF0] text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand"
+                                >
+                                  <span className="truncate">{s.full_name ?? s.email}</span>
+                                  {isSelected && <span className="text-primary flex-shrink-0">✓</span>}
+                                </button>
+                              </div>
+                            )
+                          })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+              {/* Month / Week / Agenda segmented control */}
+              <div className="flex h-8 rounded-[6px] border border-cal-border dark:border-dark-cal-border overflow-hidden">
+                {(['month', 'week', 'agenda'] as ViewMode[]).map((v, i) => (
+                  <button
+                    key={v}
+                    onClick={() => setView(v)}
+                    aria-pressed={view === v}
+                    className={`flex items-center justify-center px-3 text-[13px] font-medium capitalize transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand ${
+                      i > 0 ? 'border-l border-cal-border dark:border-dark-cal-border' : ''
+                    } ${
+                      view === v
+                        ? 'bg-brand dark:bg-brand-btn text-white'
+                        : 'bg-surface-card dark:bg-dark-card text-[#6B7280] dark:text-[#9CA3AF] hover:bg-surface-border/20 dark:hover:bg-dark-border/20'
+                    }`}
+                  >
+                    {v}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 
