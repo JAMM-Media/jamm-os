@@ -1419,26 +1419,35 @@ export default function CalendarPage() {
           {/* Upcoming events */}
           <div className="flex-1 overflow-y-auto p-3">
             <div className="text-[13px] font-medium mb-2">Upcoming</div>
-            {/* Filter pills */}
-            <div className="flex flex-wrap gap-1 mb-3">
-              {allDefaultTypes.map((t) => (
-                <button
-                  key={t}
-                  onClick={() =>
-                    setSidebarFilter((prev) =>
-                      prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]
-                    )
-                  }
-                  className={`text-[11px] px-2 py-0.5 rounded-full border transition-colors ${
-                    sidebarFilter.includes(t)
-                      ? ''
-                      : 'border-surface-border text-muted-foreground'
-                  }`}
-                  style={sidebarFilter.includes(t) ? { backgroundColor: `${eventColors[t]}20`, color: eventColors[t], borderColor: eventColors[t] } : undefined}
-                >
-                  {TYPE_LABELS[t]}
-                </button>
-              ))}
+            {/* Filter chips */}
+            <div className="flex flex-wrap gap-1.5 mb-3">
+              {allDefaultTypes.map((t) => {
+                const on = sidebarFilter.includes(t)
+                const dotColor = eventColors[t] ?? '#9CA3AF'
+                return (
+                  <button
+                    key={t}
+                    aria-pressed={on}
+                    onClick={() =>
+                      setSidebarFilter((prev) =>
+                        prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]
+                      )
+                    }
+                    className={`h-7 rounded-[6px] px-2.5 text-[12px] font-medium flex items-center gap-1.5 border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand ${
+                      on
+                        ? 'bg-surface-card dark:bg-dark-card border-cal-border dark:border-dark-cal-border text-brand dark:text-[#EDEEF0]'
+                        : 'border-surface-border dark:border-dark-border text-[#6B7280] dark:text-[#9CA3AF]'
+                    }`}
+                  >
+                    {on ? (
+                      <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: dotColor }} />
+                    ) : (
+                      <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ border: `1.5px solid ${dotColor}` }} />
+                    )}
+                    {TYPE_LABELS[t]}
+                  </button>
+                )
+              })}
             </div>
             {/* List */}
             <div className="flex flex-col gap-1.5">
