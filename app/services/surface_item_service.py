@@ -491,6 +491,34 @@ def implement_item(db: Session, item: SurfaceItem, actor_id=None) -> SurfaceItem
     return item
 
 
+def record_item_viewed(db: Session, item: SurfaceItem, actor_id=None) -> None:
+    """
+    Record that an owner looked at one item. Writes nothing.
+
+    Unlike dismiss and implement, this touches no column on surface_items:
+    there is no viewed_at, no counter, no commit. The event log is the
+    whole record. Ruled Sep 24, 2026, and the name matches its neighbours,
+    surface_item.dismissed and surface_item.implemented.
+
+    Every call fires. There is no dedup, because time to acted on is read
+    from the FIRST view in the log, and a deduplicating writer would have
+    to decide what first means before anyone has asked the question.
+
+    Recorder only. Nothing in the product may read this event for control
+    flow: operational decisions read durable tables, never the log.
+
+    db is taken and deliberately unused. Every other action in this module
+    has the same shape, and a view that starts writing state would arrive
+    here needing a session it would otherwise have to be given.
+    """
+    _fire("surface_item.viewed", item, {
+        "item_id": str(item.id),
+        "kind": str(item.kind.value),
+        "item_type": item.item_type,
+        "appearance_count": item.appearance_count,
+    }, actor_id)
+
+
 def promote_next_briefing_item(db: Session, firm_id: UUID) -> Optional[SurfaceItem]:
     """
     Slot the single next-ranked active unslotted briefing row.

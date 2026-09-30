@@ -88,6 +88,29 @@ def dismiss_item(
     )
 
 
+@router.post(
+    "/surface-items/{item_id}/view",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def view_item(
+    item_id: UUID,
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    current_user: User = Depends(require_manager_or_above),
+):
+    """
+    Record that this item was looked at. 204, no body, no state change.
+
+    One endpoint serves both surfaces: the event carries the kind, so the
+    caller does not need a Briefing route and an Observatory route.
+    """
+    item = surface_item_service.get_item_for_firm(db, item_id, current_firm.id)
+    if item is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found")
+
+    surface_item_service.record_item_viewed(db, item, actor_id=current_user.id)
+
+
 @router.post("/surface-items/{item_id}/implement", response_model=SurfaceItemOut)
 def implement_item(
     item_id: UUID,
