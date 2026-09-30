@@ -1,5 +1,6 @@
 # app/crud/irs_authorization_warning.py
 
+from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy import select
@@ -20,6 +21,47 @@ def create_warning(
     db.commit()
     db.refresh(warning)
     return warning
+
+
+def create_warnings_for_recipients(
+    db: Session,
+    *,
+    firm_id: UUID,
+    authorization_id: UUID,
+    threshold_days: int,
+    sent_at: datetime,
+    recipient_user_ids: list[UUID],
+) -> list[IrsAuthorizationWarning]:
+    """
+    Record one tier as delivered, one row per recipient, in a single commit.
+
+    Every row carries the same sent_at, because they are one send: the tier
+    fired once and reached several people. Letting each row stamp its own
+    clock would make the earliest-row grouping in the ladder endpoint depend
+    on iteration order.
+
+    An empty recipient list writes nothing and commits nothing. The caller
+    only ever passes recipients whose in-app notification landed, so an
+    empty list means the tier reached nobody and must not be recorded.
+    """
+    if not recipient_user_ids:
+        return []
+
+    warnings = [
+        IrsAuthorizationWarning(
+            firm_id=firm_id,
+            authorization_id=authorization_id,
+            threshold_days=threshold_days,
+            sent_at=sent_at,
+            recipient_user_id=recipient_user_id,
+        )
+        for recipient_user_id in recipient_user_ids
+    ]
+    db.add_all(warnings)
+    db.commit()
+    for warning in warnings:
+        db.refresh(warning)
+    return warnings
 
 
 def list_warnings_for_authorization(
@@ -45,8 +87,12 @@ def get_warning_for_threshold(
     threshold_days: int,
 ) -> IrsAuthorizationWarning | None:
     """
-    The row for one specific tier, or None if that tier has not fired.
-    This is the check the sweep makes before sending.
+    Any row for one specific tier, or None if that tier has not fired.
+
+    This is the check the sweep makes before sending, and since Sep 24,
+    2026 a tier can hold several rows, one per recipient. The question it
+    answers is unchanged: has this tier fired at all. Which row comes back
+    when several exist is not meaningful, and no caller reads it.
     """
     return db.execute(
         select(IrsAuthorizationWarning).where(

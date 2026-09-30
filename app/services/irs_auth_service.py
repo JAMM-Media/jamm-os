@@ -11,6 +11,7 @@ so the end-to-end flow is fully testable.
 import io
 import logging
 import uuid
+from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 from typing import Optional
 
@@ -30,7 +31,6 @@ from app.schemas.irs_authorization import (
     IrsAuthorizationSendRequest,
     IrsAuthorizationUpdate,
 )
-from app.schemas.irs_authorization_warning import IrsAuthorizationWarningCreate
 from app.schemas.signature_envelope import SignatureEnvelopeCreate
 from app.services import s3 as s3_service
 from app.services.audit_service import write_audit_log
@@ -407,17 +407,46 @@ def send_irs_authorization(
     }
 
 
+@dataclass(frozen=True)
+class ExpiryWarningDelivery:
+    """Who one expiry warning actually reached.
+
+    in_app_user_ids are the recipients whose in-app notification landed,
+    meaning create_notification returned a record rather than None. They
+    are the recipients a warning row is written for.
+
+    emailed_user_ids are the recipients whose email send completed without
+    raising. It is a strict subset of the resolved recipients and often
+    smaller than in_app_user_ids, because email respects the channel
+    preference and in-app does not.
+
+    Truthiness is the in-app list alone, so the sweep's existing gate,
+    write the row only if something actually landed, reads the same as it
+    did when this function returned a bool.
+    """
+
+    in_app_user_ids: list[UUID] = field(default_factory=list)
+    emailed_user_ids: list[UUID] = field(default_factory=list)
+
+    def __bool__(self) -> bool:
+        return bool(self.in_app_user_ids)
+
+
 def _deliver_expiry_warning(
     *,
     db: Session,
     authorization,
     as_of: date,
-) -> bool:
+) -> ExpiryWarningDelivery:
     """
     Send one warning to every firm_owner and manager in the firm.
 
-    Returns True if the in-app record was written for at least one recipient,
-    which is what the caller gates the warning row on.
+    Returns who it reached: the recipients whose in-app record was written
+    and the recipients whose email went out. An empty in-app list is what
+    the caller gates the warning rows on, exactly as the old False did.
+
+    Who gets resolved is unchanged, and deliberately so. Recording who the
+    code reaches is not the same as changing who that is.
 
     The sweep delivers directly rather than through the automation engine or
     the event bus. is_enabled on a preset is a toggle a firm owner can flip,
@@ -438,7 +467,7 @@ def _deliver_expiry_warning(
             "IRS expiry warning had no firm_owner or manager recipients: firm=%s auth=%s",
             authorization.firm_id, authorization.id,
         )
-        return False
+        return ExpiryWarningDelivery()
 
     title, body = build_expiry_warning_message(authorization, as_of)
 
@@ -449,7 +478,7 @@ def _deliver_expiry_warning(
     ).scalars().first()
     firm_name = firm.name if firm else ""
 
-    delivered_in_app = False
+    delivered_in_app: list[UUID] = []
     for recipient in recipients:
         # In-app first, and unconditionally. A firm may stop the emails. A
         # firm may not make the compliance record disappear from the app.
@@ -470,19 +499,20 @@ def _deliver_expiry_warning(
             force_in_app=True,
         )
         if notification is not None:
-            delivered_in_app = True
+            delivered_in_app.append(recipient.id)
 
     if not delivered_in_app:
         logger.warning(
             "IRS expiry warning wrote no in-app record: firm=%s auth=%s",
             authorization.firm_id, authorization.id,
         )
-        return False
+        return ExpiryWarningDelivery()
 
     # Email last, best effort, and it DOES respect the recipient's channel
     # preference. EmailService._send raises on a Postmark failure and
     # send_notification_email does not catch it, so one bad address would
     # otherwise abort every remaining recipient.
+    emailed: list[UUID] = []
     for recipient in recipients:
         if not recipient.email:
             continue
@@ -503,13 +533,20 @@ def _deliver_expiry_warning(
                 title=title,
                 body=body,
             )
+            # Appended only after the send returns. _send raises on a
+            # Postmark failure, so a recipient inside the except branch
+            # below was not emailed and must not be listed as emailed.
+            emailed.append(recipient.id)
         except Exception:
             logger.exception(
                 "IRS expiry warning email failed: firm=%s auth=%s recipient=%s",
                 authorization.firm_id, authorization.id, recipient.id,
             )
 
-    return True
+    return ExpiryWarningDelivery(
+        in_app_user_ids=delivered_in_app,
+        emailed_user_ids=emailed,
+    )
 
 
 def _record_warning_sent(
@@ -518,16 +555,27 @@ def _record_warning_sent(
     authorization,
     threshold_days: int,
     as_of: date,
+    delivery: ExpiryWarningDelivery,
 ) -> None:
-    """Write the warning row. Only ever called after a successful send."""
-    crud_warning.create_warning(
+    """Write the warning rows and fire the receipt. Only ever called after a
+    successful send.
+
+    One row per in-app recipient, all sharing one sent_at, because the tier
+    fired once. The event is fired once too, whatever the recipient count.
+
+    The event carries the recipient lists as well as the rows, deliberately.
+    update_authorization deletes a ladder's rows when valid_until changes,
+    so the table alone cannot answer who was warned before a renewal. The
+    event is append-only and is the permanent receipt.
+    """
+    sent_at = datetime.now(timezone.utc)
+    crud_warning.create_warnings_for_recipients(
         db=db,
-        warning_in=IrsAuthorizationWarningCreate(
-            authorization_id=authorization.id,
-            threshold_days=threshold_days,
-            sent_at=datetime.now(timezone.utc),
-        ),
         firm_id=authorization.firm_id,
+        authorization_id=authorization.id,
+        threshold_days=threshold_days,
+        sent_at=sent_at,
+        recipient_user_ids=delivery.in_app_user_ids,
     )
     log_event(
         firm_id=authorization.firm_id,
@@ -542,6 +590,8 @@ def _record_warning_sent(
                 if authorization.valid_until else None
             ),
             "warning_tier": threshold_days,
+            "recipient_user_ids": [str(uid) for uid in delivery.in_app_user_ids],
+            "emailed_user_ids": [str(uid) for uid in delivery.emailed_user_ids],
         }
     )
 
@@ -618,12 +668,14 @@ def check_expiring_authorizations() -> dict:
                 # Row written only after the send succeeds. If the process
                 # dies mid-sweep, a duplicate warning tomorrow is a minor
                 # annoyance; a silently skipped warning is not.
-                if _deliver_expiry_warning(db=db, authorization=auth, as_of=cutoff):
+                delivery = _deliver_expiry_warning(db=db, authorization=auth, as_of=cutoff)
+                if delivery:
                     _record_warning_sent(
                         db=db,
                         authorization=auth,
                         threshold_days=most_urgent,
                         as_of=cutoff,
+                        delivery=delivery,
                     )
                     alerts_emitted += 1
             except Exception:
@@ -649,12 +701,14 @@ def check_expiring_authorizations() -> dict:
                     threshold_days=0,
                 )
                 if already_sent is None:
-                    if _deliver_expiry_warning(db=db, authorization=auth, as_of=cutoff):
+                    delivery = _deliver_expiry_warning(db=db, authorization=auth, as_of=cutoff)
+                    if delivery:
                         _record_warning_sent(
                             db=db,
                             authorization=auth,
                             threshold_days=0,
                             as_of=cutoff,
+                            delivery=delivery,
                         )
                         alerts_emitted += 1
 
@@ -678,6 +732,55 @@ def check_expiring_authorizations() -> dict:
         }
     finally:
         db.close()
+
+
+def get_warning_ladder(
+    *,
+    db: Session,
+    firm_id: UUID,
+    authorization_id: UUID,
+) -> list[dict]:
+    """
+    The expiry warning ladder for one authorization, one rung per tier.
+
+    The table holds one row per recipient per tier from Sep 24, 2026, so a
+    tier that reached three people is three rows and still one rung. The
+    rung's sent_at is the earliest row in the tier: the rows share a sent_at
+    by construction, and taking the earliest keeps the answer stable if a
+    future retry ever adds a later one.
+
+    recipient_user_ids lists the non-null recipients. Nulls are dropped
+    rather than represented, because a null means the recipient was not
+    recorded (a pre-Sep-24 row, or a deleted user) and there is no id to
+    report. An empty list therefore means not recorded, never sent to
+    nobody, which is why it is never backfilled from current membership.
+
+    Ordering is most recent send first, the same order the endpoint has
+    always returned. This lives here rather than in the router because
+    grouping is business logic and routers are thin.
+    """
+    rows = crud_warning.list_warnings_for_authorization(
+        db=db,
+        firm_id=firm_id,
+        authorization_id=authorization_id,
+    )
+
+    rungs: dict[int, dict] = {}
+    for row in rows:
+        rung = rungs.get(row.threshold_days)
+        if rung is None:
+            rung = {
+                "threshold_days": row.threshold_days,
+                "sent_at": row.sent_at,
+                "recipient_user_ids": [],
+            }
+            rungs[row.threshold_days] = rung
+        elif row.sent_at < rung["sent_at"]:
+            rung["sent_at"] = row.sent_at
+        if row.recipient_user_id is not None:
+            rung["recipient_user_ids"].append(row.recipient_user_id)
+
+    return sorted(rungs.values(), key=lambda rung: rung["sent_at"], reverse=True)
 
 
 def update_authorization(

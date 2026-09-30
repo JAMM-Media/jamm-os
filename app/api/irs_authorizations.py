@@ -8,7 +8,6 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.crud import irs_authorization as crud_auth
-from app.crud import irs_authorization_warning as crud_warning
 from app.db.session import get_db
 from app.dependencies.auth import get_current_user
 from app.dependencies.roles import require_manager_or_above
@@ -25,6 +24,7 @@ from app.schemas.irs_authorization_warning import IrsAuthorizationWarningLadderI
 from app.services.irs_auth_service import (
     send_irs_authorization,
     check_expiring_authorizations,
+    get_warning_ladder,
     update_authorization,
 )
 from app.services.event_bus import emit_event
@@ -185,8 +185,8 @@ def list_irs_authorization_warnings(
     _: User = Depends(require_manager_or_above),
 ):
     """
-    The expiry warning ladder for one authorization: which tiers fired and
-    when, most recent first.
+    The expiry warning ladder for one authorization: which tiers fired,
+    when, and who they reached, most recent first.
 
     Read only. The nightly sweep writes these rows and nothing else may, so
     this endpoint has no side effects at all, not even a lazy backfill.
@@ -202,11 +202,14 @@ def list_irs_authorization_warnings(
     Deliberately per-authorization. There is no list-across-all variant. The
     Morning Briefing may eventually want one, and it should be built then,
     against what it actually needs.
+
+    One rung per tier. The table holds one row per recipient per tier, so
+    the grouping is real work and it lives in the service.
     """
     auth = crud_auth.get_irs_authorization(db, auth_id, current_firm.id)
     if not auth:
         raise HTTPException(status_code=404, detail="IRS authorization not found")
-    return crud_warning.list_warnings_for_authorization(
+    return get_warning_ladder(
         db=db,
         firm_id=current_firm.id,
         authorization_id=auth_id,
