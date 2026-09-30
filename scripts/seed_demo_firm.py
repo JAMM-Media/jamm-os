@@ -272,7 +272,7 @@ from app.services import portal_magic_link
 from app.services.behavioral_log import log_event
 
 from scripts.seed_demo_firm_config import (
-    FIRM, DEMO_PASSWORD, STAFF_PERSONAS, HERO_CLIENTS, POPULATION,
+    FIRM, get_demo_password, STAFF_PERSONAS, HERO_CLIENTS, POPULATION,
     CHOREOGRAPHY, WARMUP_EVENT_TYPE,
 )
 
@@ -699,7 +699,8 @@ def setup_staff(db, firm: Firm) -> dict:
                 email=persona["email"],
                 full_name=persona["full_name"],
                 role=UserRole(persona["role"]),
-                password=DEMO_PASSWORD,
+                # Resolved here, not at import: the guard has already run.
+                password=get_demo_password(),
                 firm_id=firm.id,
             ),
         )
@@ -803,7 +804,7 @@ def staff_login(db, user, persona, d: date):
         try:
             auth_service.authenticate_staff(
                 db=db,
-                login_data=LoginRequest(username=user.email, password=DEMO_PASSWORD),
+                login_data=LoginRequest(username=user.email, password=get_demo_password()),
             )
             STATS.events_by_type["user.login"] = STATS.events_by_type.get("user.login", 0) + 1
         except Exception as e:
@@ -816,7 +817,7 @@ def staff_login(db, user, persona, d: date):
                 try:
                     auth_service.authenticate_staff(
                         db=db,
-                        login_data=LoginRequest(username=user.email, password=DEMO_PASSWORD),
+                        login_data=LoginRequest(username=user.email, password=get_demo_password()),
                     )
                 except Exception as e:
                     STATS.failures.append(("staff_login_after_hours", persona["key"], str(e)))

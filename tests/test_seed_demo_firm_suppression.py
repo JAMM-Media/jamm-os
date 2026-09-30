@@ -95,10 +95,18 @@ def test_install_network_suppression_wires_both_patches_with_working_counters(mo
 def _run_seed_subprocess(*extra_args, stdin_input=None, timeout=600):
     database_url = os.environ["DATABASE_URL"]
     cmd = [sys.executable, os.path.join("scripts", "seed_demo_firm.py"), *extra_args]
+
+    # DEMO_SEED_PASSWORD moved out of tracked config on Sep 24, 2026, so the
+    # seed now reads it from the environment at run time and refuses without
+    # it. The value is a placeholder: this run creates a demo firm in the
+    # test database and nothing ever logs into it.
+    child_env = os.environ.copy()
+    child_env.setdefault("DEMO_SEED_PASSWORD", "placeholder-not-a-real-credential")
+
     return subprocess.run(
         cmd,
         cwd=_REPO_ROOT,
-        env=os.environ.copy(),
+        env=child_env,
         input=stdin_input,
         capture_output=True,
         text=True,
