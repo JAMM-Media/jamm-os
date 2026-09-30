@@ -24,7 +24,7 @@ function QboImportWizard() {
   async function handlePreview() {
     setLoading(true)
     try {
-      const res = await api.get('/api/v1/integrations/quickbooks/import-preview')
+      const res = await api.get('/integrations/quickbooks/import-preview')
       const data = res.data
       if (data.customers.length === 0) {
         setStep('empty')
@@ -50,7 +50,7 @@ function QboImportWizard() {
     if (selectedIds.size === 0) return
     setImporting(true)
     try {
-      const res = await api.post('/api/v1/integrations/quickbooks/import-clients', {
+      const res = await api.post('/integrations/quickbooks/import-clients', {
         quickbooks_customer_ids: Array.from(selectedIds),
       })
       setResult(res.data)

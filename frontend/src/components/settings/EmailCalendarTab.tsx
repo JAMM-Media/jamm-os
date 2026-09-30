@@ -111,7 +111,7 @@ function StaffIntegrationControls() {
     async function load() {
       try {
         const [intRes, usersRes] = await Promise.all([
-          api.get('/api/v1/integrations/firm/staff'),
+          api.get('/integrations/firm/staff'),
           api.get('/api/v1/users/'),
         ])
         setStaffIntegrations(intRes.data)
@@ -139,7 +139,7 @@ function StaffIntegrationControls() {
     )
 
     try {
-      await api.post(`/api/v1/integrations/firm/${userId}/${provider}/${action}`)
+      await api.post(`/integrations/firm/${userId}/${provider}/${action}`)
     } catch {
       setStaffIntegrations((prev) =>
         prev.map((i) =>

@@ -27,7 +27,7 @@ function MyIntegrationsContent() {
   async function fetchData() {
     try {
       const [intResp, firmResp] = await Promise.all([
-        api.get('/api/v1/integrations/staff/me'),
+        api.get('/integrations/staff/me'),
         settingsApi.getMyFirm(),
       ])
       setIntegrations(intResp.data ?? [])
@@ -55,7 +55,7 @@ function MyIntegrationsContent() {
   async function handleConnect(provider: 'gmail' | 'outlook') {
     setConnecting(provider)
     try {
-      const resp = await api.get(`/api/v1/integrations/staff/${provider}/connect`)
+      const resp = await api.get(`/integrations/staff/${provider}/connect`)
       window.location.href = resp.data.authorization_url
     } catch {
       toast.error(`Failed to start ${provider} connection.`)
@@ -66,7 +66,7 @@ function MyIntegrationsContent() {
   async function handleDisconnect(provider: string) {
     setDisconnecting(provider)
     try {
-      await api.delete(`/api/v1/integrations/staff/${provider}`)
+      await api.delete(`/integrations/staff/${provider}`)
       toast.success(`${provider.charAt(0).toUpperCase() + provider.slice(1)} disconnected.`)
       await fetchData()
     } catch {

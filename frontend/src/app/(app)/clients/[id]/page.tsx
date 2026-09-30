@@ -618,7 +618,7 @@ function ClientDetailContent() {
                         onClick={async () => {
                           setQboDeepLinkLoading(true)
                           try {
-                            const res = await api.get(`/api/v1/integrations/quickbooks/deep-link/client/${clientId}`)
+                            const res = await api.get(`/integrations/quickbooks/deep-link/client/${clientId}`)
                             window.open(res.data.url, '_blank')
                           } catch {
                             toast.error('Could not open QuickBooks link.')

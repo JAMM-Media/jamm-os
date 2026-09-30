@@ -139,7 +139,7 @@ export function Sidebar({ collapsed, onToggle, onConciergeOpen, locked }: Sideba
 
   const { data: myIntegrations } = useQuery({
     queryKey: ['my-integrations-sidebar'],
-    queryFn: () => api.get('/api/v1/integrations/staff/me').then((r) => r.data),
+    queryFn: () => api.get('/integrations/staff/me').then((r) => r.data),
     staleTime: 5 * 60 * 1000,
   })
 
