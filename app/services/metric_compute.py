@@ -462,7 +462,7 @@ def _build_portal_utilization_documents(db: Session, firm_id: uuid.UUID, current
 
 def _build_portal_utilization_invoices(db: Session, firm_id: uuid.UUID, current_week: date):
     paid_events = _fetch_events(db, firm_id, ["invoice.paid"])
-    portal_events = _fetch_events(db, firm_id, ["portal.invoice_paid"])
+    portal_events = _fetch_events(db, firm_id, ["portal.payment_initiated"])
 
     portal_marked: set[uuid.UUID] = {ev.entity_id for ev in portal_events if ev.entity_id is not None}
 

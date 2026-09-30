@@ -268,7 +268,7 @@ def test_portal_utilization_invoices_happy_path():
         portal_inv = uuid.uuid4()
         staff_inv = uuid.uuid4()
 
-        _event(db, firm.id, "portal.invoice_paid", entity_id=portal_inv, occurred_at=_at(2026, 5, 4))
+        _event(db, firm.id, "portal.payment_initiated", entity_id=portal_inv, occurred_at=_at(2026, 5, 4))
         _event(db, firm.id, "invoice.paid", entity_id=portal_inv, occurred_at=_at(2026, 5, 5))
         _event(db, firm.id, "invoice.paid", entity_id=staff_inv, occurred_at=_at(2026, 5, 5))
 

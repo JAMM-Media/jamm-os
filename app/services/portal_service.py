@@ -183,9 +183,14 @@ def pay_invoice(*, db: Session, invoice, invoice_id, client):
         idempotency_key=idempotency_key,
     )
     set_payment_intent(db, invoice, result["payment_intent_id"])
+    # Fires when the client starts a Stripe payment, at payment intent
+    # creation, not when money arrives. The payment itself is invoice.paid,
+    # written from the Stripe webhook. Renamed Sep 22, 2026: the old name
+    # claimed a settlement this call site never observes, and Invoice Payment
+    # Time now computes from invoice.paid alone.
     log_event(
         firm_id=client.firm_id,
-        event_type="portal.invoice_paid",
+        event_type="portal.payment_initiated",
         entity_type="invoice",
         entity_id=invoice_id,
         actor_type="client",
