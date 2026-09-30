@@ -55,6 +55,8 @@ const DEFAULT_COLORS: Record<string, string> = {
   meeting: '#4E8A6B',
   holiday: '#8A94A3',
 }
+// Stays false until events can be created and assigned to a category.
+const CUSTOM_CATEGORIES_ENABLED = false
 
 const STAFF_PALETTE = [
   '#6366F1', '#EC4899', '#14B8A6', '#F59E0B',
@@ -1531,7 +1533,7 @@ export default function CalendarPage() {
             </div>
 
             {/* Add category */}
-            {addCatOpen ? (
+            {CUSTOM_CATEGORIES_ENABLED && (addCatOpen ? (
               <div className="mt-2 flex flex-col gap-1">
                 <input
                   className="text-[12px] border border-surface-border rounded px-1.5 py-0.5 bg-transparent"
@@ -1569,7 +1571,7 @@ export default function CalendarPage() {
               >
                 <Plus size={10} /> Add category
               </button>
-            )}
+            ))}
           </div>
         </aside>
       </div>
