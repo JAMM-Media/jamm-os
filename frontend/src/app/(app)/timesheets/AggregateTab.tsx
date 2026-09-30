@@ -6,6 +6,7 @@ import { ChevronLeft, ChevronRight, Download, Pencil, Check, AlertTriangle } fro
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import api from '@/lib/api'
+import { fetchAllPages } from '@/lib/fetchAllPages'
 
 export type Period = 'weekly' | 'biweekly' | 'monthly' | 'quarterly' | 'yearly'
 
@@ -204,6 +205,8 @@ export default function AggregateTab({
   const [users, setUsers] = useState<Record<string, string>>({})
   const [loadingSummary, setLoadingSummary] = useState(true)
   const [loadingEntries, setLoadingEntries] = useState(true)
+  const [entriesError, setEntriesError] = useState(false)
+  const [reloadKey, setReloadKey] = useState(0)
   const [editModal, setEditModal] = useState<TimeEntry | null>(null)
   const [editNote, setEditNote] = useState('')
   const [editFields, setEditFields] = useState<Partial<TimeEntry>>({})
@@ -252,15 +255,19 @@ export default function AggregateTab({
       .finally(() => setLoadingSummary(false))
 
     setLoadingEntries(true)
-    const eParams = new URLSearchParams({ start_date: startISO, end_date: endISO, limit: '500' })
-    if (effectiveUserId) eParams.set('user_id', effectiveUserId)
-    api
-      .get(`/time-entries/?${eParams}`)
-      .then((r) => setEntries(r.data?.items ?? []))
-      .catch(() => setEntries([]))
-      .finally(() => setLoadingEntries(false))
+    setEntriesError(false)
+    let cancelled = false
+    fetchAllPages<TimeEntry>((offset, limit) => {
+      const eParams = new URLSearchParams({ start_date: startISO, end_date: endISO, limit: String(limit), skip: String(offset) })
+      if (effectiveUserId) eParams.set('user_id', effectiveUserId)
+      return api.get(`/time-entries/?${eParams}`).then((r) => ({ items: r.data?.items ?? [], total: r.data?.total ?? 0 }))
+    })
+      .then((items) => { if (!cancelled) setEntries(items) })
+      .catch(() => { if (!cancelled) { setEntriesError(true); setEntries([]) } })
+      .finally(() => { if (!cancelled) setLoadingEntries(false) })
+    return () => { cancelled = true }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [startISO, endISO, effectiveUserId])
+  }, [startISO, endISO, effectiveUserId, reloadKey])
 
   function handleExport() {
     const params = new URLSearchParams({ start_date: startISO, end_date: endISO })
@@ -292,10 +299,12 @@ export default function AggregateTab({
       setEditNote('')
       setEditFields({})
       // Reload
-      const params = new URLSearchParams({ start_date: startISO, end_date: endISO, limit: '500' })
-      if (effectiveUserId) params.set('user_id', effectiveUserId)
-      const r = await api.get(`/time-entries/?${params}`)
-      setEntries(r.data?.items ?? [])
+      const reloadedEntries = await fetchAllPages<TimeEntry>((offset, limit) => {
+        const params = new URLSearchParams({ start_date: startISO, end_date: endISO, limit: String(limit), skip: String(offset) })
+        if (effectiveUserId) params.set('user_id', effectiveUserId)
+        return api.get(`/time-entries/?${params}`).then((r) => ({ items: r.data?.items ?? [], total: r.data?.total ?? 0 }))
+      })
+      setEntries(reloadedEntries)
       toast.success('Entry updated')
     } catch {
       toast.error('Failed to update entry')
@@ -413,6 +422,16 @@ export default function AggregateTab({
       {/* Detail table */}
       {loadingEntries ? (
         <AggregateEntriesSkeleton />
+      ) : entriesError ? (
+        <div className="text-[13px] text-[#6B7280] py-8 text-center flex flex-col items-center gap-2">
+          Could not load time entries for this period.
+          <button
+            onClick={() => setReloadKey((k) => k + 1)}
+            className="flex items-center gap-1.5 h-8 px-3 text-[13px] font-medium rounded-[6px] border border-surface-border dark:border-dark-border text-[#374151] dark:text-[#D1D5DB] hover:bg-[#F3F4F6] dark:hover:bg-[#2A2A2A]"
+          >
+            Try again
+          </button>
+        </div>
       ) : entries.length === 0 ? (
         <div className="text-[13px] text-[#6B7280] py-8 text-center">
           No entries for this period.
