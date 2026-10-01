@@ -781,11 +781,6 @@ export default function SettingsPage() {
                 )}
               </div>
             </div>
-            {isFirmOwner && (
-              <p className="text-[11px] text-[#6B7280]" style={{ marginTop: '8px' }}>
-                To update your profile details, contact your JAMM PX administrator.
-              </p>
-            )}
           </>
         )}
 
