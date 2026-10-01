@@ -2,8 +2,22 @@
 """record IRS expiry warning recipients one row per recipient per tier
 
 Revision ID: e4a7c2b91d63
-Revises: a4d91c7b3e28
+Revises: b66b4394a869
 Create Date: 2026-09-24 00:00:00.000000
+
+Repointed twice, and the reason is the same both times: this revision kept
+waiting to be pushed while the chain grew past its parent.
+
+  Oct 1, 2026: from a4d91c7b3e28 to 1dbec4aebadd, after Ben's
+  9703bc76ace7, 1cdc9c33705a and 1dbec4aebadd forked from a4d91c7b3e28.
+  Oct 11, 2026: from 1dbec4aebadd to b66b4394a869, after Ben's calendar
+  pair 0310a1b5d296 and b66b4394a869 forked from 1dbec4aebadd, which is
+  the revision the first repoint had just landed on.
+
+Fifth stale parent in three weeks. Both times alembic reported two heads
+and both times this revision rebased onto the end of the other chain rather
+than merging, because it only touches irs_authorization_warnings and none
+of those five revisions does.
 
 Hand-written, because the downgrade is destructive and autogenerate cannot
 write a data-preserving one.
@@ -45,7 +59,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = "e4a7c2b91d63"
-down_revision: Union[str, Sequence[str], None] = "a4d91c7b3e28"
+down_revision: Union[str, Sequence[str], None] = "b66b4394a869"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
