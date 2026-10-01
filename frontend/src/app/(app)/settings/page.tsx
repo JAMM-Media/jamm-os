@@ -19,6 +19,7 @@ import MigrationTab from '@/components/settings/MigrationTab'
 import SendingDomainTab from '@/components/settings/SendingDomainTab'
 import PortalDomainTab from '@/components/settings/PortalDomainTab'
 import EmailCalendarTab from '@/components/settings/EmailCalendarTab'
+import { BillingTab } from '@/components/settings/BillingTab'
 import { onConciergeAction, setFormDirty } from '@/lib/events/conciergeEvents'
 import { staffApi } from '@/lib/api/staffApi'
 import { EditStaffModal } from '@/components/settings/EditStaffModal'
@@ -277,6 +278,8 @@ function MyIntegrationsTabContent() {
   )
 }
 
+// The concierge log link stays hidden because the log is for the JAMM team only and the backend route is restricted separately.
+const SHOW_CONCIERGE_LOG_LINK = false
 const TABS = [
   { key: 'my_integrations', label: 'My Integrations' },
   { key: 'profile', label: 'Profile' },
@@ -712,13 +715,7 @@ export default function SettingsPage() {
                   {visibleTabs.map((tab) => (
                     <button
                       key={tab.key}
-                      onClick={() => {
-                        if (tab.key === 'billing') {
-                          router.push('/settings/billing')
-                        } else {
-                          setActiveTab(tab.key)
-                        }
-                      }}
+                      onClick={() => setActiveTab(tab.key)}
                       className={cn(
                         'w-full text-left h-9 px-4 text-[13px] transition-colors',
                         activeTab === tab.key
@@ -1477,6 +1474,19 @@ export default function SettingsPage() {
         {/* Pricing tab */}
         {activeTab === 'pricing' && isFirmOwner && <PricingTab />}
 
+        {/* Billing tab */}
+        {activeTab === 'billing' && isFirmOwner && (
+          <div className="flex flex-col gap-6">
+            <div>
+              <h2 className="text-[15px] font-medium text-brand dark:text-[#EDEEF0]">Billing</h2>
+              <p className="text-[12px] text-[#6B7280] mt-0.5">
+                Connect Stripe to accept online payments from clients.
+              </p>
+            </div>
+            <BillingTab />
+          </div>
+        )}
+
         {/* Portal Branding tab */}
         {activeTab === 'portal_branding' && isFirmOwner && <PortalBrandingTab />}
 
@@ -1492,7 +1502,7 @@ export default function SettingsPage() {
           {/* Migration tab */}
           {activeTab === 'migration' && canSeeMigration && <MigrationTab />}
 
-        {isFirmOwner && (
+        {SHOW_CONCIERGE_LOG_LINK && isFirmOwner && (
           <div className="mt-8 pt-4 border-t border-[0.5px] border-[#E5E7EB] dark:border-[#3D3D3D] max-w-lg">
             <a
               href="/concierge-log"
