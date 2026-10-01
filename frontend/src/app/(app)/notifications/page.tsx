@@ -6,6 +6,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useRouter } from 'next/navigation'
 import api from '@/lib/api'
 import { toast } from 'sonner'
+import { getEntityPath } from '@/lib/notificationPaths'
 
 // Notification type from backend NotificationOut schema
 interface Notification {
@@ -30,18 +31,6 @@ function relativeTime(iso: string): string {
   const days = Math.floor(hours / 24)
   if (days === 1) return 'Yesterday'
   return `${days}d ago`
-}
-
-// Entity navigation map
-function getEntityPath(type?: string, id?: string): string | null {
-  if (!type || !id) return null
-  const map: Record<string, string> = {
-    engagement: `/engagements/${id}`,
-    task: `/tasks/${id}`,
-    client: `/clients/${id}`,
-    message: '/firm-chat',
-  }
-  return map[type] ?? null
 }
 
 export default function NotificationsPage() {
@@ -69,7 +58,7 @@ export default function NotificationsPage() {
   })
 
   async function handleMarkRead(id: string) {
-    await api.patch(`/api/v1/notifications/${id}`, { is_read: true })
+    await api.patch(`/api/v1/notifications/${id}/read`)
     queryClient.setQueryData(['notifications'], (old: { items: Notification[] } | undefined) => {
       if (!old) return old
       return { ...old, items: old.items.map((n) => n.id === id ? { ...n, is_read: true } : n) }
@@ -85,8 +74,14 @@ export default function NotificationsPage() {
   }
 
   async function handleRowClick(n: Notification) {
-    if (!n.is_read) await handleMarkRead(n.id)
     const path = getEntityPath(n.related_entity_type, n.related_entity_id)
+    if (!n.is_read) {
+      try {
+        await handleMarkRead(n.id)
+      } catch {
+        toast.error('Could not mark notification as read')
+      }
+    }
     if (path) router.push(path)
   }
 
