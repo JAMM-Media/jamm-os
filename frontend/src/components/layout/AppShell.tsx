@@ -30,6 +30,8 @@ export function AppShell({ children }: AppShellProps) {
   const [conciergeOpen, setConciergeOpen] = useState(false)
   const [conciergeEntryMode, setConciergeEntryMode] = useState<'sidebar' | 'floating'>('floating')
   const [hoverExpanded, setHoverExpanded] = useState(false)
+  // Clear stuck hover state when entering or leaving Settings.
+  useEffect(() => { setHoverExpanded(false) }, [isSettingsRoute])
   const { user } = useAuth()
 
   const isHoverMode = user?.sidebar_expand_mode === 'hover'
@@ -179,8 +181,8 @@ export function AppShell({ children }: AppShellProps) {
       {/* Hover mode: the sidebar is absolutely positioned within a fixed-width spacer
           so expanding it overlays the page content rather than pushing it over. The
           w-12 spacer preserves the collapsed rail's visual footprint in the flex layout.
-          Settings route lock overrides hover mode and forces the sidebar fully collapsed. */}
-      {isHoverMode && !isSettingsRoute ? (
+          Hover behavior applies when the user's sidebar_expand_mode is hover, and always on Settings routes, where the rail would otherwise stay locked collapsed. */}
+      {isHoverMode || isSettingsRoute ? (
         <div
           className="relative w-12 flex-shrink-0"
           onMouseEnter={() => setHoverExpanded(true)}

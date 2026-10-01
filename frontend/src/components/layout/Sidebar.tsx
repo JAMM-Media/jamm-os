@@ -160,7 +160,7 @@ export function Sidebar({ collapsed, onToggle, onConciergeOpen, locked }: Sideba
   return (
     <aside
       className={cn(
-        'flex flex-col h-screen bg-brand dark:bg-brand-dark transition-all duration-200 ease-in-out flex-shrink-0',
+        'flex flex-col h-screen bg-brand dark:bg-brand-dark overflow-hidden transition-all duration-200 ease-in-out flex-shrink-0',
         collapsed ? 'w-12' : 'w-[220px]'
       )}
     >
@@ -215,23 +215,35 @@ export function Sidebar({ collapsed, onToggle, onConciergeOpen, locked }: Sideba
           reachable on short screens. survey-scroll is defined in globals.css and
           applies scrollbar-width:thin plus a matching scrollbar-color for the navy
           background. The bottom cluster sits outside this element and never scrolls. */}
-      <nav ref={navRef} className="flex-1 py-3 overflow-y-auto survey-scroll">
+      <nav ref={navRef} className="flex-1 py-3 overflow-y-auto overflow-x-hidden survey-scroll">
         {navSections.map((section) => {
           const visibleItems = section.items.filter(isItemVisible)
           if (visibleItems.length === 0) return null
 
           return (
             <div key={section.label ?? '__root__'}>
-              {/* Expanded: section label header. Collapsed: thin divider between sections.
-                  The null-label Dashboard section gets neither. */}
+              {/* Animated height: collapses to the thin divider height, expands to section heading height. */}
               {section.label !== null && (
-                collapsed ? (
-                  <div className="mx-1.5 mt-3 mb-1 border-t border-white/10" />
-                ) : (
-                  <p className="px-3.5 pt-4 pb-1 text-[11px] font-medium text-white/40 uppercase tracking-[0.05em]">
+                <div className={cn(
+                  'relative overflow-hidden transition-[height] duration-200 ease-in-out motion-reduce:transition-none',
+                  collapsed ? 'h-[17px]' : 'h-9'
+                )}>
+                  <div
+                    className={cn(
+                      'absolute left-1.5 right-1.5 top-3 border-t border-white/10 transition-opacity duration-200 ease-in-out motion-reduce:transition-none',
+                      collapsed ? 'opacity-100' : 'opacity-0'
+                    )}
+                    aria-hidden
+                  />
+                  <p className={cn(
+                    'px-3.5 pt-4 pb-1 text-[11px] font-medium text-white/40 uppercase tracking-[0.05em] leading-4 whitespace-nowrap transition-opacity duration-200 ease-in-out motion-reduce:transition-none',
+                    collapsed ? 'opacity-0' : 'opacity-100'
+                  )}
+                  aria-hidden={collapsed}
+                  >
                     {section.label}
                   </p>
-                )
+                </div>
               )}
               <ul className="space-y-0.5 px-1.5">
                 {visibleItems.map((item) => {
@@ -249,15 +261,11 @@ export function Sidebar({ collapsed, onToggle, onConciergeOpen, locked }: Sideba
                         href={item.href}
                         scroll={false}
                         className={cn(
-                          'flex items-center gap-3 px-2 py-2 rounded text-[13px] transition-colors',
+                          'flex items-center overflow-hidden border-l-[3px] pl-[7px] pr-[10px] py-2 rounded text-[13px] transition-colors',
                           isActive
                             ? 'bg-white/15 text-white'
                             : 'text-white/60 hover:text-white hover:bg-white/10',
-                          /* Gold left-edge indicator on the active item in expanded state.
-                             In collapsed state the icon itself turns gold instead (see Icon below),
-                             since a 3px bar is too narrow to read at 48px width. */
-                          isActive && !collapsed && 'border-l-[3px] border-[#B07D3A]',
-                          collapsed && 'justify-center px-2'
+                          isActive && !collapsed ? 'border-[#B07D3A]' : 'border-transparent',
                         )}
                         title={collapsed ? item.label : undefined}
                       >
@@ -270,22 +278,29 @@ export function Sidebar({ collapsed, onToggle, onConciergeOpen, locked }: Sideba
                               isActive && collapsed && 'text-[#B07D3A]'
                             )}
                           />
-                          {showBadge && collapsed && (
-                            <span className="absolute -top-1 -right-1 flex items-center justify-center bg-[#B07D3A] dark:bg-brand-btn text-white text-[11px] font-medium w-[18px] h-[18px] rounded-full">
+                          {showBadge && (
+                            <span className={cn(
+                              'absolute -top-1 -right-1 flex items-center justify-center bg-[#B07D3A] dark:bg-brand-btn text-white text-[11px] font-medium w-[18px] h-[18px] rounded-full transition-opacity duration-200 ease-in-out motion-reduce:transition-none',
+                              collapsed ? 'opacity-100' : 'opacity-0'
+                            )} aria-hidden={!collapsed}>
                               {badgeCount > 99 ? '99+' : badgeCount}
                             </span>
                           )}
                         </div>
-                        {/* Label + expanded badge */}
-                        {!collapsed && (
-                          <>
-                            <span className="truncate flex-1">{item.label}</span>
-                            {showBadge && (
-                              <span className="flex items-center justify-center bg-[#B07D3A] dark:bg-brand-btn text-white text-[11px] font-medium h-[18px] min-w-[18px] px-1.5 rounded-full flex-shrink-0">
-                                {badgeCount > 99 ? '99+' : badgeCount}
-                              </span>
-                            )}
-                          </>
+                        {/* Label and expanded badge - always mounted, fade in/out */}
+                        <span className={cn(
+                          'ml-3 min-w-0 flex-1 truncate whitespace-nowrap transition-opacity duration-200 ease-in-out motion-reduce:transition-none',
+                          collapsed ? 'opacity-0' : 'opacity-100'
+                        )} aria-hidden={collapsed}>
+                          {item.label}
+                        </span>
+                        {showBadge && (
+                          <span className={cn(
+                            'flex items-center justify-center bg-[#B07D3A] dark:bg-brand-btn text-white text-[11px] font-medium h-[18px] min-w-[18px] px-1.5 rounded-full flex-shrink-0 transition-opacity duration-200 ease-in-out motion-reduce:transition-none',
+                            collapsed ? 'opacity-0' : 'opacity-100'
+                          )} aria-hidden={collapsed}>
+                            {badgeCount > 99 ? '99+' : badgeCount}
+                          </span>
                         )}
                       </Link>
                     </li>
@@ -302,10 +317,7 @@ export function Sidebar({ collapsed, onToggle, onConciergeOpen, locked }: Sideba
         {/* Theme toggle */}
         <button
           onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-          className={cn(
-            'w-full flex items-center gap-3 px-2 py-2 rounded text-[13px] text-white/60 hover:text-white hover:bg-white/10 transition-colors',
-            collapsed && 'justify-center px-2'
-          )}
+          className="w-full flex items-center overflow-hidden pl-[10px] pr-[10px] py-2 rounded text-[13px] text-white/60 hover:text-white hover:bg-white/10 transition-colors"
           title={collapsed ? (theme === 'dark' ? 'Light mode' : 'Dark mode') : undefined}
         >
           {mounted && (theme === 'dark' ? (
@@ -313,27 +325,31 @@ export function Sidebar({ collapsed, onToggle, onConciergeOpen, locked }: Sideba
           ) : (
             <Moon className="h-4 w-4 flex-shrink-0" />
           ))}
-          {!collapsed && mounted && (
-            <span>{theme === 'dark' ? 'Light mode' : 'Dark mode'}</span>
+          {mounted && (
+            <span className={cn(
+              'ml-3 min-w-0 flex-1 truncate whitespace-nowrap transition-opacity duration-200 ease-in-out motion-reduce:transition-none',
+              collapsed ? 'opacity-0' : 'opacity-100'
+            )} aria-hidden={collapsed}>
+              {theme === 'dark' ? 'Light mode' : 'Dark mode'}
+            </span>
           )}
         </button>
 
 
         {onConciergeOpen && (
-          <>
-            {/* Concierge */}
-            <button
-              onClick={onConciergeOpen}
-              className={cn(
-                'w-full flex items-center gap-3 px-2 py-2 rounded text-[13px] text-white/60 hover:text-white hover:bg-white/10 transition-colors',
-                collapsed && 'justify-center px-2'
-              )}
-              title={collapsed ? 'JAMM Concierge' : undefined}
-            >
-              <BotMessageSquare className='h-4 w-4 flex-shrink-0' />
-              {!collapsed && <span className='truncate'>JAMM Concierge</span>}
-            </button>
-          </>
+          <button
+            onClick={onConciergeOpen}
+            className="w-full flex items-center overflow-hidden pl-[10px] pr-[10px] py-2 rounded text-[13px] text-white/60 hover:text-white hover:bg-white/10 transition-colors"
+            title={collapsed ? 'JAMM Concierge' : undefined}
+          >
+            <BotMessageSquare className='h-4 w-4 flex-shrink-0' />
+            <span className={cn(
+              'ml-3 min-w-0 flex-1 truncate whitespace-nowrap transition-opacity duration-200 ease-in-out motion-reduce:transition-none',
+              collapsed ? 'opacity-0' : 'opacity-100'
+            )} aria-hidden={collapsed}>
+              JAMM Concierge
+            </span>
+          </button>
         )}
 
         {/* Settings */}
@@ -341,36 +357,36 @@ export function Sidebar({ collapsed, onToggle, onConciergeOpen, locked }: Sideba
           href={settingsItem.href}
           scroll={false}
           className={cn(
-            'flex items-center gap-3 px-2 py-2 rounded text-[13px] transition-colors',
+            'flex items-center overflow-hidden pl-[10px] pr-[10px] py-2 rounded text-[13px] transition-colors',
             pathname.startsWith(settingsItem.href)
               ? 'bg-white/15 text-white'
               : 'text-white/60 hover:text-white hover:bg-white/10',
-            collapsed && 'justify-center px-2'
           )}
           title={collapsed ? settingsItem.label : undefined}
         >
           <Settings className="h-4 w-4 flex-shrink-0" />
-          {!collapsed && <span className="truncate">{settingsItem.label}</span>}
+          <span className={cn(
+            'ml-3 min-w-0 flex-1 truncate whitespace-nowrap transition-opacity duration-200 ease-in-out motion-reduce:transition-none',
+            collapsed ? 'opacity-0' : 'opacity-100'
+          )} aria-hidden={collapsed}>
+            {settingsItem.label}
+          </span>
         </Link>
 
         {/* Sign out */}
-        {collapsed ? (
-          <button
-            onClick={logout}
-            className="w-full flex items-center justify-center h-9 rounded-md text-white/60 hover:text-white hover:bg-white/10 transition-colors"
-            title="Sign out"
-          >
-            <LogOut className="w-4 h-4" />
-          </button>
-        ) : (
-          <button
-            onClick={logout}
-            className="w-full flex items-center gap-3 px-2 py-2 rounded-md text-[13px] text-white/60 hover:text-white hover:bg-white/10 transition-colors"
-          >
-            <LogOut className="w-4 h-4 shrink-0" />
-            <span>Sign out</span>
-          </button>
-        )}
+        <button
+          onClick={logout}
+          className="w-full flex items-center overflow-hidden pl-[10px] pr-[10px] py-2 rounded text-[13px] text-white/60 hover:text-white hover:bg-white/10 transition-colors"
+          title={collapsed ? 'Sign out' : undefined}
+        >
+          <LogOut className="w-4 h-4 flex-shrink-0" />
+          <span className={cn(
+            'ml-3 min-w-0 flex-1 truncate whitespace-nowrap transition-opacity duration-200 ease-in-out motion-reduce:transition-none',
+            collapsed ? 'opacity-0' : 'opacity-100'
+          )} aria-hidden={collapsed}>
+            Sign out
+          </span>
+        </button>
       </div>
     </aside>
   )
