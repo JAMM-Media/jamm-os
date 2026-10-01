@@ -1476,7 +1476,7 @@ export default function SettingsPage() {
 
         {/* Billing tab */}
         {activeTab === 'billing' && isFirmOwner && (
-          <div className="flex flex-col gap-6">
+          <div className="flex flex-col gap-6 max-w-2xl">
             <div>
               <h2 className="text-[15px] font-medium text-brand dark:text-[#EDEEF0]">Billing</h2>
               <p className="text-[12px] text-[#6B7280] mt-0.5">
