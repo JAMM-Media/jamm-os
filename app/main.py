@@ -90,6 +90,7 @@ from app.api.sending_domain import router as sending_domain_router
 from app.api.portal_domain import router as portal_domain_router
 from app.api.inbox import router as inbox_router
 from app.api.calendar import router as calendar_router
+from app.api.calendar_events import router as calendar_events_router
 from app.api.morning_briefing import router as morning_briefing_router
 from app.api.surface_items import router as surface_items_router
 from app.api.staff_credentials import router as staff_credentials_router
@@ -415,6 +416,7 @@ app.include_router(sending_domain_router, prefix="/api/v1")
 app.include_router(portal_domain_router, prefix="/api/v1")
 app.include_router(inbox_router, prefix="/api/v1")
 app.include_router(calendar_router, prefix="/api/v1")
+app.include_router(calendar_events_router, prefix="/api/v1")
 app.include_router(morning_briefing_router)
 app.include_router(surface_items_router, prefix="/api/v1")
 app.include_router(staff_credentials_router)
