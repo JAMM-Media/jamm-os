@@ -26,8 +26,25 @@ function toDate(input: InstantInput): Date {
 // Internal helpers
 // ---------------------------------------------------------------------------
 
+// Cache of Intl.DateTimeFormat instances keyed by "purpose|timeZone".
+// An invalid zone must never be cached: construction throws before the set.
+const formatterCache = new Map<string, Intl.DateTimeFormat>()
+
+function getCachedFormatter(
+  purpose: string,
+  timeZone: string,
+  options: Omit<Intl.DateTimeFormatOptions, 'timeZone'>
+): Intl.DateTimeFormat {
+  const key = `${purpose}|${timeZone}`
+  const hit = formatterCache.get(key)
+  if (hit) return hit
+  const fmt = new Intl.DateTimeFormat('en-US', { ...options, timeZone })
+  formatterCache.set(key, fmt)
+  return fmt
+}
+
 function getParts(epochMs: number, timeZone: string) {
-  const fmt = new Intl.DateTimeFormat('en-US', {
+  const fmt = getCachedFormatter('parts', timeZone, {
     hourCycle: 'h23',
     year: 'numeric',
     month: '2-digit',
@@ -35,7 +52,6 @@ function getParts(epochMs: number, timeZone: string) {
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',
-    timeZone,
   })
   const parts = fmt.formatToParts(new Date(epochMs))
   const get = (t: string) => parts.find(p => p.type === t)!.value
@@ -83,11 +99,10 @@ export function zonedDateStr(instant: InstantInput, timeZone: string): string {
 
 export function minutesIntoDay(instant: InstantInput, timeZone: string): number {
   const d = toDate(instant)
-  const fmt = new Intl.DateTimeFormat('en-US', {
+  const fmt = getCachedFormatter('minutes', timeZone, {
     hourCycle: 'h23',
     hour: 'numeric',
     minute: 'numeric',
-    timeZone,
   })
   const parts = fmt.formatToParts(d)
   // h23: midnight returns hour=0 (not 24)
@@ -315,13 +330,12 @@ export function normalizeSpaces(s: string): string {
 
 export function formatTimeLabel(instant: InstantInput, timeZone: string): string {
   const d = toDate(instant)
-  const raw = new Intl.DateTimeFormat('en-US', {
+  const fmt = getCachedFormatter('label', timeZone, {
     hour: 'numeric',
     minute: '2-digit',
     hour12: true,
-    timeZone,
-  }).format(d)
-  return normalizeSpaces(raw)
+  })
+  return normalizeSpaces(fmt.format(d))
 }
 
 // ---------------------------------------------------------------------------

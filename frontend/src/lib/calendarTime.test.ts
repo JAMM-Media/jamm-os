@@ -478,3 +478,96 @@ describe('wallTimeToInstant fallback RangeError', () => {
       .toThrow('wallTimeToInstant: could not resolve "0001-01-01"')
   })
 })
+
+
+// ---------------------------------------------------------------------------
+// Formatter cache: interleaved zones give correct answers
+// ---------------------------------------------------------------------------
+
+describe('formatter cache: interleaved zones', () => {
+  // Three zones called alternately to verify the cache key includes the zone
+  // and different zones never receive each other's formatter.
+  const inst = '2026-10-15T14:00:00Z'
+  const NY = 'America/New_York'
+  const KO = 'Asia/Kolkata'
+  const LA = 'America/Los_Angeles'
+
+  it('alternating minutesIntoDay calls for three zones return the same values every round', () => {
+    for (let round = 0; round < 3; round++) {
+      expect(minutesIntoDay(inst, NY), `round ${round} NY`).toBe(600)
+      expect(minutesIntoDay(inst, KO), `round ${round} KO`).toBe(1170)
+      expect(minutesIntoDay(inst, LA), `round ${round} LA`).toBe(420)
+    }
+  })
+
+  it('alternating zonedDateStr calls for three zones return correct dates every round', () => {
+    for (let round = 0; round < 3; round++) {
+      expect(zonedDateStr(inst, NY), `round ${round} NY`).toBe('2026-10-15')
+      expect(zonedDateStr(inst, KO), `round ${round} KO`).toBe('2026-10-15')
+      // 2026-10-15T14:00:00Z = 2026-10-15T07:00 PDT (UTC-7); date is still Oct 15
+      expect(zonedDateStr(inst, LA), `round ${round} LA`).toBe('2026-10-15')
+    }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Formatter cache: invalid zone throws on first and repeat calls
+// ---------------------------------------------------------------------------
+
+describe('formatter cache: invalid zone throws every time', () => {
+  const inst = '2026-10-15T14:00:00Z'
+  const BAD = 'Not/AZone'
+
+  it('zonedDateStr throws RangeError on first call with bad zone', () => {
+    expect(() => zonedDateStr(inst, BAD)).toThrow(RangeError)
+  })
+
+  it('zonedDateStr throws RangeError on a second call with the same bad zone', () => {
+    expect(() => zonedDateStr(inst, BAD)).toThrow(RangeError)
+  })
+
+  it('minutesIntoDay throws RangeError on first call with bad zone', () => {
+    expect(() => minutesIntoDay(inst, BAD)).toThrow(RangeError)
+  })
+
+  it('minutesIntoDay throws RangeError on a second call with the same bad zone', () => {
+    expect(() => minutesIntoDay(inst, BAD)).toThrow(RangeError)
+  })
+
+  it('formatTimeLabel throws RangeError on first call with bad zone', () => {
+    expect(() => formatTimeLabel(inst, BAD)).toThrow(RangeError)
+  })
+
+  it('formatTimeLabel throws RangeError on a second call with the same bad zone', () => {
+    expect(() => formatTimeLabel(inst, BAD)).toThrow(RangeError)
+  })
+
+  it('a valid zone still works correctly after bad zone calls', () => {
+    expect(minutesIntoDay(inst, 'America/New_York')).toBe(600)
+    expect(zonedDateStr(inst, 'America/New_York')).toBe('2026-10-15')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Formatter cache: formatTimeLabel normalizes spaces after repeated calls
+// ---------------------------------------------------------------------------
+
+describe('formatter cache: formatTimeLabel normalizes spaces after repeated calls', () => {
+  it('returns normal-space strings for America/New_York across repeated calls', () => {
+    const inst = '2026-10-15T13:15:00Z'  // 9:15 AM EDT
+    for (let i = 0; i < 3; i++) {
+      const result = formatTimeLabel(inst, 'America/New_York')
+      expect(result, `call ${i}`).toBe('9:15 AM')
+      expect(result.charCodeAt(result.indexOf('AM') - 1), `call ${i} space code`).toBe(0x20)
+    }
+  })
+
+  it('returns normal-space strings for Asia/Kolkata across repeated calls', () => {
+    const inst = '2026-10-15T14:00:00Z'  // 7:30 PM IST
+    for (let i = 0; i < 3; i++) {
+      const result = formatTimeLabel(inst, 'Asia/Kolkata')
+      expect(result, `call ${i}`).toBe('7:30 PM')
+      expect(result.charCodeAt(result.indexOf('PM') - 1), `call ${i} space code`).toBe(0x20)
+    }
+  })
+})
