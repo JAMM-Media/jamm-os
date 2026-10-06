@@ -1,7 +1,7 @@
 // path: frontend/src/app/calendar/page.tsx
 'use client'
 
-import { useState, useCallback, useRef, useEffect, useLayoutEffect } from 'react'
+import { useState, useCallback, useRef, useEffect, useLayoutEffect, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { engagementsApi } from '@/lib/api/engagements'
@@ -11,7 +11,12 @@ import api from '@/lib/api'
 import { ChevronDown, ChevronLeft, ChevronRight, Pencil, Plus, X } from 'lucide-react'
 import { ContextualBanner } from '@/components/concierge-inline/ContextualBanner'
 import { emitConciergeAction } from '@/lib/events/conciergeEvents'
-import { filterUpcomingByDate, startOfWeek, addDaysStr, filterByDateRange, formatLocalDate, agendaWindowBounds } from '@/lib/utils'
+import { filterUpcomingByDate, startOfWeek, addDaysStr, filterByDateRange, formatLocalDate, agendaWindowBounds, localDateStr } from '@/lib/utils'
+import { TimeGrid, type TimeGridProps } from '@/components/calendar/TimeGrid'
+import { GridErrorBoundary } from '@/components/calendar/GridErrorBoundary'
+import { weekDates } from '@/lib/calendarGrid'
+import { buildGridInputs, hasOffset, isValidTimeZone, formatDayTitle } from '@/lib/calendarGridData'
+import { zonedDateStr, formatTimeLabel } from '@/lib/calendarTime'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -28,6 +33,8 @@ interface CalEvent {
   description?: string
   engagementId?: string | null
   location?: string | null
+  startAt?: string | null
+  endAt?: string | null
 }
 
 interface MySettings {
@@ -42,7 +49,7 @@ interface StaffMember {
   role: string
 }
 
-type ViewMode = 'month' | 'week' | 'agenda'
+type ViewMode = 'month' | 'week' | 'day' | 'agenda'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -609,7 +616,7 @@ function extractJoinUrl(description: string, location: string): string | null {
 // Meeting popover
 // ---------------------------------------------------------------------------
 
-function MeetingPopover({ event, pos, onClose }: { event: CalEvent; pos: { x: number; y: number }; onClose: () => void }) {
+function MeetingPopover({ event, pos, onClose, timeZone }: { event: CalEvent; pos: { x: number; y: number }; onClose: () => void; timeZone?: string | null }) {
   const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -633,6 +640,9 @@ function MeetingPopover({ event, pos, onClose }: { event: CalEvent; pos: { x: nu
         <button onClick={onClose} className="text-[#6B7280] hover:text-brand flex-shrink-0"><X size={14} /></button>
       </div>
       <p className="text-[12px] text-[#6B7280] mb-1">{formatDate(event.date)}</p>
+      {event.startAt && event.endAt && timeZone && isValidTimeZone(timeZone) && hasOffset(event.startAt) && hasOffset(event.endAt) && (
+        <p className="text-[12px] text-[#6B7280] mb-1">{formatTimeLabel(event.startAt, timeZone)} to {formatTimeLabel(event.endAt, timeZone)}</p>
+      )}
       {event.location && (
         <p className="text-[12px] text-[#6B7280] mb-1">{event.location}</p>
       )}
@@ -676,6 +686,17 @@ function CalendarGridSkeleton() {
       </div>
     </div>
   )
+}
+
+function LiveTimeGrid(props: Omit<TimeGridProps, 'now'>) {
+  const [now, setNow] = useState<Date | null>(null)
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setNow(new Date())
+    const id = setInterval(() => setNow(new Date()), 60000)
+    return () => clearInterval(id)
+  }, [])
+  return <TimeGrid {...props} now={now} />
 }
 
 export default function CalendarPage() {
@@ -801,7 +822,7 @@ export default function CalendarPage() {
   // Derived colors
   // ---------------------------------------------------------------------------
 
-  const eventColors: Record<string, string> = { ...DEFAULT_COLORS, ...(mySettings?.colors ?? {}) }
+  const eventColors = useMemo<Record<string, string>>(() => ({ ...DEFAULT_COLORS, ...(mySettings?.colors ?? {}) }), [mySettings?.colors])
   const customCategories = mySettings?.custom_categories ?? []
 
   function getStaffColor(userId: string, index: number): string {
@@ -853,6 +874,8 @@ export default function CalendarPage() {
         type: 'meeting',
         description: ev.description,
         location: ev.location ?? null,
+        startAt: ev.start,
+        endAt: ev.end,
       })
     }
   }
@@ -867,6 +890,13 @@ export default function CalendarPage() {
   }
 
   const visibleEvents = allEvents.filter(isEventVisible)
+
+  const { data: firmData, isLoading: firmLoading, isError: firmError } = useQuery<{ timezone?: string | null }>({ queryKey: ['firm-settings-sidebar'], queryFn: () => api.get('/users/firm').then((r) => r.data), staleTime: 5 * 60 * 1000 })
+  const firmTz = typeof firmData?.timezone === 'string' ? firmData.timezone : null
+  const firmTzValid = firmTz !== null && isValidTimeZone(firmTz)
+  const gridDays = useMemo(() => (view === 'day' ? [localDateStr(cursor)] : weekDates(localDateStr(cursor))), [view, cursor])
+  const gridInputs = useMemo(() => buildGridInputs(visibleEvents, eventColors), [visibleEvents, eventColors])
+  const eventsById = useMemo(() => { const m = new Map<string, CalEvent>(); for (const ev of visibleEvents) m.set(ev.id, ev); return m }, [visibleEvents])
 
   // Group by date for easy lookup
   const byDate: Record<string, CalEvent[]> = {}
@@ -893,6 +923,10 @@ export default function CalendarPage() {
       const d = new Date(cursor)
       d.setDate(d.getDate() - 7)
       setCursor(d)
+    } else if (view === 'day') {
+      const d = new Date(cursor)
+      d.setDate(d.getDate() - 1)
+      setCursor(d)
     } else if (view === 'agenda') {
       setAgendaAnchor(addDaysStr(agendaAnchor, -14))
     }
@@ -904,9 +938,19 @@ export default function CalendarPage() {
       const d = new Date(cursor)
       d.setDate(d.getDate() + 7)
       setCursor(d)
+    } else if (view === 'day') {
+      const d = new Date(cursor)
+      d.setDate(d.getDate() + 1)
+      setCursor(d)
     } else if (view === 'agenda') {
       setAgendaAnchor(addDaysStr(agendaAnchor, 14))
     }
+  }
+
+  function goToday() {
+    if (view === 'agenda') { setAgendaAnchor(todayStr); setAgendaMode('next') }
+    else if ((view === 'week' || view === 'day') && firmTzValid && firmTz) { setCursor(parseDate(zonedDateStr(new Date(), firmTz))) }
+    else { setCursor(new Date(today.getFullYear(), today.getMonth(), today.getDate())) }
   }
 
   function cursorLabel(): string {
@@ -917,6 +961,7 @@ export default function CalendarPage() {
       sat.setDate(sat.getDate() + 6)
       return `${sun.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${sat.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
     }
+    if (view === 'day') return formatDayTitle(localDateStr(cursor))
     if (view === 'agenda') {
       const { startStr, endStr } = agendaWindowBounds(agendaAnchor, agendaMode)
       return `${formatLocalDate(startStr, { month: 'short', day: 'numeric' })} - ${formatLocalDate(endStr, { month: 'short', day: 'numeric', year: 'numeric' })}`
@@ -950,6 +995,8 @@ export default function CalendarPage() {
     }
     // holidays: no action
   }
+
+  function handleGridItemClick(id: string, e: React.MouseEvent<HTMLElement>) { const ev = eventsById.get(id); if (ev) handleEventClick(ev, e) }
 
   // ---------------------------------------------------------------------------
   // Pill rendering helpers
@@ -1041,50 +1088,6 @@ export default function CalendarPage() {
                     <div className="flex flex-col gap-0.5">{renderPills(dayEvents)}</div>
                   </div>
                 )}
-              </div>
-            )
-          })}
-        </div>
-      </div>
-    )
-  }
-
-  // ---------------------------------------------------------------------------
-  // Week view
-  // ---------------------------------------------------------------------------
-
-  function WeekView() {
-    const sun = startOfWeek(cursor)
-    const days: string[] = []
-    for (let i = 0; i < 7; i++) {
-      const d = new Date(sun)
-      d.setDate(d.getDate() + i)
-      days.push(toDateStr(d))
-    }
-    const todayStr = toDateStr(today)
-
-    return (
-      <div className="flex-1 flex flex-col overflow-hidden bg-surface-card dark:bg-dark-card">
-        <div className="grid grid-cols-7 border-b border-cal-border dark:border-dark-cal-border flex-shrink-0">
-          {days.map((ds) => {
-            const d = parseDate(ds)
-            const isToday = ds === todayStr
-            return (
-              <div key={ds} className="text-center py-2 border-r border-cal-border dark:border-dark-cal-border last:border-r-0">
-                <div className="text-xs text-muted-foreground">{DAY_NAMES[d.getDay()]}</div>
-                <div className={`text-sm font-medium mx-auto w-7 h-7 flex items-center justify-center rounded-full ${isToday ? 'bg-primary text-primary-foreground' : ''}`}>
-                  {d.getDate()}
-                </div>
-              </div>
-            )
-          })}
-        </div>
-        <div className="grid grid-cols-7 flex-1 min-h-0 overflow-y-auto">
-          {days.map((ds) => {
-            const dayEvents = byDate[ds] ?? []
-            return (
-              <div key={ds} className="border-r border-cal-border dark:border-dark-cal-border last:border-r-0 p-1 flex flex-col gap-0.5">
-                {renderPills(dayEvents)}
               </div>
             )
           })}
@@ -1225,7 +1228,7 @@ export default function CalendarPage() {
             <div className="flex items-center gap-2">
               {/* Today */}
               <button
-                onClick={() => { if (view === 'agenda') { setAgendaAnchor(todayStr); setAgendaMode('next') } else { setCursor(new Date(today.getFullYear(), today.getMonth(), today.getDate())) } }}
+                onClick={goToday}
                 className="h-8 px-3 text-[13px] font-medium rounded-[6px] border border-cal-border dark:border-dark-cal-border bg-surface-card dark:bg-dark-card text-brand dark:text-[#EDEEF0] hover:bg-surface-border/20 dark:hover:bg-dark-border/20 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
               >
                 Today
@@ -1367,7 +1370,7 @@ export default function CalendarPage() {
               )}
               {/* Month / Week / Agenda segmented control */}
               <div className="flex h-8 rounded-[6px] border border-cal-border dark:border-dark-cal-border overflow-hidden">
-                {(['month', 'week', 'agenda'] as ViewMode[]).map((v, i) => (
+                {(['month', 'week', 'day', 'agenda'] as ViewMode[]).map((v, i) => (
                   <button
                     key={v}
                     onClick={() => setView(v)}
@@ -1409,7 +1412,19 @@ export default function CalendarPage() {
             ) : (
               <>
                 {view === 'month' && <MonthView />}
-                {view === 'week' && <WeekView />}
+                {(view === 'week' || view === 'day') && (
+                  firmLoading ? (
+                    <div role="status" className="flex-1 flex items-center justify-center text-[13px] text-muted-foreground">Loading the firm time zone</div>
+                  ) : firmError ? (
+                    <div role="alert" className="flex-1 flex items-center justify-center text-[13px] text-muted-foreground">Could not load the firm time zone. Reload the page to try again.</div>
+                  ) : !firmTzValid || !firmTz ? (
+                    <div role="alert" className="flex-1 flex items-center justify-center text-[13px] text-muted-foreground">The firm time zone is missing or not valid. A firm owner can set it in Settings.</div>
+                  ) : (
+                    <GridErrorBoundary resetKey={`${view}|${gridDays.join(',')}`}>
+                      <LiveTimeGrid className="flex-1" days={gridDays} timeZone={firmTz} timed={gridInputs.timed} allDay={gridInputs.allDay} onItemClick={handleGridItemClick} />
+                    </GridErrorBoundary>
+                  )
+                )}
                 {view === 'agenda' && <AgendaView />}
               </>
             )}
@@ -1580,6 +1595,7 @@ export default function CalendarPage() {
           event={clickedEvent}
           pos={popoverPos}
           onClose={() => setClickedEvent(null)}
+          timeZone={firmTzValid ? firmTz : null}
         />
       )}
   </>)

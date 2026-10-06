@@ -122,7 +122,7 @@ export function TimeGrid({
       className={`flex flex-col min-h-0 overflow-hidden${className ? ` ${className}` : ''}`}
     >
       {/* Header row */}
-      <div className="flex flex-shrink-0 border-b border-cal-border dark:border-dark-cal-border">
+      <div className="flex flex-shrink-0 overflow-y-hidden border-b border-cal-border dark:border-dark-cal-border" data-grid-header="true" style={{ scrollbarGutter: 'stable' }}>
         <div style={{ width: GUTTER_WIDTH_PX, flexShrink: 0 }} />
         {days.map(dateStr => {
           const parts = dateStr.split('-')
@@ -157,7 +157,7 @@ export function TimeGrid({
 
       {/* All day strip (only when at least one day in view has items) */}
       {hasAllDay && (
-        <div className="flex flex-shrink-0 border-b border-cal-border dark:border-dark-cal-border">
+        <div className="flex flex-shrink-0 overflow-y-hidden border-b border-cal-border dark:border-dark-cal-border" data-grid-allday="true" style={{ scrollbarGutter: 'stable' }}>
           <div style={{ width: GUTTER_WIDTH_PX, flexShrink: 0 }} />
           {gridDays.map(gd => (
             <div
@@ -189,7 +189,7 @@ export function TimeGrid({
       )}
 
       {/* Scrolling grid */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto min-h-0">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto min-h-0" data-grid-scroll="true" style={{ scrollbarGutter: 'stable' }}>
         <div className="relative flex" style={{ height: GRID_HEIGHT_PX }}>
           {/* Gutter: hour labels at hours 1-23 */}
           <div
