@@ -387,3 +387,64 @@ describe('end-to-end: buildGridInputs into buildGridDays', () => {
     expect(oct15.blocks[0]!.endMin).toBe(1230)
   })
 })
+
+describe('buildGridInputs own event color', () => {
+  const TYPE_COLOR = '#4E8A6B'
+  const OWN_COLOR = '#3F6E9A'
+  const colors = { meeting: TYPE_COLOR }
+
+  function timedEvent(overrides: Partial<PageEvent> = {}): PageEvent {
+    return {
+      id: 'ev-own',
+      title: 'Test',
+      date: '2026-10-15',
+      type: 'meeting',
+      startAt: '2026-10-15T13:00:00Z',
+      endAt: '2026-10-15T14:00:00Z',
+      ...overrides,
+    }
+  }
+
+  it('own valid color beats a valid type color', () => {
+    const { timed } = buildGridInputs([timedEvent({ color: OWN_COLOR })], colors)
+    expect(timed[0]!.color).toBe(OWN_COLOR)
+  })
+
+  it('invalid own colors fall back to the valid type color', () => {
+    for (const bad of ['red', '#12', '']) {
+      const { timed } = buildGridInputs([timedEvent({ id: `ev-${bad}`, color: bad })], colors)
+      expect(timed[0]!.color).toBe(TYPE_COLOR)
+    }
+  })
+
+  it('null own color uses the valid type color', () => {
+    const { timed } = buildGridInputs([timedEvent({ color: null })], colors)
+    expect(timed[0]!.color).toBe(TYPE_COLOR)
+  })
+
+  it('missing own color (undefined) uses the valid type color', () => {
+    const ev: PageEvent = { id: 'ev-undef', title: 'T', date: '2026-10-15', type: 'meeting',
+      startAt: '2026-10-15T13:00:00Z', endAt: '2026-10-15T14:00:00Z' }
+    const { timed } = buildGridInputs([ev], colors)
+    expect(timed[0]!.color).toBe(TYPE_COLOR)
+  })
+
+  it('own invalid and type color invalid or missing gives FALLBACK_EVENT_COLOR', () => {
+    const { timed } = buildGridInputs([timedEvent({ color: 'red' })], { meeting: 'bad' })
+    expect(timed[0]!.color).toBe(FALLBACK_EVENT_COLOR)
+    const { timed: timed2 } = buildGridInputs([timedEvent({ color: 'red' })], {})
+    expect(timed2[0]!.color).toBe(FALLBACK_EVENT_COLOR)
+  })
+
+  it('own valid color is used when the type has no entry in the colors map', () => {
+    const { timed } = buildGridInputs([timedEvent({ color: OWN_COLOR })], {})
+    expect(timed[0]!.color).toBe(OWN_COLOR)
+  })
+
+  it('color travels to the allDay item as well as the timed item', () => {
+    const allDayEv: PageEvent = { id: 'ev-allday', title: 'AD', date: '2026-10-15',
+      type: 'meeting', color: OWN_COLOR }
+    const { allDay } = buildGridInputs([allDayEv], colors)
+    expect(allDay[0]!.color).toBe(OWN_COLOR)
+  })
+})

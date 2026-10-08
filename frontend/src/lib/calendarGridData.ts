@@ -18,6 +18,7 @@ export interface PageEvent {
   type: string
   startAt?: string | null
   endAt?: string | null
+  color?: string | null
 }
 
 // ---------------------------------------------------------------------------
@@ -53,12 +54,11 @@ export function buildGridInputs(
     if (seen.has(ev.id)) continue
     seen.add(ev.id)
 
-    // Rule c: validate color or fall back.
-    const rawColor = colors[ev.type]
-    const color =
-      typeof rawColor === 'string' && COLOR_RE.test(rawColor)
-        ? rawColor
-        : FALLBACK_EVENT_COLOR
+    // Rule c: an event's own color wins when it matches COLOR_RE; otherwise the
+    // type color from the colors map when that matches COLOR_RE; otherwise FALLBACK_EVENT_COLOR.
+    const ownColor = typeof ev.color === 'string' && COLOR_RE.test(ev.color) ? ev.color : null
+    const typeColor = (() => { const r = colors[ev.type]; return typeof r === 'string' && COLOR_RE.test(r) ? r : null })()
+    const color = ownColor ?? typeColor ?? FALLBACK_EVENT_COLOR
 
     // Rule b: timed only when both startAt and endAt have an offset and
     // endAt is strictly after startAt.
