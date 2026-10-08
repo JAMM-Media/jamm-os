@@ -8,7 +8,7 @@ import { engagementsApi } from '@/lib/api/engagements'
 import { tasksApi } from '@/lib/api/tasks'
 import { useAuth } from '@/lib/hooks/useAuth'
 import api from '@/lib/api'
-import { ChevronDown, ChevronLeft, ChevronRight, Pencil, Plus, X } from 'lucide-react'
+import { Calendar, ChevronDown, ChevronLeft, ChevronRight, Pencil, Plus, X } from 'lucide-react'
 import { ContextualBanner } from '@/components/concierge-inline/ContextualBanner'
 import { emitConciergeAction } from '@/lib/events/conciergeEvents'
 import { filterUpcomingByDate, startOfWeek, addDaysStr, filterByDateRange, formatLocalDate, agendaWindowBounds, localDateStr } from '@/lib/utils'
@@ -16,6 +16,9 @@ import { TimeGrid, type TimeGridProps } from '@/components/calendar/TimeGrid'
 import { GridErrorBoundary } from '@/components/calendar/GridErrorBoundary'
 import { weekDates } from '@/lib/calendarGrid'
 import { buildGridInputs, hasOffset, isValidTimeZone, formatDayTitle } from '@/lib/calendarGridData'
+import { mapNativeEvents, dateRangeForView, rangeToInstants } from '@/lib/calendarNative'
+import { calendarEventsApi } from '@/lib/api/calendarEvents'
+import { parsePickedDate } from '@/lib/calendarPickDate'
 import { zonedDateStr, formatTimeLabel } from '@/lib/calendarTime'
 
 // ---------------------------------------------------------------------------
@@ -35,6 +38,7 @@ interface CalEvent {
   location?: string | null
   startAt?: string | null
   endAt?: string | null
+  color?: string | null
 }
 
 interface MySettings {
@@ -730,6 +734,7 @@ export default function CalendarPage() {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false)
   const [staffSearch, setStaffSearch] = useState('')
   const dropdownRef = useRef<HTMLDivElement>(null)
+  const datePickerRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     function handleMouseDown(e: MouseEvent) {
@@ -889,11 +894,36 @@ export default function CalendarPage() {
     return selectedStaff.includes(ev.assignedTo)
   }
 
-  const visibleEvents = allEvents.filter(isEventVisible)
-
   const { data: firmData, isLoading: firmLoading, isError: firmError } = useQuery<{ timezone?: string | null }>({ queryKey: ['firm-settings-sidebar'], queryFn: () => api.get('/users/firm').then((r) => r.data), staleTime: 5 * 60 * 1000 })
   const firmTz = typeof firmData?.timezone === 'string' ? firmData.timezone : null
   const firmTzValid = firmTz !== null && isValidTimeZone(firmTz)
+
+  const _nativeRange = useMemo(() => {
+    if (!firmTzValid || !firmTz) return null
+    try {
+      const { startStr: agStart, endStr: agEnd } = agendaWindowBounds(agendaAnchor, agendaMode)
+      const { startStr, endStr } = dateRangeForView({ view, cursorDateStr: localDateStr(cursor), agendaStartStr: agStart, agendaEndStr: agEnd })
+      return { startStr, endStr, ...rangeToInstants(startStr, endStr, firmTz) }
+    } catch {
+      return null
+    }
+  }, [view, cursor, agendaAnchor, agendaMode, firmTzValid, firmTz])
+
+  const { data: _nativeData, isError: nativeEventsError } = useQuery({
+    queryKey: ['native-calendar-events', firmTz ?? '', view, _nativeRange?.startStr ?? '', _nativeRange?.endStr ?? ''],
+    queryFn: () => calendarEventsApi.listEventsInRange({ from: _nativeRange!.from, to: _nativeRange!.to }),
+    enabled: firmTzValid && !firmLoading && _nativeRange !== null,
+    retry: false,
+    staleTime: 5 * 60 * 1000,
+  })
+
+  if (_nativeData && firmTz) {
+    for (const nativeEv of mapNativeEvents(_nativeData, firmTz)) {
+      allEvents.push(nativeEv)
+    }
+  }
+
+  const visibleEvents = allEvents.filter(isEventVisible)
   const gridDays = useMemo(() => (view === 'day' ? [localDateStr(cursor)] : weekDates(localDateStr(cursor))), [view, cursor])
   const gridInputs = useMemo(() => buildGridInputs(visibleEvents, eventColors), [visibleEvents, eventColors])
   const eventsById = useMemo(() => { const m = new Map<string, CalEvent>(); for (const ev of visibleEvents) m.set(ev.id, ev); return m }, [visibleEvents])
@@ -1255,6 +1285,35 @@ export default function CalendarPage() {
               <span className="text-[15px] font-semibold text-brand dark:text-[#EDEEF0] min-w-[200px] whitespace-nowrap">
                 {cursorLabel()}
               </span>
+              {view !== 'agenda' && (
+                <div className="relative flex">
+                  <button
+                    aria-label="Pick a date"
+                    onClick={() => {
+                      const input = datePickerRef.current
+                      if (!input) return
+                      const sp = (input as HTMLInputElement & { showPicker?(): void }).showPicker
+                      if (sp) {
+                        try { sp.call(input) } catch { input.focus(); input.click() }
+                      } else {
+                        input.focus(); input.click()
+                      }
+                    }}
+                    className="flex items-center justify-center w-8 h-8 rounded-[6px] border border-cal-border dark:border-dark-cal-border bg-surface-card dark:bg-dark-card text-[#6B7280] dark:text-[#9CA3AF] hover:bg-surface-border/20 dark:hover:bg-dark-border/20 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+                  >
+                    <Calendar size={15} />
+                  </button>
+                  <input
+                    ref={datePickerRef}
+                    type="date"
+                    value={localDateStr(cursor)}
+                    onChange={(e) => { const d = parsePickedDate(e.target.value); if (d) setCursor(d) }}
+                    className="absolute opacity-0 w-0 h-0 pointer-events-none"
+                    tabIndex={-1}
+                    aria-hidden="true"
+                  />
+                </div>
+              )}
               {/* Agenda tabs -- visible only in Agenda view */}
               {view === 'agenda' && (
                 <div role="tablist" className="flex items-center">
@@ -1407,6 +1466,9 @@ export default function CalendarPage() {
 
           {/* Calendar view */}
           <div className="flex-1 overflow-hidden flex flex-col" onClick={() => setClickedEvent(null)}>
+            {nativeEventsError && (
+              <p role="alert" className="text-[11px] text-muted-foreground text-center py-0.5 flex-shrink-0">Native events could not be loaded.</p>
+            )}
             {calendarLoading ? (
               <CalendarGridSkeleton />
             ) : (
