@@ -5,12 +5,14 @@ import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { useFetch } from '@/lib/hooks/useFetch'
+import { useQueryClient } from '@tanstack/react-query'
 import { Eye, EyeOff, Plug, CheckCircle2, ChevronLeft, Pencil, UserX, UserCheck, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { RoleBadge, formatRoleLabel } from '@/lib/roleLabels'
 import { toast } from 'sonner'
 import api from '@/lib/api'
 import { settingsApi, type FirmDetails, type StaffMember } from '@/lib/api/settingsApi'
+import { refreshFirmCache } from '@/lib/firmCache'
 import AutomationsTab from '@/components/settings/AutomationsTab'
 import SecurityTab from '@/components/settings/SecurityTab'
 import PricingTab from '@/components/settings/PricingTab'
@@ -395,6 +397,7 @@ function formatPhoneNumber(value: string): string {
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState('profile')
   const { user, refreshUser, isLoading: authLoading } = useAuth()
+  const qc = useQueryClient()
   const [approvalRequired, setApprovalRequired] = useState<boolean | null>(null)
   const [savingApproval, setSavingApproval] = useState(false)
 
@@ -637,6 +640,7 @@ export default function SettingsPage() {
     try {
       await api.patch('/firms/me', { timezone: firmTimezone })
       toast.success('Timezone saved')
+      void refreshFirmCache(qc)
     } catch {
       toast.error('Failed to save timezone')
     } finally {
