@@ -19,6 +19,7 @@ import { buildGridInputs, hasOffset, isValidTimeZone, formatDayTitle } from '@/l
 import { mapNativeEvents, dateRangeForView, rangeToInstants } from '@/lib/calendarNative'
 import { calendarEventsApi } from '@/lib/api/calendarEvents'
 import { parsePickedDate } from '@/lib/calendarPickDate'
+import { DatePickerPopover } from '@/components/calendar/DatePickerPopover'
 import { zonedDateStr, formatTimeLabel } from '@/lib/calendarTime'
 
 // ---------------------------------------------------------------------------
@@ -732,9 +733,11 @@ export default function CalendarPage() {
 
   // Staff dropdown
   const [isDropdownOpen, setIsDropdownOpen] = useState(false)
+  const [pickerOpen, setPickerOpen] = useState(false)
   const [staffSearch, setStaffSearch] = useState('')
   const dropdownRef = useRef<HTMLDivElement>(null)
-  const datePickerRef = useRef<HTMLInputElement>(null)
+  const pickerWrapperRef = useRef<HTMLDivElement>(null)
+  const pickerButtonRef = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
     function handleMouseDown(e: MouseEvent) {
@@ -745,6 +748,20 @@ export default function CalendarPage() {
     document.addEventListener('mousedown', handleMouseDown)
     return () => document.removeEventListener('mousedown', handleMouseDown)
   }, [])
+
+  useEffect(() => {
+    function handleMouseDown(e: MouseEvent) {
+      if (pickerWrapperRef.current && !pickerWrapperRef.current.contains(e.target as Node)) {
+        setPickerOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleMouseDown)
+    return () => document.removeEventListener('mousedown', handleMouseDown)
+  }, [])
+
+  useEffect(() => {
+    if (view === 'agenda') setPickerOpen(false)
+  }, [view])
 
   const year = today.getFullYear()
   const holidays = usHolidays(year)
@@ -1286,32 +1303,26 @@ export default function CalendarPage() {
                 {cursorLabel()}
               </span>
               {view !== 'agenda' && (
-                <div className="relative flex">
+                <div ref={pickerWrapperRef} className="relative flex">
                   <button
+                    ref={pickerButtonRef}
                     aria-label="Pick a date"
-                    onClick={() => {
-                      const input = datePickerRef.current
-                      if (!input) return
-                      const sp = (input as HTMLInputElement & { showPicker?(): void }).showPicker
-                      if (sp) {
-                        try { sp.call(input) } catch { input.focus(); input.click() }
-                      } else {
-                        input.focus(); input.click()
-                      }
-                    }}
+                    aria-haspopup="dialog"
+                    aria-expanded={pickerOpen}
+                    onClick={() => setPickerOpen((o) => !o)}
                     className="flex items-center justify-center w-8 h-8 rounded-[6px] border border-cal-border dark:border-dark-cal-border bg-surface-card dark:bg-dark-card text-[#6B7280] dark:text-[#9CA3AF] hover:bg-surface-border/20 dark:hover:bg-dark-border/20 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
                   >
                     <Calendar size={15} />
                   </button>
-                  <input
-                    ref={datePickerRef}
-                    type="date"
-                    value={localDateStr(cursor)}
-                    onChange={(e) => { const d = parsePickedDate(e.target.value); if (d) setCursor(d) }}
-                    className="absolute opacity-0 w-0 h-0 pointer-events-none"
-                    tabIndex={-1}
-                    aria-hidden="true"
-                  />
+                  {pickerOpen && (
+                    <DatePickerPopover
+                      valueDateStr={localDateStr(cursor)}
+                      todayDateStr={firmTzValid && firmTz ? zonedDateStr(new Date(), firmTz) : todayStr}
+                      onPick={(dateStr) => { const d = parsePickedDate(dateStr); if (d) setCursor(d); setPickerOpen(false); pickerButtonRef.current?.focus() }}
+                      onClose={() => { setPickerOpen(false); pickerButtonRef.current?.focus() }}
+                      className="absolute top-full mt-1 left-0 z-50"
+                    />
+                  )}
                 </div>
               )}
               {/* Agenda tabs -- visible only in Agenda view */}

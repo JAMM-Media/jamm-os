@@ -20,9 +20,14 @@ describe('calendarPickDate wiring: source guards', () => {
     expect(src).toContain("import { parsePickedDate } from '@/lib/calendarPickDate'")
   })
 
-  it('page contains a date input (type="date")', () => {
+  it('page imports DatePickerPopover from the component path', () => {
     const src = readSrc(PAGE)
-    expect(src).toContain('type="date"')
+    expect(src).toContain("import { DatePickerPopover } from '@/components/calendar/DatePickerPopover'")
+  })
+
+  it('page does NOT contain a native type="date" input any more', () => {
+    const src = readSrc(PAGE)
+    expect(src).not.toContain('type="date"')
   })
 
   it('page contains aria-label "Pick a date"', () => {
