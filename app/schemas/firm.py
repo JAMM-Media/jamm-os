@@ -4,6 +4,8 @@ from typing import Optional
 from uuid import UUID
 from datetime import datetime
 
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
 from pydantic import BaseModel, ConfigDict, field_validator
 import re
 
@@ -74,6 +76,19 @@ class FirmUpdate(BaseModel):
     signup_source: Optional[str] = None
     timezone: Optional[str] = None
     nurture_enabled: Optional[bool] = None
+
+    @field_validator("timezone", mode="after")
+    @classmethod
+    def validate_timezone(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        try:
+            ZoneInfo(v)
+        except (ZoneInfoNotFoundError, ValueError, OSError):
+            raise ValueError(
+                "Unknown time zone. Use an IANA name such as America/New_York."
+            )
+        return v
 
 
 class FirmOut(FirmBase):
