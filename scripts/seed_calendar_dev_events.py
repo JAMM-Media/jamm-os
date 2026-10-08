@@ -9,24 +9,10 @@ import argparse
 import os
 import sys
 import urllib.parse
-from datetime import date, datetime, timedelta
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
-
-import requests
 
 # ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
-
-CATEGORY_PLAN = {
-    'client_call': {'name': 'DEV SEED Client call', 'color': '#3F6E9A'},
-    'review':      {'name': 'DEV SEED Review',       'color': '#B07D3A'},
-}
-
-_DEV_SEED_PREFIX = 'DEV SEED '
-
-# ---------------------------------------------------------------------------
-# Guard
+# Guard helpers -- defined before any non-stdlib import so the guard can
+# abort the process before an import that could fail or hit a real server.
 # ---------------------------------------------------------------------------
 
 def check_local_api_url(url: str) -> None:
@@ -44,6 +30,36 @@ def check_local_api_url(url: str) -> None:
     if parsed.hostname not in ('localhost', '127.0.0.1'):
         print(f'Error: JAMM_DEV_API_URL hostname must be localhost or 127.0.0.1, got {parsed.hostname!r}')
         raise SystemExit(1)
+
+
+def _enforce_environment_guard() -> None:
+    api_url = os.environ.get('JAMM_DEV_API_URL', '')
+    if not api_url:
+        print('Error: JAMM_DEV_API_URL environment variable is not set')
+        sys.exit(1)
+    check_local_api_url(api_url)
+
+
+if __name__ == '__main__':
+    _enforce_environment_guard()
+
+# Everything below this line is safe to import: when run as a script, the
+# guard above has already either aborted the process or confirmed the target URL.
+from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+import requests
+
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
+
+CATEGORY_PLAN = {
+    'client_call': {'name': 'DEV SEED Client call', 'color': '#3F6E9A'},
+    'review':      {'name': 'DEV SEED Review',       'color': '#B07D3A'},
+}
+
+_DEV_SEED_PREFIX = 'DEV SEED '
 
 # ---------------------------------------------------------------------------
 # Plan builder

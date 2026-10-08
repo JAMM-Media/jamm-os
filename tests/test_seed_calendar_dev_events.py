@@ -12,6 +12,7 @@ import pytest
 import requests
 
 from scripts.seed_calendar_dev_events import (
+    _enforce_environment_guard,
     build_event_plan,
     CATEGORY_PLAN,
     check_local_api_url,
@@ -320,3 +321,33 @@ def test_cleanup_safety_valve_prints_warning(capsys):
     out = capsys.readouterr().out
     assert 'WARNING' in out
     assert '200' in out
+
+
+# ---------------------------------------------------------------------------
+# _enforce_environment_guard
+# ---------------------------------------------------------------------------
+
+def test_enforce_environment_guard_exits_1_when_env_unset(monkeypatch):
+    monkeypatch.delenv('JAMM_DEV_API_URL', raising=False)
+    with pytest.raises(SystemExit) as exc_info:
+        _enforce_environment_guard()
+    assert exc_info.value.code == 1
+
+
+def test_enforce_environment_guard_exits_1_for_non_local_url(monkeypatch):
+    monkeypatch.setenv('JAMM_DEV_API_URL', 'http://example.com')
+    with pytest.raises(SystemExit) as exc_info:
+        _enforce_environment_guard()
+    assert exc_info.value.code == 1
+
+
+def test_enforce_environment_guard_returns_normally_for_localhost(monkeypatch):
+    monkeypatch.setenv('JAMM_DEV_API_URL', 'http://localhost:8000')
+    _enforce_environment_guard()  # must not raise
+
+
+def test_importing_module_with_env_unset_does_not_raise(monkeypatch):
+    import importlib
+    import scripts.seed_calendar_dev_events as mod
+    monkeypatch.delenv('JAMM_DEV_API_URL', raising=False)
+    importlib.reload(mod)  # guard is inside if __name__ == '__main__', so it does not run
