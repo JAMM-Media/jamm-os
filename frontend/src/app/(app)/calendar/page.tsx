@@ -1109,7 +1109,8 @@ export default function CalendarPage() {
             return (
               <div
                 key={ds}
-                className="border-b border-r border-cal-border dark:border-dark-cal-border p-1 relative"
+                className="border-b border-r border-cal-border dark:border-dark-cal-border p-1 relative cursor-pointer"
+                onClick={() => { const d = parsePickedDate(ds); if (!d) return; setExpandedDay(null); setPickerOpen(false); setCursor(d); setView('day') }}
               >
                 <div
                   className={`text-xs font-medium mb-1 w-5 h-5 flex items-center justify-center rounded-full ${isToday ? 'bg-primary text-primary-foreground' : 'text-foreground'}`}
@@ -1121,17 +1122,17 @@ export default function CalendarPage() {
                   {dayEvents.length > 3 && (
                     <button
                       className="text-xs text-primary underline text-left"
-                      onClick={() => setExpandedDay(isExpanded ? null : ds)}
+                      onClick={(e) => { e.stopPropagation(); setExpandedDay(isExpanded ? null : ds) }}
                     >
                       +{dayEvents.length - 3} more
                     </button>
                   )}
                 </div>
                 {isExpanded && dayEvents.length > 3 && (
-                  <div className="absolute top-0 left-0 z-40 bg-surface-card border border-surface-border rounded shadow-lg p-2 w-56">
+                  <div className="absolute top-0 left-0 z-40 bg-surface-card border border-surface-border rounded shadow-lg p-2 w-56" onClick={(e) => e.stopPropagation()}>
                     <div className="flex justify-between items-center mb-1">
                       <span className="text-xs font-medium">{formatDate(ds)}</span>
-                      <button onClick={() => setExpandedDay(null)}><X size={12} /></button>
+                      <button onClick={(e) => { e.stopPropagation(); setExpandedDay(null) }}><X size={12} /></button>
                     </div>
                     <div className="flex flex-col gap-0.5">{renderPills(dayEvents)}</div>
                   </div>
