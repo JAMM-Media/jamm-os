@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from typing import Optional
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.models.calendar_event import CalendarEvent
@@ -46,6 +46,7 @@ def list_events(
     include_deleted: bool = False,
     limit: int = 50,
     offset: int = 0,
+    staff_scope_user_id: Optional[UUID] = None,
 ) -> tuple[list[CalendarEvent], int]:
     base = select(CalendarEvent).where(
         CalendarEvent.firm_id == firm_id,
@@ -58,6 +59,13 @@ def list_events(
         base = base.where(CalendarEvent.owner_user_id == owner_user_id)
     if category_id:
         base = base.where(CalendarEvent.category_id == category_id)
+    if staff_scope_user_id is not None:
+        base = base.where(
+            or_(
+                CalendarEvent.owner_user_id == staff_scope_user_id,
+                CalendarEvent.owner_user_id.is_(None),
+            )
+        )
 
     count_stmt = select(func.count()).select_from(base.subquery())
     total = db.execute(count_stmt).scalar_one()

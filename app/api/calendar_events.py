@@ -133,9 +133,9 @@ def get_event(
     event_id: UUID,
     db: Session = Depends(get_db),
     current_firm: Firm = Depends(get_current_firm),
-    _: User = Depends(require_staff_or_above),
+    current_user: User = Depends(require_staff_or_above),
 ):
-    ev = event_svc.get_event(db, current_firm.id, event_id)
+    ev = event_svc.get_event(db, current_firm.id, event_id, current_user)
     return _enrich_event(ev)
 
 
@@ -148,10 +148,10 @@ def create_event(
     payload: CalendarEventCreate,
     db: Session = Depends(get_db),
     current_firm: Firm = Depends(get_current_firm),
-    current_user: User = Depends(require_manager_or_above),
+    current_user: User = Depends(require_staff_or_above),
 ):
     ev = event_svc.create_event(
-        db, payload, current_firm.id, current_user.id, current_firm.timezone
+        db, payload, current_firm.id, current_user, current_firm.timezone
     )
     return _enrich_event(ev)
 
@@ -162,9 +162,9 @@ def update_event(
     payload: CalendarEventUpdate,
     db: Session = Depends(get_db),
     current_firm: Firm = Depends(get_current_firm),
-    current_user: User = Depends(require_manager_or_above),
+    current_user: User = Depends(require_staff_or_above),
 ):
-    ev = event_svc.update_event(db, event_id, payload, current_firm.id, current_user.id)
+    ev = event_svc.update_event(db, event_id, payload, current_firm.id, current_user)
     return _enrich_event(ev)
 
 
@@ -173,9 +173,9 @@ def delete_event(
     event_id: UUID,
     db: Session = Depends(get_db),
     current_firm: Firm = Depends(get_current_firm),
-    current_user: User = Depends(require_manager_or_above),
+    current_user: User = Depends(require_staff_or_above),
 ):
-    event_svc.delete_event(db, event_id, current_firm.id, current_user.id)
+    event_svc.delete_event(db, event_id, current_firm.id, current_user)
 
 
 @router.post("/events/{event_id}/restore", response_model=CalendarEventOut)
@@ -185,5 +185,5 @@ def restore_event(
     current_firm: Firm = Depends(get_current_firm),
     current_user: User = Depends(require_manager_or_above),
 ):
-    ev = event_svc.restore_event(db, event_id, current_firm.id, current_user.id)
+    ev = event_svc.restore_event(db, event_id, current_firm.id, current_user)
     return _enrich_event(ev)

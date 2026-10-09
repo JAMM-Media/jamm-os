@@ -205,13 +205,20 @@ class TestCalendarEventsTimeValidation:
 # ---------------------------------------------------------------------------
 
 class TestCalendarEventsRBAC:
-    def test_staff_cannot_create(self, client, firm_a_staff):
+    def test_staff_create_saves_event_as_own(self, client, firm_a_staff):
+        me_r = client.get("/users/me", headers=firm_a_staff["headers"])
+        assert me_r.status_code == 200
+        staff_id = me_r.json()["id"]
+
         r = client.post(
             "/api/v1/calendar/events",
             json=_BASE_EVENT,
             headers=firm_a_staff["headers"],
         )
-        assert r.status_code == 403
+        assert r.status_code == 201
+        body = r.json()
+        assert body["owner_user_id"] == staff_id
+        assert body["created_by"] == staff_id
 
     def test_staff_cannot_patch(self, client, firm_a_owner, firm_a_staff):
         ev_id = _create_event(client, firm_a_owner["headers"])

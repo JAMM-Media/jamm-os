@@ -9,6 +9,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.enums import UserRole
 from app.crud import calendar_event as crud_event
 from app.models.calendar_category import CalendarCategory
 from app.models.calendar_event import CalendarEvent
@@ -17,6 +18,35 @@ from app.models.user import User
 from app.schemas.calendar_event import CalendarEventCreate, CalendarEventUpdate
 from app.services.behavioral_log import log_event
 
+
+# ---------------------------------------------------------------------------
+# Permission helpers
+# ---------------------------------------------------------------------------
+
+def _is_manager_or_above(user: User) -> bool:
+    """Returns True when the user role grants full firm-wide calendar access."""
+    return user.role in (UserRole.firm_owner, UserRole.manager, UserRole.system_admin)
+
+
+def _can_view(user: User, ev: CalendarEvent) -> bool:
+    """Returns True when the user is allowed to see this event."""
+    if _is_manager_or_above(user):
+        return True
+    return ev.owner_user_id is None or ev.owner_user_id == user.id
+
+
+def _can_edit_or_delete(user: User, ev: CalendarEvent) -> bool:
+    """Returns True when the user is allowed to modify or delete this event."""
+    if _is_manager_or_above(user):
+        return True
+    if ev.created_by is None:
+        return False
+    return ev.created_by == user.id and ev.owner_user_id == user.id
+
+
+# ---------------------------------------------------------------------------
+# Validation helpers
+# ---------------------------------------------------------------------------
 
 def _validate_timezone(tz_name: str) -> ZoneInfo:
     try:
@@ -75,6 +105,11 @@ def _resolve_owner(db: Session, owner_user_id: UUID, firm_id: UUID) -> User:
     ).scalar_one_or_none()
     if not u:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
+    if u.role == UserRole.client_portal_user:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Cannot assign a client portal user as owner.",
+        )
     if not u.is_active:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -82,6 +117,10 @@ def _resolve_owner(db: Session, owner_user_id: UUID, firm_id: UUID) -> User:
         )
     return u
 
+
+# ---------------------------------------------------------------------------
+# Service functions
+# ---------------------------------------------------------------------------
 
 def list_events(
     db: Session,
@@ -91,20 +130,32 @@ def list_events(
     owner_user_id: Optional[UUID],
     category_id: Optional[UUID],
     include_deleted: bool,
-    current_user,
+    current_user: User,
     limit: int,
     offset: int,
 ) -> dict:
+    staff_scope = None
+    if not _is_manager_or_above(current_user):
+        if owner_user_id is not None and owner_user_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Staff can only filter by their own user id.",
+            )
+        staff_scope = current_user.id
+
     items, total = crud_event.list_events(
         db, firm_id, range_start, range_end,
         owner_user_id, category_id, include_deleted, limit, offset,
+        staff_scope_user_id=staff_scope,
     )
     return {"items": items, "total": total, "limit": limit, "offset": offset}
 
 
-def get_event(db: Session, firm_id: UUID, event_id: UUID) -> CalendarEvent:
+def get_event(db: Session, firm_id: UUID, event_id: UUID, current_user: User) -> CalendarEvent:
     ev = crud_event.get_event_for_firm(db, event_id, firm_id, include_deleted=False)
     if not ev:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found.")
+    if not _can_view(current_user, ev):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found.")
     return ev
 
@@ -113,19 +164,34 @@ def create_event(
     db: Session,
     payload: CalendarEventCreate,
     firm_id: UUID,
-    current_user_id: UUID,
+    current_user: User,
     firm_timezone: str,
 ) -> CalendarEvent:
     tz = _validate_timezone(firm_timezone)
     _validate_times(payload.start_at, payload.end_at, tz)
+
+    if not _is_manager_or_above(current_user):
+        if payload.client_id is not None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Staff cannot assign a client to a calendar event.",
+            )
+        if payload.owner_user_id is not None and payload.owner_user_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Staff can only create events for themselves.",
+            )
+        payload = payload.model_copy(update={"owner_user_id": current_user.id})
+
     if payload.category_id:
         _resolve_category(db, payload.category_id, firm_id, require_active=True)
     if payload.client_id:
         _resolve_client(db, payload.client_id, firm_id)
     if payload.owner_user_id:
         _resolve_owner(db, payload.owner_user_id, firm_id)
+
     ev = crud_event.create_event(
-        db, payload, firm_id=firm_id, event_timezone=firm_timezone, created_by=current_user_id
+        db, payload, firm_id=firm_id, event_timezone=firm_timezone, created_by=current_user.id
     )
     duration_minutes = int((ev.end_at - ev.start_at).total_seconds() / 60)
     log_event(
@@ -134,7 +200,7 @@ def create_event(
         entity_type="calendar_event",
         entity_id=ev.id,
         actor_type="staff",
-        actor_id=current_user_id,
+        actor_id=current_user.id,
         metadata={
             "duration_minutes": duration_minutes,
             "has_category": ev.category_id is not None,
@@ -150,15 +216,38 @@ def update_event(
     event_id: UUID,
     payload: CalendarEventUpdate,
     firm_id: UUID,
-    current_user_id: UUID,
+    current_user: User,
 ) -> CalendarEvent:
     ev = crud_event.get_event_for_firm(db, event_id, firm_id, include_deleted=False)
     if not ev:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found.")
+
+    if not _can_view(current_user, ev):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found.")
+
     updates = payload.model_dump(exclude_unset=True)
     real_changes = {k: v for k, v in updates.items() if getattr(ev, k) != v}
     if not real_changes:
         return ev
+
+    if not _can_edit_or_delete(current_user, ev):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have permission to edit this event.",
+        )
+
+    if not _is_manager_or_above(current_user):
+        if "owner_user_id" in real_changes:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Staff cannot change the owner of an event.",
+            )
+        if "client_id" in real_changes:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Staff cannot change the client on an event.",
+            )
+
     times_changed = "start_at" in real_changes or "end_at" in real_changes
     if times_changed:
         new_start = real_changes.get("start_at", ev.start_at)
@@ -181,7 +270,7 @@ def update_event(
             entity_type="calendar_event",
             entity_id=ev.id,
             actor_type="staff",
-            actor_id=current_user_id,
+            actor_id=current_user.id,
             metadata={
                 "old_start_at": old_start.isoformat(),
                 "old_end_at": old_end.isoformat(),
@@ -197,7 +286,7 @@ def update_event(
                 entity_type="calendar_event",
                 entity_id=ev.id,
                 actor_type="staff",
-                actor_id=current_user_id,
+                actor_id=current_user.id,
                 metadata={"changed_fields": other_fields},
             )
     else:
@@ -207,7 +296,7 @@ def update_event(
             entity_type="calendar_event",
             entity_id=ev.id,
             actor_type="staff",
-            actor_id=current_user_id,
+            actor_id=current_user.id,
             metadata={"changed_fields": list(real_changes.keys())},
         )
     return ev
@@ -217,11 +306,21 @@ def delete_event(
     db: Session,
     event_id: UUID,
     firm_id: UUID,
-    current_user_id: UUID,
+    current_user: User,
 ) -> None:
     ev = crud_event.get_event_for_firm(db, event_id, firm_id, include_deleted=False)
     if not ev:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found.")
+
+    if not _can_view(current_user, ev):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found.")
+
+    if not _can_edit_or_delete(current_user, ev):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have permission to delete this event.",
+        )
+
     crud_event.soft_delete_event(db, ev)
     log_event(
         firm_id=firm_id,
@@ -229,7 +328,7 @@ def delete_event(
         entity_type="calendar_event",
         entity_id=event_id,
         actor_type="staff",
-        actor_id=current_user_id,
+        actor_id=current_user.id,
         metadata={},
     )
 
@@ -238,7 +337,7 @@ def restore_event(
     db: Session,
     event_id: UUID,
     firm_id: UUID,
-    current_user_id: UUID,
+    current_user: User,
 ) -> CalendarEvent:
     ev = crud_event.get_event_for_firm(db, event_id, firm_id, include_deleted=True)
     if not ev:
@@ -252,7 +351,7 @@ def restore_event(
         entity_type="calendar_event",
         entity_id=event_id,
         actor_type="staff",
-        actor_id=current_user_id,
+        actor_id=current_user.id,
         metadata={},
     )
     return ev
