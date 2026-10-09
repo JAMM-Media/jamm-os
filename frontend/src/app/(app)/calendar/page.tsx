@@ -17,6 +17,7 @@ import { GridErrorBoundary } from '@/components/calendar/GridErrorBoundary'
 import { weekDates } from '@/lib/calendarGrid'
 import { buildGridInputs, hasOffset, isValidTimeZone, formatDayTitle } from '@/lib/calendarGridData'
 import { resolveEventColor } from '@/lib/calendarEventColor'
+import { formatChipTime, sortDayEvents } from '@/lib/calendarChipTime'
 import { mapNativeEvents, dateRangeForView, rangeToInstants } from '@/lib/calendarNative'
 import { calendarEventsApi } from '@/lib/api/calendarEvents'
 import { parsePickedDate } from '@/lib/calendarPickDate'
@@ -568,10 +569,11 @@ interface PillProps {
   staffName?: string
   isOwner: boolean
   isPersonalView: boolean
+  chipTime?: string | null
   onClick?: (e: React.MouseEvent) => void
 }
 
-function EventPill({ event, borderColor, fillColor, staffName, isOwner, isPersonalView, onClick }: PillProps) {
+function EventPill({ event, borderColor, fillColor, staffName, isOwner, isPersonalView, chipTime, onClick }: PillProps) {
   const showDot = isOwner && !isPersonalView && !!fillColor && fillColor !== 'transparent'
   const tooltip = showDot && staffName ? `${event.title} - ${staffName}` : event.title
   return (
@@ -592,7 +594,7 @@ function EventPill({ event, borderColor, fillColor, staffName, isOwner, isPerson
         className="text-xs px-1 py-0.5 truncate text-brand dark:text-[#EDEEF0]"
         style={{ lineHeight: '1.4' }}
       >
-        {event.title}
+        {chipTime && <span className="text-muted-foreground mr-0.5">{chipTime}</span>}{event.title}
       </div>
     </div>
   )
@@ -1057,6 +1059,7 @@ export default function CalendarPage() {
       const fillColor = ev.assignedTo ? getStaffColor(ev.assignedTo, staffIdx) : 'transparent'
       const staffMember = ev.assignedTo ? staffList.find(s => s.id === ev.assignedTo) : undefined
       const staffName = staffMember?.full_name ?? staffMember?.email ?? undefined
+      const chipTime = formatChipTime(ev.startAt, firmTzValid ? firmTz : null)
       return (
         <EventPill
           key={ev.id}
@@ -1066,6 +1069,7 @@ export default function CalendarPage() {
           staffName={staffName}
           isOwner={isFirmOwner}
           isPersonalView={justMe}
+          chipTime={chipTime}
           onClick={(e) => handleEventClick(ev, e)}
         />
       )
@@ -1103,7 +1107,7 @@ export default function CalendarPage() {
         >
           {cells.map((ds, i) => {
             if (!ds) return <div key={i} className="border-b border-r border-cal-border dark:border-dark-cal-border bg-surface-border/10 dark:bg-dark-border/10" />
-            const dayEvents = byDate[ds] ?? []
+            const dayEvents = sortDayEvents(byDate[ds] ?? [], firmTzValid ? firmTz : null)
             const isToday = ds === todayStr
             const isExpanded = expandedDay === ds
             return (
