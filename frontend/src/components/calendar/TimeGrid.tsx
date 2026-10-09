@@ -13,6 +13,7 @@ import {
   formatTimeLabel,
   zonedDateStr,
 } from '@/lib/calendarTime'
+import { readableTextColor } from '@/lib/calendarTextColor'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -138,14 +139,14 @@ export function TimeGrid({
               className="flex-1 flex flex-col items-center justify-center py-1"
               {...(isToday ? { 'data-today': 'true' } : {})}
             >
-              <span className="text-[11px] text-muted-foreground">
+              <span className="text-[11px] text-muted-foreground uppercase tracking-wide">
                 {DAY_NAMES[weekday]}
               </span>
               <span
                 className={
                   isToday
-                    ? 'mt-0.5 w-7 h-7 flex items-center justify-center rounded-full bg-brand text-white text-sm font-medium'
-                    : 'mt-0.5 text-sm font-medium text-brand dark:text-[#EDEEF0]'
+                    ? 'mt-0.5 w-7 h-7 flex items-center justify-center rounded-full bg-primary text-primary-foreground text-base font-medium'
+                    : 'mt-0.5 text-base font-medium text-brand dark:text-[#EDEEF0]'
                 }
               >
                 {d}
@@ -172,10 +173,10 @@ export function TimeGrid({
                     key={`a-${aid}`}
                     type="button"
                     data-allday-id={aid}
-                    className="truncate rounded-[3px] px-1 text-[11px] text-brand dark:text-[#EDEEF0] text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+                    className="truncate rounded-[3px] px-1 text-[11px] text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
                     style={{
-                      borderLeft: `3px solid ${item.color}`,
-                      backgroundColor: `color-mix(in srgb, ${item.color} 15%, transparent)`,
+                      backgroundColor: item.color,
+                      color: readableTextColor(item.color),
                     }}
                     onClick={e => onItemClick?.(aid, e)}
                   >
@@ -189,7 +190,7 @@ export function TimeGrid({
       )}
 
       {/* Scrolling grid */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto min-h-0" data-grid-scroll="true" style={{ scrollbarGutter: 'stable' }}>
+      <div ref={scrollRef} className="flex-1 overflow-y-auto min-h-0 bg-white" data-grid-scroll="true" style={{ scrollbarGutter: 'stable' }}>
         <div className="relative flex" style={{ height: GRID_HEIGHT_PX }}>
           {/* Gutter: hour labels at hours 1-23 */}
           <div
@@ -227,13 +228,13 @@ export function TimeGrid({
             {gridDays.map(gd => (
               <div
                 key={gd.dateStr}
-                className="relative border-l border-cal-border dark:border-dark-cal-border"
+                className="relative border-l border-gray-100 dark:border-dark-cal-border"
               >
                 {/* Hour lines */}
                 {Array.from({ length: 24 }, (_, hour) => (
                   <div
                     key={`hl-${hour}`}
-                    className="absolute left-0 right-0 border-t border-cal-border dark:border-dark-cal-border pointer-events-none"
+                    className="absolute left-0 right-0 border-t border-gray-200 dark:border-dark-cal-border pointer-events-none"
                     style={{ top: hour * HOUR_HEIGHT_PX }}
                   />
                 ))}
@@ -289,23 +290,23 @@ export function TimeGrid({
                       data-end-min={block.endMin}
                       data-continues-before={block.continuesBefore ? 'true' : 'false'}
                       data-continues-after={block.continuesAfter ? 'true' : 'false'}
-                      className="absolute overflow-hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand text-brand dark:text-[#EDEEF0]"
+                      className="absolute overflow-hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand border border-white dark:border-[#1c1c1c]"
                       style={{
                         top: box.top,
                         height: box.height,
                         left: `calc(${box.leftPct}% + 1px)`,
                         width: `calc(${box.widthPct}% - 2px)`,
-                        borderLeft: `3px solid ${item.color}`,
-                        backgroundColor: `color-mix(in srgb, ${item.color} 15%, transparent)`,
+                        backgroundColor: item.color,
                         borderRadius,
+                        color: readableTextColor(item.color),
                       }}
                       onClick={e => onItemClick?.(block.id, e)}
                     >
-                      <div className="text-[12px] font-medium truncate px-1 pt-0.5 leading-tight">
+                      <div className="text-[12px] font-bold truncate px-1 pt-0.5 leading-tight">
                         {item.title}
                       </div>
                       {showTimeLabel && (
-                        <div className="text-[11px] text-muted-foreground truncate px-1 leading-tight">
+                        <div className="text-[11px] opacity-80 truncate px-1 leading-tight">
                           {formatTimeLabel(item.startAt, timeZone)}
                         </div>
                       )}

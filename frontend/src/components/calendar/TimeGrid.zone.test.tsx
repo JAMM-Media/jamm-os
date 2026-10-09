@@ -25,7 +25,7 @@ function countOccurrences(str: string, sub: string): number {
 function todayCellContext(markup: string): string {
   const idx = markup.indexOf('data-today="true"')
   if (idx === -1) return ''
-  return markup.slice(idx, idx + 200)
+  return markup.slice(idx, idx + 400)
 }
 
 const DAYS = ['2026-10-14', '2026-10-15', '2026-10-16']

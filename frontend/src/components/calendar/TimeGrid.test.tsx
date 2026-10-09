@@ -2,6 +2,7 @@
 import { describe, it, expect } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { TimeGrid } from './TimeGrid'
+import { readableTextColor } from '@/lib/calendarTextColor'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -437,5 +438,40 @@ describe('TimeGrid input mutation', () => {
 
     expect(timed[0]).toEqual(timedCopy[0])
     expect(allDay[0]).toEqual(allDayCopy[0])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Visual style
+// ---------------------------------------------------------------------------
+
+describe('TimeGrid visual style', () => {
+  it('timed block inline color equals readableTextColor of its fill', () => {
+    const color = '#3B82F6'
+    const timed = [{
+      id: 'colortest',
+      title: 'Color Test',
+      startAt: '2026-10-15T13:00:00Z',
+      endAt: '2026-10-15T14:00:00Z',
+      color,
+    }]
+    const markup = render({ days: ['2026-10-15'], timeZone: NY, timed, allDay: [], now: null })
+    const expected = readableTextColor(color)
+    const blockStart = markup.indexOf('data-block-id="colortest"')
+    expect(blockStart).toBeGreaterThan(-1)
+    const tagStart = markup.lastIndexOf('<button', blockStart)
+    const tagEnd = markup.indexOf('>', tagStart)
+    const openTag = markup.slice(tagStart, tagEnd + 1)
+    expect(openTag).toContain(`color:${expected}`)
+  })
+
+  it("today header date number has bg-primary and text-primary-foreground", () => {
+    const now = new Date('2026-10-15T14:00:00Z')
+    const markup = render({ days: ['2026-10-14', '2026-10-15', '2026-10-16'], timeZone: NY, timed: [], allDay: [], now })
+    const todayIdx = markup.indexOf('data-today="true"')
+    expect(todayIdx).toBeGreaterThan(-1)
+    const todayContext = markup.slice(todayIdx, todayIdx + 300)
+    expect(todayContext).toContain('bg-primary')
+    expect(todayContext).toContain('text-primary-foreground')
   })
 })
