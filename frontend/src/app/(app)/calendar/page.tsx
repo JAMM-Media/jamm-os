@@ -16,6 +16,7 @@ import { TimeGrid, type TimeGridProps } from '@/components/calendar/TimeGrid'
 import { GridErrorBoundary } from '@/components/calendar/GridErrorBoundary'
 import { weekDates } from '@/lib/calendarGrid'
 import { buildGridInputs, hasOffset, isValidTimeZone, formatDayTitle } from '@/lib/calendarGridData'
+import { resolveEventColor } from '@/lib/calendarEventColor'
 import { mapNativeEvents, dateRangeForView, rangeToInstants } from '@/lib/calendarNative'
 import { calendarEventsApi } from '@/lib/api/calendarEvents'
 import { parsePickedDate } from '@/lib/calendarPickDate'
@@ -1051,7 +1052,7 @@ export default function CalendarPage() {
 
   function renderPills(events: CalEvent[], limit = 99) {
     return events.slice(0, limit).map((ev) => {
-      const borderColor = eventColors[ev.type] ?? '#9CA3AF'
+      const borderColor = resolveEventColor(ev.color, eventColors[ev.type])
       const staffIdx = ev.assignedTo ? (staffIndexMap[ev.assignedTo] ?? 0) : 0
       const fillColor = ev.assignedTo ? getStaffColor(ev.assignedTo, staffIdx) : 'transparent'
       const staffMember = ev.assignedTo ? staffList.find(s => s.id === ev.assignedTo) : undefined
@@ -1183,7 +1184,7 @@ export default function CalendarPage() {
               {/* Events column */}
               <div className="flex-1 flex flex-col gap-1.5 border-t border-cal-border dark:border-dark-cal-border pt-0.5">
                 {grouped[ds].map((ev) => {
-                  const color = eventColors[ev.type] ?? '#9CA3AF'
+                  const color = resolveEventColor(ev.color, eventColors[ev.type])
                   return (
                     <div key={ev.id} className="flex items-start gap-2 py-0.5">
                       <div className="w-2 h-2 rounded-full mt-1.5 flex-shrink-0" style={{ backgroundColor: color }} />
@@ -1545,7 +1546,7 @@ export default function CalendarPage() {
                 <div key={ev.id} className="flex items-start gap-1.5">
                   <div
                     className="w-2 h-2 rounded-full mt-1 flex-shrink-0"
-                    style={{ backgroundColor: eventColors[ev.type] ?? '#9CA3AF' }}
+                    style={{ backgroundColor: resolveEventColor(ev.color, eventColors[ev.type]) }}
                   />
                   <div className="min-w-0">
                     <div className="text-[12px] truncate">{ev.title}</div>
