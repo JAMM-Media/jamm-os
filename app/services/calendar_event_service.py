@@ -36,12 +36,19 @@ def _can_view(user: User, ev: CalendarEvent) -> bool:
 
 
 def _can_edit_or_delete(user: User, ev: CalendarEvent) -> bool:
-    """Returns True when the user is allowed to modify or delete this event."""
+    """Returns True when the user created and owns the event (full edit rights)."""
     if _is_manager_or_above(user):
         return True
     if ev.created_by is None:
         return False
     return ev.created_by == user.id and ev.owner_user_id == user.id
+
+
+def _can_annotate_only(user: User, ev: CalendarEvent) -> bool:
+    """Returns True when staff own the event but did not create it (notes and done only)."""
+    if _is_manager_or_above(user):
+        return False
+    return ev.owner_user_id == user.id and ev.created_by != user.id
 
 
 # ---------------------------------------------------------------------------
@@ -116,6 +123,65 @@ def _resolve_owner(db: Session, owner_user_id: UUID, firm_id: UUID) -> User:
             detail="Cannot assign an inactive user as owner.",
         )
     return u
+
+
+# ---------------------------------------------------------------------------
+# Notification helper
+# ---------------------------------------------------------------------------
+
+def _notify_delete_request(db: Session, firm_id: UUID, ev: CalendarEvent, requester: User) -> None:
+    """Send a quiet notification when a delete request is filed. Never raises."""
+    try:
+        from app.db.session import SessionLocal
+        from app.services.notification_service import NotificationService
+        from app.core.enums import NotificationType, NotificationTier, RecipientType
+
+        requester_name = requester.full_name or requester.email
+        body = f'{requester_name} has requested to delete "{ev.title}".'
+        if ev.delete_request_reason:
+            body += f' {ev.delete_request_reason}'
+        notif_title = 'Delete request'
+
+        recipient_ids: list = []
+        if ev.created_by is not None:
+            creator = db.execute(
+                select(User).where(User.id == ev.created_by, User.firm_id == firm_id)
+            ).scalar_one_or_none()
+            if creator and creator.is_active and _is_manager_or_above(creator):
+                recipient_ids = [creator.id]
+
+        if not recipient_ids:
+            managers = db.execute(
+                select(User).where(
+                    User.firm_id == firm_id,
+                    User.role.in_([UserRole.firm_owner, UserRole.manager]),
+                    User.is_active.is_(True),
+                )
+            ).scalars().all()
+            recipient_ids = [u.id for u in managers]
+
+        if not recipient_ids:
+            return
+
+        notification_db = SessionLocal()
+        try:
+            for recipient_id in recipient_ids:
+                NotificationService.create_notification(
+                    db=notification_db,
+                    firm_id=firm_id,
+                    recipient_id=recipient_id,
+                    recipient_type=RecipientType.staff,
+                    title=notif_title,
+                    body=body,
+                    notification_type=NotificationType.system,
+                    tier=NotificationTier.quiet,
+                    related_entity_type='calendar_event',
+                    related_entity_id=ev.id,
+                )
+        finally:
+            notification_db.close()
+    except Exception:
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -226,15 +292,33 @@ def update_event(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found.")
 
     updates = payload.model_dump(exclude_unset=True)
-    real_changes = {k: v for k, v in updates.items() if getattr(ev, k) != v}
+
+    # Translate is_done to completed_at before building real_changes
+    if "is_done" in updates:
+        is_done_val = updates.pop("is_done")
+        if is_done_val is True:
+            if ev.completed_at is None:
+                updates["completed_at"] = datetime.now(timezone.utc)
+        elif is_done_val is False:
+            updates["completed_at"] = None
+
+    real_changes = {k: v for k, v in updates.items() if getattr(ev, k, None) != v}
     if not real_changes:
         return ev
 
     if not _can_edit_or_delete(current_user, ev):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You do not have permission to edit this event.",
-        )
+        if not _can_annotate_only(current_user, ev):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You do not have permission to edit this event.",
+            )
+        # Annotation only: staff_notes and completed_at are the only allowed changes
+        forbidden = {k for k in real_changes if k not in ("staff_notes", "completed_at")}
+        if forbidden:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You do not have permission to edit this event.",
+            )
 
     if not _is_manager_or_above(current_user):
         if "owner_user_id" in real_changes:
@@ -345,6 +429,12 @@ def restore_event(
     if ev.deleted_at is None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Event is not deleted.")
     ev = crud_event.restore_event(db, ev)
+    # Per Decision 2: restore also clears any pending delete request
+    ev = crud_event.update_event(db, ev, {
+        "delete_requested_at": None,
+        "delete_requested_by": None,
+        "delete_request_reason": None,
+    })
     log_event(
         firm_id=firm_id,
         event_type="calendar_event.restored",
@@ -353,5 +443,128 @@ def restore_event(
         actor_type="staff",
         actor_id=current_user.id,
         metadata={},
+    )
+    return ev
+
+
+def request_delete(
+    db: Session,
+    event_id: UUID,
+    firm_id: UUID,
+    current_user: User,
+    reason: Optional[str],
+) -> CalendarEvent:
+    ev = crud_event.get_event_for_firm(db, event_id, firm_id, include_deleted=False)
+    if not ev:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found.")
+
+    if not _can_view(current_user, ev):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found.")
+
+    if _is_manager_or_above(current_user):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="You can delete this event directly.",
+        )
+
+    if ev.owner_user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have permission to request deletion of this event.",
+        )
+
+    if ev.created_by == current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="You can delete this event directly.",
+        )
+
+    if ev.delete_requested_at is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="A delete request is already pending for this event.",
+        )
+
+    now = datetime.now(timezone.utc)
+    ev = crud_event.update_event(db, ev, {
+        "delete_requested_at": now,
+        "delete_requested_by": current_user.id,
+        "delete_request_reason": reason,
+    })
+
+    log_event(
+        firm_id=firm_id,
+        event_type="calendar_event.delete_requested",
+        entity_type="calendar_event",
+        entity_id=event_id,
+        actor_type="staff",
+        actor_id=current_user.id,
+        metadata={"has_reason": reason is not None},
+    )
+
+    _notify_delete_request(db, firm_id, ev, current_user)
+    return ev
+
+
+def approve_delete_request(
+    db: Session,
+    event_id: UUID,
+    firm_id: UUID,
+    current_user: User,
+) -> CalendarEvent:
+    ev = crud_event.get_event_for_firm(db, event_id, firm_id, include_deleted=False)
+    if not ev:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found.")
+    if ev.delete_requested_at is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="No delete request is pending for this event.",
+        )
+
+    had_reason = ev.delete_request_reason is not None
+    crud_event.soft_delete_event(db, ev)
+
+    log_event(
+        firm_id=firm_id,
+        event_type="calendar_event.delete_request_approved",
+        entity_type="calendar_event",
+        entity_id=event_id,
+        actor_type="staff",
+        actor_id=current_user.id,
+        metadata={"has_reason": had_reason},
+    )
+    return crud_event.get_event_for_firm(db, event_id, firm_id, include_deleted=True)
+
+
+def deny_delete_request(
+    db: Session,
+    event_id: UUID,
+    firm_id: UUID,
+    current_user: User,
+) -> CalendarEvent:
+    ev = crud_event.get_event_for_firm(db, event_id, firm_id, include_deleted=False)
+    if not ev:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found.")
+    if ev.delete_requested_at is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="No delete request is pending for this event.",
+        )
+
+    had_reason = ev.delete_request_reason is not None
+    ev = crud_event.update_event(db, ev, {
+        "delete_requested_at": None,
+        "delete_requested_by": None,
+        "delete_request_reason": None,
+    })
+
+    log_event(
+        firm_id=firm_id,
+        event_type="calendar_event.delete_request_denied",
+        entity_type="calendar_event",
+        entity_id=event_id,
+        actor_type="staff",
+        actor_id=current_user.id,
+        metadata={"has_reason": had_reason},
     )
     return ev

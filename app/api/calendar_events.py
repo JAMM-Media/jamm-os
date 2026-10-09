@@ -21,6 +21,7 @@ from app.schemas.calendar_category import (
 )
 from app.schemas.calendar_event import (
     CalendarEventCreate,
+    CalendarEventDeleteRequest,
     CalendarEventOut,
     CalendarEventUpdate,
 )
@@ -186,4 +187,38 @@ def restore_event(
     current_user: User = Depends(require_manager_or_above),
 ):
     ev = event_svc.restore_event(db, event_id, current_firm.id, current_user)
+    return _enrich_event(ev)
+
+
+@router.post("/events/{event_id}/delete-request", response_model=CalendarEventOut)
+def request_delete_event(
+    event_id: UUID,
+    payload: CalendarEventDeleteRequest,
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    current_user: User = Depends(require_staff_or_above),
+):
+    ev = event_svc.request_delete(db, event_id, current_firm.id, current_user, payload.reason)
+    return _enrich_event(ev)
+
+
+@router.post("/events/{event_id}/delete-request/approve", response_model=CalendarEventOut)
+def approve_delete_request(
+    event_id: UUID,
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    current_user: User = Depends(require_manager_or_above),
+):
+    ev = event_svc.approve_delete_request(db, event_id, current_firm.id, current_user)
+    return _enrich_event(ev)
+
+
+@router.post("/events/{event_id}/delete-request/deny", response_model=CalendarEventOut)
+def deny_delete_request(
+    event_id: UUID,
+    db: Session = Depends(get_db),
+    current_firm: Firm = Depends(get_current_firm),
+    current_user: User = Depends(require_manager_or_above),
+):
+    ev = event_svc.deny_delete_request(db, event_id, current_firm.id, current_user)
     return _enrich_event(ev)
