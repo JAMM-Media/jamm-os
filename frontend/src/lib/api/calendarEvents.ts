@@ -33,6 +33,12 @@ export interface CalendarEvent {
   createdAt: string
   updatedAt: string
   deletedAt: string | null
+  staffNotes: string | null
+  completedAt: string | null
+  isDone: boolean
+  deleteRequestedAt: string | null
+  deleteRequestedBy: string | null
+  deleteRequestReason: string | null
 }
 
 // ---------------------------------------------------------------------------
@@ -70,6 +76,12 @@ export function mapEvent(raw: Record<string, unknown>): CalendarEvent {
     createdAt: String(raw.created_at ?? ''),
     updatedAt: String(raw.updated_at ?? ''),
     deletedAt: raw.deleted_at != null ? String(raw.deleted_at) : null,
+    staffNotes: raw.staff_notes != null ? String(raw.staff_notes) : null,
+    completedAt: raw.completed_at != null ? String(raw.completed_at) : null,
+    isDone: raw.is_done === true || raw.completed_at != null,
+    deleteRequestedAt: raw.delete_requested_at != null ? String(raw.delete_requested_at) : null,
+    deleteRequestedBy: raw.delete_requested_by != null ? String(raw.delete_requested_by) : null,
+    deleteRequestReason: raw.delete_request_reason != null ? String(raw.delete_request_reason) : null,
   }
 }
 
@@ -98,6 +110,8 @@ export function buildEventPatch(input: {
   categoryId?: string | null
   clientId?: string | null
   ownerUserId?: string | null
+  staffNotes?: string | null
+  isDone?: boolean
 }): Record<string, unknown> {
   const body: Record<string, unknown> = {}
   if (input.title !== undefined) body.title = input.title
@@ -106,6 +120,8 @@ export function buildEventPatch(input: {
   if (input.categoryId !== undefined) body.category_id = input.categoryId
   if (input.clientId !== undefined) body.client_id = input.clientId
   if (input.ownerUserId !== undefined) body.owner_user_id = input.ownerUserId
+  if (input.staffNotes !== undefined) body.staff_notes = input.staffNotes
+  if (input.isDone !== undefined) body.is_done = input.isDone
   return body
 }
 
@@ -263,6 +279,24 @@ export const calendarEventsApi = {
 
   restoreEvent: async (id: string): Promise<CalendarEvent> => {
     const { data } = await api.post(`/api/v1/calendar/events/${id}/restore`)
+    return mapEvent(data)
+  },
+
+  requestDelete: async (id: string, reason?: string): Promise<CalendarEvent> => {
+    const body: Record<string, unknown> = {}
+    const trimmed = reason?.trim()
+    if (trimmed) body.reason = trimmed
+    const { data } = await api.post(`/api/v1/calendar/events/${id}/delete-request`, body)
+    return mapEvent(data)
+  },
+
+  approveDeleteRequest: async (id: string): Promise<CalendarEvent> => {
+    const { data } = await api.post(`/api/v1/calendar/events/${id}/delete-request/approve`)
+    return mapEvent(data)
+  },
+
+  denyDeleteRequest: async (id: string): Promise<CalendarEvent> => {
+    const { data } = await api.post(`/api/v1/calendar/events/${id}/delete-request/deny`)
     return mapEvent(data)
   },
 }

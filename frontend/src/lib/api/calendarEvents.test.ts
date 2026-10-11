@@ -542,3 +542,164 @@ describe('calendarEventsApi addresses', () => {
     expect(mockApi.get).toHaveBeenCalledWith('/api/v1/calendar/events', expect.anything())
   })
 })
+
+// ---------------------------------------------------------------------------
+// Phase 2: mapEvent new fields
+// ---------------------------------------------------------------------------
+
+describe('mapEvent Phase 2 fields', () => {
+  it('mapEvent with all new fields present', () => {
+    const ev = mapEvent(rawEv({
+      staff_notes: 'good work',
+      completed_at: '2026-10-10T10:00:00Z',
+      is_done: true,
+      delete_requested_at: '2026-10-11T09:00:00Z',
+      delete_requested_by: 'usr-2',
+      delete_request_reason: 'closing matter',
+    }))
+    expect(ev.staffNotes).toBe('good work')
+    expect(ev.completedAt).toBe('2026-10-10T10:00:00Z')
+    expect(ev.isDone).toBe(true)
+    expect(ev.deleteRequestedAt).toBe('2026-10-11T09:00:00Z')
+    expect(ev.deleteRequestedBy).toBe('usr-2')
+    expect(ev.deleteRequestReason).toBe('closing matter')
+  })
+
+  it('mapEvent with all new fields absent gives nulls and isDone false', () => {
+    const ev = mapEvent(rawEv())
+    expect(ev.staffNotes).toBeNull()
+    expect(ev.completedAt).toBeNull()
+    expect(ev.isDone).toBe(false)
+    expect(ev.deleteRequestedAt).toBeNull()
+    expect(ev.deleteRequestedBy).toBeNull()
+    expect(ev.deleteRequestReason).toBeNull()
+  })
+
+  it('mapEvent with completed_at set and no is_done gives isDone true', () => {
+    const ev = mapEvent(rawEv({ completed_at: '2026-10-10T10:00:00Z' }))
+    expect(ev.isDone).toBe(true)
+  })
+
+  it('mapEvent with is_done true gives isDone true', () => {
+    const ev = mapEvent(rawEv({ is_done: true }))
+    expect(ev.isDone).toBe(true)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Phase 2: buildEventPatch new fields
+// ---------------------------------------------------------------------------
+
+describe('buildEventPatch Phase 2 fields', () => {
+  it('buildEventPatch with staffNotes sends staff_notes', () => {
+    const body = buildEventPatch({ staffNotes: 'note text' })
+    expect(body).toHaveProperty('staff_notes', 'note text')
+  })
+
+  it('buildEventPatch with staffNotes null sends staff_notes null', () => {
+    const body = buildEventPatch({ staffNotes: null })
+    expect(body).toHaveProperty('staff_notes', null)
+  })
+
+  it('buildEventPatch with isDone false sends is_done false', () => {
+    const body = buildEventPatch({ isDone: false })
+    expect(body).toHaveProperty('is_done', false)
+  })
+
+  it('buildEventPatch with neither omits both keys', () => {
+    const body = buildEventPatch({ title: 'x' })
+    expect(body).not.toHaveProperty('staff_notes')
+    expect(body).not.toHaveProperty('is_done')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Phase 2: requestDelete
+// ---------------------------------------------------------------------------
+
+describe('calendarEventsApi.requestDelete', () => {
+  it('requestDelete posts to the correct URL with the reason in the body', async () => {
+    mockApi.post.mockResolvedValue({ data: rawEv() })
+    await calendarEventsApi.requestDelete('ev-1', 'closing matter')
+    expect(mockApi.post).toHaveBeenCalledWith(
+      '/api/v1/calendar/events/ev-1/delete-request',
+      { reason: 'closing matter' }
+    )
+  })
+
+  it('requestDelete with no reason calls api.post with the URL and exactly {}', async () => {
+    mockApi.post.mockResolvedValue({ data: rawEv() })
+    await calendarEventsApi.requestDelete('ev-1')
+    expect(mockApi.post).toHaveBeenCalledWith(
+      '/api/v1/calendar/events/ev-1/delete-request',
+      {}
+    )
+  })
+
+  it('requestDelete with empty or missing reason sends no reason key in body', async () => {
+    mockApi.post.mockResolvedValue({ data: rawEv() })
+    await calendarEventsApi.requestDelete('ev-1', '')
+    const body = mockApi.post.mock.calls[0][1] as Record<string, unknown>
+    expect(body).not.toHaveProperty('reason')
+  })
+
+  it('requestDelete with whitespace-only reason posts {}', async () => {
+    mockApi.post.mockResolvedValue({ data: rawEv() })
+    await calendarEventsApi.requestDelete('ev-1', '   ')
+    expect(mockApi.post).toHaveBeenCalledWith(
+      '/api/v1/calendar/events/ev-1/delete-request',
+      {}
+    )
+  })
+
+  it('requestDelete with a reason trims it', async () => {
+    mockApi.post.mockResolvedValue({ data: rawEv() })
+    await calendarEventsApi.requestDelete('ev-1', '  needs trimming  ')
+    const body = mockApi.post.mock.calls[0][1] as Record<string, unknown>
+    expect(body).toHaveProperty('reason', 'needs trimming')
+  })
+
+  it('requestDelete returns the mapped event', async () => {
+    mockApi.post.mockResolvedValue({ data: rawEv({
+      delete_requested_at: '2026-10-11T09:00:00Z',
+      delete_requested_by: 'usr-2',
+      is_done: false,
+    }) })
+    const ev = await calendarEventsApi.requestDelete('ev-1', 'reason')
+    expect(ev.deleteRequestedAt).toBe('2026-10-11T09:00:00Z')
+    expect(ev.deleteRequestedBy).toBe('usr-2')
+    expect(ev.isDone).toBe(false)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Phase 2: approveDeleteRequest and denyDeleteRequest
+// ---------------------------------------------------------------------------
+
+describe('calendarEventsApi.approveDeleteRequest', () => {
+  it('approveDeleteRequest posts to the correct URL and returns the mapped event', async () => {
+    mockApi.post.mockResolvedValue({ data: rawEv({ deleted_at: '2026-10-11T09:00:00Z' }) })
+    const ev = await calendarEventsApi.approveDeleteRequest('ev-1')
+    expect(mockApi.post).toHaveBeenCalledWith(
+      '/api/v1/calendar/events/ev-1/delete-request/approve'
+    )
+    expect(ev.deletedAt).toBe('2026-10-11T09:00:00Z')
+  })
+})
+
+describe('calendarEventsApi.denyDeleteRequest', () => {
+  it('denyDeleteRequest posts to the correct URL and returns the mapped event', async () => {
+    mockApi.post.mockResolvedValue({ data: rawEv({
+      delete_requested_at: null,
+      delete_requested_by: null,
+      delete_request_reason: null,
+    }) })
+    const ev = await calendarEventsApi.denyDeleteRequest('ev-1')
+    expect(mockApi.post).toHaveBeenCalledWith(
+      '/api/v1/calendar/events/ev-1/delete-request/deny'
+    )
+    expect(ev.deleteRequestedAt).toBeNull()
+    expect(ev.deleteRequestedBy).toBeNull()
+    expect(ev.deleteRequestReason).toBeNull()
+  })
+})

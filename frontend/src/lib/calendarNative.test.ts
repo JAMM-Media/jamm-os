@@ -33,6 +33,12 @@ function makeEvent(overrides: Partial<CalendarEvent> = {}): CalendarEvent {
     createdAt: '2026-10-01T00:00:00Z',
     updatedAt: '2026-10-01T00:00:00Z',
     deletedAt: null,
+    staffNotes: null,
+    completedAt: null,
+    isDone: false,
+    deleteRequestedAt: null,
+    deleteRequestedBy: null,
+    deleteRequestReason: null,
     ...overrides,
   }
 }
