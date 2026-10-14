@@ -11,7 +11,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.enums import NotificationType, RecipientType, UserRole
+from app.core.enums import NotificationTier, NotificationType, RecipientType, UserRole
 from app.crud import notification as crud_notification
 from app.crud import time_entry as crud_time_entry
 from app.models.engagement import Engagement
@@ -288,6 +288,7 @@ def edit_submitted_entry(
                 title="Timesheet entry edited after submission",
                 body=notif_body,
                 notification_type=NotificationType.system,
+                tier=NotificationTier.quiet,
                 related_entity_type="time_entry",
                 related_entity_id=entry.id,
             ),
