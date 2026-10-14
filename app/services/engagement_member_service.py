@@ -32,6 +32,7 @@ from app.models.engagement import Engagement
 from app.models.engagement_member import EngagementMember
 from app.models.user import User
 from app.services.audit_service import write_audit_log
+from app.services.behavioral_log import log_event
 
 # Firm roles that carry membership-management capability on every engagement
 # in the firm, member or not.
@@ -182,6 +183,25 @@ def add_member(
             user_agent=user_agent,
         )
 
+    # Behavioral record. An add fires .added only, never .promoted, even when
+    # the member goes straight in as an administrator: as_administrator carries
+    # that fact. .promoted and .demoted belong to update_member alone (ruled
+    # Oct 12, 2026). The audit log above keeps its separate promoted entry.
+    log_event(
+        firm_id=firm_id,
+        event_type="engagement_member.added",
+        entity_type="engagement_member",
+        entity_id=member.id,
+        actor_type="staff",
+        actor_id=current_user.id,
+        metadata={
+            "engagement_id": str(engagement_id),
+            "user_id": str(payload.user_id),
+            "as_administrator": bool(member.is_administrator),
+            "via": "manual",
+        },
+    )
+
     return member
 
 
@@ -245,6 +265,21 @@ def add_member_for_assignment(
         actor_type="staff",
         entity_type="engagement_member",
         entity_id=member.id,
+        metadata={
+            "engagement_id": str(engagement_id),
+            "user_id": str(user_id),
+            "as_administrator": False,
+            "via": "task_assignment",
+        },
+    )
+
+    log_event(
+        firm_id=firm_id,
+        event_type="engagement_member.added",
+        entity_type="engagement_member",
+        entity_id=member.id,
+        actor_type="staff",
+        actor_id=acting_user.id,
         metadata={
             "engagement_id": str(engagement_id),
             "user_id": str(user_id),
@@ -358,6 +393,22 @@ def update_member(
             ip_address=ip_address,
             user_agent=user_agent,
         )
+        log_event(
+            firm_id=firm_id,
+            event_type=(
+                "engagement_member.promoted" if updated.is_administrator
+                else "engagement_member.demoted"
+            ),
+            entity_type="engagement_member",
+            entity_id=updated.id,
+            actor_type="staff",
+            actor_id=current_user.id,
+            metadata={
+                "engagement_id": str(updated.engagement_id),
+                "user_id": str(updated.user_id),
+                "is_administrator": bool(updated.is_administrator),
+            },
+        )
 
     return updated
 
@@ -398,6 +449,19 @@ def remove_member(
         entity_id=member_id,
         ip_address=ip_address,
         user_agent=user_agent,
+        metadata={
+            "engagement_id": str(engagement_id),
+            "user_id": str(removed_user_id),
+            "was_administrator": was_administrator,
+        },
+    )
+    log_event(
+        firm_id=firm_id,
+        event_type="engagement_member.removed",
+        entity_type="engagement_member",
+        entity_id=member_id,
+        actor_type="staff",
+        actor_id=current_user.id,
         metadata={
             "engagement_id": str(engagement_id),
             "user_id": str(removed_user_id),
