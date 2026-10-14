@@ -1,6 +1,6 @@
 # app/api/settings.py
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 
 from app.core.enums import StaffAuthPolicy
@@ -10,6 +10,7 @@ from app.dependencies.tenant import get_current_firm
 from app.models.firm import Firm
 from app.models.user import User
 from app.schemas.firm import FirmOut
+from app.services import firm_service
 from app.schemas.settings import StaffAuthPolicyOut, StaffAuthPolicyUpdate, EmailSettingsUpdate, ReviewSettingsUpdate, EmailCalendarSyncUpdate
 
 router = APIRouter(prefix="/settings", tags=["settings"])
@@ -26,9 +27,13 @@ def update_staff_auth_policy(
     Firm owner updates the staff login policy for their firm.
     Controls whether staff can use password, magic link, or either.
     """
-    current_firm.staff_auth_policy = body.staff_auth_policy.value
-    db.commit()
-    return StaffAuthPolicyOut(staff_auth_policy=current_firm.staff_auth_policy)
+    firm = firm_service.update_staff_auth_policy(
+        db,
+        firm=current_firm,
+        staff_auth_policy=body.staff_auth_policy.value,
+        current_user_id=current_user.id,
+    )
+    return StaffAuthPolicyOut(staff_auth_policy=firm.staff_auth_policy)
 
 
 @router.patch("/review")
@@ -38,23 +43,13 @@ def update_review_settings(
     current_user: User = Depends(require_firm_owner),
     current_firm: Firm = Depends(get_current_firm),
 ):
-    if body.google_review_url is not None and not body.google_review_url.startswith("https://"):
-        raise HTTPException(
-            status_code=400,
-            detail="google_review_url must start with 'https://'",
-        )
-    existing = current_firm.settings or {}
-    merged = {**existing}
-    if body.google_review_url is not None:
-        merged["google_review_url"] = body.google_review_url
-    else:
-        merged.pop("google_review_url", None)
-    current_firm.settings = merged
-    if body.review_requests_enabled is not None:
-        existing_flags = current_firm.feature_flags or {}
-        current_firm.feature_flags = {**existing_flags, "review_requests_enabled": body.review_requests_enabled}
-    db.commit()
-    return current_firm.settings
+    return firm_service.update_review_settings(
+        db,
+        firm=current_firm,
+        google_review_url=body.google_review_url,
+        review_requests_enabled=body.review_requests_enabled,
+        current_user_id=current_user.id,
+    )
 
 
 @router.patch("/email-calendar-sync", response_model=FirmOut)
@@ -64,20 +59,12 @@ def update_email_calendar_sync(
     current_user: User = Depends(require_firm_owner),
     current_firm: Firm = Depends(get_current_firm),
 ):
-    existing = current_firm.settings or {}
-    merged = {**existing}
-    if body.email_sync_enabled is not None:
-        merged["email_sync_enabled"] = body.email_sync_enabled
-    if body.calendar_sync_enabled is not None:
-        merged["calendar_sync_enabled"] = body.calendar_sync_enabled
-    if body.staff_can_disable_email_sync is not None:
-        merged["staff_can_disable_email_sync"] = body.staff_can_disable_email_sync
-    if body.staff_can_disable_calendar_sync is not None:
-        merged["staff_can_disable_calendar_sync"] = body.staff_can_disable_calendar_sync
-    current_firm.settings = merged
-    db.commit()
-    db.refresh(current_firm)
-    return current_firm
+    return firm_service.update_email_calendar_sync(
+        db,
+        firm=current_firm,
+        updates=body.model_dump(),
+        current_user_id=current_user.id,
+    )
 
 
 @router.patch("/email")
@@ -87,16 +74,10 @@ def update_email_settings(
     current_user: User = Depends(require_firm_owner),
     current_firm: Firm = Depends(get_current_firm),
 ):
-    existing = current_firm.settings or {}
-    merged = {**existing}
-    if body.reply_to is not None:
-        merged["email_reply_to"] = str(body.reply_to)
-    else:
-        merged.pop("email_reply_to", None)
-    if body.display_name is not None:
-        merged["email_display_name"] = body.display_name
-    else:
-        merged.pop("email_display_name", None)
-    current_firm.settings = merged
-    db.commit()
-    return current_firm.settings
+    return firm_service.update_email_settings(
+        db,
+        firm=current_firm,
+        reply_to=str(body.reply_to) if body.reply_to is not None else None,
+        display_name=body.display_name,
+        current_user_id=current_user.id,
+    )
