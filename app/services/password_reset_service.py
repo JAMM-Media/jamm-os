@@ -12,6 +12,7 @@ from app.core.config import get_settings
 from app.core.security import get_password_hash
 from app.models.firm import Firm
 from app.models.user import User
+from app.services.behavioral_log import log_event
 from app.services.email_service import EmailService
 
 logger = logging.getLogger(__name__)
@@ -118,4 +119,14 @@ def reset_password(token: str, new_password: str, db: Session) -> tuple[bool, st
     user.token_version = (user.token_version or 0) + 1
 
     db.commit()
+
+    log_event(
+        firm_id=user.firm_id,
+        event_type="user.password_reset_completed",
+        entity_type="user",
+        entity_id=user.id,
+        actor_type="staff",
+        actor_id=user.id,
+        metadata={"role": user.role.value if hasattr(user.role, "value") else str(user.role)},
+    )
     return True, None

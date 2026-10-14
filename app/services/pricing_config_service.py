@@ -2218,6 +2218,8 @@ def set_option_price(
         )
     ).scalar_one_or_none()
 
+    created = row is None
+    from_price = None if created else row.price
     if row is None:
         row = FirmOptionPrice(
             firm_id=firm_id,
@@ -2231,6 +2233,27 @@ def set_option_price(
 
     db.commit()
     db.refresh(row)
+
+    log_event(
+        event_type="pricing.option_price_set",
+        firm_id=firm_id,
+        entity_type="firm_option_price",
+        entity_id=row.id,
+        actor_type="staff",
+        actor_id=actor_id,
+        metadata={
+            "dimension_key": dimension.key,
+            "option_key": option.key,
+            # Null versus zero law: None means unpriced, "0.00" means priced
+            # at zero. str() of a Decimal keeps the distinction; nothing here
+            # coerces None to 0.
+            "from_price": str(from_price) if from_price is not None else None,
+            "to_price": str(row.price) if row.price is not None else None,
+            "scope": "blanket" if scope is None else "engagement_type",
+            "service_catalog_entry_id": str(scope) if scope is not None else None,
+            "created": created,
+        },
+    )
 
     return FirmOptionPriceOut.model_validate(row)
 

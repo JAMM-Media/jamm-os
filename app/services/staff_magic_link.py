@@ -15,6 +15,7 @@ from app.core.enums import StaffAuthPolicy
 from app.core.security import create_access_token
 from app.models.firm import Firm
 from app.models.user import User
+from app.services.behavioral_log import log_event
 from app.services.email_service import EmailService
 
 settings = get_settings()
@@ -93,6 +94,22 @@ def verify_staff_magic_link(token: str, db: Session) -> Tuple[Optional[dict], Op
     user.magic_link_expires_at = None
     user.current_session_jti = session_jti
     db.commit()
+
+    # Same name and keys as the password login in auth_service, plus method
+    # (ruled Oct 12, 2026), so magic-link sign-ins stop being invisible.
+    log_event(
+        firm_id=user.firm_id,
+        event_type="user.login",
+        entity_type="user",
+        entity_id=user.id,
+        actor_type="staff",
+        actor_id=user.id,
+        metadata={
+            "time_of_day": datetime.now(timezone.utc).hour,
+            "day_of_week": datetime.now(timezone.utc).weekday(),
+            "method": "magic_link",
+        },
+    )
 
     access_token = create_access_token(data={
         "sub": str(user.id),

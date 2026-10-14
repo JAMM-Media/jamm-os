@@ -147,7 +147,25 @@ def delete_document_request(
     firm_id: UUID,
     current_user_id: UUID,
 ):
+    doc_request = crud.get_document_request(db, request_id, firm_id=firm_id)
+    client_id = doc_request.client_id if doc_request else None
+    engagement_id = doc_request.engagement_id if doc_request else None
+
     deleted = crud.delete_document_request(db, request_id, firm_id=firm_id)
+
+    if deleted:
+        log_event(
+            firm_id=firm_id,
+            event_type="document_request.deleted",
+            entity_type="document_request",
+            entity_id=request_id,
+            actor_type="staff",
+            actor_id=current_user_id,
+            metadata={
+                "client_id": str(client_id) if client_id else None,
+                "engagement_id": str(engagement_id) if engagement_id else None,
+            },
+        )
     return deleted
 
 

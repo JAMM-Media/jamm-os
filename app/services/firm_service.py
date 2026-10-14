@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.crud import firm as crud_firm
 from app.schemas.firm import FirmCreate
-from app.services.behavioral_log import log_event, log_setting_changes
+from app.services.behavioral_log import log_event, log_platform_event, log_setting_changes
 
 
 def create_firm(
@@ -167,3 +167,24 @@ def update_email_settings(
         new_values={k: merged.get(k) for k in ("email_reply_to", "email_display_name")},
     )
     return firm.settings
+
+
+def delete_firm(db: Session, *, firm) -> None:
+    """Hard delete of a firm and, by cascade, all of its data. System admin
+    only. Moved out of DELETE /firms/{firm_id} (Phase 7)."""
+    firm_id = firm.id
+    firm_name = firm.name
+
+    crud_firm.delete_firm(db, firm)
+
+    # Documented use of platform_events for a firm that no longer exists: the
+    # second documented use after network-wide findings (ruled Oct 12, 2026).
+    # behavioral_events.firm_id is a NOT NULL foreign key to firms, so a row
+    # pointing at the firm just deleted would be rejected, and log_event
+    # swallows that failure silently. platform_events carries no firm_id.
+    log_platform_event(
+        event_type="firm.deleted",
+        entity_type="firm",
+        entity_id=firm_id,
+        metadata={"firm_id": str(firm_id), "firm_name": firm_name},
+    )

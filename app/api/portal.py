@@ -61,10 +61,8 @@ from app.services.portal_auth import (
     generate_invite_token,
     generate_refresh_token,
     hash_portal_password,
-    hash_portal_password_bcrypt,
     hash_refresh_token,
     login_portal_with_password,
-    verify_portal_password,
 )
 from app.core.config import get_settings
 from app.schemas.portal import MagicLinkRequest, MagicLinkResponse, ClientMagicLinkRequest
@@ -314,9 +312,9 @@ def portal_admin_revoke(
     if client is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Client not found")
 
-    count = crud_portal_session.revoke_all_client_sessions(db, client_id, current_firm.id)
-    client.portal_access_enabled = False
-    db.commit()
+    count = portal_service.revoke_client_access(
+        db=db, client=client, firm_id=current_firm.id, current_user_id=current_user.id,
+    )
 
     return {"message": "Portal access revoked", "sessions_revoked": count}
 
@@ -367,9 +365,9 @@ def staff_portal_access(
     if client is None:
         raise HTTPException(status_code=404, detail="Client not found")
 
-    if not client.portal_access_enabled:
-        client.portal_access_enabled = True
-        db.commit()
+    portal_service.enable_access_for_staff_preview(
+        db=db, client=client, current_user_id=current_user.id,
+    )
 
     _, raw_token = portal_magic_link.generate_magic_link(
         client_id=client_id,
@@ -441,33 +439,13 @@ def portal_set_password(
     If a password is already set, current_password is required and verified.
     Uses bcrypt for new password hashes.
     """
-    import bcrypt as _bcrypt
-
-    if len(body.new_password) < 8:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Password must be at least 8 characters.",
-        )
-    if body.new_password != body.confirm_password:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Passwords don't match.",
-        )
-
-    if current_client.portal_password_hash:
-        if not body.current_password:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="Current password is required to change your password.",
-            )
-        if not verify_portal_password(body.current_password, current_client.portal_password_hash):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Current password is incorrect.",
-            )
-
-    current_client.portal_password_hash = hash_portal_password_bcrypt(body.new_password)
-    db.commit()
+    portal_service.set_portal_password(
+        db=db,
+        client=current_client,
+        new_password=body.new_password,
+        confirm_password=body.confirm_password,
+        current_password=body.current_password,
+    )
     return {"success": True}
 
 
@@ -503,42 +481,13 @@ def portal_update_profile(
     Scoped strictly to the authenticated client's own record via get_current_portal_client --
     no client_id is accepted from the request body.
     """
-    if body.name is not None:
-        n = body.name.strip()
-        if not n:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="Name cannot be blank.",
-            )
-        current_client.name = n
-
-    if body.email is not None:
-        e = body.email.strip()
-        if "@" not in e or "." not in e.rsplit("@", 1)[-1]:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="Invalid email address.",
-            )
-        existing = db.query(Client).filter(
-            Client.email == e,
-            Client.id != current_client.id,
-        ).first()
-        if existing:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Email is already in use.",
-            )
-        current_client.email = e
-
-    if body.phone is not None:
-        current_client.phone = body.phone.strip() or None
-
-    db.commit()
-    return {
-        "name": current_client.name,
-        "email": current_client.email,
-        "phone": current_client.phone,
-    }
+    return portal_service.update_portal_profile(
+        db=db,
+        client=current_client,
+        name=body.name,
+        email=body.email,
+        phone=body.phone,
+    )
 
 
 @router.get("/account/sessions")
@@ -582,7 +531,7 @@ def portal_revoke_session_by_id(
     ).first()
     if not session:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
-    crud_portal_session.revoke_session(db, session, revoked_by="client")
+    portal_service.revoke_own_session(db=db, session=session, client=current_client)
 
 @router.get("/dashboard", response_model=PortalDashboardOut)
 def portal_dashboard(

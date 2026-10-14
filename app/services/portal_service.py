@@ -14,7 +14,9 @@ from app.core.enums import InvoiceStatus
 from app.services import document_request_service as dr_service
 from app.services import document_service
 from app.services import stripe_service
-from app.services.behavioral_log import log_event
+from app.models.client import Client
+from app.services.behavioral_log import build_changed_fields, log_event
+from app.services.portal_auth import hash_portal_password_bcrypt, verify_portal_password
 
 log = logging.getLogger(__name__)
 
@@ -226,3 +228,166 @@ def save_organizer(*, db: Session, organizer, payload, client):
         )
 
     return updated
+
+
+# ---------------------------------------------------------------------------
+# Portal access and account writes moved out of app/api/portal.py (Phase 7).
+# client.portal_access_changed and client.updated are reused here with the
+# extra keys ruled Oct 12, 2026: via and sessions_revoked on the former,
+# actor_type "client" on the latter. No password or hash reaches any event.
+# ---------------------------------------------------------------------------
+
+def revoke_client_access(*, db: Session, client, firm_id, current_user_id) -> int:
+    """Staff revoke: every active session ends and portal access turns off.
+
+    Fires on every call, even when access was already off, because sessions
+    are revoked either way; from_enabled and to_enabled carry the truth."""
+    old_enabled = client.portal_access_enabled
+    count = crud_portal_session.revoke_all_client_sessions(db, client.id, firm_id)
+    client.portal_access_enabled = False
+    db.commit()
+
+    log_event(
+        firm_id=firm_id,
+        event_type="client.portal_access_changed",
+        entity_type="client",
+        entity_id=client.id,
+        actor_type="staff",
+        actor_id=current_user_id,
+        metadata={
+            "from_enabled": old_enabled,
+            "to_enabled": False,
+            "via": "admin_revoke",
+            "sessions_revoked": count,
+        },
+    )
+    return count
+
+
+def enable_access_for_staff_preview(*, db: Session, client, current_user_id) -> None:
+    """Staff preview turns portal access on if it was off. Fires only when the
+    flag actually flips."""
+    if not client.portal_access_enabled:
+        client.portal_access_enabled = True
+        db.commit()
+
+        log_event(
+            firm_id=client.firm_id,
+            event_type="client.portal_access_changed",
+            entity_type="client",
+            entity_id=client.id,
+            actor_type="staff",
+            actor_id=current_user_id,
+            metadata={
+                "from_enabled": False,
+                "to_enabled": True,
+                "via": "staff_preview",
+            },
+        )
+
+
+def set_portal_password(
+    *, db: Session, client, new_password: str, confirm_password: str, current_password
+) -> None:
+    if len(new_password) < 8:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Password must be at least 8 characters.",
+        )
+    if new_password != confirm_password:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Passwords don't match.",
+        )
+
+    first_set = not client.portal_password_hash
+    if client.portal_password_hash:
+        if not current_password:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Current password is required to change your password.",
+            )
+        if not verify_portal_password(current_password, client.portal_password_hash):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Current password is incorrect.",
+            )
+
+    client.portal_password_hash = hash_portal_password_bcrypt(new_password)
+    db.commit()
+
+    log_event(
+        firm_id=client.firm_id,
+        event_type="portal.password_changed",
+        entity_type="client",
+        entity_id=client.id,
+        actor_type="client",
+        actor_id=client.id,
+        metadata={"first_set": first_set},
+    )
+
+
+def update_portal_profile(*, db: Session, client, name, email, phone) -> dict:
+    old_values = {"name": client.name, "email": client.email, "phone": client.phone}
+
+    if name is not None:
+        n = name.strip()
+        if not n:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Name cannot be blank.",
+            )
+        client.name = n
+
+    if email is not None:
+        e = email.strip()
+        if "@" not in e or "." not in e.rsplit("@", 1)[-1]:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Invalid email address.",
+            )
+        existing = db.query(Client).filter(
+            Client.email == e,
+            Client.id != client.id,
+        ).first()
+        if existing:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Email is already in use.",
+            )
+        client.email = e
+
+    if phone is not None:
+        client.phone = phone.strip() or None
+
+    db.commit()
+
+    new_values = {"name": client.name, "email": client.email, "phone": client.phone}
+    changed_fields = build_changed_fields(old_values, new_values)
+    if changed_fields:
+        log_event(
+            firm_id=client.firm_id,
+            event_type="client.updated",
+            entity_type="client",
+            entity_id=client.id,
+            actor_type="client",
+            actor_id=client.id,
+            metadata={"changed_fields": changed_fields},
+        )
+
+    return new_values
+
+
+def revoke_own_session(*, db: Session, session, client) -> None:
+    session_id = session.id
+    crud_portal_session.revoke_session(db, session, revoked_by="client")
+
+    log_event(
+        firm_id=client.firm_id,
+        event_type="portal.session_revoked",
+        entity_type="portal_session",
+        entity_id=session_id,
+        actor_type="client",
+        actor_id=client.id,
+        metadata={"session_id": str(session_id)},
+    )

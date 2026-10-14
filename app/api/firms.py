@@ -357,4 +357,4 @@ def delete_firm(
     firm = crud_firm.get_firm(db, firm_id)
     if not firm:
         raise HTTPException(status_code=404, detail="Firm not found")
-    crud_firm.delete_firm(db, firm)
+    firm_service.delete_firm(db, firm=firm)
