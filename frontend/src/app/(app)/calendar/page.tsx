@@ -20,6 +20,7 @@ import { resolveEventColor } from '@/lib/calendarEventColor'
 import { formatChipTime, sortDayEvents } from '@/lib/calendarChipTime'
 import { mapNativeEvents, dateRangeForView, rangeToInstants } from '@/lib/calendarNative'
 import { calendarEventsApi } from '@/lib/api/calendarEvents'
+import { NewEventModal } from '@/components/calendar/NewEventModal'
 import { parsePickedDate } from '@/lib/calendarPickDate'
 import { DatePickerPopover } from '@/components/calendar/DatePickerPopover'
 import { zonedDateStr, formatTimeLabel } from '@/lib/calendarTime'
@@ -728,6 +729,7 @@ export default function CalendarPage() {
   const [expandedDay, setExpandedDay] = useState<string | null>(null)
 
   // Clicked event popover
+  const [newEventOpen, setNewEventOpen] = useState(false)
   const [clickedEvent, setClickedEvent] = useState<CalEvent | null>(null)
   const [popoverPos, setPopoverPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 })
 
@@ -1463,6 +1465,14 @@ export default function CalendarPage() {
                   </button>
                 ))}
               </div>
+              {(user?.role === 'staff' || user?.role === 'manager' || user?.role === 'firm_owner') && firmTzValid && (
+                <button
+                  onClick={() => setNewEventOpen(true)}
+                  className="h-8 px-3 text-[13px] font-medium rounded-[6px] border border-cal-border dark:border-dark-cal-border bg-surface-card dark:bg-dark-card text-brand dark:text-[#EDEEF0] hover:bg-surface-border/20 dark:hover:bg-dark-border/20 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+                >
+                  New event
+                </button>
+              )}
             </div>
           </div>
 
@@ -1669,6 +1679,20 @@ export default function CalendarPage() {
           </div>
         </aside>
       </div>
+      {newEventOpen && (
+        <NewEventModal
+          open={newEventOpen}
+          onClose={() => setNewEventOpen(false)}
+          onCreated={() => {
+            qc.invalidateQueries({ queryKey: ['native-calendar-events'] })
+          }}
+          defaultDateStr={localDateStr(cursor)}
+          todayDateStr={firmTzValid && firmTz ? zonedDateStr(new Date(), firmTz) : todayStr}
+          timeZone={firmTz ?? ""}
+          currentUserId={user?.id ?? ""}
+          role={user?.role === 'firm_owner' ? 'firm_owner' : user?.role === 'manager' ? 'manager' : 'staff'}
+        />
+      )}
       {clickedEvent && clickedEvent.type === 'meeting' && (
         <MeetingPopover
           event={clickedEvent}
