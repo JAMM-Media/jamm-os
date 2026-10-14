@@ -18,7 +18,7 @@ from app.models.engagement import Engagement
 from app.models.user import User
 from app.schemas.notification import NotificationCreate
 from app.schemas.time_entry import SubmittedEditPayload, TimesheetSummaryRow
-from app.services.behavioral_log import log_event
+from app.services.behavioral_log import build_changed_fields, log_event
 
 
 def create_time_entry(
@@ -149,6 +149,20 @@ def submit_day(
         entry.submitted_at = now
     db.commit()
 
+    log_event(
+        firm_id=firm_id,
+        event_type="time_entry.day_submitted",
+        entity_type="user",
+        entity_id=current_user.id,
+        actor_type="staff",
+        actor_id=current_user.id,
+        metadata={
+            "entry_date": entry_date.isoformat(),
+            "entry_count": len(entries),
+            "total_hours": float(sum(e.hours for e in entries if e.hours is not None)),
+        },
+    )
+
     return len(entries), None
 
 
@@ -224,6 +238,7 @@ def edit_submitted_entry(
 
     update_data = payload.model_dump(exclude_unset=True)
     edit_note = update_data.pop("edit_note", None)
+    old_values = {field: getattr(entry, field) for field in update_data}
     for field, value in update_data.items():
         setattr(entry, field, value)
     entry.edited_after_submission = True
@@ -231,6 +246,24 @@ def edit_submitted_entry(
         entry.edit_note = edit_note
     db.commit()
     db.refresh(entry)
+
+    # The edit note is free text written for managers; the event records only
+    # that one was left.
+    log_event(
+        firm_id=firm_id,
+        event_type="time_entry.submitted_edited",
+        entity_type="time_entry",
+        entity_id=entry.id,
+        actor_type="staff",
+        actor_id=current_user.id,
+        metadata={
+            "changed_fields": build_changed_fields(
+                old_values, {field: getattr(entry, field) for field in update_data}
+            ),
+            "has_edit_note": edit_note is not None,
+            "engagement_id": str(entry.engagement_id) if entry.engagement_id else None,
+        },
+    )
 
     managers = db.execute(
         select(User).where(
@@ -276,11 +309,28 @@ def approve_entry(
     if not entry.is_submitted:
         return None, "not_submitted"
 
+    was_already_approved = bool(entry.is_approved)
     entry.is_approved = True
     entry.approved_at = datetime.now(timezone.utc)
     entry.approved_by_id = current_user.id
     db.commit()
     db.refresh(entry)
+
+    log_event(
+        firm_id=firm_id,
+        event_type="time_entry.approved",
+        entity_type="time_entry",
+        entity_id=entry.id,
+        actor_type="staff",
+        actor_id=current_user.id,
+        metadata={
+            "hours": float(entry.hours) if entry.hours is not None else None,
+            "is_billable": entry.is_billable,
+            "engagement_id": str(entry.engagement_id) if entry.engagement_id else None,
+            "entry_user_id": str(entry.user_id),
+            "was_already_approved": was_already_approved,
+        },
+    )
 
     return entry, None
 
