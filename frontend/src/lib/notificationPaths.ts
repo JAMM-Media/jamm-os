@@ -3,6 +3,7 @@ export function getEntityPath(type?: string, id?: string): string | null {
   if (!type) return null
   if (type === 'time_entry') return '/timesheets'
   if (type === 'staff_credential') return '/staff'
+  if (type === 'calendar_event') return '/calendar'
   if (!id) return null
   const map: Record<string, string> = {
     engagement: `/engagements/${id}`,

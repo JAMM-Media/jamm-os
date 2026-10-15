@@ -40,4 +40,9 @@ describe('getEntityPath', () => {
     expect(getEntityPath('document')).toBeNull()
     expect(getEntityPath('message')).toBeNull()
   })
+
+  it('returns /calendar for calendar_event with and without id', () => {
+    expect(getEntityPath('calendar_event', 'some-uuid')).toBe('/calendar')
+    expect(getEntityPath('calendar_event')).toBe('/calendar')
+  })
 })

@@ -1,8 +1,8 @@
 // path: frontend/src/lib/calendarEventPermissions.test.ts
 import { describe, it, expect } from 'vitest'
-import { getEventActions } from './calendarEventPermissions'
+import { getEventActions, getDeleteRequestActions } from './calendarEventPermissions'
 import type { CalendarEvent } from './api/calendarEvents'
-import type { EventUser, EventActions } from './calendarEventPermissions'
+import type { EventUser, EventActions, DeleteRequestActions } from './calendarEventPermissions'
 
 const SELF = 'user-self'
 const MANAGER = 'user-manager'
@@ -151,6 +151,81 @@ describe('getEventActions', () => {
   for (const { label, event, user, expected } of cases) {
     it(label, () => {
       expect(getEventActions(event, user)).toEqual(expected)
+    })
+  }
+})
+
+
+type DRCase = {
+  label: string
+  event: CalendarEvent
+  user: EventUser
+  expected: DeleteRequestActions
+}
+
+const PENDING_AT = '2026-10-14T10:00:00Z'
+
+const drCases: DRCase[] = [
+  {
+    label: 'staff on manager-assigned event can request deletion',
+    event: makeEvent({ createdBy: MANAGER, ownerUserId: SELF, deleteRequestedAt: null }),
+    user: staff,
+    expected: { canRequestDelete: true, canResolveRequest: false, isPending: false },
+  },
+  {
+    label: 'staff on own event cannot request (can delete directly)',
+    event: makeEvent({ createdBy: SELF, ownerUserId: SELF, deleteRequestedAt: null }),
+    user: staff,
+    expected: { canRequestDelete: false, canResolveRequest: false, isPending: false },
+  },
+  {
+    label: 'staff on firm-wide event cannot request',
+    event: makeEvent({ createdBy: null, ownerUserId: null, deleteRequestedAt: null }),
+    user: staff,
+    expected: { canRequestDelete: false, canResolveRequest: false, isPending: false },
+  },
+  {
+    label: 'staff on another person event cannot request (not owner)',
+    event: makeEvent({ createdBy: OTHER, ownerUserId: OTHER, deleteRequestedAt: null }),
+    user: staff,
+    expected: { canRequestDelete: false, canResolveRequest: false, isPending: false },
+  },
+  {
+    label: 'staff with pending request cannot request again',
+    event: makeEvent({ createdBy: MANAGER, ownerUserId: SELF, deleteRequestedAt: PENDING_AT }),
+    user: staff,
+    expected: { canRequestDelete: false, canResolveRequest: false, isPending: true },
+  },
+  {
+    label: 'manager on pending event can resolve',
+    event: makeEvent({ deleteRequestedAt: PENDING_AT }),
+    user: manager,
+    expected: { canRequestDelete: false, canResolveRequest: true, isPending: true },
+  },
+  {
+    label: 'manager on non-pending event cannot resolve',
+    event: makeEvent({ deleteRequestedAt: null }),
+    user: manager,
+    expected: { canRequestDelete: false, canResolveRequest: false, isPending: false },
+  },
+  {
+    label: 'firm_owner on pending event can resolve',
+    event: makeEvent({ deleteRequestedAt: PENDING_AT }),
+    user: firmOwner,
+    expected: { canRequestDelete: false, canResolveRequest: true, isPending: true },
+  },
+  {
+    label: 'staff cannot resolve even when pending',
+    event: makeEvent({ createdBy: MANAGER, ownerUserId: SELF, deleteRequestedAt: PENDING_AT }),
+    user: staff,
+    expected: { canRequestDelete: false, canResolveRequest: false, isPending: true },
+  },
+]
+
+describe('getDeleteRequestActions', () => {
+  for (const { label, event, user, expected } of drCases) {
+    it(label, () => {
+      expect(getDeleteRequestActions(event, user)).toEqual(expected)
     })
   }
 })

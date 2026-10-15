@@ -13,6 +13,12 @@ export interface EventActions {
   canAnnotate: boolean
 }
 
+export interface DeleteRequestActions {
+  canRequestDelete: boolean
+  canResolveRequest: boolean
+  isPending: boolean
+}
+
 function isManagerOrAbove(user: EventUser): boolean {
   return user.role === 'firm_owner' || user.role === 'manager'
 }
@@ -42,4 +48,18 @@ export function getEventActions(event: CalendarEvent, user: EventUser): EventAct
   const canAnnotate = event.ownerUserId === user.id && event.createdBy !== user.id
 
   return { canView: true, canEdit: false, canDelete: false, canAnnotate }
+}
+
+export function getDeleteRequestActions(event: CalendarEvent, user: EventUser): DeleteRequestActions {
+  const isPending = event.deleteRequestedAt !== null
+
+  const canRequestDelete =
+    !isManagerOrAbove(user) &&
+    event.ownerUserId === user.id &&
+    event.createdBy !== user.id &&
+    !isPending
+
+  const canResolveRequest = isManagerOrAbove(user) && isPending
+
+  return { canRequestDelete, canResolveRequest, isPending }
 }

@@ -5,7 +5,7 @@ import { useState, useRef, useEffect } from 'react'
 import { X } from 'lucide-react'
 import { toast } from 'sonner'
 import { calendarEventsApi, buildEventPatch, type CalendarEvent } from '@/lib/api/calendarEvents'
-import { getEventActions } from '@/lib/calendarEventPermissions'
+import { getEventActions, getDeleteRequestActions } from '@/lib/calendarEventPermissions'
 import type { EventUser } from '@/lib/calendarEventPermissions'
 import { NewEventModal } from '@/components/calendar/NewEventModal'
 import { formatTimeLabel } from '@/lib/calendarTime'
@@ -49,7 +49,10 @@ export function EventDetailsPopover({
   timeZone,
   user,
 }: EventDetailsPopoverProps) {
-  const actions = getEventActions(event, user)
+  const [localEvent, setLocalEvent] = useState(event)
+  const actions = getEventActions(localEvent, user)
+  const drActions = getDeleteRequestActions(localEvent, user)
+
   const popoverRef = useRef<HTMLDivElement>(null)
   const submittingRef = useRef(false)
 
@@ -57,9 +60,16 @@ export function EventDetailsPopover({
   const [editOpen, setEditOpen] = useState(false)
   const [submitting, setSubmitting] = useState(false)
 
-  // Annotation state (only relevant when canAnnotate)
-  const [staffNotes, setStaffNotes] = useState(event.staffNotes ?? '')
-  const [isDone, setIsDone] = useState(event.isDone)
+  // Annotation state
+  const [staffNotes, setStaffNotes] = useState(localEvent.staffNotes ?? '')
+  const [isDone, setIsDone] = useState(localEvent.isDone)
+
+  // Delete request state
+  const [requestStep, setRequestStep] = useState(false)
+  const [reason, setReason] = useState('')
+
+  // Approve/deny confirm state
+  const [confirmAction, setConfirmAction] = useState<'approve' | 'deny' | null>(null)
 
   // Escape: only active when edit modal is closed
   useEffect(() => {
@@ -92,7 +102,7 @@ export function EventDetailsPopover({
     submittingRef.current = true
     setSubmitting(true)
     try {
-      await calendarEventsApi.deleteEvent(event.id)
+      await calendarEventsApi.deleteEvent(localEvent.id)
       onMutated()
       onClose()
     } catch (err: unknown) {
@@ -109,7 +119,8 @@ export function EventDetailsPopover({
     submittingRef.current = true
     setSubmitting(true)
     try {
-      await calendarEventsApi.updateEvent(event.id, buildEventPatch({ staffNotes }))
+      const updated = await calendarEventsApi.updateEvent(localEvent.id, buildEventPatch({ staffNotes }))
+      setLocalEvent(updated)
       onMutated()
       onClose()
     } catch (err: unknown) {
@@ -128,7 +139,8 @@ export function EventDetailsPopover({
     const next = !isDone
     setIsDone(next)
     try {
-      await calendarEventsApi.updateEvent(event.id, buildEventPatch({ isDone: next }))
+      const updated = await calendarEventsApi.updateEvent(localEvent.id, buildEventPatch({ isDone: next }))
+      setLocalEvent(updated)
       onMutated()
       onClose()
     } catch (err: unknown) {
@@ -141,11 +153,70 @@ export function EventDetailsPopover({
     }
   }
 
+  async function handleRequestDelete() {
+    if (submittingRef.current) return
+    if (reason.length > 500) return
+    submittingRef.current = true
+    setSubmitting(true)
+    try {
+      const updated = await calendarEventsApi.requestDelete(localEvent.id, reason || undefined)
+      setLocalEvent(updated)
+      setRequestStep(false)
+      setReason('')
+      onMutated()
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      toast.error(detail ?? 'Could not update the event')
+    } finally {
+      submittingRef.current = false
+      setSubmitting(false)
+    }
+  }
+
+  async function handleApproveDeleteRequest() {
+    if (submittingRef.current) return
+    submittingRef.current = true
+    setSubmitting(true)
+    try {
+      await calendarEventsApi.approveDeleteRequest(localEvent.id)
+      onMutated()
+      onClose()
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      toast.error(detail ?? 'Could not update the event')
+    } finally {
+      submittingRef.current = false
+      setSubmitting(false)
+    }
+  }
+
+  async function handleDenyDeleteRequest() {
+    if (submittingRef.current) return
+    submittingRef.current = true
+    setSubmitting(true)
+    try {
+      const updated = await calendarEventsApi.denyDeleteRequest(localEvent.id)
+      setLocalEvent(updated)
+      setConfirmAction(null)
+      onMutated()
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      toast.error(detail ?? 'Could not update the event')
+    } finally {
+      submittingRef.current = false
+      setSubmitting(false)
+    }
+  }
+
   // ---------------------------------------------------------------------------
   // Render
   // ---------------------------------------------------------------------------
 
-  const ownerLabel = event.ownerUserId === null ? 'Whole firm' : (event.ownerName ?? event.ownerUserId ?? 'Unknown')
+  const ownerLabel = localEvent.ownerUserId === null
+    ? 'Whole firm'
+    : (localEvent.ownerName ?? localEvent.ownerUserId ?? 'Unknown')
+  const requesterLabel = localEvent.ownerName ?? 'A staff member'
+  const reasonOverLimit = reason.length > 500
 
   return (
     <>
@@ -162,9 +233,9 @@ export function EventDetailsPopover({
         <div className="flex items-start justify-between gap-2 mb-3">
           <div className="flex items-center gap-2 flex-wrap">
             <p className="text-[13px] font-medium text-brand dark:text-[#EDEEF0] leading-snug">
-              {event.title}
+              {localEvent.title}
             </p>
-            {event.isDone && (
+            {localEvent.isDone && (
               <span
                 data-testid="done-badge"
                 className="text-[10px] font-medium bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 px-1.5 py-0.5 rounded"
@@ -183,33 +254,35 @@ export function EventDetailsPopover({
         </div>
 
         {/* Date and time */}
-        <p className="text-[12px] text-[#6B7280] mb-1">{formatEventDate(event.startAt, timeZone)}</p>
+        <p className="text-[12px] text-[#6B7280] mb-1">{formatEventDate(localEvent.startAt, timeZone)}</p>
         <p className="text-[12px] text-[#6B7280] mb-2">
-          {formatTimeLabel(event.startAt, timeZone)} to {formatTimeLabel(event.endAt, timeZone)}
+          {formatTimeLabel(localEvent.startAt, timeZone)} to {formatTimeLabel(localEvent.endAt, timeZone)}
         </p>
 
         {/* Category */}
-        {event.categoryName && (
-          <p className="text-[12px] text-[#6B7280] mb-1">Category: {event.categoryName}</p>
+        {localEvent.categoryName && (
+          <p className="text-[12px] text-[#6B7280] mb-1">Category: {localEvent.categoryName}</p>
         )}
 
         {/* Owner */}
         <p className="text-[12px] text-[#6B7280] mb-1">Owner: {ownerLabel}</p>
 
         {/* Client */}
-        {event.clientName && (
-          <p className="text-[12px] text-[#6B7280] mb-1">Client: {event.clientName}</p>
+        {localEvent.clientName && (
+          <p className="text-[12px] text-[#6B7280] mb-1">Client: {localEvent.clientName}</p>
         )}
 
-        {/* Staff notes (read-only for everyone who can view) */}
-        {event.staffNotes && (
+        {/* Staff notes (read-only for all viewers) */}
+        {localEvent.staffNotes && (
           <p className="text-[12px] text-[#6B7280] mb-2 whitespace-pre-wrap">
-            Notes: {event.staffNotes}
+            Notes: {localEvent.staffNotes}
           </p>
         )}
 
         {/* Action buttons */}
         <div className="flex flex-col gap-2 mt-3">
+
+          {/* Edit */}
           {actions.canEdit && !deleteConfirm && (
             <button
               onClick={() => setEditOpen(true)}
@@ -219,6 +292,7 @@ export function EventDetailsPopover({
             </button>
           )}
 
+          {/* Delete */}
           {actions.canDelete && !deleteConfirm && (
             <button
               onClick={() => setDeleteConfirm(true)}
@@ -228,6 +302,7 @@ export function EventDetailsPopover({
             </button>
           )}
 
+          {/* Delete confirm */}
           {actions.canDelete && deleteConfirm && (
             <div className="flex gap-2">
               <button
@@ -246,6 +321,7 @@ export function EventDetailsPopover({
             </div>
           )}
 
+          {/* Annotate controls */}
           {actions.canAnnotate && (
             <>
               <textarea
@@ -275,6 +351,133 @@ export function EventDetailsPopover({
               </label>
             </>
           )}
+
+          {/* Request deletion button */}
+          {drActions.canRequestDelete && !requestStep && (
+            <button
+              onClick={() => setRequestStep(true)}
+              className="h-8 px-3 rounded-[6px] border border-[#6B7280] text-[#6B7280] text-[12px] font-medium hover:bg-surface-page dark:hover:bg-dark-page transition-colors"
+            >
+              Request deletion
+            </button>
+          )}
+
+          {/* Request deletion inline step */}
+          {drActions.canRequestDelete && requestStep && (
+            <div className="flex flex-col gap-2">
+              <textarea
+                aria-label="Reason for deletion request"
+                value={reason}
+                onChange={e => setReason(e.target.value)}
+                rows={3}
+                placeholder="Reason (optional)"
+                className="w-full text-[12px] px-2 py-1.5 rounded-[6px] border border-surface-border dark:border-dark-border bg-surface-input dark:bg-dark-card text-brand dark:text-[#EDEEF0] resize-none focus:outline-none focus:border-brand-light"
+              />
+              {reasonOverLimit && (
+                <p className="text-[11px] text-red-600 dark:text-red-400">Reason must be 500 characters or fewer.</p>
+              )}
+              <div className="flex gap-2">
+                <button
+                  onClick={() => { setRequestStep(false); setReason('') }}
+                  className="flex-1 h-8 px-3 rounded-[6px] border border-surface-border text-[12px] font-medium text-brand dark:text-[#EDEEF0] hover:bg-surface-page dark:hover:bg-dark-page transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleRequestDelete}
+                  disabled={submitting || reasonOverLimit}
+                  className="flex-1 h-8 px-3 rounded-[6px] bg-brand dark:bg-brand-btn text-white text-[12px] font-medium hover:opacity-90 transition-opacity disabled:opacity-60"
+                >
+                  Send
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Pending: staff view */}
+          {drActions.isPending && !drActions.canResolveRequest && (
+            <div className="mt-1">
+              <p
+                className="text-[12px] text-[#6B7280]"
+                data-testid="deletion-requested-msg"
+              >
+                Deletion requested
+              </p>
+              {localEvent.deleteRequestReason && (
+                <p className="text-[12px] text-[#6B7280] mt-0.5">
+                  Reason: {localEvent.deleteRequestReason}
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* Pending: manager/owner view */}
+          {drActions.canResolveRequest && (
+            <div className="flex flex-col gap-2 mt-1">
+              <p
+                className="text-[12px] text-[#6B7280]"
+                data-testid="resolve-request-msg"
+              >
+                {requesterLabel} asked to delete this event
+              </p>
+              {localEvent.deleteRequestReason && (
+                <p className="text-[12px] text-[#6B7280]">
+                  Reason: {localEvent.deleteRequestReason}
+                </p>
+              )}
+              {confirmAction === null && (
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setConfirmAction('approve')}
+                    className="flex-1 h-8 px-3 rounded-[6px] bg-red-600 text-white text-[12px] font-medium hover:bg-red-700 transition-colors"
+                  >
+                    Approve
+                  </button>
+                  <button
+                    onClick={() => setConfirmAction('deny')}
+                    className="flex-1 h-8 px-3 rounded-[6px] border border-surface-border text-[12px] font-medium text-brand dark:text-[#EDEEF0] hover:bg-surface-page dark:hover:bg-dark-page transition-colors"
+                  >
+                    Deny
+                  </button>
+                </div>
+              )}
+              {confirmAction === 'approve' && (
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setConfirmAction(null)}
+                    className="flex-1 h-8 px-3 rounded-[6px] border border-surface-border text-[12px] font-medium text-brand dark:text-[#EDEEF0] hover:bg-surface-page dark:hover:bg-dark-page transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleApproveDeleteRequest}
+                    disabled={submitting}
+                    className="flex-1 h-8 px-3 rounded-[6px] bg-red-600 text-white text-[12px] font-medium hover:bg-red-700 transition-colors disabled:opacity-60"
+                  >
+                    Confirm
+                  </button>
+                </div>
+              )}
+              {confirmAction === 'deny' && (
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setConfirmAction(null)}
+                    className="flex-1 h-8 px-3 rounded-[6px] border border-surface-border text-[12px] font-medium text-brand dark:text-[#EDEEF0] hover:bg-surface-page dark:hover:bg-dark-page transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleDenyDeleteRequest}
+                    disabled={submitting}
+                    className="flex-1 h-8 px-3 rounded-[6px] bg-brand dark:bg-brand-btn text-white text-[12px] font-medium hover:opacity-90 transition-opacity disabled:opacity-60"
+                  >
+                    Confirm
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
         </div>
       </div>
 
@@ -283,7 +486,7 @@ export function EventDetailsPopover({
           open={editOpen}
           onClose={() => setEditOpen(false)}
           onCreated={() => { onMutated(); onClose() }}
-          editEvent={event}
+          editEvent={localEvent}
           defaultDateStr={''}
           todayDateStr={''}
           timeZone={timeZone}

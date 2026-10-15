@@ -14,6 +14,9 @@ vi.mock('@/lib/api/calendarEvents', () => ({
   calendarEventsApi: {
     deleteEvent: vi.fn(),
     updateEvent: vi.fn(),
+    requestDelete: vi.fn(),
+    approveDeleteRequest: vi.fn(),
+    denyDeleteRequest: vi.fn(),
   },
   buildEventPatch: (input: Record<string, unknown>) => {
     const body: Record<string, unknown> = {}
@@ -61,6 +64,9 @@ import { toast } from 'sonner'
 const mockApi = calendarEventsApi as unknown as {
   deleteEvent: ReturnType<typeof vi.fn>
   updateEvent: ReturnType<typeof vi.fn>
+  requestDelete: ReturnType<typeof vi.fn>
+  approveDeleteRequest: ReturnType<typeof vi.fn>
+  denyDeleteRequest: ReturnType<typeof vi.fn>
 }
 const mockToast = toast as unknown as { error: ReturnType<typeof vi.fn> }
 
@@ -122,6 +128,9 @@ beforeEach(() => {
   vi.clearAllMocks()
   mockApi.deleteEvent.mockResolvedValue(undefined)
   mockApi.updateEvent.mockResolvedValue(makeEvent())
+  mockApi.requestDelete.mockResolvedValue(makeEvent({ deleteRequestedAt: '2026-10-15T10:00:00Z' }))
+  mockApi.approveDeleteRequest.mockResolvedValue(makeEvent({ deletedAt: '2026-10-15T10:00:00Z' }))
+  mockApi.denyDeleteRequest.mockResolvedValue(makeEvent({ deleteRequestedAt: null }))
 })
 
 // ---------------------------------------------------------------------------
@@ -316,4 +325,190 @@ describe('rapid-click guard', () => {
   // provide defense-in-depth in real browsers). The test proves the COMBINED protection:
   // removing BOTH ref guard and disabled makes this test go red (verified). The test
   // we rely on for the guarantee is this one, which requires removing both.
+})
+
+// ---------------------------------------------------------------------------
+// Delete request flow
+// ---------------------------------------------------------------------------
+
+const PENDING_AT = '2026-10-15T10:00:00Z'
+
+function makeManagerAssigned() {
+  return makeEvent({ createdBy: MANAGER, ownerUserId: SELF, ownerName: 'Priya Mehta' })
+}
+
+function makePendingEvent() {
+  return makeEvent({
+    createdBy: MANAGER,
+    ownerUserId: SELF,
+    ownerName: 'Priya Mehta',
+    deleteRequestedAt: PENDING_AT,
+    deleteRequestReason: 'No longer needed.',
+  })
+}
+
+function makePendingNoName() {
+  return makeEvent({
+    createdBy: MANAGER,
+    ownerUserId: SELF,
+    ownerName: null,
+    deleteRequestedAt: PENDING_AT,
+  })
+}
+
+describe('delete request flow', () => {
+  it('staff sees Request deletion button on a manager-assigned event', () => {
+    renderPopover(makeManagerAssigned(), staffUser)
+    expect(screen.getByRole('button', { name: /request deletion/i })).toBeInTheDocument()
+  })
+
+  it('Send calls requestDelete once with the reason', async () => {
+    const user = userEvent.setup()
+    renderPopover(makeManagerAssigned(), staffUser)
+    await user.click(screen.getByRole('button', { name: /request deletion/i }))
+    await user.type(screen.getByLabelText(/reason for deletion request/i), 'Too old')
+    await user.click(screen.getByRole('button', { name: /^send$/i }))
+    await waitFor(() => expect(mockApi.requestDelete).toHaveBeenCalledTimes(1))
+    expect(mockApi.requestDelete).toHaveBeenCalledWith('ev-1', 'Too old')
+  })
+
+  it('empty reason calls requestDelete with undefined (body {})', async () => {
+    const user = userEvent.setup()
+    renderPopover(makeManagerAssigned(), staffUser)
+    await user.click(screen.getByRole('button', { name: /request deletion/i }))
+    await user.click(screen.getByRole('button', { name: /^send$/i }))
+    await waitFor(() => expect(mockApi.requestDelete).toHaveBeenCalledTimes(1))
+    expect(mockApi.requestDelete).toHaveBeenCalledWith('ev-1', undefined)
+  })
+
+  it('Cancel on request step makes no API call', async () => {
+    const user = userEvent.setup()
+    renderPopover(makeManagerAssigned(), staffUser)
+    await user.click(screen.getByRole('button', { name: /request deletion/i }))
+    await user.click(screen.getByRole('button', { name: /cancel/i }))
+    expect(mockApi.requestDelete).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: /request deletion/i })).toBeInTheDocument()
+  })
+
+  it('after requestDelete success popover shows Deletion requested and no request button', async () => {
+    mockApi.requestDelete.mockResolvedValue(makeEvent({
+      createdBy: MANAGER, ownerUserId: SELF, deleteRequestedAt: PENDING_AT,
+    }))
+    const user = userEvent.setup()
+    renderPopover(makeManagerAssigned(), staffUser)
+    await user.click(screen.getByRole('button', { name: /request deletion/i }))
+    await user.click(screen.getByRole('button', { name: /^send$/i }))
+    await waitFor(() => expect(screen.getByTestId('deletion-requested-msg')).toBeInTheDocument())
+    expect(screen.queryByRole('button', { name: /request deletion/i })).not.toBeInTheDocument()
+  })
+
+  it('staff sees no request button when already pending', () => {
+    renderPopover(makePendingEvent(), staffUser)
+    expect(screen.queryByRole('button', { name: /request deletion/i })).not.toBeInTheDocument()
+    expect(screen.getByTestId('deletion-requested-msg')).toBeInTheDocument()
+  })
+
+  it('manager sees Approve and Deny only when pending', () => {
+    renderPopover(makePendingEvent(), managerUser)
+    expect(screen.getByRole('button', { name: /approve/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /deny/i })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /request deletion/i })).not.toBeInTheDocument()
+  })
+
+  it('manager sees requester name from ownerName', () => {
+    renderPopover(makePendingEvent(), managerUser)
+    expect(screen.getByTestId('resolve-request-msg')).toHaveTextContent('Priya Mehta asked to delete this event')
+  })
+
+  it('manager sees A staff member fallback when ownerName is null', () => {
+    renderPopover(makePendingNoName(), managerUser)
+    expect(screen.getByTestId('resolve-request-msg')).toHaveTextContent('A staff member asked to delete this event')
+  })
+
+  it('Approve confirm calls approveDeleteRequest once and closes the popover', async () => {
+    const onClose = vi.fn()
+    const user = userEvent.setup()
+    renderPopover(makePendingEvent(), managerUser, onClose)
+    await user.click(screen.getByRole('button', { name: /approve/i }))
+    await user.click(screen.getByRole('button', { name: /confirm/i }))
+    await waitFor(() => expect(mockApi.approveDeleteRequest).toHaveBeenCalledTimes(1))
+    expect(mockApi.approveDeleteRequest).toHaveBeenCalledWith('ev-1')
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('Deny confirm calls denyDeleteRequest once and popover shows no pending state', async () => {
+    mockApi.denyDeleteRequest.mockResolvedValue(makeEvent({
+      createdBy: MANAGER, ownerUserId: SELF, deleteRequestedAt: null,
+    }))
+    const user = userEvent.setup()
+    renderPopover(makePendingEvent(), managerUser)
+    await user.click(screen.getByRole('button', { name: /deny/i }))
+    await user.click(screen.getByRole('button', { name: /confirm/i }))
+    await waitFor(() => expect(mockApi.denyDeleteRequest).toHaveBeenCalledTimes(1))
+    expect(mockApi.denyDeleteRequest).toHaveBeenCalledWith('ev-1')
+    expect(screen.queryByTestId('resolve-request-msg')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /approve/i })).not.toBeInTheDocument()
+  })
+
+  it('Cancel on Approve makes no API call', async () => {
+    const user = userEvent.setup()
+    renderPopover(makePendingEvent(), managerUser)
+    await user.click(screen.getByRole('button', { name: /approve/i }))
+    await user.click(screen.getByRole('button', { name: /cancel/i }))
+    expect(mockApi.approveDeleteRequest).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: /approve/i })).toBeInTheDocument()
+  })
+
+  it('Cancel on Deny makes no API call', async () => {
+    const user = userEvent.setup()
+    renderPopover(makePendingEvent(), managerUser)
+    await user.click(screen.getByRole('button', { name: /deny/i }))
+    await user.click(screen.getByRole('button', { name: /cancel/i }))
+    expect(mockApi.denyDeleteRequest).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: /deny/i })).toBeInTheDocument()
+  })
+
+  it('backend error on requestDelete shows toast.error and keeps popover open', async () => {
+    mockApi.requestDelete.mockRejectedValue({ response: { data: { detail: 'Already pending.' } } })
+    const onClose = vi.fn()
+    const user = userEvent.setup()
+    renderPopover(makeManagerAssigned(), staffUser, onClose)
+    await user.click(screen.getByRole('button', { name: /request deletion/i }))
+    await user.click(screen.getByRole('button', { name: /^send$/i }))
+    await waitFor(() => expect(mockToast.error).toHaveBeenCalledWith('Already pending.'))
+    expect(onClose).not.toHaveBeenCalled()
+    expect(screen.getByTestId('event-details-popover')).toBeInTheDocument()
+  })
+
+  it('Send is disabled and shows message when reason exceeds 500 characters', async () => {
+    const user = userEvent.setup()
+    renderPopover(makeManagerAssigned(), staffUser)
+    await user.click(screen.getByRole('button', { name: /request deletion/i }))
+    const longReason = 'a'.repeat(501)
+    await user.type(screen.getByLabelText(/reason for deletion request/i), longReason)
+    expect(screen.getByRole('button', { name: /^send$/i })).toBeDisabled()
+    expect(screen.getByText(/500 characters or fewer/i)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /^send$/i }))
+    expect(mockApi.requestDelete).not.toHaveBeenCalled()
+  })
+
+  it('second rapid click on Send makes only one requestDelete call', async () => {
+    let resolveReq!: (v: CalendarEvent) => void
+    mockApi.requestDelete.mockReturnValue(
+      new Promise<CalendarEvent>(res => { resolveReq = res })
+    )
+    const user = userEvent.setup()
+    renderPopover(makeManagerAssigned(), staffUser)
+    await user.click(screen.getByRole('button', { name: /request deletion/i }))
+    const sendBtn = screen.getByRole('button', { name: /^send$/i })
+    await user.click(sendBtn)
+    // fireEvent bypasses disabled to probe the ref guard
+    fireEvent.click(sendBtn)
+    resolveReq(makeEvent({ deleteRequestedAt: PENDING_AT }))
+    await waitFor(() => expect(mockApi.requestDelete).toHaveBeenCalledTimes(1))
+    // Honest note on proof (d): in happy-dom, fireEvent.click on a disabled React
+    // button does NOT trigger onClick. Removing only the ref guard while keeping
+    // disabled does NOT make this test fail. Both guards are kept for defense-in-depth.
+    // Proof: removing BOTH makes the test fail.
+  })
 })
