@@ -9,13 +9,14 @@ import { FormField } from '@/components/ui/FormField'
 import { TextInput } from '@/components/ui/TextInput'
 import { SelectInput } from '@/components/ui/SelectInput'
 import { DatePickerPopover } from '@/components/calendar/DatePickerPopover'
-import { calendarEventsApi, type CalendarEvent } from '@/lib/api/calendarEvents'
+import { calendarEventsApi, buildEventPatch, type CalendarEvent } from '@/lib/api/calendarEvents'
 import { staffApi } from '@/lib/api/staffApi'
 import {
   wallTimeToInstant,
   minutesIntoDay,
   snapMinutes,
   SNAP_MINUTES,
+  zonedDateStr,
 } from '@/lib/calendarTime'
 
 // ---------------------------------------------------------------------------
@@ -31,6 +32,7 @@ export interface NewEventModalProps {
   timeZone: string
   currentUserId: string
   role: 'firm_owner' | 'manager' | 'staff'
+  editEvent?: CalendarEvent
 }
 
 // ---------------------------------------------------------------------------
@@ -105,6 +107,7 @@ export function NewEventModal({
   timeZone,
   currentUserId,
   role,
+  editEvent,
 }: NewEventModalProps) {
   const isManagerOrAbove = role === 'firm_owner' || role === 'manager'
 
@@ -128,18 +131,39 @@ export function NewEventModal({
   const [categories, setCategories] = useState<{ value: string; label: string }[]>([])
   const [roster, setRoster] = useState<{ id: string; full_name: string | null }[]>([])
 
-  // Reset form when modal opens
+  // Reset or prefill form when modal opens
   useEffect(() => {
     if (!open) return
-    const s = defaultStartMin(defaultDateStr, todayDateStr, timeZone)
-    setTitle('')
-    setDateStr(defaultDateStr)
-    setStartMin(s)
-    setEndMin(Math.min(s + 60, 1425))
-    setCategoryId('')
-    setOwnerValue(currentUserId)
-    setErrors({})
-    setDatePickerOpen(false)
+    if (editEvent) {
+      setTitle(editEvent.title)
+      try {
+        const d = zonedDateStr(editEvent.startAt, timeZone)
+        setDateStr(d)
+        const s = Math.max(0, Math.min(1410, snapMinutes(minutesIntoDay(new Date(editEvent.startAt), timeZone), 'round')))
+        const e = Math.max(SNAP_MINUTES, Math.min(1425, snapMinutes(minutesIntoDay(new Date(editEvent.endAt), timeZone), 'round')))
+        setStartMin(s)
+        setEndMin(e > s ? e : Math.min(s + 60, 1425))
+      } catch {
+        const s = defaultStartMin(defaultDateStr, todayDateStr, timeZone)
+        setDateStr(defaultDateStr)
+        setStartMin(s)
+        setEndMin(Math.min(s + 60, 1425))
+      }
+      setCategoryId(editEvent.categoryId ?? '')
+      setOwnerValue(editEvent.ownerUserId ?? '')
+      setErrors({})
+      setDatePickerOpen(false)
+    } else {
+      const s = defaultStartMin(defaultDateStr, todayDateStr, timeZone)
+      setTitle('')
+      setDateStr(defaultDateStr)
+      setStartMin(s)
+      setEndMin(Math.min(s + 60, 1425))
+      setCategoryId('')
+      setOwnerValue(currentUserId)
+      setErrors({})
+      setDatePickerOpen(false)
+    }
   }, [open]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load active categories
@@ -228,27 +252,49 @@ export function NewEventModal({
     const startInstant = wallTimeToInstant(dateStr, startMin, timeZone)
     const endInstant = wallTimeToInstant(dateStr, endMin, timeZone)
 
-    const input: {
-      title: string
-      startAt: string
-      endAt: string
-      categoryId?: string | null
-      ownerUserId?: string | null
-    } = {
-      title: title.trim(),
-      startAt: startInstant.toISOString(),
-      endAt: endInstant.toISOString(),
-    }
-    if (categoryId) input.categoryId = categoryId
-    if (isManagerOrAbove) {
-      input.ownerUserId = ownerValue === '' ? null : ownerValue
-    }
-
     setSubmitting(true)
     try {
-      const ev = await calendarEventsApi.createEvent(input)
-      onCreated(ev)
-      onClose()
+      if (editEvent) {
+        // Edit mode: send only changed fields
+        const patch: {
+          title?: string
+          startAt?: string
+          endAt?: string
+          categoryId?: string | null
+          ownerUserId?: string | null
+        } = {}
+        if (title.trim() !== editEvent.title) patch.title = title.trim()
+        if (startInstant.getTime() !== new Date(editEvent.startAt).getTime()) patch.startAt = startInstant.toISOString()
+        if (endInstant.getTime() !== new Date(editEvent.endAt).getTime()) patch.endAt = endInstant.toISOString()
+        const newCatId = categoryId || null
+        if (newCatId !== editEvent.categoryId) patch.categoryId = newCatId
+        if (isManagerOrAbove) {
+          const newOwner = ownerValue === '' ? null : ownerValue
+          if (newOwner !== editEvent.ownerUserId) patch.ownerUserId = newOwner
+        }
+        const ev = await calendarEventsApi.updateEvent(editEvent.id, buildEventPatch(patch))
+        onCreated(ev)
+        onClose()
+      } else {
+        const input: {
+          title: string
+          startAt: string
+          endAt: string
+          categoryId?: string | null
+          ownerUserId?: string | null
+        } = {
+          title: title.trim(),
+          startAt: startInstant.toISOString(),
+          endAt: endInstant.toISOString(),
+        }
+        if (categoryId) input.categoryId = categoryId
+        if (isManagerOrAbove) {
+          input.ownerUserId = ownerValue === '' ? null : ownerValue
+        }
+        const ev = await calendarEventsApi.createEvent(input)
+        onCreated(ev)
+        onClose()
+      }
     } catch (err: unknown) {
       const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
       toast.error(detail ?? 'Could not create the event.')
@@ -275,7 +321,7 @@ export function NewEventModal({
       <Modal
         open={open}
         onClose={handleClose}
-        title="New event"
+        title={editEvent ? 'Edit event' : 'New event'}
         size="md"
         footer={
           <>

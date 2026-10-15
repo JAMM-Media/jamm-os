@@ -12,6 +12,19 @@ vi.mock('@/lib/api/calendarEvents', () => ({
   calendarEventsApi: {
     listCategories: vi.fn(),
     createEvent: vi.fn(),
+    updateEvent: vi.fn(),
+  },
+  buildEventPatch: (input: Record<string, unknown>) => {
+    const body: Record<string, unknown> = {}
+    if (input.title !== undefined) body.title = input.title
+    if (input.startAt !== undefined) body.start_at = input.startAt
+    if (input.endAt !== undefined) body.end_at = input.endAt
+    if (input.categoryId !== undefined) body.category_id = input.categoryId
+    if (input.clientId !== undefined) body.client_id = input.clientId
+    if (input.ownerUserId !== undefined) body.owner_user_id = input.ownerUserId
+    if (input.staffNotes !== undefined) body.staff_notes = input.staffNotes
+    if (input.isDone !== undefined) body.is_done = input.isDone
+    return body
   },
 }))
 
@@ -44,6 +57,7 @@ import { toast } from 'sonner'
 const mockApi = calendarEventsApi as unknown as {
   listCategories: ReturnType<typeof vi.fn>
   createEvent: ReturnType<typeof vi.fn>
+  updateEvent: ReturnType<typeof vi.fn>
 }
 const mockStaffApi = staffApi as unknown as {
   listFirmRoster: ReturnType<typeof vi.fn>
@@ -373,5 +387,74 @@ describe('date picker interactions', () => {
     expect(screen.getByRole('button', { name: /pick event date/i })).toHaveTextContent('2026-02-01')
     expect(onClose).not.toHaveBeenCalled()
     expect(screen.queryByTestId('date-picker')).not.toBeInTheDocument()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Edit mode (editEvent prop)
+// ---------------------------------------------------------------------------
+
+describe('edit mode', () => {
+  const EDIT_EVENT: import('@/lib/api/calendarEvents').CalendarEvent = {
+    id: 'ev-edit',
+    title: 'Morning sync',
+    startAt: '2026-01-15T14:00:00Z',
+    endAt: '2026-01-15T15:00:00Z',
+    eventTimezone: TZ,
+    categoryId: 'cat-1',
+    categoryName: 'Tax',
+    categoryColor: null,
+    clientId: null,
+    clientName: null,
+    ownerUserId: CURRENT_USER_ID,
+    ownerName: 'Me',
+    createdBy: CURRENT_USER_ID,
+    createdAt: '2026-01-01T00:00:00Z',
+    updatedAt: '2026-01-01T00:00:00Z',
+    deletedAt: null,
+    staffNotes: null,
+    completedAt: null,
+    isDone: false,
+    deleteRequestedAt: null,
+    deleteRequestedBy: null,
+    deleteRequestReason: null,
+  }
+
+  it('edit mode title reads "Edit event"', async () => {
+    mockApiSuccess()
+    render(<NewEventModal {...staffProps()} editEvent={EDIT_EVENT} />)
+    expect(await screen.findByText('Edit event')).toBeInTheDocument()
+  })
+
+  it('edit mode prefills title and times in the firm timezone', async () => {
+    mockApiSuccess()
+    render(<NewEventModal {...staffProps()} editEvent={EDIT_EVENT} />)
+    const titleInput = screen.getByRole('textbox', { name: /title/i }) as HTMLInputElement
+    expect(titleInput.value).toBe('Morning sync')
+    // 2026-01-15T14:00:00Z in America/New_York (EST, UTC-5) = 09:00 = 540 minutes
+    const startSel = screen.getByRole('combobox', { name: /start time/i }) as HTMLSelectElement
+    expect(startSel.value).toBe('540')
+    // end: 2026-01-15T15:00:00Z = 10:00 EST = 600 minutes
+    const endSel = screen.getByRole('combobox', { name: /end time/i }) as HTMLSelectElement
+    expect(endSel.value).toBe('600')
+  })
+
+  it('edit mode sends only changed fields via updateEvent', async () => {
+    mockApi.listCategories.mockResolvedValue({ items: [{ id: 'cat-1', name: 'Tax' }], total: 1 })
+    mockApi.updateEvent.mockResolvedValue({ ...EDIT_EVENT, title: 'New title' })
+    const user = userEvent.setup()
+    render(<NewEventModal {...staffProps()} editEvent={EDIT_EVENT} />)
+    const titleInput = screen.getByRole('textbox', { name: /title/i })
+    await user.clear(titleInput)
+    await user.type(titleInput, 'New title')
+    await user.click(screen.getByRole('button', { name: /save/i }))
+    await waitFor(() => expect(mockApi.updateEvent).toHaveBeenCalledTimes(1))
+    const [id, patch] = mockApi.updateEvent.mock.calls[0]
+    expect(id).toBe('ev-edit')
+    expect(patch).toHaveProperty('title', 'New title')
+    // unchanged fields must NOT be in the patch
+    expect(patch).not.toHaveProperty('start_at')
+    expect(patch).not.toHaveProperty('end_at')
+    expect(patch).not.toHaveProperty('category_id')
   })
 })

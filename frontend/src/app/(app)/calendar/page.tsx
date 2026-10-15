@@ -18,12 +18,13 @@ import { weekDates } from '@/lib/calendarGrid'
 import { buildGridInputs, hasOffset, isValidTimeZone, formatDayTitle } from '@/lib/calendarGridData'
 import { resolveEventColor } from '@/lib/calendarEventColor'
 import { formatChipTime, sortDayEvents } from '@/lib/calendarChipTime'
-import { mapNativeEvents, dateRangeForView, rangeToInstants } from '@/lib/calendarNative'
-import { calendarEventsApi } from '@/lib/api/calendarEvents'
+import { mapNativeEvents, dateRangeForView, rangeToInstants, NATIVE_ID_PREFIX } from '@/lib/calendarNative'
+import { calendarEventsApi, type CalendarEvent } from '@/lib/api/calendarEvents'
 import { NewEventModal } from '@/components/calendar/NewEventModal'
 import { parsePickedDate } from '@/lib/calendarPickDate'
 import { DatePickerPopover } from '@/components/calendar/DatePickerPopover'
 import { zonedDateStr, formatTimeLabel } from '@/lib/calendarTime'
+import { EventDetailsPopover } from '@/components/calendar/EventDetailsPopover'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -732,6 +733,7 @@ export default function CalendarPage() {
   const [newEventOpen, setNewEventOpen] = useState(false)
   const [clickedEvent, setClickedEvent] = useState<CalEvent | null>(null)
   const [popoverPos, setPopoverPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 })
+  const [clickedNativeEvent, setClickedNativeEvent] = useState<CalendarEvent | null>(null)
 
   // Staff color picker
   const [editingStaffColor, setEditingStaffColor] = useState<string | null>(null)
@@ -1042,6 +1044,12 @@ export default function CalendarPage() {
     if (ev.type === 'meeting') {
       const rect = (e.target as HTMLElement).getBoundingClientRect()
       setPopoverPos({ x: rect.left, y: rect.bottom + 8 })
+      if (ev.id.startsWith(NATIVE_ID_PREFIX) && _nativeData) {
+        const rawId = ev.id.slice(NATIVE_ID_PREFIX.length)
+        const raw = _nativeData.find(r => r.id === rawId) ?? null
+        setClickedNativeEvent(raw)
+        return
+      }
       setClickedEvent(clickedEvent?.id === ev.id ? null : ev)
       return
     }
@@ -1699,6 +1707,16 @@ export default function CalendarPage() {
           pos={popoverPos}
           onClose={() => setClickedEvent(null)}
           timeZone={firmTzValid ? firmTz : null}
+        />
+      )}
+      {clickedNativeEvent && (
+        <EventDetailsPopover
+          event={clickedNativeEvent}
+          pos={popoverPos}
+          onClose={() => setClickedNativeEvent(null)}
+          onMutated={() => qc.invalidateQueries({ queryKey: ['native-calendar-events'] })}
+          timeZone={firmTz ?? ''}
+          user={{ id: user?.id ?? '', role: user?.role === 'firm_owner' ? 'firm_owner' : user?.role === 'manager' ? 'manager' : 'staff' }}
         />
       )}
   </>)
