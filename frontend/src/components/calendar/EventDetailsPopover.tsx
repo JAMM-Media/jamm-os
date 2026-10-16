@@ -222,6 +222,7 @@ export function EventDetailsPopover({
     <>
       <div
         ref={popoverRef}
+        hidden={editOpen}
         data-testid="event-details-popover"
         className="fixed z-50 bg-surface-card dark:bg-dark-card border border-surface-border dark:border-dark-border rounded-[10px] shadow-lg p-4 w-80"
         style={{

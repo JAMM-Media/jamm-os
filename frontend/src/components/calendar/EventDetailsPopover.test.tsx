@@ -512,3 +512,35 @@ describe('delete request flow', () => {
     // Proof: removing BOTH makes the test fail.
   })
 })
+
+// ---------------------------------------------------------------------------
+// Panel visibility while the edit modal is open
+// ---------------------------------------------------------------------------
+
+describe('panel visibility while edit modal is open', () => {
+  it('clicking Edit hides the popover panel while the edit modal is shown', async () => {
+    const user = userEvent.setup()
+    renderPopover(makeEvent({ createdBy: SELF, ownerUserId: SELF }), staffUser)
+    const panel = screen.getByTestId('event-details-popover')
+    expect(panel).not.toHaveAttribute('hidden')
+    expect(panel).toBeVisible()
+    await user.click(screen.getByRole('button', { name: /edit/i }))
+    expect(screen.getByTestId('event-details-popover')).toHaveAttribute('hidden')
+    expect(screen.getByTestId('event-details-popover')).not.toBeVisible()
+    expect(screen.getByRole('dialog', { name: /edit-modal/i })).toBeVisible()
+  })
+
+  it('Cancel in the edit modal brings the popover panel back', async () => {
+    const onClose = vi.fn()
+    const user = userEvent.setup()
+    renderPopover(makeEvent({ createdBy: SELF, ownerUserId: SELF }), staffUser, onClose)
+    await user.click(screen.getByRole('button', { name: /edit/i }))
+    expect(screen.getByTestId('event-details-popover')).toHaveAttribute('hidden')
+    await user.click(screen.getByRole('button', { name: /close modal/i }))
+    expect(screen.queryByRole('dialog', { name: /edit-modal/i })).not.toBeInTheDocument()
+    const panel = screen.getByTestId('event-details-popover')
+    expect(panel).not.toHaveAttribute('hidden')
+    expect(panel).toBeVisible()
+    expect(onClose).not.toHaveBeenCalled()
+  })
+})

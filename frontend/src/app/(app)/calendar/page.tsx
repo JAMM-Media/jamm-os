@@ -934,7 +934,7 @@ export default function CalendarPage() {
   }, [view, cursor, agendaAnchor, agendaMode, firmTzValid, firmTz])
 
   const { data: _nativeData, isError: nativeEventsError } = useQuery({
-    queryKey: ['native-calendar-events', firmTz ?? '', view, _nativeRange?.startStr ?? '', _nativeRange?.endStr ?? ''],
+    queryKey: ['native-calendar-events', user?.id ?? '', firmTz ?? '', view, _nativeRange?.startStr ?? '', _nativeRange?.endStr ?? ''],
     queryFn: () => calendarEventsApi.listEventsInRange({ from: _nativeRange!.from, to: _nativeRange!.to }),
     enabled: firmTzValid && !firmLoading && _nativeRange !== null,
     retry: false,
@@ -1709,13 +1709,13 @@ export default function CalendarPage() {
           timeZone={firmTzValid ? firmTz : null}
         />
       )}
-      {clickedNativeEvent && (
+      {clickedNativeEvent && (firmTzValid && firmTz) && (
         <EventDetailsPopover
           event={clickedNativeEvent}
           pos={popoverPos}
           onClose={() => setClickedNativeEvent(null)}
           onMutated={() => qc.invalidateQueries({ queryKey: ['native-calendar-events'] })}
-          timeZone={firmTz ?? ''}
+          timeZone={firmTz}
           user={{ id: user?.id ?? '', role: user?.role === 'firm_owner' ? 'firm_owner' : user?.role === 'manager' ? 'manager' : 'staff' }}
         />
       )}
