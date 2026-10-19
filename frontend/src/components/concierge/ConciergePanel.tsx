@@ -45,7 +45,7 @@ const PAGE_LABELS: Record<string, string> = {
 const MODAL_LABELS: Record<string, string> = {
   'new-client': 'New Client form',
   'new-engagement': 'New Engagement form',
-  'invite-staff': 'Invite Team Member form',
+  'invite-staff': 'Invite Staff Member form',
   'portal-magic-link': 'Send Magic-Link',
   'new-template': 'New Template form',
   'quickbooks-scroll': 'QuickBooks connection',
@@ -763,7 +763,7 @@ export function ConciergePanel({ isOpen, onClose }: ConciergePanelProps) {
     const normalizedRoute = (action.route === '/settings/team' ? '/settings' : action.route) as string
     const routeToLabel: Record<string, string> = {
       '/clients': 'Navigated to Clients',
-      '/settings/team': 'Navigated to Team Settings',
+      '/settings/team': 'Navigated to Staff Settings',
       '/engagements/templates': 'Navigated to Engagement Templates',
       '/settings/integrations': 'Navigated to Integrations',
       '/settings/billing': 'Navigated to Billing',

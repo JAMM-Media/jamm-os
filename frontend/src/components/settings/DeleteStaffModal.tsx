@@ -46,7 +46,7 @@ export function DeleteStaffModal({ open, onClose, onDeleted, member }: Props) {
     } catch (err: unknown) {
       const msg =
         (err as { response?: { data?: { detail?: string } }; message?: string })
-          ?.response?.data?.detail ?? 'Failed to delete team member.'
+          ?.response?.data?.detail ?? 'Failed to delete staff member.'
       setDeleteError(msg)
     } finally {
       setDeleting(false)
@@ -68,7 +68,7 @@ export function DeleteStaffModal({ open, onClose, onDeleted, member }: Props) {
           <>
             <div className="bg-[#FEE2E2] rounded-t-[10px] px-5 py-4 flex items-center gap-3">
               <AlertTriangle className="h-6 w-6 text-[#991B1B] flex-shrink-0" />
-              <span className="text-[14px] font-medium text-[#991B1B]">Delete Team Member</span>
+              <span className="text-[14px] font-medium text-[#991B1B]">Delete Staff Member</span>
             </div>
             <div className="px-5 py-4 flex flex-col gap-3">
               <ul className="flex flex-col gap-2">
@@ -137,7 +137,7 @@ export function DeleteStaffModal({ open, onClose, onDeleted, member }: Props) {
           <>
             <div className="bg-[#991B1B] rounded-t-[10px] px-5 py-4 flex items-center gap-3">
               <AlertTriangle className="h-6 w-6 text-white flex-shrink-0" />
-              <span className="text-[14px] font-medium text-white">Delete Team Member</span>
+              <span className="text-[14px] font-medium text-white">Delete Staff Member</span>
             </div>
             <div className="px-5 py-4 flex flex-col gap-4">
               <p className="text-[13px] text-brand dark:text-[#EDEEF0]">

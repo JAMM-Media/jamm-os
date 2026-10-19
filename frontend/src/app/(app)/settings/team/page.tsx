@@ -112,7 +112,7 @@ export default function SettingsTeamPage() {
     return (
         <div className="flex items-center justify-center h-full p-6">
           <p className="text-[14px] text-[#6B7280]">
-            You do not have permission to manage team members.
+            You do not have permission to manage staff members.
           </p>
         </div>
     )
@@ -168,10 +168,10 @@ export default function SettingsTeamPage() {
             Settings
           </Link>
           <span className="text-[12px] text-[#9CA3AF]">/</span>
-          <span className="text-[12px] text-brand dark:text-[#EDEEF0]">Team</span>
+          <span className="text-[12px] text-brand dark:text-[#EDEEF0]">Staff</span>
         </div>
 
-        <h1 className="text-[24px] font-medium text-brand dark:text-[#EDEEF0]">Team</h1>
+        <h1 className="text-[24px] font-medium text-brand dark:text-[#EDEEF0]">Staff</h1>
 
         {/* Invite Staff Section */}
         <div
@@ -264,7 +264,7 @@ export default function SettingsTeamPage() {
         <div className="flex flex-col gap-3">
           <div className="flex items-center justify-between">
             <span className="text-[14px] font-medium text-brand dark:text-[#EDEEF0]">
-              Team Members
+              Staff
             </span>
             {!staffLoading && (
               <span className="text-[13px] text-[#6B7280] dark:text-[#9CA3AF]">
@@ -299,7 +299,7 @@ export default function SettingsTeamPage() {
             ) : members.length === 0 ? (
               <div className="flex items-center justify-center px-4 py-10 bg-[#E4E6EA] dark:bg-[#2D2D2D]">
                 <p className="text-[13px] font-medium text-brand dark:text-[#EDEEF0]">
-                  No team members found.
+                  No staff members found.
                 </p>
               </div>
             ) : (

@@ -286,7 +286,7 @@ const TABS = [
   { key: 'my_integrations', label: 'My Integrations' },
   { key: 'profile', label: 'Profile' },
   { key: 'firm', label: 'Firm' },
-  { key: 'team', label: 'Team' },
+  { key: 'team', label: 'Staff' },
   { key: 'security', label: 'Security' },
   { key: 'automations', label: 'Automations' },
   { key: 'pricing', label: 'Pricing' },
@@ -485,7 +485,7 @@ export default function SettingsPage() {
         role: inviteRole,
       })
       setFormDirty(false)
-      toast.success('Team member added.')
+      toast.success('Staff member added.')
       setInviteFullName('')
       setInviteEmail('')
       setInvitePassword('')
@@ -1343,7 +1343,7 @@ export default function SettingsPage() {
                       disabled={inviteSubmitting}
                       className="h-8 px-3 text-[13px] font-medium rounded-[6px] bg-brand text-white hover:bg-brand/90 transition-colors disabled:opacity-60"
                     >
-                      {inviteSubmitting ? 'Adding...' : '+ Add Team Member'}
+                      {inviteSubmitting ? 'Adding...' : '+ Add Staff Member'}
                     </button>
                   </div>
                 </form>
@@ -1353,10 +1353,10 @@ export default function SettingsPage() {
             {/* Right: Staff table — always visible */}
             <div className="flex-1 min-w-0">
               <div className="flex items-center justify-between mb-3">
-                <span className="text-[14px] font-medium text-brand dark:text-[#EDEEF0]">Team Members</span>
+                <span className="text-[14px] font-medium text-brand dark:text-[#EDEEF0]">Staff</span>
                 {!teamLoading && (
                   <span className="text-[12px] text-[#6B7280] dark:text-[#9CA3AF]">
-                    {team.length} {team.length === 1 ? 'member' : 'members'}
+                    {team.length} {team.length === 1 ? 'staff member' : 'staff members'}
                   </span>
                 )}
               </div>
@@ -1389,7 +1389,7 @@ export default function SettingsPage() {
                     ) : team.length === 0 ? (
                       <tr className="bg-surface-page dark:bg-dark-page">
                         <td colSpan={5} className="px-4 py-10 text-center text-[12px] text-[#6B7280]">
-                          No team members yet. Use the form to add your first staff member.
+                          No staff members yet. Use the form to add your first staff member.
                         </td>
                       </tr>
                     ) : (

@@ -47,7 +47,7 @@ export function EditStaffModal({ open, onClose, onSaved, member }: Props) {
     } catch (err: unknown) {
       const msg =
         (err as { response?: { data?: { detail?: string } }; message?: string })
-          ?.response?.data?.detail ?? 'Failed to update team member.'
+          ?.response?.data?.detail ?? 'Failed to update staff member.'
       setError(msg)
     } finally {
       setSubmitting(false)
@@ -60,7 +60,7 @@ export function EditStaffModal({ open, onClose, onSaved, member }: Props) {
     <Modal
       open={open}
       onClose={onClose}
-      title="Edit Team Member"
+      title="Edit Staff Member"
       size="sm"
       footer={
         <>
