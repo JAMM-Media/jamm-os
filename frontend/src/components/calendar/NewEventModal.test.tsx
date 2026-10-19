@@ -458,3 +458,220 @@ describe('edit mode', () => {
     expect(patch).not.toHaveProperty('category_id')
   })
 })
+
+// ---------------------------------------------------------------------------
+// Client picker (Calendar 3e)
+// ---------------------------------------------------------------------------
+
+// Hoisted by vitest to the top of the file, so it applies to every test here.
+vi.mock('@/lib/api/clients', () => ({
+  clientsApi: {
+    list: vi.fn(),
+  },
+}))
+
+import { clientsApi } from '@/lib/api/clients'
+
+const mockClientsApi = clientsApi as unknown as { list: ReturnType<typeof vi.fn> }
+
+// Load-bearing for the existing manager and owner tests: without a resolved
+// value the mocked list() returns undefined and the load effect throws.
+beforeEach(() => {
+  mockClientsApi.list.mockResolvedValue({ items: [], total: 0 })
+})
+
+describe('client picker', () => {
+  const CLIENTS = {
+    items: [
+      { id: 'client-1', name: 'Acme LLC', isActive: true },
+      { id: 'client-2', name: 'Old Co', isActive: false },
+      { id: 'client-3', name: 'Beta Inc', isActive: true },
+    ],
+    total: 3,
+  }
+
+  function clientEditEvent(overrides: Partial<import('@/lib/api/calendarEvents').CalendarEvent> = {}): import('@/lib/api/calendarEvents').CalendarEvent {
+    return {
+      id: 'ev-client',
+      title: 'Client review',
+      startAt: '2026-01-15T14:00:00Z',
+      endAt: '2026-01-15T15:00:00Z',
+      eventTimezone: TZ,
+      categoryId: null,
+      categoryName: null,
+      categoryColor: null,
+      clientId: 'client-1',
+      clientName: 'Acme LLC',
+      ownerUserId: CURRENT_USER_ID,
+      ownerName: 'Me',
+      createdBy: CURRENT_USER_ID,
+      createdAt: '2026-01-01T00:00:00Z',
+      updatedAt: '2026-01-01T00:00:00Z',
+      deletedAt: null,
+      staffNotes: null,
+      completedAt: null,
+      isDone: false,
+      deleteRequestedAt: null,
+      deleteRequestedBy: null,
+      deleteRequestReason: null,
+      ...overrides,
+    }
+  }
+
+  it('manager sees the Client select with No client first and active clients only', async () => {
+    mockClientsApi.list.mockResolvedValue(CLIENTS)
+    render(<NewEventModal {...managerProps()} />)
+    const sel = await screen.findByRole('combobox', { name: /client/i }) as HTMLSelectElement
+    expect(sel.value).toBe('')
+    expect(screen.getByRole('option', { name: 'No client' })).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByRole('option', { name: 'Acme LLC' })).toBeInTheDocument())
+    expect(screen.getByRole('option', { name: 'Beta Inc' })).toBeInTheDocument()
+    expect(screen.queryByRole('option', { name: 'Old Co' })).not.toBeInTheDocument()
+    expect(mockClientsApi.list).toHaveBeenCalledWith(0, 1000)
+  })
+
+  it('owner sees the Client select', async () => {
+    render(<NewEventModal {...ownerProps()} />)
+    expect(await screen.findByRole('combobox', { name: /client/i })).toBeInTheDocument()
+  })
+
+  it('staff does not see the Client select and the clients list is not requested', () => {
+    render(<NewEventModal {...staffProps()} />)
+    expect(screen.queryByRole('combobox', { name: /client/i })).not.toBeInTheDocument()
+    expect(mockClientsApi.list).not.toHaveBeenCalled()
+  })
+
+  it('staff submit sends no clientId', async () => {
+    mockApiSuccess()
+    const user = userEvent.setup()
+    render(<NewEventModal {...staffProps()} />)
+    await user.type(screen.getByRole('textbox', { name: /title/i }), 'Staff event')
+    await user.click(screen.getByRole('button', { name: /save/i }))
+    await waitFor(() => expect(mockApi.createEvent).toHaveBeenCalledTimes(1))
+    expect(mockApi.createEvent.mock.calls[0][0]).not.toHaveProperty('clientId')
+  })
+
+  it('manager picks a client and create sends that clientId', async () => {
+    mockApiSuccess()
+    mockClientsApi.list.mockResolvedValue(CLIENTS)
+    const user = userEvent.setup()
+    render(<NewEventModal {...managerProps()} />)
+    await user.type(screen.getByRole('textbox', { name: /title/i }), 'Client meeting')
+    await waitFor(() => expect(screen.getByRole('option', { name: 'Acme LLC' })).toBeInTheDocument())
+    fireEvent.change(screen.getByRole('combobox', { name: /client/i }), { target: { value: 'client-1' } })
+    await user.click(screen.getByRole('button', { name: /save/i }))
+    await waitFor(() => expect(mockApi.createEvent).toHaveBeenCalledTimes(1))
+    expect(mockApi.createEvent.mock.calls[0][0]).toHaveProperty('clientId', 'client-1')
+  })
+
+  it('manager leaving No client sends no clientId on create', async () => {
+    mockApiSuccess()
+    mockClientsApi.list.mockResolvedValue(CLIENTS)
+    const user = userEvent.setup()
+    render(<NewEventModal {...managerProps()} />)
+    await user.type(screen.getByRole('textbox', { name: /title/i }), 'No client meeting')
+    await waitFor(() => expect(screen.getByRole('option', { name: 'Acme LLC' })).toBeInTheDocument())
+    await user.click(screen.getByRole('button', { name: /save/i }))
+    await waitFor(() => expect(mockApi.createEvent).toHaveBeenCalledTimes(1))
+    expect(mockApi.createEvent.mock.calls[0][0]).not.toHaveProperty('clientId')
+  })
+
+  it('edit mode prefills the existing client', async () => {
+    mockApiSuccess()
+    mockClientsApi.list.mockResolvedValue(CLIENTS)
+    render(<NewEventModal {...managerProps()} editEvent={clientEditEvent()} />)
+    const sel = await screen.findByRole('combobox', { name: /client/i }) as HTMLSelectElement
+    await waitFor(() => expect(sel.value).toBe('client-1'))
+    await waitFor(() => expect(screen.getByRole('option', { name: 'Beta Inc' })).toBeInTheDocument())
+    expect(sel.value).toBe('client-1')
+    expect(screen.getAllByRole('option', { name: 'Acme LLC' })).toHaveLength(1)
+  })
+
+  it('edit mode sends client_id only when the client changed', async () => {
+    mockApiSuccess()
+    mockClientsApi.list.mockResolvedValue(CLIENTS)
+    mockApi.updateEvent.mockResolvedValue(clientEditEvent({ title: 'Renamed' }))
+    const user = userEvent.setup()
+    const first = render(<NewEventModal {...managerProps()} editEvent={clientEditEvent()} />)
+    await waitFor(() => expect(screen.getByRole('option', { name: 'Beta Inc' })).toBeInTheDocument())
+    const titleInput = screen.getByRole('textbox', { name: /title/i })
+    await user.clear(titleInput)
+    await user.type(titleInput, 'Renamed')
+    await user.click(screen.getByRole('button', { name: /save/i }))
+    await waitFor(() => expect(mockApi.updateEvent).toHaveBeenCalledTimes(1))
+    const [, unchangedPatch] = mockApi.updateEvent.mock.calls[0]
+    expect(unchangedPatch).toHaveProperty('title', 'Renamed')
+    expect(unchangedPatch).not.toHaveProperty('client_id')
+    first.unmount()
+
+    mockApi.updateEvent.mockResolvedValue(clientEditEvent({ clientId: 'client-3', clientName: 'Beta Inc' }))
+    render(<NewEventModal {...managerProps()} editEvent={clientEditEvent()} />)
+    await waitFor(() => expect(screen.getByRole('option', { name: 'Beta Inc' })).toBeInTheDocument())
+    fireEvent.change(screen.getByRole('combobox', { name: /client/i }), { target: { value: 'client-3' } })
+    await user.click(screen.getByRole('button', { name: /save/i }))
+    await waitFor(() => expect(mockApi.updateEvent).toHaveBeenCalledTimes(2))
+    const [, changedPatch] = mockApi.updateEvent.mock.calls[1]
+    expect(changedPatch).toEqual({ client_id: 'client-3' })
+  })
+
+  it('clearing the client in edit mode sends client_id null', async () => {
+    mockApiSuccess()
+    mockClientsApi.list.mockResolvedValue(CLIENTS)
+    mockApi.updateEvent.mockResolvedValue(clientEditEvent({ clientId: null, clientName: null }))
+    const user = userEvent.setup()
+    render(<NewEventModal {...managerProps()} editEvent={clientEditEvent()} />)
+    await waitFor(() => expect(screen.getByRole('option', { name: 'Beta Inc' })).toBeInTheDocument())
+    fireEvent.change(screen.getByRole('combobox', { name: /client/i }), { target: { value: '' } })
+    await user.click(screen.getByRole('button', { name: /save/i }))
+    await waitFor(() => expect(mockApi.updateEvent).toHaveBeenCalledTimes(1))
+    const [, patch] = mockApi.updateEvent.mock.calls[0]
+    expect(patch).toHaveProperty('client_id', null)
+  })
+
+  it('editing an event whose clientId is undefined and changing only the title sends no client_id', async () => {
+    mockApiSuccess()
+    mockApi.updateEvent.mockResolvedValue(clientEditEvent({ title: 'Renamed', clientId: null, clientName: null }))
+    const user = userEvent.setup()
+    const legacyEvent = clientEditEvent({ clientId: undefined as unknown as null, clientName: null })
+    render(<NewEventModal {...managerProps()} editEvent={legacyEvent} />)
+    await screen.findByRole('combobox', { name: /client/i })
+    const titleInput = screen.getByRole('textbox', { name: /title/i })
+    await user.clear(titleInput)
+    await user.type(titleInput, 'Renamed')
+    await user.click(screen.getByRole('button', { name: /save/i }))
+    await waitFor(() => expect(mockApi.updateEvent).toHaveBeenCalledTimes(1))
+    const [, patch] = mockApi.updateEvent.mock.calls[0]
+    expect(patch).toHaveProperty('title', 'Renamed')
+    expect(patch).not.toHaveProperty('client_id')
+  })
+
+  it('clients list failure leaves only No client and the form still submits', async () => {
+    mockApiSuccess()
+    mockClientsApi.list.mockRejectedValue(new Error('network'))
+    const user = userEvent.setup()
+    render(<NewEventModal {...managerProps()} />)
+    const sel = await screen.findByRole('combobox', { name: /client/i }) as HTMLSelectElement
+    await waitFor(() => expect(mockClientsApi.list).toHaveBeenCalledTimes(1))
+    expect(sel.querySelectorAll('option')).toHaveLength(1)
+    expect(screen.getByRole('option', { name: 'No client' })).toBeInTheDocument()
+    await user.type(screen.getByRole('textbox', { name: /title/i }), 'Still works')
+    await user.click(screen.getByRole('button', { name: /save/i }))
+    await waitFor(() => expect(mockApi.createEvent).toHaveBeenCalledTimes(1))
+    expect(mockApi.createEvent.mock.calls[0][0]).not.toHaveProperty('clientId')
+  })
+
+  it('backend 422 detail on a client submit is shown via toast.error and the form stays open', async () => {
+    mockClientsApi.list.mockResolvedValue(CLIENTS)
+    mockApi.createEvent.mockRejectedValue({ response: { data: { detail: 'Client not found.' } } })
+    const onClose = vi.fn()
+    const user = userEvent.setup()
+    render(<NewEventModal {...managerProps()} onClose={onClose} />)
+    await user.type(screen.getByRole('textbox', { name: /title/i }), 'Bad client')
+    await waitFor(() => expect(screen.getByRole('option', { name: 'Acme LLC' })).toBeInTheDocument())
+    fireEvent.change(screen.getByRole('combobox', { name: /client/i }), { target: { value: 'client-1' } })
+    await user.click(screen.getByRole('button', { name: /save/i }))
+    await waitFor(() => expect(mockToast.error).toHaveBeenCalledWith('Client not found.'))
+    expect(onClose).not.toHaveBeenCalled()
+    expect(screen.getByRole('combobox', { name: /client/i })).toBeInTheDocument()
+  })
+})

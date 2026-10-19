@@ -11,6 +11,7 @@ import { SelectInput } from '@/components/ui/SelectInput'
 import { DatePickerPopover } from '@/components/calendar/DatePickerPopover'
 import { calendarEventsApi, buildEventPatch, type CalendarEvent } from '@/lib/api/calendarEvents'
 import { staffApi } from '@/lib/api/staffApi'
+import { clientsApi } from '@/lib/api/clients'
 import {
   wallTimeToInstant,
   minutesIntoDay,
@@ -93,6 +94,8 @@ function validateWallTime(dateStr: string, minutes: number, timeZone: string): s
 
 const START_OPTIONS = buildStartOptions()
 const END_OPTIONS = buildEndOptions()
+// Backend caps the clients list at 1000 per page; ask for the cap so no client is hidden
+const CLIENT_LIST_LIMIT = 1000
 
 // ---------------------------------------------------------------------------
 // Component
@@ -118,6 +121,7 @@ export function NewEventModal({
   const [endMin, setEndMin] = useState(() => Math.min(defaultStartMin(defaultDateStr, todayDateStr, timeZone) + 60, 1425))
   const [categoryId, setCategoryId] = useState('')
   const [ownerValue, setOwnerValue] = useState(currentUserId)
+  const [clientId, setClientId] = useState('')
   const [errors, setErrors] = useState<Record<string, string | undefined>>({})
   const [submitting, setSubmitting] = useState(false)
 
@@ -130,6 +134,7 @@ export function NewEventModal({
   // Data
   const [categories, setCategories] = useState<{ value: string; label: string }[]>([])
   const [roster, setRoster] = useState<{ id: string; full_name: string | null }[]>([])
+  const [clients, setClients] = useState<{ id: string; name: string }[]>([])
 
   // Reset or prefill form when modal opens
   useEffect(() => {
@@ -150,6 +155,7 @@ export function NewEventModal({
         setEndMin(Math.min(s + 60, 1425))
       }
       setCategoryId(editEvent.categoryId ?? '')
+      setClientId(editEvent.clientId ?? '')
       setOwnerValue(editEvent.ownerUserId ?? '')
       setErrors({})
       setDatePickerOpen(false)
@@ -160,6 +166,7 @@ export function NewEventModal({
       setStartMin(s)
       setEndMin(Math.min(s + 60, 1425))
       setCategoryId('')
+      setClientId('')
       setOwnerValue(currentUserId)
       setErrors({})
       setDatePickerOpen(false)
@@ -180,6 +187,14 @@ export function NewEventModal({
     staffApi.listFirmRoster()
       .then(people => setRoster(people))
       .catch(() => setRoster([]))
+  }, [open, isManagerOrAbove])
+
+  // Load clients for managers and owners (active only)
+  useEffect(() => {
+    if (!open || !isManagerOrAbove) return
+    clientsApi.list(0, CLIENT_LIST_LIMIT)
+      .then(({ items }) => setClients(items.filter(c => c.isActive).map(c => ({ id: c.id, name: c.name }))))
+      .catch(() => setClients([]))
   }, [open, isManagerOrAbove])
 
   // When picker is open, intercept Escape at window capture so it closes only
@@ -261,6 +276,7 @@ export function NewEventModal({
           startAt?: string
           endAt?: string
           categoryId?: string | null
+          clientId?: string | null
           ownerUserId?: string | null
         } = {}
         if (title.trim() !== editEvent.title) patch.title = title.trim()
@@ -271,6 +287,8 @@ export function NewEventModal({
         if (isManagerOrAbove) {
           const newOwner = ownerValue === '' ? null : ownerValue
           if (newOwner !== editEvent.ownerUserId) patch.ownerUserId = newOwner
+          const newClient = clientId === '' ? null : clientId
+          if (newClient !== (editEvent.clientId ?? null)) patch.clientId = newClient
         }
         const ev = await calendarEventsApi.updateEvent(editEvent.id, buildEventPatch(patch))
         onCreated(ev)
@@ -281,6 +299,7 @@ export function NewEventModal({
           startAt: string
           endAt: string
           categoryId?: string | null
+          clientId?: string | null
           ownerUserId?: string | null
         } = {
           title: title.trim(),
@@ -291,6 +310,7 @@ export function NewEventModal({
         if (isManagerOrAbove) {
           input.ownerUserId = ownerValue === '' ? null : ownerValue
         }
+        if (isManagerOrAbove && clientId) input.clientId = clientId
         const ev = await calendarEventsApi.createEvent(input)
         onCreated(ev)
         onClose()
@@ -307,6 +327,15 @@ export function NewEventModal({
     setDatePickerOpen(false)
     onClose()
   }
+
+  // A prefilled client stays selectable even if it is inactive or beyond the page
+  const clientOptions = [
+    { value: '', label: 'No client' },
+    ...clients.map(c => ({ value: c.id, label: c.name })),
+    ...(editEvent?.clientId && !clients.some(c => c.id === editEvent.clientId)
+      ? [{ value: editEvent.clientId, label: editEvent.clientName ?? editEvent.clientId }]
+      : []),
+  ]
 
   const ownerOptions = [
     { value: currentUserId, label: 'Me' },
@@ -402,6 +431,18 @@ export function NewEventModal({
               options={[{ value: '', label: 'No category' }, ...categories]}
             />
           </FormField>
+
+          {/* Client (managers and owners only) */}
+          {isManagerOrAbove && (
+            <FormField label="Client">
+              <SelectInput
+                aria-label="Client"
+                value={clientId}
+                onChange={e => setClientId(e.target.value)}
+                options={clientOptions}
+              />
+            </FormField>
+          )}
 
           {/* Owner (managers and owners only) */}
           {isManagerOrAbove && (
