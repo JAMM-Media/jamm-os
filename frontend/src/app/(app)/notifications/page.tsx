@@ -1,12 +1,20 @@
-// path: frontend/src/app/notifications/page.tsx
+// path: frontend/src/app/(app)/notifications/page.tsx
 'use client'
 
-import { useState } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMemo, useState } from 'react'
+import { useInfiniteQuery, useQuery, useQueryClient, type InfiniteData } from '@tanstack/react-query'
 import { useRouter } from 'next/navigation'
 import api from '@/lib/api'
 import { toast } from 'sonner'
-import { getEntityPath } from '@/lib/notificationPaths'
+import { getEntityPath, getEntityDestinationLabel } from '@/lib/notificationPaths'
+import {
+  DAY_GROUP_LABELS,
+  dedupeById,
+  getDayGroup,
+  getNotificationTypeLabel,
+  splitDeleteRequestBody,
+  type DayGroup,
+} from '@/lib/notificationDisplay'
 
 // Notification type from backend NotificationOut schema
 interface Notification {
@@ -18,6 +26,34 @@ interface Notification {
   created_at: string
   related_entity_type?: string
   related_entity_id?: string
+}
+
+// Response shape of GET /api/v1/notifications/ (PaginatedResponse)
+interface NotificationsResponse {
+  items: Notification[]
+  total: number
+  limit: number
+  offset: number
+}
+
+type CachedNotifications = InfiniteData<NotificationsResponse, number>
+
+const PAGE_SIZE = 50
+
+// Marks one row (or every accumulated row when id is null) as read across
+// all loaded pages, so a row stays read after Load more.
+function markCachedRead(
+  old: CachedNotifications | undefined,
+  id: string | null,
+): CachedNotifications | undefined {
+  if (!old) return old
+  return {
+    ...old,
+    pages: old.pages.map((p) => ({
+      ...p,
+      items: p.items.map((n) => (id === null || n.id === id ? { ...n, is_read: true } : n)),
+    })),
+  }
 }
 
 // Relative timestamp helper
@@ -40,14 +76,46 @@ export default function NotificationsPage() {
   const [typeFilter, setTypeFilter] = useState('all')
   const [readFilter, setReadFilter] = useState('all')
 
-  const { data, isLoading, isError, refetch } = useQuery<{ items: Notification[] }>({
+  const {
+    data,
+    isLoading,
+    isError,
+    refetch,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isFetchNextPageError,
+  } = useInfiniteQuery({
     queryKey: ['notifications'],
-    queryFn: () => api.get('/api/v1/notifications/?limit=50').then((r) => r.data),
+    initialPageParam: 0,
+    queryFn: ({ pageParam }): Promise<NotificationsResponse> =>
+      api.get(`/api/v1/notifications/?limit=${PAGE_SIZE}&skip=${pageParam}`).then((r) => r.data),
+    // Next skip is the number of rows fetched so far. Rows arriving mid-session
+    // shift offsets, so the loaded rows are deduped by id below.
+    getNextPageParam: (lastPage, allPages) => {
+      const fetched = allPages.reduce((sum, p) => sum + p.items.length, 0)
+      if (lastPage.items.length === 0 || fetched >= lastPage.total) return undefined
+      return fetched
+    },
     staleTime: 30 * 1000,
   })
 
-  const notifications = data?.items ?? []
-  const unreadCount = notifications.filter((n) => !n.is_read).length
+  // Same key and queryFn as the Sidebar badge, so the cache entry is shared.
+  const { data: unreadData } = useQuery({
+    queryKey: ['notifications-unread-count'],
+    queryFn: () => api.get('/api/v1/notifications/unread-count').then((r) => r.data),
+    staleTime: 30 * 1000,
+  })
+  const serverUnread: number = unreadData?.count ?? 0
+
+  const notifications = useMemo(
+    () => dedupeById(data?.pages.flatMap((p) => p.items) ?? []),
+    [data],
+  )
+  const total = data?.pages[data.pages.length - 1]?.total ?? 0
+  const loadedUnread = notifications.filter((n) => !n.is_read).length
+  const showMarkAll = loadedUnread > 0 || serverUnread > 0
+  const loadedOnly = notifications.length < total
 
   const filtered = notifications.filter((n) => {
     if (search && !n.title.toLowerCase().includes(search.toLowerCase()) && !n.body.toLowerCase().includes(search.toLowerCase())) return false
@@ -59,16 +127,13 @@ export default function NotificationsPage() {
 
   async function handleMarkRead(id: string) {
     await api.patch(`/api/v1/notifications/${id}/read`)
-    queryClient.setQueryData(['notifications'], (old: { items: Notification[] } | undefined) => {
-      if (!old) return old
-      return { ...old, items: old.items.map((n) => n.id === id ? { ...n, is_read: true } : n) }
-    })
+    queryClient.setQueryData<CachedNotifications>(['notifications'], (old) => markCachedRead(old, id))
     queryClient.invalidateQueries({ queryKey: ['notifications-unread-count'] })
   }
 
   async function handleMarkAllRead() {
     await api.patch('/api/v1/notifications/read-all')
-    refetch()
+    queryClient.setQueryData<CachedNotifications>(['notifications'], (old) => markCachedRead(old, null))
     queryClient.invalidateQueries({ queryKey: ['notifications-unread-count'] })
     toast.success('All notifications marked as read')
   }
@@ -85,35 +150,26 @@ export default function NotificationsPage() {
     if (path) router.push(path)
   }
 
-  const NOTIFICATION_TYPE_LABELS: Record<string, string> = {
-    'mention': '@ Mention',
-    'task.assigned': 'Task Assigned',
-    'task.completed': 'Task Completed',
-    'task.overdue': 'Task Overdue',
-    'engagement.deadline_approaching': 'Deadline Approaching',
-    'engagement.completed': 'Engagement Completed',
-    'document_request.completed': 'Documents Received',
-    'document_request.reminder_sent': 'Document Reminder Sent',
-    'invoice.paid': 'Invoice Paid',
-    'invoice.overdue': 'Invoice Overdue',
-    'invoice.reminder_sent': 'Invoice Reminder Sent',
-    'irs_authorization.expiry_approaching': 'IRS Auth Expiring',
-    'portal.first_login': 'Client Portal Login',
-    'firm_chat.message': 'Firm Chat Message',
-    'anniversary': 'Client Anniversary',
-    'automation.fired': 'Automation Fired',
-  }
-
   const uniqueTypes = Array.from(
     new Set(notifications.map((n) => n.notification_type))
   ).sort()
+
+  // Rows arrive newest first, so each day group is contiguous.
+  const now = new Date()
+  const groups: Array<{ group: DayGroup; rows: Notification[] }> = []
+  for (const n of filtered) {
+    const g = getDayGroup(n.created_at, now)
+    const last = groups[groups.length - 1]
+    if (last && last.group === g) last.rows.push(n)
+    else groups.push({ group: g, rows: [n] })
+  }
 
   return (
       <div className="p-6 max-w-3xl">
         {/* Header */}
         <div className="flex items-center justify-between mb-5">
           <h1 className="text-[24px] font-medium text-brand dark:text-[#EDEEF0]">Notifications</h1>
-          {unreadCount > 0 && (
+          {showMarkAll && (
             <button
               onClick={handleMarkAllRead}
               className="text-[12px] font-medium text-[#6B7280] hover:text-brand underline"
@@ -146,7 +202,7 @@ export default function NotificationsPage() {
             <option value="all">All Types</option>
             {uniqueTypes.map((t) => (
               <option key={t} value={t}>
-                {NOTIFICATION_TYPE_LABELS[t] ?? t}
+                {getNotificationTypeLabel(t)}
               </option>
             ))}
           </select>
@@ -187,7 +243,7 @@ export default function NotificationsPage() {
               </div>
             ))}
           </div>
-        ) : isError ? (
+        ) : isError && !data ? (
           <div className="text-center py-12">
             <p className="text-[13px] text-[#6B7280] mb-3">Failed to load notifications.</p>
             <button onClick={() => refetch()} className="text-[12px] font-medium px-4 py-2 rounded-[6px] bg-brand text-white">Retry</button>
@@ -203,35 +259,77 @@ export default function NotificationsPage() {
             <p className="text-[12px] text-[#6B7280]">You&apos;ll see mentions, messages, and updates here.</p>
           </div>
         ) : (
-          <div className="space-y-1">
-            {filtered.map((n) => {
-              const hasLink = !!getEntityPath(n.related_entity_type, n.related_entity_id)
-              return (
-                <div
-                  key={n.id}
-                  onClick={() => handleRowClick(n)}
-                  className={`flex items-start gap-3 px-4 py-3 rounded-[8px] transition-colors ${
-                    n.is_read
-                      ? 'bg-surface-card dark:bg-dark-card'
-                      : 'bg-[#EDEEF0] dark:bg-[#2D2D2D] border border-surface-border dark:border-dark-border'
-                  } ${hasLink ? 'cursor-pointer hover:bg-[#E4E6EA] dark:hover:bg-[#383838]' : ''}`}
-                >
-                  {/* Unread dot */}
-                  <div className="flex-shrink-0 mt-1.5">
-                    <div className={`w-2 h-2 rounded-full ${n.is_read ? 'bg-transparent' : 'bg-brand'}`} />
-                  </div>
+          <div>
+            {groups.map(({ group, rows }) => (
+              <section key={`${group}-${rows[0].id}`} className="mb-4">
+                <h2 className="text-[11px] font-medium uppercase tracking-wide text-[#6B7280] mb-1.5 px-1">
+                  {DAY_GROUP_LABELS[group]}
+                </h2>
+                <div className="space-y-1">
+                  {rows.map((n) => {
+                    const destLabel = getEntityDestinationLabel(n.related_entity_type, n.related_entity_id)
+                    const { main, reason } = splitDeleteRequestBody(n.title, n.body, n.related_entity_type)
+                    return (
+                      <div
+                        key={n.id}
+                        data-unread={n.is_read ? 'false' : 'true'}
+                        onClick={() => handleRowClick(n)}
+                        className={`flex items-start gap-3 px-4 py-3 rounded-[8px] transition-colors ${
+                          n.is_read
+                            ? 'bg-surface-card dark:bg-dark-card'
+                            : 'bg-[#EDEEF0] dark:bg-[#2D2D2D] border border-surface-border dark:border-dark-border'
+                        } ${destLabel ? 'cursor-pointer hover:bg-[#E4E6EA] dark:hover:bg-[#383838]' : ''}`}
+                      >
+                        {/* Unread dot */}
+                        <div className="flex-shrink-0 mt-1.5">
+                          <div className={`w-2 h-2 rounded-full ${n.is_read ? 'bg-transparent' : 'bg-brand'}`} />
+                        </div>
 
-                  {/* Content */}
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[13px] font-medium text-brand dark:text-[#EDEEF0] leading-snug">{n.title}</p>
-                    <p className="text-[12px] text-[#6B7280] mt-0.5 truncate">{n.body}</p>
-                  </div>
+                        {/* Content */}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[13px] font-medium text-brand dark:text-[#EDEEF0] leading-snug">{n.title}</p>
+                          <p className="text-[12px] text-[#6B7280] mt-0.5 whitespace-pre-wrap break-words">{main}</p>
+                          {reason && (
+                            <p className="text-[12px] text-[#6B7280] mt-0.5 whitespace-pre-wrap break-words">
+                              <span className="font-medium">Reason:</span> {reason}
+                            </p>
+                          )}
+                          <p className="text-[11px] text-[#9CA3AF] mt-1">
+                            {destLabel ? `Opens: ${destLabel}` : 'No linked page'}
+                          </p>
+                        </div>
 
-                  {/* Timestamp */}
-                  <span className="text-[11px] text-[#6B7280] flex-shrink-0 mt-0.5">{relativeTime(n.created_at)}</span>
+                        {/* Timestamp */}
+                        <span className="text-[11px] text-[#6B7280] flex-shrink-0 mt-0.5">{relativeTime(n.created_at)}</span>
+                      </div>
+                    )
+                  })}
                 </div>
-              )
-            })}
+              </section>
+            ))}
+          </div>
+        )}
+
+        {/* Load more and loaded-only note */}
+        {!isLoading && !(isError && !data) && (
+          <div className="mt-2 flex flex-col items-center gap-2">
+            {loadedOnly && (
+              <p className="text-[11px] text-[#6B7280] text-center">
+                Showing {notifications.length} of {total} notifications. Search and filters apply to the loaded notifications only.
+              </p>
+            )}
+            {isFetchNextPageError && (
+              <p className="text-[12px] text-[#6B7280]">Could not load more notifications.</p>
+            )}
+            {hasNextPage && (
+              <button
+                onClick={() => fetchNextPage()}
+                disabled={isFetchingNextPage}
+                className="text-[12px] font-medium px-4 py-2 rounded-[6px] border border-surface-border dark:border-dark-border bg-surface-card dark:bg-dark-card text-brand dark:text-[#EDEEF0] disabled:opacity-60"
+              >
+                {isFetchingNextPage ? 'Loading...' : isFetchNextPageError ? 'Retry' : 'Load more'}
+              </button>
+            )}
           </div>
         )}
       </div>
