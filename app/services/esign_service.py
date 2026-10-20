@@ -431,6 +431,60 @@ def update_letter_template(
     return updated
 
 
+def delete_letter_template(
+    *,
+    db: Session,
+    template,
+    firm_id,
+    current_user_id,
+) -> None:
+    """Soft delete (is_active=False), moved out of DELETE /esign/templates/{id}
+    (Phase 7). The template stays restorable from the Deleted Templates tab."""
+    crud_template.delete_template(db, template)
+
+    log_event(
+        firm_id=firm_id,
+        event_type="letter_template.deleted",
+        entity_type="letter_template",
+        entity_id=template.id,
+        actor_type="staff",
+        actor_id=current_user_id,
+        metadata={
+            "engagement_type": template.engagement_type,
+        },
+    )
+
+
+def delete_envelope(
+    *,
+    db: Session,
+    envelope: SignatureEnvelope,
+    firm_id,
+    current_user_id,
+) -> None:
+    """Hard delete, moved out of DELETE /esign/envelopes/{id} (Phase 7)."""
+    envelope_id = envelope.id
+    client_id = envelope.client_id
+    engagement_id = envelope.engagement_id
+    status_at_delete = envelope.status
+
+    crud_envelope.delete_signature_envelope(db, envelope)
+
+    log_event(
+        firm_id=firm_id,
+        event_type="engagement_letter.deleted",
+        entity_type="signature_envelope",
+        entity_id=envelope_id,
+        actor_type="staff",
+        actor_id=current_user_id,
+        metadata={
+            "client_id": str(client_id),
+            "engagement_id": str(engagement_id) if engagement_id else None,
+            "status": status_at_delete,
+        },
+    )
+
+
 def store_signed_document(
     envelope_id: str,
     firm_id: str,

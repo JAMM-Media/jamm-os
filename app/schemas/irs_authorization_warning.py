@@ -16,6 +16,10 @@ class IrsAuthorizationWarningBase(BaseModel):
 class IrsAuthorizationWarningCreate(IrsAuthorizationWarningBase):
     # firm_id is injected server-side from the JWT and is never accepted here.
     authorization_id: UUID
+    # Required, not optional. Every write from Sep 24, 2026 knows who it
+    # reached, because the row is only written after that recipient's in-app
+    # notification landed. Nulls in this column are history, not new data.
+    recipient_user_id: UUID
 
 
 class IrsAuthorizationWarningUpdate(BaseModel):
@@ -27,6 +31,9 @@ class IrsAuthorizationWarningOut(IrsAuthorizationWarningBase):
     id: UUID
     firm_id: UUID
     authorization_id: UUID
+    # Optional on the way out: rows written before Sep 24, 2026 have no
+    # recipient recorded, and a deleted user nulls it on rows that did.
+    recipient_user_id: Optional[UUID] = None
     created_at: datetime
     updated_at: datetime
 
@@ -37,25 +44,25 @@ class IrsAuthorizationWarningLadderItem(BaseModel):
     """
     One rung of the ladder as GET /{auth_id}/warnings reports it.
 
-    Which tier fired and when, and nothing else. Deliberately narrower than
+    Which tier fired, when, and who it reached. Deliberately narrower than
     IrsAuthorizationWarningOut, which carries firm_id, authorization_id and
     the row's own timestamps: the caller already knows the firm from its JWT
     and the authorization from the URL, and created_at is an artifact of when
     the row was written rather than a fact about the warning.
 
-    RECIPIENTS ARE NOT HERE, and their absence is a real gap rather than an
-    editorial choice. irs_authorization_warnings has no recipient column.
-    The sweep resolves recipients at send time through
-    crud_user.get_firm_owners_and_managers and keeps no record of who it
-    reached, so who a warning went to is not recoverable from this table.
-    Reporting it needs a schema change, which Phase F2 did not have. Do not
-    synthesise the list by re-running get_firm_owners_and_managers at read
-    time: firm membership changes, so that would answer "who would be warned
-    today" while appearing to answer "who was warned then", and a compliance
-    record that quietly rewrites its own history is worse than one that
-    admits a gap.
+    RECIPIENTS ARE RECORDED from Sep 24, 2026. The table now holds one row per
+    recipient per tier, so a rung is a grouping of those rows: sent_at is the
+    earliest send in the tier and recipient_user_ids lists every recipient
+    recorded for it. Rungs from before that date, and rungs whose recipients
+    have since been deleted, return an empty list, which means "not recorded"
+    and never "sent to nobody". The list is never synthesised by re-running
+    get_firm_owners_and_managers at read time: firm membership changes, so that
+    would answer "who would be warned today" while appearing to answer "who was
+    warned then", and a compliance record that quietly rewrites its own history
+    is worse than one that admits a gap.
     """
     threshold_days: int
     sent_at: datetime
+    recipient_user_ids: list[UUID]
 
     model_config = ConfigDict(from_attributes=True)

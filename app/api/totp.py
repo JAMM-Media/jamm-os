@@ -4,7 +4,6 @@ import json
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
-from sqlalchemy import select
 
 from app.db.session import get_db
 from app.models.user import User
@@ -20,6 +19,7 @@ from app.services.totp_service import (
     verify_totp_code,
     generate_backup_codes,
     enable_2fa_for_user,
+    disable_2fa_for_user,
 )
 from app.services.audit_service import write_audit_log
 
@@ -94,40 +94,7 @@ def disable_2fa(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    # firm_owner restriction: must not be the only 2FA-enabled owner
-    if current_user.role == UserRole.firm_owner:
-        other_enabled_owners = db.execute(
-            select(User).where(
-                User.firm_id == current_user.firm_id,
-                User.role == UserRole.firm_owner,
-                User.totp_enabled.is_(True),
-                User.id != current_user.id,
-            )
-        ).scalars().first()
-        if not other_enabled_owners:
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    "Cannot disable 2FA: you are the only firm_owner with 2FA enabled. "
-                    "Another firm_owner must enable 2FA first to prevent lockout."
-                ),
-            )
-
-    current_user.totp_secret = None
-    current_user.totp_enabled = False
-    current_user.backup_codes_hash = None
-    db.commit()
-
-    write_audit_log(
-        db=db,
-        firm_id=current_user.firm_id,
-        action="user.2fa_disabled",
-        actor_id=current_user.id,
-        actor_type="staff",
-        entity_type="user",
-        entity_id=current_user.id,
-    )
-
+    disable_2fa_for_user(db=db, user=current_user)
     return {"message": "2FA disabled"}
 
 

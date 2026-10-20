@@ -173,12 +173,14 @@ def delete_envelope(
     envelope_id: UUID,
     db: Session = Depends(get_db),
     current_firm: Firm = Depends(get_current_firm),
-    _: User = Depends(require_manager_or_above),
+    current_user: User = Depends(require_manager_or_above),
 ):
     envelope = crud_envelope.get_signature_envelope(db, envelope_id, current_firm.id)
     if not envelope:
         raise HTTPException(status_code=404, detail="Signature envelope not found")
-    crud_envelope.delete_signature_envelope(db, envelope)
+    esign_service.delete_envelope(
+        db=db, envelope=envelope, firm_id=current_firm.id, current_user_id=current_user.id,
+    )
     return {"deleted": True}
 
 
@@ -673,10 +675,12 @@ def delete_letter_template(
     template_id: UUID,
     db: Session = Depends(get_db),
     current_firm: Firm = Depends(get_current_firm),
-    _: User = Depends(require_manager_or_above),
+    current_user: User = Depends(require_manager_or_above),
 ):
     template = crud_template.get_template(db, template_id, current_firm.id)
     if not template:
         raise HTTPException(status_code=404, detail="Template not found")
-    crud_template.delete_template(db, template)
+    esign_service.delete_letter_template(
+        db=db, template=template, firm_id=current_firm.id, current_user_id=current_user.id,
+    )
     return {"deleted": True}

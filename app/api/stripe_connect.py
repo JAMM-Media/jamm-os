@@ -57,23 +57,7 @@ def stripe_callback(
                 url=f"{settings.FRONTEND_URL}/settings/billing?error=stripe_already_connected"
             )
 
-        token_data = stripe_service.exchange_connect_code(code)
-        stripe_account_id = token_data["stripe_account_id"]
-        stripe_publishable_key = token_data.get("stripe_publishable_key")
-
-        account_details = stripe_service.get_account_details(stripe_account_id)
-
-        crud_stripe.create_connection(
-            db,
-            firm_id=firm_id,
-            stripe_account_id=stripe_account_id,
-            stripe_publishable_key=stripe_publishable_key,
-            country=account_details.get("country"),
-            default_currency=account_details.get("default_currency"),
-            charges_enabled=account_details.get("charges_enabled", False),
-            payouts_enabled=account_details.get("payouts_enabled", False),
-            details_submitted=account_details.get("details_submitted", False),
-        )
+        stripe_service.record_connection(db, firm_id=firm_id, code=code)
 
         return RedirectResponse(
             url=f"{settings.FRONTEND_URL}/settings/billing?connected=stripe"

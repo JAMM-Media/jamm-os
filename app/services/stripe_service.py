@@ -121,6 +121,47 @@ def retrieve_payment_intent(
         raise HTTPException(status_code=400, detail=str(e))
 
 
+def record_connection(db, *, firm_id: UUID, code: str):
+    """Exchange the OAuth code and store the firm's Stripe connection, moved
+    out of GET /stripe/callback (Phase 7). Fires stripe.account_connected with
+    the account's capability flags only: no account id, key or token."""
+    from app.crud import stripe_connection as crud_stripe
+
+    token_data = exchange_connect_code(code)
+    stripe_account_id = token_data["stripe_account_id"]
+    stripe_publishable_key = token_data.get("stripe_publishable_key")
+
+    account_details = get_account_details(stripe_account_id)
+
+    connection = crud_stripe.create_connection(
+        db,
+        firm_id=firm_id,
+        stripe_account_id=stripe_account_id,
+        stripe_publishable_key=stripe_publishable_key,
+        country=account_details.get("country"),
+        default_currency=account_details.get("default_currency"),
+        charges_enabled=account_details.get("charges_enabled", False),
+        payouts_enabled=account_details.get("payouts_enabled", False),
+        details_submitted=account_details.get("details_submitted", False),
+    )
+
+    log_event(
+        firm_id=firm_id,
+        event_type="stripe.account_connected",
+        entity_type="firm",
+        entity_id=firm_id,
+        actor_type="system",
+        actor_id=None,
+        metadata={
+            "charges_enabled": account_details.get("charges_enabled", False),
+            "payouts_enabled": account_details.get("payouts_enabled", False),
+            "details_submitted": account_details.get("details_submitted", False),
+            "country": account_details.get("country"),
+        },
+    )
+    return connection
+
+
 def log_account_status_changed(
     *,
     firm_id: UUID,

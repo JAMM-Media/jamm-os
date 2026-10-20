@@ -10,8 +10,11 @@ import string
 import bcrypt as _bcrypt_lib
 import pyotp
 import qrcode
+from fastapi import HTTPException
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.enums import UserRole
 from app.models.user import User
 from app.services.audit_service import write_audit_log
 from app.services.behavioral_log import log_event
@@ -86,6 +89,58 @@ def enable_2fa_for_user(db: Session, user: User, ip_address: str | None = None, 
 
     log_event(
         event_type="2fa.enabled",
+        firm_id=user.firm_id,
+        entity_type="user",
+        entity_id=user.id,
+        actor_type="staff",
+        actor_id=user.id,
+        metadata={"role": user.role.value if hasattr(user.role, "value") else str(user.role)},
+    )
+
+
+def disable_2fa_for_user(db: Session, user: User) -> None:
+    """Self-service 2FA disable, moved out of POST /2fa/disable (Phase 7).
+
+    Fires 2fa.disabled, the mirror of 2fa.enabled above (ruled Oct 12, 2026).
+    The payload is the role only: the secret and backup codes being cleared
+    here never reach the event.
+    """
+    # firm_owner restriction: must not be the only 2FA-enabled owner
+    if user.role == UserRole.firm_owner:
+        other_enabled_owners = db.execute(
+            select(User).where(
+                User.firm_id == user.firm_id,
+                User.role == UserRole.firm_owner,
+                User.totp_enabled.is_(True),
+                User.id != user.id,
+            )
+        ).scalars().first()
+        if not other_enabled_owners:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Cannot disable 2FA: you are the only firm_owner with 2FA enabled. "
+                    "Another firm_owner must enable 2FA first to prevent lockout."
+                ),
+            )
+
+    user.totp_secret = None
+    user.totp_enabled = False
+    user.backup_codes_hash = None
+    db.commit()
+
+    write_audit_log(
+        db=db,
+        firm_id=user.firm_id,
+        action="user.2fa_disabled",
+        actor_id=user.id,
+        actor_type="staff",
+        entity_type="user",
+        entity_id=user.id,
+    )
+
+    log_event(
+        event_type="2fa.disabled",
         firm_id=user.firm_id,
         entity_type="user",
         entity_id=user.id,

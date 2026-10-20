@@ -14,6 +14,12 @@ from app.core.enums import UserRole
 from app.models.peer_network import PeerNetworkMember, PeerNetworkRoomMember
 from app.models.firm import Firm
 from app.models.user import User
+from app.services.behavioral_log import log_event
+
+
+# Consent events below never carry the member's handle: behavioral_events is
+# firm-scoped and keyed to real user ids, so a handle there would tie the
+# pseudonym to the person (Phase 7).
 
 
 def _generate_handle(db: Session) -> str:
@@ -43,6 +49,7 @@ def opt_in_firm(db: Session, calling_owner: User) -> dict:
         select(Firm).where(Firm.id == calling_owner.firm_id)
     ).scalar_one()
 
+    was_enabled = bool(firm.peer_network_enabled)
     firm.peer_network_enabled = True
 
     existing_member = db.execute(
@@ -61,6 +68,17 @@ def opt_in_firm(db: Session, calling_owner: User) -> dict:
         db.add(member)
 
     db.commit()
+
+    if not was_enabled:
+        log_event(
+            firm_id=calling_owner.firm_id,
+            event_type="peer_network.firm_opted_in",
+            entity_type="firm",
+            entity_id=calling_owner.firm_id,
+            actor_type="staff",
+            actor_id=calling_owner.id,
+            metadata={"owner_member_created": existing_member is None},
+        )
 
     if existing_member is None:
         db.refresh(member)
@@ -124,6 +142,19 @@ def grant_access(db: Session, calling_owner: User, target_user_id: UUID) -> dict
     db.add(member)
     db.commit()
     db.refresh(member)
+
+    log_event(
+        firm_id=calling_owner.firm_id,
+        event_type="peer_network.access_granted",
+        entity_type="peer_network_member",
+        entity_id=member.id,
+        actor_type="staff",
+        actor_id=calling_owner.id,
+        metadata={
+            "target_user_id": str(target_user_id),
+            "target_role": target.role.value if hasattr(target.role, "value") else str(target.role),
+        },
+    )
     return {"granted": True, "handle": member.handle, "already_existed": False}
 
 
@@ -171,6 +202,19 @@ def accept_terms(db: Session, user_id: UUID) -> dict:
     if member.terms_accepted_at is None:
         member.terms_accepted_at = datetime.now(timezone.utc)
         db.commit()
+
+        user = db.get(User, user_id)
+        log_event(
+            firm_id=member.firm_id,
+            event_type="peer_network.terms_accepted",
+            entity_type="peer_network_member",
+            entity_id=member.id,
+            actor_type="staff",
+            actor_id=user_id,
+            metadata={
+                "role": user.role.value if hasattr(user.role, "value") else str(user.role),
+            },
+        )
 
     return {"accepted": True, "terms_accepted_at": member.terms_accepted_at.isoformat()}
 

@@ -2,6 +2,7 @@
 
 from uuid import UUID
 
+from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.crud import automation_rule as crud_rule
@@ -83,3 +84,89 @@ def toggle_automation_rule(
     )
 
     return result
+
+
+# ---------------------------------------------------------------------------
+# Create, delete and reset moved out of app/api/automation_rules.py (Phase 7).
+# Updates and toggles already fired; these three were silent.
+# ---------------------------------------------------------------------------
+
+def create_automation_rule(
+    db: Session,
+    *,
+    payload,  # AutomationRuleCreate
+    firm_id: UUID,
+    current_user_id: UUID,
+):
+    rule = crud_rule.create_rule(db, payload=payload, firm_id=firm_id)
+
+    log_event(
+        firm_id=firm_id,
+        event_type="firm.automation_created",
+        entity_type="automation_rule",
+        entity_id=rule.id,
+        actor_type="staff",
+        actor_id=current_user_id,
+        metadata={
+            "rule_name": rule.name,
+            "trigger_event": rule.trigger_event,
+            "is_preset": rule.preset_key is not None,
+        },
+    )
+    return rule
+
+
+def delete_automation_rule(
+    db: Session,
+    *,
+    rule: AutomationRule,
+    firm_id: UUID,
+    current_user_id: UUID,
+) -> None:
+    rule_id = rule.id
+    metadata = {
+        "rule_name": rule.name,
+        "trigger_event": rule.trigger_event,
+        "is_preset": rule.preset_key is not None,
+    }
+
+    crud_rule.delete_rule(db, rule=rule)
+
+    log_event(
+        firm_id=firm_id,
+        event_type="firm.automation_deleted",
+        entity_type="automation_rule",
+        entity_id=rule_id,
+        actor_type="staff",
+        actor_id=current_user_id,
+        metadata=metadata,
+    )
+
+
+def reset_automation_rule(
+    db: Session,
+    *,
+    rule: AutomationRule,
+    firm_id: UUID,
+    current_user_id: UUID,
+):
+    if not rule.default_actions:
+        raise HTTPException(status_code=400, detail="No default actions stored for this rule")
+    rule.actions = rule.default_actions
+    rule.is_customized = False
+    db.commit()
+    db.refresh(rule)
+
+    log_event(
+        firm_id=firm_id,
+        event_type="firm.automation_reset",
+        entity_type="automation_rule",
+        entity_id=rule.id,
+        actor_type="staff",
+        actor_id=current_user_id,
+        metadata={
+            "rule_name": rule.name,
+            "trigger_event": rule.trigger_event,
+        },
+    )
+    return rule

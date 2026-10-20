@@ -407,21 +407,9 @@ def staff_disconnect_integration(
     if not integration:
         raise HTTPException(status_code=404, detail="Integration not found")
 
-    integration.encrypted_access_token = None
-    integration.encrypted_refresh_token = None
-    integration.token_expires_at = None
-    integration.connected_at = None
-    integration.scopes = None
-    integration.external_account_id = None
-    crud_integration.update_integration_status(db, integration, status="disconnected")
-    write_audit_log(
-        db=db,
-        firm_id=current_firm.id,
-        action="integration.disconnected",
-        actor_type="staff",
-        entity_type="integration",
-        entity_id=integration.id,
-        metadata={"provider": provider, "user_id": str(current_user.id)},
+    integration_service.disconnect_staff_integration(
+        db=db, integration=integration, firm_id=current_firm.id,
+        provider=provider, current_user_id=current_user.id,
     )
 
 
@@ -585,25 +573,13 @@ def disconnect_integration(
     provider: str,
     db: Session = Depends(get_db),
     current_firm: Firm = Depends(get_current_firm),
-    _: object = Depends(require_firm_owner),
+    current_user: User = Depends(require_firm_owner),
 ):
     integration = crud_integration.get_integration(db, firm_id=current_firm.id, provider=provider)
     if not integration:
         raise HTTPException(status_code=404, detail="Integration not found")
 
-    integration.encrypted_access_token = None
-    integration.encrypted_refresh_token = None
-    integration.token_expires_at = None
-    integration.connected_at = None
-    integration.scopes = None
-    integration.external_account_id = None
-    crud_integration.update_integration_status(db, integration, status="disconnected")
-    write_audit_log(
-        db=db,
-        firm_id=current_firm.id,
-        action="integration.disconnected",
-        actor_type="staff",
-        entity_type="integration",
-        entity_id=integration.id,
-        metadata={"provider": provider},
+    integration_service.disconnect_firm_integration(
+        db=db, integration=integration, firm_id=current_firm.id,
+        provider=provider, current_user_id=current_user.id,
     )

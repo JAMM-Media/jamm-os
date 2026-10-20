@@ -368,11 +368,18 @@ def test_superseded_row_survives_with_its_document_and_history(firm_a_owner):
         prior.signed_document_id = doc.id
         db.commit()
 
+        # recipient_user_id is required on writes from Sep 24, 2026. The
+        # owner is who the sweep would have reached for this firm.
+        from app.models.user import User
+        owner_id = db.execute(
+            select(User).where(User.firm_id == uuid.UUID(firm_id))
+        ).scalars().first().id
         crud_warning.create_warning(
             db=db,
             warning_in=IrsAuthorizationWarningCreate(
                 authorization_id=prior.id, threshold_days=60,
                 sent_at=datetime.now(timezone.utc),
+                recipient_user_id=owner_id,
             ),
             firm_id=uuid.UUID(firm_id),
         )

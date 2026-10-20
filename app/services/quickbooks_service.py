@@ -88,6 +88,18 @@ class QuickBooksService:
                 scopes=QB_SCOPES,
                 external_account_id=realm_id,
             )
+
+            # Gmail and Outlook already record integration.connected from their
+            # callbacks; QuickBooks did not (Phase 7). provider only: tokens,
+            # scopes and the realm id stay out of the event.
+            log_event(
+                event_type="integration.connected",
+                firm_id=firm_id,
+                entity_type="integration",
+                entity_id=integration.id,
+                actor_type="system",
+                metadata={"provider": QB_PROVIDER},
+            )
             return integration
 
         except Exception as e:

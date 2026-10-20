@@ -8,10 +8,12 @@ from uuid import UUID
 from app.db.session import get_db
 from app.models.contact import Contact
 from app.models.firm import Firm
+from app.models.user import User
 from app.schemas.contact import ContactCreate, ContactUpdate, ContactOut
 from app.schemas.pagination import PaginatedResponse
 from app.utils.pagination import paginate
 from app.crud import contact as crud_contact
+from app.services import contact_service
 from app.dependencies.tenant import get_current_firm
 from app.dependencies.roles import require_staff_or_above
 
@@ -51,9 +53,11 @@ def create_contact(
     contact_in: ContactCreate,
     db: Session = Depends(get_db),
     current_firm: Firm = Depends(get_current_firm),
-    _: object = Depends(require_staff_or_above),
+    current_user: User = Depends(require_staff_or_above),
 ):
-    return crud_contact.create_contact(db, contact_in, firm_id=current_firm.id)
+    return contact_service.create_contact(
+        db, contact_in=contact_in, firm_id=current_firm.id, current_user_id=current_user.id,
+    )
 
 
 @router.patch("/{contact_id}", response_model=ContactOut)
@@ -62,12 +66,15 @@ def update_contact(
     contact_in: ContactUpdate,
     db: Session = Depends(get_db),
     current_firm: Firm = Depends(get_current_firm),
-    _: object = Depends(require_staff_or_above),
+    current_user: User = Depends(require_staff_or_above),
 ):
     contact = crud_contact.get_contact_for_firm(db, contact_id, current_firm.id)
     if not contact:
         raise HTTPException(status_code=404, detail="Contact not found")
-    return crud_contact.update_contact(db, contact, contact_in)
+    return contact_service.update_contact(
+        db, contact=contact, contact_in=contact_in,
+        firm_id=current_firm.id, current_user_id=current_user.id,
+    )
 
 
 @router.delete("/{contact_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -75,9 +82,11 @@ def delete_contact(
     contact_id: UUID,
     db: Session = Depends(get_db),
     current_firm: Firm = Depends(get_current_firm),
-    _: object = Depends(require_staff_or_above),
+    current_user: User = Depends(require_staff_or_above),
 ):
     contact = crud_contact.get_contact_for_firm(db, contact_id, current_firm.id)
     if not contact:
         raise HTTPException(status_code=404, detail="Contact not found")
-    crud_contact.delete_contact(db, contact)
+    contact_service.delete_contact(
+        db, contact=contact, firm_id=current_firm.id, current_user_id=current_user.id,
+    )

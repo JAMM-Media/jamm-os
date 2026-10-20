@@ -11,14 +11,18 @@ the line number of the first non-stdlib import (third-party or app/scripts-local
 so a later PR that adds an import above the guard fails CI instead of
 failing quietly on a production host.
 
-Scope: all scripts/seed_*.py and scripts/fix_*.py files, with one explicit
-exclusion:
+Scope: all scripts/seed_*.py, scripts/fix_*.py and scripts/reset_*.py files,
+with one explicit exclusion:
 
   seed_demo_firm_config.py -- pure config module imported by seed_demo_firm.py,
   not a standalone script. It has no __main__ block and no SessionLocal usage,
   so the guard does not apply to it and it is excluded from this scan.
 
 The guard was added to seed_complexity_catalog.py in 478feac; the script is now covered by this scan like every other seed_*.py file.
+
+reset_*.py joined the scan on Sep 24, 2026, when scripts/reset_test_schema.py
+landed. That script drops a schema, so an import sitting above its guard is
+the same production hazard the Phase 8 bug was, only louder.
 """
 
 import ast
@@ -39,7 +43,7 @@ _EXCLUDED_SCRIPTS = {"seed_demo_firm_config.py"}
 
 def _gather_script_paths() -> list[Path]:
     paths: list[Path] = []
-    for pattern in ("seed_*.py", "fix_*.py"):
+    for pattern in ("seed_*.py", "fix_*.py", "reset_*.py"):
         for p in _SCRIPTS_DIR.glob(pattern):
             if p.name not in _EXCLUDED_SCRIPTS:
                 paths.append(p)

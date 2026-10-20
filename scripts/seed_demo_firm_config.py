@@ -8,13 +8,40 @@ Nothing in this file computes calendar dates directly - the window is always
 relative to the run date, resolved at runtime in seed_demo_firm.py.
 """
 
+import os
+
 FIRM = {
     "name": "Cedar and Vance Advisors (DEMO)",
     "slug": "cedar-and-vance-demo",
     "subscription_tier": "pro",
 }
 
-DEMO_PASSWORD = "DemoSeed2026!"
+def get_demo_password() -> str:
+    """The password every seeded demo account gets, read at run time.
+
+    Not a constant in this file any more. A password literal in tracked
+    config is a credential published to everyone who can read the repo,
+    and rotating it means a commit. Ruled Sep 24, 2026.
+
+    Read at run time and never at import, so importing this module with
+    the variable unset stays safe: the ordering guard, the test suite and
+    any tooling that merely imports the config must not blow up over a
+    password they are never going to use. Callers invoke this only after
+    their production guard has passed.
+    """
+    # The variable name is spelled here rather than held in a module
+    # constant: a constant whose name contains PASSWORD and whose value is
+    # a string is exactly what the tripwire refuses, and an exemption for
+    # names ending _ENV_VAR would be a door a real secret could walk back
+    # through.
+    value = os.environ.get("DEMO_SEED_PASSWORD", "")
+    if not value.strip():
+        raise RuntimeError(
+            "DEMO_SEED_PASSWORD is not set. The demo seed needs a password "
+            "for the accounts it creates, and this repo does not carry one. "
+            "Set it in your environment (see .env.example) and run again."
+        )
+    return value
 
 # ---------------------------------------------------------------------------
 # Staff personas

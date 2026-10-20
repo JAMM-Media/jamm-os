@@ -36,17 +36,12 @@ def create_user(
     user_in: UserCreate,
     db: Session = Depends(get_db),
     current_firm: Firm = Depends(get_current_firm),
-    _: object = Depends(require_firm_owner),
+    current_user: User = Depends(require_firm_owner),
 ):
-    existing = crud_user.get_user_by_email(db, email=user_in.email)
-    if existing:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email already registered",
-        )
-    # Override firm_id with the authenticated firm - never trust what's in the payload.
-    user_in_with_firm = user_in.model_copy(update={"firm_id": current_firm.id})
-    return crud_user.create_user(db, user_in_with_firm)
+    return user_service.create_user(
+        db=db, user_in=user_in,
+        firm_id=current_firm.id, current_user_id=current_user.id,
+    )
 
 
 # -------------------------------------------------------------------
@@ -362,7 +357,7 @@ def delete_user(
     user_id: UUID,
     db: Session = Depends(get_db),
     current_firm: Firm = Depends(get_current_firm),
-    _: object = Depends(require_firm_owner),
+    current_user: User = Depends(require_firm_owner),
 ):
     user = db.query(User).filter(
         User.id == user_id,
@@ -370,4 +365,6 @@ def delete_user(
     ).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    crud_user.delete_user(db, user)
+    user_service.delete_user(
+        db=db, user=user, firm_id=current_firm.id, current_user_id=current_user.id,
+    )

@@ -45,7 +45,21 @@ def _mk_auth(db, firm_id, client_id, form_type="8821"):
     return a
 
 
-def _mk_warning(db, firm_id, auth_id, threshold_days, sent_at):
+def _owner_id(db, firm_id):
+    """The firm's owner, who is who the sweep would have reached.
+
+    recipient_user_id is required on writes from Sep 24, 2026, so these
+    tests have to name a real user. Tests that care which recipient a row
+    carries pass one explicitly.
+    """
+    from sqlalchemy import select
+    from app.models.user import User
+    return db.execute(
+        select(User).where(User.firm_id == uuid.UUID(firm_id))
+    ).scalars().first().id
+
+
+def _mk_warning(db, firm_id, auth_id, threshold_days, sent_at, recipient_id=None):
     from app.crud import irs_authorization_warning as crud_warning
     from app.schemas.irs_authorization_warning import IrsAuthorizationWarningCreate
     return crud_warning.create_warning(
@@ -54,6 +68,7 @@ def _mk_warning(db, firm_id, auth_id, threshold_days, sent_at):
             authorization_id=auth_id,
             threshold_days=threshold_days,
             sent_at=sent_at,
+            recipient_user_id=recipient_id or _owner_id(db, firm_id),
         ),
         firm_id=uuid.UUID(firm_id),
     )
@@ -94,13 +109,15 @@ def test_ladder_returns_every_tier_that_fired(client, firm_a_owner):
     assert sent == sorted(sent, reverse=True), "most recent send first"
 
 
-def test_ladder_returns_threshold_and_sent_at_only(client, firm_a_owner):
+def test_ladder_returns_threshold_sent_at_and_recipients(client, firm_a_owner):
     """
-    The response carries the tier and the timestamp, nothing more.
+    The response carries the tier, the timestamp and the recipients, and
+    nothing more.
 
     firm_id comes from the caller's JWT and authorization_id from the URL, so
-    echoing either back is noise. Recipients are absent because the table has
-    no recipient column, which is a known gap rather than an omission here.
+    echoing either back is noise. recipient_user_ids arrived Sep 24, 2026,
+    when the table gained a recipient column: this test previously asserted
+    the gap, and the gap is now closed.
     """
     firm_id = firm_a_owner["firm_id"]
     db = TestingSessionLocal()
@@ -116,7 +133,7 @@ def test_ladder_returns_threshold_and_sent_at_only(client, firm_a_owner):
         f"/irs-authorizations/{auth_id}/warnings", headers=firm_a_owner["headers"]
     )
     assert r.status_code == 200
-    assert set(r.json()[0]) == {"threshold_days", "sent_at"}
+    assert set(r.json()[0]) == {"threshold_days", "sent_at", "recipient_user_ids"}
 
 
 def test_tier_zero_is_reported_not_treated_as_absent(client, firm_a_owner):

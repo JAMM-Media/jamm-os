@@ -68,9 +68,11 @@ def create_rule(
     payload: AutomationRuleCreate,
     db: Session = Depends(get_db),
     current_firm: Firm = Depends(get_current_firm),
-    _: User = Depends(require_manager_or_above),
+    current_user: User = Depends(require_manager_or_above),
 ):
-    return crud_rule.create_rule(db, payload=payload, firm_id=current_firm.id)
+    return automation_rule_service.create_automation_rule(
+        db, payload=payload, firm_id=current_firm.id, current_user_id=current_user.id,
+    )
 
 
 # --- GET /{rule_id} ---
@@ -111,12 +113,14 @@ def delete_rule(
     rule_id: UUID,
     db: Session = Depends(get_db),
     current_firm: Firm = Depends(get_current_firm),
-    _: User = Depends(require_manager_or_above),
+    current_user: User = Depends(require_manager_or_above),
 ):
     rule = crud_rule.get_rule(db, rule_id=rule_id, firm_id=current_firm.id)
     if not rule:
         raise HTTPException(status_code=404, detail="Automation rule not found")
-    crud_rule.delete_rule(db, rule=rule)
+    automation_rule_service.delete_automation_rule(
+        db, rule=rule, firm_id=current_firm.id, current_user_id=current_user.id,
+    )
 
 
 # --- POST /{rule_id}/toggle ---
@@ -143,18 +147,14 @@ def reset_rule_to_default(
     rule_id: UUID,
     db: Session = Depends(get_db),
     current_firm: Firm = Depends(get_current_firm),
-    _: User = Depends(require_manager_or_above),
+    current_user: User = Depends(require_manager_or_above),
 ):
     rule = crud_rule.get_rule(db, rule_id=rule_id, firm_id=current_firm.id)
     if not rule:
         raise HTTPException(status_code=404, detail="Automation rule not found")
-    if not rule.default_actions:
-        raise HTTPException(status_code=400, detail="No default actions stored for this rule")
-    rule.actions = rule.default_actions
-    rule.is_customized = False
-    db.commit()
-    db.refresh(rule)
-    return rule
+    return automation_rule_service.reset_automation_rule(
+        db, rule=rule, firm_id=current_firm.id, current_user_id=current_user.id,
+    )
 
 
 # --- POST /{rule_id}/simulate ---

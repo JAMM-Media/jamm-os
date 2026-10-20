@@ -8,7 +8,7 @@ fires when the portal dashboard loads.
 
 Login:
   Email:    portal-demo@jammpx.com
-  Password: Portal2026!
+  Password: whatever PORTAL_SEED_PASSWORD held when this was run.
 
 Run from the project root:
     python scripts/seed_portal_client.py
@@ -189,7 +189,21 @@ from app.services.portal_auth import hash_portal_password
 
 FIRM_ID = uuid.UUID("185314c9-e702-4eab-8600-249848022206")
 PORTAL_EMAIL = "portal-demo@jammpx.com"
-PORTAL_PASSWORD = "Portal2026!"
+def get_portal_password() -> str:
+    """The demo portal client password, read at run time.
+
+    Was a literal in this file until Sep 24, 2026, and spelled out in the
+    module docstring as well. Same ruling as the demo firm seed: no
+    password literal anywhere under scripts/.
+    """
+    value = os.environ.get("PORTAL_SEED_PASSWORD", "")
+    if not value.strip():
+        raise RuntimeError(
+            "PORTAL_SEED_PASSWORD is not set. This seed needs a password for "
+            "the demo portal client it creates. Set it in your environment "
+            "(see .env.example) and run again."
+        )
+    return value
 
 
 def main() -> None:
@@ -214,7 +228,7 @@ def main() -> None:
             name="Demo Portal Client",
             email=PORTAL_EMAIL,
             referral_source=None,
-            portal_password_hash=hash_portal_password(PORTAL_PASSWORD),
+            portal_password_hash=hash_portal_password(get_portal_password()),
             portal_access_enabled=True,
         )
         db.add(client)
@@ -228,7 +242,7 @@ def main() -> None:
         print()
         print("Portal login credentials:")
         print(f"  Email:    {PORTAL_EMAIL}")
-        print(f"  Password: {PORTAL_PASSWORD}")
+        print("  Password: the value of PORTAL_SEED_PASSWORD")
         print()
         print("Start both dev servers (backend + frontend), then navigate to /portal/login")
     finally:

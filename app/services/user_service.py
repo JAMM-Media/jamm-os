@@ -2,11 +2,13 @@
 
 from typing import Optional
 from uuid import UUID
+from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.crud import user as crud_user
 from app.crud import firm as crud_firm
 from app.schemas.firm import FirmUpdate
+from app.schemas.user import UserCreate
 from app.services import s3 as s3_service
 from app.services.audit_service import write_audit_log
 from app.services.behavioral_log import log_event, log_setting_changes
@@ -160,3 +162,65 @@ def update_user_cost_rate(
         },
     )
     return user
+
+
+def _role_value(role) -> str:
+    return role.value if hasattr(role, "value") else str(role)
+
+
+def create_user(
+    *,
+    db: Session,
+    user_in: UserCreate,
+    firm_id: UUID,
+    current_user_id: UUID,
+):
+    """Staff join, moved out of POST /users/ (Phase 7). The event carries the
+    role and active flag only; the password and its hash never reach it."""
+    existing = crud_user.get_user_by_email(db, email=user_in.email)
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email already registered",
+        )
+    # Override firm_id with the authenticated firm - never trust what's in the payload.
+    user_in_with_firm = user_in.model_copy(update={"firm_id": firm_id})
+    user = crud_user.create_user(db, user_in_with_firm)
+
+    log_event(
+        firm_id=firm_id,
+        event_type="user.created",
+        entity_type="user",
+        entity_id=user.id,
+        actor_type="staff",
+        actor_id=current_user_id,
+        metadata={
+            "role": _role_value(user.role),
+            "is_active": user.is_active,
+        },
+    )
+    return user
+
+
+def delete_user(
+    *,
+    db: Session,
+    user,
+    firm_id: UUID,
+    current_user_id: UUID,
+) -> None:
+    """Staff hard delete, moved out of DELETE /users/{user_id} (Phase 7)."""
+    user_id = user.id
+    role = _role_value(user.role)
+
+    crud_user.delete_user(db, user)
+
+    log_event(
+        firm_id=firm_id,
+        event_type="user.deleted",
+        entity_type="user",
+        entity_id=user_id,
+        actor_type="staff",
+        actor_id=current_user_id,
+        metadata={"role": role},
+    )
