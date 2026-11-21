@@ -6,6 +6,9 @@ import { useInfiniteQuery, useQuery, useQueryClient, type InfiniteData } from '@
 import { useRouter } from 'next/navigation'
 import api from '@/lib/api'
 import { toast } from 'sonner'
+import { useAuth } from '@/lib/hooks/useAuth'
+import { DeleteRequestActions } from '@/components/notifications/DeleteRequestActions'
+import { isDeleteRequestRow } from '@/lib/deleteRequestState'
 import { getEntityPath, getEntityDestinationLabel } from '@/lib/notificationPaths'
 import {
   DAY_GROUP_LABELS,
@@ -72,6 +75,7 @@ function relativeTime(iso: string): string {
 export default function NotificationsPage() {
   const queryClient = useQueryClient()
   const router = useRouter()
+  const { user } = useAuth()
   const [search, setSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState('all')
   const [readFilter, setReadFilter] = useState('all')
@@ -293,6 +297,9 @@ export default function NotificationsPage() {
                             <p className="text-[12px] text-[#6B7280] mt-0.5 whitespace-pre-wrap break-words">
                               <span className="font-medium">Reason:</span> {reason}
                             </p>
+                          )}
+                          {isDeleteRequestRow(n.title, n.related_entity_type, n.related_entity_id) && (
+                            <DeleteRequestActions notification={n} role={user?.role} onMarkRead={handleMarkRead} />
                           )}
                           <p className="text-[11px] text-[#9CA3AF] mt-1">
                             {destLabel ? `Opens: ${destLabel}` : 'No linked page'}

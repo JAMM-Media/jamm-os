@@ -13,6 +13,10 @@ vi.mock('sonner', () => ({
   toast: { success: vi.fn(), error: vi.fn() },
 }))
 
+vi.mock('@/lib/hooks/useAuth', () => ({
+  useAuth: () => ({ user: { role: 'firm_owner' }, isLoading: false }),
+}))
+
 // The page imports the axios instance as the default export of '@/lib/api'.
 vi.mock('@/lib/api', () => ({
   default: { get: vi.fn(), patch: vi.fn() },
