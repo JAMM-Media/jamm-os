@@ -22,7 +22,14 @@ vi.mock('@/lib/api', () => ({
   default: { get: vi.fn(), patch: vi.fn() },
 }))
 
+// The IRS lookup. The real helper builds the URL from what this returns.
+vi.mock('@/lib/api/irsAuthorizationsApi', () => ({
+  irsAuthorizationsApi: { getById: vi.fn() },
+}))
+
 import api from '@/lib/api'
+import { toast } from 'sonner'
+import { irsAuthorizationsApi } from '@/lib/api/irsAuthorizationsApi'
 import NotificationsPage from './page'
 
 interface FakeRow {
@@ -38,6 +45,8 @@ interface FakeRow {
 
 const getMock = api.get as unknown as ReturnType<typeof vi.fn>
 const patchMock = api.patch as unknown as ReturnType<typeof vi.fn>
+const getByIdMock = irsAuthorizationsApi.getById as unknown as ReturnType<typeof vi.fn>
+const toastErrorMock = toast.error as unknown as ReturnType<typeof vi.fn>
 
 let server: FakeRow[] = []
 let failSkip: number | null = null
@@ -113,6 +122,8 @@ beforeEach(() => {
   getMock.mockReset()
   patchMock.mockReset()
   push.mockClear()
+  getByIdMock.mockReset()
+  toastErrorMock.mockClear()
   server = []
   failSkip = null
   installApi()
@@ -190,10 +201,11 @@ describe('notifications page: row content', () => {
     ]
     renderPage()
     await screen.findByText('Plain system row')
-    expect(screen.getAllByText('No linked page')).toHaveLength(2)
+    expect(screen.getAllByText('No linked page')).toHaveLength(1)
     expect(screen.getByText('Opens: Calendar')).toBeInTheDocument()
+    expect(screen.getByText('Opens: Client IRS authorizations')).toBeInTheDocument()
     expect(rowFor('Plain system row').className).not.toContain('cursor-pointer')
-    expect(rowFor('IRS row').className).not.toContain('cursor-pointer')
+    expect(rowFor('IRS row').className).toContain('cursor-pointer')
     expect(rowFor('Calendar row').className).toContain('cursor-pointer')
   })
 
@@ -268,5 +280,95 @@ describe('notifications page: mark as read', () => {
     await waitFor(() => expect(rowEls()).toHaveLength(100))
     expect(rowFor('Title 0').getAttribute('data-unread')).toBe('false')
     expect(rowFor('Title 1').getAttribute('data-unread')).toBe('true')
+  })
+})
+
+describe('notifications page: row click destinations', () => {
+  const irsRow = (over: Partial<FakeRow> = {}) =>
+    row(0, {
+      title: 'IRS row',
+      notification_type: 'irs_auth_expiry',
+      related_entity_type: 'irs_authorization',
+      related_entity_id: 'a-1',
+      ...over,
+    })
+
+  it('an irs row marks read first, looks the authorization up once, then pushes the exact client URL', async () => {
+    server = [irsRow()]
+    getByIdMock.mockResolvedValue({ id: 'a-1', client_id: 'c-9' })
+    renderPage()
+    await screen.findByText('IRS row')
+    fireEvent.click(rowFor('IRS row'))
+    await waitFor(() => expect(push).toHaveBeenCalledTimes(1))
+    expect(push).toHaveBeenCalledWith('/clients/c-9?tab=irs-auth')
+    expect(getByIdMock).toHaveBeenCalledTimes(1)
+    expect(getByIdMock).toHaveBeenCalledWith('a-1')
+    expect(patchMock).toHaveBeenCalledWith('/api/v1/notifications/n-000/read')
+    expect(patchMock.mock.invocationCallOrder[0]).toBeLessThan(getByIdMock.mock.invocationCallOrder[0])
+  })
+
+  it.each([
+    ['404', { response: { status: 404 } }],
+    ['403', { response: { status: 403 } }],
+    ['network error', new Error('Network Error')],
+  ])('a failed lookup (%s) shows the toast, does not navigate, still marks read and leaves no unhandled rejection', async (_name, failure) => {
+    const unhandled = vi.fn()
+    process.on('unhandledRejection', unhandled)
+    try {
+      server = [irsRow()]
+      getByIdMock.mockRejectedValue(failure)
+      renderPage()
+      await screen.findByText('IRS row')
+      fireEvent.click(rowFor('IRS row'))
+      await waitFor(() => expect(toastErrorMock).toHaveBeenCalledWith('Could not open this IRS authorization'))
+      expect(push).not.toHaveBeenCalled()
+      await waitFor(() => expect(rowFor('IRS row').getAttribute('data-unread')).toBe('false'))
+      expect(patchMock).toHaveBeenCalledWith('/api/v1/notifications/n-000/read')
+      await new Promise((r) => setTimeout(r, 50))
+      expect(unhandled).not.toHaveBeenCalled()
+    } finally {
+      process.off('unhandledRejection', unhandled)
+    }
+  })
+
+  it('a second click while the lookup is in flight is ignored', async () => {
+    server = [irsRow()]
+    let resolveLookup!: (v: unknown) => void
+    getByIdMock.mockReturnValue(new Promise((res) => { resolveLookup = res }))
+    renderPage()
+    await screen.findByText('IRS row')
+    fireEvent.click(rowFor('IRS row'))
+    await waitFor(() => expect(getByIdMock).toHaveBeenCalledTimes(1))
+    fireEvent.click(rowFor('IRS row'))
+    await new Promise((r) => setTimeout(r, 30))
+    expect(getByIdMock).toHaveBeenCalledTimes(1)
+    expect(push).not.toHaveBeenCalled()
+    resolveLookup({ id: 'a-1', client_id: 'c-9' })
+    await waitFor(() => expect(push).toHaveBeenCalledTimes(1))
+    expect(getByIdMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('after a failed lookup a later click tries again', async () => {
+    server = [irsRow()]
+    getByIdMock.mockRejectedValueOnce({ response: { status: 404 } })
+    getByIdMock.mockResolvedValueOnce({ id: 'a-1', client_id: 'c-9' })
+    renderPage()
+    await screen.findByText('IRS row')
+    fireEvent.click(rowFor('IRS row'))
+    await waitFor(() => expect(toastErrorMock).toHaveBeenCalledWith('Could not open this IRS authorization'))
+    fireEvent.click(rowFor('IRS row'))
+    await waitFor(() => expect(push).toHaveBeenCalledWith('/clients/c-9?tab=irs-auth'))
+    expect(getByIdMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('a calendar_event row still marks read and pushes /calendar with no lookup', async () => {
+    server = [row(0, { title: 'Calendar row', related_entity_type: 'calendar_event', related_entity_id: 'e-1' })]
+    renderPage()
+    await screen.findByText('Calendar row')
+    fireEvent.click(rowFor('Calendar row'))
+    await waitFor(() => expect(push).toHaveBeenCalledWith('/calendar'))
+    expect(push).toHaveBeenCalledTimes(1)
+    expect(patchMock).toHaveBeenCalledWith('/api/v1/notifications/n-000/read')
+    expect(getByIdMock).not.toHaveBeenCalled()
   })
 })

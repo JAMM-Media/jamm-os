@@ -65,6 +65,11 @@ export const irsAuthorizationsApi = {
       params: { client_id: clientId },
     }),
 
+  getById: async (id: string): Promise<IrsAuthorizationRecord> => {
+    const { data } = await api.get<IrsAuthorizationRecord>(`/irs-authorizations/${id}`)
+    return data
+  },
+
   send: (payload: IrsAuthSendRequest) =>
     api.post(`/irs-authorizations/send`, payload),
 }

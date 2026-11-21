@@ -1,7 +1,7 @@
 // path: frontend/src/app/(app)/notifications/page.tsx
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { useInfiniteQuery, useQuery, useQueryClient, type InfiniteData } from '@tanstack/react-query'
 import { useRouter } from 'next/navigation'
 import api from '@/lib/api'
@@ -9,7 +9,8 @@ import { toast } from 'sonner'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { DeleteRequestActions } from '@/components/notifications/DeleteRequestActions'
 import { isDeleteRequestRow } from '@/lib/deleteRequestState'
-import { getEntityPath, getEntityDestinationLabel } from '@/lib/notificationPaths'
+import { getEntityPath, getEntityDestinationLabel, isAsyncDestination } from '@/lib/notificationPaths'
+import { resolveIrsAuthorizationPath } from '@/lib/irsAuthorizationDestination'
 import {
   DAY_GROUP_LABELS,
   dedupeById,
@@ -79,6 +80,8 @@ export default function NotificationsPage() {
   const [search, setSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState('all')
   const [readFilter, setReadFilter] = useState('all')
+  // True while an async destination (a lookup before navigating) is being opened.
+  const openingAsync = useRef(false)
 
   const {
     data,
@@ -144,14 +147,32 @@ export default function NotificationsPage() {
 
   async function handleRowClick(n: Notification) {
     const path = getEntityPath(n.related_entity_type, n.related_entity_id)
-    if (!n.is_read) {
-      try {
-        await handleMarkRead(n.id)
-      } catch {
-        toast.error('Could not mark notification as read')
-      }
+    const asyncId = isAsyncDestination(n.related_entity_type) ? n.related_entity_id : undefined
+    if (asyncId) {
+      // A second click while the first is still opening is ignored.
+      if (openingAsync.current) return
+      openingAsync.current = true
     }
-    if (path) router.push(path)
+    try {
+      if (!n.is_read) {
+        try {
+          await handleMarkRead(n.id)
+        } catch {
+          toast.error('Could not mark notification as read')
+        }
+      }
+      if (asyncId) {
+        try {
+          router.push(await resolveIrsAuthorizationPath(asyncId))
+        } catch {
+          toast.error('Could not open this IRS authorization')
+        }
+        return
+      }
+      if (path) router.push(path)
+    } finally {
+      if (asyncId) openingAsync.current = false
+    }
   }
 
   const uniqueTypes = Array.from(

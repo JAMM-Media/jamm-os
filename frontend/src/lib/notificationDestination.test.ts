@@ -4,16 +4,18 @@ import {
   NOTIFICATION_ENTITY_TYPES,
   getEntityDestinationLabel,
   getEntityPath,
+  isAsyncDestination,
 } from './notificationPaths'
 
 describe('getEntityDestinationLabel', () => {
-  it('has a label exactly when there is a path, for every type in the shared table', () => {
+  it('has a label exactly when there is a path, or an id for an async destination, for every type', () => {
     expect(NOTIFICATION_ENTITY_TYPES.length).toBeGreaterThan(0)
-    for (const type of NOTIFICATION_ENTITY_TYPES) {
+    for (const type of [...NOTIFICATION_ENTITY_TYPES, 'irs_authorization']) {
       for (const id of ['some-id', undefined, '']) {
         const path = getEntityPath(type, id)
         const label = getEntityDestinationLabel(type, id)
-        expect(label === null).toBe(path === null)
+        const opens = path !== null || (isAsyncDestination(type) && !!id)
+        expect(label === null).toBe(!opens)
       }
     }
   })
@@ -36,11 +38,16 @@ describe('getEntityDestinationLabel', () => {
     }
   })
 
-  it('is null for irs_authorization, unknown types, inherited keys and a missing type', () => {
-    expect(getEntityDestinationLabel('irs_authorization', '9')).toBeNull()
+  it('is the static IRS label for irs_authorization, and null for unknown types, inherited keys and a missing type', () => {
+    expect(getEntityDestinationLabel('irs_authorization', '9')).toBe('Client IRS authorizations')
     expect(getEntityDestinationLabel('unknown_type', '10')).toBeNull()
     expect(getEntityDestinationLabel('constructor', '11')).toBeNull()
     expect(getEntityDestinationLabel()).toBeNull()
     expect(getEntityDestinationLabel(undefined, '1')).toBeNull()
+  })
+
+  it('has no IRS label without an id to look up', () => {
+    expect(getEntityDestinationLabel('irs_authorization')).toBeNull()
+    expect(getEntityDestinationLabel('irs_authorization', '')).toBeNull()
   })
 })

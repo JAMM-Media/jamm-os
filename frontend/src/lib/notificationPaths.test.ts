@@ -1,6 +1,6 @@
 // path: frontend/src/lib/notificationPaths.test.ts
 import { describe, it, expect } from 'vitest'
-import { getEntityPath } from './notificationPaths'
+import { getEntityPath, isAsyncDestination } from './notificationPaths'
 
 describe('getEntityPath', () => {
   it('returns existing paths for engagement, task, client, message', () => {
@@ -44,5 +44,22 @@ describe('getEntityPath', () => {
   it('returns /calendar for calendar_event with and without id', () => {
     expect(getEntityPath('calendar_event', 'some-uuid')).toBe('/calendar')
     expect(getEntityPath('calendar_event')).toBe('/calendar')
+  })
+})
+
+describe('isAsyncDestination', () => {
+  it('is true for irs_authorization, whose path stays null because it needs a lookup', () => {
+    expect(isAsyncDestination('irs_authorization')).toBe(true)
+    expect(getEntityPath('irs_authorization', '9')).toBeNull()
+  })
+
+  it('is false for synchronous types, unknown types, inherited keys and a missing type', () => {
+    for (const type of ['engagement', 'task', 'client', 'lead', 'document', 'message', 'time_entry', 'staff_credential', 'calendar_event']) {
+      expect(isAsyncDestination(type)).toBe(false)
+    }
+    expect(isAsyncDestination('unknown_type')).toBe(false)
+    expect(isAsyncDestination('constructor')).toBe(false)
+    expect(isAsyncDestination()).toBe(false)
+    expect(isAsyncDestination('')).toBe(false)
   })
 })
